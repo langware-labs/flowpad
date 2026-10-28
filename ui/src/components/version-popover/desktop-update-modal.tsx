@@ -5,8 +5,9 @@ import { Trans } from '@lingui/react/macro';
 
 /** What the "Desktop Update Required" popup needs to say (FLOWPAD-2310). */
 export interface DesktopUpdateRequiredInfo {
-  /** The flow SDK (PyPI) version the user tried to install. */
-  engineTarget: string;
+  /** The flow SDK (PyPI) version the user tried to install — null when neither the shell nor the
+   *  backend could name one (offline): Update Both is then impossible and is not offered. */
+  engineTarget: string | null;
   /** That release's minimum desktop version, when known. */
   minDesktop: string | null;
   /** The running desktop app's version. */
@@ -73,11 +74,18 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onUp
               <Trans>A newer version of FlowPad Desktop is required before upgrading the Python backend.</Trans>
             )}
           </p>
-          {info.desktopAvailable ? (
+          {info.desktopAvailable && info.engineTarget ? (
             <p className="text-muted-foreground">
               <Trans>
                 FlowPad Desktop v{info.desktopAvailable} is available. Both components update together: the desktop
                 first, then the flow SDK right after the restart.
+              </Trans>
+            </p>
+          ) : info.desktopAvailable ? (
+            <p className="text-muted-foreground">
+              <Trans>
+                FlowPad Desktop v{info.desktopAvailable} is available, but the flow SDK version could not be
+                determined — check your connection and try again.
               </Trans>
             </p>
           ) : info.checkFailed ? (
@@ -98,7 +106,7 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onUp
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
         <div className="flex flex-col gap-2">
-          {info.desktopAvailable && (
+          {info.desktopAvailable && info.engineTarget && (
             <Button type="button" onClick={onUpdateBoth} disabled={busy} data-testid="update-both-button">
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               <Trans>Update Both</Trans>

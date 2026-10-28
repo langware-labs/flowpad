@@ -525,7 +525,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
    *  flow SDK THIS desktop can run (named only when it actually moves the install forward). */
   const buildCompatInfo = useCallback(
     (info: UpdateInfo | null, engine: EnginePreflight | null): DesktopUpdateRequiredInfo => ({
-      engineTarget: engine?.latest ?? data?.pypi?.latest ?? '',
+      engineTarget: engine?.latest ?? data?.pypi?.latest ?? null,
       minDesktop: engine?.latestMinDesktop ?? null,
       desktopInstalled: info?.desktop.installed ?? electronVersion,
       desktopAvailable:
@@ -637,7 +637,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   }, [electronApi, compatInfo, t]);
 
   const handleUpdateBoth = useCallback(async () => {
-    if (!electronApi?.updateBoth || !compatInfo) return;
+    if (!electronApi?.updateBoth || !compatInfo?.engineTarget) return;
     setModalBusy(true);
     setModalError(null);
     try {

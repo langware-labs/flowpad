@@ -2840,7 +2840,7 @@ class UvManager {
    *   `newestCompatible` is filled only when the latest release is incompatible: the newest release
    *   this desktop CAN run (null when none, or when that could not be resolved).
    */
-  async engineUpdatePreflight() {
+  async engineUpdatePreflight({ fresh = false } = {}) {
     // A popover open followed by an Upgrade click repeats the whole round (fresh PyPI document, a
     // wheel range read, and a resolve walk when the latest is incompatible): one short-lived snapshot
     // covers both. Keyed on the INSTALLED version (re-read every time, local and cheap), so an engine
@@ -2850,7 +2850,9 @@ class UvManager {
     const installed = this.getInstalledVersionSync() || null;
     const c = this._preflightCache;
     if (c && c.installed === installed && Date.now() - c.at < TTL_MS) return c.value;
-    const latest = await this.getLatestPypiVersion(true); // user-facing pre-flight: must see a just-published release
+    // Display rides the CDN (a popover open is not an install); the ACTION paths (upgrade, the
+    // version pick before an install) ask fresh themselves, right before locking a version.
+    const latest = await this.getLatestPypiVersion(fresh);
     const info = {
       installed,
       latest,

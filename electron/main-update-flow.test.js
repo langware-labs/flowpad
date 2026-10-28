@@ -60,7 +60,7 @@ function load(opts = {}) {
       if (opts.desktopCheckThrows) throw new Error(opts.desktopCheckThrows);
       return { updateInfo: { version: opts.desktopFeed || opts.appVersion || '0.2.47' } };
     },
-    downloadUpdate() { autoUpdater.downloads.push(1); return new Promise((r) => { autoUpdater.finishDownload = r; }); },
+    downloadUpdate() { autoUpdater.downloads.push(1); return new Promise((r, j) => { autoUpdater.finishDownload = r; autoUpdater.failDownload = j; }); },
     quitAndInstall: (...a) => { autoUpdater.quits.push(a); },
   });
   const electron = {
@@ -723,16 +723,15 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(await env.ipc['update:take-resumed'](), null, 'a dialog-initiated resume stays out of the panel');
   }
   {
-    // A failed download surfaces in the panel with the error (the Retry re-invokes download-desktop).
+    // A failed download surfaces in the panel from the download's OWN catch (the Retry re-invokes
+    // download-desktop); stray 'error' events on the shared emitter never touch the row.
     const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
     env.t.setupElectronAutoUpdater();
     await env.ipc['update:download-desktop']();
-    env.autoUpdater.emit('error', new Error('feed unreachable')); await tick();
-    ok(pushes(env).some((d) => d.state === 'error' && /feed unreachable/.test(d.error)), 'the panel hears the download error');
-    env.autoUpdater.finishDownload(); await tick(); // the promise's finally resets the in-flight flag…
-    env.sent.length = 0;
-    env.autoUpdater.emit('error', new Error('late error')); await tick();
-    ok(pushes(env).some((d) => d.state === 'error' && /late error/.test(d.error)), '…and an error landing after that still reaches the panel (it owns the version)');
+    env.autoUpdater.emit('error', new Error('emitter noise')); await tick();
+    eq(pushes(env).filter((d) => d.state === 'error').length, 0, 'emitter noise is not a download error');
+    env.autoUpdater.failDownload(new Error('download failed: network dropped')); await tick(); await tick();
+    ok(pushes(env).some((d) => d.state === 'error' && /network dropped/.test(d.error)), "the download's own failure reaches the panel");
   }
   {
     // After a FAILED panel download the periodic tick retries it WITHOUT a native prompt: the panel
@@ -823,6 +822,28 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(checks, 1, 'two get-info calls within the TTL: one feed check');
   }
   {
+    // A FAILED feed check is not stamped into the TTL: "Check again" right after a failure really
+    // asks again; only an ANSWERED check starts the quiet minute.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    let checks = 0; let failCheck = true;
+    const orig = env.autoUpdater.checkForUpdates;
+    env.autoUpdater.checkForUpdates = async (...a) => { checks += 1; if (failCheck) throw new Error('offline'); return orig(...a); };
+    await env.ipc['update:get-info']();
+    failCheck = false;
+    await env.ipc['update:get-info']();
+    eq(checks, 2, 'the failed check did not start the TTL — Check again really checked');
+    await env.ipc['update:get-info']();
+    eq(checks, 2, 'the ANSWERED check did: a third call within the minute is served from the snapshot');
+  }
+  {
+    // An UNPARSEABLE floor is not positive knowledge: the pin stays held and nothing is stopped.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '1.0' });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['upgrade-flowpad'](null, { version: '0.2.240' });
+    eq([r.desktopUpdatePending, env.uv.upgrades.length, env.uv.flowStops || 0], [true, 0, 0],
+      'an unparseable floor: held, server untouched');
+  }
+  {
     // A release published WHILE the panel downloads: the panel keeps ownership of the superseding
     // version — its row restarts at 0% and no native dialog pops over it.
     const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
@@ -863,7 +884,7 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     env.autoUpdater.checkForUpdates = async () => { env.autoUpdater.emit('error', new Error('feed offline')); throw new Error('feed offline'); };
     await env.t.getDesktopUpdateVersion(); await tick();
     eq(pushes(env).filter((d) => d.state === 'error').length, 0, 'a feed-check error does not touch the live download row');
-    env.autoUpdater.emit('error', new Error('download broke')); await tick();
+    env.autoUpdater.failDownload(new Error('download broke')); await tick(); await tick();
     ok(pushes(env).some((d) => d.state === 'error' && /download broke/.test(d.error)), 'a real download error still lands');
   }
   {

@@ -67,6 +67,12 @@ describe('DesktopUpdateModal', () => {
     expect(text).not.toContain('No newer FlowPad Desktop');
   });
 
+  it('a desktop build exists but no engine target: no Update Both, honest advice instead', () => {
+    renderModal({ info: { ...INFO, engineTarget: null } });
+    expect(screen.queryByTestId('update-both-button')).toBeNull();
+    expect(screen.getByTestId('desktop-update-required-modal').textContent).toContain('could not be');
+  });
+
   it('busy disables every action (no duplicate update operations)', () => {
     const { onUpdateBoth } = renderModal({ busy: true });
     const both = screen.getByTestId('update-both-button');

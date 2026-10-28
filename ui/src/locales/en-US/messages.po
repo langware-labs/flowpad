@@ -13304,6 +13304,11 @@ msgstr "Flowpad Cloud:"
 
 #. placeholder {0}: info.desktopAvailable
 #: src/components/version-popover/desktop-update-modal.tsx
+msgid "FlowPad Desktop v{0} is available, but the flow SDK version could not be determined — check your connection and try again."
+msgstr "FlowPad Desktop v{0} is available, but the flow SDK version could not be determined — check your connection and try again."
+
+#. placeholder {0}: info.desktopAvailable
+#: src/components/version-popover/desktop-update-modal.tsx
 msgid "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
 msgstr "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
 

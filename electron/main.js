@@ -226,13 +226,11 @@ function setupElectronAutoUpdater() {
     });
     autoUpdater.on('error', (err) => {
       log.error('[electron-updater] error:', err);
-      // The version panel shows the error with a Retry — when a download or an apply was actually
-      // under way, or the panel owns a DOWNLOAD still in flight (panelDesktopVersion survives the
-      // download promise's finally, which can reset the in-flight flag before this handler runs).
-      // Once the download landed, panel ownership of errors ends: a later stray error (a periodic
-      // feed check failing) must not replace the panel's Ready state with a dead "Retry the download".
-      if (!feedCheckInFlight
-          && (desktopDownloadInFlight || restartApplier.busy || (panelDesktopVersion && !desktopDownloadedVersion))) {
+      // Download errors reach the panel from downloadDesktopUpdateInBackground's OWN catch — the one
+      // place that knows the error belongs to its download. This shared emitter also carries feed-check
+      // failures, so pushing from here misattributed them in both directions. Only an apply
+      // ("Restart now") failure is pushed from here.
+      if (restartApplier.busy) {
         sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err) });
       }
       // If this happened while a "Restart now" was in flight, the app is not quitting after all.
@@ -285,28 +283,14 @@ function setupElectronAutoUpdater() {
         await desktopDownloadDone;
       }
       if (supersededPanelDownload) {
-        // The panel owned the cancelled download: it keeps owning the newer release. No native
-        // dialog — the panel's row restarts at 0% for the superseding version.
-        panelDesktopVersion = desktopLatest;
-        pendingDesktopVersion = desktopLatest;
-        offeredDesktopVersion = desktopLatest;
-        sendDesktopUpdateState({ state: 'downloading', percent: 0, version: desktopLatest });
-        downloadDesktopUpdateInBackground({ version: desktopLatest, promptOnReady: false });
+        // The panel owned the cancelled download: it keeps owning the newer release (no native dialog).
+        panelAdoptsSupersedingRelease(desktopLatest);
       } else if (desktopLatest !== offeredDesktopVersion) {
         if (panelDesktopVersion && desktopDownloadedVersion === panelDesktopVersion) {
-          // The panel owns a READY update ("Update Now" on screen): it keeps owning the superseding
-          // release — no native dialog, and the consented panel pending-engine record follows the
-          // new desktop version instead of being overwritten unconsented by offerDesktopUpdate.
+          // The panel owns a READY update ("Update Now" on screen): same adoption — no native dialog,
+          // and the consented panel record is not overwritten unconsented by offerDesktopUpdate.
           log.info(`[electron-updater] ${desktopLatest} supersedes the panel's ready ${desktopDownloadedVersion}`);
-          panelDesktopVersion = desktopLatest;
-          pendingDesktopVersion = desktopLatest;
-          offeredDesktopVersion = desktopLatest;
-          desktopDownloadedVersion = null; // the old artifact is superseded
-          const saved = pendingEngineStore.read();
-          // The agreed engine's floor was met by the OLD desktop; a newer desktop meets it too.
-          if (saved && saved.source === 'panel') pendingEngineStore.write({ ...saved, desktopVersion: desktopLatest });
-          sendDesktopUpdateState({ state: 'downloading', percent: 0, version: desktopLatest });
-          downloadDesktopUpdateInBackground({ version: desktopLatest, promptOnReady: false });
+          panelAdoptsSupersedingRelease(desktopLatest);
         } else if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
           // A release we have not offered yet: same screen as at launch (desktop only, or desktop + engine).
           // Not while a download is running, the restart prompt is up, or another update dialog is open.
@@ -571,9 +555,7 @@ async function offerDesktopUpdate(desktopLatest) {
  */
 async function getDesktopUpdateVersion() {
   if (!app.isPackaged || process.windowsStore) return setDesktopStatus({ state: 'unsupported' }).version;
-  feedCheckInFlight = true;
   try {
-    desktopFeedCheckedAt = Date.now();
     const result = await autoUpdater.checkForUpdates();
     if (!result) return setDesktopStatus({ state: 'unsupported' }).version; // the updater is inactive
     const latest = result.updateInfo && result.updateInfo.version;
@@ -583,19 +565,18 @@ async function getDesktopUpdateVersion() {
     log.warn(`[electron-updater] desktop update check failed: ${err.message}`);
     return setDesktopStatus({ state: 'unknown', reason: `update check failed: ${err.message}` }).version;
   } finally {
-    feedCheckInFlight = false;
+    if (desktopStatus.state !== 'unknown') desktopFeedCheckedAt = Date.now();
   }
 }
 
 // What the last desktop update check found — the input of engineChangePolicy (update-plan.js). 'unknown' until a
 // check answers: a check that failed or is still running is NOT "no newer desktop".
 let desktopStatus = { state: 'unknown', reason: 'not checked yet' };
-// When the feed was last actually asked — the panel's 'update:get-info' re-checks at most once a
-// minute (the 20-minute tick calls getDesktopUpdateVersion directly and is not throttled by this).
+// When the feed last ANSWERED — the panel's 'update:get-info' re-checks at most once a minute (the
+// 20-minute tick calls getDesktopUpdateVersion directly and is not throttled by this). A FAILED
+// check is not stamped: "Check again" after a failure must actually ask again, not no-op silently
+// for the rest of the window.
 let desktopFeedCheckedAt = 0;
-// True while checkForUpdates() runs: ITS 'error' event (the feed check failing, e.g. offline for a
-// moment) lands on the same emitter as download errors and must not reach the panel's download row.
-let feedCheckInFlight = false;
 function setDesktopStatus(status) {
   desktopStatus = { version: null, ...status };
   updateTest.event('desktop-check', { running: app.getVersion(), ...desktopStatus });
@@ -643,6 +624,9 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
         log.info(`[electron-updater] download of ${version || 'update'} cancelled (superseded)`);
       } else {
         log.error('[electron-updater] download failed:', err);
+        // This catch KNOWS the error belongs to this download — unlike the shared 'error' emitter,
+        // which also carries feed-check noise. The panel's row flips to error + Retry.
+        sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err) });
       }
     })
     .finally(() => {
@@ -2885,14 +2869,14 @@ ipcMain.handle('upgrade-flowpad', async (_event, opts) => {
   const requested = (opts && opts.version) || null;
   // Desktop first: refuse before touching the running server or the window.
   if (engineChangeAllowed('upgrade-flowpad IPC') !== 'allow') {
-    // One exception, and only on POSITIVE knowledge: a pinned release whose floor the RUNNING
-    // desktop already meets is safe to install while a desktop update is pending — it is exactly
-    // the popup's "works with this desktop" fallback, which this hold used to contradict.
-    const candidate = requested && engineCompat.isInstallableVersion(requested)
-      ? await uvManager._readCandidateMinDesktop(requested) : null;
-    const compatibleNow = !!candidate && candidate !== 'invalid'
-      && engineCompat.meetsFloor(app.getVersion(), candidate.minDesktopVersion) !== false;
-    if (!compatibleNow) {
+    // One exception, and only on POSITIVE knowledge (engineFloorAllows): a pinned release whose
+    // floor the RUNNING desktop explicitly meets is safe to install while a desktop update is
+    // pending — it is exactly the popup's "works with this desktop" fallback, which this hold used
+    // to contradict. An unparseable or unreadable floor stays held: better refused here than a
+    // stopped server and a splash before _assertCandidateCompatible says the same thing.
+    const verdict = requested && engineCompat.isInstallableVersion(requested)
+      ? await engineFloorAllows(requested, app.getVersion()) : { allowed: false };
+    if (!verdict.allowed) {
       return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
     }
     log.info(`[update] engine change allowed despite the pending desktop: ${requested} runs on the current desktop`);
@@ -2907,12 +2891,43 @@ ipcMain.handle('upgrade-flowpad', async (_event, opts) => {
 // dialogs: promptOnReady:false keeps the native "Restart now" prompt out of a panel-initiated download,
 // and the panel's own buttons are the consent instead.
 
+/**
+ * POSITIVE-knowledge floor gate: `allowed` only when the candidate engine release declares no floor,
+ * or `desktopVersion` EXPLICITLY meets it. Unknown, unreadable or invalid metadata refuses — a
+ * refusal here is words on a panel; optimism here is a stopped server or a restart that ends in a
+ * rollback. (The install-time gates stay authoritative either way.)
+ */
+async function engineFloorAllows(engineVersion, desktopVersion) {
+  if (!uvManager || typeof uvManager._readCandidateMinDesktop !== 'function') return { allowed: false, floor: null };
+  const candidate = await uvManager._readCandidateMinDesktop(engineVersion);
+  if (!candidate || candidate === 'invalid') return { allowed: false, floor: null };
+  const floor = candidate.minDesktopVersion;
+  const allowed = floor == null || engineCompat.meetsFloor(desktopVersion, floor) === true;
+  return { allowed, floor: floor == null ? null : floor };
+}
+
 /** Why a panel update action must be refused right now, or null when it may proceed. */
 function desktopUpdateRefusal() {
   if (!app.isPackaged || process.windowsStore) return 'unsupported';
   if (restartApplier.busy || desktopRestartPromptOpen) return 'busy';
   if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) return 'busy';
   return null;
+}
+
+/**
+ * The panel keeps ownership of a release that supersedes the one it was handling: flags, its
+ * consented pending-engine record (the agreed engine's floor was met by the OLD desktop, so a newer
+ * desktop meets it too), the row's restart at 0%, and the new download — never a native dialog.
+ */
+function panelAdoptsSupersedingRelease(desktopLatest) {
+  panelDesktopVersion = desktopLatest;
+  pendingDesktopVersion = desktopLatest;
+  offeredDesktopVersion = desktopLatest;
+  desktopDownloadedVersion = null; // any older downloaded artifact is superseded
+  const saved = pendingEngineStore.read();
+  if (saved && saved.source === 'panel') pendingEngineStore.write({ ...saved, desktopVersion: desktopLatest });
+  sendDesktopUpdateState({ state: 'downloading', percent: 0, version: desktopLatest });
+  downloadDesktopUpdateInBackground({ version: desktopLatest, promptOnReady: false });
 }
 
 /** The one desktop version a panel action applies to — downloaded first (possibly "Later"-deferred),
@@ -3025,13 +3040,13 @@ ipcMain.handle('update:both', async (_event, engineVersion) => {
   if (!desktopVersion) return { started: false, reason: 'no-update' };
   // The engine's own floor must accept the desktop about to be installed — otherwise the whole
   // coordinated flow is doomed: the new desktop would refuse the engine (_assertCandidateCompatible),
-  // clear the pending state, and the panel would offer the same lost round again.
-  const candidate = typeof uvManager._readCandidateMinDesktop === 'function'
-    ? await uvManager._readCandidateMinDesktop(engineVersion) : null;
-  const engineFloor = candidate && candidate !== 'invalid' ? candidate.minDesktopVersion : null;
-  if (engineFloor && engineCompat.meetsFloor(desktopVersion, engineFloor) === false) {
-    log.warn(`[update] panel: refusing Update Both — engine ${engineVersion} needs desktop ${engineFloor}, the feed offers ${desktopVersion}`);
-    return { started: false, reason: 'desktop-too-old', minDesktop: engineFloor };
+  // clear the pending state, and the panel would offer the same lost round again. Positive knowledge
+  // only (engineFloorAllows): an unknown floor refuses — a failed round after a restart costs far
+  // more than an early refusal.
+  const verdict = await engineFloorAllows(engineVersion, desktopVersion);
+  if (!verdict.allowed) {
+    log.warn(`[update] panel: refusing Update Both — engine ${engineVersion} needs desktop ${verdict.floor || 'unknown'}, the feed offers ${desktopVersion}`);
+    return { started: false, reason: 'desktop-too-old', minDesktop: verdict.floor };
   }
   log.info(`[update] panel: coordinated update — desktop ${desktopVersion}, then engine ${engineVersion}`);
   // The popup click is the agreement to BOTH versions: save and consent in one go, so quitting before
