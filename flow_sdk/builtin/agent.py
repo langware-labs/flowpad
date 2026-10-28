@@ -1220,11 +1220,11 @@ class Agent(Entity):
         no hub and no publish — the one way "This computer" becomes a deployment. Any other
         ``provider`` is passed to the hub, which refuses one it does not offer; none is ``e2b``.
 
-        A cloud deploy answers once everything up to readiness has run — a refusal (a missing value, a
-        publish problem) is still the answer — with where its activity reports, and any warnings (no model
-        funding). The machine, minutes, is placed after that; the ``deploy``
-        activity on this agent says how it goes. ``{"wait": true}`` answers only once the machine is
-        placed, with the hub's answer (``flow agent deploy``).
+        A cloud deploy answers at once with where its activity reports: every step — publish, plan,
+        readiness, the machine — runs after that, and the ``deploy`` activity on this agent says how it
+        goes, a refusal (a missing value, a publish problem) included. ``{"wait": true}`` answers only once
+        the machine is placed, with the hub's answer and any warnings (no model funding) — or with the
+        refusal (``flow agent deploy``).
         """
         from flow_sdk.builtin.agent_cloud_deploy import CloudDeploy, DeployRunning, run_cloud_deploy  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
@@ -1277,7 +1277,7 @@ class Agent(Entity):
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         if body.wait:
-            return ApiSuccessResponse(data={"agent_id": self.id, **deploy.result, "warnings": accepted["warnings"]})
+            return ApiSuccessResponse(data={"agent_id": self.id, **deploy.result, "warnings": deploy.warnings})
         return ApiSuccessResponse(data=accepted)
 
     # ── the run verb (HTTP) ───────────────────────────────────────────────

@@ -6,12 +6,12 @@ Two layers, kept apart on purpose:
   share its hub dependencies, plan its placement on the hub, check readiness, have the hub place it on
   a machine. Nothing here reports progress; ``Agent.deploy_to_cloud`` runs the steps back to back.
 * :func:`run_cloud_deploy` — the deploy under its activity (``deploy`` on the agent), each step one of
-  its children. Everything up to readiness runs in the request, so a refusal (a missing value, a
-  publish problem) is still the answer; the machine — minutes — runs after the request has answered,
-  and the activity is what tells the screen how it goes.
+  its children. The request is answered as soon as the activity is claimed and every step runs after
+  it: the activity is what tells the screen how it goes, a refusal (a missing value, a publish problem)
+  included. A deploy that waits runs them all before answering (``flow agent deploy``).
 
 Model funding never refuses a deploy (``requirement_spec.ADVISORY_KINDS``): a placement with nothing to
-spend is placed all the same, and the answer carries the warning.
+spend is placed all the same, and the answer of a deploy that waits carries the warning.
 """
 
 from __future__ import annotations
@@ -41,14 +41,12 @@ class DeployRunning(RuntimeError):
 
 
 @dataclass(frozen=True)
-class Step:
-    """One step of the deploy: its child's name on the activity, how a screen reads it, and the work.
-    ``background``: the slow tail run after the request has answered."""
+class DeployStep:
+    """One step of the deploy: its child's name on the activity, how a screen reads it, and the work."""
 
     name: str
     label: str
     run: Callable[[], Awaitable[None]]
-    background: bool = False
 
 
 class CloudDeploy:
@@ -74,13 +72,13 @@ class CloudDeploy:
         #: The hub's answer once the machine is placed: the adopted deployment, its endpoints, its secrets.
         self.result: dict[str, Any] = {}
 
-    def steps(self) -> list[Step]:
+    def steps(self) -> list[DeployStep]:
         return [
-            Step("publish", "Publish the agent", self._publish),
-            Step("dependencies", "Share its dependencies", self._dependencies),
-            Step("plan", "Plan the deployment", self._plan),
-            Step("readiness", "Check what it needs", self._readiness),
-            Step("machine", "Start a machine", self._machine, background=True),
+            DeployStep("publish", "Publish the agent", self._publish),
+            DeployStep("dependencies", "Share its dependencies", self._dependencies),
+            DeployStep("plan", "Plan the deployment", self._plan),
+            DeployStep("readiness", "Check what it needs", self._readiness),
+            DeployStep("machine", "Start a machine", self._machine),
         ]
 
     async def run(self) -> dict[str, Any]:
@@ -133,12 +131,11 @@ class CloudDeploy:
 
 
 async def run_cloud_deploy(deploy: CloudDeploy, *, background: bool) -> dict[str, Any]:
-    """Run *deploy* under its activity: every step up to readiness now; the machine after this returns when
-    *background*, before it otherwise. A step that fails ends the activity failed and is raised here — for a
-    background step, the activity is the only one told.
+    """Run *deploy* under its activity: every step after this returns when *background*, before it otherwise.
+    A step that fails ends the activity failed; it is raised here when not *background*, and in the background
+    the activity is the only one told.
 
-    The answer: the agent, where its activity reports, the warnings (no model funding) and the placement it
-    lands on.
+    The answer: the agent, and where its activity reports.
 
     Single-flight per agent: a deploy already running raises :class:`DeployRunning`.
     """
@@ -156,30 +153,26 @@ async def run_cloud_deploy(deploy: CloudDeploy, *, background: bool) -> dict[str
     steps = deploy.steps()
     # The whole outline before any step starts: every step is on the screen, pending, at once.
     root.label(f"Deploy {agent.name or agent.id}").plan([{"name": step.name, "label": step.label} for step in steps])
-    try:
-        await _run_steps(root, [step for step in steps if not step.background])
-    except BaseException as exc:
-        root.fail(str(exc) or type(exc).__name__)
-        raise
-
-    tail = [step for step in steps if step.background]
-    accepted = {
-        "agent_id": str(agent.id),
-        "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": subject},
-        "warnings": deploy.warnings,
-        "deployment_id": str(deploy.deployment.id) if deploy.deployment is not None else "",
-    }
+    accepted = {"agent_id": str(agent.id), "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": subject}}
     if background:
-        create_detached_task(_finish(root, tail), name=f"agent-deploy:{agent.id}")
+        create_detached_task(_run_steps(root, steps), name=f"agent-deploy:{agent.id}")
     else:
-        await _finish(root, tail, reraise=True)
+        await _run_steps(root, steps, reraise=True)
     return accepted
 
 
-async def _finish(root: "Activity", steps: list[Step], *, reraise: bool = False) -> None:
-    """The rest of the steps, then the activity's end — done, or failed with the step's error."""
+async def _run_steps(root: "Activity", steps: list[DeployStep], *, reraise: bool = False) -> None:
+    """*steps* in order, each as its child of *root* — running, then done or failed with its error — then
+    *root*'s end: done, or failed with the failing step's error."""
     try:
-        await _run_steps(root, steps)
+        for step in steps:
+            node = root.child(step.name).label(step.label)
+            try:
+                await step.run()
+            except BaseException as exc:
+                node.fail(str(exc) or type(exc).__name__)
+                raise
+            node.done()
     except BaseException as exc:
         root.fail(str(exc) or type(exc).__name__)
         if reraise:
@@ -187,19 +180,6 @@ async def _finish(root: "Activity", steps: list[Step], *, reraise: bool = False)
         logger.warning("cloud deploy of %s failed: %s", root.subject_entity, exc)
         return
     root.done()
-
-
-async def _run_steps(root: "Activity", steps: list[Step]) -> None:
-    """*steps* in order, each as its child of *root*: running, then done — or failed with its error, which is
-    raised. Ending *root* is the caller's: only it knows whether more steps follow."""
-    for step in steps:
-        node = root.child(step.name).label(step.label)
-        try:
-            await step.run()
-        except BaseException as exc:
-            node.fail(str(exc) or type(exc).__name__)
-            raise
-        node.done()
 
 
 __all__ = ["DEPLOY_ACTIVITY", "CloudDeploy", "DeployRunning", "run_cloud_deploy"]
