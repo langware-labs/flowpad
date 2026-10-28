@@ -519,6 +519,33 @@ async def test_the_listing_unions_the_catalog_so_the_global_root_is_offered(env,
     assert names == ["my allocation", "global"], f"expected the union, de-duplicated; got {names}"
 
 
+async def test_the_listing_names_who_pays_not_the_entity_default(env, monkeypatch) -> None:
+    """A chain row carries the entity-default ``provider`` (``openrouter``) whoever pays; the hub says
+    who does in the permission expansion, and the listing shows that."""
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+
+    _login()
+    row = {
+        "id": "11111111-2222-4333-8444-555555555555",
+        "type": "llm_endpoint",
+        "name": "me default",
+        "provider": "openrouter",
+        "expand": {"roles": ["reader"], "root_provider": "vertex"},
+    }
+    plain = {
+        "id": "66666666-2222-4333-8444-555555555555",
+        "type": "llm_endpoint",
+        "name": "plain",
+        "provider": "openai",
+    }
+
+    async def _hub_get(method, entity_type, entity_id=None, action=None, **kwargs):
+        return None if action == "catalog" else {"data": [row, plain]}
+
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(_hub_get))
+    assert {e.name: e.provider for e in await fetch_hub_llm_endpoints()} == {"me default": "vertex", "plain": "openai"}
+
+
 async def test_a_failed_catalog_read_still_offers_the_scoped_rows(env, monkeypatch) -> None:
     """Losing the fallback is not a reason to answer with nothing."""
     from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
