@@ -9,7 +9,6 @@ export const EntityTypes = {
   Bookmark: 'bookmark',
   Comment: 'comment',
   ComputeNode: 'compute_node',
-  CronEvent: 'cron_event',
   Flow: 'flow',
   Func: 'func',
   GraphContext: 'graph_context',

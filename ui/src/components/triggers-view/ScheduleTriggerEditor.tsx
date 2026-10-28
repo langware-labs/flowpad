@@ -11,6 +11,9 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { describeSchedule } from '@src/components/cron-view/describe-schedule';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { useAutomation } from '@src/hooks/automations/useAutomations';
+import { PlaceBadge } from '@src/components/assets/editor/agent-profile/PlaceBadge';
+import { placeOf } from '@sdk';
 
 /** The scope chip's colours — the one place this editor shows a scope. */
 const SCOPE_CHIP: Record<string, string> = {
@@ -45,6 +48,8 @@ function AgentScheduleDetail({ trigger, agentTypeId }: { trigger: Trigger; agent
   const agentName = agents[0]?.name ?? agentId.slice(0, 8);
   const prompt = (trigger.actions ?? []).find((a) => a.action_type === 'run_agent')?.prompt ?? '';
   const openAgent = () => navigation.openDock(DockPointer.forAssetEditorByTypeId('agent', new TypeId(agentTypeId)));
+  // Where it runs, as the overview places it; the place is changed (or moved) in the agent's schedules.
+  const { automation } = useAutomation(trigger.id, { poll: false });
 
   return (
     <div className="flex flex-col gap-3 px-4 py-3 text-sm" data-testid="agent-schedule-detail">
@@ -63,6 +68,20 @@ function AgentScheduleDetail({ trigger, agentTypeId }: { trigger: Trigger; agent
         </div>
         <div data-testid="agent-schedule-detail-when">
           {describeSchedule(trigger.expr, trigger.sched_trigger_type, trigger.timezone)}
+        </div>
+      </div>
+      <div>
+        <div className="text-[11px] font-medium text-muted-foreground">
+          <Trans>Runs on</Trans>
+        </div>
+        <div className="flex items-center gap-2" data-testid="agent-schedule-detail-place">
+          <PlaceBadge
+            place={automation ? placeOf(automation) : { kind: 'local', label: 'This computer', every_machine: !trigger.runs_on }}
+            className="text-sm text-foreground"
+          />
+          <span className="text-xs text-muted-foreground">
+            <Trans>Change where it runs from the agent&apos;s schedules.</Trans>
+          </span>
         </div>
       </div>
       <div>

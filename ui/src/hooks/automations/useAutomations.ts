@@ -13,9 +13,11 @@ import {
   Agent,
   Trigger,
   type AutomationCheck,
+  type AutomationOverview,
   type AutomationRun,
   type AutomationSample,
   type AutomationSummary,
+  type TriggerCallOptions,
   type BusMap,
   type AutomationTestEvent,
   type ITrigger,
@@ -42,13 +44,35 @@ const automationKeys = {
 /** Every automation as a sentence with its health. `poll: false` for a screen that
  *  only needs the names (a filter list) — it shares the cache without adding a poll. */
 export function useAutomations(options: { enabled?: boolean; poll?: boolean } = {}) {
-  return useQuery<AutomationSummary[]>({
+  return useQuery<AutomationOverview, Error, AutomationSummary[]>({
     queryKey: automationKeys.overview(),
-    queryFn: () => Trigger.overview(),
+    queryFn: () => Trigger.overviewWithWarnings(),
+    select: selectRows,
     refetchInterval: options.poll === false ? false : AUTOMATIONS_POLL_MS,
     enabled: options.enabled ?? true,
   });
 }
+
+const selectRows = (overview: AutomationOverview) => overview.rows;
+const selectCloudWarning = (overview: AutomationOverview) =>
+  overview.warnings.find((w) => w.error_code.startsWith('CLOUD_')) ?? null;
+
+/** Why the overview holds this machine's automations only: its `CLOUD_UNAVAILABLE` / `CLOUD_SIGNED_OUT`
+ *  warning, or null when the cloud's were read too. Shares the overview's request and cache. */
+export function useAutomationsCloudWarning(options: { enabled?: boolean } = {}) {
+  const { data } = useQuery<AutomationOverview, Error, ReturnType<typeof selectCloudWarning>>({
+    queryKey: automationKeys.overview(),
+    queryFn: () => Trigger.overviewWithWarnings(),
+    select: selectCloudWarning,
+    enabled: options.enabled ?? true,
+  });
+  return data ?? null;
+}
+
+/** Where a row-level call goes: a hub row's to the hub. */
+export const callOptionsFor = (row: Pick<AutomationSummary, 'source'> | null | undefined): TriggerCallOptions => ({
+  hubReflect: row?.source === 'hub',
+});
 
 /** One automation's summary, from the same list (no second request). */
 export function useAutomation(triggerId: string | null | undefined, options: { poll?: boolean } = {}) {
@@ -114,9 +138,13 @@ export function useRunOnce() {
   return useMutation<
     RunOnceStarted,
     Error,
-    { triggerId: string; event?: AutomationTestEvent | null; messageId?: string }
+    { triggerId: string; event?: AutomationTestEvent | null; messageId?: string; source?: AutomationSummary['source'] }
   >({
-    mutationFn: ({ triggerId, event, messageId }) => Trigger.runOnce(triggerId, event, { messageId }),
+    // A hub row's *Run now* is the hub's fire; it answers no run id, so the lists pick the fire up on refresh.
+    mutationFn: async ({ triggerId, event, messageId, source }) =>
+      source === 'hub'
+        ? (await Trigger.fire(triggerId), { trigger_id: triggerId, background: true, detail: {} })
+        : Trigger.runOnce(triggerId, event, { messageId }),
     onSettled: () => void invalidate(),
   });
 }
@@ -175,8 +203,8 @@ export function useStartedLastHour(): number {
 
 export function useSetAutomationEnabled() {
   const invalidate = useInvalidateAutomations();
-  return useMutation<Trigger, Error, { triggerId: string; enabled: boolean }>({
-    mutationFn: ({ triggerId, enabled }) => Trigger.setEnabled(triggerId, enabled),
+  return useMutation<Trigger, Error, { triggerId: string; enabled: boolean; source?: AutomationSummary['source'] }>({
+    mutationFn: ({ triggerId, enabled, source }) => Trigger.setEnabled(triggerId, enabled, callOptionsFor({ source })),
     onSettled: () => void invalidate(),
   });
 }
@@ -184,17 +212,24 @@ export function useSetAutomationEnabled() {
 /** Create (no id) or update (id) an automation from its fields. */
 export function useSaveAutomation() {
   const invalidate = useInvalidateAutomations();
-  return useMutation<Trigger, Error, { triggerId?: string | null; fields: Partial<ITrigger> & { name: string } }>({
-    mutationFn: ({ triggerId, fields }) =>
-      triggerId ? Trigger.updateAutomation(triggerId, fields) : Trigger.createAutomation(fields),
+  return useMutation<
+    Trigger,
+    Error,
+    { triggerId?: string | null; fields: Partial<ITrigger> & { name: string }; source?: AutomationSummary['source'] }
+  >({
+    mutationFn: ({ triggerId, fields, source }) =>
+      triggerId
+        ? Trigger.updateAutomation(triggerId, fields, callOptionsFor({ source }))
+        : Trigger.createAutomation(fields, callOptionsFor({ source })),
     onSettled: () => void invalidate(),
   });
 }
 
 export function useDeleteAutomation() {
   const invalidate = useInvalidateAutomations();
-  return useMutation<void, Error, string>({
-    mutationFn: (triggerId) => Trigger.remove(triggerId),
+  return useMutation<void, Error, string | { triggerId: string; source?: AutomationSummary['source'] }>({
+    mutationFn: (arg) =>
+      typeof arg === 'string' ? Trigger.remove(arg) : Trigger.remove(arg.triggerId, callOptionsFor(arg)),
     onSettled: () => void invalidate(),
   });
 }

@@ -21,6 +21,39 @@ import type {
   TryRow,
 } from './automation-types';
 import type { DecisionVerdict } from '../models/ReturnedValue';
+import type { ApiWarning } from '../ApiResponse';
+import { warningsOf } from '../client';
+
+/** Where a row-level call goes: `hubReflect` sends it to the hub (a row whose `source` is `hub`). */
+export interface TriggerCallOptions {
+  hubReflect?: boolean;
+}
+
+/** The overview's rows, plus the warnings its answer carried (e.g. `CLOUD_UNAVAILABLE`). */
+export interface AutomationOverview {
+  rows: AutomationSummary[];
+  warnings: ApiWarning[];
+}
+
+/** A schedule that runs an agent on Flowpad cloud — what `Trigger.createOnCloud` sends to the hub. */
+export interface CloudSchedule {
+  name: string;
+  description?: string;
+  expr: string;
+  sched_trigger_type?: 'cron' | 'interval' | 'date';
+  /** IANA zone, always sent: the hub reads an empty one as UTC. */
+  timezone: string;
+  /** `agent-<uuid>`, or the bare uuid. */
+  agent: string;
+  prompt: string;
+  project_id?: string | null;
+  enabled?: boolean;
+}
+
+const reflect = (action: ActionInfo, options: TriggerCallOptions): ActionInfo => {
+  if (options.hubReflect) action.hubReflect = true;
+  return action;
+};
 
 /** One raw trigger-log row (`fs_store/operations/trigger_log.py`). The Automations screen reads runs instead. */
 export interface TriggerLogRow {
@@ -292,9 +325,16 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
 
   /** Every automation as a sentence with its health — the whole list in one call. */
   static async overview(options: { includeInactive?: boolean } = {}): Promise<AutomationSummary[]> {
+    return (await Trigger.overviewWithWarnings(options)).rows;
+  }
+
+  /** The overview and what its answer warned of: a `CLOUD_UNAVAILABLE` / `CLOUD_SIGNED_OUT` warning means
+   *  the rows are this machine's only — the cloud's could not be read. */
+  static async overviewWithWarnings(options: { includeInactive?: boolean } = {}): Promise<AutomationOverview> {
     const action = new ActionInfo('overview', Trigger.type, null, 'GET' as HttpMethod);
     if (options.includeInactive) action.queryParameters = { include_inactive: 'true' };
-    return ((await dataManager.callAction<undefined, AutomationSummary[]>(action)) as AutomationSummary[]) ?? [];
+    const rows = ((await dataManager.callAction<undefined, AutomationSummary[]>(action)) as AutomationSummary[]) ?? [];
+    return { rows, warnings: warningsOf(rows) };
   }
 
   /** When a schedule (saved or still being edited) fires next, and how it reads. */
@@ -383,9 +423,9 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   static async runOnce(
     triggerId: string,
     event?: AutomationTestEvent | null,
-    options: { messageId?: string } = {},
+    options: { messageId?: string } & TriggerCallOptions = {},
   ): Promise<RunOnceStarted> {
-    const action = new ActionInfo('test', Trigger.type, triggerId, 'POST' as HttpMethod);
+    const action = reflect(new ActionInfo('test', Trigger.type, triggerId, 'POST' as HttpMethod), options);
     action.bodyParameters = {
       ...(event ? { event: { ...event } } : {}),
       ...(options.messageId ? { message_id: options.messageId } : {}),
@@ -437,28 +477,69 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     return (await dataManager.callAction<undefined, PatternMatch>(action)) as PatternMatch;
   }
 
+  /** Fire a hub trigger now (`POST trigger/<id>/fire` on the hub) — *Run now* for a row whose source is
+   *  `hub`. The hub records the fire in the row's recent fires. */
+  static async fire(triggerId: string): Promise<unknown> {
+    const action = reflect(new ActionInfo('fire', Trigger.type, triggerId, 'POST' as HttpMethod), { hubReflect: true });
+    action.bodyParameters = {};
+    return await dataManager.callAction<undefined, unknown>(action);
+  }
+
+  /** *Run now* for an overview row: the hub's fire for a hub row, else a local run once. */
+  static async runNow(row: { id: string; source?: string | null }): Promise<unknown> {
+    return row.source === 'hub' ? Trigger.fire(row.id) : Trigger.runOnce(row.id);
+  }
+
+  /** Create a schedule that runs an agent on Flowpad cloud: a hub Trigger, made through `hubReflect`. */
+  static async createOnCloud(schedule: CloudSchedule): Promise<Trigger> {
+    return Trigger.createAutomation(Trigger.cloudScheduleFields(schedule), { hubReflect: true });
+  }
+
+  /** The fields a Flowpad cloud schedule is saved with — the hub's create and update take the same. */
+  static cloudScheduleFields(schedule: CloudSchedule): Partial<ITrigger> & { name: string } {
+    const agent = schedule.agent.startsWith('agent-') ? schedule.agent : `agent-${schedule.agent}`;
+    return {
+      name: schedule.name,
+      ...(schedule.description ? { description: schedule.description } : {}),
+      trigger_type: 'schedule',
+      expr: schedule.expr,
+      sched_trigger_type: schedule.sched_trigger_type ?? 'cron',
+      timezone: schedule.timezone,
+      actions: [{ action_type: 'run_agent', target_type_id: agent, prompt: schedule.prompt }],
+      enabled: schedule.enabled ?? true,
+      project_id: schedule.project_id ?? null,
+    };
+  }
+
   /** Create an automation from its fields (`trigger_type`, `name`, the kind's fields, `actions`). */
-  static async createAutomation(fields: Partial<ITrigger> & { name: string }): Promise<Trigger> {
-    const action = new ActionInfo('create', Trigger.type, null, 'POST' as HttpMethod);
+  static async createAutomation(
+    fields: Partial<ITrigger> & { name: string },
+    options: TriggerCallOptions = {},
+  ): Promise<Trigger> {
+    const action = reflect(new ActionInfo('create', Trigger.type, null, 'POST' as HttpMethod), options);
     action.bodyParameters = { ...fields } as Record<string, unknown>;
     return new Trigger((await dataManager.callAction<undefined, ITrigger>(action)) as ITrigger);
   }
 
   /** Change an automation's fields; the backend re-arms it. */
-  static async updateAutomation(triggerId: string, patch: Partial<ITrigger>): Promise<Trigger> {
-    const action = new ActionInfo('update', Trigger.type, triggerId, 'PATCH' as HttpMethod);
+  static async updateAutomation(
+    triggerId: string,
+    patch: Partial<ITrigger>,
+    options: TriggerCallOptions = {},
+  ): Promise<Trigger> {
+    const action = reflect(new ActionInfo('update', Trigger.type, triggerId, 'PATCH' as HttpMethod), options);
     action.bodyParameters = { ...patch } as Record<string, unknown>;
     return new Trigger((await dataManager.callAction<undefined, ITrigger>(action)) as ITrigger);
   }
 
   /** Switch an automation on or off. */
-  static async setEnabled(triggerId: string, enabled: boolean): Promise<Trigger> {
-    return Trigger.updateAutomation(triggerId, { enabled });
+  static async setEnabled(triggerId: string, enabled: boolean, options: TriggerCallOptions = {}): Promise<Trigger> {
+    return Trigger.updateAutomation(triggerId, { enabled }, options);
   }
 
   /** Delete an automation; the backend disarms it first. */
-  static async remove(triggerId: string): Promise<void> {
-    const action = new ActionInfo('delete', Trigger.type, triggerId, 'DELETE' as HttpMethod);
+  static async remove(triggerId: string, options: TriggerCallOptions = {}): Promise<void> {
+    const action = reflect(new ActionInfo('delete', Trigger.type, triggerId, 'DELETE' as HttpMethod), options);
     await dataManager.callAction(action);
   }
 

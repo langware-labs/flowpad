@@ -10,7 +10,7 @@
  * Flowpad's own are read-only here but can still be checked and run.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { AutomationKind, ITrigger } from '@sdk';
+import { Trigger, type AutomationKind, type ITrigger } from '@sdk';
 import { ArrowLeft, CheckCircle2, FileJson, FlaskConical, FolderOpen, Lock, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
@@ -25,6 +25,7 @@ import {
   useDeleteAutomation,
   useDiscoverRules,
   useRuleCode,
+  useRunnableAgents,
   useSaveAutomation,
   useSetAutomationEnabled,
 } from '@src/hooks/automations/useAutomations';
@@ -33,7 +34,21 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { defaultDraft, draftFromTrigger, draftProblems, draftToFields, type AutomationDraft } from './automation-draft';
+import {
+  cloudAllowed,
+  defaultDraft,
+  draftFromTrigger,
+  draftProblems,
+  draftToCloudSchedule,
+  draftToFields,
+  triggerFromSummary,
+  type AutomationDraft,
+} from './automation-draft';
+import { RunsOnPicker } from '@src/components/assets/editor/agent-profile/RunsOnPicker';
+import { isMove, type RunsOn } from '@src/components/assets/editor/agent-profile/runs-on';
+import { useAgentPlaces } from '@src/components/assets/editor/agent-profile/use-agent-places';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { useContext } from '@src/hooks/useContext';
 import { recipeById } from './automation-recipes';
 import { sentenceText, useAutomationWords } from './automation-words';
 import type { AutomationsRoute } from './automations-pointer';
@@ -49,6 +64,14 @@ import { ThenSteps } from './ThenSteps';
 /** One automation's page. Which page depends on the rule, and an existing rule's kind is only known once its
  *  row is read — so nothing kind-specific (the general page's polling list subscription among it) mounts first. */
 export function AutomationPage({ route }: { route: AutomationsRoute }) {
+  const triggerId = route.trigger ?? null;
+  const { automation } = useAutomation(triggerId, { poll: false });
+  // A hub row is not in this machine's store: the general page reads it from the overview.
+  if (automation?.source === 'hub') return <GeneralAutomationPage route={route} />;
+  return <LocalAutomationPage route={route} />;
+}
+
+function LocalAutomationPage({ route }: { route: AutomationsRoute }) {
   const triggerId = route.trigger ?? null;
   const triggerQuery = useAutomationTrigger(triggerId);
   // A rule on messages arriving has its own two-box screen (docs/snippets/stream-inbox-automations.md).
@@ -70,7 +93,14 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const triggerId = route.trigger ?? null;
   const isNew = !triggerId;
   const { automation } = useAutomation(triggerId);
-  const triggerQuery = useAutomationTrigger(triggerId);
+  const onHub = automation?.source === 'hub';
+  const localTrigger = useAutomationTrigger(onHub ? null : triggerId);
+  const triggerQuery = onHub
+    ? { data: automation ? (triggerFromSummary(automation) as ITrigger) : undefined, error: null }
+    : localTrigger;
+  const projectId = useContext().project?.id ?? null;
+  const cloudGate = useCloudLoginGate();
+  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   const save = useSaveAutomation();
   const remove = useDeleteAutomation();
   const setEnabled = useSetAutomationEnabled();
@@ -88,9 +118,12 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
       // Started from the event bus: the event is already chosen.
       if (route.tag && base.kind === 'event') base = { ...base, event: { ...base.event, pattern: route.tag } };
     } else if (triggerQuery.data && automation)
-      base = draftFromTrigger(triggerQuery.data as ITrigger, automation.when.schedule);
+      base = {
+        ...draftFromTrigger(triggerQuery.data as ITrigger, automation.when.schedule),
+        ...(onHub ? { runsOn: { kind: 'hub' } as RunsOn } : {}),
+      };
     if (base) setLoaded({ key: loadKey, base, draft: base });
-  }, [loadKey, loaded?.key, isNew, route.creating, route.recipe, route.tag, triggerQuery.data, automation]);
+  }, [loadKey, loaded?.key, isNew, route.creating, route.recipe, route.tag, triggerQuery.data, automation, onHub]);
 
   const draft = loaded?.draft ?? null;
   const setDraft = (next: AutomationDraft) => setLoaded((l) => (l ? { ...l, draft: next } : l));
@@ -103,7 +136,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const [jsonError, setJsonError] = useState<string | null>(null);
 
   const readOnly = !!automation?.read_only;
-  const isRuleFolder = !!triggerQuery.data?.path && automation?.kind === 'agent_hook';
+  const isRuleFolder = !!(triggerQuery.data as ITrigger | undefined)?.path && automation?.kind === 'agent_hook';
   const tab = route.tab ?? 'setup';
   const runs = useAutomationRuns({ triggerId, limit: 100 }, { enabled: !!triggerId && tab === 'runs' });
   const go = (patch: Partial<AutomationsRoute>) =>
@@ -143,10 +176,30 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
       });
       return null;
     }
+    const toHub = draft.kind === 'schedule' && draft.runsOn.kind === 'hub';
+    const saved_place: RunsOn | null = isNew ? null : (loaded?.base.runsOn ?? null);
+    const moving = !!saved_place && isMove(saved_place, draft.runsOn);
+    if (toHub) {
+      const gate = await cloudGate();
+      if (!gate.ok) {
+        notify.error({ title: t`Sign in to Flowpad cloud`, message: gate.error, forceToast: true });
+        return null;
+      }
+    }
     try {
-      const saved = await save.mutateAsync({ triggerId, fields });
+      const hubFields = toHub
+        ? Trigger.cloudScheduleFields(draftToCloudSchedule(draft, { projectId, fallbackTimezone: timezone }))
+        : null;
+      const target = hubFields ?? fields;
+      // A move across stores is a create on the new place, then a delete of the old row.
+      const saved = await save.mutateAsync({
+        triggerId: moving ? null : triggerId,
+        fields: target,
+        source: toHub ? 'hub' : 'local',
+      });
+      if (moving && triggerId) await remove.mutateAsync({ triggerId, source: onHub ? 'hub' : 'local' });
       setLoaded((l) => (l ? { ...l, base: l.draft } : l));
-      if (isNew && saved.id) navigation.openDock(DockPointer.forAutomations({ trigger: saved.id }));
+      if ((isNew || moving) && saved.id) navigation.openDock(DockPointer.forAutomations({ trigger: saved.id }));
       notify.success({ title: isNew ? t`Automation created` : t`Saved`, message: fields.name });
       return saved.id ?? triggerId;
     } catch (e) {
@@ -158,7 +211,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const onToggle = (on: boolean) => {
     if (isNew) return setDraft({ ...draft, enabled: on });
     setEnabled.mutate(
-      { triggerId: triggerId as string, enabled: on },
+      { triggerId: triggerId as string, enabled: on, source: automation?.source },
       {
         onSuccess: () =>
           setLoaded((l) => (l ? { ...l, base: { ...l.base, enabled: on }, draft: { ...l.draft, enabled: on } } : l)),
@@ -359,6 +412,9 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
                 </ul>
               )}
               <WhenBlock draft={draft} onChange={setDraft} readOnly={readOnly || isRuleFolder} />
+              {draft.kind === 'schedule' && !readOnly && (
+                <RunsOnBlock draft={draft} onChange={setDraft} saved={isNew ? null : (loaded?.base.runsOn ?? null)} />
+              )}
               {isRuleFolder ? (
                 <RuleCodeBlock triggerId={triggerId as string} />
               ) : readOnly && automation ? (
@@ -488,15 +544,18 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
         confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() =>
-          remove.mutate(triggerId as string, {
-            onSuccess: () => navigation.openDock(DockPointer.forAutomations()),
-            onError: (e) =>
-              notify.error({
-                title: t`Could not delete`,
-                message: errorMessage(e, t`Delete failed`),
-                forceToast: true,
-              }),
-          })
+          remove.mutate(
+            { triggerId: triggerId as string, source: automation?.source },
+            {
+              onSuccess: () => navigation.openDock(DockPointer.forAutomations()),
+              onError: (e) =>
+                notify.error({
+                  title: t`Could not delete`,
+                  message: errorMessage(e, t`Delete failed`),
+                  forceToast: true,
+                }),
+            },
+          )
         }
       />
     </div>
@@ -590,5 +649,31 @@ function AgentRulesExplainer({ onBack }: { onBack: () => void }) {
         {discover.isSuccess ? <Trans>Found {discover.data?.length ?? 0} rules</Trans> : <Trans>Find agent rules</Trans>}
       </Button>
     </div>
+  );
+}
+
+/** "Runs on" — this computer, one of the chosen agent's cloud machines, or Flowpad cloud. */
+function RunsOnBlock({
+  draft,
+  onChange,
+  saved,
+}: {
+  draft: AutomationDraft;
+  onChange: (next: AutomationDraft) => void;
+  saved: RunsOn | null;
+}) {
+  const { data: agents = [] } = useRunnableAgents();
+  const agent = agents.find((a) => `agent-${a.id}` === draft.then.agentTypeId || a.id === draft.then.agentTypeId);
+  const { places } = useAgentPlaces(draft.then.choice === 'run_agent' ? agent : null);
+  return (
+    <Block testId="automation-runs-on" title={<Trans>Where</Trans>}>
+      <RunsOnPicker
+        value={draft.runsOn}
+        onChange={(runsOn) => onChange({ ...draft, runsOn })}
+        places={places ?? []}
+        cloudAllowed={cloudAllowed(draft)}
+        saved={saved}
+      />
+    </Block>
   );
 }

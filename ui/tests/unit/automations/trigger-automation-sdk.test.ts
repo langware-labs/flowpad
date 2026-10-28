@@ -4,7 +4,7 @@
  * (flow_sdk/builtin/trigger.py): name, entity, method, query and body.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ActionInfo, dataManager, isMessagePattern, messageRuleFields, parseTarget, Trigger } from '@sdk';
+import { ActionInfo, dataManager, isMessagePattern, messageRuleFields, parseTarget, Trigger, withPage } from '@sdk';
 
 function capture(answer: unknown = {}) {
   const calls: ActionInfo[] = [];
@@ -129,6 +129,79 @@ describe('Trigger automation methods', () => {
     const calls = capture({});
     await Trigger.setEnabled(ID, true);
     expect(calls[0].bodyParameters).toEqual({ enabled: true });
+  });
+
+  it.each([
+    ['update', () => Trigger.setEnabled(ID, false, { hubReflect: true })],
+    ['update', () => Trigger.updateAutomation(ID, { name: 'n' }, { hubReflect: true })],
+    ['delete', () => Trigger.remove(ID, { hubReflect: true })],
+    ['test', () => Trigger.runOnce(ID, null, { hubReflect: true })],
+    ['fire', () => Trigger.fire(ID)],
+  ] as const)('%s on a hub row is reflected to the hub', async (name, call) => {
+    const calls = capture({});
+    await call();
+    expect(calls[0].name).toBe(name);
+    expect(calls[0].hubReflect).toBe(true);
+    expect(calls[0].actionUrl.split('?')[0]).toBe(`/graph/trigger/${ID}/${name}`);
+  });
+
+  it('a local row is not reflected', async () => {
+    const calls = capture({});
+    await Trigger.setEnabled(ID, false);
+    await Trigger.remove(ID);
+    await Trigger.runOnce(ID);
+    expect(calls.map((c) => c.hubReflect)).toEqual([false, false, false]);
+  });
+
+  it('run now fires a hub row and runs a local one once', async () => {
+    const calls = capture({});
+    await Trigger.runNow({ id: ID, source: 'hub' });
+    await Trigger.runNow({ id: ID, source: 'local' });
+    expect(calls.map((c) => [c.name, c.method, c.hubReflect])).toEqual([
+      ['fire', 'POST', true],
+      ['test', 'POST', false],
+    ]);
+  });
+
+  it('createOnCloud creates a hub schedule that runs the agent, with its zone always sent', async () => {
+    const calls = capture({ id: ID, name: 'n' });
+    await Trigger.createOnCloud({
+      name: 'Morning',
+      expr: '0 9 * * 1-5',
+      timezone: 'Asia/Jerusalem',
+      agent: ID,
+      prompt: 'Brief me',
+      project_id: 'p1',
+    });
+    expect(calls[0].name).toBe('create');
+    expect(calls[0].hubReflect).toBe(true);
+    expect(calls[0].bodyParameters).toEqual({
+      name: 'Morning',
+      trigger_type: 'schedule',
+      expr: '0 9 * * 1-5',
+      sched_trigger_type: 'cron',
+      timezone: 'Asia/Jerusalem',
+      actions: [{ action_type: 'run_agent', target_type_id: `agent-${ID}`, prompt: 'Brief me' }],
+      enabled: true,
+      project_id: 'p1',
+    });
+  });
+
+  it("overview's CLOUD_* warning reaches the caller beside the rows", async () => {
+    const warning = { error_code: 'CLOUD_UNAVAILABLE', message: 'The cloud did not answer.' };
+    // The client's unwrap keeps the envelope's warnings on the list, as it keeps its page.
+    const rows = withPage([{ id: 'a' }], { status: 'SUCCESS', data: [{ id: 'a' }], warnings: [warning] });
+    capture(rows);
+    const overview = await Trigger.overviewWithWarnings();
+    expect(overview.rows).toEqual([{ id: 'a' }]);
+    expect(overview.warnings).toEqual([warning]);
+    // Non-enumerable: the rows still spread and serialize as a plain list.
+    expect(JSON.stringify(overview.rows)).toBe('[{"id":"a"}]');
+  });
+
+  it('an overview with no warnings has none', async () => {
+    capture([]);
+    expect((await Trigger.overviewWithWarnings()).warnings).toEqual([]);
   });
 
   it('overview asks for inactive copies only when told to', async () => {

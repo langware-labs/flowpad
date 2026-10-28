@@ -1,7 +1,7 @@
-import { Deployment, type AgentPlace } from '@sdk';
+import { Deployment, type AgentPlace, type AutomationPlace } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
-import { Laptop, type LucideIcon } from 'lucide-react';
+import { Cloud, Laptop, type LucideIcon } from 'lucide-react';
 
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 
@@ -22,6 +22,27 @@ export function usePlaceDisplay(): (place: AgentPlace) => PlaceDisplay {
       place.is_local
         ? { label: t`Development · local`, Icon: Laptop }
         : { label: t`Cloud · ${place.deployment.name}`, Icon: iconForType(Deployment.type) },
+    [t],
+  );
+}
+
+/** The deployment name in an overview place's label (`Cloud · <name>`). The label is the backend's English. */
+const deploymentName = (place: AutomationPlace): string => place.label.replace(/^Cloud\s*·\s*/, '') || place.label;
+
+/**
+ * How an automation's place is named and drawn, on every schedule surface: `This computer` (and `every
+ * machine` for a row no machine is named on), `Cloud · <name>` for a cloud machine, `Flowpad cloud` for a
+ * schedule the hub runs.
+ */
+export function usePlaceBadge(): (place: AutomationPlace) => PlaceDisplay {
+  const { t } = useLingui();
+  return useCallback(
+    (place: AutomationPlace) => {
+      if (place.kind === 'hub') return { label: t`Flowpad cloud`, Icon: Cloud };
+      if (place.kind === 'cloud_machine')
+        return { label: t`Cloud · ${deploymentName(place)}`, Icon: iconForType(Deployment.type) };
+      return { label: place.every_machine ? t`This computer · every machine` : t`This computer`, Icon: Laptop };
+    },
     [t],
   );
 }

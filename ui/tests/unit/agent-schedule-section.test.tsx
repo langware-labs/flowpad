@@ -1,11 +1,15 @@
 /**
  * The agent's Schedule tab: its schedules are child trigger assets, found by
- * containment; a click only navigates; writes go through the agent's verbs.
+ * containment, plus every other schedule the overview says runs the agent (the
+ * hub's among them); a click only navigates; writes go through the agent's
+ * verbs, or — for a hub row — the Trigger SDK with hubReflect.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Agent } from '@sdk';
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Agent, Trigger, type AgentPlace, type AutomationSummary } from '@sdk';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -22,6 +26,14 @@ vi.mock('@sdk/react/hooks', async (original) => ({
 }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 vi.mock('@src/components/assets/delete-asset-modal', () => ({ showDeleteAssetModal: vi.fn() }));
+vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: 'p1' } }) }));
+const gate = vi.hoisted(() => ({ fn: vi.fn(() => Promise.resolve({ ok: true as const })) }));
+vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => gate.fn }));
+const placesState = vi.hoisted(() => ({ places: [] as unknown[] }));
+vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
+  useAgentPlaces: () => ({ places: placesState.places, reload: vi.fn() }),
+}));
+const overview = vi.hoisted(() => ({ rows: [] as unknown[], spy: null as unknown }));
 
 import { AgentScheduleSection } from '@src/components/assets/editor/agent-profile/AgentScheduleSection';
 
@@ -48,11 +60,70 @@ function schedule(overrides: Record<string, unknown> = {}) {
   };
 }
 
+beforeEach(() => {
+  overview.spy = vi.spyOn(Trigger, 'overviewWithWarnings').mockImplementation(() =>
+    Promise.resolve({ rows: overview.rows as AutomationSummary[], warnings: [] }),
+  );
+});
+
 afterEach(() => {
   cleanup();
   rows.triggers = [];
+  overview.rows = [];
+  placesState.places = [];
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
+
+/** Every render gets a fresh query cache: the overview is read through react-query. */
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
+const CLOUD_MACHINE = '55555555-5555-4555-8555-555555555555';
+
+function place(id: string, name: string, isLocal: boolean): AgentPlace {
+  return {
+    deployment: { id, name, kind: isLocal ? 'local' : 'e2b' },
+    is_local: isLocal,
+    overrides: {},
+    schedule_count: 0,
+    answers_email: false,
+    behind: null,
+    enabled: true,
+  } as unknown as AgentPlace;
+}
+
+/** A hub trigger running this agent, as the overview reads it. */
+function hubRow(overrides: Partial<AutomationSummary> = {}): AutomationSummary {
+  return {
+    id: 'h1',
+    name: 'Cloud digest',
+    description: '',
+    kind: 'schedule',
+    group: 'project',
+    project_id: 'p1',
+    enabled: true,
+    when: {
+      kind: 'schedule',
+      text: 'Daily at 07:00',
+      schedule: { preset: 'daily', expr: '0 7 * * *', sched_type: 'cron', time: '07:00', timezone: 'UTC' },
+    },
+    then: [{ kind: 'run_agent', text: 'Run triage', target: AGENT_KEY, prompt: 'Digest the night' }],
+    recent_failures: 0,
+    recent_runs: 0,
+    last_runs: [],
+    passed_over: 0,
+    fires: 3,
+    tested: true,
+    read_only: false,
+    place: { kind: 'hub', label: 'Flowpad cloud' },
+    agent_type_id: AGENT_KEY,
+    source: 'hub',
+    ...overrides,
+  } as AutomationSummary;
+}
 
 function renderSection(autoLaunchPrompt = '') {
   const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
@@ -152,7 +223,9 @@ describe('the agent schedule tab', () => {
     render(<AgentScheduleSection agent={agent} deploymentId={LOCAL} isLocal />);
     expect(screen.getByTestId('agent-schedule-0')).toHaveTextContent('Here');
     expect(screen.getByTestId('agent-schedule-1')).toHaveTextContent('Legacy');
-    expect(screen.getByTestId('agent-schedule-everywhere-1')).toBeInTheDocument();
+    // The shared place badge, not an ad-hoc chip: a row no machine is named on runs on every machine.
+    expect(screen.getByTestId('agent-schedule-place-0')).toHaveTextContent('This computer');
+    expect(screen.getByTestId('agent-schedule-place-1')).toHaveTextContent('This computer · every machine');
     expect(screen.queryByTestId('agent-schedule-2')).toBeNull();
   });
 
@@ -175,5 +248,96 @@ describe('the agent schedule tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
     await waitFor(() => expect(add).toHaveBeenCalledTimes(1));
     expect(add.mock.calls[0][0]).toMatchObject({ runs_on: LOCAL, prompt: 'Go' });
+  });
+
+  it('Flowpad cloud lists the hub schedules that run this agent, and only those', async () => {
+    overview.rows = [hubRow(), hubRow({ id: 'h2', name: 'Someone else', agent_type_id: 'agent-other' })];
+    rows.triggers = [schedule()];
+    const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
+    render(<AgentScheduleSection agent={agent} deploymentId="" isLocal={false} onHub />);
+    await waitFor(() => expect(screen.getByTestId('agent-schedule-0')).toHaveTextContent('Cloud digest'));
+    expect(screen.getByTestId('agent-schedule-place-0')).toHaveTextContent('Flowpad cloud');
+    expect(screen.getByTestId('agent-schedule-when-0')).toHaveTextContent('Daily at 07:00');
+    expect(screen.getByTestId('agent-schedule-0')).toHaveTextContent('Digest the night');
+    expect(screen.queryByTestId('agent-schedule-1')).toBeNull();
+  });
+
+  it('a hub schedule does not show on this computer', async () => {
+    overview.rows = [hubRow()];
+    rows.triggers = [schedule({ runs_on: null })];
+    renderSection();
+    await waitFor(() => expect(overview.spy).toHaveBeenCalled());
+    expect(screen.getByTestId('agent-schedule-0')).toHaveTextContent('Morning triage');
+    expect(screen.queryByTestId('agent-schedule-1')).toBeNull();
+  });
+
+  it('a hub row is switched, run and deleted on the hub', async () => {
+    overview.rows = [hubRow()];
+    const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
+    const toggle = vi.spyOn(Trigger, 'setEnabled').mockResolvedValue({} as never);
+    const fire = vi.spyOn(Trigger, 'fire').mockResolvedValue({});
+    const own = vi.spyOn(agent, 'updateSchedule');
+    render(<AgentScheduleSection agent={agent} deploymentId="" isLocal={false} onHub />);
+    await waitFor(() => expect(screen.getByTestId('agent-schedule-0')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('agent-schedule-enabled-0'));
+    await waitFor(() => expect(toggle).toHaveBeenCalledWith('h1', false, { hubReflect: true }));
+    fireEvent.click(screen.getByTestId('agent-schedule-run-0'));
+    await waitFor(() => expect(fire).toHaveBeenCalledWith('h1'));
+    expect(own).not.toHaveBeenCalled();
+  });
+
+  it('the form offers this computer, each cloud machine, and Flowpad cloud once there is a prompt', () => {
+    const LOCAL = '44444444-4444-4444-8444-444444444444';
+    placesState.places = [place(LOCAL, 'mac', true), place(CLOUD_MACHINE, 'box-1', false)];
+    const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
+    render(<AgentScheduleSection agent={agent} deploymentId={LOCAL} isLocal />);
+    fireEvent.click(screen.getByTestId('agent-schedule-add'));
+    const picker = screen.getByTestId<HTMLSelectElement>('runs-on-picker');
+    const options = () => Array.from(picker.options).map((o) => o.textContent);
+    expect(picker.value).toBe('local');
+    // No prompt yet: Flowpad cloud runs only an agent with a prompt.
+    expect(options()).toEqual(['This computer', 'Cloud · box-1']);
+    fireEvent.change(screen.getByTestId('agent-schedule-prompt'), { target: { value: 'Go' } });
+    expect(options()).toEqual(['This computer', 'Cloud · box-1', 'Flowpad cloud']);
+  });
+
+  it('a new schedule on Flowpad cloud is created on the hub, signed in first, with the zone sent', async () => {
+    const LOCAL = '44444444-4444-4444-8444-444444444444';
+    const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
+    const add = vi.spyOn(agent, 'addSchedule');
+    const create = vi.spyOn(Trigger, 'createOnCloud').mockResolvedValue({} as never);
+    render(<AgentScheduleSection agent={agent} autoLaunchPrompt="Go" deploymentId={LOCAL} isLocal />);
+    fireEvent.click(screen.getByTestId('agent-schedule-add'));
+    fireEvent.change(screen.getByTestId('runs-on-picker'), { target: { value: 'hub' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(gate.fn).toHaveBeenCalled();
+    expect(create.mock.calls[0][0]).toMatchObject({
+      agent: AGENT_KEY,
+      prompt: 'Go',
+      expr: '0 9 * * *',
+      sched_trigger_type: 'cron',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      project_id: 'p1',
+    });
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('moving a schedule to Flowpad cloud says so, then creates it there and deletes it here', async () => {
+    const LOCAL = '44444444-4444-4444-8444-444444444444';
+    rows.triggers = [schedule({ runs_on: LOCAL })];
+    const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
+    const create = vi.spyOn(Trigger, 'createOnCloud').mockResolvedValue({} as never);
+    const removeOwn = vi.spyOn(agent, 'removeSchedule').mockResolvedValue();
+    const update = vi.spyOn(agent, 'updateSchedule');
+    render(<AgentScheduleSection agent={agent} deploymentId={LOCAL} isLocal />);
+    fireEvent.click(screen.getByTestId('agent-schedule-edit-0'));
+    expect(screen.queryByTestId('runs-on-move')).toBeNull();
+    fireEvent.change(screen.getByTestId('runs-on-picker'), { target: { value: 'hub' } });
+    expect(screen.getByTestId('runs-on-move')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(removeOwn).toHaveBeenCalledWith('t1'));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(update).not.toHaveBeenCalled();
   });
 });
