@@ -334,7 +334,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
         log.info(`[electron-updater] ${desktopLatest} supersedes the open offer for ${offerVersion}`);
         offerAbort.abort();
         await offerClosed;
-        await offerPromise; // the superseded offer settles and releases offerInProgress
+        // The superseded offer settles and releases offerInProgress; its own failure was already
+        // logged by startOffer's caller and must not fail THIS pass (which announces the newer one).
+        await offerPromise.catch(() => {});
       }
       const action = updateSchedule.decideDesktopAction({
         state: scheduleStore.read(), // fresh: the awaits above may have recorded an offer/adoption meanwhile
