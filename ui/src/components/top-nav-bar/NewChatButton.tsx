@@ -5,8 +5,7 @@ import { chromeEntityActionClassName, chromeGlyphClassName } from '@src/componen
 import { WorkerIcon } from '@src/components/entity-execution-panel/history-row';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
-import { useLastWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
+import { usePrimaryWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
@@ -31,11 +30,9 @@ import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 export function NewChatButton() {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const { lastWorker } = useLastWorkerType();
-  const defaultWorker = useDefaultWorkerType();
   const [starting, setStarting] = useState(false);
 
-  const worker = lastWorker ?? defaultWorker;
+  const worker = usePrimaryWorkerType();
   const label = WORKER_LABELS[workerToOpener(worker)];
 
   const start = useCallback(() => {
