@@ -19,7 +19,7 @@ import { useLlmEndpoint, useLlmEndpointModels, useLlmEndpoints } from '@src/comp
 import { Switch } from '@src/components/ui/switch';
 import { notify } from '@src/notifications';
 
-import { aliasesForPinnedModel, SEED_BY_SCOPE, type BudgetScope } from './budget-models';
+import { aliasesForPinnedModel, reconcileAliases, sameAliases, SEED_BY_SCOPE, type BudgetScope } from './budget-models';
 import { useInvalidateBudgets } from './use-budgets';
 
 export interface EndpointControlsProps {
@@ -81,8 +81,8 @@ export function EndpointControls({ endpointId, scope, testIdPrefix, manage }: En
   // fires on a row that already has a model. Without this they would refuse every `md`-tier caller
   // forever. Comparing the whole map (not just its presence) also repairs a row pinned to a slug
   // whose sibling tiers have since changed.
-  const wantedAliases = aliasesForPinnedModel(models);
-  const aliasesStale = !!endpoint && JSON.stringify(endpoint.filters.aliases ?? {}) !== JSON.stringify(wantedAliases);
+  const wantedAliases = reconcileAliases(endpoint?.filters.aliases ?? {}, models);
+  const aliasesStale = !!endpoint && !sameAliases(endpoint.filters.aliases ?? {}, wantedAliases);
 
   // Repairs a STALE REDIRECT, and nothing else. It used to also seed an empty list, and that was
   // the bug: a wallet was restricted because somebody opened this screen, so a person nobody had
@@ -265,10 +265,11 @@ async function saveModels(typeId: string, currentFilters: LLMEndpointFilters, mo
   // max_tokens_ceiling, …) to its default. Rebuilding the full object from what the entity already
   // has, with only this one field changed, is what keeps the rest of the filters untouched.
   //
-  // `aliases` is rewritten from the new list on every save, never merged into what was there. It is
-  // derived state — "whatever this wallet is pinned to" — so widening a wallet back to the globs
-  // must CLEAR the redirect, or a wallet that visibly allows everything would go on quietly forcing
-  // the model it used to be pinned to.
-  const aliases = aliasesForPinnedModel(models_allow);
+  // `aliases` is rebuilt from the new list on every save: it is derived state — "whatever this wallet
+  // is pinned to" — so widening a wallet back to the globs must CLEAR the redirect, or a wallet that
+  // visibly allows everything would go on quietly forcing the model it used to be pinned to. The one
+  // thing carried over is what an admin wrote by hand across families (Claude -> Gemini), which the
+  // derivation cannot produce and which still points at an allowed model.
+  const aliases = reconcileAliases(currentFilters.aliases ?? {}, models_allow);
   await dataManager.save(new TypeId(typeId), [], { filters: { ...currentFilters, models_allow, aliases } } as never);
 }
