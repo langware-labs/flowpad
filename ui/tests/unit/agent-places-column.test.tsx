@@ -19,6 +19,9 @@ vi.mock('@sdk/utils/hub-runtime', () => ({ isHubOnly: () => nav.hub }));
 vi.mock('@src/components/assets/editor/agent-profile/NewDeploymentDialog', () => ({
   NewDeploymentDialog: () => <div data-testid="mock-new-deployment" />,
 }));
+// Watching registers this connection with the backend; there is none here.
+const { useWatch } = vi.hoisted(() => ({ useWatch: vi.fn() }));
+vi.mock('@sdk/react/hooks', async (importOriginal) => ({ ...(await importOriginal<object>()), useWatch }));
 
 import { AgentPlacesColumn } from '@src/components/assets/editor/agent-profile/AgentPlacesColumn';
 
@@ -92,6 +95,15 @@ describe('Deployments', () => {
     expect(screen.queryByTestId(`agent-place-row-${CLOUD_ID}`)).toBeNull();
     expect(screen.queryByTestId(`agent-place-row-${LOCAL_ID}`)).toBeNull();
     expect(screen.queryByTestId('agent-new-deployment')).toBeNull();
+  });
+
+  it('watches the agent while open, so a deploy’s steps arrive after its dialog has closed', async () => {
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    expect(useWatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agent', id: '33333333-3333-4333-8333-333333333333' }),
+      true,
+    );
   });
 
   it('an agent deployed nowhere says so — nothing is created by looking at it', async () => {

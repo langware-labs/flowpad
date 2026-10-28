@@ -1,4 +1,5 @@
 import { Agent, type AgentPlace, type DeploymentStatus } from '@sdk';
+import { useWatch } from '@sdk/react/hooks';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
@@ -35,6 +36,9 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
   const wired = useAgentChannels(agent);
   const [deployOpen, setDeployOpen] = useState(false);
   const hub = isHubOnly();
+  // A deploy reports on the agent's `deploy` activity, sent only to the agent's watchers. Watched for as
+  // long as this column is open: the dialog closes on the deploy's answer, before its steps run.
+  useWatch(agent.typeId, !hub);
 
   // The server lists this computer first.
   const visible = (places ?? []).filter((place) => !hub || !place.is_local);
