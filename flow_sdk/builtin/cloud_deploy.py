@@ -29,6 +29,12 @@ DEFAULT_CLOUD_ENVIRONMENT = "production"
 #: exist is the hub's to say: it refuses one it does not offer.
 DEFAULT_CLOUD_PROVIDER = "e2b"
 
+#: How long a deploy whose answer was lost waits for its machine. The load balancer in front of the hub drops a
+#: request it has held for minutes while the hub goes on placing the machine: a dropped answer is not a failure.
+PLACED_WITHIN_S = 8 * 60
+#: How often the hub is asked for the placement meanwhile.
+PLACED_POLL_S = 10
+
 
 async def deploy_entity_to_cloud(
     entity: "Entity", environment: str | None = None, *, provider: str | None = None, require: list[str] | None = None
@@ -73,4 +79,42 @@ async def deploy_entity_to_cloud(
     return data
 
 
-__all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud"]
+async def wait_until_placed(deployment_id: str, element: "Entity | None" = None) -> dict[str, Any]:
+    """The hub's placement *deployment_id* once it has a machine, adopted here — for a deploy whose answer never
+    came back. Answers like the deploy, without its endpoints (a cloud placement's are read from the hub when
+    asked). Raises ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none; a read whose connection drops too
+    is asked again."""
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + PLACED_WITHIN_S
+    while True:
+        try:
+            row = await HubProxy.call("GET", EntityType.DEPLOYMENT.value, deployment_id, strict=True)
+        except HubError as exc:
+            if exc.status_code != 0:
+                raise
+            row = None
+        if _has_machine(row):
+            await Deployment.adopt_from_hub(row, element=element)
+            return {"deployment": row}
+        if loop.time() >= deadline:
+            raise TimeoutError(f"the hub placed no machine within {PLACED_WITHIN_S // 60} minutes of losing its answer")
+        await asyncio.sleep(PLACED_POLL_S)
+
+
+def _has_machine(row: Any) -> bool:
+    """Whether a hub placement row has its machine: the hub records the machine and ``running`` together."""
+    if not isinstance(row, dict):
+        return False
+    origin = row.get("origin") or {}
+    status = row.get("status") or {}
+    return bool(origin.get("external_id")) and status.get("provider_state") == "running"
+
+
+__all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud", "wait_until_placed"]
