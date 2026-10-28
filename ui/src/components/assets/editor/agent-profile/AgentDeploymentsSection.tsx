@@ -87,27 +87,8 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
     setDeploying(true);
     try {
       const data = await agent.deploy(undefined, ComputeProviderType.E2B);
-      for (const warning of data.warnings ?? []) {
-        notify.warning({ title: t`Deploying without model funding`, message: warning, forceToast: true });
-      }
-      if (data.activity) {
-        // Taken on: the machine is placed after this answer; the run below follows it to the end.
-        setRun({ activity: data.activity, launch: Date.now() });
-        return;
-      }
-      if (data.agent_definition_error) {
-        // The machine is live but is not yet the agent — a genuinely partial
-        // outcome, so say so rather than showing an unqualified success.
-        notify.warning({
-          title: t`Deployed without its definition`,
-          message: data.agent_definition_error,
-        });
-      } else if (data.reused) {
-        notify.info({ title: t`${agent.name} is already deployed` });
-      } else {
-        notify.success({ title: t`${agent.name} is deployed` });
-      }
-      await refetch();
+      // Taken on: the machine is placed after this answer; the run below follows it to the end.
+      if (data.activity) setRun({ activity: data.activity, launch: Date.now() });
     } catch (e) {
       notify.error({
         title: t`Could not deploy`,
@@ -124,7 +105,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
     } finally {
       setDeploying(false);
     }
-  }, [agent, refetch, t]);
+  }, [agent, t]);
 
   const pause = useCallback(
     async (deployment: Deployment) => {
