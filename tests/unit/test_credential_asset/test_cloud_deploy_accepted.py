@@ -11,6 +11,7 @@ import pytest
 from flow_sdk.activity import Activity, ActivityState, monitor
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, CloudDeploy, DeployRunning, run_cloud_deploy
+from flow_sdk.schema.data_spec.activity_spec import ActivityProgressSpec
 from tests.utils import fake_hub_store
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -85,6 +86,33 @@ async def test_a_background_deploy_answers_before_its_machine_is_placed(agent, h
         ("machine", ActivityState.RUNNING),
     ]
     assert set(ended) == {ActivityState.COMPLETED}
+
+
+async def test_a_failing_step_fails_itself_and_the_deploy_and_the_rest_are_interrupted(agent, hub, monkeypatch):
+    async def refused(self, environment=None, *, provider=None, token_allocation=None):
+        raise RuntimeError("the hub refused")
+
+    monkeypatch.setattr(Agent, "plan_deployment", refused)
+    # A root that ends leaves the monitor: its last tree is the one handed to subscribers as it ends.
+    ended: list[ActivityProgressSpec] = []
+    stop = monitor.subscribe(lambda root, transition: ended.append(root.spec()) if root.is_terminal else None)
+
+    try:
+        with pytest.raises(RuntimeError, match="the hub refused"):
+            await run_cloud_deploy(CloudDeploy(agent, "user-1", "production", provider="e2b"), background=False)
+    finally:
+        stop()
+
+    root = ended[-1]
+    assert [(c.name, c.state, c.message) for c in root.children] == [
+        ("publish", ActivityState.COMPLETED, None),
+        ("dependencies", ActivityState.COMPLETED, None),
+        ("plan", ActivityState.FAILED, "the hub refused"),
+        ("readiness", ActivityState.INTERRUPTED, None),
+        ("machine", ActivityState.INTERRUPTED, None),
+    ]
+    assert root.state == ActivityState.FAILED
+    assert hub.deploys == []
 
 
 async def test_a_second_deploy_of_the_same_agent_is_refused_while_one_runs(agent, hub):
