@@ -893,7 +893,6 @@ msgstr "ל-{0} יש עכשיו גישה, אבל הודעת ההזמנה לא נ�
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} now runs on a cloud machine"
 msgstr "{0} פועל עכשיו על מכונת ענן"
 
@@ -8019,7 +8018,6 @@ msgid "Could not keep the task"
 msgstr "לא ניתן לשמור את המשימה"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Could not launch the deployment"
 msgstr "לא ניתן היה להפעיל את הפריסה"
 
@@ -10075,6 +10073,10 @@ msgstr "הפריסה נמחקה"
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "Deployment details"
 msgstr "פרטי הפריסה"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deployment running in the background"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment type"
@@ -15971,7 +15973,6 @@ msgstr "יש להפעיל סשן תחילה"
 msgid "Launch bot"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Launch failed."
 msgstr "ההפעלה נכשלה."

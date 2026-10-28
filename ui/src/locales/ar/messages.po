@@ -893,7 +893,6 @@ msgstr "مُنح {0} صلاحية الوصول، لكن لم تُرسل رسال
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} now runs on a cloud machine"
 msgstr "يعمل {0} الآن على جهاز سحابي"
 
@@ -8019,7 +8018,6 @@ msgid "Could not keep the task"
 msgstr "تعذّر الاحتفاظ بالمهمة"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Could not launch the deployment"
 msgstr "تعذّر إطلاق عملية النشر"
 
@@ -10075,6 +10073,10 @@ msgstr "تم حذف النشر"
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "Deployment details"
 msgstr "تفاصيل النشر"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deployment running in the background"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment type"
@@ -15971,7 +15973,6 @@ msgstr "يجب بدء جلسة أولاً"
 msgid "Launch bot"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Launch failed."
 msgstr "فشل التشغيل."

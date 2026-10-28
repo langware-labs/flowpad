@@ -896,7 +896,6 @@ msgstr "{0} now has access, but the invite message wasn't sent."
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} now runs on a cloud machine"
 msgstr "{0} now runs on a cloud machine"
 
@@ -8075,7 +8074,6 @@ msgid "Could not keep the task"
 msgstr "Could not keep the task"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Could not launch the deployment"
 msgstr "Could not launch the deployment"
 
@@ -10139,6 +10137,10 @@ msgstr "Deployment deleted"
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "Deployment details"
 msgstr "Deployment details"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deployment running in the background"
+msgstr "Deployment running in the background"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment type"
@@ -16099,7 +16101,6 @@ msgstr "Launch a session first"
 msgid "Launch bot"
 msgstr "Launch bot"
 
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Launch failed."
 msgstr "Launch failed."
