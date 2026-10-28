@@ -278,6 +278,9 @@ export interface ProjectAppPort {
   note: string;
   /** The log the process writes, when Flowpad started it and it is running. */
   log?: string | null;
+  /** What the running process no longer matches in the saved definition (`port 3300 → 3301`,
+   *  `start command`): a restart applies them. */
+  changes?: string[];
 }
 
 /** `GET project/<id>/setup-run` — the app-run setup: going or not, and its tree so far. */

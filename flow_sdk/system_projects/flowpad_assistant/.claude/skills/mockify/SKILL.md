@@ -93,11 +93,11 @@ Send the user the step table (id · title · scenario · controls that move on),
 
 | mode | when | fidelity |
 |---|---|---|
-| **real** (always, for an app that runs here) | any screen of Flowpad or the user's app — new, redesigned or existing | identical |
+| **real** (always, for an app that runs here) | any screen of an app whose code is here — new, redesigned or existing | identical |
 | **fast** | ONLY (a) the person asked for a rough sketch in their own words, or (b) the product does not run here at all (a third-party site) | recognisable |
 
-**You do not get to pick fast.** Effort is never a reason ("the state is hard to reach", "it needs a test
-instance"). Reach the state (`reference/real-capture.md` §2 has recipes for the hard ones). If you truly
+**You do not get to pick fast.** Effort is never a reason ("the state is hard to reach", "it needs
+seed data"). Reach the state (`reference/real-capture.md` §2 has recipes for the hard ones). If you truly
 cannot, STOP and ask. A fast mock's row MUST carry `fast_reason` (the person's quoted words, or the product
 that does not run here); the bar refuses a fast mock without it.
 
@@ -106,7 +106,8 @@ that does not run here); the bar refuses a fast mock without it.
 **Keep everything that is not under discussion.** Every screen is a full-window capture — top bar, rail,
 tab rows, status bar. A control missing from a mock reads as "remove it".
 
-- **real**: follow `reference/real-capture.md`. For EVERY step, drive the live app (a test instance) to that
+- **real**: follow `reference/real-capture.md`. For EVERY step, run the app yourself in its own dev / UI-only mode (never the person's
+real running app or a copy of its data), drive it to that
   screen's state and capture it — `capture/<step id>.html`. A step whose `source` is `built` starts from the
   nearest capture and is edited per its scenario, cloning real elements and using the app's own classes
   (`scripts/check_classes.py`). Then assemble with `scripts/build_mock.py` (command: `reference/real-capture.md` §5).

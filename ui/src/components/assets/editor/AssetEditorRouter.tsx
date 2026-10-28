@@ -26,6 +26,7 @@ import {
   VFSPath,
   Chart,
   Wizard,
+  WebApp,
   type AnyEntity,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -60,6 +61,7 @@ import { detectLanguage } from '@sdk';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
+import { AppEditor } from './app-profile/AppEditor';
 import { AgentChildView } from './agent-profile/AgentChildView';
 import { CredentialView } from '@src/components/credentials-view/CredentialView';
 import { useNestedHost } from './nested-host';
@@ -448,6 +450,21 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
                 </AssetCollisionShell>
               )
             }
+          />
+        );
+      case AssetEditor.APP:
+        return (
+          <EntityResolutionGate<WebApp>
+            type={WebApp.type}
+            fsRef={fsRef}
+            renderDocument={renderDocument}
+            typeLabel="app"
+            resolvedEntity={typeIdEntity as WebApp | undefined}
+            render={(app) => (
+              <AssetCollisionShell entity={app}>
+                <AppEditor app={app} mainRef={mainFileRef} />
+              </AssetCollisionShell>
+            )}
           />
         );
       case AssetEditor.CHART:

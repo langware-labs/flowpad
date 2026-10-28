@@ -130,6 +130,8 @@ class WebappManifestSpec(DataSpec):
     """
 
     main_file: ClassVar[str | None] = "webapp.json"
+    #: One plain JSON object, edited by field (``flow_sdk.assets.entity_document``) — the app editor's file.
+    manifest_layout: ClassVar[str | None] = "flat"
 
     #: The app's name AND its folder name. One noun.
     name: str = ""

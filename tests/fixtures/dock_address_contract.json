@@ -978,6 +978,12 @@
       "url": "/dock/assets/editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000"
     },
     {
+      "name": "assets app editor by typeid",
+      "view_type": "assets",
+      "pointer": "editor/app/typeid/micro_app-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/assets/editor/app/typeid/micro_app-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
       "name": "assets editor by vfs (@ is escaped)",
       "view_type": "assets",
       "pointer": "editor/skill/vfs/compute_node-@local/skills/demo/SKILL.md",

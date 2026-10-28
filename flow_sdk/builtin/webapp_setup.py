@@ -528,9 +528,15 @@ async def ports(webapp_id: str) -> list[dict]:
     rows = []
     for process in _processes(app):
         taken, clash = _elsewhere(app, process, others)
-        found, _mine, _up = await asyncio.to_thread(_look, app, process, taken, snapshot)
+        found, mine, _up = await asyncio.to_thread(_look, app, process, taken, snapshot)
         declared = _declared(process.serving)
         live = found.state in ("running", "wrong_port")
+        # What the running process no longer matches in the saved definition: a restart applies it.
+        changes = []
+        if found.state == "wrong_port" and declared is not None:
+            changes.append(f"port {found.port} → {declared.port}")
+        if live and mine and not any(app_ports.launched_by(one, process.serving.start_cmd) for one in mine):
+            changes.append("start command")
         rows.append(
             {
                 "app": app.name,
@@ -542,6 +548,7 @@ async def ports(webapp_id: str) -> list[dict]:
                 "pid": found.holder.pid if live and found.holder is not None else None,
                 "note": f"also declared by {clash}" if clash else found.note,
                 "log": _log_of(app, process, found.port) if live else None,
+                "changes": changes,
             }
         )
     return rows
