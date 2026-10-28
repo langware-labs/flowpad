@@ -235,7 +235,7 @@ agent's requirements. A hub that cannot answer blocks nothing.
 `flow project setup` folds the same per-source derivation (`--deployment` sets up a
 deployment's values).
 
-Readiness **gates a cloud deploy**: `Agent.deploy_to_cloud` publishes, plans the
+Readiness **gates a cloud deploy**: `agent_cloud_deploy.run_deployment_steps` publishes, plans the
 placement, and raises `NotReady` (HTTP 409, `code: not_ready`, with the readiness and the
 planned deployment) before any machine is paid for; the hub checks the same names again
 (`require`). The deploy dialog renders that refusal with Use mine / Authorize per item.

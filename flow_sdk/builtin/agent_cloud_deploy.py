@@ -2,9 +2,9 @@
 
 The deploy is five plain steps (``DEPLOYMENT_STEPS``) — publish the agent, share its hub dependencies, plan its
 placement on the hub, check readiness, have the hub place it on a machine — that know nothing of progress.
-:func:`run_deployment_steps` claims the agent's ``deploy`` activity, answers with where it reports, and runs every
-step after that, each one a child of it: the activity is what tells the screen how it goes, a refusal (a missing
-value, a publish problem) included.
+:func:`run_deployment_steps` runs them under the agent's ``deploy`` activity, each one a child of it: everything up
+to readiness before it answers, so a refusal (a missing value, a publish problem) is the answer; the machine after,
+the activity telling the screen how it goes.
 
 Model funding never refuses a deploy (``requirement_spec.ADVISORY_KINDS``): a placement with nothing to spend is
 placed all the same, and the readiness step says so.
@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 #: The activity a deploy reports on, under its agent.
 DEPLOY_ACTIVITY = "deploy"
+
+#: ``token_allocation`` not given: leave the deployment's as it is.
+_UNSET = object()
 
 
 class AgentDeployRequest(DataSpec):
@@ -91,11 +94,13 @@ class DeployContext:
 @dataclass(frozen=True)
 class DeployStep:
     """One step of the deploy: its child's name on the activity, how a screen reads it, and the work. A step that
-    answers a string has it shown as its end."""
+    answers a string has it shown as its end. An ``inline`` step runs before the request is answered, so its
+    refusal is the answer; the others run after it."""
 
     name: str
     label: str
     run: Callable[[DeployContext], Awaitable[object]]
+    inline: bool = False
 
 
 async def _share_dependencies(ctx: DeployContext) -> None:
@@ -154,22 +159,29 @@ async def _start_machine(ctx: DeployContext) -> None:
 
 DEPLOYMENT_STEPS = [
     # A deploy names an agent the hub has to already know.
-    DeployStep("publish", "Publish the agent", lambda ctx: ctx.agent.ensure_on_hub(ctx.actor)),
-    DeployStep("dependencies", "Share its dependencies", _share_dependencies),
-    DeployStep("plan", "Plan the deployment", _plan),
-    DeployStep("readiness", "Check what it needs", _check_readiness),
+    DeployStep("publish", "Publish the agent", lambda ctx: ctx.agent.ensure_on_hub(ctx.actor), inline=True),
+    DeployStep("dependencies", "Share its dependencies", _share_dependencies, inline=True),
+    DeployStep("plan", "Plan the deployment", _plan, inline=True),
+    # The gate: a missing value refuses the deploy before a machine is paid for, as the request's answer.
+    DeployStep("readiness", "Check what it needs", _check_readiness, inline=True),
     DeployStep("machine", "Start a machine", _start_machine),
 ]
 
 
 async def run_deployment_steps(
-    agent: "Agent", actor: "TypeId", environment: Optional[str], *, provider: Optional[str], token_allocation: Any
-) -> dict[str, str]:
+    agent: "Agent",
+    actor: "TypeId",
+    environment: Optional[str] = None,
+    *,
+    provider: Optional[str] = None,
+    token_allocation: Any = _UNSET,
+) -> dict[str, Any]:
     """``DEPLOYMENT_STEPS`` under *agent*'s ``deploy`` activity, each as its child — running, then done or failed
-    with its error — then the activity's end. They run after this returns, a failure told only on the activity.
+    with its error — then the activity's end. The ``inline`` steps run first, a failure raised to the caller (and
+    ending the activity); the rest run after this returns, a failure told only on the activity.
 
-    The answer: where the activity reports. Single-flight per agent: a deploy already running raises
-    :class:`DeployRunning`.
+    The answer: where the activity reports, and the placement it lands on. Single-flight per agent: a deploy
+    already running raises :class:`DeployRunning`.
     """
     from flow_sdk.activity import Activity  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_proxy import DEPLOY_TIMEOUT  # noqa: PLC0415
@@ -187,24 +199,37 @@ async def run_deployment_steps(
     )
     ctx = DeployContext(agent, actor, environment, provider, token_allocation)
 
-    async def run() -> None:
+    async def run(steps: list[DeployStep]) -> None:
+        for step in steps:
+            node = root.child(step.name).label(step.label)
+            try:
+                message = await step.run(ctx)
+            except BaseException as exc:
+                node.fail(str(exc) or type(exc).__name__)
+                raise
+            node.done(message if isinstance(message, str) and message else None)
+
+    async def run_after_the_answer(steps: list[DeployStep]) -> None:
         try:
-            for step in DEPLOYMENT_STEPS:
-                node = root.child(step.name).label(step.label)
-                try:
-                    message = await step.run(ctx)
-                except BaseException as exc:
-                    node.fail(str(exc) or type(exc).__name__)
-                    raise
-                node.done(message if isinstance(message, str) and message else None)
+            await run(steps)
         except BaseException as exc:
             root.fail(str(exc) or type(exc).__name__)
             logger.warning("cloud deploy of %s failed: %s", subject, exc)
             return
         root.done()
 
-    create_detached_task(run(), name=f"agent-deploy:{agent.id}")
-    return {"path": DEPLOY_ACTIVITY, "subject_entity": subject}
+    try:
+        await run([step for step in DEPLOYMENT_STEPS if step.inline])
+    except BaseException as exc:
+        root.fail(str(exc) or type(exc).__name__)
+        raise
+    create_detached_task(
+        run_after_the_answer([step for step in DEPLOYMENT_STEPS if not step.inline]), name=f"agent-deploy:{agent.id}"
+    )
+    return {
+        "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": subject},
+        "deployment_id": str(ctx.deployment.id),
+    }
 
 
 __all__ = ["DEPLOY_ACTIVITY", "DEPLOYMENT_STEPS", "AgentDeployRequest", "DeployRunning", "run_deployment_steps"]

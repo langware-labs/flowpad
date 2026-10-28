@@ -1,4 +1,4 @@
-"""A cloud deploy (``Agent.deploy_to_cloud``): answered before any step runs, each step a child of the agent's
+"""A cloud deploy (``agent_cloud_deploy.run_deployment_steps``): answered before any step runs, each step a child of the agent's
 ``deploy`` activity, a refusal told on that activity; no model funding is a warning, never a refusal; one deploy per
 agent at a time. The hub is the in-memory double. No network."""
 
@@ -10,10 +10,11 @@ import pytest
 
 from flow_sdk.activity import Activity, ActivityState, monitor
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, DeployRunning
+from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, DeployRunning, run_deployment_steps
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
 from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.schema.data_spec.activity_spec import ActivityProgressSpec
 from tests.utils import fake_hub_store
 from tests.utils.deploy_run import deploy_ended
 
@@ -60,32 +61,46 @@ async def test_an_unfunded_deploy_is_placed_and_the_readiness_step_says_so(agent
     assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": []}], "funding never stops it"
 
 
-async def test_a_deploy_answers_before_any_of_its_steps_runs(agent, hub):
+async def test_a_deploy_answers_once_ready_and_before_its_machine_starts(agent, hub):
     ended = asyncio.Event()
     stop = monitor.subscribe(lambda root, transition: ended.set() if root.is_terminal else None)
 
     try:
-        accepted = await agent.deploy_to_cloud("user-1", "production", provider="e2b")
+        accepted = await run_deployment_steps(agent, "user-1", "production", provider="e2b")
         answered = monitor.get(DEPLOY_ACTIVITY, subject_entity=str(agent.typeid))
         await ended.wait()
     finally:
         stop()
 
-    assert accepted == {"activity": {"path": DEPLOY_ACTIVITY, "subject_entity": str(agent.typeid)}}
+    assert accepted == {
+        "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": str(agent.typeid)},
+        "deployment_id": str(hub.deployment(str(agent.typeid), "production")["id"]),
+    }
     assert [(c.name, c.state) for c in answered.children] == [
-        (name, ActivityState.PENDING) for name in ("publish", "dependencies", "plan", "readiness", "machine")
+        ("publish", ActivityState.COMPLETED),
+        ("dependencies", ActivityState.COMPLETED),
+        ("plan", ActivityState.COMPLETED),
+        ("readiness", ActivityState.COMPLETED),
+        ("machine", ActivityState.PENDING),
     ]
     assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": []}]
 
 
-async def test_a_step_failing_fails_itself_and_the_deploy_and_the_rest_are_interrupted(agent, hub, monkeypatch):
+async def test_a_step_refused_before_the_answer_is_the_answer_and_ends_the_deploy(agent, hub, monkeypatch):
     async def refused(self, environment=None, *, provider=None, token_allocation=None):
         raise RuntimeError("the hub refused")
 
     monkeypatch.setattr(Agent, "plan_deployment", refused)
+    ended: list[ActivityProgressSpec] = []
+    stop = monitor.subscribe(lambda root, transition: ended.append(root.spec()) if root.is_terminal else None)
 
-    final = await deploy_ended(agent, "user-1", "production", provider="e2b")
+    try:
+        with pytest.raises(RuntimeError, match="the hub refused"):
+            await run_deployment_steps(agent, "user-1", "production", provider="e2b")
+    finally:
+        stop()
 
+    final = ended[-1]
     assert [(c.name, c.state, c.message) for c in final.children] == [
         ("publish", ActivityState.COMPLETED, None),
         ("dependencies", ActivityState.COMPLETED, None),
@@ -95,6 +110,21 @@ async def test_a_step_failing_fails_itself_and_the_deploy_and_the_rest_are_inter
     ]
     assert final.state == ActivityState.FAILED
     assert hub.deploys == []
+
+
+async def test_the_machine_failing_after_the_answer_is_told_only_on_the_activity(agent, hub, monkeypatch):
+    async def refused(entity, environment=None, *, provider=None, require=None, deployment_id=None):
+        raise HubError(500, "the provider is out of machines")
+
+    monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", refused)
+
+    final = await deploy_ended(agent, "user-1", "production", provider="e2b")
+
+    assert [(c.name, c.state) for c in final.children][-2:] == [
+        ("readiness", ActivityState.COMPLETED),
+        ("machine", ActivityState.FAILED),
+    ]
+    assert final.state == ActivityState.FAILED
 
 
 DROPPED = "Server disconnected without sending a response."
@@ -150,5 +180,5 @@ async def test_a_second_deploy_of_the_same_agent_is_refused_while_one_runs(agent
     Activity.try_claim(DEPLOY_ACTIVITY, subject_entity=str(agent.typeid))
 
     with pytest.raises(DeployRunning):
-        await agent.deploy_to_cloud("user-1", "production", provider="e2b")
+        await run_deployment_steps(agent, "user-1", "production", provider="e2b")
     assert hub.deploys == []

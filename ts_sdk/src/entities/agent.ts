@@ -691,26 +691,20 @@ function normalizeAgentMailboxState(state: AgentMailboxStateWire): AgentMailboxS
  * `deployment` is the placement ROW — the same entity, at the same id, that the
  * local backend has already adopted by the time this resolves. Callers render
  * the persisted Deployment rather than this response: it is a receipt, not the
- * state. `agent_definition_error` is present when the box came up but
- * `agent.json` failed to land — a live machine that is not yet the agent.
+ * state.
  */
 export interface AgentDeployResult {
   agent_id: string;
   deployment?: IDeployment;
   node_typeid?: string;
   host_url?: string;
-  reused?: boolean;
-  agent_definition?: string;
-  agent_definition_error?: string;
   /**
    * A cloud deploy taken on: it runs on, reporting at this activity, until its machine is placed.
-   * Absent on an answer that is already the outcome (this computer, or a hub that deploys in one call).
+   * Absent on this computer's deploy, whose answer is already the outcome.
    */
   activity?: Pick<ActivityProgressSpec, 'path' | 'subject_entity'>;
   /** The placement a taken-on deploy lands on, before its machine exists. */
   deployment_id?: string;
-  /** What the placement runs without — its model funding. Never a refusal. */
-  warnings?: string[];
 }
 
 /** What `POST /agent/<id>/use` hands back — the session opened as the agent.

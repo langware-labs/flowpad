@@ -39,7 +39,7 @@ from flow_sdk.builtin.agent_auto_open import (
     rebase_auto_open,
     start_auto_open,
 )
-from flow_sdk.builtin.agent_cloud_deploy import AgentDeployRequest
+from flow_sdk.builtin.agent_cloud_deploy import _UNSET, AgentDeployRequest
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
 from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
 from flow_sdk.builtin.deployment import Deployment
@@ -69,9 +69,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.webhook_spec import DeploymentWebhookSpec
 
 logger = logging.getLogger(__name__)
-
-#: ``token_allocation`` not given: leave the deployment's as it is.
-_UNSET = object()
 
 #: The two vocabularies for "which CLI": an agent.json declares the DRIVER
 #: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
@@ -1122,42 +1119,6 @@ class Agent(Entity):
 
     # ── deploy to the cloud ───────────────────────────────────────────────
 
-    async def deploy_to_cloud(
-        self,
-        actor: TypeId,
-        environment: str | None = None,
-        *,
-        provider: str | None = None,
-        token_allocation: "TokenAllocationSpec | None | object" = _UNSET,
-    ) -> dict:
-        """Give this agent a machine of its own on the hub.
-
-        Publish is implicit: a deploy names an agent the hub has to already
-        know, so ``ensure_on_hub`` runs first and the two are never separately
-        orderable by a caller.
-
-        The hub does everything else — it mints the ComputeNode, provisions the
-        Identity, and logs the sandbox in AS the agent. Deliberately no node or
-        principal parameter: were either passable from here they would be
-        passable from anywhere, which is the exact hole the hub's pentest guards
-        exist to keep shut. This call says only *which agent*, on which ``provider`` (none: ``e2b``), which
-        credential ``environment`` the placement reads (``production`` by default), and its
-        ``token_allocation`` (see :meth:`plan_deployment`).
-
-        The credentials live in this process, so the browser never talks to the
-        hub directly.
-
-        Answers at once with where the agent's ``deploy`` activity reports: its steps
-        (``agent_cloud_deploy.DEPLOYMENT_STEPS``) run after that, and a refusal — a missing value
-        (``NotReady``), a publish problem — is told on the activity. Missing model funding refuses nothing.
-        """
-        from flow_sdk.builtin.agent_cloud_deploy import run_deployment_steps  # noqa: PLC0415
-
-        activity = await run_deployment_steps(
-            self, actor, environment, provider=provider, token_allocation=token_allocation
-        )
-        return {"activity": activity}
-
     async def webhook_specs(self) -> list["DeploymentWebhookSpec"]:
         """One hub webhook per driver among this agent's sources that takes provider pushes (its manifest's
         ``webhook``): named by the driver, its URL stored and placed as the driver's URL variable."""
@@ -1227,11 +1188,13 @@ class Agent(Entity):
         no hub and no publish — the one way "This computer" becomes a deployment. Any other
         ``provider`` is passed to the hub, which refuses one it does not offer; none is ``e2b``.
 
-        A cloud deploy answers at once with where its activity reports: every step — publish, plan,
-        readiness, the machine — runs after that, and the ``deploy`` activity on this agent says how it
-        goes, a refusal (a missing value, a publish problem) included.
+        A cloud deploy publishes, plans and checks readiness before it answers — a refusal (a missing value, a
+        publish problem) is the answer — then answers with where its ``deploy`` activity reports and the
+        placement; the machine, minutes, starts after that and the activity says how it goes.
         """
-        from flow_sdk.builtin.agent_cloud_deploy import DeployRunning  # noqa: PLC0415
+        from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.builtin.agent_cloud_deploy import DeployRunning, run_deployment_steps  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
@@ -1245,7 +1208,8 @@ class Agent(Entity):
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
-            data = await self.deploy_to_cloud(
+            data = await run_deployment_steps(
+                self,
                 actor,
                 body.environment,
                 provider=body.provider or None,
@@ -1253,6 +1217,25 @@ class Agent(Entity):
             )
         except DeployRunning as exc:
             return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})
+        except NotReady as exc:
+            # The gate: nothing is deployed, and each missing value is named with its fix.
+            return ApiFailResponse(
+                status_code=409,
+                message=str(exc),
+                data={
+                    "code": "not_ready",
+                    "readiness": exc.readiness.model_dump(mode="json"),
+                    "deployment": exc.deployment.model_dump(mode="json") if exc.deployment else None,
+                },
+            )
+        except AssetPublishError as exc:
+            # Deploy publishes the agent through git first, so every publish precondition is a deploy
+            # precondition: the caller's state, not a server fault — and its sentence says what to do.
+            return ApiFailResponse(
+                status_code=exc.status_code,
+                message=exc.actionable,
+                data={"code": str(exc.code), **exc.data},
+            )
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"agent_id": self.id, **data})

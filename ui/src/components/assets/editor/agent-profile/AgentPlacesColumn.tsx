@@ -1,8 +1,9 @@
 import { Agent, type AgentPlace, type DeploymentStatus } from '@sdk';
+import { isTerminal } from '@sdk/activity';
 import { useWatch } from '@sdk/react/hooks';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Loader2, Plus, Server } from 'lucide-react';
 
 import { Button } from '@src/components/ui/button';
@@ -15,6 +16,9 @@ import { providerIcon, useAgentChannels } from '@src/components/agent-resources/
 import { NewDeploymentDialog } from './NewDeploymentDialog';
 import { useAgentPlaces } from './use-agent-places';
 import { usePlaceDisplay } from './use-place-display';
+
+/** The deploys whose funding warning was already shown (or that were history when first seen): kept across mounts. */
+const announcedDeploys = new Set<string>();
 
 interface AgentPlacesColumnProps {
   agent: Agent;
@@ -48,12 +52,17 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
   useEffect(() => {
     if (deployMoved) void reload();
   }, [deployMoved, reload]);
-  // What the deploy goes ahead without (no model funding) is the readiness step's end message: said once per deploy.
-  const warnedDeploy = useRef<string | null>(null);
+  // What the deploy goes ahead without (no model funding) is the readiness step's end message: said once per deploy,
+  // however often this column mounts. A deploy that has ended by the time it is first seen is history, not news.
   const warning = deploy?.children.find((step) => step.name === 'readiness' && step.state === 'completed')?.message;
   useEffect(() => {
-    if (!deploy || !warning || warnedDeploy.current === deploy.activity_id) return;
-    warnedDeploy.current = deploy.activity_id;
+    if (!deploy || announcedDeploys.has(deploy.activity_id)) return;
+    if (isTerminal(deploy)) {
+      announcedDeploys.add(deploy.activity_id);
+      return;
+    }
+    if (!warning) return;
+    announcedDeploys.add(deploy.activity_id);
     notify.warning({ title: t`Deploying without model funding`, message: warning, forceToast: true });
   }, [deploy, warning, t]);
 

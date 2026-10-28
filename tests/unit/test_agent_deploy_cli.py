@@ -38,7 +38,9 @@ def app(monkeypatch):
         if not state["ready"]:
             on_error(409, {"status": "FAIL", "message": "not ready to deploy: stripe missing",
                            "data": {"code": "not_ready", "readiness": READINESS}})
-        return {"agent_id": AGENT_ID, "activity": ACTIVITY}
+        if payload.get("provider") == "local":
+            return {"agent_id": AGENT_ID, "deployment": {"id": "d-local"}}
+        return {"agent_id": AGENT_ID, "activity": ACTIVITY, "deployment_id": "d-1"}
 
     monkeypatch.setattr(agent_cmd, "discover_port", lambda required=True: 1)
     monkeypatch.setattr(agent_cmd, "get_graph_json", get)
@@ -52,7 +54,7 @@ def test_deploys_an_agent_named_by_its_name(app):
     result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", "researcher", "--environment", "staging", "--no-blocking"])
 
     assert result.exit_code == 0, result.stdout
-    assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "activity": ACTIVITY}
+    assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "activity": ACTIVITY, "deployment_id": "d-1"}
     assert calls[-1][1].endswith(f"/agent/{AGENT_ID}/deploy")
     assert calls[-1][2] == {"environment": "staging", "provider": "e2b"}
 
@@ -94,14 +96,21 @@ def _report(state: str, steps: dict[str, str], message: str | None = None) -> di
                                          "children": [{"name": n, "state": st} for n, st in steps.items()]}}}
 
 
+class _Frames(list):
+    """The frames the app sends; and the connection ids the command opened its socket under."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.connection_ids: list[str] = []
+
+
 @pytest.fixture
 def frames(app, monkeypatch):
     """The socket double: the app's frames, sent once the command has registered its watch and sent the deploy."""
-    sent: list[dict] = []
-    sent.connection_ids = []  # type: ignore[attr-defined]  # the ids the command opened its socket under
+    sent = _Frames()
 
     async def backend_frames(port, kinds, *, on_connected=None, connection_id=None):
-        sent.connection_ids.append(connection_id)  # type: ignore[attr-defined]
+        sent.connection_ids.append(connection_id)
         await on_connected()
         for frame in sent:
             yield frame
@@ -192,7 +201,19 @@ def test_no_blocking_opens_no_connection(app, monkeypatch):
     result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", AGENT_ID, "--no-blocking"])
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "activity": ACTIVITY}
+    assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "activity": ACTIVITY, "deployment_id": "d-1"}
+
+
+def test_a_local_deploy_has_nothing_to_follow_and_never_blocks(app, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise AssertionError("--provider local has no deploy activity: it must not wait on the socket")
+
+    monkeypatch.setattr(agent_cmd, "backend_frames", refuse)
+
+    result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", AGENT_ID, "--provider", "local"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "activity": None, "deployment_id": "d-local"}
 
 
 def test_a_refusal_from_the_app_exits_1_before_any_report_is_printed(app, frames):

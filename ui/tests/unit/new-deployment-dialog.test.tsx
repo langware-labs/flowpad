@@ -137,22 +137,18 @@ describe('New deployment', () => {
     expect(onMachineSize).toHaveBeenCalledWith('lg');
   });
 
-  it('a cloud deploy taken on warns, closes on the answer, and says it runs in the background', async () => {
+  it('a cloud deploy taken on closes on the answer and says it runs in the background', async () => {
     const { deploy, onLaunched, onOpenChange } = renderDialog();
     deploy.mockResolvedValue({
       agent_id: '33333333-3333-4333-8333-333333333333',
       activity: { path: 'deploy', subject_entity: 'agent-33333333-3333-4333-8333-333333333333' },
       deployment_id: 'dep-3',
-      warnings: ['No LLM funding for brief: limit exceeded'],
     } as never);
     fireEvent.click(screen.getByTestId('new-deployment-type-gcp_vm-sm'));
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
     await waitFor(() => expect(onLaunched).toHaveBeenCalledWith('dep-3'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(notify.info).toHaveBeenCalledWith({ title: 'Deployment running in the background' });
-    expect(notify.warning).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'No LLM funding for brief: limit exceeded' }),
-    );
   });
 
   it('this computer can always be launched again — each launch is one more process here', () => {
