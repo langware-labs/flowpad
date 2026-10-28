@@ -131,6 +131,22 @@ it('an app that validates opens at once, never loads, and a re-open shows it on 
   expect(load).not.toHaveBeenCalled();
 });
 
+it('a running app whose setup owes something stays shown under a bar, and Set up runs that setup', async () => {
+  // Spora Admin answered on its port while its Google sign-in had expired: it opened as ready, silently.
+  const asset = 'micro_app-22222222-2222-4222-8222-222222222222';
+  const owes: ProjectLoadResult = { ...ready, asset, setup_owed: 'Google Cloud: the sign-in expired — sign in again' };
+  vi.spyOn(Project, 'validateLoad').mockResolvedValue({ ...ready, asset });
+  vi.spyOn(Project, 'loadState').mockResolvedValue(owes);
+  vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: '', running: false, tree: null });
+  const load = vi.spyOn(Project, 'load').mockResolvedValue({ ...ready, asset, state: 'running', run: 'setup-x', phase: 'setup' });
+  gate(asset);
+  expect(await screen.findByTestId('project-load-setup-owed')).toHaveTextContent('Google Cloud: the sign-in expired');
+  expect(screen.getByText('Service home')).toBeInTheDocument();
+  expect(load).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Set up' }));
+  await waitFor(() => expect(load).toHaveBeenCalledWith(projectId, { approved: true, asset }));
+});
+
 it('an app that does not validate is loaded, and a load-only run says Starting, not the setup tree', async () => {
   const asset = 'micro_app-22222222-2222-4222-8222-222222222222';
   const starting: ProjectLoadResult = { ...ready, state: 'running', run: 'run-1', phase: 'load' };

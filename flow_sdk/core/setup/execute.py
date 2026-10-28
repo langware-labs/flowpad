@@ -62,6 +62,13 @@ async def execute_setup(
     from flow_sdk.core.wizard.execute import _resolve_op, _resolve_wizard  # noqa: PLC0415 — entity layer
 
     resolvers = dict(resolve_op=resolve_op or _resolve_op, resolve_wizard=resolve_wizard or _resolve_wizard)
+    if shell is None:
+        # A setup's own credential checks are answered in this process, with their reason; anything else runs.
+        import functools  # noqa: PLC0415
+
+        from flow_sdk.builtin.project_setup import _setup_shell  # noqa: PLC0415
+
+        shell = functools.partial(_setup_shell, inner=None)
     if check_only:
         return await setup_tree(
             root_id, resolve_node=resolve_node, subject_entity=subject_entity, workdir=cwd, shell=shell,

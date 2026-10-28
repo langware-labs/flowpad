@@ -187,3 +187,6 @@ class LoadResult(DataSpec):
     tree: Optional[SetupTreeResult] = None
     #: What a RUNNING load is doing: ``load`` only starts what is set up, ``setup`` sets up first.
     phase: Optional[Literal["load", "setup"]] = None
+    #: A READY app that opened because it answers, checked behind it: what its setup still owes (a credential
+    #: that expired under it), else empty. ``None`` while that check has not answered yet.
+    setup_owed: Optional[str] = None

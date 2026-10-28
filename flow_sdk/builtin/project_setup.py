@@ -800,6 +800,11 @@ def _own_check(command: str) -> Optional[tuple[str, str, str]]:
     return argv[5], given.get("--project", ""), given.get("--deployment", "")
 
 
+def setup_shell_answers(command: str) -> bool:
+    """``command`` is a check the setup's shell answers in this process — its detail is a reason."""
+    return _own_check(command) is not None
+
+
 async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, extra_env: Optional[dict] = None,
                        platform: str = "", stop: Optional[asyncio.Event] = None, on_output=None,
                        on_spawn=None, fresh: bool = False, inner=None):
@@ -822,7 +827,7 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
         return await (inner or run_shell)(command, timeout_seconds=timeout_seconds, workdir=workdir,
                                           extra_env=extra_env, platform=platform, stop=stop,
                                           on_output=on_output, on_spawn=on_spawn, fresh=fresh)
-    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import credentials_status, why_not_ready  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode  # noqa: PLC0415
 
@@ -834,8 +839,9 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
     row = next((r for r in rows if r.get("scope") == "project"), rows[0] if rows else None)
     ready = row is not None and row.get("state") == "connected"
     said = json.dumps({"name": name, "declared": row is not None, "ready": ready})
+    # Why it is not ready rides as the answer's detail: a step's check says it in its own words.
     return CliResult.of_process(command, 0 if ready else int(ExitCode.NOT_YET), said,
-                                duration_s=time.monotonic() - started)
+                                duration_s=time.monotonic() - started, detail=why_not_ready(row))
 
 
 def _release_control(key: tuple[str, str], control: Any, _task: "asyncio.Task") -> None:

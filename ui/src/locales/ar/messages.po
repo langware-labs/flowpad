@@ -34183,3 +34183,7 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Needs setup: {owed}"
+msgstr "يلزم الإعداد: {owed}"

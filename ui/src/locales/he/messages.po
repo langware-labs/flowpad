@@ -34179,3 +34179,7 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Needs setup: {owed}"
+msgstr "נדרשת הגדרה: {owed}"

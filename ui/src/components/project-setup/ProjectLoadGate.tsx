@@ -10,7 +10,7 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { SetupFailureActions } from './SetupFailureActions';
 import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
-import { useProjectLoad, validLoad } from './use-project-load';
+import { projectLoadKey, useProjectLoad, validLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
 
 /** The route has already selected identity. Operational work starts after the tab mounts. */
@@ -49,7 +49,11 @@ export function ProjectLoadGate({
         const up = verdict?.state === 'ready';
         validLoad.set(validKey, up);
         setValid(up);
-        if (up) return;
+        if (up) {
+          // The app shows now; its setup is checked behind it, and the poll reads what it owes.
+          void client.invalidateQueries({ queryKey: projectLoadKey(projectId, display, asset) });
+          return;
+        }
       }
       await load();
       if (live) setLoadedLocation(location.key);
@@ -57,7 +61,7 @@ export function ProjectLoadGate({
     return () => {
       live = false;
     };
-  }, [load, location.key, projectId, asset, display, validKey]);
+  }, [load, location.key, projectId, asset, display, validKey, client]);
   const result = lifecycle.result;
   const fix = useSetupFix(projectId, result, lifecycle.error, (approved) => load(approved));
   const navigate = useNavigate();
@@ -104,6 +108,36 @@ export function ProjectLoadGate({
       void client.invalidateQueries({ queryKey: ['service_endpoint'] });
     }
   }, [client, result, loadedLocation, location.key, validKey]);
+  // Up, but its setup owes something (a sign-in that expired under it): the app stays, a bar says what is
+  // needed, and Set up leaves the fast path for the setup flow the gate already runs.
+  const owed = valid && result?.state === 'ready' ? result.setup_owed : null;
+  if (owed)
+    return (
+      <div className="flex h-full flex-col">
+        <div
+          role="alert"
+          className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm"
+          data-testid="project-load-setup-owed"
+        >
+          <span className="min-w-0 flex-1 truncate" title={owed}>
+            <Trans>Needs setup: {owed}</Trans>
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              validLoad.set(validKey, false);
+              setValid(false);
+              setLoadedLocation(location.key);
+              void load(true);
+            }}
+          >
+            <Trans>Set up</Trans>
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1">{children}</div>
+      </div>
+    );
   if (valid) return children;
   if (valid === null) return null;
   if (result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key)
