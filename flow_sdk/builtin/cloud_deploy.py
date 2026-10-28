@@ -34,6 +34,8 @@ DEFAULT_CLOUD_PROVIDER = "e2b"
 #: the hub drops a request it has held for minutes while the hub goes on placing the machine: a dropped answer is
 #: not a failure.
 PLACED_WITHIN_S = 8 * 60
+#: How often the local row is looked at meanwhile: a read of this computer's own store.
+PLACED_LOCAL_POLL_S = 1
 
 
 async def deploy_entity_to_cloud(
@@ -79,30 +81,25 @@ async def deploy_entity_to_cloud(
     return data
 
 
-async def wait_until_placed(pushed: "asyncio.Queue[dict[str, Any]]") -> dict[str, Any]:
-    """The placement once the hub pushes it with a machine — for a deploy whose answer never came back. *pushed*
-    is the placement's ``hub_bridge.deployment_pushes``, opened before the deploy was sent; the bridge has already
-    mirrored each row here. Answers like the deploy, without its endpoints (a cloud placement's are read from the
-    hub when asked). Raises ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none."""
+async def wait_until_placed(deployment_id: str) -> None:
+    """Wait for the placement's local row to have its machine — for a deploy whose answer never came back. The hub
+    pushes the placement as it gives it its machine and the bridge mirrors each push into that row, so this only
+    reads here, never asks the hub. Raises ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    async def placed() -> None:
+        while True:
+            row = await Deployment.get_by_id(deployment_id)
+            if row is not None and row.origin and row.origin.external_id and row.status.provider_state == "running":
+                return
+            await asyncio.sleep(PLACED_LOCAL_POLL_S)
+
     try:
-        async with asyncio.timeout(PLACED_WITHIN_S):
-            row = await pushed.get()
-            while not _has_machine(row):
-                row = await pushed.get()
+        await asyncio.wait_for(placed(), PLACED_WITHIN_S)
     except TimeoutError:
         raise TimeoutError(
             f"the hub sent no machine for it within {PLACED_WITHIN_S // 60} minutes of losing its answer"
         ) from None
-    return {"deployment": row}
-
-
-def _has_machine(row: Any) -> bool:
-    """Whether a hub placement row has its machine: the hub records the machine and ``running`` together."""
-    if not isinstance(row, dict):
-        return False
-    origin = row.get("origin") or {}
-    status = row.get("status") or {}
-    return bool(origin.get("external_id")) and status.get("provider_state") == "running"
 
 
 __all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud", "wait_until_placed"]

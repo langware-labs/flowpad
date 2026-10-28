@@ -342,20 +342,10 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
     )
 
 
-def funding_warnings(agent: "Agent", ready: ReadinessSpec) -> list[str]:
-    """The funding a deploy proceeds without, said to the person deploying: one sentence per missing item."""
-    return [
-        f"No LLM funding for {agent.name or agent.id}: {item.fix}"
-        for item in ready.advisories()
-        if item.requirement.kind == REQUIREMENT_FUNDING
-    ]
-
-
 __all__ = [
     "auth_of",
     "connection_of",
     "derive_requirements",
-    "funding_warnings",
     "merge",
     "readiness",
     "refresh_requirements",
