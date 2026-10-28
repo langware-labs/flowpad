@@ -10122,6 +10122,7 @@ msgid "Deployed without its definition"
 msgstr "Deployed without its definition"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deploying without model funding"
 msgstr "Deploying without model funding"

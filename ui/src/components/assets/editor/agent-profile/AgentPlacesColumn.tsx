@@ -2,11 +2,13 @@ import { Agent, type AgentPlace, type DeploymentStatus } from '@sdk';
 import { useWatch } from '@sdk/react/hooks';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Loader2, Plus, Server } from 'lucide-react';
 
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { notify } from '@src/notifications';
+import { useActivitySpec } from '@src/store/activity-store';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 
 import { providerIcon, useAgentChannels } from '@src/components/agent-resources/AgentWebhooksSection';
@@ -39,6 +41,21 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
   // A deploy reports on the agent's `deploy` activity, sent only to the agent's watchers. Watched for as
   // long as this column is open: the dialog closes on the deploy's answer, before its steps run.
   useWatch(agent.typeId, !hub);
+  // The deploy's steps run after the dialog has closed: its placement is planned, then given its machine, after
+  // the list was last read. Re-read it each time the deploy moves.
+  const deploy = useActivitySpec('deploy', agent.typeId.toString());
+  const deployMoved = deploy ? `${deploy.state}:${deploy.children.map((step) => step.state).join()}` : null;
+  useEffect(() => {
+    if (deployMoved) void reload();
+  }, [deployMoved, reload]);
+  // What the deploy goes ahead without (no model funding) is the readiness step's end message: said once per deploy.
+  const warnedDeploy = useRef<string | null>(null);
+  const warning = deploy?.children.find((step) => step.name === 'readiness' && step.state === 'completed')?.message;
+  useEffect(() => {
+    if (!deploy || !warning || warnedDeploy.current === deploy.activity_id) return;
+    warnedDeploy.current = deploy.activity_id;
+    notify.warning({ title: t`Deploying without model funding`, message: warning, forceToast: true });
+  }, [deploy, warning, t]);
 
   // The server lists this computer first.
   const visible = (places ?? []).filter((place) => !hub || !place.is_local);
