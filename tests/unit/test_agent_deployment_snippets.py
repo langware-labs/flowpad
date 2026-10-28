@@ -177,7 +177,7 @@ async def test_5_a_machine_of_its_own(monkeypatch):
         published.append((self.name, str(actor)))
         return True
 
-    async def deploy(entity, environment=None, *, provider=None, require=None):
+    async def deploy(entity, environment=None, *, provider=None, require=None, deployment_id=None):
         return {"deployment_id": "dep-1", "entity": entity.name, "environment": environment or "production"}
 
     async def plan(method, etype, eid=None, action=None, *, payload=None, **_):

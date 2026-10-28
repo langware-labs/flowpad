@@ -84,6 +84,7 @@ async def test_the_deploy_is_refused_until_use_mine_fills_the_store(home, projec
 
     await deploy_ended(agent, "user-1", "production", provider="e2b")
     assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": ["STRIPE_KEY"]}]
+    assert hub.deploy_ids == [hub.deployment(f"agent-{agent.id}", "production")["id"]], "the deploy names its plan"
 
 
 async def test_a_protected_deployment_refuses_use_mine(home, project, hub):

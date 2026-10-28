@@ -137,7 +137,13 @@ async def _start_machine(ctx: DeployContext) -> None:
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
     try:
-        await deploy_entity_to_cloud(ctx.agent, ctx.environment, provider=ctx.provider, require=ctx.ready.value_names())
+        await deploy_entity_to_cloud(
+            ctx.agent,
+            ctx.environment,
+            provider=ctx.provider,
+            require=ctx.ready.value_names(),
+            deployment_id=str(ctx.deployment.id),
+        )
     except HubError as exc:
         # No answer at all (status 0): the load balancer in front of the hub dropped the request while the hub
         # went on placing the machine. Its push, mirrored into the placement's local row, is the answer.

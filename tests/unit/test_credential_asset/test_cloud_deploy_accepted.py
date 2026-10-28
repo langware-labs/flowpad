@@ -112,7 +112,7 @@ def _dropped_answer(monkeypatch, hub, agent, *, placed: bool) -> dict:
     async def push(pushed: dict) -> None:
         await hub_ws_bridge._handle_deployment_op("update", planned["id"], pushed)
 
-    async def dropped(entity, environment=None, *, provider=None, require=None):
+    async def dropped(entity, environment=None, *, provider=None, require=None, deployment_id=None):
         await push(row(1))
         if placed:
             machine = {"kind": "e2b", "provider": "e2b", "external_id": "compute_node-box"}
