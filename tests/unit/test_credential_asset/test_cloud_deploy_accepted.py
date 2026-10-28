@@ -113,7 +113,7 @@ async def test_a_step_refused_before_the_answer_is_the_answer_and_ends_the_deplo
 
 
 async def test_the_machine_failing_after_the_answer_is_told_only_on_the_activity(agent, hub, monkeypatch):
-    async def refused(entity, environment=None, *, provider=None, require=None, deployment_id=None):
+    async def refused(entity, environment=None, *, provider=None, require=None):
         raise HubError(500, "the provider is out of machines")
 
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", refused)
@@ -142,7 +142,7 @@ def _dropped_answer(monkeypatch, hub, agent, *, placed: bool) -> dict:
     async def push(pushed: dict) -> None:
         await hub_ws_bridge._handle_deployment_op("update", planned["id"], pushed)
 
-    async def dropped(entity, environment=None, *, provider=None, require=None, deployment_id=None):
+    async def dropped(entity, environment=None, *, provider=None, require=None):
         await push(row(1))
         if placed:
             machine = {"kind": "e2b", "provider": "e2b", "external_id": "compute_node-box"}

@@ -188,9 +188,9 @@ async def test_5_a_machine_of_its_own(monkeypatch):
     monkeypatch.setattr(HubProxy, "call", staticmethod(plan))
     machine = asyncio.Event()
 
-    async def deploy(entity, environment=None, *, provider=None, require=None, deployment_id=None):
+    async def deploy(entity, environment=None, *, provider=None, require=None):
         machine.set()  # the machine starts after the answer
-        return {"deployment_id": deployment_id, "entity": entity.name, "environment": environment or "production"}
+        return {"entity": entity.name, "environment": environment or "production"}
 
     monkeypatch.setattr(cloud_deploy, "deploy_entity_to_cloud", deploy)
     ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
