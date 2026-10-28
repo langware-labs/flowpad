@@ -23,6 +23,14 @@ from flow_sdk.schema.types import EntityType
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.deleted_project_returns.rules: FAILING? Read this tag's rules
+#       before editing; a project the user deleted must not be hydrated back from the
+#       hub by its conversation's messages. Needs the local hub and two identities.
+# flowpad:endcapsule tag
 async def test_a_deleted_project_is_not_rehydrated_by_its_conversation(
     tmp_path: Path,
     hub_base_url,

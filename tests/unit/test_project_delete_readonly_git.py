@@ -25,6 +25,14 @@ def _git(repo, *args) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.delete_readonly_checkout.rules: FAILING? Windows-only. Read this
+#       tag's rules before editing; do not swap _rmtree_safe back to shutil.rmtree,
+#       and do not expect it to fail on macOS.
+# flowpad:endcapsule tag
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_delete_removes_a_checkout_with_read_only_pack_files(tmp_path) -> None:
