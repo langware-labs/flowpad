@@ -1,11 +1,10 @@
-"""An agent's deploy over HTTP (``POST agent/<id>/deploy``): the request, and the answer to a cloud deploy
-that was taken on and runs on."""
+"""An agent's deploy over HTTP (``POST agent/<id>/deploy``): the request."""
 
 from __future__ import annotations
 
 from typing import Any, ClassVar, Optional
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, field_validator
 
 from flow_sdk.schema.data_spec.credential_contract import is_valid_environment
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -47,28 +46,4 @@ class AgentDeployRequest(DataSpec):
         return "token_allocation" in self.model_fields_set
 
 
-class ActivityAddress(DataSpec):
-    """Where a run reports: its activity's path on its subject entity — what a screen follows to watch it."""
-
-    model_config = ConfigDict(frozen=True)
-    spec_kind: ClassVar[str] = "activity.address"
-
-    path: str
-    subject_entity: str
-
-
-class DeployAccepted(DataSpec):
-    """A cloud deploy taken on. Its steps report at ``activity`` until the run ends; ``warnings`` name what the
-    placement will run without (its model funding), which never stops a deploy."""
-
-    model_config = ConfigDict(frozen=True)
-    spec_kind: ClassVar[str] = "agent.deploy_accepted"
-
-    agent_id: str
-    activity: ActivityAddress
-    warnings: list[str] = Field(default_factory=list)
-    #: The placement it lands on — planned now; its machine arrives with the run's end.
-    deployment_id: str = ""
-
-
-__all__ = ["ActivityAddress", "AgentDeployRequest", "DeployAccepted"]
+__all__ = ["AgentDeployRequest"]

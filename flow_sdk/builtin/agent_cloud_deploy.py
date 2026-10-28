@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.activity.steps import Step, announce, run_steps
 from flow_sdk.builtin.agent import _UNSET
-from flow_sdk.schema.data_spec.agent_deploy_spec import ActivityAddress, DeployAccepted
 
 if TYPE_CHECKING:
     from flow_sdk.activity import Activity
@@ -121,10 +120,13 @@ class CloudDeploy:
         )
 
 
-async def run_cloud_deploy(deploy: CloudDeploy, *, background: bool) -> DeployAccepted:
+async def run_cloud_deploy(deploy: CloudDeploy, *, background: bool) -> dict[str, Any]:
     """Run *deploy* under its activity: every step up to readiness now; the machine after this returns when
     *background*, before it otherwise. A step that fails ends the activity failed and is raised here — for a
     background step, the activity is the only one told.
+
+    The answer: the agent, where its activity reports, the warnings (no model funding) and the placement it
+    lands on.
 
     Single-flight per agent: a deploy already running raises :class:`DeployRunning`.
     """
@@ -148,12 +150,12 @@ async def run_cloud_deploy(deploy: CloudDeploy, *, background: bool) -> DeployAc
         raise
 
     tail = [step for step in steps if step.background]
-    accepted = DeployAccepted(
-        agent_id=str(agent.id),
-        activity=ActivityAddress(path=DEPLOY_ACTIVITY, subject_entity=subject),
-        warnings=deploy.warnings,
-        deployment_id=str(deploy.deployment.id) if deploy.deployment is not None else "",
-    )
+    accepted = {
+        "agent_id": str(agent.id),
+        "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": subject},
+        "warnings": deploy.warnings,
+        "deployment_id": str(deploy.deployment.id) if deploy.deployment is not None else "",
+    }
     if background:
         create_detached_task(_finish(root, tail), name=f"agent-deploy:{agent.id}")
     else:

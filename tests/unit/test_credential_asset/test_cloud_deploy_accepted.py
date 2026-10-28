@@ -11,7 +11,6 @@ import pytest
 from flow_sdk.activity import Activity, ActivityState, monitor
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, CloudDeploy, DeployRunning, run_cloud_deploy
-from flow_sdk.schema.data_spec.agent_deploy_spec import ActivityAddress
 from tests.utils import fake_hub_store
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -49,9 +48,9 @@ async def test_an_unfunded_deploy_is_accepted_with_a_warning_and_still_placed(ag
 
     accepted = await run_cloud_deploy(CloudDeploy(agent, "user-1", "production", provider="e2b"), background=False)
 
-    assert accepted.activity == ActivityAddress(path=DEPLOY_ACTIVITY, subject_entity=str(agent.typeid))
-    assert accepted.deployment_id == str(planned.id)
-    assert accepted.warnings == [
+    assert accepted["activity"] == {"path": DEPLOY_ACTIVITY, "subject_entity": str(agent.typeid)}
+    assert accepted["deployment_id"] == str(planned.id)
+    assert accepted["warnings"] == [
         f"No LLM funding for cloud-agent: {EXHAUSTED}: raise the limit (Configure) or wait for it to reset"
     ]
     assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": []}], "funding never stops it"

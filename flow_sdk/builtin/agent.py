@@ -1221,8 +1221,8 @@ class Agent(Entity):
         ``provider`` is passed to the hub, which refuses one it does not offer; none is ``e2b``.
 
         A cloud deploy answers once everything up to readiness has run — a refusal (a missing value, a
-        publish problem) is still the answer — with a ``DeployAccepted``: where its activity reports, and
-        any warnings (no model funding). The machine, minutes, is placed after that; the ``deploy``
+        publish problem) is still the answer — with where its activity reports, and any warnings (no model
+        funding). The machine, minutes, is placed after that; the ``deploy``
         activity on this agent says how it goes. ``{"wait": true}`` answers only once the machine is
         placed, with the hub's answer (``flow agent deploy``).
         """
@@ -1277,8 +1277,8 @@ class Agent(Entity):
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         if body.wait:
-            return ApiSuccessResponse(data={"agent_id": self.id, **deploy.result, "warnings": accepted.warnings})
-        return ApiSuccessResponse(data=accepted.model_dump(mode="json"))
+            return ApiSuccessResponse(data={"agent_id": self.id, **deploy.result, "warnings": accepted["warnings"]})
+        return ApiSuccessResponse(data=accepted)
 
     # ── the run verb (HTTP) ───────────────────────────────────────────────
 
