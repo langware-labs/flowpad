@@ -12,6 +12,7 @@ from flow_sdk.activity import Activity, ActivityState, monitor
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, CloudDeploy, DeployRunning, run_cloud_deploy
 from flow_sdk.builtin.deployment import Deployment
+from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.schema.data_spec.activity_spec import ActivityProgressSpec
 from tests.utils import fake_hub_store
@@ -115,52 +116,45 @@ async def test_a_step_failing_after_the_answer_fails_itself_and_the_deploy_and_t
 DROPPED = "Server disconnected without sending a response."
 
 
-def _dropped_answer(monkeypatch, hub, agent, *, placed_on_read: int) -> list[str]:
-    """The hub's deploy answer lost on the way (status 0), and its placement row read back: without a machine
-    until the *placed_on_read*-th read (0: never). Answers the ids asked for."""
+def _dropped_answer(monkeypatch, hub, agent, *, placed: bool) -> None:
+    """The hub's deploy answer lost on the way (status 0) while the hub pushes the placement over its socket:
+    once as it is being worked on, then — when *placed* — with its machine, after the answer was lost."""
+    planned = hub.deployment(f"agent-{agent.id}", "production")
+
+    def row(seconds: int, **fields) -> dict:
+        return {**planned, "updated_date": f"2099-01-01T00:00:{seconds:02d}Z", **fields}
+
+    async def push(*rows: dict) -> None:
+        for pushed in rows:
+            await hub_ws_bridge._handle_deployment_op("update", planned["id"], pushed)
 
     async def dropped(entity, environment=None, *, provider=None, require=None):
+        await push(row(1))
+        if placed:
+            machine = {"kind": "e2b", "provider": "e2b", "external_id": "compute_node-box"}
+            later.append(asyncio.create_task(push(row(2, origin=machine, status={"provider_state": "running"}))))
         raise HubError(0, DROPPED)
 
-    asked: list[str] = []
-    hub_get = hub.get
-
-    async def get(etype, eid=None, action=None, sub_path=None, **kwargs):
-        if str(etype) != "deployment" or action is not None:
-            return await hub_get(etype, eid, action, sub_path, **kwargs)
-        asked.append(eid)
-        row = hub.deployment(str(agent.typeid), "production")
-        if placed_on_read and len(asked) >= placed_on_read:
-            row |= {
-                "origin": {"kind": "e2b", "provider": "e2b", "external_id": "compute_node-box"},
-                "status": {"sync_state": "current", "provider_state": "running"},
-            }
-        return row
-
+    later: list[asyncio.Task] = []
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", dropped)
-    monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.PLACED_POLL_S", 0)
-    monkeypatch.setattr(hub, "get", get)
-    return asked
 
 
-async def test_a_dropped_hub_answer_is_not_a_failure_the_placement_given_its_machine_is(agent, hub, monkeypatch):
-    asked = _dropped_answer(monkeypatch, hub, agent, placed_on_read=2)
+async def test_a_dropped_hub_answer_is_not_a_failure_the_machine_pushed_over_the_socket_is(agent, hub, monkeypatch):
+    _dropped_answer(monkeypatch, hub, agent, placed=True)
     deploy = CloudDeploy(agent, "user-1", "production", provider="e2b")
 
     await run_cloud_deploy(deploy, background=False)
 
-    planned = str(deploy.deployment.id)
-    assert asked == [planned, planned], "read until the hub has given it a machine"
-    assert deploy.result["deployment"]["origin"]["external_id"] == "compute_node-box"
-    adopted = await Deployment.get_by_id(planned)
-    assert adopted.origin.external_id == "compute_node-box" and adopted.status.provider_state == "running"
+    assert deploy.result["deployment"]["origin"]["external_id"] == "compute_node-box", "the push with its machine"
+    mirrored = await Deployment.get_by_id(str(deploy.deployment.id))
+    assert mirrored.origin.external_id == "compute_node-box" and mirrored.status.provider_state == "running"
 
 
-async def test_a_dropped_hub_answer_with_no_machine_in_time_fails_the_deploy(agent, hub, monkeypatch):
-    _dropped_answer(monkeypatch, hub, agent, placed_on_read=0)
+async def test_a_dropped_hub_answer_with_no_machine_pushed_in_time_fails_the_deploy(agent, hub, monkeypatch):
+    _dropped_answer(monkeypatch, hub, agent, placed=False)
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.PLACED_WITHIN_S", 0)
 
-    with pytest.raises(TimeoutError, match="placed no machine"):
+    with pytest.raises(TimeoutError, match="sent no machine"):
         await run_cloud_deploy(CloudDeploy(agent, "user-1", "production", provider="e2b"), background=False)
 
 

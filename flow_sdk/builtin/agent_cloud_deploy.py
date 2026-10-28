@@ -123,19 +123,22 @@ class CloudDeploy:
 
     async def _machine(self) -> None:
         from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud, wait_until_placed  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_bridge import deployment_pushes  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
-        assert self.readiness is not None, "readiness runs before the machine"
-        try:
-            self.result = await deploy_entity_to_cloud(
-                self.agent, self.environment, provider=self.provider, require=self.readiness.value_names()
-            )
-        except HubError as exc:
-            # No answer at all (status 0): the load balancer in front of the hub dropped the request while the
-            # hub went on placing the machine. Its placement is the answer, once it has one.
-            if exc.status_code != 0 or self.deployment is None:
-                raise
-            self.result = await wait_until_placed(str(self.deployment.id), element=self.agent)
+        assert self.readiness is not None and self.deployment is not None, "the plan and readiness run first"
+        # Heard from before the deploy is sent: the hub pushes the placement as it gives it its machine.
+        with deployment_pushes(str(self.deployment.id)) as pushed:
+            try:
+                self.result = await deploy_entity_to_cloud(
+                    self.agent, self.environment, provider=self.provider, require=self.readiness.value_names()
+                )
+            except HubError as exc:
+                # No answer at all (status 0): the load balancer in front of the hub dropped the request while
+                # the hub went on placing the machine. Its push is the answer.
+                if exc.status_code != 0:
+                    raise
+                self.result = await wait_until_placed(pushed)
 
 
 async def run_cloud_deploy(deploy: CloudDeploy, *, background: bool) -> dict[str, Any]:

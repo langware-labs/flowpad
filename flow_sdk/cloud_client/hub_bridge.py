@@ -17,6 +17,8 @@ import asyncio
 import logging
 import os
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Optional
 
 from flow_sdk import stream_inbox
@@ -25,6 +27,24 @@ from flow_sdk.preferences import message_status_sharing_enabled
 from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
+
+#: Who hears a placement's pushed rows, by deployment id (:func:`deployment_pushes`).
+_deployment_listeners: dict[str, set[asyncio.Queue]] = {}
+
+
+@contextmanager
+def deployment_pushes(deployment_id: str) -> Iterator[asyncio.Queue]:
+    """Every row the hub pushes for placement *deployment_id* while this is open, in order, each once the bridge
+    has mirrored it here — for a caller whose own answer from the hub may not come back."""
+    queue: asyncio.Queue = asyncio.Queue()
+    _deployment_listeners.setdefault(deployment_id, set()).add(queue)
+    try:
+        yield queue
+    finally:
+        listeners = _deployment_listeners.get(deployment_id, set())
+        listeners.discard(queue)
+        if not listeners:
+            _deployment_listeners.pop(deployment_id, None)
 
 
 # Asset-entity types whose chips open a file-backed editor (Skill.md,
@@ -1272,20 +1292,24 @@ class HubWsBridge:
             return
 
         payload = {**(data or {}), "id": deployment_id}
-        if existing is None:
-            await Deployment.adopt_from_hub(payload)
-            logger.info("[bridge] deployment op %s materialized %s", op, deployment_id)
-            return
+        try:
+            if existing is None:
+                await Deployment.adopt_from_hub(payload)
+                logger.info("[bridge] deployment op %s materialized %s", op, deployment_id)
+                return
 
-        # The sender receives its OWN op too, so check staleness before doing any
-        # work — an echo would otherwise re-save and re-broadcast every time.
-        if not Deployment.is_stale(existing, payload):
-            return
-        merged = Deployment.merge_hub_payload(existing, payload)
-        refreshed = Deployment(**merged)
-        refreshed.remote = True
-        await refreshed.save()
-        logger.info("[bridge] deployment op %s refreshed %s", op, deployment_id)
+            # The sender receives its OWN op too, so check staleness before doing any
+            # work — an echo would otherwise re-save and re-broadcast every time.
+            if not Deployment.is_stale(existing, payload):
+                return
+            merged = Deployment.merge_hub_payload(existing, payload)
+            refreshed = Deployment(**merged)
+            refreshed.remote = True
+            await refreshed.save()
+            logger.info("[bridge] deployment op %s refreshed %s", op, deployment_id)
+        finally:
+            for listener in _deployment_listeners.get(deployment_id, ()):
+                listener.put_nowait(payload)
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that
