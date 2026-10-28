@@ -7165,7 +7165,14 @@ class AgenticProcess(Entity):
     async def link_roots(self) -> list[str]:
         """Where the worker IS (its shell) first, then its own workdir and project."""
         shell = await self.shell()
-        return [*(await shell.link_roots() if shell else []), *await super().link_roots()]
+        if shell:  # the shell already adds this process's mounted dirs
+            return [*await shell.link_roots(), *await super().link_roots()]
+        return [*await super().link_roots(), *await self.mounted_dirs()]
+
+    async def mounted_dirs(self) -> list[str]:
+        """The ``--add-dir`` folders the worker reads from; its output names paths under them."""
+        await self.get_project()  # stamps the project context dirs resolved_add_dirs reads
+        return list(self.resolved_add_dirs)
 
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""

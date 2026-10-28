@@ -268,6 +268,16 @@ class Shell(Entity):
             refs.append(TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=self.agentic_process_id))
         return refs
 
+    async def link_roots(self) -> list[str]:
+        """A worker's shell also resolves links under the folders its worker was given."""
+        roots = await super().link_roots()
+        if not self.agentic_process_id:
+            return roots
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_id(self.agentic_process_id)
+        return [*roots, *(await process.mounted_dirs() if process else [])]
+
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     # Cached result of the last ensure_live_compute_node_binding() — lets the
