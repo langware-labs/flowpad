@@ -9,9 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Optional
 
-from flow_sdk.schema.data_spec.automation_spec import AutomationGroup, AutomationRun, AutomationSummary, RunMark
+from flow_sdk.schema.data_spec.automation_spec import (
+    LOCAL_PLACE,
+    AutomationGroup,
+    AutomationPlace,
+    AutomationRun,
+    AutomationSummary,
+    RunMark,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +54,6 @@ _workflows_cache: tuple[float, dict[str, list[str]]] | None = None
 async def workflows_by_trigger() -> dict[str, list[str]]:
     """trigger id → names of the enabled workflows it starts. Reused for a few
     seconds: the list polls, and workflows change far less often than that."""
-    import time  # noqa: PLC0415
 
     global _workflows_cache
     if _workflows_cache and time.monotonic() - _workflows_cache[0] < WORKFLOWS_TTL_S:
@@ -64,10 +71,54 @@ async def workflows_by_trigger() -> dict[str, list[str]]:
     return out
 
 
+def agent_of(trigger: Any) -> Optional[str]:
+    """The agent a rule runs: its ``run_agent`` target, else the agent it belongs to."""
+    for action in getattr(trigger, "actions", None) or []:
+        if str(getattr(action, "action_type", "")) == "run_agent" and getattr(action, "target_type_id", None):
+            return str(action.target_type_id)
+    agent = ((getattr(trigger, "then", None) or {}).get("run_agent") or {}).get("agent")
+    if agent:
+        return str(agent)
+    parent = str(getattr(trigger, "parent_type_id", "") or "")
+    return parent if parent.startswith("agent-") else None
+
+
+def place_of(trigger: Any, deployments: dict[str, Any]) -> AutomationPlace:
+    """Where a rule runs, from its ``runs_on`` (``trigger_arming.runs_here``'s rule, in words).
+
+    ``deployments`` maps the Deployment ids the rules name to the rows known here."""
+    runs_on = str(getattr(trigger, "runs_on", "") or "")
+    if not runs_on:
+        return AutomationPlace(kind="local", label=LOCAL_PLACE.label, every_machine=True)
+    deployment = deployments.get(runs_on)
+    if deployment is not None and getattr(deployment, "is_local", False):
+        return AutomationPlace(kind="local", label=LOCAL_PLACE.label, deployment_id=runs_on)
+    name = getattr(deployment, "name", None) or "another machine"
+    return AutomationPlace(kind="cloud_machine", label=f"Cloud · {name}", deployment_id=runs_on)
+
+
+async def deployments_named_by(triggers: list[Any]) -> dict[str, Any]:
+    """The Deployment rows the rules' ``runs_on`` name, read together; an unknown id is left out."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    ids = sorted({str(t.runs_on) for t in triggers if getattr(t, "runs_on", None)})
+
+    async def one(deployment_id: str) -> Any:
+        try:
+            return await Deployment.get_by_id(deployment_id)
+        except Exception:  # noqa: BLE001 — unresolvable is "another machine", never an error
+            logger.debug("runs_on %s unresolvable", deployment_id, exc_info=True)
+            return None
+
+    found = await asyncio.gather(*(one(i) for i in ids))
+    return {i: d for i, d in zip(ids, found) if d is not None}
+
+
 async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = None,
                     workflows: Optional[list[str]] = None,
                     catalog: Optional[dict[str, tuple[str, str]]] = None,
-                    last_joined: Optional[AutomationRun] = None) -> AutomationSummary:
+                    last_joined: Optional[AutomationRun] = None,
+                    place: AutomationPlace = LOCAL_PLACE) -> AutomationSummary:
     from flow_sdk.automations.describe import describe_then, describe_when, kind_of  # noqa: PLC0415
     from flow_sdk.automations.runs import join_processes  # noqa: PLC0415
 
@@ -100,6 +151,8 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
         tested=is_tested(trigger, runs),
         read_only=group == "builtin",
         asset_ref=trigger.asset_ref or None,
+        place=place,
+        agent_type_id=agent_of(trigger),
     )
 
 
@@ -121,6 +174,7 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
     agents = {((t.then or {}).get("run_agent") or {}).get("agent") for t in triggers}
     await asyncio.gather(*(names.name(agent) for agent in agents if agent))
     flows = await workflows_by_trigger()
+    deployments = await deployments_named_by(triggers)
     folded = [(trigger, fold(rows.rows_for(str(trigger.id), trigger.name), catalog)) for trigger in triggers]
     # Every automation's newest run asks its agent run how it ended — together.
     lasts = await join_processes([runs[0] for _, runs in folded if runs])
@@ -128,8 +182,74 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
     out: list[AutomationSummary] = []
     for trigger, runs in folded:
         out.append(await summarize(trigger, runs, names=names, workflows=flows.get(str(trigger.id)),
-                                   catalog=catalog, last_joined=joined.get(runs[0].id) if runs else None))
+                                   catalog=catalog, last_joined=joined.get(runs[0].id) if runs else None,
+                                   place=place_of(trigger, deployments)))
     # A stable order: rows must not jump while someone aims at one (the list
     # polls, and ordering by last run moved them every few seconds under load).
     out.sort(key=lambda s: (s.name.casefold(), s.id))
     return out
+
+
+# ── The Flowpad cloud's automations ───────────────────────────────────────────
+
+#: How long the hub's list is reused between polls (the screen polls every few seconds).
+CLOUD_TTL_S = 15.0
+_cloud_cache: tuple[float, list[AutomationSummary]] | None = None
+
+
+class CloudWarning(Exception):
+    """Why the cloud's automations are not in the list: ``code`` is CLOUD_SIGNED_OUT or CLOUD_UNAVAILABLE."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+async def cloud_rows() -> list[AutomationSummary]:
+    """The hub's automations (``GET trigger/overview``), or ``[]`` when this instance stays local.
+
+    Raises ``CloudWarning`` when they should be shown but cannot be: signed out, offline, or a hub
+    that does not list automations yet."""
+    global _cloud_cache
+    from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.instance_settings.privacy_mode import is_local_mode  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+    if is_local_mode():
+        return []
+    if not hub_auth_available():
+        raise CloudWarning("CLOUD_SIGNED_OUT", "Sign in to Flowpad to see the automations that run in the cloud.")
+    if _cloud_cache and time.monotonic() - _cloud_cache[0] < CLOUD_TTL_S:
+        return _cloud_cache[1]
+    try:
+        data = await HubProxy.call("GET", "trigger", action="overview")
+    except HubError as e:
+        if e.kind is HubFailureKind.NOT_CONFIGURED:
+            return []
+        if e.kind is HubFailureKind.SIGNED_OUT:
+            raise CloudWarning("CLOUD_SIGNED_OUT", e.user_message()) from e
+        if e.status_code == 404:
+            raise CloudWarning("CLOUD_UNAVAILABLE", "The Flowpad cloud does not list automations yet.") from e
+        raise CloudWarning("CLOUD_UNAVAILABLE", e.user_message()) from e
+    rows: list[AutomationSummary] = []
+    for raw in data if isinstance(data, list) else []:
+        try:
+            rows.append(AutomationSummary.model_validate({**raw, "source": "hub"}))
+        except Exception:  # noqa: BLE001 — one unreadable row is left out, never the list
+            logger.warning("cloud automation row unreadable: %r", (raw or {}).get("id"), exc_info=True)
+    _cloud_cache = (time.monotonic(), rows)
+    return rows
+
+
+async def overview_with_cloud(*, include_inactive: bool = False) -> tuple[list[AutomationSummary], Optional[CloudWarning]]:
+    """This machine's automations and the cloud's, by name; the warning says why the cloud's are missing."""
+    local = await overview(include_inactive=include_inactive)
+    try:
+        cloud = await cloud_rows()
+    except CloudWarning as warning:
+        return local, warning
+    rows = sorted([*local, *cloud], key=lambda s: (s.name.casefold(), s.id))
+    return rows, None
