@@ -3,7 +3,7 @@ import { ViewType } from '../utils/ui/view-types';
 import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { ApiError, isApiError } from '../ApiResponse';
+import { ApiError, ApiWarning, isApiError } from '../ApiResponse';
 import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX, ListPage, pageOf, withPage } from '../client';
 
 import config from '../config';
@@ -1819,6 +1819,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       };
     }
 
+    if (actionInfo.keepEnvelope) requestConfig = { ...(requestConfig ?? {}), keepEnvelope: true };
+
     // XHR cannot outlive the page; the fetch adapter can (same client and interceptors).
     // Only where `fetch` can resolve the address: it parses the URL itself and throws on a
     // relative one, while XHR resolves it against the document. With no absolute base and no
@@ -1833,7 +1835,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const method = actionInfo.method ?? 'GET';
     const isDedupable = method === 'GET' && !actionInfo.abortSignal;
     if (isDedupable) {
-      const key = endpoint;
+      const key = actionInfo.keepEnvelope ? `envelope:${endpoint}` : endpoint;
       const pending = this._inFlightGets.get(key);
       if (pending) return pending as Promise<Res>;
       const promise = (async () => {
@@ -1876,6 +1878,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         break;
     }
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
+  }
+
+  /** One action over HTTP, answering its `data` together with the envelope's `warnings` (a SUCCESS
+   *  answer saying part of the work did not land), which {@link callAction} only logs. */
+  public async callActionWithWarnings<Res>(actionInfo: ActionInfo): Promise<{ data: Res; warnings: ApiWarning[] }> {
+    actionInfo.keepEnvelope = true;
+    const envelope = (await this.callAction<undefined, unknown>(actionInfo)) as {
+      data?: Res;
+      warnings?: ApiWarning[] | null;
+    } | null;
+    return { data: envelope?.data as Res, warnings: Array.isArray(envelope?.warnings) ? envelope.warnings : [] };
   }
 
   /** FlowCall answers survive either transport; expected work outcomes do not throw.

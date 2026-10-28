@@ -4,7 +4,7 @@
  * (flow_sdk/builtin/trigger.py): name, entity, method, query and body.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ActionInfo, dataManager, isMessagePattern, messageRuleFields, parseTarget, Trigger, withPage } from '@sdk';
+import { ActionInfo, dataManager, isMessagePattern, messageRuleFields, parseTarget, Trigger } from '@sdk';
 
 function capture(answer: unknown = {}) {
   const calls: ActionInfo[] = [];
@@ -131,13 +131,15 @@ describe('Trigger automation methods', () => {
     expect(calls[0].bodyParameters).toEqual({ enabled: true });
   });
 
+  // The desktop router keeps a row stored here (and not remote) here, and sends any other id to the hub —
+  // so a call by id always asks for the hub and no caller picks a side.
   it.each([
-    ['update', () => Trigger.setEnabled(ID, false, { hubReflect: true })],
-    ['update', () => Trigger.updateAutomation(ID, { name: 'n' }, { hubReflect: true })],
-    ['delete', () => Trigger.remove(ID, { hubReflect: true })],
-    ['test', () => Trigger.runOnce(ID, null, { hubReflect: true })],
+    ['update', () => Trigger.setEnabled(ID, false)],
+    ['update', () => Trigger.updateAutomation(ID, { name: 'n' })],
+    ['delete', () => Trigger.remove(ID)],
+    ['test', () => Trigger.runOnce(ID)],
     ['fire', () => Trigger.fire(ID)],
-  ] as const)('%s on a hub row is reflected to the hub', async (name, call) => {
+  ] as const)('%s by id is routed by the backend (Hub-Reflect)', async (name, call) => {
     const calls = capture({});
     await call();
     expect(calls[0].name).toBe(name);
@@ -145,12 +147,21 @@ describe('Trigger automation methods', () => {
     expect(calls[0].actionUrl.split('?')[0]).toBe(`/graph/trigger/${ID}/${name}`);
   });
 
-  it('a local row is not reflected', async () => {
-    const calls = capture({});
-    await Trigger.setEnabled(ID, false);
-    await Trigger.remove(ID);
-    await Trigger.runOnce(ID);
-    expect(calls.map((c) => c.hubReflect)).toEqual([false, false, false]);
+  it('load reads the row by id the same way, and a row neither side has is null', async () => {
+    const calls = capture({ id: ID, name: 'n', trigger_type: 'schedule' });
+    const row = await Trigger.load(ID);
+    expect(row?.id).toBe(ID);
+    expect([calls[0].method, calls[0].hubReflect, calls[0].actionUrl]).toEqual(['GET', true, `/graph/trigger/${ID}`]);
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue(
+      Object.assign(new Error('gone'), { isAxiosError: true, response: { status: 404 } }),
+    );
+    expect(await Trigger.load(ID)).toBeNull();
+  });
+
+  it('a create stays on this machine unless it is made on Flowpad cloud', async () => {
+    const calls = capture({ id: ID, name: 'n' });
+    await Trigger.createAutomation({ name: 'n', trigger_type: 'tag' });
+    expect(calls[0].hubReflect).toBe(false);
   });
 
   it('run now fires a hub row and runs a local one once', async () => {
@@ -159,7 +170,7 @@ describe('Trigger automation methods', () => {
     await Trigger.runNow({ id: ID, source: 'local' });
     expect(calls.map((c) => [c.name, c.method, c.hubReflect])).toEqual([
       ['fire', 'POST', true],
-      ['test', 'POST', false],
+      ['test', 'POST', true],
     ]);
   });
 
@@ -189,19 +200,17 @@ describe('Trigger automation methods', () => {
 
   it("overview's CLOUD_* warning reaches the caller beside the rows", async () => {
     const warning = { error_code: 'CLOUD_UNAVAILABLE', message: 'The cloud did not answer.' };
-    // The client's unwrap keeps the envelope's warnings on the list, as it keeps its page.
-    const rows = withPage([{ id: 'a' }], { status: 'SUCCESS', data: [{ id: 'a' }], warnings: [warning] });
-    capture(rows);
-    const overview = await Trigger.overviewWithWarnings();
+    // The overview asks for the whole envelope (`keepEnvelope`), not only its `data`.
+    const calls = capture({ status: 'SUCCESS', data: [{ id: 'a' }], warnings: [warning] });
+    const overview = await Trigger.overview();
+    expect(calls[0].keepEnvelope).toBe(true);
     expect(overview.rows).toEqual([{ id: 'a' }]);
     expect(overview.warnings).toEqual([warning]);
-    // Non-enumerable: the rows still spread and serialize as a plain list.
-    expect(JSON.stringify(overview.rows)).toBe('[{"id":"a"}]');
   });
 
   it('an overview with no warnings has none', async () => {
-    capture([]);
-    expect((await Trigger.overviewWithWarnings()).warnings).toEqual([]);
+    capture({ status: 'SUCCESS', data: [] });
+    expect(await Trigger.overview()).toEqual({ rows: [], warnings: [] });
   });
 
   it('overview asks for inactive copies only when told to', async () => {

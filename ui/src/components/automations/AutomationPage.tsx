@@ -41,7 +41,6 @@ import {
   draftProblems,
   draftToCloudSchedule,
   draftToFields,
-  triggerFromSummary,
   type AutomationDraft,
 } from './automation-draft';
 import { RunsOnPicker } from '@src/components/assets/editor/agent-profile/RunsOnPicker';
@@ -65,14 +64,6 @@ import { ThenSteps } from './ThenSteps';
  *  row is read — so nothing kind-specific (the general page's polling list subscription among it) mounts first. */
 export function AutomationPage({ route }: { route: AutomationsRoute }) {
   const triggerId = route.trigger ?? null;
-  const { automation } = useAutomation(triggerId, { poll: false });
-  // A hub row is not in this machine's store: the general page reads it from the overview.
-  if (automation?.source === 'hub') return <GeneralAutomationPage route={route} />;
-  return <LocalAutomationPage route={route} />;
-}
-
-function LocalAutomationPage({ route }: { route: AutomationsRoute }) {
-  const triggerId = route.trigger ?? null;
   const triggerQuery = useAutomationTrigger(triggerId);
   // A rule on messages arriving has its own two-box screen (docs/snippets/stream-inbox-automations.md).
   if (route.creating === 'message' || triggerQuery.data?.isMessageRule) return <MessageRulePage route={route} />;
@@ -94,10 +85,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const isNew = !triggerId;
   const { automation } = useAutomation(triggerId);
   const onHub = automation?.source === 'hub';
-  const localTrigger = useAutomationTrigger(onHub ? null : triggerId);
-  const triggerQuery = onHub
-    ? { data: automation ? (triggerFromSummary(automation) as ITrigger) : undefined, error: null }
-    : localTrigger;
+  const triggerQuery = useAutomationTrigger(triggerId);
   const projectId = useContext().project?.id ?? null;
   const cloudGate = useCloudLoginGate();
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
@@ -187,17 +175,14 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
       }
     }
     try {
-      const hubFields = toHub
-        ? Trigger.cloudScheduleFields(draftToCloudSchedule(draft, { projectId, fallbackTimezone: timezone }))
-        : null;
-      const target = hubFields ?? fields;
+      const cloud = toHub ? draftToCloudSchedule(draft, { projectId, fallbackTimezone: timezone }) : null;
       // A move across stores is a create on the new place, then a delete of the old row.
       const saved = await save.mutateAsync({
         triggerId: moving ? null : triggerId,
-        fields: target,
-        source: toHub ? 'hub' : 'local',
+        fields: cloud ? Trigger.cloudScheduleFields(cloud) : fields,
+        cloud,
       });
-      if (moving && triggerId) await remove.mutateAsync({ triggerId, source: onHub ? 'hub' : 'local' });
+      if (moving && triggerId) await remove.mutateAsync(triggerId);
       setLoaded((l) => (l ? { ...l, base: l.draft } : l));
       if ((isNew || moving) && saved.id) navigation.openDock(DockPointer.forAutomations({ trigger: saved.id }));
       notify.success({ title: isNew ? t`Automation created` : t`Saved`, message: fields.name });
@@ -211,7 +196,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const onToggle = (on: boolean) => {
     if (isNew) return setDraft({ ...draft, enabled: on });
     setEnabled.mutate(
-      { triggerId: triggerId as string, enabled: on, source: automation?.source },
+      { triggerId, enabled: on },
       {
         onSuccess: () =>
           setLoaded((l) => (l ? { ...l, base: { ...l.base, enabled: on }, draft: { ...l.draft, enabled: on } } : l)),
@@ -545,7 +530,7 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
         variant="destructive"
         onConfirm={() =>
           remove.mutate(
-            { triggerId: triggerId as string, source: automation?.source },
+            triggerId as string,
             {
               onSuccess: () => navigation.openDock(DockPointer.forAutomations()),
               onError: (e) =>

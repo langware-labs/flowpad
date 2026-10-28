@@ -50,8 +50,7 @@ const mutation = (fn: ReturnType<typeof vi.fn>) => ({
   variables: undefined,
 });
 vi.mock('@src/hooks/automations/useAutomations', () => ({
-  useAutomations: () => ({ data: state.automations, isLoading: false, error: null }),
-  useAutomationsCloudWarning: () => state.cloudWarning,
+  useAutomations: () => ({ data: state.automations, isLoading: false, error: null, cloudWarning: state.cloudWarning }),
   useAutomation: (id: string | null) => ({ automation: state.automations.find((a) => a.id === id) ?? null }),
   useAutomationTrigger: (id: string | null) => ({
     data:
@@ -257,7 +256,11 @@ describe('where each automation runs', () => {
     state.automations = [
       automation({ id: 'here', place: { kind: 'local', label: 'This computer' } }),
       automation({ id: 'every', place: { kind: 'local', label: 'This computer', every_machine: true } }),
-      automation({ id: 'box', place: { kind: 'cloud_machine', label: 'Cloud · box-1', deployment_id: 'd1' } }),
+      // The words come from `deployment_name`; `label` is the CLI's English and is never read.
+      automation({
+        id: 'box',
+        place: { kind: 'cloud_machine', label: 'CLI words', deployment_id: 'd1', deployment_name: 'box-1' },
+      }),
       automation({ id: 'legacy' }),
     ];
     render(<AutomationsView />);
@@ -289,7 +292,7 @@ describe('where each automation runs', () => {
     expect(screen.getByTestId('automation-place-cloud1').textContent).toContain('Flowpad cloud');
     fireEvent.click(screen.getByTestId('automation-toggle-cloud1'));
     expect(state.mutate.setEnabled).toHaveBeenCalledWith(
-      { triggerId: 'cloud1', enabled: false, source: 'hub' },
+      { triggerId: 'cloud1', enabled: false },
       expect.anything(),
     );
     fireEvent.click(screen.getByTestId('automation-run-once-cloud1'));
@@ -327,7 +330,7 @@ describe('where each automation runs', () => {
     await waitFor(() => expect(state.mutate.save).toHaveBeenCalledTimes(1));
     expect(gate.fn).toHaveBeenCalled();
     const [args] = state.mutate.save.mock.calls[0];
-    expect(args.source).toBe('hub');
+    expect(args.cloud).toMatchObject({ agent: 'agent-a1', prompt: 'Brief me', project_id: 'p1' });
     expect(args.triggerId).toBeNull();
     expect(args.fields).toMatchObject({
       trigger_type: 'schedule',

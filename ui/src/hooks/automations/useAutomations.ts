@@ -17,8 +17,8 @@ import {
   type AutomationRun,
   type AutomationSample,
   type AutomationSummary,
-  type TriggerCallOptions,
   type BusMap,
+  type CloudSchedule,
   type AutomationTestEvent,
   type ITrigger,
   type NextRuns,
@@ -43,36 +43,24 @@ const automationKeys = {
 
 /** Every automation as a sentence with its health. `poll: false` for a screen that
  *  only needs the names (a filter list) — it shares the cache without adding a poll. */
+/**
+ * `data` is the rows; `cloudWarning` says why they are this machine's only — the overview's
+ * `CLOUD_UNAVAILABLE` / `CLOUD_SIGNED_OUT` warning, or null when the cloud's were read too.
+ */
 export function useAutomations(options: { enabled?: boolean; poll?: boolean } = {}) {
-  return useQuery<AutomationOverview, Error, AutomationSummary[]>({
+  const query = useQuery<AutomationOverview, Error>({
     queryKey: automationKeys.overview(),
-    queryFn: () => Trigger.overviewWithWarnings(),
-    select: selectRows,
+    queryFn: () => Trigger.overview(),
     refetchInterval: options.poll === false ? false : AUTOMATIONS_POLL_MS,
     enabled: options.enabled ?? true,
   });
+  const overview = query.data;
+  return {
+    ...query,
+    data: overview?.rows,
+    cloudWarning: overview?.warnings.find((w) => w.error_code.startsWith('CLOUD_')) ?? null,
+  };
 }
-
-const selectRows = (overview: AutomationOverview) => overview.rows;
-const selectCloudWarning = (overview: AutomationOverview) =>
-  overview.warnings.find((w) => w.error_code.startsWith('CLOUD_')) ?? null;
-
-/** Why the overview holds this machine's automations only: its `CLOUD_UNAVAILABLE` / `CLOUD_SIGNED_OUT`
- *  warning, or null when the cloud's were read too. Shares the overview's request and cache. */
-export function useAutomationsCloudWarning(options: { enabled?: boolean } = {}) {
-  const { data } = useQuery<AutomationOverview, Error, ReturnType<typeof selectCloudWarning>>({
-    queryKey: automationKeys.overview(),
-    queryFn: () => Trigger.overviewWithWarnings(),
-    select: selectCloudWarning,
-    enabled: options.enabled ?? true,
-  });
-  return data ?? null;
-}
-
-/** Where a row-level call goes: a hub row's to the hub. */
-export const callOptionsFor = (row: Pick<AutomationSummary, 'source'> | null | undefined): TriggerCallOptions => ({
-  hubReflect: row?.source === 'hub',
-});
 
 /** One automation's summary, from the same list (no second request). */
 export function useAutomation(triggerId: string | null | undefined, options: { poll?: boolean } = {}) {
@@ -140,11 +128,8 @@ export function useRunOnce() {
     Error,
     { triggerId: string; event?: AutomationTestEvent | null; messageId?: string; source?: AutomationSummary['source'] }
   >({
-    // A hub row's *Run now* is the hub's fire; it answers no run id, so the lists pick the fire up on refresh.
-    mutationFn: async ({ triggerId, event, messageId, source }) =>
-      source === 'hub'
-        ? (await Trigger.fire(triggerId), { trigger_id: triggerId, background: true, detail: {} })
-        : Trigger.runOnce(triggerId, event, { messageId }),
+    mutationFn: ({ triggerId, event, messageId, source }) =>
+      Trigger.runNow({ id: triggerId, source }, event, { messageId }),
     onSettled: () => void invalidate(),
   });
 }
@@ -203,8 +188,8 @@ export function useStartedLastHour(): number {
 
 export function useSetAutomationEnabled() {
   const invalidate = useInvalidateAutomations();
-  return useMutation<Trigger, Error, { triggerId: string; enabled: boolean; source?: AutomationSummary['source'] }>({
-    mutationFn: ({ triggerId, enabled, source }) => Trigger.setEnabled(triggerId, enabled, callOptionsFor({ source })),
+  return useMutation<Trigger, Error, { triggerId: string; enabled: boolean }>({
+    mutationFn: ({ triggerId, enabled }) => Trigger.setEnabled(triggerId, enabled),
     onSettled: () => void invalidate(),
   });
 }
@@ -215,30 +200,33 @@ export function useSaveAutomation() {
   return useMutation<
     Trigger,
     Error,
-    { triggerId?: string | null; fields: Partial<ITrigger> & { name: string }; source?: AutomationSummary['source'] }
+    { triggerId?: string | null; fields: Partial<ITrigger> & { name: string }; cloud?: CloudSchedule | null }
   >({
-    mutationFn: ({ triggerId, fields, source }) =>
+    // An id is routed by the SDK; a new row is made on Flowpad cloud only when `cloud` says so.
+    mutationFn: ({ triggerId, fields, cloud }) =>
       triggerId
-        ? Trigger.updateAutomation(triggerId, fields, callOptionsFor({ source }))
-        : Trigger.createAutomation(fields, callOptionsFor({ source })),
+        ? Trigger.updateAutomation(triggerId, fields)
+        : cloud
+          ? Trigger.createOnCloud(cloud)
+          : Trigger.createAutomation(fields),
     onSettled: () => void invalidate(),
   });
 }
 
 export function useDeleteAutomation() {
   const invalidate = useInvalidateAutomations();
-  return useMutation<void, Error, string | { triggerId: string; source?: AutomationSummary['source'] }>({
-    mutationFn: (arg) =>
-      typeof arg === 'string' ? Trigger.remove(arg) : Trigger.remove(arg.triggerId, callOptionsFor(arg)),
+  return useMutation<void, Error, string>({
+    mutationFn: (triggerId) => Trigger.remove(triggerId),
     onSettled: () => void invalidate(),
   });
 }
 
-/** The full Trigger row behind an automation — what the builder edits. */
+/** The full Trigger row behind an automation — what the builder edits. A Flowpad-cloud row's is read
+ *  from the hub (`Trigger.load` routes by id). */
 export function useAutomationTrigger(triggerId: string | null | undefined) {
   return useQuery<Trigger | null>({
     queryKey: ['automations', 'trigger', triggerId ?? null],
-    queryFn: () => Trigger.getById<Trigger>(triggerId as string),
+    queryFn: () => Trigger.load(triggerId as string),
     enabled: !!triggerId,
   });
 }

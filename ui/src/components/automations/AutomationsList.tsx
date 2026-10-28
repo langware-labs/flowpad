@@ -14,7 +14,6 @@ import { Button } from '@src/components/ui/button';
 import { useContext } from '@src/hooks/useContext';
 import {
   useAutomations,
-  useAutomationsCloudWarning,
   useRunOnce,
   useSetAutomationEnabled,
 } from '@src/hooks/automations/useAutomations';
@@ -37,8 +36,7 @@ export function AutomationsList() {
   const words = useAutomationWords();
   const { navigation } = useDockNavigation();
   const projectId = useContext().project?.id ?? null;
-  const { data: automations = [], isLoading, error } = useAutomations();
-  const cloudWarning = useAutomationsCloudWarning();
+  const { data: automations = [], isLoading, error, cloudWarning } = useAutomations();
   const runOnce = useRunOnce();
   const setEnabled = useSetAutomationEnabled();
   const [kind, setKind] = useState<AutomationKind | null>(null);
@@ -81,7 +79,7 @@ export function AutomationsList() {
     );
   const onToggle = (a: AutomationSummary, enabled: boolean) =>
     setEnabled.mutate(
-      { triggerId: a.id, enabled, source: a.source },
+      { triggerId: a.id, enabled },
       {
         onError: (e) =>
           notify.error({
@@ -220,7 +218,7 @@ export function AutomationsList() {
                 testId="automations-chip"
                 label={t`Filter by kind`}
                 value={kind ?? 'all'}
-                onChange={(v) => setKind(v === 'all' || v === kind ? null : (v as AutomationKind))}
+                onChange={(v) => setKind(v === 'all' || v === kind ? null : v)}
                 options={[
                   {
                     value: 'all',

@@ -149,10 +149,13 @@ export type AutomationPlaceKind = 'local' | 'cloud_machine' | 'hub';
 
 export interface AutomationPlace {
   kind: AutomationPlaceKind;
-  /** English: "This computer" | "Cloud · <deployment name>" | "Flowpad cloud". The UI words its own. */
+  /** English, for the CLI: "This computer" | "Cloud · <deployment name>" | "Flowpad cloud". The UI words its own
+   *  from `kind` / `deployment_name` and never reads this. */
   label: string;
   /** The runs_on Deployment, when there is one. */
   deployment_id?: string | null;
+  /** That Deployment's name, when the backend knows it. */
+  deployment_name?: string | null;
   /** A local row with empty runs_on: every machine that has it arms it. */
   every_machine?: boolean;
 }
@@ -186,6 +189,8 @@ export interface AutomationSummary {
   place?: AutomationPlace;
   /** The agent a run_agent row runs (`agent-<uuid>`), else null. */
   agent_type_id?: string | null;
+  /** What the rule belongs to — an agent's own schedule names that agent. */
+  parent_type_id?: string | null;
   /** Which store the row lives in; absent = local. */
   source?: AutomationSource;
 }

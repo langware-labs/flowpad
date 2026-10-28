@@ -9,7 +9,7 @@ import pytest
 
 from flow_sdk.automations import overview as overview_mod
 from flow_sdk.automations.describe import describe_then
-from flow_sdk.automations.overview import CloudWarning, agent_of, cloud_rows, overview_with_cloud, place_of
+from flow_sdk.automations.overview import agent_of, cloud_rows, overview_with_cloud, place_of
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from tests.pytest_plugin import async_context
@@ -34,7 +34,8 @@ def test_a_rule_pinned_to_this_machine_is_local():
 def test_a_rule_pinned_to_a_cloud_machine_names_it():
     box = SimpleNamespace(is_local=False, name="gtm box")
     place = place_of(rule(TriggerType.SCHEDULE, runs_on="dep-box"), {"dep-box": box})
-    assert place.kind == "cloud_machine" and place.label == "Cloud · gtm box" and place.deployment_id == "dep-box"
+    assert place.kind == "cloud_machine" and place.label == "Cloud · gtm box"
+    assert place.deployment_id == "dep-box" and place.deployment_name == "gtm box"
 
 
 def test_a_machine_unknown_here_is_another_machine():
@@ -69,7 +70,7 @@ async def test_an_agents_own_schedule_says_which_agent_it_runs():
 @async_context
 async def test_a_local_instance_never_asks_the_cloud(monkeypatch):
     monkeypatch.setattr("flow_sdk.instance_settings.privacy_mode.is_local_mode", lambda: True)
-    assert await cloud_rows() == []
+    assert await cloud_rows() == ([], None)
 
 
 @async_context
@@ -77,9 +78,8 @@ async def test_signed_out_the_list_is_this_machines_and_says_why(monkeypatch):
     monkeypatch.setattr("flow_sdk.instance_settings.privacy_mode.is_local_mode", lambda: False)
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda: False)
     monkeypatch.setattr(overview_mod, "_cloud_cache", None)
-    with pytest.raises(CloudWarning) as caught:
-        await cloud_rows()
-    assert caught.value.code == "CLOUD_SIGNED_OUT"
+    rows, warning = await cloud_rows()
+    assert rows == [] and warning.code == "CLOUD_SIGNED_OUT"
     rows, warning = await overview_with_cloud()
     assert warning is not None and warning.code == "CLOUD_SIGNED_OUT"
     assert all(r.source == "local" for r in rows)

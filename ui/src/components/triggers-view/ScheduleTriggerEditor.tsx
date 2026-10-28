@@ -76,7 +76,7 @@ function AgentScheduleDetail({ trigger, agentTypeId }: { trigger: Trigger; agent
         </div>
         <div className="flex items-center gap-2" data-testid="agent-schedule-detail-place">
           <PlaceBadge
-            place={automation ? placeOf(automation) : { kind: 'local', label: 'This computer', every_machine: !trigger.runs_on }}
+            place={automation ? placeOf(automation) : { kind: 'local', every_machine: !trigger.runs_on }}
             className="text-sm text-foreground"
           />
           <span className="text-xs text-muted-foreground">

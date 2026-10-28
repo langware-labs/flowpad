@@ -62,13 +62,10 @@ export interface ListPage {
 /**
  * The unwrap keeps a paged answer's `has_more` / `next_offset` / `next_cursor` on the list it returns — as
  * non-enumerable properties, so the rows still spread, map and serialize as a plain array. An unpaged
- * answer has no `has_more`, and its list gets nothing. A list answer's envelope `warnings` ride along the same way.
+ * answer has no `has_more`, and its list gets nothing.
  */
 export function withPage<T>(data: T, envelope: unknown): T {
-  const meta = envelope as (Partial<ListPage> & { warnings?: ApiWarning[] }) | null | undefined;
-  if (Array.isArray(data) && meta?.warnings?.length) {
-    Object.defineProperty(data, 'warnings', { value: meta.warnings, enumerable: false, configurable: true });
-  }
+  const meta = envelope as Partial<ListPage> | null | undefined;
   if (!Array.isArray(data) || typeof meta?.has_more !== 'boolean') return data;
   Object.defineProperty(data, 'has_more', { value: meta.has_more, enumerable: false, configurable: true });
   Object.defineProperty(data, 'next_offset', { value: meta.next_offset, enumerable: false, configurable: true });
@@ -78,12 +75,6 @@ export function withPage<T>(data: T, envelope: unknown): T {
     configurable: true,
   });
   return data;
-}
-
-/** The envelope's `warnings` a list answer carried (kept by {@link withPage}); empty when none. */
-export function warningsOf(rows: unknown): ApiWarning[] {
-  const meta = rows as { warnings?: ApiWarning[] } | null | undefined;
-  return Array.isArray(rows) && Array.isArray(meta?.warnings) ? meta.warnings : [];
 }
 
 /** The page a list answer carried, or undefined for an unpaged one. */
@@ -206,6 +197,8 @@ function initApiClient(client: ApiAxiosInstance) {
           warnings.map((w) => `${w.error_code}: ${w.message}`).join('; '),
         );
       }
+      // A caller that reads the warnings itself (`DataManager.callActionWithWarnings`) gets the envelope.
+      if ((response.config as { keepEnvelope?: boolean } | undefined)?.keepEnvelope) return response.data;
       return withPage(response.data.data, response.data);
     },
     (error) => {

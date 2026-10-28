@@ -1,8 +1,9 @@
 import type { AgentPlace } from '@sdk';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { useId } from 'react';
 
 import { isMove, runsOnKey, type RunsOn } from './runs-on';
+import { usePlaceBadge } from './use-place-display';
 
 export { isMove, runsOnKey, runsOnOf, type RunsOn } from './runs-on';
 
@@ -22,7 +23,7 @@ interface RunsOnPickerProps {
 }
 
 export function RunsOnPicker({ value, onChange, places, cloudAllowed, saved, disabled }: RunsOnPickerProps) {
-  const { t } = useLingui();
+  const badge = usePlaceBadge(places);
   const id = useId();
   const local = places.find((p) => p.is_local);
   const machines = places.filter((p) => !p.is_local);
@@ -45,13 +46,13 @@ export function RunsOnPicker({ value, onChange, places, cloudAllowed, saved, dis
         data-testid="runs-on-picker"
         className="h-7 rounded border bg-background px-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       >
-        <option value={LOCAL}>{t`This computer`}</option>
+        <option value={LOCAL}>{badge({ kind: 'local' }).label}</option>
         {machines.map((p) => (
           <option key={p.deployment.id} value={`deployment:${p.deployment.id}`}>
-            {t`Cloud · ${p.deployment.name}`}
+            {badge({ kind: 'cloud_machine', deployment_id: p.deployment.id }).label}
           </option>
         ))}
-        {(cloudAllowed || value.kind === 'hub') && <option value={HUB}>{t`Flowpad cloud`}</option>}
+        {(cloudAllowed || value.kind === 'hub') && <option value={HUB}>{badge({ kind: 'hub' }).label}</option>}
       </select>
       {!cloudAllowed && value.kind !== 'hub' && (
         <p className="text-[11px] text-muted-foreground" data-testid="runs-on-cloud-hint">

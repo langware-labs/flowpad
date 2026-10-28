@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { CalendarClock, Plus } from 'lucide-react';
-import { Agent, Trigger, type AgentPlace, type TypeId } from '@sdk';
+import { Agent, Trigger, placeOf, type AgentPlace, type TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { describeSchedule } from '@src/components/cron-view/describe-schedule';
 import {
   AgentScheduleSection,
+  scheduleOf,
   useAgentSchedules,
   useScheduleLabels,
 } from '@src/components/assets/editor/agent-profile/AgentScheduleSection';
@@ -25,13 +26,13 @@ import { Empty, IconButton, ResourceRow } from './parts';
 export function AgentSchedulesSection({ agentTypeId }: { agentTypeId: TypeId }) {
   const { t } = useLingui();
   const display = usePlaceDisplay();
-  const badge = usePlaceBadge();
   const { navigation, currentDock } = useDockNavigation();
   const { data: agent } = useEntity<Agent>(agentTypeId);
   const { places: loaded } = useAgentPlaces(agent);
   const places: AgentPlace[] = loaded ?? [];
+  const badge = usePlaceBadge(places);
   const [adding, setAdding] = useState(false);
-  const { schedules, isLoading } = useAgentSchedules(agentTypeId, places);
+  const { schedules, isLoading } = useAgentSchedules(agentTypeId);
   const labels = useScheduleLabels();
 
   const local = places.find((place) => place.is_local);
@@ -64,12 +65,13 @@ export function AgentSchedulesSection({ agentTypeId }: { agentTypeId: TypeId }) 
       >
         {schedules.map((row) => {
           const typeId = `${Trigger.type}-${row.id}`;
+          const when = scheduleOf(row);
           return (
             <ResourceRow
               key={row.id}
               icon={CalendarClock}
               label={row.name}
-              detail={[describeSchedule(row.expr, row.sched_trigger_type, row.timezone, labels), badge(row.place).label]
+              detail={[describeSchedule(when.expr, when.sched_trigger_type, when.timezone, labels), badge(placeOf(row)).label]
                 .filter(Boolean)
                 .join(' · ')}
               muted={!row.enabled}

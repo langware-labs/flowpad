@@ -8,7 +8,6 @@
  */
 import type {
   AutomationKind,
-  AutomationSummary,
   CloudSchedule,
   ITrigger,
   ScheduleWhen,
@@ -267,25 +266,4 @@ export function draftToCloudSchedule(
     project_id: options.projectId ?? null,
     enabled: d.enabled,
   };
-}
-
-/** A hub row as the Trigger fields the builder edits — the hub's row is read from the overview, not this
- *  machine's store. */
-export function triggerFromSummary(a: AutomationSummary): Partial<ITrigger> & { name: string } {
-  const schedule = a.when.schedule;
-  const run = a.then.find((p) => p.kind === 'run_agent');
-  return {
-    id: a.id,
-    name: a.name,
-    description: a.description,
-    trigger_type: 'schedule',
-    enabled: a.enabled,
-    expr: schedule?.expr,
-    sched_trigger_type: (schedule?.sched_type as ITrigger['sched_trigger_type']) ?? 'cron',
-    timezone: schedule?.timezone ?? null,
-    project_id: a.project_id ?? null,
-    actions: run
-      ? [{ action_type: 'run_agent', target_type_id: run.target ?? a.agent_type_id ?? null, prompt: run.prompt ?? '' }]
-      : [],
-  } as Partial<ITrigger> & { name: string };
 }

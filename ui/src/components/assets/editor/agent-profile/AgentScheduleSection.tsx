@@ -1,15 +1,11 @@
 import {
   Agent,
-  QueryRequest,
   Trigger,
-  placeOf as placeOfSummary,
-  type AgentPlace,
-  type AutomationPlace,
+  placeOf,
   type AutomationSummary,
   type TypeId,
 } from '@sdk';
 import type { AgentScheduleFields } from '@sdk/entities/agent';
-import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
@@ -45,104 +41,43 @@ interface AgentScheduleSectionProps {
   onHub?: boolean;
 }
 
-/**
- * One schedule that runs this agent, wherever it lives: a child trigger of the agent (`owned`, written through
- * the agent's schedule verbs), another of this machine's triggers that runs it, or a hub trigger (`source`
- * `hub`, acted on with `hubReflect`).
- */
-export interface AgentScheduleRow {
-  id: string;
-  name: string;
-  description?: string;
-  enabled: boolean;
-  expr?: string;
-  sched_trigger_type?: string | null;
-  timezone?: string | null;
-  prompt: string;
-  runs_on?: string | null;
-  next_run?: string | Date | null;
-  last_run?: string | Date | null;
-  counter: number;
-  place: AutomationPlace;
-  source: 'local' | 'hub';
-  owned: boolean;
-}
-
 type ScheduleKind = NonNullable<AgentScheduleFields['every']>;
 
-/** The prompt a schedule runs with — on its `run_agent` action. Read off the
- *  plain row so it works on any shape the query hands back. */
-function promptOf(row: Pick<Trigger, 'actions'>): string {
-  return (row.actions ?? []).find((a) => a.action_type === 'run_agent')?.prompt ?? '';
-}
-
-/** Where a row of this machine's store runs, read against the agent's places when the overview has not said. */
-function localPlace(runsOn: string | null | undefined, places: AgentPlace[]): AutomationPlace {
-  if (!runsOn) return { kind: 'local', label: 'This computer', every_machine: true };
-  const place = places.find((p) => p.deployment.id === runsOn);
-  if (place && !place.is_local)
-    return { kind: 'cloud_machine', label: `Cloud · ${place.deployment.name}`, deployment_id: runsOn };
-  return { kind: 'local', label: 'This computer', deployment_id: runsOn };
-}
-
-function fromTrigger(row: Trigger, place: AutomationPlace): AgentScheduleRow {
+/** An overview schedule row's timing and prompt — what the list and the form show. */
+export function scheduleOf(row: AutomationSummary) {
+  const schedule = row.when.schedule;
   return {
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    enabled: row.enabled,
-    expr: row.expr,
-    sched_trigger_type: row.sched_trigger_type,
-    timezone: row.timezone,
-    prompt: promptOf(row),
-    runs_on: row.runs_on,
-    next_run: row.next_run ?? null,
-    last_run: row.last_run ?? null,
-    counter: row.counter ?? 0,
-    place,
-    source: 'local',
-    owned: true,
-  };
-}
-
-function fromSummary(a: AutomationSummary): AgentScheduleRow {
-  const schedule = a.when.schedule;
-  const place = placeOfSummary(a);
-  return {
-    id: a.id,
-    name: a.name,
-    description: a.description,
-    enabled: a.enabled,
     expr: schedule?.expr,
     sched_trigger_type: schedule?.sched_type ?? 'cron',
     timezone: schedule?.timezone ?? null,
-    prompt: a.then.find((p) => p.kind === 'run_agent')?.prompt ?? '',
-    runs_on: place.deployment_id ?? null,
-    next_run: a.next_run ?? null,
-    last_run: a.last_run?.ts ?? null,
-    counter: a.fires ?? 0,
-    place,
-    source: a.source === 'hub' ? 'hub' : 'local',
-    owned: false,
+    prompt: row.then.find((p) => p.kind === 'run_agent')?.prompt ?? '',
   };
 }
 
+/** The agent's own schedule is written through the agent's schedule verbs (the document is the source
+ *  of truth); any other row through the Trigger SDK. */
+function isOwnedBy(agent: Agent, row: AutomationSummary): boolean {
+  return row.source !== 'hub' && row.parent_type_id === agent.typeId.toString();
+}
+
 /** The place a row is on, as the picker's choice. */
-function runsOnOfRow(row: AgentScheduleRow): RunsOn {
+function runsOnOfRow(row: AutomationSummary): RunsOn {
+  const place = placeOf(row);
   if (row.source === 'hub') return { kind: 'hub' };
-  if (row.place.kind === 'cloud_machine' && row.runs_on) return { kind: 'cloud_machine', deploymentId: row.runs_on };
-  return { kind: 'local', deploymentId: row.runs_on ?? null };
+  if (place.kind === 'cloud_machine' && place.deployment_id) return { kind: 'cloud_machine', deploymentId: place.deployment_id };
+  return { kind: 'local', deploymentId: place.deployment_id ?? null };
 }
 
 /**
  * Scheduled runs of this agent.
  *
- * Each schedule is a CHILD TRIGGER ASSET under the agent's folder
- * (`agentic-assets/trigger/<slug>/trigger.json`), so the list is a query over
- * containment — the same `parent_type_id` the indexer stamps for a wizard's
- * triggers — and a schedule travels with the agent wherever it is indexed.
- * Writes go through the agent's schedule verbs, never a trigger row PATCH: the
- * document is the source of truth and a row edit would be reverted on re-index.
+ * The list is the overview's schedule rows that run this agent, on this list's place. A schedule
+ * made here is a CHILD TRIGGER ASSET under the agent's folder
+ * (`agentic-assets/trigger/<slug>/trigger.json`), so it travels with the agent
+ * wherever it is indexed; its writes go through the agent's schedule verbs, never
+ * a trigger row PATCH: the document is the source of truth and a row edit would be
+ * reverted on re-index. Every other row (a hub one among them) is written through
+ * the Trigger SDK, which routes it by id.
  */
 export function AgentScheduleSection({
   agent,
@@ -157,7 +92,7 @@ export function AgentScheduleSection({
   const projectId = useContext().project?.id ?? null;
   const { places: loadedPlaces } = useAgentPlaces(agent);
   const places = useMemo(() => loadedPlaces ?? [], [loadedPlaces]);
-  const [editing, setEditing] = useState<AgentScheduleRow | 'new' | null>(null);
+  const [editing, setEditing] = useState<AutomationSummary | 'new' | null>(null);
   const [prompt, setPrompt] = useState('');
   // The list's own place: where a new schedule goes unless another is picked.
   const listPlace = useMemo<RunsOn>(
@@ -174,14 +109,14 @@ export function AgentScheduleSection({
   // The author's zone: "daily at 09:00" must mean their 09:00 on a sandbox too.
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
-  const { schedules: allSchedules, refetch } = useAgentSchedules(agent.typeId, places);
+  const { schedules: allSchedules, refetch } = useAgentSchedules(agent.typeId);
   const schedules = useMemo(
     () =>
-      allSchedules.filter((row) =>
-        onHub
-          ? row.source === 'hub'
-          : row.source === 'local' && (row.runs_on === deploymentId || (!row.runs_on && isLocal)),
-      ),
+      allSchedules.filter((row) => {
+        if (onHub) return row.source === 'hub';
+        const runsOn = placeOf(row).deployment_id;
+        return row.source !== 'hub' && (runsOn === deploymentId || (!runsOn && isLocal));
+      }),
     [allSchedules, deploymentId, isLocal, onHub],
   );
 
@@ -198,16 +133,16 @@ export function AgentScheduleSection({
     setEditing('new');
   };
 
-  const startEdit = (row: AgentScheduleRow) => {
-    setPrompt(row.prompt);
+  const startEdit = (row: AutomationSummary) => {
+    setPrompt(scheduleOf(row).prompt);
     setRunsOn(runsOnOfRow(row));
     setEditing(row);
   };
 
   /** Remove a row from the store it lives in. */
-  const removeRow = async (row: AgentScheduleRow) => {
-    if (row.owned) await agent.removeSchedule(row.id);
-    else await Trigger.remove(row.id, { hubReflect: row.source === 'hub' });
+  const removeRow = async (row: AutomationSummary) => {
+    if (isOwnedBy(agent, row)) await agent.removeSchedule(row.id);
+    else await Trigger.remove(row.id);
   };
 
   const submit = async (data: Partial<ScheduleFormValue>) => {
@@ -251,11 +186,11 @@ export function AgentScheduleSection({
           project_id: projectId,
           enabled: fields.enabled,
         };
-        if (row && !moving) await Trigger.updateAutomation(row.id, Trigger.cloudScheduleFields(cloud), { hubReflect: true });
+        if (row && !moving) await Trigger.updateAutomation(row.id, Trigger.cloudScheduleFields(cloud));
         else await Trigger.createOnCloud(cloud);
       } else if (!row || moving) {
         await agent.addSchedule(fields);
-      } else if (row.owned) {
+      } else if (isOwnedBy(agent, row)) {
         await agent.updateSchedule(row.id, fields);
         Trigger.markEditById(row.id);
       } else {
@@ -280,14 +215,14 @@ export function AgentScheduleSection({
     }
   };
 
-  const setEnabled = async (row: AgentScheduleRow, enabled: boolean) => {
+  const setEnabled = async (row: AutomationSummary, enabled: boolean) => {
     setBusy(row.id);
     try {
-      if (row.owned) {
+      if (isOwnedBy(agent, row)) {
         await agent.updateSchedule(row.id, { enabled });
         Trigger.markEditById(row.id);
       } else {
-        await Trigger.setEnabled(row.id, enabled, { hubReflect: row.source === 'hub' });
+        await Trigger.setEnabled(row.id, enabled);
       }
       await refetch();
     } catch (e) {
@@ -297,13 +232,13 @@ export function AgentScheduleSection({
     }
   };
 
-  const runNow = async (row: AgentScheduleRow) => {
+  const runNow = async (row: AutomationSummary) => {
     setBusy(row.id);
     try {
-      // A hub schedule fires on the hub; a cloud place's fires on THAT machine, which only the hub can reach.
-      if (row.source === 'hub') await Trigger.fire(row.id);
-      else if (!isLocal) await agent.placeAction(deploymentId, 'run_now', row.id);
-      else await Trigger.runOnce(row.id);
+      // A cloud machine's schedule runs on THAT machine, which only the hub can reach; any other row is the
+      // overview's *Run now* (the hub's fire for a hub row).
+      if (!onHub && !isLocal) await agent.placeAction(deploymentId, 'run_now', row.id);
+      else await Trigger.runNow(row);
       notify.success({ title: t`Scheduled run started`, message: row.name });
       await refetch();
     } catch (e) {
@@ -313,7 +248,7 @@ export function AgentScheduleSection({
     }
   };
 
-  const remove = (row: AgentScheduleRow) => {
+  const remove = (row: AutomationSummary) => {
     showDeleteAssetModal({
       name: row.name,
       description: t`This removes the schedule from the agent. Past runs stay in the run history.`,
@@ -330,12 +265,13 @@ export function AgentScheduleSection({
   };
 
   // URL-first: a click only navigates — to the automation's own page.
-  const openTrigger = (row: AgentScheduleRow) => navigation.openDock(DockPointer.forAutomations({ trigger: row.id }));
+  const openTrigger = (row: AutomationSummary) => navigation.openDock(DockPointer.forAutomations({ trigger: row.id }));
 
-  const openRuns = (row: AgentScheduleRow) => navigation.openDock(DockPointer.forProcessRuns({ trigger_id: row.id }));
+  const openRuns = (row: AutomationSummary) => navigation.openDock(DockPointer.forProcessRuns({ trigger_id: row.id }));
 
   if (editing) {
     const row = editing === 'new' ? null : editing;
+    const saved = row ? scheduleOf(row) : null;
     return (
       <section data-testid="agent-schedule-form" className="rounded-md border">
         <div className="flex flex-col gap-1 px-4 pt-3">
@@ -361,13 +297,13 @@ export function AgentScheduleSection({
         </div>
         <CronForm
           initial={
-            row
+            row && saved
               ? {
                   name: row.name,
                   description: row.description,
-                  expr: row.expr ?? '',
-                  trigger_type: row.sched_trigger_type ?? 'cron',
-                  timezone: row.timezone ?? undefined,
+                  expr: saved.expr ?? '',
+                  trigger_type: saved.sched_trigger_type,
+                  timezone: saved.timezone ?? undefined,
                   enabled: row.enabled,
                 }
               : {}
@@ -394,11 +330,12 @@ export function AgentScheduleSection({
         ) : (
           schedules.map((row, index) => {
             const rowBusy = busy === row.id;
+            const when = scheduleOf(row);
             return (
               <div key={row.id} className="rounded-md border p-2 text-sm" data-testid={`agent-schedule-${index}`}>
                 <div className="flex items-center gap-2">
                   <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <PlaceBadge place={row.place} className="text-[10px]" testId={`agent-schedule-place-${index}`} />
+                  <PlaceBadge place={placeOf(row)} places={places} className="text-[10px]" testId={`agent-schedule-place-${index}`} />
                   <button
                     type="button"
                     className="min-w-0 flex-1 truncate text-start font-medium hover:underline"
@@ -417,18 +354,18 @@ export function AgentScheduleSection({
                   />
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground" data-testid={`agent-schedule-when-${index}`}>
-                  {describeSchedule(row.expr, row.sched_trigger_type, row.timezone, labels)}
+                  {describeSchedule(when.expr, when.sched_trigger_type, when.timezone, labels)}
                 </div>
-                <div className="mt-0.5 truncate text-xs" title={row.prompt}>
-                  {row.prompt}
+                <div className="mt-0.5 truncate text-xs" title={when.prompt}>
+                  {when.prompt}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted-foreground" data-testid={`agent-schedule-status-${index}`}>
                   {/* A spent one-shot keeps its old `next_run`; only a future run is "next". */}
                   {row.enabled && row.next_run && new Date(row.next_run).getTime() > Date.now() ? (
                     <span>{t`next ${new Date(row.next_run).toLocaleString()}`}</span>
                   ) : null}
-                  {row.last_run ? <span>{t`last ${new Date(row.last_run).toLocaleString()}`}</span> : null}
-                  <span>{row.counter ? t`ran ${row.counter}×` : t`not run yet`}</span>
+                  {row.last_run?.ts ? <span>{t`last ${new Date(row.last_run.ts).toLocaleString()}`}</span> : null}
+                  <span>{row.fires ? t`ran ${row.fires}×` : t`not run yet`}</span>
                 </div>
                 <div className="mt-1 flex items-center gap-1">
                   {/* A disabled trigger's fire is a no-op — offering Run now would toast a run that never starts. */}
@@ -473,42 +410,20 @@ export function AgentScheduleSection({
   );
 }
 
-/**
- * Every schedule that runs this agent, on any place: its child triggers (one named query shared by its
- * readers) and every other overview row whose `agent_type_id` is this agent — the hub's among them.
- * `places` names the cloud machines of a child row the overview has not placed yet.
- */
-export function useAgentSchedules(agentTypeId: TypeId, places: AgentPlace[] = []) {
-  const request = useMemo(
-    () =>
-      new QueryRequest({
-        type: Trigger.type,
-        scope: [],
-        // `query`, not `match` — see AgentDeploymentsSection.
-        query: { parent_type_id: agentTypeId.toString() },
-        name: 'agentSchedules',
-      }),
-    [agentTypeId],
-  );
-  const { data: rows = [], isLoading, refetch: refetchOwn } = useEntitiesQuery<Trigger>(request);
-  const { data: overview = [] } = useAutomations({ poll: false });
+/** Every schedule that runs this agent, on any place — the overview's schedule rows whose `agent_type_id` is
+ *  this agent (each carries its place and source; the hub's are among them). */
+export function useAgentSchedules(agentTypeId: TypeId) {
+  const { data: overview = [], isLoading } = useAutomations({ poll: false });
   const client = useQueryClient();
   const key = agentTypeId.toString();
-  const schedules = useMemo(() => {
-    const running = overview.filter((a) => a.kind === 'schedule' && a.agent_type_id === key);
-    const byId = new Map(running.map((a) => [a.id, a]));
-    const own = rows
-      .filter((row) => row.trigger_type === 'schedule')
-      .map((row) => {
-        const summary = byId.get(row.id);
-        return fromTrigger(row, summary?.place ?? localPlace(row.runs_on, places));
-      });
-    const ownIds = new Set(own.map((row) => row.id));
-    return [...own, ...running.filter((a) => !ownIds.has(a.id)).map(fromSummary)];
-  }, [rows, overview, key, places]);
-  const refetch = useCallback(async () => {
-    await Promise.all([refetchOwn(), client.invalidateQueries({ queryKey: ['automations', 'overview'] })]);
-  }, [refetchOwn, client]);
+  const schedules = useMemo(
+    () => overview.filter((a) => a.kind === 'schedule' && a.agent_type_id === key),
+    [overview, key],
+  );
+  const refetch = useCallback(
+    () => client.invalidateQueries({ queryKey: ['automations', 'overview'] }),
+    [client],
+  );
   return { schedules, isLoading, refetch };
 }
 

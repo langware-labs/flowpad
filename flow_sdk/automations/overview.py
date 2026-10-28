@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.automation_spec import (
@@ -92,25 +93,19 @@ def place_of(trigger: Any, deployments: dict[str, Any]) -> AutomationPlace:
         return AutomationPlace(kind="local", label=LOCAL_PLACE.label, every_machine=True)
     deployment = deployments.get(runs_on)
     if deployment is not None and getattr(deployment, "is_local", False):
-        return AutomationPlace(kind="local", label=LOCAL_PLACE.label, deployment_id=runs_on)
-    name = getattr(deployment, "name", None) or "another machine"
-    return AutomationPlace(kind="cloud_machine", label=f"Cloud · {name}", deployment_id=runs_on)
+        return AutomationPlace(kind="local", label=LOCAL_PLACE.label, deployment_id=runs_on,
+                               deployment_name=getattr(deployment, "name", None) or None)
+    name = getattr(deployment, "name", None) or None
+    return AutomationPlace(kind="cloud_machine", label=f"Cloud · {name or 'another machine'}",
+                           deployment_id=runs_on, deployment_name=name)
 
 
 async def deployments_named_by(triggers: list[Any]) -> dict[str, Any]:
     """The Deployment rows the rules' ``runs_on`` name, read together; an unknown id is left out."""
-    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.builtin.trigger_arming import deployment_named  # noqa: PLC0415
 
     ids = sorted({str(t.runs_on) for t in triggers if getattr(t, "runs_on", None)})
-
-    async def one(deployment_id: str) -> Any:
-        try:
-            return await Deployment.get_by_id(deployment_id)
-        except Exception:  # noqa: BLE001 — unresolvable is "another machine", never an error
-            logger.debug("runs_on %s unresolvable", deployment_id, exc_info=True)
-            return None
-
-    found = await asyncio.gather(*(one(i) for i in ids))
+    found = await asyncio.gather(*(deployment_named(i) for i in ids))
     return {i: d for i, d in zip(ids, found) if d is not None}
 
 
@@ -153,6 +148,7 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
         asset_ref=trigger.asset_ref or None,
         place=place,
         agent_type_id=agent_of(trigger),
+        parent_type_id=str(trigger.parent_type_id) if getattr(trigger, "parent_type_id", None) else None,
     )
 
 
@@ -171,10 +167,12 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
     names = _Names()
     # Every agent a `then` names, resolved together once: the per-rule sentences below then read the
     # names from memory instead of one lookup after another.
-    agents = {((t.then or {}).get("run_agent") or {}).get("agent") for t in triggers}
-    await asyncio.gather(*(names.name(agent) for agent in agents if agent))
-    flows = await workflows_by_trigger()
-    deployments = await deployments_named_by(triggers)
+    agents = {agent_of(t) for t in triggers}
+    _, flows, deployments = await asyncio.gather(
+        asyncio.gather(*(names.name(agent) for agent in agents if agent)),
+        workflows_by_trigger(),
+        deployments_named_by(triggers),
+    )
     folded = [(trigger, fold(rows.rows_for(str(trigger.id), trigger.name), catalog)) for trigger in triggers]
     # Every automation's newest run asks its agent run how it ended — together.
     lasts = await join_processes([runs[0] for _, runs in folded if runs])
@@ -192,64 +190,70 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
 
 # ── The Flowpad cloud's automations ───────────────────────────────────────────
 
-#: How long the hub's list is reused between polls (the screen polls every few seconds).
+#: How long the hub's answer (rows or why there are none) is reused between polls.
 CLOUD_TTL_S = 15.0
-_cloud_cache: tuple[float, list[AutomationSummary]] | None = None
 
 
-class CloudWarning(Exception):
+@dataclass(frozen=True)
+class CloudWarning:
     """Why the cloud's automations are not in the list: ``code`` is CLOUD_SIGNED_OUT or CLOUD_UNAVAILABLE."""
 
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-        self.message = message
+    code: str
+    message: str
 
 
-async def cloud_rows() -> list[AutomationSummary]:
-    """The hub's automations (``GET trigger/overview``), or ``[]`` when this instance stays local.
+CloudAnswer = tuple[list[AutomationSummary], Optional[CloudWarning]]
+_cloud_cache: tuple[float, CloudAnswer] | None = None
+_cloud_inflight: Optional[asyncio.Task] = None
 
-    Raises ``CloudWarning`` when they should be shown but cannot be: signed out, offline, or a hub
-    that does not list automations yet."""
-    global _cloud_cache
-    from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+
+async def _fetch_cloud() -> CloudAnswer:
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.instance_settings.privacy_mode import is_local_mode  # noqa: PLC0415
     from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
-    if is_local_mode():
-        return []
-    if not hub_auth_available():
-        raise CloudWarning("CLOUD_SIGNED_OUT", "Sign in to Flowpad to see the automations that run in the cloud.")
-    if _cloud_cache and time.monotonic() - _cloud_cache[0] < CLOUD_TTL_S:
-        return _cloud_cache[1]
     try:
         data = await HubProxy.call("GET", "trigger", action="overview")
     except HubError as e:
         if e.kind is HubFailureKind.NOT_CONFIGURED:
-            return []
+            return [], None
         if e.kind is HubFailureKind.SIGNED_OUT:
-            raise CloudWarning("CLOUD_SIGNED_OUT", e.user_message()) from e
+            return [], CloudWarning("CLOUD_SIGNED_OUT", e.user_message())
         if e.status_code == 404:
-            raise CloudWarning("CLOUD_UNAVAILABLE", "The Flowpad cloud does not list automations yet.") from e
-        raise CloudWarning("CLOUD_UNAVAILABLE", e.user_message()) from e
+            return [], CloudWarning("CLOUD_UNAVAILABLE", "The Flowpad cloud does not list automations yet.")
+        return [], CloudWarning("CLOUD_UNAVAILABLE", e.user_message())
     rows: list[AutomationSummary] = []
     for raw in data if isinstance(data, list) else []:
         try:
             rows.append(AutomationSummary.model_validate({**raw, "source": "hub"}))
         except Exception:  # noqa: BLE001 — one unreadable row is left out, never the list
             logger.warning("cloud automation row unreadable: %r", (raw or {}).get("id"), exc_info=True)
-    _cloud_cache = (time.monotonic(), rows)
-    return rows
-
-
-async def overview_with_cloud(*, include_inactive: bool = False) -> tuple[list[AutomationSummary], Optional[CloudWarning]]:
-    """This machine's automations and the cloud's, by name; the warning says why the cloud's are missing."""
-    local = await overview(include_inactive=include_inactive)
-    try:
-        cloud = await cloud_rows()
-    except CloudWarning as warning:
-        return local, warning
-    rows = sorted([*local, *cloud], key=lambda s: (s.name.casefold(), s.id))
     return rows, None
+
+
+async def cloud_rows() -> CloudAnswer:
+    """The hub's automations (``GET trigger/overview``) and, when they should be shown but cannot be,
+    why. A local instance never asks. One hub call at a time; its answer, good or bad, is reused for
+    ``CLOUD_TTL_S`` so a poll never waits on an offline hub again and again."""
+    global _cloud_cache, _cloud_inflight
+    from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+    from flow_sdk.instance_settings.privacy_mode import is_local_mode  # noqa: PLC0415
+
+    if is_local_mode():
+        return [], None
+    if not hub_auth_available():
+        return [], CloudWarning("CLOUD_SIGNED_OUT", "Sign in to Flowpad to see the automations that run in the cloud.")
+    if _cloud_cache and time.monotonic() - _cloud_cache[0] < CLOUD_TTL_S:
+        return _cloud_cache[1]
+    if _cloud_inflight is None or _cloud_inflight.done():
+        _cloud_inflight = asyncio.ensure_future(_fetch_cloud())
+    answer = await asyncio.shield(_cloud_inflight)
+    _cloud_cache = (time.monotonic(), answer)
+    return answer
+
+
+async def overview_with_cloud(*, include_inactive: bool = False) -> CloudAnswer:
+    """This machine's automations and the cloud's, by name; the warning says why the cloud's are missing."""
+    local, (cloud, warning) = await asyncio.gather(overview(include_inactive=include_inactive), cloud_rows())
+    rows = [*local, *cloud] if cloud else local
+    return sorted(rows, key=lambda s: (s.name.casefold(), s.id)), warning

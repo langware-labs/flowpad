@@ -203,8 +203,9 @@ class AutomationPlace(DataSpec):
     kind: PlaceKind
     #: "This computer", "Cloud · <machine>" or "Flowpad cloud".
     label: str
-    #: The Deployment it is pinned to (``runs_on``), when it is.
+    #: The Deployment it is pinned to (``runs_on``), when it is, and that machine's name.
     deployment_id: Optional[str] = None
+    deployment_name: Optional[str] = None
     #: Pinned to no machine: every machine that has the rule arms it.
     every_machine: bool = False
 
@@ -247,6 +248,8 @@ class AutomationSummary(DataSpec):
     place: AutomationPlace = LOCAL_PLACE
     #: The agent it runs: the ``run_agent`` target, else the agent the rule belongs to.
     agent_type_id: Optional[str] = None
+    #: What the rule belongs to (an agent's own schedule: that agent), when anything.
+    parent_type_id: Optional[str] = None
     source: AutomationSource = "local"
 
 
