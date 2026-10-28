@@ -138,7 +138,7 @@ def test_a_gate_refusal_is_named_rather_than_quoted():
 
 
 def test_an_action_403_is_not_mistaken_for_the_gate():
-    """Actions refuse with a JSON envelope (`share_action`, `cron_event`). Those
+    """Actions refuse with a JSON envelope (e.g. `share_action`). Those
     are the caller's problem to report, not a gate diagnosis."""
     message = _common.bad_response_message(_Resp(403, text='{"message": "local mode"}'))
 

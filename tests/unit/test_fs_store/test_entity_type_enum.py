@@ -138,7 +138,6 @@ EXPECTED = {
     "AGENT_HOOK": "agent_hook",
     "TRIGGER": "trigger",
     "PROCESS_RESULT": "process_result",
-    "CRON_EVENT": "cron_event",
     "FLOW_MESSAGE": "flow_message",
     # Staged bundle attachment awaiting explicit install (DB-only entity).
     "MESSAGE_ATTACHMENT": "message_attachment",
