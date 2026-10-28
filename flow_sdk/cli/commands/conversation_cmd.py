@@ -361,7 +361,10 @@ def send_message(
     ] = None,
     session: Annotated[
         Optional[str],
-        typer.Option("--session", help="Live-session id (remote_worker_session) to send into."),
+        typer.Option(
+            "--session",
+            help="Live-session id (remote_worker_session) to send into. Needs --prompt: a session runs prompts.",
+        ),
     ] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
@@ -374,6 +377,9 @@ def send_message(
     if prompt and prompt.strip():
         body["prompt_text"] = prompt
     if session:
+        # Without a prompt the host's machine gets a chat line and runs nothing.
+        if not (prompt and prompt.strip()):
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--session needs --prompt: the text alone is not run")
         body["remote_worker_session_id"] = session.strip()
     data = _post_json(
         _add_message_url(port, cid),
@@ -395,7 +401,8 @@ def _signed_in() -> bool:
     help=(
         "Start a live session on the other person's machine (they approve it), or show the one already "
         "open. Answers the session id and status; once it is past `pending`, send prompts with "
-        "`flow conversation send <id> <prompt> --session <session id>`. Run it again to re-check the status."
+        "`flow conversation send <id> \"<what they read>\" --prompt \"<what they run>\" --session <session id>`. "
+        "Run it again to re-check the status."
     ),
 )
 def start_live_session(

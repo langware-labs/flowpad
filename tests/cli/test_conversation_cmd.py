@@ -475,3 +475,11 @@ def test_live_session_refuses_an_unknown_reply_policy(conv_cli):
 def test_live_session_needs_someone_else_to_host_it(conv_cli, signed_in):
     result = conv_cli.invoke(["conversation", "live-session", conv_cli.conv_id])
     assert result.exit_code == 7 and "other participant" in result.output, result.output
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_send_into_a_session_refuses_text_without_a_prompt(conv_cli):
+    before = conv_cli.summary_text()
+    result = conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "run this", "--session", "any-session"])
+    assert result.exit_code == 2 and "--prompt" in result.output, result.output
+    assert conv_cli.summary_text() == before
