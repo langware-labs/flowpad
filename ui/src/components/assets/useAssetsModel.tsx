@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro';
 import { sectionRecordTypes } from './section-record-types';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
@@ -306,6 +306,14 @@ export function useAssetsModel() {
   // dependencies adapter so its nested per-type rows honor the same gate.
   const visibleTypeNameSet = useMemo(() => new Set(visibleTypeNames), [visibleTypeNames]);
   useAssetTreeRefresh(visibleTypeNames, effectiveFilter.scope);
+  // The Documents root lists vaults; when the list changes (it often arrives after
+  // the first render) re-list the root in place — its id is stable.
+  const markdownVaultsKey = (visibleTypes.find((t) => t.type_name === 'markdown')?.vaults ?? [])
+    .map((v) => v.absPath)
+    .join('|');
+  useEffect(() => {
+    refreshNode('asset-type:markdown');
+  }, [markdownVaultsKey]);
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
     [allTypes],

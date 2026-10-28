@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import type { Project, ProjectAssetMenu, ProjectMenuNode } from '@sdk';
+import { LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 
 /**
  * useProjectAssetMenu — the scoped project's Assets menu, computed server-side.
@@ -10,12 +12,13 @@ import type { Project, ProjectAssetMenu, ProjectMenuNode } from '@sdk';
  * folder that is itself a Project contributes its own dependencies too.
  *
  * Read-only: `get-assets` in menu mode mints nothing and indexes nothing, so
- * calling this can never change what it reports.
+ * calling this can never change what it reports. The shared read (and its
+ * refresh on a create / delete of a listed type) lives in the SDK lazy asset.
  *
- * Refetch is keyed on the project's `include_dirs` CONTENT, not its identity:
- * entity updates refill the SAME array instance (`store.deepAssign`), so an
- * identity dep would freeze this at the first (usually empty) snapshot — the
- * same race `useProjectDependencies` documents.
+ * Keyed on the project's `include_dirs` CONTENT, not its identity: entity
+ * updates refill the SAME array instance (`store.deepAssign`), so an identity
+ * key would freeze this at the first (usually empty) snapshot — the same race
+ * `useProjectDependencies` documents.
  */
 export function useProjectAssetMenu(project: Project | null | undefined): {
   menu: ProjectAssetMenu | null;
@@ -23,40 +26,16 @@ export function useProjectAssetMenu(project: Project | null | undefined): {
    *  building rows. Empty until the first response lands. */
   nodesByPath: Map<string, ProjectMenuNode>;
   isLoading: boolean;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<unknown>;
 } {
-  const [menu, setMenu] = useState<ProjectAssetMenu | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const projectRef = useRef<Project | null>(null);
-  projectRef.current = project ?? null;
-  // Discards a stale response when the project changes mid-flight (same
-  // tick-guard as useProcessAssets).
-  const tickRef = useRef(0);
-
-  const refresh = useCallback(async () => {
-    const p = projectRef.current;
-    const tick = ++tickRef.current;
-    if (!p) {
-      setMenu(null);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const next = await p.getAssetMenu();
-      if (tickRef.current === tick) setMenu(next);
-    } catch (err) {
-      console.error('[useProjectAssetMenu] failed', err);
-      if (tickRef.current === tick) setMenu(null);
-    } finally {
-      if (tickRef.current === tick) setIsLoading(false);
-    }
-  }, []);
-
-  const projectId = project?.id ?? null;
-  const contextDirsKey = JSON.stringify(project?.include_dirs ?? []);
-  useEffect(() => {
-    void refresh();
-  }, [projectId, contextDirsKey, refresh]);
+  const projectId = project?.id ?? '';
+  const contextDirs = JSON.stringify(project?.include_dirs ?? []);
+  const { data, isLoading, reload } = useLazyAsset(
+    LazyAsset.ProjectAssetMenu,
+    { projectId, contextDirs },
+    { enabled: !!projectId },
+  );
+  const menu = projectId ? (data ?? null) : null;
 
   const nodesByPath = useMemo(() => {
     const out = new Map<string, ProjectMenuNode>();
@@ -68,5 +47,5 @@ export function useProjectAssetMenu(project: Project | null | undefined): {
     return out;
   }, [menu]);
 
-  return { menu, nodesByPath, isLoading, refresh };
+  return { menu, nodesByPath, isLoading, refresh: reload };
 }

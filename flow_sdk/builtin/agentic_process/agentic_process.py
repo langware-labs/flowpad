@@ -203,6 +203,14 @@ def _iter_touched_paths(entries: "Iterable") -> "Iterator[str]":
                 yield p
 
 
+def _ran_shell_command(entries: "Iterable") -> bool:
+    """Whether a turn ran a shell command — the only way it removes a file unseen
+    (``rm``, ``mv``, ``git checkout``); Write/Edit entries name their paths."""
+    from flow_sdk.transcript_analyzer.entries.shell_command import ShellCommandEntry  # noqa: PLC0415
+
+    return any(isinstance(e, ShellCommandEntry) for e in entries)
+
+
 def _shell_compute_is_local(shell: "Shell") -> bool:
     from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
 
@@ -472,6 +480,9 @@ _LAST_BROADCAST_KEYS: dict[str, _BroadcastKey] = {}
 # every turn end rescanned the WHOLE session (prod 2026-09-20: 50,557 entries,
 # 511 paths re-indexed per turn, 9.6s).
 _REINDEX_WATERMARKS: dict[str, int] = {}
+# Whether the tail last read by ``_collect_touched_from_transcript_tail`` ran a
+# shell command — module-level for the same reason as the watermarks.
+_TAIL_RAN_SHELL: dict[str, bool] = {}
 
 # The debounce's own state, keyed by AP id, and module-level for exactly the
 # reason above: ``transcript_subscriber._route_to_ap`` resolves the AP per
@@ -512,6 +523,7 @@ def _release_process_transcript_state(process: "AgenticProcess") -> None:
     process._last_broadcast_key = None  # setter drops the row
     _PENDING_ENTRIES.pop(key, None)
     _REINDEX_WATERMARKS.pop(key, None)
+    _TAIL_RAN_SHELL.pop(key, None)
     _TRANSCRIPT_SIZE_AT_PROMPT.pop(key, None)
     forget_recovered(key)
     task = _DEBOUNCE_TASKS.pop(key, None)
@@ -8043,17 +8055,18 @@ class AgenticProcess(Entity):
         # fallback (including headless turns that do not populate this buffer).
         self._schedule_reindex_paths(touched, "flush")
 
-    def _schedule_reindex_paths(self, paths: "Iterable[str]", source: str) -> None:
+    def _schedule_reindex_paths(self, paths: "Iterable[str]", source: str, *, sweep_root: str | None = None) -> None:
         """Fire-and-forget one deduplicated reindex batch.
 
         Shared by live transcript flushes and the transport-wide turn-end
         fallback so reindex ownership does not split into parallel paths.
+        ``sweep_root`` also reaps rows under it whose file is gone (see ``_reindex_touched``).
         """
         unique = list(dict.fromkeys(path for path in paths if path))
-        if not unique:
+        if not unique and not sweep_root:
             return
         asyncio.create_task(
-            self._reindex_touched(unique),
+            self._reindex_touched(unique, sweep_root=sweep_root),
             name=f"ap-reindex-{source}-{self.id[:8]}",
         )
 
@@ -8068,11 +8081,13 @@ class AgenticProcess(Entity):
         ``data_op_msg`` (updated_date bump → frontend body re-read)."""
         try:
             touched = self._collect_touched_from_transcript_tail()
-            self._schedule_reindex_paths(touched, f"turn-end-{source}")
+            # Only a shell command can delete a file the transcript does not name.
+            sweep_root = self.workdir if _TAIL_RAN_SHELL.pop(str(self.id), False) else None
+            self._schedule_reindex_paths(touched, f"turn-end-{source}", sweep_root=sweep_root)
         except Exception:
             logger.debug("AP %s: turn-end reindex schedule failed [%s]", self.id, source, exc_info=True)
 
-    async def _reindex_touched(self, paths: list[str]) -> None:
+    async def _reindex_touched(self, paths: list[str], *, sweep_root: str | None = None) -> None:
         """Force-reindex the turn's touched files (fire-and-forget, off the turn
         path). Each resolves to its owning entity, re-parses from disk, and
         broadcasts a ``data_op_msg`` so watching clients refresh.
@@ -8088,10 +8103,11 @@ class AgenticProcess(Entity):
         # and the `finally` below formats `counts` on every exit.
         counts: object = "cancelled"
         try:
-            from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+            from flow_sdk.fs_store.reindex import reindex_paths, sources_gone_under  # noqa: PLC0415
 
+            gone = await sources_gone_under(sweep_root) if sweep_root else []
             # A session writes anywhere — scratch folders included — so only a placed file is minted.
-            result = await reindex_paths(paths, placed_only=True)
+            result = await reindex_paths(paths, gone, placed_only=True)
             counts = result.as_dict()["counts"]
             logger.debug(
                 "AP %s write reindex: %s (in=%d)",
@@ -8211,6 +8227,8 @@ class AgenticProcess(Entity):
         # — safer than re-scanning all, which would re-reindex the whole history.
         t_scan = time.monotonic()
         touched = list(_iter_touched_paths(entries[wm:]))
+        # Read by the turn-end caller: a shell command may have removed files no entry names.
+        _TAIL_RAN_SHELL[str(self.id)] = _ran_shell_command(entries[wm:])
         scan_ms = (time.monotonic() - t_scan) * 1000
         # Whole-transcript parse on the event loop at every turn end — a known
         # source of terminal-wide stalls. ``bytes`` is what the parse is linear
