@@ -242,7 +242,12 @@ function setupElectronAutoUpdater() {
     autoUpdater.on('update-downloaded', async (info) => {
       log.info(`[electron-updater] update downloaded: ${info.version}`);
       desktopDownloadedVersion = info.version;
-      sendDesktopUpdateState({ state: 'ready', version: info.version });
+      // The panel shows "ready" for a download it owns, or one downloaded quietly (deferred/"Later")
+      // — not while the native "Restart now" prompt is about to open for it (that prompt IS the
+      // ready surface; a second one in the panel just answered 'busy').
+      if (suppressDesktopRestartPrompt || panelDesktopVersion === info.version) {
+        sendDesktopUpdateState({ state: 'ready', version: info.version });
+      }
       if (suppressDesktopRestartPrompt) {
         // The user said "Later" at launch: no prompt now. The reminder offers it every 90 minutes
         // (shown right away only if a reminder already came due while the download was running), and
@@ -2371,7 +2376,7 @@ async function startApp() {
     rendererWatchdog.arm(); // the app UI is up: from now on, silence means hung
     if (resumedPanelUpdate) {
       // A panel-initiated coordinated update finished across the restart: tell the panel. The value is
-      // kept for 'update:get-info' too (one-shot there) in case the renderer mounted its listener late.
+      // kept for 'update:take-resumed' too (one-shot there): a renderer that mounted after this push pulls it.
       try { mainWindow.webContents.send('engine-update-resumed', resumedPanelUpdate); } catch { /* window going away */ }
     }
   });
@@ -2957,12 +2962,14 @@ async function desktopUpdateInfo() {
   return { installed: app.getVersion(), state, available, downloadState };
 }
 
-ipcMain.handle('update:get-info', async () => {
+ipcMain.handle('update:get-info', async (_event, opts) => {
   // Two independent sides, in parallel: serially every popover open paid the desktop feed check,
-  // then the PyPI document, then the wheel range read, end to end.
+  // then the PyPI document, then the wheel range read, end to end. `fresh` (the Upgrade click) skips
+  // the engine snapshot and PyPI's CDN — a release published a minute ago must shape the popup.
+  const fresh = !!(opts && opts.fresh);
   const [desktop, engine] = await Promise.all([
     desktopUpdateInfo(),
-    uvManager ? uvManager.engineUpdatePreflight() : null,
+    uvManager ? uvManager.engineUpdatePreflight({ fresh }) : null,
   ]);
   // Would the desktop on the feed satisfy the latest engine's floor? false → the popup must not
   // offer Update Both yet ("wait for the next desktop release" is the honest advice).

@@ -7,7 +7,7 @@
  *     an update postponed earlier with the native "Later"), Up to date when current;
  *   - without Electron the button keeps the browser path (POST /api/v1/version/install).
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), notifySuccess: vi.fn(), notifyError: vi.fn() }));
@@ -204,6 +204,25 @@ describe('the Desktop section row', () => {
     fireEvent.click(await screen.findByTestId('desktop-download-button'));
     await waitFor(() => expect(api.downloadDesktopUpdate).toHaveBeenCalledTimes(1));
     expect(api.updateBoth).not.toHaveBeenCalled(); // update:both would refuse (desktop-too-old)
+  });
+
+  it("a stale error push does not outlive the shell's idle snapshot", async () => {
+    let pushState: ((s: unknown) => void) | null = null;
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO), // downloadState idle, a build available
+      onDesktopUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        pushState = cb;
+        return () => {};
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    act(() => pushState?.({ state: 'error', error: 'old failure' }));
+    await screen.findByTestId('desktop-update-retry-button');
+    fireEvent.click(screen.getByTestId('version-popover-trigger')); // close…
+    fireEvent.click(screen.getByTestId('version-popover-trigger')); // …reopen → refresh → idle clears the push
+    await screen.findByTestId('desktop-download-button');
+    expect(screen.queryByTestId('desktop-update-retry-button')).toBeNull();
   });
 
   it("the shell refuses desktop-too-old (pre-flight floor was unknown): Download retries desktop-only", async () => {

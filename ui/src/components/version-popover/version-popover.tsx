@@ -127,7 +127,7 @@ interface ElectronAPI {
     version?: string;
   }) => Promise<{ success: boolean; error?: string; desktopUpdatePending?: boolean }>;
   openExternal?: (url: string) => Promise<boolean>;
-  getUpdateInfo?: () => Promise<UpdateInfo>;
+  getUpdateInfo?: (opts?: { fresh?: boolean }) => Promise<UpdateInfo>;
   takeResumedUpdate?: () => Promise<ResumedUpdate | null>;
   downloadDesktopUpdate?: () => Promise<UpdateActionResult>;
   applyDesktopUpdate?: () => Promise<UpdateActionResult>;
@@ -471,11 +471,14 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     [t],
   );
 
-  const refreshUpdateInfo = useCallback(async (): Promise<UpdateInfo | null> => {
+  const refreshUpdateInfo = useCallback(async (opts?: { fresh?: boolean }): Promise<UpdateInfo | null> => {
     if (!electronApi?.getUpdateInfo) return null;
     try {
-      const info = await electronApi.getUpdateInfo();
+      const info = await electronApi.getUpdateInfo(opts);
       setUpdateInfo(info);
+      // The shell's snapshot is authoritative when nothing moves: a stale push (a failed or
+      // cancelled download's last 'downloading'/'error') must not outlive it.
+      if (info.desktop.downloadState === 'idle') setDesktopPush(null);
       return info;
     } catch {
       return null;
@@ -549,7 +552,8 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     try {
       // Pre-flight: does the latest release run on THIS desktop? When it does not, the popup offers the
       // coordinated update instead of starting an upgrade the shell would refuse (or roll back) anyway.
-      const info = await refreshUpdateInfo();
+      // fresh: a release published a minute ago must shape the popup (display rides the CDN; this does not).
+      const info = await refreshUpdateInfo({ fresh: true });
       const engine = info?.engine ?? null;
       if (engine && engine.latestCompatible === false) {
         setModalError(null);

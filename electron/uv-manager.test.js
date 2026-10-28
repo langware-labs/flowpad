@@ -261,6 +261,18 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       { installed: '0.2.230', latest: '0.2.240', updateAvailable: true, latestMinDesktop: '0.2.60', latestCompatible: true, newestCompatible: null },
       'preflight: desktop at the floor → compatible, no alternative resolved');
 
+    {
+      // Display rides the CDN and the snapshot; the Upgrade click's { fresh: true } bypasses both —
+      // a release published a minute ago must shape the popup.
+      const m = make();
+      const asks = [];
+      m.getLatestPypiVersion = async (fresh) => { asks.push(!!fresh); return '0.2.240'; };
+      await m.engineUpdatePreflight();                 // fills the snapshot (CDN)
+      await m.engineUpdatePreflight();                 // served from the snapshot — no ask
+      await m.engineUpdatePreflight({ fresh: true });  // bypasses the snapshot, asks fresh
+      eq(asks, [false, true], 'one CDN ask, one fresh ask, nothing for the cached call');
+    }
+
     const incompatible = make({ appVersion: '0.2.50' });
     incompatible.resolveCompatibleEngineVersion = async () => ({ version: '0.2.235', minDesktopVersion: '0.2.45' });
     eq(await incompatible.engineUpdatePreflight(),

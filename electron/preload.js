@@ -43,7 +43,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // updateBoth           → desktop first, then the named engine version after the restart (pending-engine.json)
   // Optional { version }: the popup's "works with this desktop" fallback pins the release it named.
   upgradeFlowpad: (opts) => ipcRenderer.invoke('upgrade-flowpad', opts),
-  getUpdateInfo: () => ipcRenderer.invoke('update:get-info'),
+  // Optional { fresh }: the Upgrade click's pre-flight skips the snapshot and PyPI's CDN.
+  getUpdateInfo: (opts) => ipcRenderer.invoke('update:get-info', opts),
   downloadDesktopUpdate: () => ipcRenderer.invoke('update:download-desktop'),
   applyDesktopUpdate: () => ipcRenderer.invoke('update:apply-desktop'),
   updateBoth: (engineVersion) => ipcRenderer.invoke('update:both', engineVersion),

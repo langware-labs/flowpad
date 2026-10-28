@@ -2849,7 +2849,7 @@ class UvManager {
     const TTL_MS = 60 * 1000;
     const installed = this.getInstalledVersionSync() || null;
     const c = this._preflightCache;
-    if (c && c.installed === installed && Date.now() - c.at < TTL_MS) return c.value;
+    if (!fresh && c && c.installed === installed && Date.now() - c.at < TTL_MS) return c.value;
     // Display rides the CDN (a popover open is not an install); the ACTION paths (upgrade, the
     // version pick before an install) ask fresh themselves, right before locking a version.
     const latest = await this.getLatestPypiVersion(fresh);

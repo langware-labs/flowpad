@@ -809,6 +809,8 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.dialogCalls.length, 0, 'panel-owned 0.2.48: no native prompt');
     env.autoUpdater.emit('update-downloaded', { version: '0.2.49' }); await tick(); await tick();
     eq(env.dialogCalls.length, 1, 'a different, natively-downloaded release still prompts');
+    eq(pushes(env).filter((d) => d.state === 'ready' && d.version === '0.2.49').length, 0,
+      'the native prompt IS the ready surface — no duplicate "ready" row in the panel');
   }
   {
     // 'update:get-info' asks the feed at most once a minute: the popover open and the Upgrade click
