@@ -39,6 +39,7 @@ from flow_sdk.builtin.agent_auto_open import (
     rebase_auto_open,
     start_auto_open,
 )
+from flow_sdk.builtin.agent_cloud_deploy import AgentDeployRequest
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
 from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
 from flow_sdk.builtin.deployment import Deployment
@@ -48,7 +49,6 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec._form import ShapeForm
-from flow_sdk.schema.data_spec.agent_deploy_spec import AgentDeployRequest
 from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec, AgentSpec
 from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
@@ -1126,6 +1126,7 @@ class Agent(Entity):
         *,
         provider: str | None = None,
         token_allocation: "TokenAllocationSpec | None | object" = _UNSET,
+        background: bool = False,
     ) -> dict:
         """Give this agent a machine of its own on the hub.
 
@@ -1144,15 +1145,70 @@ class Agent(Entity):
         The credentials live in this process, so the browser never talks to the
         hub directly.
 
-        The steps are ``agent_cloud_deploy.CloudDeploy``'s, run back to back; the HTTP verb runs the same
-        steps under an activity (``run_cloud_deploy``). A missing value refuses the deploy (``NotReady``);
-        missing model funding does not.
+        Five steps, run under this agent's ``deploy`` activity (``agent_cloud_deploy.run_deployment_steps``)
+        and knowing nothing of it. A missing value refuses the deploy (``NotReady``); missing model funding
+        does not. The answer: the hub's, with the funding warnings — or, *background*, where the activity
+        reports, every step running after it.
         """
-        from flow_sdk.builtin.agent_cloud_deploy import CloudDeploy  # noqa: PLC0415
+        from flow_sdk.builtin.agent_cloud_deploy import DeployStep, run_deployment_steps  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady, funding_warnings, readiness  # noqa: PLC0415
 
-        return await CloudDeploy(
-            self, actor, environment, provider=provider, token_allocation=token_allocation
-        ).run()
+        deployment = ready = None
+        result: dict = {}
+
+        async def publish() -> None:
+            # A deploy names an agent the hub has to already know.
+            await self.ensure_on_hub(actor)
+
+        async def share_dependencies() -> None:
+            # Its ``hub:`` dependencies are fetched on the machine with the agent's own login.
+            from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+            from flow_sdk.builtin.hub_dependencies import share_hub_dependencies  # noqa: PLC0415
+
+            await share_hub_dependencies(self, await owning_project(self))
+
+        async def plan() -> None:
+            nonlocal deployment
+            deployment = await self.plan_deployment(environment, provider=provider, token_allocation=token_allocation)
+
+        async def check_readiness() -> None:
+            # The gate: the placement's store must hold every value the agent needs before a machine is paid
+            # for (the hub checks the same names again). Funding is reported, never a refusal.
+            nonlocal ready
+            ready = await readiness(self, deployment)
+            if not ready.ready:
+                raise NotReady(ready, deployment)
+
+        async def start_machine() -> None:
+            from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud, wait_until_placed  # noqa: PLC0415
+            from flow_sdk.cloud_client.hub_bridge import deployment_pushes  # noqa: PLC0415
+            from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+            nonlocal result
+            # Heard from before the deploy is sent: the hub pushes the placement as it gives it its machine.
+            with deployment_pushes(str(deployment.id)) as pushed:
+                try:
+                    result = await deploy_entity_to_cloud(
+                        self, environment, provider=provider, require=ready.value_names()
+                    )
+                except HubError as exc:
+                    # No answer at all (status 0): the load balancer in front of the hub dropped the request
+                    # while the hub went on placing the machine. Its push is the answer.
+                    if exc.status_code != 0:
+                        raise
+                    result = await wait_until_placed(pushed)
+
+        steps = [
+            DeployStep("publish", "Publish the agent", publish),
+            DeployStep("dependencies", "Share its dependencies", share_dependencies),
+            DeployStep("plan", "Plan the deployment", plan),
+            DeployStep("readiness", "Check what it needs", check_readiness),
+            DeployStep("machine", "Start a machine", start_machine),
+        ]
+        activity = await run_deployment_steps(self, steps, background=background)
+        if background:
+            return {"activity": activity}
+        return {**result, "warnings": funding_warnings(self, ready)}
 
     async def webhook_specs(self) -> list["DeploymentWebhookSpec"]:
         """One hub webhook per driver among this agent's sources that takes provider pushes (its manifest's
@@ -1226,7 +1282,7 @@ class Agent(Entity):
         the machine is placed, with the hub's answer and any warnings (no model funding) — or with the
         refusal (``flow agent deploy``).
         """
-        from flow_sdk.builtin.agent_cloud_deploy import CloudDeploy, DeployRunning, run_cloud_deploy  # noqa: PLC0415
+        from flow_sdk.builtin.agent_cloud_deploy import DeployRunning  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
@@ -1242,15 +1298,14 @@ class Agent(Entity):
         from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
         from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
 
-        deploy = CloudDeploy(
-            self,
-            actor,
-            body.environment,
-            provider=body.provider or None,
-            token_allocation=body.token_allocation if body.allocation_given else _UNSET,
-        )
         try:
-            accepted = await run_cloud_deploy(deploy, background=not body.wait)
+            data = await self.deploy_to_cloud(
+                actor,
+                body.environment,
+                provider=body.provider or None,
+                token_allocation=body.token_allocation if body.allocation_given else _UNSET,
+                background=not body.wait,
+            )
         except DeployRunning as exc:
             return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})
         except NotReady as exc:
@@ -1276,9 +1331,7 @@ class Agent(Entity):
             )
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
-        if body.wait:
-            return ApiSuccessResponse(data={"agent_id": self.id, **deploy.result, "warnings": deploy.warnings})
-        return ApiSuccessResponse(data=accepted)
+        return ApiSuccessResponse(data={"agent_id": self.id, **data})
 
     # ── the run verb (HTTP) ───────────────────────────────────────────────
 

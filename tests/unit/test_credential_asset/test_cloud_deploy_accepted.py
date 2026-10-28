@@ -1,4 +1,4 @@
-"""A cloud deploy taken on (``agent_cloud_deploy.run_cloud_deploy``): answered before any step runs, each step a
+"""A cloud deploy taken on (``Agent.deploy_to_cloud`` in the background): answered before any step runs, each step a
 child of the agent's ``deploy`` activity, a refusal told on that activity; no model funding is a warning, never a
 refusal; one deploy per agent at a time. The hub is the in-memory double. No network."""
 
@@ -10,7 +10,7 @@ import pytest
 
 from flow_sdk.activity import Activity, ActivityState, monitor
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, CloudDeploy, DeployRunning, run_cloud_deploy
+from flow_sdk.builtin.agent_cloud_deploy import DEPLOY_ACTIVITY, DeployRunning
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
 from flow_sdk.cloud_client.shared.errors import HubError
@@ -49,11 +49,9 @@ async def _published(self, actor, force=False):
 async def test_an_unfunded_deploy_is_placed_with_a_warning(agent, hub):
     planned = await agent.plan_deployment("production", provider="e2b")
     hub.funding[str(planned.id)] = {"kind": "default", "name": "my default", "exhausted": EXHAUSTED}
-    deploy = CloudDeploy(agent, "user-1", "production", provider="e2b")
+    answer = await agent.deploy_to_cloud("user-1", "production", provider="e2b")
 
-    await run_cloud_deploy(deploy, background=False)
-
-    assert deploy.warnings == [
+    assert answer["warnings"] == [
         f"No LLM funding for cloud-agent: {EXHAUSTED}: raise the limit (Configure) or wait for it to reset"
     ]
     assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": []}], "funding never stops it"
@@ -64,17 +62,14 @@ async def test_a_background_deploy_answers_before_any_of_its_steps_runs(agent, h
     stop = monitor.subscribe(lambda root, transition: ended.append(root.spec()) if root.is_terminal else None)
 
     try:
-        accepted = await run_cloud_deploy(CloudDeploy(agent, "user-1", "production", provider="e2b"), background=True)
+        accepted = await agent.deploy_to_cloud("user-1", "production", provider="e2b", background=True)
         answered = monitor.get(DEPLOY_ACTIVITY, subject_entity=str(agent.typeid))
         while not ended:
             await asyncio.sleep(0)
     finally:
         stop()
 
-    assert accepted == {
-        "agent_id": str(agent.id),
-        "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": str(agent.typeid)},
-    }
+    assert accepted == {"activity": {"path": DEPLOY_ACTIVITY, "subject_entity": str(agent.typeid)}}
     assert [(c.name, c.state) for c in answered.children] == [
         (name, ActivityState.PENDING) for name in ("publish", "dependencies", "plan", "readiness", "machine")
     ]
@@ -95,7 +90,7 @@ async def test_a_step_failing_after_the_answer_fails_itself_and_the_deploy_and_t
 
     try:
         # Answered: the refusal comes after the answer, and only the activity is told.
-        await run_cloud_deploy(CloudDeploy(agent, "user-1", "production", provider="e2b"), background=True)
+        await agent.deploy_to_cloud("user-1", "production", provider="e2b", background=True)
         while not ended:
             await asyncio.sleep(0)
     finally:
@@ -141,12 +136,10 @@ def _dropped_answer(monkeypatch, hub, agent, *, placed: bool) -> None:
 
 async def test_a_dropped_hub_answer_is_not_a_failure_the_machine_pushed_over_the_socket_is(agent, hub, monkeypatch):
     _dropped_answer(monkeypatch, hub, agent, placed=True)
-    deploy = CloudDeploy(agent, "user-1", "production", provider="e2b")
+    answer = await agent.deploy_to_cloud("user-1", "production", provider="e2b")
 
-    await run_cloud_deploy(deploy, background=False)
-
-    assert deploy.result["deployment"]["origin"]["external_id"] == "compute_node-box", "the push with its machine"
-    mirrored = await Deployment.get_by_id(str(deploy.deployment.id))
+    assert answer["deployment"]["origin"]["external_id"] == "compute_node-box", "the push with its machine"
+    mirrored = await Deployment.get_by_id(answer["deployment"]["id"])
     assert mirrored.origin.external_id == "compute_node-box" and mirrored.status.provider_state == "running"
 
 
@@ -155,12 +148,12 @@ async def test_a_dropped_hub_answer_with_no_machine_pushed_in_time_fails_the_dep
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.PLACED_WITHIN_S", 0)
 
     with pytest.raises(TimeoutError, match="sent no machine"):
-        await run_cloud_deploy(CloudDeploy(agent, "user-1", "production", provider="e2b"), background=False)
+        await agent.deploy_to_cloud("user-1", "production", provider="e2b")
 
 
 async def test_a_second_deploy_of_the_same_agent_is_refused_while_one_runs(agent, hub):
     Activity.try_claim(DEPLOY_ACTIVITY, subject_entity=str(agent.typeid))
 
     with pytest.raises(DeployRunning):
-        await run_cloud_deploy(CloudDeploy(agent, "user-1", "production", provider="e2b"), background=False)
+        await agent.deploy_to_cloud("user-1", "production", provider="e2b")
     assert hub.deploys == []
