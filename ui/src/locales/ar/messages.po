@@ -30,6 +30,10 @@ msgstr " · {stale} غير محدّثة"
 msgid " · not secret"
 msgstr " · غير سري"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid " · only this port"
+msgstr ""
+
 #: src/components/asset-counters/agent-counters.tsx
 msgid " · paused"
 msgstr " · متوقف مؤقتاً"
@@ -56,6 +60,7 @@ msgstr " (أنتم)"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid " or "
 msgstr " أو "
 
@@ -978,6 +983,11 @@ msgstr "{0} سجل على القرص"
 msgid "{0} removed"
 msgstr "{0} محذوفة"
 
+#. placeholder {0}: appRef.current.displayName
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "{0} restarted"
+msgstr ""
+
 #: src/components/data-sources/HostedDatasets.tsx
 #~ msgid "{0} rows"
 #~ msgstr "{0} صفوف"
@@ -986,6 +996,7 @@ msgstr "{0} محذوفة"
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/connections-manager.tsx
 #: src/components/credentials-view/CredentialView.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "{0} saved"
 msgstr "تم حفظ {0}"
 
@@ -1412,6 +1423,7 @@ msgid "{left, plural, one {# thing to set up before this project can run} other 
 msgstr "{left, plural, one {# عنصر يلزم إعداده قبل تشغيل هذا المشروع} other {# عناصر يلزم إعدادها قبل تشغيل هذا المشروع}}"
 
 #: src/components/harness-login/StatusRow.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "{left} left"
 msgstr "المتبقي: {left}"
 
@@ -1591,6 +1603,10 @@ msgstr "{participantCount, plural, zero {لا مشاركين} one {مشارك و
 msgid "{pct}% of your token budget used {windowText}"
 msgstr "تم استخدام {pct}% من رصيد الرموز الخاص بكم {windowText}"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "{pending} changes not applied"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "{pending} changes not published"
@@ -1697,6 +1713,10 @@ msgstr "دعاك {senderName}"
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} جلسة"
+
+#: src/components/project-home/ProjectHomeMenu.tsx
+msgid "{setupLeft} left"
+msgstr ""
 
 #: src/components/graph-view/ui/HeatLegend.tsx
 msgid "{signal} color legend"
@@ -1985,6 +2005,10 @@ msgstr "توجد تغييرات في <0>{0}</0>. هل تُودَع قبل الم
 msgid "<0>{attemptedName}</0> already exists in this workspace. Choose a different folder name."
 msgstr "<0>{attemptedName}</0> موجود بالفعل في مساحة العمل هذه. يُرجى اختيار اسم مجلد مختلف."
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "<0>{PORT_TOKEN}</0> is the port it is started on."
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "<0>{recipient}</0> is not a member"
 msgstr "<0>{recipient}</0> ليس عضوًا"
@@ -2084,6 +2108,10 @@ msgstr "${cost} · {sessions} جلسات · {duration} نشاط · {prompts} م�
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "$/day"
 msgstr "$/يوم"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "1 change not applied"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -2320,6 +2348,10 @@ msgstr "مجلد مشروع جديد — كل ما يُنشأ يقتصر علي�
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A place and channel by hand…"
 msgstr "مكان وقناة يدوياً…"
+
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "A port is a whole number from 1 to 65535."
+msgstr ""
 
 #: src/components/assets/dependency-sources.tsx
 #~ msgid "A project on the hub — fetched by its id wherever this project opens"
@@ -2948,6 +2980,10 @@ msgstr "إضافة جدولة"
 msgid "Add secret"
 msgstr "إضافة سر"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Add service"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Add someone first"
 msgstr "أضيفوا شخصًا أولًا"
@@ -2980,6 +3016,10 @@ msgstr "أضيفوا هذا المفتاح ضمن الاتصالات"
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Add to agent"
 msgstr "إضافة إلى الوكيل"
+
+#: src/components/milkdown-editor/MilkdownEditor.tsx
+msgid "Add to changes ↵"
+msgstr ""
 
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -3083,6 +3123,11 @@ msgstr "مجلدات إضافية"
 msgid "Additional plugin marketplace URLs"
 msgstr "روابط إضافية لأسواق الملحقات"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Address"
+msgstr ""
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Address book"
 msgstr "دفتر العناوين"
@@ -3091,6 +3136,11 @@ msgstr "دفتر العناوين"
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Admin"
 msgstr "إدارة"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Admins"
+msgstr ""
 
 #~ msgid "Adopt a support desk published as a git repository"
 #~ msgstr ""
@@ -3137,7 +3187,7 @@ msgstr "متقدم: حدود كل نافذة زمنية وسقوف المعدل 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
-#: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/setup-labels.ts
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "agent"
 msgstr "وكيل"
@@ -3896,6 +3946,10 @@ msgstr "أي قناة"
 msgid "any diagram written as mermaid text"
 msgstr "أي مخطط مكتوب كنص mermaid"
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "any free port"
+msgstr ""
+
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
 msgstr "أي نتيجة"
@@ -4073,6 +4127,10 @@ msgstr "سر التطبيق"
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
 msgstr "تُحفظ أسرار التطبيق في سلسلة مفاتيح نظام التشغيل. يتيح التفعيل لتطبيق Flowpad تخزين مفاتيح API الخاصة بالجهات الخارجية وغيرها من الأسرار المستخدمة في تدفقاتكم بأمان."
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "App title"
+msgstr ""
+
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "App version"
 msgstr "إصدار التطبيق"
@@ -4142,6 +4200,7 @@ msgstr "موافَق عليه لهذه الجلسة"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr "تتيح الموافقة لهذا الجهاز التصرّف باسمك على FlowPad، ولا تُمنح إلا لرمز من إنشائك."
 
+#: src/components/project-home/ProjectApps.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "تطبيقات"
@@ -5225,6 +5284,18 @@ msgstr "إنشاء صفحة هبوط"
 msgid "Build AI"
 msgstr "بناء الذكاء الاصطناعي"
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Build command"
+msgstr ""
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Build folder"
+msgstr ""
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Build folder — the subfolder that is served"
+msgstr ""
+
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "سجل الإصدارات"
@@ -5458,6 +5529,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
+#: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/notes/NoteViews.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -5674,9 +5746,18 @@ msgstr "تغيير الحالة"
 msgid "Change the installed flow SDK version"
 msgstr "تغيير إصدار flow SDK المثبت"
 
+#: src/components/milkdown-editor/MilkdownEditor.tsx
+msgid "Change this"
+msgstr ""
+
 #: src/components/project-home/ProjectLanguageCard.tsx
 msgid "Change this project's language"
 msgstr "تغيير لغة هذا المشروع"
+
+#: src/components/milkdown-editor/MilkdownEditor.tsx
+#: src/components/milkdown-editor/MilkdownEditor.tsx
+msgid "Change this…"
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Change to… from now"
@@ -5695,6 +5776,8 @@ msgstr "معدّل"
 msgid "Changed since publish"
 msgstr "تغيّر منذ النشر"
 
+#: src/components/assets/editor/changes/useDocChanges.tsx
+#: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
 msgstr "التغييرات"
@@ -5716,6 +5799,10 @@ msgstr "التغييرات بحاجة إلى دمج"
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "Changes need merging — let the assistant finish it"
 msgstr "التغييرات تحتاج إلى دمج — يمكن للمساعد إنهاؤه"
+
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "Changes queued on this doc"
+msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -5783,6 +5870,11 @@ msgstr "المحادثة"
 #: src/components/assets/editor/ViewerChatToggle.tsx
 msgid "Chat about this file"
 msgstr "الدردشة حول هذا الملف"
+
+#. placeholder {0}: workerLabel(worker)
+#: src/components/workers/ContextWorkerToolbar.tsx
+msgid "Chat about this message with {0}"
+msgstr ""
 
 #: src/components/floating-chat/AssistantContextChips.tsx
 msgid "Chat context"
@@ -6196,6 +6288,8 @@ msgstr "فترة التنظيف (أيام)"
 msgid "clear"
 msgstr "مسح"
 
+#: src/components/assets/editor/changes/useDocChanges.tsx
+#: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
@@ -6303,6 +6397,10 @@ msgstr "مسح التحديد"
 
 #~ msgid "Clear subject filter"
 #~ msgstr "مسح فلتر الموضوع"
+
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "Clear the list without waiting for the worker"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Cleared"
@@ -7235,6 +7333,10 @@ msgstr "جارٍ الاتصال"
 msgid "Connecting…"
 msgstr "جارٍ الاتصال…"
 
+#: src/components/project-setup/setup-labels.ts
+msgid "Connection"
+msgstr ""
+
 #: src/components/account/hub-status-visuals.ts
 msgid "Connection error"
 msgstr "خطأ في الاتصال"
@@ -8064,6 +8166,11 @@ msgstr "تعذّر تحميل التشغيلات"
 msgid "Could not load the agent's definition: {0}"
 msgstr "تعذّر تحميل تعريف الوكيل: {0}"
 
+#. placeholder {0}: definitionError.message
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Could not load the app's definition: {0}"
+msgstr ""
+
 #: src/components/automations/BusView.tsx
 msgid "Could not load the bus"
 msgstr "تعذّر تحميل ناقل الأحداث"
@@ -8184,6 +8291,10 @@ msgstr "تعذّرت قراءة التشخيص"
 #: src/components/rag/RagChunkBrowser.tsx
 msgid "Could not read the index"
 msgstr "تعذّرت قراءة الفهرس"
+
+#: src/components/project-setup/use-setup-readiness.ts
+msgid "Could not read the project's setup"
+msgstr ""
 
 #. placeholder {0}: errorText(error)
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -8483,13 +8594,13 @@ msgstr "تعذّر تسجيل الخروج من FlowPad"
 msgid "Could not sign the sandbox out"
 msgstr "تعذّر تسجيل الخروج من Sandbox"
 
-#. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Could not skip {0}"
-msgstr "تعذّر تخطّي {0}"
+#~ msgid "Could not skip {0}"
+#~ msgstr "تعذّر تخطّي {0}"
 
-#~ msgid "Could not skip {name}"
-#~ msgstr ""
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Could not skip {name}"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -8503,6 +8614,11 @@ msgstr "تعذّر تخطّي {0}"
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
 msgstr "تعذر البدء"
+
+#. placeholder {0}: appRef.current.displayName
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Could not start {0}"
+msgstr ""
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Could not start automation"
@@ -8534,6 +8650,7 @@ msgid "Could not start the live session"
 msgstr "تعذّر بدء الجلسة المباشرة"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Could not start the setup"
 msgstr "تعذّر بدء الإعداد"
 
@@ -8553,6 +8670,7 @@ msgid "Could not stop covering {path}"
 msgstr "تعذّر إيقاف شمول {path} بالفهرس"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Could not stop the setup"
 msgstr "تعذّر إيقاف الإعداد"
 
@@ -8586,6 +8704,7 @@ msgstr "تعذّرت التجربة"
 
 #. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Could not undo the skip of {0}"
 msgstr "تعذّر التراجع عن تخطّي {0}"
 
@@ -9079,12 +9198,13 @@ msgstr "جارٍ الإنشاء..."
 msgid "Creating…"
 msgstr "جاري الإنشاء…"
 
-#: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/setup-labels.ts
 msgid "credential"
 msgstr ""
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/project-setup/setup-labels.ts
 #: src/i18n/type-labels.ts
 msgid "Credential"
 msgstr "بيانات الاعتماد"
@@ -9254,11 +9374,12 @@ msgstr "وضع خصوصية البيانات"
 msgid "Data Schema"
 msgstr "مخطط البيانات"
 
-#: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/setup-labels.ts
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "data source"
 msgstr "مصدر بيانات"
 
+#: src/components/project-setup/setup-labels.ts
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -9558,6 +9679,7 @@ msgid "Defined in"
 msgstr "مُعرَّف في"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Definition"
 msgstr "التعريف"
 
@@ -9711,6 +9833,11 @@ msgstr "فشل حذف الكل"
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Delete API Key"
 msgstr "حذف مفتاح API"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Delete app"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete archived conversations"
@@ -10003,14 +10130,14 @@ msgstr "رفض"
 #~ msgid "Dependencies"
 #~ msgstr ""
 
-#: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/setup-labels.ts
 msgid "dependency"
 msgstr ""
 
-#: src/components/helpdesk/AddHelpdeskDialog.tsx
-#: src/components/top-nav-bar/AppButton.tsx
-#~ msgid "Dependency"
-#~ msgstr "تبعية"
+#: src/components/project-setup/setup-labels.ts
+#: src/components/project-setup/setup-labels.ts
+msgid "Dependency"
+msgstr "تبعية"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #~ msgid "Dependency removed"
@@ -10073,6 +10200,7 @@ msgstr "العرض الشامل للنشر"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/components/webapp-viewer/webapp-terminal-panel.tsx
@@ -10119,6 +10247,8 @@ msgstr "صِفوا هوية هذا الوكيل وما يقوم به وما يج
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/CredentialDialog.tsx
@@ -10167,6 +10297,7 @@ msgstr "إصدار سطح المكتب"
 msgid "Destination already has an item with that name"
 msgstr "الوجهة تحتوي بالفعل على عنصر بهذا الاسم"
 
+#: src/components/asset-counters/issue-counters.tsx
 #: src/notifications/ingest.ts
 msgid "Detail"
 msgstr "التفاصيل"
@@ -10212,6 +10343,7 @@ msgid "Developer Tools"
 msgstr "أدوات المطورين"
 
 #: src/components/assets/editor/agent-profile/use-place-display.ts
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 msgid "Development · local"
 msgstr "التطوير · محلي"
 
@@ -10319,6 +10451,11 @@ msgstr "اكتمل التشخيص — لم يُعثر على أي مشكلة."
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Diagram"
 msgstr "رسم تخطيطي"
+
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "did not finish"
+msgstr ""
 
 #~ msgid "did not run"
 #~ msgstr ""
@@ -11000,11 +11137,16 @@ msgstr "الحواف حسب النوع"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Edit"
 msgstr "تعديل"
 
 #. placeholder {0}: d.title
+#. placeholder {0}: entry.app.displayName
+#. placeholder {0}: only.app.displayName
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 msgid "Edit {0}"
 msgstr "تحرير {0}"
 
@@ -11013,6 +11155,10 @@ msgstr "تحرير {0}"
 
 #~ msgid "Edit anyway"
 #~ msgstr "تحرير على أي حال"
+
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Edit app"
+msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Edit data source"
@@ -11195,6 +11341,10 @@ msgstr "ترك الحقل فارغًا يعيد تشغيل كل شيء. عند �
 msgid "Empty trace"
 msgstr "تتبع فارغ"
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Empty: derived from its package manager"
+msgstr ""
+
 #~ msgid "Enable Agent"
 #~ msgstr ""
 
@@ -11295,6 +11445,11 @@ msgstr "إنهاء الغرفة"
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "End time"
 msgstr "وقت النهاية"
+
+#. placeholder {0}: addressOf(mount, app.name)
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "End users open it at {0}."
+msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "ended"
@@ -11505,6 +11660,7 @@ msgstr "خطأ: {error}"
 msgid "errors"
 msgstr "الأخطاء"
 
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/i18n/pref-labels.ts
@@ -11809,6 +11965,10 @@ msgstr "كل شيء محدث بالفعل"
 #~ msgid "Everything is set up."
 #~ msgstr ""
 
+#: src/components/asset-counters/issue-counters.tsx
+msgid "Everything open that needs fixing"
+msgstr ""
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Everything required is set up."
 msgstr "تم إعداد كل المتطلبات الضرورية."
@@ -11853,6 +12013,14 @@ msgstr "الأوامر المستبعدة"
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "Execute"
 msgstr "تنفيذ"
+
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "Execute {nNew} changes"
+msgstr ""
+
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "Execute 1 change"
+msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Execute Plan"
@@ -12062,9 +12230,12 @@ msgstr "جارٍ الاستخراج…"
 msgid "failed"
 msgstr "فشل"
 
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Failed"
 msgstr "فشل"
 
@@ -12432,6 +12603,10 @@ msgstr "فشل إرسال التقرير"
 msgid "Failed to send status request"
 msgstr "تعذر إرسال طلب الحالة"
 
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
+msgid "Failed to send the changes"
+msgstr ""
+
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Failed to set project"
 msgstr "تعذر تعيين المشروع"
@@ -12440,6 +12615,7 @@ msgstr "تعذر تعيين المشروع"
 msgid "Failed to start GitHub connection"
 msgstr "فشل في بدء الاتصال بـ GitHub"
 
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
 #: src/components/conversation/useConversationSession.ts
 #: src/components/conversation/useImplementPlan.ts
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
@@ -12623,6 +12799,7 @@ msgstr "الحقل"
 msgid "Fields"
 msgstr "الحقول"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunDetail.tsx
@@ -12649,6 +12826,10 @@ msgstr "وقت تعديل الملف (mtime) أحدث من تاريخ التحد
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "File name"
 msgstr "اسم الملف"
+
+#: src/components/code-editor/CodeEditor.tsx
+msgid "File not found"
+msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "File not uploaded yet"
@@ -13245,6 +13426,8 @@ msgstr "طيّ"
 msgid "folder"
 msgstr "مجلد"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
@@ -14116,6 +14299,11 @@ msgstr "عنوان 3"
 msgid "Health"
 msgstr "الحالة الصحية"
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Health check"
+msgstr ""
+
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Health:"
 msgstr "الحالة:"
@@ -14289,7 +14477,7 @@ msgstr "يحوي"
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
-#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+#: src/navigation/asset-doc-types.ts
 #: src/types/ViewType.ts
 msgid "Home"
 msgstr "الرئيسية"
@@ -14306,9 +14494,14 @@ msgstr "تمت إزالة خلفية الرئيسية"
 msgid "Home background updated"
 msgstr "تم تحديث خلفية الرئيسية"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Home page"
 msgstr "الصفحة الرئيسية"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Home page — opens at the root"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Home page reset to the default home"
@@ -14468,6 +14661,10 @@ msgstr "كيف يعمل تحسين الأصل؟"
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "How it is judged done"
 msgstr "كيف يُحكم بأنه اكتمل"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "How it runs"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "How many hook-sniffer events to retain in the buffer."
@@ -15085,6 +15282,10 @@ msgstr "تثبيت"
 msgid "Install {0}?"
 msgstr "هل تريدون تثبيت {0}؟"
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Install & build"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Install & restart"
 msgstr "التثبيت وإعادة التشغيل"
@@ -15092,6 +15293,10 @@ msgstr "التثبيت وإعادة التشغيل"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "Install as this name"
 msgstr "تثبيت بهذا الاسم"
+
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Install command"
+msgstr ""
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #~ msgid "Install dependency"
@@ -15172,6 +15377,10 @@ msgstr "مثبّت في"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Installed Plugins"
 msgstr "الإضافات المثبتة"
+
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Installed when this path exists"
+msgstr ""
 
 #: src/components/harness-login/funding-pill.ts
 msgid "Installed, and no sign-in check has run yet"
@@ -15394,9 +15603,18 @@ msgstr "تمت دعوة {trimmed}."
 #~ msgid "Inviting…"
 #~ msgstr "جاري الدعوة…"
 
+#: src/components/asset-counters/issue-counters.tsx
+msgid "Issue"
+msgstr ""
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "تشخيصات المشاكل التي سجلها المساعد. انقروا على صف لعرض التشخيص الكامل."
+
+#: src/components/asset-counters/issue-counters.tsx
+#: src/components/asset-counters/issue-counters.tsx
+msgid "Issues"
+msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -15492,6 +15710,10 @@ msgstr "وكيلها"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "يبدو أن محتوى الملف عبارة عن بيانات ثنائية (مثل صورة)، لذا لا يمكن عرضه في المحرر."
+
+#: src/components/task-receive/use-shared-project-warnings.ts
+msgid "Its files are on another machine, not here yet."
+msgstr ""
 
 #: src/components/assets/editor/GitConnectionRequiredCard.tsx
 msgid "Its files live in git, and it is not linked to a repository yet. Publish it from the FlowPad desktop app to view and edit it here."
@@ -15692,6 +15914,7 @@ msgstr "النوع"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
@@ -15869,6 +16092,11 @@ msgstr "آخر تشغيل"
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Last run"
 msgstr "آخر تشغيل"
+
+#. placeholder {0}: i18n.date(lastRun, { dateStyle: 'medium', timeStyle: 'short' })
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Last run {0} · {lastRunState}"
+msgstr ""
 
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "last session: {lastSession}"
@@ -17717,6 +17945,7 @@ msgid "more"
 msgstr "المزيد"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -17850,6 +18079,7 @@ msgstr "الاسم"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #: src/components/conversation/asset-review/ProjectPreview.tsx
@@ -17886,12 +18116,20 @@ msgstr "الاسم"
 msgid "Name — the agent's folder name, used to address it"
 msgstr "الاسم — اسم مجلد الوكيل، ويُستخدم للإشارة إليه"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Name — the app's folder name, used to address it"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields"
 msgstr "الاسم · الوصف · المقدمة · الموجّه التلقائي · التشغيل التلقائي · مساعد Flowpad · الحقول المعلنة"
 
 #~ msgid "name · description · intro · auto-launch · Flowpad assistant · declared fields"
 #~ msgstr ""
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "name · kind · build folder · file"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "name (e.g. coding)"
@@ -17973,8 +18211,13 @@ msgstr "يحتاج إلى انتباه"
 msgid "needs setup"
 msgstr "يحتاج إلى إعداد"
 
-#~ msgid "Needs setup"
-#~ msgstr ""
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Needs setup"
+msgstr ""
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Needs setup: {owed}"
+msgstr "يلزم الإعداد: {owed}"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Needs values"
@@ -18274,8 +18517,9 @@ msgstr "بيئة معزولة جديدة"
 #~ msgid "New Schedule Trigger"
 #~ msgstr "مشغّل جدولة جديد"
 
-#~ msgid "New session"
-#~ msgstr "جلسة جديدة"
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "New session"
+msgstr "جلسة جديدة"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "New skill"
@@ -18411,6 +18655,7 @@ msgstr "لا يمكن الوصول إلى هذا المستودع. يمكن ال
 #~ msgid "No actions configured."
 #~ msgstr "لا توجد إجراءات مُكونة."
 
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/notes/useNoteWorker.ts
 #: src/components/terminal/HistoryModal.tsx
@@ -18513,6 +18758,10 @@ msgstr "لا توجد ميزانية يمكنكم منحها"
 #: src/components/assets/LlmEndpointsAssetList.tsx
 msgid "No budgets are allocated to you"
 msgstr "لم تُخصَّص أي ميزانيات لكم"
+
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "No build step"
+msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "No bundle attached."
@@ -19464,6 +19713,10 @@ msgstr "لا توجد جداول زمنية بعد."
 msgid "No secrets yet. Click \"Add secret\" to create one."
 msgstr "لا توجد أسرار حتى الآن. انقروا على \"إضافة سر\" لإنشاء واحد."
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "No services — an API the app brings along runs as its own service."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No session to analyze yet."
 msgstr "لا توجد جلسة للتحليل بعد."
@@ -19817,6 +20070,14 @@ msgstr "ليس مستودع Git"
 msgid "Not a git repository"
 msgstr "هذا المجلد ليس مستودع Git"
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Not a port"
+msgstr ""
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Not an address"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not available"
 msgstr "غير متاح"
@@ -19999,6 +20260,14 @@ msgstr "لم يُشغَّل بعد."
 msgid "Not runnable here"
 msgstr "لا يمكن تشغيله هنا"
 
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+msgid "not running"
+msgstr ""
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Not running"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Not saved"
 msgstr "غير محفوظ"
@@ -20157,6 +20426,10 @@ msgstr "لا يوجد حد لهذا النطاق بعد. يُرجى من مسؤ�
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Nothing caps this scope yet. Set a daily, weekly or monthly budget in dollars or tokens."
 msgstr "لا يوجد حد لهذا النطاق بعد. عيّنوا ميزانية يومية أو أسبوعية أو شهرية بالدولار أو بالرموز."
+
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "nothing declared"
+msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -20451,6 +20724,11 @@ msgstr "متوقف"
 msgid "Off on this place"
 msgstr "متوقف في هذا المكان"
 
+#. placeholder {0}: port.port
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Off: when {0} is taken, a free port is picked."
+msgstr ""
+
 #: src/components/inbound/RouteCheck.tsx
 msgid "offline"
 msgstr "غير متصل"
@@ -20564,6 +20842,11 @@ msgstr "وفق الجدول {expr}"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr "على هذا الجهاز فقط — يمكن التراجع في أي وقت"
+
+#. placeholder {0}: port.port
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "On: if another program holds {0}, starting fails instead of moving."
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 #: src/i18n/pref-labels.ts
@@ -20709,6 +20992,11 @@ msgstr "لا يمكن عرض هذا الوكيل إلا للأشخاص الذي�
 msgid "Only the steps below"
 msgstr "الخطوات أدناه فقط"
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Only this port"
+msgstr ""
+
 #: src/pages/NotFound.tsx
 msgid "Oops! Page not found"
 msgstr "عذرًا! الصفحة غير موجودة"
@@ -20829,6 +21117,10 @@ msgstr "يجب فتح مشروع لتحليل هذا النص."
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Open a project to choose which of its secrets this machine can see."
 msgstr "يمكن فتح مشروع لتحديد الأسرار التي تستطيع هذه الآلة رؤيتها."
+
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
+msgid "Open a project to run these changes."
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
@@ -21129,6 +21421,14 @@ msgstr "فتح في بيئة العمل"
 msgid "Open in your browser"
 msgstr "افتحوا في المتصفح"
 
+#: src/components/asset-counters/issue-counters.tsx
+msgid "Open issues that stop something from working"
+msgstr ""
+
+#: src/components/asset-counters/issue-counters.tsx
+msgid "Open issues that will stop something soon"
+msgstr ""
+
 #: src/components/automations/ThenSteps.tsx
 msgid "Open it"
 msgstr "فتحه"
@@ -21248,6 +21548,8 @@ msgstr "فتح الصندوق"
 msgid "Open sandbox terminal (E2B)"
 msgstr "فتح طرفية معزولة (E2B)"
 
+#: src/components/assets/editor/changes/useDocChanges.tsx
+#: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open session"
 msgstr "فتح الجلسة"
@@ -21647,6 +21949,10 @@ msgstr "اختياري — تم تخطّيه على هذا الجهاز"
 msgid "optional · not set"
 msgstr "اختياري · غير مضبوط"
 
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Optional · not set up"
+msgstr ""
+
 #: src/components/artifacts/artifact-form.tsx
 msgid "Optional description"
 msgstr "وصف اختياري"
@@ -21925,6 +22231,7 @@ msgstr "تمت إزالة الحزمة"
 msgid "Packages"
 msgstr "الحزم"
 
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
 msgstr "الصفحة"
@@ -22006,6 +22313,14 @@ msgstr "المشاركون"
 #: src/components/conversation/ConversationParticipants.tsx
 msgid "Participants ({participantCount})"
 msgstr "المشاركون ({participantCount})"
+
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "passed"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Passed"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Past analyses"
@@ -22629,10 +22944,17 @@ msgstr "ربط هذا المشروع بمجلد آخر أو مستودع أو م
 msgid "Poll interval (seconds)"
 msgstr "فترة الاستطلاع (بالثواني)"
 
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr "المنفذ"
+
+#. placeholder {0}: row.port
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+msgid "port {0}"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Port for HTTP proxy in sandbox"
@@ -22964,6 +23286,7 @@ msgid "Project folder…"
 msgstr "مجلد المشروع…"
 
 #: src/components/assets/useAssetsModel.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Project home"
 msgstr "الصفحة الرئيسية للمشروع"
 
@@ -23047,6 +23370,12 @@ msgstr "دور المشروع"
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Project secrets on this machine"
 msgstr "أسرار المشروع على هذه الآلة"
+
+#: src/components/project-home/ProjectHomeMenu.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/navigation/asset-doc-types.ts
+msgid "Project setup"
+msgstr ""
 
 #. placeholder {0}: tabTypeId.type
 #: src/routes/loaders/load-project.ts
@@ -23367,6 +23696,7 @@ msgid "Published to the project."
 msgstr "تم النشر في المشروع."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Published version — edit it on the author's computer"
 msgstr "النسخة المنشورة — يُعدَّل عليها من حاسوب المؤلف"
 
@@ -23506,6 +23836,10 @@ msgstr "الطابور"
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Queue message"
 msgstr "إضافة الرسالة إلى الطابور"
+
+#: src/components/milkdown-editor/MilkdownEditor.tsx
+msgid "Queued for later — nothing runs yet"
+msgstr ""
 
 #: src/components/entity-execution-panel/QueueChip.tsx
 msgid "Queued messages"
@@ -23652,6 +23986,10 @@ msgstr "جارٍ قراءة السجل…"
 #~ msgid "Reading the schemas…"
 #~ msgstr "جارٍ قراءة المخططات…"
 
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Reading the setup…"
+msgstr ""
+
 #~ msgid "Reading this team's people…"
 #~ msgstr ""
 
@@ -23663,6 +24001,8 @@ msgstr "جاري القراءة…"
 msgid "ready"
 msgstr "جاهزة"
 
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
 msgstr "جاهز"
@@ -24050,6 +24390,10 @@ msgstr "العلاقات"
 msgid "Relative path"
 msgstr "المسار النسبي"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Relative to the app folder. Empty: its build folder."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Relaunched."
 msgstr "تم إعادة الإطلاق."
@@ -24135,6 +24479,10 @@ msgstr "إزالة الإشارة المرجعية"
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Remove budget"
 msgstr "إزالة الميزانية"
+
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "Remove change"
+msgstr ""
 
 #~ msgid "Remove context folder"
 #~ msgstr "إزالة مجلد السياق"
@@ -24246,6 +24594,10 @@ msgstr "إزالة الصف"
 #: src/components/inbound/InboundView.tsx
 msgid "Remove rule"
 msgstr "إزالة القاعدة"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Remove service"
+msgstr ""
 
 #: src/components/conversation/MessageSessionChip.tsx
 msgid "Remove session from this message"
@@ -24684,6 +25036,10 @@ msgstr "يتطلب مستودع Git يحتوي على التزام واحد عل
 msgid "Rerun"
 msgstr "إعادة التشغيل"
 
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Rerun setup"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Rescan docs"
 msgstr "إعادة مسح المستندات"
@@ -24792,8 +25148,13 @@ msgstr "ردّ"
 msgid "responses"
 msgstr "الردود"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "REST API"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -24821,6 +25182,10 @@ msgstr "يلزم إعادة التشغيل — تغيّر {changedCount} {0}"
 #~ msgid "Restart required — config changed since start"
 #~ msgstr "يجب إعادة التشغيل — تغيرت الإعدادات منذ البدء"
 
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart required — settings changed since start"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/TerminalPanel.tsx
@@ -24835,11 +25200,19 @@ msgstr "إعادة تشغيل الإعداد"
 msgid "Restart this journey"
 msgstr "إعادة تشغيل هذه الرحلة"
 
+#: src/components/terminal/interactive-terminal/RestartChangesList.tsx
+msgid "Restart to apply what changed since this session started"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
-msgid ""
-"Restart to apply what changed since this session started:\n"
-"{lines}\n"
-"Full comparison: Debug menu → Command Status"
+#~ msgid ""
+#~ "Restart to apply what changed since this session started:\n"
+#~ "{lines}\n"
+#~ "Full comparison: Debug menu → Command Status"
+#~ msgstr ""
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart to apply: {names}"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
@@ -24930,6 +25303,7 @@ msgid "Resumed — it polls on the next tick."
 msgstr "استُؤنِف — سيتم الفحص في الدورة التالية."
 
 #: src/components/agent-layout/DockLoadErrorView.tsx
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/assets/editor/EntityResolutionGate.tsx
 #: src/components/assets/editor/GitConnectionRequiredCard.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -25228,6 +25602,7 @@ msgstr "القواعد — الأكثر تحديدًا هي الأولى: الم
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Run"
 msgstr "تشغيل"
 
@@ -25252,6 +25627,7 @@ msgstr "تشغيل {name}"
 msgid "Run `flow connect` on a machine and enter its code here"
 msgstr "شغِّلوا `flow connect` على الجهاز وأدخلوا الرمز هناشغِّلوا `flow connect` على الجهاز وأدخلوا الرمز هنا"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Run a command"
 msgstr "تشغيل أمر"
@@ -25389,6 +25765,7 @@ msgid "Run script"
 msgstr "تشغيل البرنامج النصي"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Run setup"
 msgstr "تشغيل الإعداد"
 
@@ -25460,9 +25837,13 @@ msgstr "قيد التشغيل"
 #: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
 #: src/components/data-sources/health-style.ts
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "قيد التشغيل"
@@ -25486,6 +25867,12 @@ msgstr ""
 msgid "Running {0}"
 msgstr "جارٍ تشغيل {0}"
 
+#. placeholder {0}: drawn.done
+#. placeholder {1}: drawn.total
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Running {0} of {1}"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Running /context…"
 msgstr "جارٍ تنفيذ /context…"
@@ -25507,6 +25894,14 @@ msgstr "جارٍ التشغيل مرة واحدة"
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "Running on the host's machine · status: {0}"
 msgstr "يعمل على جهاز المضيف · الحالة: {0}"
+
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+msgid "Running the old definition — Restart to apply"
+msgstr ""
+
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Running the setup. Steps that pass stay green; you are asked only for what is missing."
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -26316,6 +26711,10 @@ msgstr "تم تفعيل الأسرار"
 msgid "See all {0} results →"
 msgstr "عرض كل النتائج ({0}) →"
 
+#: src/components/terminal/interactive-terminal/RestartChangesList.tsx
+msgid "See all settings"
+msgstr ""
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "See all sources"
 msgstr "عرض جميع المصادر"
@@ -26503,6 +26902,10 @@ msgstr "تحديد المشاريع"
 msgid "Select session"
 msgstr "اختيار الجلسة"
 
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "Select text and press the wand to add a change. Nothing runs until Execute."
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Select text to add a link"
 msgstr "يُرجى تحديد النص لإضافة رابط"
@@ -26676,6 +27079,7 @@ msgstr "يرسل الردود"
 msgid "Sends your question to a help desk — a person picks it up."
 msgstr "يُرسل سؤالكم إلى مكتب المساعدة، ويتولّى شخص الرد عليه."
 
+#: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Sent"
 msgstr "تم الإرسال"
@@ -26737,6 +27141,10 @@ msgstr "مخطط تسلسلي"
 msgid "serial (queue)"
 msgstr "تسلسلي (طابور)"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Serve a folder"
+msgstr ""
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Served"
 msgstr "قيد الخدمة"
@@ -26757,6 +27165,10 @@ msgstr "يخدم"
 msgid "Service endpoints"
 msgstr "نقاط نهاية الخدمة"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Service name"
+msgstr ""
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Service unavailable"
 msgstr "الخدمة غير متاحة"
@@ -26767,6 +27179,7 @@ msgid "Service Unavailable"
 msgstr "الخدمة غير متاحة"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Services"
 msgstr "الخدمات"
 
@@ -26975,6 +27388,7 @@ msgstr "جعله عامًا"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -27111,7 +27525,11 @@ msgid "Settings"
 msgstr "الإعدادات"
 
 #: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
-msgid "Settings changed since this session started — restart to apply"
+#~ msgid "Settings changed since this session started — restart to apply"
+#~ msgstr ""
+
+#: src/components/terminal/interactive-terminal/RestartChangesList.tsx
+msgid "Settings changed since this session started."
 msgstr ""
 
 #: src/components/account/settings-section.tsx
@@ -27175,6 +27593,10 @@ msgstr "دليل الإعداد"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Setup instructions"
 msgstr "تعليمات الإعداد"
+
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Setup is saved with the project, so everyone who opens {projectName} runs the same steps."
+msgstr ""
 
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "Setup notes"
@@ -27990,6 +28412,10 @@ msgstr "يوقّع كل تسليم (x-hub-signature-256). يُخزَّن للك�
 msgid "Simple actions — click to show all git operations"
 msgstr "إجراءات بسيطة — انقروا لعرض جميع عمليات Git"
 
+#: src/components/asset-counters/issue-counters.tsx
+msgid "Since"
+msgstr ""
+
 #: src/components/data-sources/ReplayDialog.tsx
 msgid "Since (optional)"
 msgstr "منذ (اختياري)"
@@ -28159,6 +28585,7 @@ msgid "Skipped — setup goes on without it."
 msgstr "تم التخطي — يستمر الإعداد بدونه."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Skipped on this machine"
 msgstr "تم تخطّيه على هذا الجهاز"
 
@@ -28526,6 +28953,7 @@ msgid "Star chat"
 msgstr "إضافة نجمة للمحادثة"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/assets/editor/task/ParentTaskBlock.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -28584,6 +29012,11 @@ msgstr "بدء Claude"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Start Codex"
 msgstr "بدء Codex"
+
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+#: src/components/assets/editor/app-profile/AppServingFields.tsx
+msgid "Start command"
+msgstr ""
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "Start Copilot"
@@ -28800,6 +29233,7 @@ msgstr ""
 #~ msgstr "الخطوة: {0}ms · إلغاء الاهتزاز: {1}ms"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "الخطوات"
 
@@ -28844,6 +29278,7 @@ msgstr "لا يزال العمل جارياً — في انتظار السحاب
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/webapp-display/AppStatusLine.tsx
 msgid "Stop"
 msgstr "إيقاف"
@@ -28870,11 +29305,13 @@ msgstr "خطافات التوقف"
 msgid "Stop reading {0}"
 msgstr "إيقاف قراءة {0}"
 
+#: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
 msgstr "متوقف"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Stopped"
 msgstr "متوقفة"
@@ -29737,6 +30174,11 @@ msgstr "فشلت المكالمة."
 msgid "The change was not saved."
 msgstr "لم يتم حفظ التغيير."
 
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
+msgid "The changes did not finish"
+msgstr ""
+
 #: src/components/data-sources/use-source-verify.ts
 msgid "The check did not run."
 msgstr "لم يتم تنفيذ الفحص."
@@ -29980,6 +30422,10 @@ msgstr "فشل الجلب الأخير بسبب خطأ في الإعداد."
 msgid "The last poll failed; the scheduler retries on its own."
 msgstr "فشل الجلب الأخير؛ يعيد المجدوِل المحاولة من تلقاء نفسه."
 
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "The last run did not finish — run these changes in a fresh worker"
+msgstr ""
+
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "The lens path could not be parsed."
 msgstr "تعذر تحليل مسار Lens."
@@ -30059,6 +30505,11 @@ msgstr "اسم المشروع \"{0}\" لكن اسم مجلده \"{folderMismatch
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "The project's folder is named \"{0}\""
 msgstr "اسم مجلد المشروع هو «{0}»"
+
+#. placeholder {0}: addressOf(mount, app.name)
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "The project's operators open it at {0}."
+msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The project's own assets"
@@ -30316,6 +30767,12 @@ msgstr "تستجيب هذه الأتمتات لما يفعله وكيل البر
 msgid "They approve the steps and what you sent along, describe the issue, and decide whether the result is sent to you."
 msgstr "يوافقون على الخطوات وما أرسلتموه، ويصفون المشكلة، ويقررون ما إذا كانت النتيجة ستُرسل إليكم."
 
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
+#: src/components/assets/editor/changes/useDocChangesWorker.ts
+msgid "They are still in the list — Execute to try again."
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "They reported"
 msgstr "أبلغوا"
@@ -30396,6 +30853,10 @@ msgstr "تقرر هذه القاعدة برمجيًا ما يجب فعله، و�
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent stream inbox URL is malformed."
 msgstr "عنوان URL لصندوق التدفق الوارد الخاص بالوكيل غير صالح."
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "this app"
+msgstr ""
 
 #~ msgid "This app could not be set up"
 #~ msgstr ""
@@ -30836,6 +31297,10 @@ msgstr "لا يمكن فتح هذا المشروع إلا من خلال مشار
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project could not be shared."
 msgstr "تعذّرت مشاركة هذا المشروع."
+
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "This project declares no setup steps."
+msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "This project declares the same variables, and its values win"
@@ -31892,6 +32357,10 @@ msgstr "تراجع"
 msgid "Undo changes"
 msgstr "التراجع عن التغييرات"
 
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Undo skip"
+msgstr ""
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Unfold"
 msgstr "توسيع"
@@ -32330,6 +32799,10 @@ msgstr "استخدام الوكيل"
 msgid "Use an API key"
 msgstr "استخدام مفتاح API"
 
+#: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+msgid "Use any free port"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Use AWS Bedrock as the backend"
 msgstr "استخدام AWS Bedrock كخادم خلفي"
@@ -32345,6 +32818,10 @@ msgstr "استخدام الإعدادات الافتراضية"
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Google Vertex AI as the backend"
 msgstr "استخدام Google Vertex AI كخادم خلفي"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Use letters, digits, '.', '_', '~' or '-', starting with a letter or digit."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -32391,6 +32868,7 @@ msgid "Used by"
 msgstr "تُستخدم بواسطة"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Used by: {usedBy}"
 msgstr "مستخدَم من: {usedBy}"
 
@@ -32444,6 +32922,11 @@ msgstr "ملاحظة المستخدم"
 #: src/components/hooks-view/HooksTable.tsx
 msgid "User Prompt Submit"
 msgstr "إرسال طلب المستخدم"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Users"
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -32965,6 +33448,10 @@ msgstr "تحذير"
 msgid "Warning: {warning}"
 msgstr "تحذير: {warning}"
 
+#: src/components/asset-counters/issue-counters.tsx
+msgid "Warnings"
+msgstr ""
+
 #~ msgid "Watch"
 #~ msgstr "المراقبة"
 
@@ -33004,8 +33491,12 @@ msgstr "تعذر الوصول إلى الخدمة السحابية. يرجى ا�
 msgid "We skipped {count} sessions that couldn't be restored."
 msgstr "تم تخطّي {count} من الجلسات التي تعذّر استعادتها."
 
-#: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/setup-labels.ts
 msgid "web app"
+msgstr ""
+
+#: src/components/project-setup/setup-labels.ts
+msgid "Web app"
 msgstr ""
 
 #: src/types/ViewType.ts
@@ -33015,6 +33506,10 @@ msgstr "تطبيق ويب"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Web app status"
 msgstr "حالة تطبيق الويب"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "webapp.json · shared by every place"
+msgstr ""
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Webhook"
@@ -33056,6 +33551,10 @@ msgstr "مرحباً! بيّنوا للمستخدم ما يستطيع هذا ا�
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "What"
 msgstr "الإجراء"
+
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "What {projectName} needs to run on this computer, and whether each step passed."
+msgstr ""
 
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "What can flowpad do for you ?"
@@ -33160,6 +33659,10 @@ msgstr "ما الغرض من المكالمة؟ (اختياري)"
 msgid "What is this agent for?"
 msgstr "ما الغرض من هذا الوكيل؟"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "What is this app for?"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "What is this secret used for?"
 msgstr "ما الغرض من هذا السر؟"
@@ -33186,6 +33689,10 @@ msgstr "ما الذي تم العمل عليه"
 #: src/components/assets/editor/PublishedToggle.tsx
 #~ msgid "What Published does"
 #~ msgstr "وظيفة خيار «منشور»"
+
+#: src/components/milkdown-editor/MilkdownEditor.tsx
+msgid "What should change here?"
+msgstr ""
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 msgid "What should change? (paste an image here too)"
@@ -33372,6 +33879,10 @@ msgstr "من أين يحصل كل مساعد على وصوله إلى النمو
 msgid "Where people reach this agent — one number, mailbox or chat per channel."
 msgstr "أين يصل الناس إلى هذا الوكيل — رقم واحد أو صندوق بريد واحد أو محادثة واحدة لكل قناة."
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Where the app runs is shown on the computer that runs it."
+msgstr ""
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Where the key is created, and how to store it: flow credentials set <name> VAR=…"
 msgstr "مكان إنشاء المفتاح، وكيفية تخزينه: flow credentials set <name> VAR=…"
@@ -33420,6 +33931,10 @@ msgstr "من يستدعي من، خطوة بخطوة — مع تدفقات فر�
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
 msgstr "الجهات المخوّلة بتسجيل الدخول إلى هذه البيئة المعزولة"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Who opens it"
+msgstr ""
 
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Who pays"
@@ -33536,6 +34051,14 @@ msgstr ""
 #: src/types/ViewType.ts
 msgid "Worker"
 msgstr "بيئة التنفيذ"
+
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "Worker is applying {nSent} changes"
+msgstr ""
+
+#: src/components/assets/editor/changes/useDocChanges.tsx
+msgid "Worker is applying 1 change"
+msgstr ""
 
 #. placeholder {0}: data.worker_type ? ` (${data.worker_type})` : ''
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -34183,7 +34706,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Needs setup: {owed}"
-msgstr "يلزم الإعداد: {owed}"
