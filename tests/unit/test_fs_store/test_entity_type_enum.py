@@ -225,6 +225,7 @@ EXPECTED = {
     # additive member, no existing value changed.
     "AGENT_MAILBOX": "agent_mailbox",
     "WEBHOOK": "webhook",
+    "ISSUE": "issue",
 }
 
 

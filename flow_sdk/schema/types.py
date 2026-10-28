@@ -34,6 +34,8 @@ class EntityType(StrEnum):
     AGENT_MAILBOX = "agent_mailbox"
     # The hub's webhook chain (builtin/webhook.py): hub-only, no local rows.
     WEBHOOK = "webhook"
+    # The hub's Issues — something stopped working and who must fix it (builtin/issue.py): hub-only, read-only.
+    ISSUE = "issue"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"

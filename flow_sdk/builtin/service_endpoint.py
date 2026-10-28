@@ -198,7 +198,15 @@ class ServiceEndpoint(Entity):
             deployment = await Deployment.get_by_typeid(self.parent_type_id) if self.parent_type_id else None
             if deployment is None:
                 return "failing", "no deployment answers this channel"
-            return deployment_process.loop_state(deployment)
+            state = deployment_process.loop_state(deployment)
+            if state[0] != "alive":
+                return state
+            # A running loop is not an answering one: its newest turns say whether messages get answers.
+            from flow_sdk.builtin.agent_serve import turns_health, turns_of  # noqa: PLC0415
+            from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+            processes = await AgenticProcess.local_rows({"match": {"deployment_id": deployment.id}})
+            return turns_health([record for ap in processes for record in turns_of(ap).values()])
         return "unknown", f"no builtin check for a {self.backend.type} backend"
 
     async def _health_from_hub(self) -> EndpointHealth:

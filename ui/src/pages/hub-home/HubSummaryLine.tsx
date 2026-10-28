@@ -5,6 +5,7 @@ import {
   hubDeploymentCounterGroup,
   hubMachineCounterGroup,
 } from '@src/components/asset-counters/hub-counters';
+import { IssuesSummaryChip } from '@src/components/asset-counters/issue-counters';
 import { openInbound } from '@src/components/inbound/inbound-pointer';
 import { useInboundClaims } from '@src/components/inbound/use-inbound';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -40,6 +41,7 @@ export function HubSummaryLine() {
       />
       <AssetSummaryChip group={hubDeploymentCounterGroup} />
       <InboundChip />
+      <IssuesSummaryChip />
     </div>
   );
 }

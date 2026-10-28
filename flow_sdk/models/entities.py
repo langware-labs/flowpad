@@ -324,3 +324,8 @@ try:
     from flow_sdk.builtin.webhook import Webhook  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Webhook: {e}")
+
+try:
+    from flow_sdk.builtin.issue import Issue  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Issue: {e}")

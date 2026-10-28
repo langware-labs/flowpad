@@ -5,6 +5,7 @@ export * from './AgentConfig';
 export * from './api_key';
 export * from './artifact';
 export * from './deployment';
+export * from './issue';
 export * from './service-endpoint';
 export * from './agent-chat';
 export * from './agent-hook';

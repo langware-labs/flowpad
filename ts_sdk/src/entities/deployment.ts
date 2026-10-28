@@ -276,9 +276,14 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   }
 
   override get dockPointer(): DockPointerData {
+    return Deployment.dockPointerFor(this.id);
+  }
+
+  /** Where deployment *id* opens, without loading it — an issue's "Open the deployment" names only the id. */
+  static dockPointerFor(id: string): DockPointerData {
     return new DockPointerData(ViewType.WORLDVIEW, WorldViewProjection.DEPLOYMENT, {
-      focus: `${Deployment.type}-${this.id}`,
-      selected: `${Deployment.type}-${this.id}`,
+      focus: `${Deployment.type}-${id}`,
+      selected: `${Deployment.type}-${id}`,
     });
   }
 
