@@ -33,6 +33,7 @@ RELAYED_TAG_PATTERNS: list[str] = [
     # Where a message is on its way to an answer (``emit_message_status``): an agent picking it up here.
     "stream_inbox.*.message.status",
     "task.*",
+    "user_app.*",
     "voice.call.*",
 ]
 
