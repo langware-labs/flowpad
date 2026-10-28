@@ -537,10 +537,9 @@ msgstr "{0} נוסף"
 msgid "{0} added, {1} updated in {teamName}."
 msgstr "נוספו {0} ועודכנו {1} ב-{teamName}."
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} already has a cloud machine"
-msgstr "ל-{0} כבר יש מכונת ענן"
+#~ msgid "{0} already has a cloud machine"
+#~ msgstr "ל-{0} כבר יש מכונת ענן"
 
 #. placeholder {0}: teamLabel(s)
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -720,13 +719,11 @@ msgstr "{0} בתוך {folder}"
 msgid "{0} indexed"
 msgstr "{0} אונדקסו"
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
-msgid "{0} is already deployed"
-msgstr "{0} כבר פרוס"
+#~ msgid "{0} is already deployed"
+#~ msgstr "{0} כבר פרוס"
 
 #. placeholder {0}: agent.name
-#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "{0} is deployed"
 msgstr "{0} פרוס"
@@ -891,10 +888,9 @@ msgstr "המשימה \"{1}\" הוקצתה כעת ל־{0}."
 msgid "{0} now has access, but the invite message wasn't sent."
 msgstr "ל-{0} יש עכשיו גישה, אבל הודעת ההזמנה לא נשלחה."
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} now runs on a cloud machine"
-msgstr "{0} פועל עכשיו על מכונת ענן"
+#~ msgid "{0} now runs on a cloud machine"
+#~ msgstr "{0} פועל עכשיו על מכונת ענן"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -10054,12 +10050,10 @@ msgstr "סוכן פרוס"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "Deployed without its definition"
-msgstr "פרסו ללא הגדרתו"
+#~ msgid "Deployed without its definition"
+#~ msgstr "פרסו ללא הגדרתו"
 
-#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
-#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deploying without model funding"
 msgstr ""
 
