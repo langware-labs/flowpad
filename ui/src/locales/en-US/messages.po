@@ -29338,6 +29338,12 @@ msgstr "Subprocess runs the file walk in a separate process, so a large or slow 
 msgid "Succeeded"
 msgstr "Succeeded"
 
+#. placeholder {0}: redirects.map(([from]) => from).join(', ')
+#. placeholder {1}: redirects.map(([, to]) => to).join(', ')
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Suggested for this provider: requests for {0} models are answered by {1} models. You can change this under Advanced."
+msgstr "Suggested for this provider: requests for {0} models are answered by {1} models. You can change this under Advanced."
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Summarize what changed since yesterday and list what needs me."
 msgstr "Summarize what changed since yesterday and list what needs me."

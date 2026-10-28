@@ -29104,6 +29104,12 @@ msgstr "«عملية فرعية» يشغّل مسح الملفات في عملي
 msgid "Succeeded"
 msgstr "نجح"
 
+#. placeholder {0}: redirects.map(([from]) => from).join(', ')
+#. placeholder {1}: redirects.map(([, to]) => to).join(', ')
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Suggested for this provider: requests for {0} models are answered by {1} models. You can change this under Advanced."
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Summarize what changed since yesterday and list what needs me."
 msgstr "لخِّص التغييرات منذ أمس، واذكر ما يحتاج إلى متابعة."
