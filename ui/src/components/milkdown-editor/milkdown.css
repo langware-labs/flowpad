@@ -157,7 +157,7 @@
 }
 
 .milkdown-editor-wrapper .ProseMirror a {
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
   text-decoration: underline;
   /* Override the UA rule a:any-link:read-write { cursor: text } that fires
      inside the contenteditable root; anchor clicks are intercepted and open. */
