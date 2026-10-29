@@ -64,7 +64,7 @@ import type { MultiSelectAction } from '@src/components/navigator-panel/types';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 
-const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT]);
+const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT, RecordType.COMPUTE_OP]);
 
 // --- path helpers (mirrors AssetsPage; pure) -------------------------------
 function normalizeTreePath(path: string): string {
