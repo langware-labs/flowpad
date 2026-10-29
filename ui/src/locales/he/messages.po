@@ -3833,6 +3833,10 @@ msgstr "טווח העוגן"
 msgid "Anchor time range"
 msgstr "טווח זמן עוגן"
 
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "and"
+msgstr ""
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
 msgstr "הערות על התמונה"
@@ -4022,6 +4026,10 @@ msgstr "כל דבר"
 #: src/components/automations/KindGallery.tsx
 msgid "Anything that needs a person today becomes a task for you."
 msgstr "כל מה שדורש טיפול אנושי היום הופך למשימה אישית."
+
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "Anything to add? (optional)"
+msgstr "יש מה להוסיף? (לא חובה)"
 
 #~ msgid "API"
 #~ msgstr ""
@@ -5577,10 +5585,10 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
+#: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/components/workspace/workspace-switcher.tsx
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
@@ -5770,6 +5778,10 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Change to… from now"
 msgstr "שינוי ל… מעכשיו"
+
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
+msgid "Change where it runs from the agent's schedules."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
@@ -6608,7 +6620,6 @@ msgstr "משבוט…"
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
 msgid "Close"
 msgstr "סגרו"
 
@@ -6720,6 +6731,11 @@ msgstr "ענן · {0}"
 #: src/notifications/ingest.ts
 msgid "Cloud access denied"
 msgstr "הגישה לענן נדחתה"
+
+#. placeholder {0}: cloudWarning.message
+#: src/components/automations/AutomationsList.tsx
+msgid "Cloud automations not shown: {0}"
+msgstr ""
 
 #: src/components/inbound/use-inbound.ts
 msgid "Cloud box {place}"
@@ -8559,6 +8575,10 @@ msgstr "לא ניתן לשלוח"
 msgid "Could not send report to the Flowpad team"
 msgstr "לא ניתן לשלוח את הדוח לצוות Flowpad"
 
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "Could not send the diagnosis"
+msgstr "לא ניתן היה לשלוח את האבחון"
+
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #~ msgid "Could not send the files"
 #~ msgstr ""
@@ -9242,8 +9262,8 @@ msgid "Cron {expr}"
 msgstr "Cron {expr}"
 
 #: src/i18n/type-labels.ts
-msgid "Cron Event"
-msgstr "אירוע Cron"
+#~ msgid "Cron Event"
+#~ msgstr "אירוע Cron"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Cron expression"
@@ -10369,7 +10389,6 @@ msgstr "התחברות דרך מכשיר"
 msgid "Device logins"
 msgstr "התחברויות מכשיר"
 
-#: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Diagnose"
 msgstr "אבחון"
@@ -10378,20 +10397,25 @@ msgstr "אבחון"
 msgid "Diagnose a Flowpad issue"
 msgstr "אבחנו בעיה ב-Flowpad"
 
+#. placeholder {0}: e instanceof Error ? e.message : String(e)
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "Diagnose failed: {0}"
+msgstr "האבחון נכשל: {0}"
+
 #: src/notifications/diagnose/DiagnoseErrorModal.tsx
-msgid "Diagnose failed: {text}"
-msgstr "האבחון נכשל: {text}"
+#~ msgid "Diagnose failed: {text}"
+#~ msgstr "האבחון נכשל: {text}"
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnose Flowpad"
 msgstr "אבחון Flowpad"
 
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
+#: src/components/version-popover/diagnose-modal.tsx
 #: src/notifications/diagnose/DiagnoseIconButton.tsx
 msgid "Diagnose this error"
 msgstr "אבחנו את השגיאה הזו"
 
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
+#: src/components/version-popover/diagnose-modal.tsx
 #: src/notifications/diagnose/DiagnoseIconButton.tsx
 msgid "Diagnose this warning"
 msgstr "אבחנו את האזהרה הזו"
@@ -10423,8 +10447,11 @@ msgstr "האבחנה עדיין לא זמינה"
 msgid "Diagnosis not found."
 msgstr "לא נמצאה אבחנה."
 
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "Diagnosis recorded — not sent"
+msgstr "האבחון נשמר — לא נשלח"
+
 #: src/components/version-popover/diagnose-modal.tsx
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
 msgid "Diagnosis recorded."
 msgstr "אבחון נשמר."
 
@@ -10447,8 +10474,17 @@ msgstr "בקשת אבחון"
 msgid "Diagnosis request created"
 msgstr "בקשת האבחון נוצרה"
 
+#. placeholder {0}: sent.map((s) => s.to).join(', ')
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "Diagnosis sent to {0}"
+msgstr "האבחון נשלח אל {0}"
+
+#. placeholder {0}: done.shared.map((s) => s.to).join(', ')
 #: src/components/version-popover/diagnose-modal.tsx
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
+msgid "Diagnosis sent to {0}."
+msgstr "האבחון נשלח אל {0}."
+
+#: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnosis was not recorded — try again."
 msgstr "אבחון לא נשמר — נסו שוב."
 
@@ -10794,6 +10830,14 @@ msgstr "אל תשאלו אותי שוב"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Don't have FlowPad yet?"
 msgstr "עדיין אין לכם FlowPad?"
+
+#: src/components/diagnose/SendOnceDoneDialog.tsx
+msgid "Don't send"
+msgstr "אל תשלח"
+
+#: src/components/diagnose/SendOnceDoneDialog.tsx
+msgid "Don't show again"
+msgstr "אל תציג שוב"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Don’t show again"
@@ -11627,7 +11671,7 @@ msgstr "שגיאה"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/machine-overview/node-secrets.tsx
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
+#: src/components/version-popover/diagnose-modal.tsx
 msgid "Error"
 msgstr "שגיאה"
 
@@ -11834,8 +11878,8 @@ msgid "Every indexed row has a source file on disk."
 msgstr "לכל שורה בעלת אינדקס יש קובץ מקור בדיסק."
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
-msgid "every machine"
-msgstr "בכל מחשב"
+#~ msgid "every machine"
+#~ msgstr "בכל מחשב"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Every machine you can reach"
@@ -13310,9 +13354,17 @@ msgstr "פרויקט עוזר Flowpad אינו זמין."
 msgid "Flowpad can’t see any of {owner}’s repos. {owner} most likely restricts third-party apps: grant Flowpad access to it on GitHub (Settings → Applications → Flowpad → Organization access), or paste a repo URL above."
 msgstr "Flowpad לא רואה אף אחד מהמאגרים של {owner}. סביר ש-{owner} מגביל אפליקציות של צד שלישי: הענקו ל-Flowpad גישה ב-GitHub (Settings → Applications → Flowpad → Organization access), או הדביקו כתובת מאגר למעלה."
 
+#: src/components/assets/editor/agent-profile/use-place-display.ts
+msgid "Flowpad cloud"
+msgstr ""
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Flowpad Cloud"
 msgstr "Flowpad Cloud"
+
+#: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
+msgid "Flowpad cloud can run a schedule that runs an agent with a prompt."
+msgstr ""
 
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "Flowpad Cloud Results"
@@ -14320,6 +14372,7 @@ msgstr "מצב תקינות:"
 msgid "Held by"
 msgstr "מוחזק על ידי"
 
+#: src/components/diagnose/ShareWithRow.tsx
 #: src/components/footer.tsx
 #: src/components/footer.tsx
 #: src/components/help/AskForHelpDialog.tsx
@@ -15629,8 +15682,8 @@ msgid "It can read your Slack channels."
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#~ msgid "It cannot be removed from the project"
-#~ msgstr ""
+msgid "It cannot be removed from the project"
+msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -16014,7 +16067,7 @@ msgstr "הרצה מקסימלית"
 msgid "last"
 msgstr "אחרונה"
 
-#. placeholder {0}: new Date(row.last_run).toLocaleString()
+#. placeholder {0}: new Date(row.last_run.ts).toLocaleString()
 #. placeholder {0}: new Date(trigger.last_run).toLocaleString()
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -20619,6 +20672,10 @@ msgstr "לא הותקן כלום. ניתן לסגור את הכרטיסייה ה
 msgid "Nothing was launched. You can close this tab."
 msgstr "לא הופעל דבר. ניתן לסגור את הלשונית הזו."
 
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "Nothing was sent."
+msgstr "שום דבר לא נשלח."
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr "לא היה מגיע דבר עבור זה, ולכן לא נשלח:"
@@ -20727,6 +20784,10 @@ msgstr "כבוי"
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
 msgstr "כבוי"
+
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "Off — Flowpad asks before it sends anything to {goesTo}. Your choice is remembered."
+msgstr "כבוי — Flowpad ישאל לפני שישלח משהו אל {goesTo}. הבחירה שלך נשמרת."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Off on this place"
@@ -21020,6 +21081,7 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/task-it.tsx
+#: src/components/diagnose/diagnose-run-store.ts
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
@@ -21217,6 +21279,10 @@ msgstr "פתחו את החיבורים"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open Context"
 msgstr "פתחו הקשר"
+
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "Open conversation"
+msgstr "פתח שיחה"
 
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Open data_driver.json"
@@ -21984,6 +22050,7 @@ msgstr "או העתיקו קישור הזמנה"
 msgid "or open the link on your phone"
 msgstr "או פתחו את הקישור בטלפון שלכם"
 
+#: src/components/diagnose/ShareWithRow.tsx
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Or pick a person, or type an email"
 msgstr "או בחרו אדם, או הקלידו כתובת דוא״ל"
@@ -22629,6 +22696,7 @@ msgstr "בחרו זרימה מהתפריט השמאלי, או צרו חדשה ע
 msgid "Pick a group in any conversation to add all its members at once."
 msgstr "ניתן לבחור קבוצה בכל שיחה כדי להוסיף את כל החברים שלה בבת אחת."
 
+#: src/components/diagnose/ShareWithRow.tsx
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Pick a person or type an email"
 msgstr "בחרו אדם או הקלידו כתובת דוא״ל"
@@ -23875,7 +23943,7 @@ msgstr "RAM (MB)"
 msgid "RAM:"
 msgstr "זיכרון RAM:"
 
-#. placeholder {0}: row.counter
+#. placeholder {0}: row.fires
 #. placeholder {0}: trigger.counter
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -24413,6 +24481,10 @@ msgstr "טעינה מחדש"
 msgid "Reload the MarkdownIndex list."
 msgstr "טענו מחדש את רשימת MarkdownIndex."
 
+#: src/components/diagnose/SendOnceDoneDialog.tsx
+msgid "Remember this decision"
+msgstr "זכור החלטה זו"
+
 #: src/components/project-home/ProjectHome.tsx
 msgid "Remote repository"
 msgstr "מאגר מרוחק"
@@ -24538,6 +24610,7 @@ msgstr "הסרה מהתיקייה"
 
 #: src/components/connections-manager.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Remove from project"
 msgstr "הסירו מהפרויקט"
 
@@ -25616,6 +25689,7 @@ msgid "Run — once its steps are set up"
 msgstr "הרצה — אחרי שהשלבים שלו הוגדרו"
 
 #: src/components/collaboration/useApproveLiveSession.tsx
+#: src/components/open-project-component/open-project-component.tsx
 msgid "Run (Skip project)"
 msgstr "להריץ (בלי פרויקט)"
 
@@ -25637,13 +25711,18 @@ msgstr "הריצו `flow connect` במחשב והזינו כאן את הקוד �
 msgid "Run a command"
 msgstr "הרצת פקודה"
 
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
-msgid "Run a diagnosis on the error below? The assistant inspects Flowpad, repairs what's safe, and records the result."
-msgstr "להריץ אבחון על השגיאה שלמטה? העוזר בודק את Flowpad, מתקן את מה שבטוח לתקן ומתעד את התוצאה."
+#. placeholder {0}: seed.kind
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "Run a diagnosis on the {0} below? The assistant inspects Flowpad, repairs what's safe, and records the result."
+msgstr ""
 
 #: src/notifications/diagnose/DiagnoseErrorModal.tsx
-msgid "Run a diagnosis on the warning below? The assistant inspects Flowpad, repairs what's safe, and records the result."
-msgstr "להריץ אבחון על האזהרה שלהלן? העוזר יבדוק את Flowpad, יתקן את מה שבטוח לתקן ויתעד את התוצאה."
+#~ msgid "Run a diagnosis on the error below? The assistant inspects Flowpad, repairs what's safe, and records the result."
+#~ msgstr "להריץ אבחון על השגיאה שלמטה? העוזר בודק את Flowpad, מתקן את מה שבטוח לתקן ומתעד את התוצאה."
+
+#: src/notifications/diagnose/DiagnoseErrorModal.tsx
+#~ msgid "Run a diagnosis on the warning below? The assistant inspects Flowpad, repairs what's safe, and records the result."
+#~ msgstr "להריץ אבחון על האזהרה שלהלן? העוזר יבדוק את Flowpad, יתקן את מה שבטוח לתקן ויתעד את התוצאה."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Run a new analysis of this session — adds another entry, previous analyses are kept"
@@ -25703,7 +25782,7 @@ msgstr "הפעילו את Claude Code בתיקייה של פרויקט כדי ל
 msgid "Run detail"
 msgstr "פרטי ההרצה"
 
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
+#: src/components/version-popover/diagnose-modal.tsx
 msgid "Run diagnosis"
 msgstr "הרצת אבחון"
 
@@ -25740,6 +25819,10 @@ msgstr "הריצו אותה פעם אחת עכשיו, גם אם היא כבוי�
 #: src/components/collaboration/useApproveLiveSession.tsx
 msgid "Run it without a project, in this machine's live-session temp folder — always the same folder"
 msgstr "להריץ בלי פרויקט, בתיקייה הזמנית של סשני זמן האמת במחשב הזה — תמיד אותה תיקייה"
+
+#: src/components/open-project-component/open-project-component.tsx
+msgid "Run it without a project, in this machine's temp folder"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/automations/AutomationRow.tsx
@@ -25964,8 +26047,10 @@ msgstr "רץ מעצמו כאשר"
 msgid "Runs of this flow"
 msgstr "הרצות של הזרימה הזו"
 
-#~ msgid "Runs on"
-#~ msgstr ""
+#: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
+#: src/components/triggers-view/ScheduleTriggerEditor.tsx
+msgid "Runs on"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Runs on {hostName}'s machine, in their Claude Code · Enter to send"
@@ -26207,6 +26292,10 @@ msgstr ""
 #: src/components/credentials/VariableDetails.tsx
 msgid "Saved with the form. One-of requires at least two variables in the same credential."
 msgstr "נשמר עם הטופס. ״אחד מתוך קבוצה״ דורש לפחות שני משתנים באותם פרטי גישה."
+
+#: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
+msgid "Saving moves this schedule: it is deleted where it runs now and created on the new place."
+msgstr ""
 
 #~ msgid "Saving..."
 #~ msgstr "שמירה..."
@@ -27025,6 +27114,14 @@ msgstr "שלחו את השינויים שלי בחזרה"
 msgid "Send one minimal call through this endpoint"
 msgstr "שליחת קריאה מינימלית אחת דרך נקודת הקצה הזו"
 
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "Send report once done"
+msgstr "שלח דוח בסיום"
+
+#: src/components/diagnose/SendOnceDoneDialog.tsx
+msgid "Send report once done?"
+msgstr "לשלוח דוח בסיום?"
+
 #: src/components/inbound/InboundView.tsx
 msgid "Send this code from your phone to link it:"
 msgstr "שלחו מהטלפון את הקוד הזה כדי לקשר אותו:"
@@ -27040,6 +27137,14 @@ msgstr "שלחו את הקישור הזה למי שתרצו לתת לו גישה
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Send this to the person you support — they run it in their terminal:"
 msgstr "שלחו את זה לאדם שאתם תומכים בו — הוא יריץ את זה בטרמינל שלו:"
+
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "Send to {to}"
+msgstr "שלח אל {to}"
+
+#: src/components/diagnose/SendOnceDoneDialog.tsx
+msgid "Send when done"
+msgstr "שלח בסיום"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Send without it"
@@ -27079,6 +27184,10 @@ msgstr "משלח…"
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Sends replies"
 msgstr "שולח תשובות"
+
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "Sends the results to {goesTo} when the diagnosis finishes — even if you close this window."
+msgstr "שולח את התוצאות אל {goesTo} כשהאבחון מסתיים — גם אם תסגור את החלון."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Sends your question to a help desk — a person picks it up."
@@ -27698,6 +27807,10 @@ msgstr "שיתוף סנדבוקס"
 #~ msgid "Share the agent with someone first — the link only works for people it's shared with."
 #~ msgstr ""
 
+#: src/components/diagnose/ShareWithRow.tsx
+msgid "Share the results with"
+msgstr "שתף את התוצאות עם"
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Share this agent with specific people"
 msgstr "שתפו את הסוכן הזה עם אנשים מסוימים"
@@ -28213,6 +28326,11 @@ msgstr "התחברו כדי ליצור סנדבוקסים"
 msgid "Sign in to Flowpad"
 msgstr "התחברו ל-Flowpad"
 
+#: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/automations/AutomationPage.tsx
+msgid "Sign in to Flowpad cloud"
+msgstr ""
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr "יש להתחבר ל-FlowPad Hub תחילה — אישור מכונה מקשר אותה לחשבון שלכם."
@@ -28567,6 +28685,10 @@ msgstr "דילוג על בדיקת ההרשאות ההתחלתית בעת ההפ
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skip it…"
 msgstr "לדלג…"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skip locally"
+msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #~ msgid "Skip on this machine only — undo any time"
@@ -30343,6 +30465,7 @@ msgstr "לא ניתן היה לטעון את המדריכים ({guidesFailed}) �
 msgid "The health check did not answer"
 msgstr "בדיקת התקינות לא קיבלה מענה"
 
+#: src/components/diagnose/diagnose-run-store.ts
 #: src/components/help/AskForHelpDialog.tsx
 msgid "the help desk"
 msgstr "דסק העזרה"
@@ -30919,6 +31042,7 @@ msgstr "חדר השיתוף הזה כבר לא קיים או אינו זמין."
 #~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/assets/editor/agent-profile/use-place-display.ts
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/inbound/use-inbound.ts
 msgid "This computer"
@@ -30928,6 +31052,10 @@ msgstr "המחשב הזה"
 #: src/components/connections-manager.tsx
 msgid "This computer · {0}"
 msgstr "המחשב הזה · {0}"
+
+#: src/components/assets/editor/agent-profile/use-place-display.ts
+msgid "This computer · every machine"
+msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "This computer (fetches its own)"
@@ -31417,8 +31545,12 @@ msgid "This run wrote no files. Runs launched outside a flow only produce artifa
 msgstr "ההרצה הזו לא כתבה קבצים. הרצות שהופעלו מחוץ ל-Flow מפיקות תוצרים רק כשאומרים לסוכן היכן לכתוב אותם."
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
-msgstr "התהליך רץ ברקע — אפשר להמשיך לעבוד. כשהוא יסתיים, התוצאה (וכל פעולה שתידרש) תחכה לכם בפיד הבית."
+#~ msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
+#~ msgstr "התהליך רץ ברקע — אפשר להמשיך לעבוד. כשהוא יסתיים, התוצאה (וכל פעולה שתידרש) תחכה לכם בפיד הבית."
+
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "This runs in the background — when it's done, the result (and any actions) waits on your Home feed."
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "this sandbox"
@@ -33449,7 +33581,7 @@ msgstr "בקשה להריץ במחשב שלך"
 msgid "wants to run prompts on your machine"
 msgstr "רוצה להריץ פרומפטים במחשב שלכם"
 
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
+#: src/components/version-popover/diagnose-modal.tsx
 msgid "Warning"
 msgstr "אזהרה"
 
@@ -33844,6 +33976,14 @@ msgstr "כשסוכן עושה משהו"
 msgid "When an agent reports {events}"
 msgstr "כשסוכן מדווח על {events}"
 
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "When it finishes, send the results to the people above. Flowpad remembers this choice."
+msgstr "בסיום, שלח את התוצאות לאנשים שלמעלה. Flowpad זוכר בחירה זו."
+
+#: src/components/version-popover/diagnose-modal.tsx
+msgid "When it is done, the results go to {goesTo} in a new conversation titled with the diagnosis."
+msgstr "בסיום, התוצאות יישלחו אל {goesTo} בשיחה חדשה שכותרתה האבחון."
+
 #: src/i18n/pref-labels.ts
 msgid "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
 msgstr "כשמופעל, השרת יוצר מחדש בהפעלה הבאה את סימניית קבלת הפנים ואת רשומת הפיד, ולאחר מכן מכבה הגדרה זו."
@@ -33856,6 +33996,10 @@ msgstr "כשקורה משהו"
 #: src/components/automations/KindGallery.tsx
 msgid "When something happens in Flowpad"
 msgstr "כשקורה משהו ב-Flowpad"
+
+#: src/components/diagnose/SendOnceDoneDialog.tsx
+msgid "When the diagnosis finishes, Flowpad sends the results to <0>{to}</0> in a new conversation — even if you close this window."
+msgstr "כשהאבחון מסתיים, Flowpad שולח את התוצאות אל <0>{to}</0> בשיחה חדשה — גם אם תסגור את החלון."
 
 #~ msgid "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
 #~ msgstr ""
@@ -33871,6 +34015,10 @@ msgstr "כשזה קורה"
 #: src/i18n/pref-labels.ts
 msgid "When you are signed out, ask whether to sign in so the search line can open screens directly."
 msgstr "כשלא מחוברים, יש לשאול אם להתחבר, כדי ששורת החיפוש תוכל לפתוח מסכים ישירות."
+
+#: src/components/automations/AutomationPage.tsx
+msgid "Where"
+msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Where do I get this?"
@@ -34147,7 +34295,6 @@ msgstr "עובד…"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/version-popover/diagnose-modal.tsx
-#: src/notifications/diagnose/DiagnoseErrorModal.tsx
 msgid "Working…"
 msgstr "בתהליך…"
 
