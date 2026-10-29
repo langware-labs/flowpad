@@ -117,3 +117,63 @@ export function aliasesForPinnedModel(models_allow: string[]): Record<string, st
   }
   return out;
 }
+
+/** The model family of a slug or of a family glob, vendor-free: `anthropic/claude-*`, `claude-*` -> `claude`;
+ *  `google/gemini-3.5-flash` -> `gemini`. */
+function familyName(slugOrGlob: string): string {
+  const bare = slugOrGlob.includes('/') ? slugOrGlob.slice(slugOrGlob.indexOf('/') + 1) : slugOrGlob;
+  return bare.split('-')[0];
+}
+
+/** Whether `models_allow` lets `slug` through: listed as is, or covered by one of its globs. */
+function isAllowed(slug: string, models_allow: string[]): boolean {
+  return models_allow.some((pattern) => {
+    if (!pattern.includes('*')) return pattern === slug;
+    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    return new RegExp(`^${escaped}$`).test(slug);
+  });
+}
+
+/**
+ * The alias map a row should carry: what the allowed list derives (`aliasesForPinnedModel`), PLUS the
+ * redirects an admin wrote by hand that the derivation can never make -- those that cross families
+ * (`anthropic/claude-*` -> `google/gemini-3.5-flash`: Claude Code asking for Claude, answered with
+ * the one model the wallet funds) and still point at a model the list allows.
+ *
+ * Without this the screen's repair effect rewrote the map from the list alone on every open, so a
+ * redirect an admin typed and saved was gone the next time anyone looked. Same-family entries stay
+ * fully derived: widening a wallet back to a glob must still clear the redirect it used to need.
+ */
+export function reconcileAliases(current: Record<string, string>, models_allow: string[]): Record<string, string> {
+  const derived = aliasesForPinnedModel(models_allow);
+  const kept: Record<string, string> = {};
+  for (const [from, to] of Object.entries(current)) {
+    if (from in derived) continue;
+    if (familyName(from) === familyName(to)) continue; // derived territory: rebuilt from the list
+    if (!isAllowed(to, models_allow)) continue; // would redirect into a refusal
+    kept[from] = to;
+  }
+  return { ...kept, ...derived };
+}
+
+/** Same map, whatever the key order. */
+export function sameAliases(a: Record<string, string>, b: Record<string, string>): boolean {
+  const norm = (m: Record<string, string>) => JSON.stringify(Object.entries(m).sort(([x], [y]) => (x < y ? -1 : 1)));
+  return norm(a) === norm(b);
+}
+
+/**
+ * The cross-family redirects on a row, as `[from, to]` family names (`['claude', 'gemini']`), one per
+ * pair. What the "suggested for this provider" note names after a provider's defaults were written.
+ */
+export function crossFamilyRedirects(aliases: Record<string, string>): Array<[string, string]> {
+  const seen = new Set<string>();
+  const out: Array<[string, string]> = [];
+  for (const [from, to] of Object.entries(aliases)) {
+    const pair: [string, string] = [familyName(from), familyName(to)];
+    if (pair[0] === pair[1] || seen.has(pair.join('>'))) continue;
+    seen.add(pair.join('>'));
+    out.push(pair);
+  }
+  return out;
+}

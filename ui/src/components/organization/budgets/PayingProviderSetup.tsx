@@ -44,12 +44,14 @@ import {
   rootBaseUrl,
   type ProviderSpec,
 } from '@src/components/llm-endpoints/endpoint-catalog';
+import { useLlmEndpoint } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
+import { crossFamilyRedirects } from './budget-models';
 import { useInvalidateBudgets, useSetPayingProvider } from './use-budgets';
 
 export interface PayingProviderSetupProps {
@@ -280,6 +282,10 @@ function OrgKeyField({
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [removing, setRemoving] = useState(false);
   const invalidate = useInvalidateBudgets();
+  // What the provider's defaults put on this budget, read from the row itself: the note below says
+  // exactly what is there, and goes away when the payer removes it.
+  const endpoint = useLlmEndpoint(endpointId);
+  const redirects = crossFamilyRedirects(endpoint?.filters.aliases ?? {});
 
   // Switching provider means DELETING this root and building another, because `provider` and
   // `base_url` sit in the hub's `_immutable_update` list. Removing the stored key does not do it —
@@ -317,6 +323,14 @@ function OrgKeyField({
           />
         </div>
       </div>
+      {redirects.length > 0 && hint && (
+        <p className="text-xs text-muted-foreground" data-testid="org-root-redirects">
+          <Trans>
+            Suggested for this provider: requests for {redirects.map(([from]) => from).join(', ')} models are answered
+            by {redirects.map(([, to]) => to).join(', ')} models. You can change this under Advanced.
+          </Trans>
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
         <Trans>The provider is fixed once a budget exists.</Trans>{' '}
         <Button
