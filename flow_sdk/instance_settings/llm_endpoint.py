@@ -257,8 +257,9 @@ def listing_supersedes_binding() -> bool:
     return cached[0] > _bound_at.get(name, 0.0)
 
 
-def _can_administer(row: dict) -> bool | None:
-    """Whether the caller may CHANGE this endpoint, out of the hub's permission expansion.
+def _allows(row: dict, action: str) -> bool | None:
+    """Whether the hub's permission expansion lets the caller run ``action`` on this endpoint --
+    ``update`` (may CHANGE it) or ``allocate`` (may carve a sub-budget from it).
 
     ``None`` when the row carries no expansion at all -- an older hub, or a read that did not ask
     for one. Unknown is not "no": a caller that treated it as "no" would read every row on an
@@ -266,14 +267,7 @@ def _can_administer(row: dict) -> bool | None:
     """
     expand = row.get("expand") if isinstance(row, dict) else None
     actions = expand.get("allowed_actions") if isinstance(expand, dict) else None
-    return ("update" in actions) if isinstance(actions, list) else None
-
-
-def _can_allocate(row: dict) -> bool | None:
-    """Whether the caller may carve a sub-budget from this endpoint (``allocate``), off the same expansion."""
-    expand = row.get("expand") if isinstance(row, dict) else None
-    actions = expand.get("allowed_actions") if isinstance(expand, dict) else None
-    return ("allocate" in actions) if isinstance(actions, list) else None
+    return (action in actions) if isinstance(actions, list) else None
 
 
 def _root_provider(row: dict) -> str | None:
@@ -291,7 +285,7 @@ def _root_provider(row: dict) -> str | None:
 def _is_mine(row: dict) -> bool | None:
     """Whether this endpoint is the caller's OWN to spend, out of the hub's permission expansion.
 
-    The SAME block ``_can_administer`` reads, answering the other question about it: "may I change
+    The SAME block ``_allows`` reads, answering the other question about it: "may I change
     this" and "is this mine" are not the same, and neither implies the other. The hub answers it
     while it holds both the caller and the row (``LLMEndpoint.expand_permissions``), so there is no
     second read and nothing to join here.
@@ -437,8 +431,8 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             # different meaning cannot turn a hub endpoint into a local one.
             payload["kind"] = LLMEndpointKind.HUB
             # ``None`` unless this row came from the scoped listing WITH an answer -- see the field.
-            payload["can_administer"] = _can_administer(row) if row_id in held else None
-            payload["can_allocate"] = _can_allocate(row) if row_id in held else None
+            payload["can_administer"] = _allows(row, "update") if row_id in held else None
+            payload["can_allocate"] = _allows(row, "allocate") if row_id in held else None
             # Off the SAME expansion block as ``can_administer`` above -- one read answers both.
             payload["is_mine"] = _is_mine(row) if row_id in held else None
             # Name who pays, not the entity default a chain row carries.

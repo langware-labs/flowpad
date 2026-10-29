@@ -156,10 +156,10 @@ def test_row_tiers_fall_back_to_the_rows_own_and_drop_empty() -> None:
 
 def test_can_allocate_is_the_hubs_allocate_permission_not_update() -> None:
     """A holder may carve a sub-budget from their own allowance without being able to change it."""
-    from flow_sdk.instance_settings.llm_endpoint import _can_administer, _can_allocate
+    from flow_sdk.instance_settings.llm_endpoint import _allows
 
     holder = {"expand": {"allowed_actions": ["read", "invoke", "allocate", "history"]}}
     spender = {"expand": {"allowed_actions": ["read", "invoke"]}}
-    assert (_can_allocate(holder), _can_administer(holder)) == (True, False)
-    assert _can_allocate(spender) is False
-    assert _can_allocate({}) is None  # no expansion: unknown, not "no"
+    assert (_allows(holder, "allocate"), _allows(holder, "update")) == (True, False)
+    assert _allows(spender, "allocate") is False
+    assert _allows({}, "allocate") is None  # no expansion: unknown, not "no"
