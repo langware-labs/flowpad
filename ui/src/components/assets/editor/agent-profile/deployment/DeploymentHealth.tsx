@@ -3,6 +3,7 @@ import { type Deployment, type EndpointHealth, type HealthState, type ServiceEnd
 import { Loader2, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
+import { issuesConcerning, SeverityDot, useIssues } from '@src/components/asset-counters/issue-counters';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 
@@ -30,6 +31,9 @@ export function DeploymentHealth({ deployment }: { deployment: Deployment }) {
   const [fresh, setFresh] = useState<Record<string, EndpointHealth>>({});
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { issues } = useIssues();
+  // Why it is unhealthy, when the hub knows: the worst open issue about this deployment.
+  const reason = issuesConcerning(issues, deployment.typeId.toString())[0] ?? null;
 
   useEffect(() => {
     let live = true;
@@ -104,6 +108,16 @@ export function DeploymentHealth({ deployment }: { deployment: Deployment }) {
       {endpoints?.length === 0 && missing.length === 0 && (
         <span className="text-xs text-muted-foreground">
           <Trans>none</Trans>
+        </span>
+      )}
+      {reason && (
+        <span
+          className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+          title={reason.detail}
+          data-testid={`deployment-health-reason-${deployment.id}`}
+        >
+          <SeverityDot severity={reason.severity} />
+          <span className="truncate">{reason.title}</span>
         </span>
       )}
       {error && <span className="text-xs text-destructive">{error}</span>}

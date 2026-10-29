@@ -1,6 +1,6 @@
 import apiClient from '../client';
 import type { APIEntity } from '../APIEntity';
-import type { Project } from '../entities/project';
+import type { Project, ProjectAssetMenu, ProjectMenuNode } from '../entities/project';
 import type { Bookmark } from '../entities/bookmark';
 import type { Workspace } from '../entities/workspace';
 import type { RagIndex } from '../entities/rag-index';
@@ -145,6 +145,26 @@ export const assetDefinitions = {
       return subscribeToEntityOps(Object.keys(initial.per_type), () => {
         void lazyAssets.invalidate(LazyAsset.AssetStats, p ?? {});
       });
+    },
+  }),
+  // The project's Assets menu (per-type counts + dependency rows). `contextDirs` is in
+  // the key so a changed dependency list refetches; a create or delete of a listed type
+  // changes a count, so those ops invalidate it.
+  [LazyAsset.ProjectAssetMenu]: defineAsset({
+    load: async (p: { projectId: string; contextDirs: string }): Promise<ProjectAssetMenu | null> => {
+      const { Project: ProjectEntity } = await import('../entities/project');
+      return ProjectEntity.getAssetMenuById(p.projectId);
+    },
+    subscribe: async (p: { projectId: string; contextDirs: string }, _publish: unknown, initial: ProjectAssetMenu | null) => {
+      const { subscribeToEntityOps } = await import('../FlowSync/entity-ops');
+      const { lazyAssets } = await import('./registry');
+      const types = new Set<string>();
+      const visit = (node: ProjectMenuNode) => {
+        for (const g of node.groups ?? []) types.add(g.type_name);
+        for (const child of node.children ?? []) visit(child);
+      };
+      if (initial?.root) visit(initial.root);
+      return subscribeToEntityOps([...types], () => { void lazyAssets.invalidate(LazyAsset.ProjectAssetMenu, p); }, { ops: ['create', 'delete'] });
     },
   }),
   [LazyAsset.Projects]: entities<Project>('project'),

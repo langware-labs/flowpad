@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
 import { IEntity, EntityMerge } from '../IEntity';
@@ -21,6 +22,37 @@ import type {
   TryRow,
 } from './automation-types';
 import type { DecisionVerdict } from '../models/ReturnedValue';
+import type { ApiWarning } from '../ApiResponse';
+/** The overview's rows, plus the warnings its answer carried (e.g. `CLOUD_UNAVAILABLE`). */
+export interface AutomationOverview {
+  rows: AutomationSummary[];
+  warnings: ApiWarning[];
+}
+
+/** A schedule that runs an agent on Flowpad cloud — what `Trigger.createOnCloud` sends to the hub. */
+export interface CloudSchedule {
+  name: string;
+  description?: string;
+  expr: string;
+  sched_trigger_type?: 'cron' | 'interval' | 'date';
+  /** IANA zone, always sent: the hub reads an empty one as UTC. */
+  timezone: string;
+  /** `agent-<uuid>`, or the bare uuid. */
+  agent: string;
+  prompt: string;
+  project_id?: string | null;
+  enabled?: boolean;
+}
+
+/**
+ * A call about one trigger (by id) always asks for the hub: the desktop's router
+ * (`flow_sdk/server/routes/_hub_reflect.py` `decide`) answers it here when the row is stored here and
+ * is not remote, and sends any other id — a Flowpad-cloud row — to the hub. No caller picks a side.
+ */
+const byId = (action: ActionInfo): ActionInfo => {
+  action.hubReflect = true;
+  return action;
+};
 
 /** One raw trigger-log row (`fs_store/operations/trigger_log.py`). The Automations screen reads runs instead. */
 export interface TriggerLogRow {
@@ -290,11 +322,27 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   // `Trigger` action in `flow_sdk/builtin/trigger.py`; answers are the
   // `automation.*` shapes in `./automation-types`.
 
-  /** Every automation as a sentence with its health — the whole list in one call. */
-  static async overview(options: { includeInactive?: boolean } = {}): Promise<AutomationSummary[]> {
+  /** Every automation as a sentence with its health — the whole list in one call — and what the answer
+   *  warned of: a `CLOUD_UNAVAILABLE` / `CLOUD_SIGNED_OUT` warning means the rows are this machine's
+   *  only — the cloud's could not be read. */
+  static async overview(options: { includeInactive?: boolean } = {}): Promise<AutomationOverview> {
     const action = new ActionInfo('overview', Trigger.type, null, 'GET' as HttpMethod);
     if (options.includeInactive) action.queryParameters = { include_inactive: 'true' };
-    return ((await dataManager.callAction<undefined, AutomationSummary[]>(action)) as AutomationSummary[]) ?? [];
+    const { data, warnings } = await dataManager.callActionWithWarnings<AutomationSummary[]>(action);
+    return { rows: data ?? [], warnings };
+  }
+
+  /** One automation's full row, by id — wherever it is stored: this machine's, or the hub's for a
+   *  Flowpad-cloud row (see {@link byId}). Null when neither has it. */
+  static async load(triggerId: string): Promise<Trigger | null> {
+    const action = byId(new ActionInfo('', Trigger.type, triggerId, 'GET' as HttpMethod));
+    try {
+      const row = (await dataManager.callAction<undefined, ITrigger | null>(action)) as ITrigger | null;
+      return row ? new Trigger(row) : null;
+    } catch (error) {
+      if (isAxiosError(error) && error.response?.status === 404) return null;
+      throw error;
+    }
   }
 
   /** When a schedule (saved or still being edited) fires next, and how it reads. */
@@ -385,7 +433,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     event?: AutomationTestEvent | null,
     options: { messageId?: string } = {},
   ): Promise<RunOnceStarted> {
-    const action = new ActionInfo('test', Trigger.type, triggerId, 'POST' as HttpMethod);
+    const action = byId(new ActionInfo('test', Trigger.type, triggerId, 'POST' as HttpMethod));
     action.bodyParameters = {
       ...(event ? { event: { ...event } } : {}),
       ...(options.messageId ? { message_id: options.messageId } : {}),
@@ -437,6 +485,50 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     return (await dataManager.callAction<undefined, PatternMatch>(action)) as PatternMatch;
   }
 
+  /** Fire a hub trigger now (`POST trigger/<id>/fire` on the hub) — *Run now* for a row whose source is
+   *  `hub`. The hub records the fire in the row's recent fires. */
+  static async fire(triggerId: string): Promise<unknown> {
+    const action = byId(new ActionInfo('fire', Trigger.type, triggerId, 'POST' as HttpMethod));
+    action.bodyParameters = {};
+    return await dataManager.callAction<undefined, unknown>(action);
+  }
+
+  /** *Run now* for an overview row — the ONE place a row's source picks the call: the hub's fire for a
+   *  hub row (it answers no run id; the lists pick the fire up on refresh), else a local run once. */
+  static async runNow(
+    row: { id: string; source?: string | null },
+    event?: AutomationTestEvent | null,
+    options: { messageId?: string } = {},
+  ): Promise<RunOnceStarted> {
+    if (row.source !== 'hub') return Trigger.runOnce(row.id, event, options);
+    await Trigger.fire(row.id);
+    return { trigger_id: row.id, background: true, detail: {} };
+  }
+
+  /** Create a schedule that runs an agent on Flowpad cloud: a hub Trigger, made through `hubReflect`. */
+  static async createOnCloud(schedule: CloudSchedule): Promise<Trigger> {
+    const action = new ActionInfo('create', Trigger.type, null, 'POST' as HttpMethod);
+    action.hubReflect = true; // no id to route by: asking for the hub is what makes this a cloud row
+    action.bodyParameters = { ...Trigger.cloudScheduleFields(schedule) } as Record<string, unknown>;
+    return new Trigger((await dataManager.callAction<undefined, ITrigger>(action)) as ITrigger);
+  }
+
+  /** The fields a Flowpad cloud schedule is saved with — the hub's create and update take the same. */
+  static cloudScheduleFields(schedule: CloudSchedule): Partial<ITrigger> & { name: string } {
+    const agent = schedule.agent.startsWith('agent-') ? schedule.agent : `agent-${schedule.agent}`;
+    return {
+      name: schedule.name,
+      ...(schedule.description ? { description: schedule.description } : {}),
+      trigger_type: 'schedule',
+      expr: schedule.expr,
+      sched_trigger_type: schedule.sched_trigger_type ?? 'cron',
+      timezone: schedule.timezone,
+      actions: [{ action_type: 'run_agent', target_type_id: agent, prompt: schedule.prompt }],
+      enabled: schedule.enabled ?? true,
+      project_id: schedule.project_id ?? null,
+    };
+  }
+
   /** Create an automation from its fields (`trigger_type`, `name`, the kind's fields, `actions`). */
   static async createAutomation(fields: Partial<ITrigger> & { name: string }): Promise<Trigger> {
     const action = new ActionInfo('create', Trigger.type, null, 'POST' as HttpMethod);
@@ -446,7 +538,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
 
   /** Change an automation's fields; the backend re-arms it. */
   static async updateAutomation(triggerId: string, patch: Partial<ITrigger>): Promise<Trigger> {
-    const action = new ActionInfo('update', Trigger.type, triggerId, 'PATCH' as HttpMethod);
+    const action = byId(new ActionInfo('update', Trigger.type, triggerId, 'PATCH' as HttpMethod));
     action.bodyParameters = { ...patch } as Record<string, unknown>;
     return new Trigger((await dataManager.callAction<undefined, ITrigger>(action)) as ITrigger);
   }
@@ -458,7 +550,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
 
   /** Delete an automation; the backend disarms it first. */
   static async remove(triggerId: string): Promise<void> {
-    const action = new ActionInfo('delete', Trigger.type, triggerId, 'DELETE' as HttpMethod);
+    const action = byId(new ActionInfo('delete', Trigger.type, triggerId, 'DELETE' as HttpMethod));
     await dataManager.callAction(action);
   }
 

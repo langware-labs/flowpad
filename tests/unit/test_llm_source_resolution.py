@@ -126,6 +126,8 @@ async def _signed_in(*workers: str) -> None:
 
 EP1 = "llm_endpoint-11111111-2222-4333-8444-555555555555"
 EP2 = "llm_endpoint-22222222-2222-4333-8444-555555555555"
+#: The model per size the test endpoints declare (the endpoint, not code, decides what a size runs).
+TIERS = {"sm": "anthropic/claude-haiku-5.5", "md": "anthropic/claude-sonnet-4.5", "lg": "anthropic/claude-opus-4.1"}
 
 
 def _bind(monkeypatch, *, login: bool = True, typeid: str = EP1) -> None:
@@ -137,7 +139,9 @@ def _bind(monkeypatch, *, login: bool = True, typeid: str = EP1) -> None:
     if login:
         set_api_key("fp-hub-key")
     llm_endpoint.reset_cache()
-    llm_endpoint.set_hub_llm_endpoint(typeid, f"/api/v1/graph/{typeid}/invoke", provider="openrouter", name="Team pool")
+    llm_endpoint.set_hub_llm_endpoint(
+        typeid, f"/api/v1/graph/{typeid}/invoke", provider="openrouter", name="Team pool", tiers=TIERS
+    )
 
 
 def _grant(monkeypatch, *, typeid: str = EP1) -> None:
@@ -163,6 +167,7 @@ def _grant(monkeypatch, *, typeid: str = EP1) -> None:
         provider="openrouter",
         kind="hub",
         invoke_url=f"/api/v1/graph/{typeid}/invoke",
+        tiers=dict(TIERS),
     )
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [granted])
     assert settings.get_hub_llm_endpoint() is None, "a grant is not a binding"
@@ -502,26 +507,23 @@ async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
 
 
 def test_no_harness_collapses_its_model_tiers() -> None:
-    """sm/md/lg must name three different models on the key and endpoint paths.
+    """sm/md/lg must name three different sizes on the claude device login.
 
-    codex, copilot and opencode each mapped ``md`` and ``lg`` to the SAME slug, so asking
-    for the accurate model quietly got the balanced one -- a tier that silently does
-    nothing is worse than one that does not exist, because the caller believes it worked.
-    The device-login path has always had three distinct tiers; this keeps the funded paths
-    honest about the same promise.
+    A funded spawn reads the ENDPOINT's slug for the size (``ApiAuthSpec.tier_models`` is gone),
+    so the only code-side size names left are claude's own words, and they must stay distinct.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS
+    from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_CLI_ALIASES, CLAUDE_MODEL_TIERS
 
-    for worker, spec in _SPECS.items():
-        slugs = [spec.tier_models[t] for t in ("sm", "md", "lg")]
-        assert len(set(slugs)) == 3, f"{worker} maps two tiers to one model: {spec.tier_models}"
+    assert CLAUDE_MODEL_TIERS == {"sm": "haiku", "md": "sonnet", "lg": "opus"}
+    assert CLAUDE_CLI_ALIASES == {"haiku": "sm", "sonnet": "md", "opus": "lg"}
 
 
 def test_every_harness_declares_all_three_tiers() -> None:
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS
+    from flow_sdk.builtin.agentic_process import model_tiers
 
-    for worker, spec in _SPECS.items():
-        assert set(spec.tier_models) >= {"sm", "md", "lg"}, worker
+    assert set(model_tiers.CLAUDE_MODEL_TIERS) >= {"sm", "md", "lg"}
+    # Every vendor CLI but claude picks its own default: no model ids in code.
+    assert dict(model_tiers.VENDOR_DEFAULT_TIERS) == {"sm": None, "md": None, "lg": None}
 
 
 # ── the device rung's verdict has to actually be resolved ────────────────────────
@@ -1208,7 +1210,12 @@ def _bind_public(monkeypatch, *, typeid: str = EP1, hub_origin: str = "https://o
 
     llm_endpoint.reset_cache()
     llm_endpoint.set_hub_llm_endpoint(
-        typeid, f"/api/v1/graph/{typeid}/invoke", name="open budget", public=True, hub_origin=hub_origin
+        typeid,
+        f"/api/v1/graph/{typeid}/invoke",
+        name="open budget",
+        public=True,
+        hub_origin=hub_origin,
+        tiers=TIERS,
     )
 
 
@@ -1279,6 +1286,22 @@ async def test_a_process_pinned_to_a_public_endpoint_spends_it_without_a_login(e
         await resolve_llm_endpoint(_process(endpoint=EP2))
 
 
+@pytest.fixture
+async def _openrouter_key_models_restored():
+    """The page tunes the shared OpenRouter key row's ``sm`` (``LLMEndpointConfig``) and a funded spawn
+    RUNS ``endpoint.tiers[size]`` -- left tuned, every later test on that key runs the page's model."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    before = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+    saved = dict(before.tiers) if before is not None else None
+    yield
+    after = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+    if after is not None and saved is not None and after.tiers != saved:
+        after.tiers = saved
+        await after.save()
+
+
+@pytest.mark.usefixtures("_openrouter_key_models_restored")
 async def test_the_llm_endpoints_page_runs_in_order(monkeypatch, tmp_path):
     """``docs/snippets/llm-endpoints.md``, every fence but the long tier's script, verbatim and in order.
 

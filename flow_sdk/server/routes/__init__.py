@@ -22,6 +22,7 @@ from .favorites import router as favorites_router
 from .git import router as git_router
 from .graph import graph_router
 from .graph_workflows import router as graph_workflows_router
+from .headless_turn import router as headless_turn_router
 from .health import health_router
 from .hooks import router as hooks_router
 from .ingest import router as ingest_router
@@ -79,6 +80,7 @@ __all__ = [
     "asset_share_router",
     "display_router",
     "shell_router",
+    "headless_turn_router",
     "snippet_router",
     "navigate_router",
     "agent_records_router",

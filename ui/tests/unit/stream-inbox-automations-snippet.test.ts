@@ -24,7 +24,9 @@ describe('stream-inbox-automations.md §9', () => {
     };
     vi.spyOn(dataManager, 'callAction').mockImplementation((action: ActionInfo) => {
       calls.push(action);
-      return Promise.resolve((answers[action.name] ?? []) as never);
+      const answer = answers[action.name] ?? [];
+      // `overview` reads the whole envelope, to carry its warnings beside the rows.
+      return Promise.resolve((action.keepEnvelope ? { data: answer, warnings: [] } : answer) as never);
     });
     const ns = await runTsFence(tsFenceUnder(snippetDoc('stream-inbox-automations.md'), '9.'), {
       Trigger,

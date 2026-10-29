@@ -53,9 +53,12 @@ class AgentStreamInboxScope:
 
 
 def is_message_source(source) -> bool:
-    """The domain predicate: a DataSource on a channel whose driver can send."""
+    """The domain predicate: a DataSource on a channel whose driver can send, and not read-only.
+    The UI spelling is ``isMessageChannel`` (ui/src/components/data-sources/use-source-specs.ts)."""
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
+    if getattr(source, "read_only", False):
+        return False
     if not (getattr(source, "channel", "") or "").strip():
         return False
     driver = DataDriver.loaded(getattr(source, "provider", "") or "")

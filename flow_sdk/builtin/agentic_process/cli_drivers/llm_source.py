@@ -78,13 +78,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Rank bands: a signed-in device login first, then a stored key, then a hub endpoint.
-_RANK_DEVICE = 0
-_RANK_KEY = 10
-_RANK_ENDPOINT = 20
+def _rank(kind: str) -> int:
+    """The rank band of a source kind (``device`` / ``api_key`` / ``endpoint``) in the user's order
+    (``preferences.llm_source_order``). Only rung 4 (nobody asked) reads it -- a process, project or
+    explicit harness choice still wins."""
+    from flow_sdk.preferences import llm_source_order  # noqa: PLC0415
+
+    return llm_source_order().index(kind) * 10
 
 
-def _hub_stub(typeid: str, *, name: str = "", provider: str = "", public: bool = False) -> "LLMEndpoint":
+def _hub_stub(
+    typeid: str, *, name: str = "", provider: str = "", public: bool = False, tiers: dict | None = None
+) -> "LLMEndpoint":
     """A hub endpoint we know only by typeid.
 
     Used for the two cases where a budget is named before any listing describes it: the
@@ -97,7 +102,9 @@ def _hub_stub(typeid: str, *, name: str = "", provider: str = "", public: bool =
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
 
-    return LLMEndpoint.projection("hub", typeid, name=name, provider=provider, public=public)
+    return LLMEndpoint.projection(
+        "hub", typeid, name=name, provider=provider, public=public, tiers=dict(tiers or {})
+    )
 
 
 class Candidate(NamedTuple):
@@ -161,7 +168,7 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
             LLMSource(
                 endpoint_typeid=typeid,
                 name=name,
-                rank=_RANK_DEVICE,
+                rank=_rank("device"),
                 eligible=eligible,
                 auto=eligible,
                 authority=authority,
@@ -234,7 +241,7 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
                     # Display only: the masked hint of the stored key, so the picker can say
                     # WHICH key funds this; nothing for a slot with no key.
                     detail=(hints or {}).get(provider.value, "") if has_key else "",
-                    rank=_RANK_KEY,
+                    rank=_rank("api_key"),
                     eligible=has_key,
                     auto=has_key,
                     # CACHED, not PROVEN: a key's NAME was listed, its value was never tried.
@@ -276,6 +283,7 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
             name=bound.name if bound else "",
             provider=bound.provider if bound else "",
             public=bool(bound and bound.public),
+            tiers=bound.tiers if bound else None,
         )
     out: list[Candidate] = []
     for typeid, endpoint in rows.items():
@@ -298,7 +306,7 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
                     detail=(
                         bound.provider if bound and typeid == bound_typeid and bound.provider else endpoint.provider
                     ),
-                    rank=_RANK_ENDPOINT,
+                    rank=_rank("endpoint"),
                     eligible=not reason,
                     auto=(not reason) and typeid == bound_typeid,
                     authority=LLMSourceAuthority.PRESUMED,

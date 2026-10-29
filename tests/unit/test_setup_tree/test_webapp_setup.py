@@ -808,3 +808,19 @@ async def test_a_server_that_answers_a_moment_after_its_port_opens_is_up_on_the_
     started = await webapp_setup.step("a1", "start", check=False)
     assert started.ok and started.ran, started.detail
     assert webapp_setup.health_answers(int(started.value))
+
+
+@pytest.mark.asyncio
+async def test_a_running_process_reports_what_it_no_longer_matches_in_the_saved_definition(app):
+    """The app editor's "N changes not applied": a saved port or start command the running process
+    did not start with is listed, and nothing once it runs the definition as saved."""
+    port, moved = _free(), _free()
+    app.make(ports={"port": port})
+    assert (await webapp_setup.step("a1", "start", check=False)).ok
+    (page,) = await webapp_setup.ports("a1")
+    assert page["changes"] == []
+
+    app.make(ports={"port": moved}, start_cmd=SERVER + " --directory .")
+    (page,) = await webapp_setup.ports("a1")
+    assert page["changes"] == [f"port {port} → {moved}", "start command"]
+    assert (await webapp_setup.stop("a1")).ok

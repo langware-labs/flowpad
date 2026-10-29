@@ -32,7 +32,7 @@ import { ConnectMachineDialog } from './ConnectMachineDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
-import { HubSummaryLine } from './HubSummaryLine';
+import { HubItemsSection } from './HubItemsSection';
 import { hubProjectAssetDock } from '@src/lib/hub-page-url';
 import { FirstAgentCard } from './first-agent/FirstAgentCard';
 import { SharedProjectsBanner, sharedProjectsToOpen } from './SharedProjectsBanner';
@@ -380,6 +380,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
   // name what it is about to destroy.
 
   // Active hides machines the provider no longer has (Not found).
+  const firstAgentRef = useRef<HTMLDivElement>(null);
   const [machineFilter, setMachineFilter] = useState<'active' | 'all'>('active');
   const activeSandboxes = sandboxes.filter((d) => details[d.id]?.status !== ExecutionEnvironmentStatus.NOT_FOUND);
   const shownSandboxes = machineFilter === 'all' ? sandboxes : activeSandboxes;
@@ -475,9 +476,9 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10 sm:py-14">
         {!showMachines && (
           <>
-            {/* Hero — greeting, same typographic treatment as HomeLanding */}
-            <div className="flex flex-col items-center gap-3 text-center">
-              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+            {/* Greeting — small, left-aligned; the counters live in the tabs below. */}
+            <div className="flex flex-col items-start text-left">
+              <h1 className="text-xl font-bold tracking-tight">
                 <Trans>
                   Hey{' '}
                   <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
@@ -485,20 +486,23 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                   </span>
                 </Trans>
               </h1>
-              <p className="text-lg text-muted-foreground">
-                <Trans>Explore your organization and everything you can reach.</Trans>
-              </p>
-              <HubSummaryLine />
             </div>
 
             {/* First agent: describe → its own sandbox + a channel → it answers. */}
-            <FirstAgentCard />
+            <div ref={firstAgentRef} className="w-full">
+              <FirstAgentCard />
+            </div>
 
             {/* Projects other people gave you — the way from here to FlowPad. */}
             <SharedProjectsBanner projects={sharedProjects} />
 
             {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
             <ProjectActionsRow className="w-full self-start" />
+
+            {/* The counters as tabs over the items they count. */}
+            <HubItemsSection
+              onCreate={() => firstAgentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            />
           </>
         )}
 

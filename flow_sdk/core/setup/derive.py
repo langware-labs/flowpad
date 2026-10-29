@@ -42,7 +42,8 @@ PROJECT = "project"
 FIXER_AGENT = "setup-fixer"
 
 
-def _op(name: str, label: str, step: str, *, kind: str = "webapp_step", fixer: str = "") -> ComputeOpSpec:
+def _op(name: str, label: str, step: str, *, kind: str = "webapp_step", fixer: str = "",
+        fix_on_load: bool = False) -> ComputeOpSpec:
     """An in-process step of the run's web app (``webapp_step``) or source (``source_step``): the call is the
     step, the check is the same step in check mode. ``fixer``: the prompt of the step's last resort — while
     its check still fails, the setup-fixer repairs what the step stands on, then the step runs again; the
@@ -53,7 +54,7 @@ def _op(name: str, label: str, step: str, *, kind: str = "webapp_step", fixer: s
     ] if fixer else []
     return ComputeOpSpec.model_validate({
         "name": name, "label": label, "subkind": "cli", "exe_data": {kind: step}, "completion_check": {kind: step},
-        "attempts": attempts,
+        "attempts": attempts, "fix_on_load": fix_on_load,
     })
 
 
@@ -269,14 +270,13 @@ class ProjectTree:
         label = str(app.title or app.name) if hasattr(app, "title") else str(app.name)
         if self._skipped(node_id, label, app.setup_skipped):
             return node_id
-        steps = []
-        for step, what in (("install", "Install"), ("build", "Build"), ("start", "Start"), ("present", "Verify display")):
-            op = _op(f"{node_id}:{step}", f"{what} {label}", step,
-                     fixer=_fixer_prompt(self.pid, app) if step != "present" else "")
-            self.ops[op.name] = op
-            steps.append({"id": step, "label": what, "kind": "compute", "ref": op.name})
-        setup = WizardSpec.model_validate({"name": node_id, "label": f"Set up {label}", "steps": steps[:2]})
-        load = WizardSpec.model_validate({"name": node_id, "label": f"Load {label}", "steps": steps[2:]})
+        # ONE step: the app up and shown (``webapp_setup.UP``: install → build → start → verify, each only
+        # when needed). Its check is the same step checking; its last resort is the fixer, on load too.
+        op = _op(f"{node_id}:up", f"Start {label}", "up", fixer=_fixer_prompt(self.pid, app), fix_on_load=True)
+        self.ops[op.name] = op
+        load = WizardSpec.model_validate({"name": node_id, "label": f"Load {label}",
+                                          "steps": [{"id": "up", "label": "Start", "kind": "compute", "ref": op.name}]})
+        setup = None
         # A stopped server is a LOAD, never a missing setup prerequisite.
         inputs = (("webapp", str(app.id)), ("display", self.display))
         self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=inputs, run=setup, on_load=load,

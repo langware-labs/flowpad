@@ -157,7 +157,6 @@ that), `supports_plan_mode() → False`, `has_resumable_session() → False`, no
 | `tests/unit/test_hook_capability_matrix.py` | `HARNESSES` / `WORKER_TYPE`; `EXPECTED_PROCESS` only if hooks are supported |
 | `tests/unit/test_cli_driver_contract.py` | `compose_prompt` row; resumable / plan / fork / `report_event` traits |
 | `tests/unit/test_headless_turn_runner.py`, `test_cli_process_tree_cleanup.py`, `test_preassign_session_id_gate.py`, `test_worker_asset_discovery.py`, `test_api_auth_binding.py`, `test_capabilities*.py` | one row each |
-| `tests/unit/test_llm_source_resolution.py` | nothing — but it FAILS unless `tier_models` has three DISTINCT sm/md/lg slugs |
 | `tests/unit/test_<key>_cli_stream_worker.py` (new) | clone `test_opencode_cli_stream_worker.py`; `tests/utils/fake_cli.patch_build_spawn` runs a turn with no LLM |
 | `tests/long_tests/conftest.py` | `_WORKER_PARAMS` + `_DRIVER_TO_ENUM` (real-LLM matrix, `DEEP_TESTING=1`) |
 | vitest | `FLOWPAD_DEFAULT_WORKER=<key>` on the BACKEND process + `npm run test:vitest:long` |
@@ -1358,7 +1357,7 @@ the hand-written residue. Each is a table row, never an `if` — a missing row f
 
 ### Model tiers
 - **Need:** `sm`/`md`/`lg` must resolve to a valid selection for this vendor, so prompts/tests stay portable.
-- **Claude/Codex:** `CLAUDE_MODEL_TIERS` (haiku/sonnet/opus) and `CODEX_MODEL_TIERS` (concrete GPT models). **Native Copilot:** `COPILOT_MODEL_TIERS` maps all tiers to vendor auto (`None`, omitting `--model`) because device-account availability is vendor-managed. **OpenCode:** `OPENCODE_MODEL_TIERS` (`openrouter/<slug>` — it addresses models as `provider/model`). **Deep Agents:** `DEEPAGENTS_MODEL_TIERS` (bare OpenRouter slugs). All maps live in `agentic_process/model_tiers.py`, preserve the raw persisted tier, and resolve only when the command is emitted. Separately, an `ApiAuthSpec.tier_models` (§11) must hold three DISTINCT slugs — a collapsed `md == lg` is a silent no-op tier and `tests/unit/test_llm_source_resolution.py` rejects it.
+- **Device login (no endpoint):** `CLAUDE_MODEL_TIERS` is the claude CLI's own size words (haiku/sonnet/opus); every other harness gets `VENDOR_DEFAULT_TIERS` (`None`, omitting `--model`), so the vendor picks. No model ids live in code: all maps are in `agentic_process/model_tiers.py`, preserve the raw persisted tier, and resolve only when the command is emitted. **Funded by an LLM endpoint:** the worker runs the model the endpoint declares for the size (its `tiers`, inherited down the hub chain; see §11), and a size the endpoint does not declare is refused.
 - **Required:** Yes
 - **Vendor must expose:** three valid tier outcomes: concrete model names or an explicit vendor-auto/no-flag outcome. An empty map means pass-through only, and every tier-valued config breaks.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
@@ -1444,7 +1443,7 @@ the hand-written residue. Each is a table row, never an `if` — a missing row f
 - **Codex:** `OPENROUTER_API_KEY` + `-c model_providers.openrouter.*` (`wire_api=responses`), slug via `-m`.
 - **Copilot:** `COPILOT_ENABLE_ALT_PROVIDERS=1` + `COPILOT_PROVIDER_*`, slug in `COPILOT_*MODEL*` env (no GitHub token needed).
 - **OpenCode:** a generated provider block in the per-process `opencode.json`. **Deep Agents:** `FLOWPAD_DEEPAGENTS_BASE_URL` / `FLOWPAD_DEEPAGENTS_API_KEY` read by our own runner (OpenAI wire).
-- Declared as an `ApiAuthSpec` per vendor — a `<VENDOR>_API_AUTH_SPEC` literal plus a row in `_SPECS` (`cli_drivers/api_auth.py`): `token_env_var`, `base_env`, `tier_models` (three DISTINCT slugs), `supported_providers`, `model_env_vars`, `prompt_model_env_vars`, the user-config pointer fields (`pointer_env`, `pointer_is_dir`, `user_config_path`, `user_config_fmt`, `config_filename`, `user_config_note`), `hub_endpoint_binding` and `has_device_login`.
+- Declared as an `ApiAuthSpec` per vendor — a `<VENDOR>_API_AUTH_SPEC` literal plus a row in `_SPECS` (`cli_drivers/api_auth.py`): `token_env_var`, `base_env`, `supported_providers`, `model_env_vars`, `prompt_model_env_vars`, the user-config pointer fields (`pointer_env`, `pointer_is_dir`, `user_config_path`, `user_config_fmt`, `config_filename`, `user_config_note`), `hub_endpoint_binding` and `has_device_login`.
 - **Funding is one resolver, three sources** (`cli_drivers/llm_source.py`): the vendor's device login, a stored provider key, or a hub `LLMEndpoint`. A vendor reachable from a hub endpoint supplies `_<vendor>_hub_binding(url)`; `HUB_ENDPOINT_HARNESSES` is derived from `_SPECS`. A vendor with NO account of its own sets `has_device_login=False` — otherwise an unproven rank-0 device login outranks real funding and the worker spawns with no credentials.
 - Applied by `resolve_worker_api_auth` via `apply_worker_secret_env` into the transient spawn env. Everything explicit is HARD: a missing key raises `WorkerSpawnError` — it must never silently fall back to the device-login picker.
 - **Required:** Optional for a vendor with its own login; REQUIRED for one without

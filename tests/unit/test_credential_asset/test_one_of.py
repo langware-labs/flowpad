@@ -506,3 +506,18 @@ async def test_setting_the_credential_rechecks_the_sources_waiting_on_it(project
     await credential_service.set_credential_by_name("mailbox", {APP_PASSWORD: "abcd efgh"}, project_id=str(project.id))
 
     assert (await DataSource.get_one({"id": source.id})).status == SourceStatus.ACTIVE.value
+
+
+@pytest.mark.asyncio
+async def test_a_sign_in_whose_check_fails_says_why_and_a_missing_tool_says_it_is_missing():
+    """An expired gcloud sign-in read "not installed yet": the tool is there, its check fails — two things."""
+    from flow_sdk.builtin.credential_status import _signed_in
+
+    def var(command):
+        return _spec({SIGN_IN: {"kind": "cli", "label": "Sign in", "login": _every_os("true"),
+                                "check": _every_os(command)}}).vars[SIGN_IN]
+
+    assert await _signed_in(var("exit 0")) == ""
+    expired = await _signed_in(var("echo 'ERROR: (tool.token) Reauthentication failed.' >&2; exit 1"))
+    assert "expired" in expired and "Reauthentication failed." in expired and "(tool.token)" not in expired
+    assert "is not installed" in await _signed_in(var("no-such-tool-xyz --token"))

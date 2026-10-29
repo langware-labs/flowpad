@@ -5,9 +5,11 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { Trans } from '@lingui/react/macro';
 import type { WebappVerdict } from './classify';
 import { WebDebugComponent } from './WebDebugComponent';
-import { WebappErrorBanner } from './WebappErrorBanner';
 import { useWebappDiagnostics } from './useWebappDiagnostics';
 import { useWebappFix } from './useWebappFix';
+import { usePageCheck } from './usePageCheck';
+import { PageCheckPanel } from './PageCheckPanel';
+import type { PageReportVerdict } from '@sdk';
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 
 export interface WebappDisplayProps {
@@ -49,15 +51,31 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   ref,
 ) {
   const frameRef = useRef<PersistentIframeHandle>(null);
-  const [dismissedBanner, setDismissedBanner] = useState<string | null>(null);
 
   const diagnostics = useWebappDiagnostics({ endpoint, host: src });
 
+  // A page-report failure handed to the fixer: its errors, and what the agent keeps up to date.
+  const [agentFor, setAgentFor] = useState<PageReportVerdict | null>(null);
+  const pageVerdict: WebappVerdict | null = agentFor
+    ? {
+        severity: 'fatal',
+        code: 'crashed',
+        detail: [
+          ...agentFor.decisions
+            .filter((d) => d.action === 'recover')
+            .map(
+              (d) =>
+                `${d.source}: ${d.text}${d.rule ? ` (known as ${d.rule}${d.fix ? `, fix: ${d.fix}` : ''})` : ' (unknown)'}`,
+            ),
+          `App folder: ${agentFor.app_folder} — its setup/recovery.md (read it first) and setup/webapp_errors.json (error rules).`,
+        ],
+      }
+    : null;
   const fix = useWebappFix({
-    verdict: diagnostics,
+    verdict: pageVerdict ?? diagnostics,
     endpoint,
     url: src,
-    workdir,
+    workdir: workdir ?? agentFor?.app_folder ?? null,
     targetTypeId,
     onFinished: () => {
       diagnostics.refresh();
@@ -75,6 +93,24 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   if (!fix.running && latched) setLatched(null);
   const verdict = latched ?? diagnostics;
 
+  const isGuest = useCallback((source: MessageEventSource | null) => frameRef.current?.isGuest(source) ?? false, []);
+  const postToGuest = useCallback((message: unknown) => frameRef.current?.postToGuest(message), []);
+  const page = usePageCheck({
+    endpoint,
+    isGuest,
+    postToGuest,
+    src,
+    agentRunning: fix.running,
+    startAgent: setAgentFor,
+  });
+  useEffect(() => {
+    if (agentFor && !fix.running) fix.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentFor]);
+  useEffect(() => {
+    if (!fix.running && page.state !== 'recovering') setAgentFor(null);
+  }, [fix.running, page.state]);
+
   const refreshAll = useCallback(() => {
     diagnostics.refresh();
     frameRef.current?.refresh();
@@ -84,7 +120,6 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   const setupRoot = webappAsset(endpoint?.webapp_id);
   const setupProject = setupRoot ? (endpoint?.project_id ?? '') : '';
   const needsSetup = !!setupProject && verdict.severity === 'fatal' && verdict.code === 'not_running';
-
 
   useImperativeHandle(
     ref,
@@ -119,10 +154,12 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
     fatalAt.current = null;
   }, [verdict.severity, diagnostics.reloadNonce]);
 
-  const showBanner = verdict.severity === 'degraded' && dismissedBanner !== verdict.code;
-
   if (needsSetup) {
-    return <ProjectLoadGate projectId={setupProject} asset={setupRoot}><RefreshLoadedApp refresh={refreshAll} /></ProjectLoadGate>;
+    return (
+      <ProjectLoadGate projectId={setupProject} asset={setupRoot}>
+        <RefreshLoadedApp refresh={refreshAll} />
+      </ProjectLoadGate>
+    );
   }
 
   if (verdict.severity === 'fatal') {
@@ -139,15 +176,10 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
 
   return (
     <div className="flex h-full w-full flex-col" data-testid="webapp-display">
-      {showBanner && (
-        <WebappErrorBanner
-          verdict={verdict}
-          fixRunning={fix.running}
-          onFix={fix.start}
-          onDismiss={() => setDismissedBanner(verdict.code)}
-        />
-      )}
       <div className="relative min-h-0 flex-1">
+        {page.state !== 'ok' && verdict.severity !== 'unknown' && (
+          <PageCheckPanel page={page} toolCount={fix.toolCount} />
+        )}
         {verdict.severity === 'unknown' && !diagnostics.probe && (
           <div
             className="absolute inset-0 z-10 flex items-center justify-center bg-background"
@@ -168,7 +200,7 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
           // The registry parks a dead frame rather than destroying it, so an app
           // that recovers would otherwise re-reveal Chrome's error page. The
           // reload nonce advances on every down→up edge to force a real reload.
-          cacheKey={cacheKey + diagnostics.reloadNonce + recoveries}
+          cacheKey={cacheKey + diagnostics.reloadNonce + recoveries + page.reloads}
         />
       </div>
     </div>
@@ -178,5 +210,9 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
 /** Refresh diagnostics once the provider Load has completed, without starting installation behind approval. */
 function RefreshLoadedApp({ refresh }: { refresh: () => void }) {
   useEffect(refresh, [refresh]);
-  return <p role="status" className="p-8 text-sm text-muted-foreground"><Trans>Checking the app…</Trans></p>;
+  return (
+    <p role="status" className="p-8 text-sm text-muted-foreground">
+      <Trans>Checking the app…</Trans>
+    </p>
+  );
 }

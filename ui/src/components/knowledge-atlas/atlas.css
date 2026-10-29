@@ -553,7 +553,7 @@
   color: var(--ink-faint);
 }
 .kb-atlas .kb-status.err {
-  color: hsl(var(--destructive));
+  color: hsl(var(--destructive-text));
 }
 
 /* ---- Reading drawer ---------------------------------------------- */

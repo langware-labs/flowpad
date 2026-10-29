@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING
 
 from flow_sdk.cli import app_config
@@ -62,6 +62,9 @@ class HubLLMEndpoint:
     #: them. A person's allowance states no filters of its own, so this is where a box learns
     #: what its default model may be.
     models_allow: tuple[str, ...] = ()
+    #: ``{sm, md, lg}`` -> model, inherited down the endpoint's chain, as the hub pushed it -- so a
+    #: spawn knows each size's model before any listing has been read.
+    tiers: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -72,7 +75,7 @@ _cache: dict[str, HubLLMEndpoint | None] = {}
 
 
 def _validated(
-    endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="", models_allow=()
+    endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="", models_allow=(), tiers=None
 ) -> HubLLMEndpoint:
     """The ONE rule for a usable binding: a non-empty id and a hub-relative path.
     Raises ``ValueError`` -- callers decide whether that is a 400 or "unbound"."""
@@ -93,6 +96,7 @@ def _validated(
         public=bool(public),
         hub_origin=hub_origin if public else "",
         models_allow=tuple(str(m) for m in (models_allow or ()) if str(m).strip()),
+        tiers=_clean_tiers(tiers),
     )
 
 
@@ -108,6 +112,7 @@ def _parse(raw) -> HubLLMEndpoint | None:
             raw.get("public") is True,
             raw.get("hub_origin"),
             raw.get("models_allow"),
+            raw.get("tiers"),
         )
     except ValueError:
         # A record written by a newer/older build must not brick spawn: unbound.
@@ -133,13 +138,14 @@ def set_hub_llm_endpoint(
     public: bool = False,
     hub_origin: str = "",
     models_allow=(),
+    tiers=None,
 ) -> HubLLMEndpoint:
     """Persist the hub's binding for this instance and return it.
 
     Raises ``ValueError`` on an empty id or a path that is not hub-relative. The
     sole writer is the ``llm-endpoint`` box action, which only the hub calls.
     """
-    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin, models_allow)
+    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin, models_allow, tiers)
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
     instance = get_instance_settings().instance_name
     _cache[instance] = bound
@@ -251,8 +257,9 @@ def listing_supersedes_binding() -> bool:
     return cached[0] > _bound_at.get(name, 0.0)
 
 
-def _can_administer(row: dict) -> bool | None:
-    """Whether the caller may CHANGE this endpoint, out of the hub's permission expansion.
+def _allows(row: dict, action: str) -> bool | None:
+    """Whether the hub's permission expansion lets the caller run ``action`` on this endpoint --
+    ``update`` (may CHANGE it) or ``allocate`` (may carve a sub-budget from it).
 
     ``None`` when the row carries no expansion at all -- an older hub, or a read that did not ask
     for one. Unknown is not "no": a caller that treated it as "no" would read every row on an
@@ -260,7 +267,7 @@ def _can_administer(row: dict) -> bool | None:
     """
     expand = row.get("expand") if isinstance(row, dict) else None
     actions = expand.get("allowed_actions") if isinstance(expand, dict) else None
-    return ("update" in actions) if isinstance(actions, list) else None
+    return (action in actions) if isinstance(actions, list) else None
 
 
 def _root_provider(row: dict) -> str | None:
@@ -285,7 +292,7 @@ def _chain_models_allow(row: dict) -> list[str]:
 def _is_mine(row: dict) -> bool | None:
     """Whether this endpoint is the caller's OWN to spend, out of the hub's permission expansion.
 
-    The SAME block ``_can_administer`` reads, answering the other question about it: "may I change
+    The SAME block ``_allows`` reads, answering the other question about it: "may I change
     this" and "is this mine" are not the same, and neither implies the other. The hub answers it
     while it holds both the caller and the row (``LLMEndpoint.expand_permissions``), so there is no
     second read and nothing to join here.
@@ -296,6 +303,25 @@ def _is_mine(row: dict) -> bool | None:
     expand = row.get("expand") if isinstance(row, dict) else None
     mine = expand.get("mine") if isinstance(expand, dict) else None
     return mine if isinstance(mine, bool) else None
+
+
+def _clean_tiers(raw) -> dict[str, str]:
+    """``{size: model}`` with every empty or non-string model dropped; ``{}`` for anything not a dict."""
+    if not isinstance(raw, dict):
+        return {}
+    return {str(size): model for size, model in raw.items() if isinstance(model, str) and model}
+
+
+def _row_tiers(row: dict) -> dict[str, str]:
+    """``{sm, md, lg}`` -> model, from the hub's ``expand.tiers`` (sizes inherited down the row's chain).
+
+    A size the chain does not declare is left out, so a spawn asking for it is refused in words
+    rather than handed a guess. A row with no expansion (a catalog row) falls back to its OWN
+    ``tiers`` -- exact for a root, which is what the catalog serves; ``{}`` from an older hub.
+    """
+    expand = row.get("expand") if isinstance(row, dict) else None
+    tiers = expand.get("tiers") if isinstance(expand, dict) else None
+    return _clean_tiers(tiers if isinstance(tiers, dict) else (row.get("tiers") if isinstance(row, dict) else None))
 
 
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:
@@ -412,13 +438,16 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             # different meaning cannot turn a hub endpoint into a local one.
             payload["kind"] = LLMEndpointKind.HUB
             # ``None`` unless this row came from the scoped listing WITH an answer -- see the field.
-            payload["can_administer"] = _can_administer(row) if row_id in held else None
+            payload["can_administer"] = _allows(row, "update") if row_id in held else None
+            payload["can_allocate"] = _allows(row, "allocate") if row_id in held else None
             # Off the SAME expansion block as ``can_administer`` above -- one read answers both.
             payload["is_mine"] = _is_mine(row) if row_id in held else None
             payload["chain_models_allow"] = _chain_models_allow(row)
             # Name who pays, not the entity default a chain row carries.
             if root_provider := _root_provider(row):
                 payload["provider"] = root_provider
+            # The model each size runs, inherited down the hub chain.
+            payload["tiers"] = _row_tiers(row)
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)

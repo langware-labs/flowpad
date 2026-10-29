@@ -26,6 +26,8 @@ export enum PrefDataType {
  */
 export enum PrefKey {
   SHOW_SYSTEM_SKILLS = 'preferences.general.show_system_skills',
+  DIAGNOSE_SEND_WHEN_DONE = 'preferences.general.diagnose_send_when_done',
+  DIAGNOSE_ASK_BEFORE_SEND = 'preferences.general.diagnose_ask_before_send',
   DEFAULT_TERMINAL = 'preferences.general.default_terminal',
   BUFFER_SYNC_UPDATES = 'preferences.terminal.buffer_sync_updates',
   SOUND_ENABLED = 'preferences.notifications.sound_enabled',
@@ -60,6 +62,9 @@ export enum PrefKey {
   VIEW_MODE = 'preferences.ui.view_mode',
   DEV_MODE = 'preferences.ui.dev_mode',
   VIBE_MODEL_TIER = 'preferences.ui.vibe_model_tier',
+  // Mirrored in flow_sdk/preferences.py: which size a worker runs, and which token source funds it.
+  LLM_DEFAULT_SIZE = 'preferences.llm.default_size',
+  LLM_SOURCE_ORDER = 'preferences.llm.source_order',
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   // Snippet view (flow show snippet): folded regions and the Run budget.
   SNIPPET_SHOW_INIT = 'preferences.editor.snippet_show_init',
@@ -239,6 +244,24 @@ function indexFolderPref(key: PrefKey, folder: string): PrefInfo {
 }
 
 export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
+  [PrefKey.DIAGNOSE_SEND_WHEN_DONE]: {
+    key: PrefKey.DIAGNOSE_SEND_WHEN_DONE,
+    surfaced: true,
+    category: 'general',
+    label: 'Diagnose: send report once done',
+    description: 'When a diagnosis finishes, send it to the people picked in the Diagnose window.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
+  },
+  [PrefKey.DIAGNOSE_ASK_BEFORE_SEND]: {
+    key: PrefKey.DIAGNOSE_ASK_BEFORE_SEND,
+    surfaced: true,
+    category: 'general',
+    label: 'Diagnose: ask before sending',
+    description: 'With "send report once done" off, ask at Diagnose whether to send the report when it finishes.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: true,
+  },
   [PrefKey.SHOW_SYSTEM_SKILLS]: {
     key: PrefKey.SHOW_SYSTEM_SKILLS,
     surfaced: true,
@@ -316,8 +339,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     surfaced: true,
     category: 'notifications',
     label: 'Sign-in prompt for smart navigation',
-    description:
-      'When you are signed out, ask whether to sign in so the search line can open screens directly.',
+    description: 'When you are signed out, ask whether to sign in so the search line can open screens directly.',
     dataType: PrefDataType.STRING,
     defaultValue: 'ask',
     options: [
@@ -451,6 +473,35 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     dataType: PrefDataType.JSON,
     defaultValue: {},
   },
+  [PrefKey.LLM_DEFAULT_SIZE]: {
+    key: PrefKey.LLM_DEFAULT_SIZE,
+    surfaced: true,
+    category: 'llm',
+    label: 'Default model size',
+    description: 'The size a worker runs when none is named. Each token source decides which model that size is.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'md',
+    options: [
+      { value: 'sm', label: 'Small (sm)' },
+      { value: 'md', label: 'Medium (md)' },
+      { value: 'lg', label: 'Large (lg)' },
+    ],
+  },
+  [PrefKey.LLM_SOURCE_ORDER]: {
+    key: PrefKey.LLM_SOURCE_ORDER,
+    surfaced: true,
+    category: 'llm',
+    label: 'Token source order',
+    description:
+      'Which kind of token source funds a worker when nothing pins one. A project or process pin still wins.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'device,api_key,endpoint',
+    options: [
+      { value: 'device,api_key,endpoint', label: 'Device login, then API key, then hub endpoint' },
+      { value: 'endpoint,device,api_key', label: 'Hub endpoint first' },
+      { value: 'api_key,endpoint,device', label: 'API key first' },
+    ],
+  },
   [PrefKey.VIBE_MODEL_TIER]: {
     key: PrefKey.VIBE_MODEL_TIER,
     // A build is SENT from the hero the moment the user hits enter, so the stored
@@ -492,7 +543,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     label: 'Developer mode',
     description:
       'Shows developer-only tools on top of whichever surface you are on. ' +
-      'A switch, not a view mode: a tab\'s own mode never hides it.',
+      "A switch, not a view mode: a tab's own mode never hides it.",
     dataType: PrefDataType.BOOL,
     defaultValue: false,
   },

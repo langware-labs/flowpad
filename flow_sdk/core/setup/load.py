@@ -52,7 +52,7 @@ class LoadTree:
         resolved = await self.tree.resolve_op(name)
         rungs = list(getattr(resolved.spec, "attempts", None) or []) if resolved is not None else []
         agent = next((at for at, rung in enumerate(rungs) if rung.subkind == "agent"), None)
-        if self.fix or agent is None:
+        if self.fix or agent is None or resolved.spec.fix_on_load:
             return resolved
         return dataclasses.replace(resolved, spec=resolved.spec.model_copy(update={"attempts": rungs[:agent]}))
 
@@ -130,16 +130,17 @@ def _configuration_failure(node, target: str = "") -> str:
     return next((detail for child in node.children if (detail := _configuration_failure(child, target))), "")
 
 
-def _leaf_failure(node) -> str:
-    """The deepest step that failed, in its own words — a parent's "waiting on X" names nothing to fix."""
-    if node is None:
+def _leaf_failure(node, *, owed: bool = False) -> str:
+    """The deepest step that failed, in its own words — a parent's "waiting on X" names nothing to fix.
+    ``owed``: also a step merely not done yet (a check found it missing), which is what a person acts on."""
+    if node is None or node.state in (SetupState.DONE, SetupState.SKIPPED):
         return ""
-    deeper = next((detail for child in node.children if (detail := _leaf_failure(child))), "")
+    deeper = next((detail for child in node.children if (detail := _leaf_failure(child, owed=owed))), "")
     if deeper:
         return deeper
-    if node.state in (SetupState.FAILED, SetupState.REFUSED) and node.detail:
-        return f"{node.label}: {node.detail}" if node.label else node.detail
-    return ""
+    if not node.detail or not (owed or node.state in (SetupState.FAILED, SetupState.REFUSED)):
+        return ""
+    return f"{node.label}: {node.detail}" if node.label and not node.detail.startswith(f"{node.label}:") else node.detail
 
 
 def _unmet(result, target: str) -> str:
@@ -156,11 +157,52 @@ def _unmet(result, target: str) -> str:
     return _leaf_failure(node) or (f"{node.label}: {node.detail}" if node.detail else f"{node.label} is not set up")
 
 
-async def validate(pid: str, target: str, display: str = "") -> Optional[LoadResult]:
+#: The check running behind an app that opened because it answers, per ``(provider, asset)``: one at a time.
+_AUDITS: dict[tuple[str, str], asyncio.Task] = {}
+
+
+async def _audit(pid: str, target: str, project: Any = None, tree: Any = None) -> None:
+    """Check ONE running app's setup — rooted at it, check mode: no lock, no question — and write what it
+    still owes onto its kept READY. A credential can expire under a running app; this is where that shows."""
+    from flow_sdk.core.setup.execute import execute_setup  # noqa: PLC0415
+
+    try:
+        if project is None:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+            project = await Project.get_by_id(pid)
+        if tree is None:
+            from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
+
+            tree = await ProjectTree(project).load()
+        found = await execute_setup(target, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
+                                    subject_entity=f"project-{pid}", check_only=True, approved=True,
+                                    cwd=getattr(project, "fs_storage_mount_path", None))
+        unmet = _unmet(found, target)
+        owed = (_leaf_failure(found.root, owed=True) or unmet) if unmet else ""
+    except Exception as exc:  # noqa: BLE001 — a check that broke says nothing; the app stays as it opened
+        logger.warning("setup check behind %s failed: %s", target, exc)
+        owed = ""  # answered, so a screen waiting on it stops asking
+    kept = _RESULTS.get((pid, target))
+    if kept is not None and kept.state is LoadState.READY:
+        _RESULTS[(pid, target)] = kept.model_copy(update={"setup_owed": owed})
+
+
+def _audit_behind(pid: str, target: str, project: Any = None, tree: Any = None) -> None:
+    """Start ``_audit`` for the app, or join the one already running for it."""
+    key = (pid, target)
+    task = _AUDITS.get(key)
+    if task is None:
+        task = _AUDITS[key] = asyncio.get_running_loop().create_task(_audit(pid, target, project, tree))
+        task.add_done_callback(lambda _done: _AUDITS.pop(key, None))
+
+
+async def validate(pid: str, target: str, display: str = "", *, project: Any = None,
+                   tree: Any = None) -> Optional[LoadResult]:
     """Phase one of an open: an app that answers where it runs opens as it is — no tree, no walk, no lock.
-    None: load it. A running app is shown whatever its setup says (that is the next load's business). A
-    display session needs this provider's READY for THAT display: its saved presentation is checked by a
-    load, never assumed."""
+    None: load it. A running app is shown at once; its setup is checked BEHIND it (``_audit``), and what it
+    owes lands on the kept verdict's ``setup_owed`` for the screen to show. A display session needs this
+    provider's READY for THAT display: its saved presentation is checked by a load, never assumed."""
     if not target.startswith("micro_app-"):
         return None
     kept = _RESULTS.get((pid, target))
@@ -176,7 +218,9 @@ async def validate(pid: str, target: str, display: str = "") -> Optional[LoadRes
     except Exception as exc:  # noqa: BLE001 — a failed check is a load, never an error
         logger.debug("validate of %s failed: %s", target, exc)
         return None
-    return kept or _keep(pid, target, LoadResult(state=LoadState.READY, project_id=pid, asset=target))
+    kept = kept or _keep(pid, target, LoadResult(state=LoadState.READY, project_id=pid, asset=target))
+    _audit_behind(pid, target, project, tree)
+    return kept
 
 
 async def load_project(project: Any, *, approved: bool = False, asset: Any = None, tree: Any = None,
@@ -202,7 +246,8 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             state=LoadState.FAILED, project_id=pid, asset=target,
             detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}"))
         return gone
-    valid = await validate(pid, target, display) if not approved and not ancestors else None
+    valid = (await validate(pid, target, display, project=project, tree=tree)
+             if not approved and not ancestors else None)
     if valid is not None:
         return valid
     # Traverse before taking this provider's lock: opposite ends of a dependency
@@ -250,7 +295,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                     not _unmet(running, target) if target else running.done == running.total)
                 if loaded and all(c.state is LoadState.READY for c in children):
                     _REPAIRED.discard((pid, target))
-                    result = LoadResult(state=LoadState.READY, project_id=pid)
+                    result = LoadResult(state=LoadState.READY, project_id=pid, setup_owed="" if target else None)
                 else:
                     # The load failed and the person said go: setup first (it redoes only what its own
                     # checks find missing), then the load again. Once — its failure is then the answer.

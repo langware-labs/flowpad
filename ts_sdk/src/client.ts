@@ -171,6 +171,12 @@ function initApiClient(client: ApiAxiosInstance) {
         request.headers['Authorization'] = `Bearer ${extendedClient.testUserToken}`;
       }
 
+      // Who is asking — the screen this call came from — so a hub error it causes says "Made by".
+      if (typeof window !== 'undefined' && !request.headers?.['X-Flow-Caller']) {
+        request.headers = request.headers || {};
+        request.headers['X-Flow-Caller'] = window.location.pathname.slice(0, 200);
+      }
+
       return request;
     },
     function (error) {
@@ -197,6 +203,8 @@ function initApiClient(client: ApiAxiosInstance) {
           warnings.map((w) => `${w.error_code}: ${w.message}`).join('; '),
         );
       }
+      // A caller that reads the warnings itself (`DataManager.callActionWithWarnings`) gets the envelope.
+      if ((response.config as { keepEnvelope?: boolean } | undefined)?.keepEnvelope) return response.data;
       return withPage(response.data.data, response.data);
     },
     (error) => {
@@ -204,6 +212,7 @@ function initApiClient(client: ApiAxiosInstance) {
       // Do something with response error
       const method = error.config?.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementFailed(method);
+      rememberFailedCall(error);
 
       // A sandbox waking from E2B's idle pause: retry silently, a few times,
       // with a short delay — see SANDBOX_WAKING_RETRY_STATUS above.
@@ -242,6 +251,78 @@ function initApiClient(client: ApiAxiosInstance) {
       //return Promise.reject(error);
     },
   );
+}
+
+/** A failed backend call, described once when it fails — the request and the backend's answer. */
+export interface FailedCallDetail {
+  request: { method?: string; url?: string; caller?: string };
+  response: { status?: number; message?: string; body?: string; errorCode?: string; requestId?: string };
+}
+
+const MAX_BODY_CHARS = 4096;
+
+interface AxiosLikeError {
+  isAxiosError?: boolean;
+  config?: { method?: string; url?: string; headers?: Record<string, unknown> };
+  response?: { status?: number; data?: unknown; headers?: Record<string, unknown> };
+  message?: string;
+}
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+
+/** The backend's own reason: the envelope `message`, or FastAPI's `detail` (a string or a list of problems). */
+function answerOf(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return str(data);
+  const d = data as { message?: unknown; detail?: unknown };
+  if (Array.isArray(d.detail))
+    return d.detail.map((x: { msg?: unknown }) => str(x?.msg) ?? JSON.stringify(x)).join('; ');
+  return str(d.detail) ?? str(d.message);
+}
+
+/** `FailedCallDetail` for an axios error, or undefined for anything else. */
+export function describeFailedCall(error: unknown): FailedCallDetail | undefined {
+  const e = error as AxiosLikeError | null;
+  if (!e || typeof e !== 'object' || !(e.isAxiosError || e.config)) return undefined;
+  const data = e.response?.data;
+  const body =
+    data === undefined || data === null ? undefined : typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const headers = e.response?.headers ?? {};
+  return {
+    request: {
+      method: e.config?.method?.toUpperCase(),
+      url: e.config?.url,
+      caller: str(e.config?.headers?.['X-Flow-Caller']),
+    },
+    response: {
+      status: e.response?.status,
+      message: answerOf(data),
+      body: body && body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}…` : (body ?? e.message),
+      errorCode: str((data as { data?: { error_code?: unknown } } | undefined)?.data?.error_code),
+      requestId: str(headers['x-flow-request-id']) ?? str(headers['x-request-id']),
+    },
+  };
+}
+
+/**
+ * The last few failed backend calls, newest first, already described (the axios error itself is
+ * not kept). An alert raised from a caught error that was not handed to `notify` (it shows only
+ * "Request failed with status code 409") is matched back to its call here.
+ */
+export interface FailedCall {
+  at: number;
+  /** axios's own message ("Request failed with status code 409"). */
+  message: string;
+  detail: FailedCallDetail;
+}
+
+const MAX_FAILED_CALLS = 20;
+export const recentFailedCalls: FailedCall[] = [];
+
+function rememberFailedCall(error: unknown): void {
+  const detail = describeFailedCall(error);
+  if (!detail) return;
+  recentFailedCalls.unshift({ at: Date.now(), message: (error as Error).message ?? '', detail });
+  recentFailedCalls.length = Math.min(recentFailedCalls.length, MAX_FAILED_CALLS);
 }
 
 export function getApiClient(): ApiAxiosInstance {
@@ -345,7 +426,9 @@ export function isNetworkErrorMessage(message: string | undefined): boolean {
 
 export function isBackendUnreachable(error: unknown): boolean {
   const e = error as
-    { isServiceUnavailable?: boolean; type?: string; code?: string; message?: string } | null | undefined;
+    | { isServiceUnavailable?: boolean; type?: string; code?: string; message?: string }
+    | null
+    | undefined;
   if (!e) return false;
   return Boolean(
     e.isServiceUnavailable ||

@@ -111,8 +111,14 @@ async def test_override_scoped_per_provider(env) -> None:
     # An override under a DIFFERENT provider must not apply to openrouter.
     await _set_harness("claude", provider="openrouter", model_map={"anthropic": {"sm": "x/y"}})
 
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
     auth = await resolve_worker_api_auth(_proc("claude", "sm"))
-    assert auth.model_slug == "anthropic/claude-haiku-5.5"  # spec default, not the anthropic override
+    assert auth.model_slug != "x/y", "an override under another provider leaked onto openrouter"
+    # The key endpoint's own ``sm`` -- read from the row, since the session DB is shared and a
+    # docs snippet (docs/snippets/llm-endpoints.md) legitimately retunes it.
+    row = await LLMEndpoint.ensure_for_secret("openrouter")
+    assert auth.model_slug == row.tiers["sm"]
 
 
 def test_models_endpoint_resolver_covers_all_providers(env) -> None:

@@ -62,6 +62,9 @@ class CredentialVarStatusSpec(DataSpec):
     #: ``missing`` (no value anywhere), ``wrong-store`` (a value in the other local store) or
     #: ``unreachable`` (a remote store that could not be asked).
     warning: Optional[str] = None
+    #: cli: why the sign-in check failed on this computer, in a person's words ("signed in, but the sign-in
+    #: expired — sign in again: Reauthentication is needed"). Empty while signed in or never checked.
+    why: str = ""
     #: The typeid of the project credential overriding this user one, if any.
     shadowed_by: Optional[str] = None
     #: ONE_OF: the way this variable belongs to (``CredentialVarSpec.way``); empty = its own name.

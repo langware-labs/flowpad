@@ -101,3 +101,25 @@ async def test_hub_success_non_list_data_coerced_empty() -> None:
 
     assert resp.status == ApiResponseStatus.SUCCESS.value
     assert resp.data == {"tickets": [], "project_id": "proj-helpdesk"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("body", "expected"), [({"include_closed": True}, {"include_closed": "true"}), ({}, None)])
+async def test_include_closed_is_forwarded_to_the_hub(body, expected) -> None:
+    """D7: the staff queue asks the hub for closed tickets only when the caller does."""
+    asked: list = []
+
+    async def _hub(*args, **kwargs):
+        asked.append(kwargs.get("params"))
+        return [{"conversation_id": "c1", "status": "closed"}]
+
+    info = SimpleNamespace(someone_typeid="user-aaaaaaaa-0000-4000-8000-000000000001", get_post_data=AsyncMock(return_value=body))
+    with (
+        patch.object(fma, "get_current_request_info", return_value=info),
+        patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
+        patch.object(HubProxy, "call", _hub),
+    ):
+        resp = await fma.helpdesk_tickets_list()
+
+    assert resp.status == ApiResponseStatus.SUCCESS.value
+    assert asked == [expected]

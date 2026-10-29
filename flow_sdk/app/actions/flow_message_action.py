@@ -1633,6 +1633,11 @@ async def conversation_pickup() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
 
 
+def _truthy(value) -> bool:
+    """A body flag as sent by JSON (``true``) or a form/query (``"true"``)."""
+    return value is True or str(value or "").strip().lower() in ("true", "1", "yes")
+
+
 @action.post(action_name="helpdesk-tickets-list", types=None)
 async def helpdesk_tickets_list() -> ApiResponse:
     """Staff triage queue: list the helpdesk project's tickets (members-only on
@@ -1675,8 +1680,10 @@ async def helpdesk_tickets_list() -> ApiResponse:
         # A hub refusal stays a refusal, never an empty queue: a non-staff caller is told
         # "no valid access", which is what lets the staff UI tell the two apart.
         try:
+            # D7: closed tickets only when asked -- the hub's default queue is the open one, the call unchanged.
+            extra = {"params": {"include_closed": "true"}} if _truthy(body.get("include_closed")) else {}
             rows = await HubProxy.call(
-                "GET", BuiltinEntityType.PROJECT, helpdesk_id, "helpdesk_conversations", strict=True
+                "GET", BuiltinEntityType.PROJECT, helpdesk_id, "helpdesk_conversations", strict=True, **extra
             )
         except HubError as e:
             return e.fail_response("Could not list help desk tickets")

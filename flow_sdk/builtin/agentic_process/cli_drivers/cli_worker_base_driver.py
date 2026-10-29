@@ -40,7 +40,7 @@ import sys
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Mapping, Protocol, Sequence
 
 import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -56,6 +56,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
     quote_powershell_literal,
     quote_shell_arg,
 )
+from flow_sdk.builtin.agentic_process.model_tiers import VENDOR_DEFAULT_TIERS
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
@@ -924,9 +925,9 @@ class AgentOptions:
     model name is always passed through.
     """
 
-    # Per-worker tier→model/auto map; empty in the base (pass-through). See
-    # ``flow_sdk/builtin/agentic_process/model_tiers.py``.
-    MODEL_TIERS: dict[str, str | None] = {}
+    # Per-worker tier→model/auto map. The vendor picks at every size unless a worker overrides it
+    # (only claude does: its CLI's own size words). See ``flow_sdk/builtin/agentic_process/model_tiers.py``.
+    MODEL_TIERS: Mapping[str, str | None] = VENDOR_DEFAULT_TIERS
 
     # ── Vendor spec (declarative; overridden per worker) ─────────────────────
     # The bare executable name (claude/codex/copilot). ``_resolve_binary`` may

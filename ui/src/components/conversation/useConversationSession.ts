@@ -25,7 +25,10 @@ import type { WorkerType } from './conversation-session-constants';
  */
 export function useConversationSession(opts: {
   conversation: Conversation | null;
-  ensureMapped?: (continuation: () => void | Promise<void>) => void;
+  ensureMapped?: (
+    continuation: () => void | Promise<void>,
+    opts?: { onSkip?: () => void | Promise<void> },
+  ) => void;
   /** Builds the first instruction placed on the worker's queue. The drawer
    *  supplies the full context-aware prompt; the header a lighter one. */
   buildPrompt: () => string;
@@ -78,16 +81,17 @@ export function useConversationSession(opts: {
   );
 
   const startSession = useCallback(
-    async (workerType: WorkerType, prompt: () => string = buildPrompt, messageId?: string) => {
+    async (workerType: WorkerType, prompt: () => string = buildPrompt, messageId?: string, scratch = false) => {
       if (!conversation || starting) return;
       // The conversation owns the project (conversation.project_id). A worker
       // starts on the conversation's project and is linked back via the generic
       // shared-context interface — no task, no my_process_id.
-      const workdir = await resolveWorkdir(conversation.project_id);
+      // "Run (Skip project)": no workdir — the backend runs it in the instance's temp folder.
+      const workdir = scratch ? undefined : await resolveWorkdir(conversation.project_id);
       // No warn-and-bail: launch is always entered through `ensureMapped`, which
       // opens the picker when unmapped and only runs this after a project lands.
       // A null workdir here means the user cancelled the picker — just stop.
-      if (!workdir) return;
+      if (!workdir && !scratch) return;
       setStarting(true);
       try {
         const instruction = prompt();
@@ -105,7 +109,8 @@ export function useConversationSession(opts: {
         const proc = await AgenticProcess.launch({
           workerType,
           workdir,
-          projectId: conversation.project_id ?? undefined,
+          projectId: scratch ? undefined : (conversation.project_id ?? undefined),
+          scratch,
           launchPrompt: instruction,
           enableAssistant: true,
           processType: ProcessKind.Conversation,
@@ -134,7 +139,7 @@ export function useConversationSession(opts: {
   const launch = useCallback(
     (worker: WorkerType, prompt?: () => string, messageId?: string) => {
       const run = () => startSession(worker, prompt, messageId);
-      if (ensureMapped) ensureMapped(run);
+      if (ensureMapped) ensureMapped(run, { onSkip: () => startSession(worker, prompt, messageId, true) });
       else void run();
     },
     [startSession, ensureMapped],

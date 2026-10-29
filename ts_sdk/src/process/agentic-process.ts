@@ -640,6 +640,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     /** Host of the asset being opened; defaults to the active compute node. */
     computeNode?: ComputeNode;
     projectId?: string | null;
+    /** No project: run in the instance's temp folder (backend picks it). */
+    scratch?: boolean;
     /** First prompt — placed on the queue, popped as the launch instruction. */
     launchPrompt?: string;
     /** Mount the Flowpad Assistant skills/agents for this worker. */
@@ -664,6 +666,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       {
         workdir: opts.workdir,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
+        ...(opts.scratch ? { scratch: true } : {}),
         ...(opts.workerType ? { workerType: opts.workerType } : {}),
         ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
         ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),

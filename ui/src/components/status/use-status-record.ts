@@ -1,4 +1,4 @@
-import { HARNESS_CAPABILITY_KINDS, statusService, type StatusRecord } from '@sdk';
+import { dataContext, HARNESS_CAPABILITY_KINDS, statusService, type StatusRecord } from '@sdk';
 import { LazyAsset } from '@sdk/lazy';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 import { useEffect } from 'react';
@@ -23,6 +23,8 @@ export function useStatusRecord(): { status: StatusRecord | null; isLoading: boo
  * failure leaves the record as it was, which is what is true.
  */
 export function refreshHarnessStatus(): void {
+  // Harness CLIs only exist where terminals run; the hub has no `@local` to probe (404).
+  if (!dataContext.caps.terminals) return;
   void statusService.refresh([...HARNESS_CAPABILITY_KINDS]).catch(() => undefined);
 }
 

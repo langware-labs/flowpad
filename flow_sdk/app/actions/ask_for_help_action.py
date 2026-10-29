@@ -194,6 +194,11 @@ async def send_diagnosis(conv_id: str, ask: AskForHelpRequest, someone) -> Optio
         return None
 
 
+def member_of(recipient) -> dict:
+    """A person recipient as a conversation member: only the fields it has."""
+    return {k: v for k, v in (("email", recipient.email), ("user_id", recipient.user_id), ("name", recipient.name)) if v}
+
+
 async def _capture_conversation(ask: AskForHelpRequest, someone) -> tuple[Conversation, Optional[Task], bool]:
     """The request's conversation (and task, for a person) — found by the asker's id, or written."""
     conv_id = ask.conversation_id or mint_uuid()
@@ -218,10 +223,7 @@ async def _capture_conversation(ask: AskForHelpRequest, someone) -> tuple[Conver
         )
     else:
         task = await _write_task(ask, conv_id, someone)
-        member = {
-            k: v for k, v in (("email", recipient.email), ("user_id", recipient.user_id), ("name", recipient.name)) if v
-        }
-        conv = Conversation(id=conv_id, title=task.title, members=[member])
+        conv = Conversation(id=conv_id, title=task.title, members=[member_of(recipient)])
     conv.awaits_hub = True
     conv.origin_project_id = ask.project_id
     conv = await conv.save(someone)

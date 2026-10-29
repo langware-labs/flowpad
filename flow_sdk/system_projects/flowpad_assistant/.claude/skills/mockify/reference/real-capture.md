@@ -1,14 +1,21 @@
 # Real mode — build the mock out of the running app
 
-Use it when the new screens extend an app that runs here (Flowpad, or the user's own app). A hand-drawn
-copy of a real product never looks like it; the product's own DOM and CSS do.
+Use it when the new screens extend an app whose code is here — any app, any stack. A hand-drawn copy of a
+real product never looks like it; the product's own DOM and CSS do. This skill is generic: nothing below
+assumes a particular product.
 
-## 1. A test instance, never the person's real one
+## 1. Run the app yourself, in its own dev / UI-only mode
 
-Flowpad: `scripts/instance_ctl.sh launch mock-1` from the repo (own ports, own DB), or an instance that
-`ls ~/.flow/instances/*/server.json` shows running and that is not `prod` (never port 9007). Anything you add
-to reach a state (a test source, a fake task) goes there — and is named in your reply. The user's own app:
-its dev server.
+**You start the app.** From its repo, run the UI the way its developers do — its dev server (`npm run dev`,
+`vite`, `next dev`, `flutter run -d web-server`, …), or a UI-only / mock-backend mode when it has one
+(storybook, MSW, a fixture or demo flag). Read its README / `package.json` scripts to find it. Your own
+ports, your own process; stop it when done.
+
+**Never touch the person's real running app or its data.** Do not attach to a production or personal
+instance, do not copy its database or data folders, do not sign in as the person. If a screen needs
+data, seed it the app's own way (fixtures, seed script, the UI itself) or fill it in the capture — and
+name what you added in your reply. If the app cannot run here at all, STOP and ask (fast mode needs
+the person's words).
 
 ## 2. Drive it to EVERY screen of the journey, in a real browser
 
@@ -20,15 +27,11 @@ stale screenshot after the layout and webfont settle is the usual reason a click
 
 ### Hard states — recipes (none of them needs an agent)
 
-- **The person's own data / projects** (their app, their open tabs): copy prod into your own instance
-  (`prodit` skill, `latest`: sqlite `.backup` each DB, rsync the rest incl. `sodot/`, `instance_ctl.sh launch
-  prodit-<N> --hub <prod hub> --email <their email> --password ""`). Never capture on prod itself.
-- **A Vibe tab with a project web app in the display** (the agent chat left, the app right): open
-  `http://localhost:<fe>/dock/app/micro_app-<id>?scope-mode=project&scope-activeProjectId=<project id>`.
-  The micro_app id is in the instance DB: `select id from entities where type='micro_app' and
-  json_extract(data,'$.name')='<app>'`. It opens with the chat that owns the app, exactly as the person sees it.
-- **The app inside the display is a cross-origin `<iframe>`** (`[data-testid=vibe-app-frame]`, portaled into
-  a fixed layer): the shell capture does NOT contain it. Open the iframe's `src` in its own tab, inline its
+- **A state that needs the person's own content** (their names, their records): seed look-alike data in
+  your dev run, or edit the text in the capture. Never copy their real data to get it.
+- **A deep state** (a menu inside a dialog inside a page): reach it by URL / route when the app has one,
+  else click through; a state the dev run cannot reach is a `built` step (§5).
+- **Part of the screen is a cross-origin `<iframe>`**: the shell capture does NOT contain it. Open the iframe's `src` in its own tab, inline its
   linked stylesheets (`fetch` each `link[rel=stylesheet]`), capture it, save it as `app.html` in the mock,
   and in the states script move the iframe into the display's content slot with `src="app.html"`.
 
@@ -64,15 +67,13 @@ await __info(); await __cap('home.html');   // then drive to the next step and _
 One capture per step, named by its step id. A step you skip has no screen, and the build stops on it.
 
 `info.json` tells you what the `<html>` carries and where the font comes from — both change the look and
-neither is in the body. Flowpad today: `data-view="vibe"`, `class="dark"`, an inline `--primary`, and the
-Plus Jakarta Sans webfont from a Google Fonts `<link>` (pass that link to `build_mock.py --head`). Missing
-any of these is the difference between "close" and "the same".
+neither is in the body (a theme class, a `data-*` attribute, inline CSS variables, a webfont `<link>` —
+pass that link to `build_mock.py --head`). Missing any of these is the difference between "close" and "the same".
 
 ## 4. Assets
 
-Copy **the stylesheet the page links** (from `info.json` → `stylesheets`; Flowpad: the one
-`static/assets/index-*.css`, not the lazy chunks) to `<mock-dir>/app.css`, and the asset folders the
-captures reference (Flowpad: `flow_sdk/server/icons/` → `icons/`, PNGs from `static/assets/` → `assets/`).
+Copy **the stylesheet the page links** (from `info.json` → `stylesheets`; the main bundle, not lazy chunks) to `<mock-dir>/app.css`, and the asset folders the
+captures reference (icons, images — under the same app paths).
 That stylesheet is the BUILT one and can lag the component source you read — if a class from source is
 missing (step 5), the build is older than the source; say so instead of guessing.
 `build_mock.py --origin http://localhost:<app port>` makes captured absolute URLs relative (`/assets`,
@@ -139,5 +140,5 @@ python3 -m http.server "$PORT" --bind 127.0.0.1 --directory <mock-dir> &   # kee
 
 ## 7. Clean up
 
-Stop the receiver and the static server by PID. Name any test data you added to the instance, and report
+Stop the receiver and the static server by PID. Stop the dev server you started. Name any test data you seeded, and report
 what the real app did wrong along the way. The mock lives in the session scratchpad — never committed.

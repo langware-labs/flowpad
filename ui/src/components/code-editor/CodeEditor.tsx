@@ -1,12 +1,4 @@
-import {
-  dataContext,
-  detectLanguage,
-  EditorLanguage,
-  isImagePath,
-  Shell,
-  TypeId,
-  VFSPath,
-} from '@sdk';
+import { dataContext, detectLanguage, EditorLanguage, isImagePath, Shell, TypeId, VFSPath } from '@sdk';
 import { TabbedTerminal } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
@@ -15,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tab
 import { useFS } from '@src/hooks/useFS';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openInPreview, TabInfo, useEditorStore } from '@src/store/use-editor-store';
-import { ChevronDown, ChevronUp, FolderTree, Pin, TerminalIcon, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileX, FolderTree, Pin, TerminalIcon, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DiffViewer from './DiffViewer';
@@ -72,11 +64,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
   // Dialog state for file/folder creation
 
-
-
-
-
-
   // Track open files for tab management (content loaded on demand)
   const [openFiles, setOpenFiles] = useState<EditorFile[]>([]);
 
@@ -107,14 +94,23 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     setShowFileTree,
   } = useEditorStore();
 
-  // State for failed file tracking - must be declared BEFORE useMemo that might reference it
-  const [failedFiles] = useState<Set<string>>(new Set());
+  // Paths the backend says don't exist. Their tab shows "not found" instead of
+  // a spinner that never ends (a tab left open on a deleted file).
+  const [missingFiles, setMissingFiles] = useState<ReadonlySet<string>>(new Set());
+  const markMissing = useCallback((path: string, missing: boolean) => {
+    setMissingFiles((prev) => {
+      if (prev.has(path) === missing) return prev;
+      const next = new Set(prev);
+      if (missing) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }, []);
 
   const [openTabs, setOpenTabs] = useState<TabInfo[]>(editorTabs?.length > 0 ? [...editorTabs] : []);
   const [activeTab, setActiveTab] = useState<string>(editorActiveTab || '');
   const [pendingOpenFile, setPendingOpenFile] = useState<string | null>(null);
   const [diffTab, setDiffTab] = useState<{ checkpoint_hash: string } | null>(null);
-
 
   useEffect(() => {
     setEditorTabs([...openTabs]);
@@ -130,11 +126,19 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
   // Fetch file metadata when activePath changes
   useEffect(() => {
-    if (!fs || !effectiveFilePath) return;
-    fs.fetch(effectiveFilePath).catch((error) => {
-      console.error('[CodeEditor] Failed to fetch file metadata:', effectiveFilePath, error);
-    });
-  }, [effectiveFilePath, fs]);
+    if (!fs || !effectiveFilePath || !activePath) return;
+    let cancelled = false;
+    fs.fetch(effectiveFilePath)
+      .then((entry) => {
+        if (!cancelled) markMissing(activePath, entry === null);
+      })
+      .catch((error) => {
+        console.error('[CodeEditor] Failed to fetch file metadata:', effectiveFilePath, error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveFilePath, activePath, fs, markMissing]);
 
   // Add streaming content from FSStore to open files list (reacts to content changes)
   // Images never have text content cached — EditorPane renders them straight from
@@ -197,7 +201,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     [fs, effectiveTypeId],
   );
 
-
   // Sync with activePath prop (unified: handles both state-driven from URL and streaming content)
   useEffect(() => {
     if (!activePath) {
@@ -205,15 +208,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       setActiveTab('');
       return;
     }
-    if (failedFiles.has(activePath)) {
-      return;
-    }
     // File should be active - ensure it's set as the active tab
-    if (activePath !== activeTab && activePath !== pendingOpenFile && !failedFiles.has(activePath)) {
+    if (activePath !== activeTab && activePath !== pendingOpenFile) {
       setPendingOpenFile(activePath);
       return;
     }
-  }, [activePath, activeTab, pendingOpenFile, failedFiles]);
+  }, [activePath, activeTab, pendingOpenFile]);
 
   useEffect(() => {
     if (!pendingOpenFile) return;
@@ -303,7 +303,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     },
     [setIsTerminalExpanded],
   );
-
 
   const treeVisible = !readOnly && showFileTree;
   const fileTreeToggle = readOnly ? null : (
@@ -415,19 +414,32 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
             const file = openFiles.find((f) => f.path === tab.path);
             return (
               <TabsContent key={tab.path} value={tab.path} className="m-0 h-full p-0">
-                <EditorPane
-                  readOnly={readOnly}
-                  file={file}
-                  revealLine={tab.path === activeTab ? deepLink : null}
-                  revealColumn={tab.path === activeTab ? deepLinkColumn : null}
-                  onExecuteScript={expandTerminal}
-                  onShellCmd={(command) => {
-                    handleShellCommand(command).catch((error) => {
-                      console.error('Error executing shell command:', error);
-                    });
-                  }}
-                  onDirtyChange={tab.onDirtyChange}
-                />
+                {!file && missingFiles.has(tab.path) ? (
+                  <div
+                    className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground"
+                    data-testid="editor-file-not-found"
+                  >
+                    <FileX className="h-8 w-8" />
+                    <p className="text-sm font-medium text-foreground">
+                      <Trans>File not found</Trans>
+                    </p>
+                    <p className="max-w-md break-all text-xs">{tab.path}</p>
+                  </div>
+                ) : (
+                  <EditorPane
+                    readOnly={readOnly}
+                    file={file}
+                    revealLine={tab.path === activeTab ? deepLink : null}
+                    revealColumn={tab.path === activeTab ? deepLinkColumn : null}
+                    onExecuteScript={expandTerminal}
+                    onShellCmd={(command) => {
+                      handleShellCommand(command).catch((error) => {
+                        console.error('Error executing shell command:', error);
+                      });
+                    }}
+                    onDirtyChange={tab.onDirtyChange}
+                  />
+                )}
               </TabsContent>
             );
           })}

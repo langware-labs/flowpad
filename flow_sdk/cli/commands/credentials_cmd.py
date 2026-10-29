@@ -226,7 +226,10 @@ def check_credential(
     row = status_row(_status(project, deployment), name)
     missing = _missing(row)
     ready = row is not None and row.get("state") == "connected"
-    ok({"name": name, "declared": row is not None, "ready": ready, "missing": missing})
+    from flow_sdk.builtin.credential_status import why_not_ready  # noqa: PLC0415
+
+    why = why_not_ready(row)
+    ok({"name": name, "declared": row is not None, "ready": ready, "missing": missing, **({"detail": why} if why else {})})
     if not ready:
         raise typer.Exit(EXIT_NOT_YET)
 

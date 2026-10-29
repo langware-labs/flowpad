@@ -5,14 +5,15 @@ import { DataSource } from '@sdk';
 import { BrowseableRoot } from '@src/components/browseable-tree/types';
 import { useBrowseableTree } from '@src/components/browseable-tree/useBrowseableTree';
 import { subscribeRefresh } from '@src/components/browseable-tree/refresh-store';
-import { useDataSourcesRoot } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
+import { useDataSourcesRoots } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
 
 let sources: DataSource[] = [];
 const specFor = () => undefined;
 vi.mock('@src/hooks/entity-hooks', () => ({ useEntitiesQuery: () => ({ data: sources }) }));
-vi.mock('@src/components/data-sources/use-source-specs', () => ({
+vi.mock('@src/components/data-sources/use-source-specs', async (orig) => ({
+  ...(await orig<typeof import('@src/components/data-sources/use-source-specs')>()),
   sourcesQuery: {},
-  useSourceSpecs: () => ({ specFor }),
+  useSourceSpecs: () => ({ specFor, loading: false }),
 }));
 
 function Rows({ root }: { root: BrowseableRoot }) {
@@ -25,7 +26,7 @@ function Rows({ root }: { root: BrowseableRoot }) {
   </>;
 }
 function Sidebar() {
-  const root = useDataSourcesRoot();
+  const { dataSourcesRoot: root } = useDataSourcesRoots(null);
   return root ? <Rows root={root} /> : null;
 }
 const source = (id: string, displayName: string) => ({ id, displayName, provider: '', channel: '' }) as DataSource;

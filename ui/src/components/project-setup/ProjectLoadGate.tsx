@@ -10,7 +10,8 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { SetupFailureActions } from './SetupFailureActions';
 import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
-import { useProjectLoad, validLoad } from './use-project-load';
+import { Step } from '@src/components/webapp-display/PageCheckPanel';
+import { projectLoadKey, useProjectLoad, validLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
 
 /** The route has already selected identity. Operational work starts after the tab mounts. */
@@ -52,7 +53,11 @@ export function ProjectLoadGate({
         const up = verdict?.state === 'ready';
         validLoad.set(validKey, up);
         setValid(up);
-        if (up) return;
+        if (up) {
+          // The app shows now; its setup is checked behind it, and the poll reads what it owes.
+          void client.invalidateQueries({ queryKey: projectLoadKey(projectId, display, asset) });
+          return;
+        }
       }
       const next = await load();
       if (!live) return;
@@ -66,7 +71,7 @@ export function ProjectLoadGate({
     return () => {
       live = false;
     };
-  }, [load, location.key, projectId, asset, display, validKey]);
+  }, [load, location.key, projectId, asset, display, validKey, client]);
   const result = lifecycle.result;
   const fix = useSetupFix(projectId, result, lifecycle.error, (approved) => load(approved));
   const navigate = useNavigate();
@@ -90,22 +95,25 @@ export function ProjectLoadGate({
     void load(true);
   }, [result, asset, lifecycle.starting, loadedLocation, location.key, load]);
   const name = project?.displayName || projectId;
-  // Working: a load in flight, or a setup run going that is not waiting on the person.
-  const busy = lifecycle.starting || !result || result.state === 'running';
-  const status =
-    busy && !lifecycle.questionId ? (
-      result?.state === 'running' ? (
-        result.phase === 'load' ? (
-          <Trans>Starting…</Trans>
-        ) : (
-          <Trans>Setting up…</Trans>
-        )
+  // A question on screen means the run waits on the person: no spinner, and say so.
+  // Otherwise working = a load in flight or a setup run going.
+  const waiting = !!lifecycle.questionId;
+  const busy = !waiting && (lifecycle.starting || !result || result.state === 'running');
+  const status = waiting ? (
+    <Trans>Waiting for your answer</Trans>
+  ) : busy ? (
+    result?.state === 'running' ? (
+      result.phase === 'load' ? (
+        <Trans>Starting…</Trans>
       ) : (
-        <Trans>Checking what this needs…</Trans>
+        <Trans>Setting up…</Trans>
       )
     ) : (
-      result?.detail || <Trans>Preparing…</Trans>
-    );
+      <Trans>Checking what this needs…</Trans>
+    )
+  ) : (
+    result?.detail || <Trans>Preparing…</Trans>
+  );
   useEffect(() => {
     // A load that just brought the app up moved its address; a validated one moved nothing.
     if (result?.state === 'ready' && loadedLocation === location.key) {
@@ -113,6 +121,36 @@ export function ProjectLoadGate({
       void client.invalidateQueries({ queryKey: ['service_endpoint'] });
     }
   }, [client, result, loadedLocation, location.key, validKey]);
+  // Up, but its setup owes something (a sign-in that expired under it): the app stays, a bar says what is
+  // needed, and Set up leaves the fast path for the setup flow the gate already runs.
+  const owed = valid && result?.state === 'ready' ? result.setup_owed : null;
+  if (owed)
+    return (
+      <div className="flex h-full flex-col">
+        <div
+          role="alert"
+          className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm"
+          data-testid="project-load-setup-owed"
+        >
+          <span className="min-w-0 flex-1 truncate" title={owed}>
+            <Trans>Needs setup: {owed}</Trans>
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              validLoad.set(validKey, false);
+              setValid(false);
+              setLoadedLocation(location.key);
+              void load(true);
+            }}
+          >
+            <Trans>Set up</Trans>
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1">{children}</div>
+      </div>
+    );
   if (valid) return children;
   if (valid === null) return null;
   if (result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key)
@@ -135,6 +173,38 @@ export function ProjectLoadGate({
           {busy ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : null}
           {status}
         </p>
+        {/* An app being opened: the lanes as steps — what happened, what runs now, what comes next. */}
+        {asset && !lifecycle.questionId && result?.phase !== 'setup' && result?.state !== 'setup_required' && (
+          <ul className="flex flex-col divide-y rounded-md border" data-testid="project-load-steps">
+            <Step
+              mark={valid === false ? 'failed' : 'running'}
+              title={
+                valid === false ? (
+                  <Trans>Check — the app is not ready to show</Trans>
+                ) : (
+                  <Trans>Check — is the app running and its page clean?</Trans>
+                )
+              }
+              detail={
+                valid === false ? (
+                  <Trans>It is not answering on its port, or its page failed the last time it opened.</Trans>
+                ) : undefined
+              }
+            />
+            {valid === false && (
+              <Step
+                mark={result?.state === 'failed' ? 'failed' : result?.state === 'ready' ? 'done' : 'running'}
+                title={<Trans>Start — starting the app's server</Trans>}
+                detail={result?.state === 'failed' ? result.detail : undefined}
+              />
+            )}
+            <Step
+              mark="next"
+              title={<Trans>Next: open the page and check it for errors</Trans>}
+              detail={<Trans>A known error is fixed on the spot; an unknown one goes to recovery.</Trans>}
+            />
+          </ul>
+        )}
         {lifecycle.error && (
           <p role="alert" className="text-destructive">
             {lifecycle.error}

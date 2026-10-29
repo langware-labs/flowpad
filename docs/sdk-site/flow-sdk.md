@@ -610,7 +610,7 @@ A provider key, a budget, or a harness login.
 ```python
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
-llm = LLMEndpoint(provider="openrouter")          # kind=api_key, base_url and models filled in
+llm = LLMEndpoint(provider="openrouter")          # kind=api_key, base_url and tiers filled in
 vectors = await llm.create_embeddings(["a hot day in July", "a cold night in January"])
 answer = await llm.create_completion("You answer in one word.", "Capital of France?")
 ```

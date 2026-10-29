@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro';
 import { sectionRecordTypes } from './section-record-types';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
@@ -41,7 +41,7 @@ import {
   assetContextFolderNodeId,
   assetContextFoldersRoot,
 } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
-import { useDataSourcesRoot } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
+import { useDataSourcesRoots } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
 import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
 import {
   basename as fsBasename,
@@ -124,7 +124,6 @@ export function useAssetsModel() {
     reload: reloadTypes,
   } = useAssetTypes({ allUserTypes: true });
   const { indexType } = useSystemTools();
-  const dataSourcesRoot = useDataSourcesRoot();
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
   const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
@@ -146,6 +145,7 @@ export function useAssetsModel() {
   );
   const scopeProjectId = urlProjectId ?? pinnedProjectId(urlScope) ?? currentProjectId;
   const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
+  const { dataSourcesRoot, channelsRoot } = useDataSourcesRoots(scopeProjectId ?? null);
 
   // The scoped project entity, watched so `include_dirs` edits (add/remove
   // dependency) re-render the tree. Backs the "Dependencies" root.
@@ -306,6 +306,14 @@ export function useAssetsModel() {
   // dependencies adapter so its nested per-type rows honor the same gate.
   const visibleTypeNameSet = useMemo(() => new Set(visibleTypeNames), [visibleTypeNames]);
   useAssetTreeRefresh(visibleTypeNames, effectiveFilter.scope);
+  // The Documents root lists vaults; when the list changes (it often arrives after
+  // the first render) re-list the root in place — its id is stable.
+  const markdownVaultsKey = (visibleTypes.find((t) => t.type_name === 'markdown')?.vaults ?? [])
+    .map((v) => v.absPath)
+    .join('|');
+  useEffect(() => {
+    refreshNode('asset-type:markdown');
+  }, [markdownVaultsKey]);
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
     [allTypes],
@@ -774,6 +782,7 @@ export function useAssetsModel() {
     }
     list.push(...typeRoots);
     if (dataSourcesRoot) list.push(dataSourcesRoot);
+    if (channelsRoot) list.push(channelsRoot);
     // Dependencies (project flow.json) — shown whenever a project is in scope
     // (even with none yet, so the "+" add action is reachable).
     if (hasScopeProject) {
@@ -797,6 +806,7 @@ export function useAssetsModel() {
     return list;
   }, [
     dataSourcesRoot,
+    channelsRoot,
     displayTypes,
     indexType,
     handleNew,

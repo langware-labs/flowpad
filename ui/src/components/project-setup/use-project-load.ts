@@ -65,7 +65,11 @@ export function useProjectLoad(
     // A seeded verdict is whatever the opener last heard, not what the backend holds now: read it once
     // on mount instead of trusting the seed for the app's five-minute default.
     staleTime: 0,
-    refetchInterval: (q) => (q.state.data?.state === 'running' ? SETUP_POLL_MS : false),
+    // Also while a running app's setup is being checked behind it: its answer (what it owes) lands here.
+    refetchInterval: (q) =>
+      q.state.data?.state === 'running' || (!!asset && q.state.data?.state === 'ready' && q.state.data.setup_owed == null)
+        ? SETUP_POLL_MS
+        : false,
     // A run finishes whether or not this window is in front: a hidden window that stopped asking kept
     // showing "Preparing…" over a run that had long failed.
     refetchIntervalInBackground: true,

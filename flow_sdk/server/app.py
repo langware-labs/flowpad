@@ -67,6 +67,7 @@ from .routes import (
     favorites_router,
     git_router,
     graph_workflows_router,
+    headless_turn_router,
     hooks_router,
     ingest_router,
     journeys_router,
@@ -984,6 +985,7 @@ server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(display_router)
 server.add_router(snippet_router)
+server.add_router(headless_turn_router)
 server.add_router(shell_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)

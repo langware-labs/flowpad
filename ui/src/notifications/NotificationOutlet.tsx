@@ -19,6 +19,7 @@ import { runAction } from './commands';
 import { closeShown, isAlertLevel } from './notify';
 import { useCenterStore } from './center-store';
 import { DiagnoseIconButton } from './diagnose/DiagnoseIconButton';
+import { ErrorDetailsButton } from './ErrorDetailsDialog';
 import { NotificationProcessLine } from './NotificationProcessLine';
 
 const LEVEL_ICON: Record<NotificationLevel, LucideIcon> = {
@@ -119,6 +120,11 @@ function NotificationContent({ data, centered = false }: { data: NotificationDat
           </Description>
         )}
         <NotificationProcessLine data={data} />
+        {!centered && isAlertLevel(data.level) && (
+          <div className="mt-2">
+            <ErrorDetailsButton data={data} />
+          </div>
+        )}
         {data.actions && data.actions.length > 0 ? (
           <ToastActions data={data} />
         ) : (

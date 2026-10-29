@@ -1,8 +1,8 @@
+import { dataContext } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
 import { notify } from '@src/notifications';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { useProjects } from '@src/hooks/use-projects';
 import { FolderOpen, FolderPlus, FolderSearch, GitBranch, Loader2 } from 'lucide-react';
@@ -73,7 +73,7 @@ function ActionButton({
  * The hub has projects and a current project like the desktop does — it just
  * reaches its files over the VFS with git as the filesystem. So only ONE action
  * is desk-specific: **Open folder**, which drives the host's native folder
- * picker and has nothing to point at on a hub-only server (`isHubOnly()`).
+ * picker, shown only where an OS window reaches a person (`caps.osDialogs`).
  * It is the only ACTION dropped there; open-existing / new / from-git all work
  * against the hub. The New-project dialog also drops its whole folder row on
  * the hub (`withFolder`): a hub project is a pure entity with nothing on a
@@ -123,9 +123,9 @@ export function ProjectActionsRow({
     }
   };
 
-  // Native host folder picker — the one action with no meaning over the hub's
-  // git-backed VFS.
-  const canPickHostFolder = !isHubOnly();
+  // Native host folder picker: only where an OS window reaches a person — not the hub,
+  // not a cloud box (its picker runs on a machine with no screen).
+  const { osDialogs: canPickHostFolder, localFiles } = dataContext.caps;
 
   return (
     <>
@@ -184,7 +184,7 @@ export function ProjectActionsRow({
         // A hub project is a pure entity — no folder behind it — so the dialog
         // asks for a name only. On the desk the project IS a directory, so the
         // parent folder stays required.
-        withFolder={canPickHostFolder}
+        withFolder={localFiles}
         onPickFolder={canPickHostFolder ? () => pickFolder(defaultWorkspacePath || undefined) : undefined}
         onCreate={async (name, parentFolder) => {
           await ensureProjectAndSetContext(parentFolder ? `${normalizePath(parentFolder)}/${name}` : name);

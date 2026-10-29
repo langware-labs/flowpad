@@ -7,7 +7,8 @@
  * the automation (URL-first: the click only navigates).
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isMessagePattern, type AutomationSummary } from '@sdk';
+import { isMessagePattern, placeOf, type AutomationSummary } from '@sdk';
+import { PlaceBadge } from '@src/components/assets/editor/agent-profile/PlaceBadge';
 import { AlertTriangle, ArrowRight, FlaskConical, FolderOpen, Play } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
@@ -81,6 +82,7 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
         )}
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <KindBadge kind={a.kind} />
+          <PlaceBadge place={placeOf(a)} testId={`automation-place-${a.id}`} />
           <button
             type="button"
             onClick={(e) => {
