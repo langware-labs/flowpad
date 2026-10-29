@@ -21,13 +21,7 @@ router = APIRouter()
 async def run_headless_turn(body: HeadlessTurnRequest) -> StreamingResponse:
     async def lines():
         try:
-            async for event in headless_turn(
-                body.prompt,
-                worker_type=body.worker,
-                model=body.model,
-                workdir=body.workdir,
-                endpoint_typeid=body.llm,
-            ):
+            async for event in headless_turn(body):
                 yield json.dumps(event) + "\n"
         except Exception as exc:  # noqa: BLE001 -- the stream has started; the error is the last event
             yield json.dumps({"kind": "done", "ok": False, "exit_code": 1, "text": "", "detail": str(exc)}) + "\n"

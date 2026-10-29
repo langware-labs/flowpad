@@ -28,7 +28,6 @@ MEMORY_FILES = ("AGENTS.md", "CLAUDE.md")
 class DeepAgentsAgentOptions(AgentOptions):
     """Builds the runner argv for one headless turn."""
 
-
     EXECUTABLE = Path(sys.executable).name
     # The runner reads the prompt from stdin to EOF, so a multi-line prompt is safe.
     PROMPT_CHANNEL = "stdin"

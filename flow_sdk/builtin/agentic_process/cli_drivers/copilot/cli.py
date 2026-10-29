@@ -13,8 +13,6 @@ logger = logging.getLogger(__name__)
 class CopilotAgentOptions(AgentOptions):
     """Builds Copilot CLI argv for headless JSON streaming or visible PTY mode."""
 
-    # Native sm/md/lg delegate to Copilot auto by omitting --model at emission.
-
     def __init__(
         self,
         session_id: str | None = None,

@@ -140,15 +140,26 @@ async def test_a_capability_model_map_override_wins_over_the_endpoint(env) -> No
 
 
 def test_row_tiers_prefer_the_chain_expansion() -> None:
-    from flow_sdk.instance_settings.llm_endpoint import _tier_models
+    from flow_sdk.instance_settings.llm_endpoint import _row_tiers
 
     row = {"tiers": {"sm": "own/sm"}, "expand": {"tiers": {"sm": "chain/sm", "md": "chain/md", "lg": None}}}
-    assert _tier_models(row) == {"sm": "chain/sm", "md": "chain/md"}
+    assert _row_tiers(row) == {"sm": "chain/sm", "md": "chain/md"}
 
 
 def test_row_tiers_fall_back_to_the_rows_own_and_drop_empty() -> None:
-    from flow_sdk.instance_settings.llm_endpoint import _tier_models
+    from flow_sdk.instance_settings.llm_endpoint import _row_tiers
 
-    assert _tier_models({"tiers": {"sm": "own/sm", "md": None, "lg": ""}}) == {"sm": "own/sm"}
-    assert _tier_models({"expand": {}, "tiers": {"lg": "own/lg"}}) == {"lg": "own/lg"}
-    assert _tier_models({}) == {}
+    assert _row_tiers({"tiers": {"sm": "own/sm", "md": None, "lg": ""}}) == {"sm": "own/sm"}
+    assert _row_tiers({"expand": {}, "tiers": {"lg": "own/lg"}}) == {"lg": "own/lg"}
+    assert _row_tiers({}) == {}
+
+
+def test_can_allocate_is_the_hubs_allocate_permission_not_update() -> None:
+    """A holder may carve a sub-budget from their own allowance without being able to change it."""
+    from flow_sdk.instance_settings.llm_endpoint import _can_administer, _can_allocate
+
+    holder = {"expand": {"allowed_actions": ["read", "invoke", "allocate", "history"]}}
+    spender = {"expand": {"allowed_actions": ["read", "invoke"]}}
+    assert (_can_allocate(holder), _can_administer(holder)) == (True, False)
+    assert _can_allocate(spender) is False
+    assert _can_allocate({}) is None  # no expansion: unknown, not "no"

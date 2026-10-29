@@ -30,38 +30,31 @@ class HeadlessTurnRequest(BaseModel):
     llm: Optional[str] = None  # an endpoint typeid; the CLI resolves row numbers and names first
 
 
-async def headless_turn(
-    prompt: str,
-    *,
-    worker_type: Optional[str] = None,
-    model: Optional[str] = None,
-    workdir: Optional[str] = None,
-    endpoint_typeid: Optional[str] = None,
-) -> AsyncIterator[dict]:
-    """Run one turn and yield its events. No ``worker_type`` takes the builtin-process rule (the
+async def headless_turn(request: HeadlessTurnRequest) -> AsyncIterator[dict]:
+    """Run one turn and yield its events. No ``worker`` takes the builtin-process rule (the
     selected harness when installed, else ``deepagents``)."""
     from flow_sdk.builtin.agent_serve import Turn, TurnEngine  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
     from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
 
     cli_config: dict = {"permission_mode": "bypassPermissions"}
-    if model:
-        cli_config["model"] = model
+    if request.model:
+        cli_config["model"] = request.model
     ap = await AgenticProcess(
-        worker_type=worker_type or await resolve_builtin_worker_type(),
-        workdir=workdir or tempfile.mkdtemp(prefix="flow-process-"),
+        worker_type=request.worker or await resolve_builtin_worker_type(),
+        workdir=request.workdir or tempfile.mkdtemp(prefix="flow-process-"),
         cli_config=cli_config,
         pty_mode=False,
         visible=False,
         # Flowpad's own skills (web-app-builder and its templates) come with the assistant.
         load_flowpad_assistant=True,
-        llm_endpoint_typeid=endpoint_typeid,
+        llm_endpoint_typeid=request.llm,
     ).save()
     yield {"kind": "process", "id": str(ap.typeid)}
     answer = None
     said = False
     try:
-        turn = Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=prompt)
+        turn = Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=request.prompt)
         async for event in TurnEngine().run_stream(turn, process=ap):
             if event.kind == "text":
                 said = True

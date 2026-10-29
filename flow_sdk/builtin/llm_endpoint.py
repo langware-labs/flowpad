@@ -141,10 +141,12 @@ def _tiers_from_legacy_models(data: Any) -> Any:
     Rows saved before the rename carry ``models``; a hub row's ``models`` is a root's catalog (a LIST)
     and never a size map, so only a dict moves. The next save writes ``tiers``.
     """
-    if isinstance(data, dict) and isinstance(data.get("models"), dict) and not data.get("tiers"):
-        data = {**data, "tiers": data["models"]}
-    if isinstance(data, dict) and "models" in data:
-        data = {k: v for k, v in data.items() if k != "models"}
+    if not isinstance(data, dict) or "models" not in data:
+        return data
+    data = dict(data)
+    legacy = data.pop("models")
+    if isinstance(legacy, dict) and not data.get("tiers"):
+        data["tiers"] = legacy
     return data
 
 
@@ -444,7 +446,7 @@ class LLMEndpoint(Entity):
                 f"{self.name or self.harness} is a vendor device login; it can fund a CLI worker "
                 f"but the backend cannot call it"
             )
-        models = dict(self.tiers)
+        tiers = dict(self.tiers)
         if self.kind == LLMEndpointKind.HUB:
             base_url = self._hub_invoke_url()
             if not base_url:
@@ -459,7 +461,7 @@ class LLMEndpoint(Entity):
                 # serializes no model names, so a hub endpoint carries none of its own, and
                 # without this every hub call had to name a model explicitly — which the docs
                 # said it did not.
-                models=models or None,
+                models=tiers or None,
                 extra_headers={},
                 label=self.name or "hub endpoint",
             )
@@ -467,7 +469,7 @@ class LLMEndpoint(Entity):
             self.provider,
             api_key=self.resolve_api_key(),
             base_url=self.base_url,
-            models=models or None,
+            models=tiers or None,
             label=self.name or self.provider,
         )
 

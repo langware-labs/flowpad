@@ -244,12 +244,6 @@ async def _run_start(request: HeadlessTurnRequest) -> int:
 
     await _bootstrap_local()
     printer = _Printer()
-    async for event in headless_turn(
-        request.prompt,
-        worker_type=request.worker,
-        model=request.model,
-        workdir=request.workdir,
-        endpoint_typeid=request.llm,
-    ):
+    async for event in headless_turn(request):
         printer.feed(event)
     return printer.result()

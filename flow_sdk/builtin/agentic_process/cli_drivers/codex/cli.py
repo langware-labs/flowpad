@@ -43,8 +43,6 @@ class CodexAgentOptions(AgentOptions):
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
 
-    # sm/md/lg → gpt-5.6-luna/gpt-5.6-terra/gpt-5.6-sol, applied when emitting command.
-
     def __init__(
         self,
         session_id: str | None = None,

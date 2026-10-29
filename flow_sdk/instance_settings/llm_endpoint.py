@@ -311,7 +311,7 @@ def _clean_tiers(raw) -> dict[str, str]:
     return {str(size): model for size, model in raw.items() if isinstance(model, str) and model}
 
 
-def _tier_models(row: dict) -> dict[str, str]:
+def _row_tiers(row: dict) -> dict[str, str]:
     """``{sm, md, lg}`` -> model, from the hub's ``expand.tiers`` (sizes inherited down the row's chain).
 
     A size the chain does not declare is left out, so a spawn asking for it is refused in words
@@ -445,7 +445,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             if root_provider := _root_provider(row):
                 payload["provider"] = root_provider
             # The model each size runs, inherited down the hub chain.
-            payload["tiers"] = _tier_models(row)
+            payload["tiers"] = _row_tiers(row)
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)
