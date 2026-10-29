@@ -26,7 +26,7 @@
  * featured ones (`channelOffers`): the greyed glyph with a "+", which opens the add dialog on
  * that channel. It is the absence of a source, not a state of one, so it never filters.
  */
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { Agent, DataSource, type DataDriver, TypeId, User } from '@sdk';
 import { Check, Plus, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
@@ -165,6 +165,7 @@ export function AttachedChannelsBar({
   const { deleting, setDeleting, remove, confirm } = useSourceDelete();
   const filtering = selected.size > 0;
   const groups = useMemo(() => groupChannels(rows), [rows]);
+  const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
 
   const pick = (key: string) => {
     const next = new Set(selected);
@@ -255,7 +256,14 @@ export function AttachedChannelsBar({
           />
         </PopoverContent>
       </Popover>
-      {adding && <AddChannelDialog owner={owner} initial={adding.initial} onClose={() => setAdding(null)} />}
+      {adding && (
+        <AddChannelDialog
+          owner={owner}
+          initial={adding.initial}
+          attached={attachedProviders}
+          onClose={() => setAdding(null)}
+        />
+      )}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(next) => !next && setDeleting(null)}
@@ -276,14 +284,28 @@ const MARK_GREYED = '[&>:first-child]:opacity-45 [&>:first-child]:grayscale';
 const MARK_BADGE = 'absolute -bottom-0.5 -end-0.5 rounded-full border-2 border-background';
 const MARK_HOVER = { openDelay: 150, closeDelay: 120 };
 
-/** The add dialog as the channel line opens it: message drivers only, on `initial` when a channel was picked. */
-function AddChannelDialog({ owner, initial, onClose }: { owner: TypeId; initial?: DataDriver; onClose: () => void }) {
+/** The add dialog as the channel line opens it: message drivers not already attached, on `initial` when a channel was picked. */
+function AddChannelDialog({
+  owner,
+  initial,
+  attached,
+  onClose,
+}: {
+  owner: TypeId;
+  initial?: DataDriver;
+  attached?: ReadonlySet<string>;
+  onClose: () => void;
+}) {
+  const only = useCallback(
+    (spec: DataDriver) => isMessageDriverSpec(spec) && !(spec.name && attached?.has(spec.name)),
+    [attached],
+  );
   return (
     <DataSourceDialog
       open
       onOpenChange={(next) => !next && onClose()}
       owner={owner}
-      only={isMessageDriverSpec}
+      only={only}
       initial={initial}
       variant="channel"
     />
