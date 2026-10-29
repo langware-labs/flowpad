@@ -23,4 +23,4 @@ class LoginData(BaseModel):
     # the user's role on it (default "member"). None when the user has no org.
     # Materialized locally as a remote=True Organization on login.
     organization: dict[str, Any] | None = None
-    organization_role: str | None = None
+    organization_roles: list[str] | None = None

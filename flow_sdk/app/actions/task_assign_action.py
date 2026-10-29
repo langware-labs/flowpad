@@ -55,7 +55,7 @@ def assignee_invite_body(email: str | None, task: Task, message: str | None = No
     """
     return {
         **({"recipient_email": email} if email else {"recipient_user_id": user_id}),
-        "invitation_targets": [{"typeid": f"task-{task.id}", "role": HubRole.EDITOR.value}],
+        "invitation_targets": [{"typeid": f"task-{task.id}", "roles": [HubRole.EDITOR.value]}],
         "message": message or f'You have been assigned the task "{task.title}"',
     }
 

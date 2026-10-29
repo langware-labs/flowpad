@@ -147,3 +147,14 @@ async def test_discard_deletes_on_the_hub_and_locally(hub):
 
     assert hub[-1][0] == "DELETE"
     assert await Conversation.get_one({"id": conv.id}) is None
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_conversation_default_and_explicit_role_sets(hub):
+    conv = await _conversation()
+    await conv.share(recipients=["default@example.com"])
+    assert _invitations(hub)[-1]["invitation_targets"][0]["roles"] == ["reader", "runner"]
+    await conv.share(recipients=["run@example.com"], invitation={
+        "invitation_targets": [{"typeid": str(conv.typeid), "roles": ["runner"]}]
+    })
+    assert _invitations(hub)[-1]["invitation_targets"][0] == {"typeid": str(conv.typeid), "roles": ["runner"]}

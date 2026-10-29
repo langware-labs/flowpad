@@ -199,13 +199,13 @@ async def helpdesk_ensure(project_id: str = "") -> ApiResponse:
             name="Help Desk",
             fs_storage_mount_path=canonical,
             fs_storage_provider=StorageProvider.LOCAL.value,
-            visitor_role="owner",
+            visitor_roles=["owner"],
             origin=GitOrigin.from_url(target.portal_git_url, rel_path="."),
         )
         await proj.save(request_info.someone_typeid)
         # Mirrors `_ensure_system_projects`: the field alone does not establish
         # the role, so the app-managed-project recipe saves AND then applies it.
-        await proj.set_visitor_role("owner")
+        await proj.set_visitor_roles(["owner"])
 
     return ApiSuccessResponse(data=_ensure_payload(target, project_id=proj.id, mount_path=canonical, cloned=cloned))
 

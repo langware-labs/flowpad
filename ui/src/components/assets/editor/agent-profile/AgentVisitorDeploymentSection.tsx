@@ -71,7 +71,7 @@ export function AgentVisitorDeploymentSection({
       setAllowed(setup.allow_visitor_deployment);
       if (role !== PUBLIC_VIEWER_ROLE) {
         const access = await setPublicAccess(agent.typeId, 'visitor', PUBLIC_VIEWER_ROLE);
-        setRole(access.role ?? null);
+        setRole(access.roles.join(', ') ?? null);
       }
       notify.success({
         title: t`Visitors can try this agent`,

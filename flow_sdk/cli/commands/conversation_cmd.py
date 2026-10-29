@@ -153,7 +153,7 @@ def _conv_summary_row(conv: dict) -> dict:
             "name": p.get("name"),
             "email": p.get("email"),
             "user_id": p.get("user_id"),
-            "role": p.get("role"),
+            "roles": p.get("roles", []),
         }
         for p in (conv.get("members") or [])
     ]

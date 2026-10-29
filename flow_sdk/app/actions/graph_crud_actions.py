@@ -577,7 +577,7 @@ async def _dispatch_create_save(
         entity = await entity.save(someone_typeid)
     elif target_typeid.type == Visitor.get_type():
         entity = await entity.save()
-        await entity.set_visitor_role(AuthRole.ANONYMOUS_VIEWER.value.lower())
+        await entity.set_visitor_roles([AuthRole.READER.value.lower()])
     else:
         target_entity: Entity | None = (
             await request_info.get_target_entity()

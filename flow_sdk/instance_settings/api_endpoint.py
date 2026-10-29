@@ -5,7 +5,7 @@ rule here is its rule, for the same reason:
 
 * TWO reads, unioned. The type listing is access-scoped (rows the user holds a role on); an
   endpoint opened to every signed-in user carries no role edge, only an
-  ``authenticated_role`` stamp, so it is in the ``catalog`` alone. A shared Jev endpoint is
+  ``authenticated_roles`` stamp, so it is in the ``catalog`` alone. A shared Jev endpoint is
   exactly that case.
 * ``[]`` when signed out, without asking (an idle box must not collect 401 toasts).
 * A 30-second memo; ``cached_only`` answers from it and never calls out; a failed refresh

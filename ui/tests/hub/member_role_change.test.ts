@@ -53,7 +53,7 @@ async function roster(conv: any): Promise<Record<string, string>> {
   const members: any[] = await conv.fetchMembers({ cache: false });
   const out: Record<string, string> = {};
   for (const m of members) {
-    if (m?.email) out[String(m.email).toLowerCase()] = String(m.role ?? '').toLowerCase();
+    if (m?.email) out[String(m.email).toLowerCase()] = (m.roles ?? []).join(',');
   }
   return out;
 }
@@ -75,7 +75,7 @@ describe('conversation member role change over the hub (realm per instance)', ()
     const initial = await pollUntil(
       async () => {
         const r = await roster(conv);
-        return r[dev2.email.toLowerCase()] === 'member' ? r : null;
+        return r[dev2.email.toLowerCase()] === 'reader,runner' ? r : null;
       },
       10_000,
       'dev-2 on roster as member',
@@ -90,7 +90,7 @@ describe('conversation member role change over the hub (realm per instance)', ()
     expect(dev2Id).toBeTruthy();
 
     // ── 1. Owner changes member → editor; both clients observe it. ──
-    await conv.setMemberRole(dev2Id, 'editor');
+    await conv.setMemberRole(dev2Id, ['editor']);
     const promoted = await pollUntil(
       async () => {
         const r = await roster(conv);
@@ -112,9 +112,9 @@ describe('conversation member role change over the hub (realm per instance)', ()
 
     // ── 2. Denials propagate (no silent local fallback). ──
     // editor may not touch the owner (target ceiling)…
-    await expect((received as any).setMemberRole(dev1Id, 'member')).rejects.toThrow();
+    await expect((received as any).setMemberRole(dev1Id, ['reader'])).rejects.toThrow();
     // …and may not self-promote (assigned-role ceiling / self-ban).
-    await expect((received as any).setMemberRole(dev2Id, 'admin')).rejects.toThrow();
+    await expect((received as any).setMemberRole(dev2Id, ['admin'])).rejects.toThrow();
 
     // Roster unchanged after both denials — hub stayed authoritative.
     const after = await roster(conv);

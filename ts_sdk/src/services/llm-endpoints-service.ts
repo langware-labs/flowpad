@@ -191,7 +191,7 @@ function action(name: string, id: string, method: HttpMethod, subpath?: string):
 export class LlmEndpointsService {
   /**
    * Endpoints the caller may USE without holding a role edge — the hub's `catalog`
-   * (entities stamped `authenticated_role`, e.g. the seeded global root). They come
+   * (entities stamped `authenticated_roles`, e.g. the seeded global root). They come
    * without a permission expansion, so `readOnly`/`canDelete` are unknown and the
    * screens treat them as read-only.
    */

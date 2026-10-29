@@ -876,7 +876,7 @@ export function ConversationView({
   const isConversationOwner =
     !!cloudUserId &&
     ((!!conversation?.initiated_by && conversation.initiated_by === cloudUserId) ||
-      (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
+      (participants ?? []).some((p) => p.user_id === cloudUserId && p.roles?.includes('owner')));
 
   // Open-to-read (URL-first): viewing a conversation marks its latest received message read —
   // the mutation lives on the mounted view, so the Stream Inbox row click / banner click / direct

@@ -44,7 +44,7 @@ function ContactDetails({ user }: { user: User }) {
     ['Email', user.email],
     ['Hub user id', user.user_id],
     ['Local id', user.id],
-    ['Organization role', user.organization_role],
+    ['Organization role', user.organization_roles?.join(', ')],
     ['Onboarded', user.onboarded != null ? String(user.onboarded) : undefined],
   ];
   return (

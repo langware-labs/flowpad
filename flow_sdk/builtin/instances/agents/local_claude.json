@@ -1,7 +1,9 @@
 {
   "env": "local",
   "allowed_public_access": true,
-  "visitor_role": "reader",
+  "visitor_roles": [
+    "reader"
+  ],
   "type": "agent",
   "uname": "local",
   "name": "Local Claude CLI",

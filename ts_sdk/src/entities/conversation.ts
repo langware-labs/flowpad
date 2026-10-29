@@ -84,7 +84,7 @@ export interface ConversationParticipant {
   user_id?: string | null;
   email?: string | null;
   name?: string | null;
-  role?: string | null;
+  roles?: string[] | null;
   /** Open like `EntityMember`, which this must stay assignable to: extra hub
    *  keys (`status`, `invitation_id`, …) pass through untouched. Without it
    *  Conversation fails its own `APIEntity<Conversation>` constraint. */

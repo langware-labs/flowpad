@@ -122,7 +122,7 @@ function InviteBox({ entityTypeId, onInvited }: { entityTypeId: TypeId; onInvite
       if (!entity || typeof entity.inviteMember !== 'function') {
         throw new Error('Organization not loaded');
       }
-      await entity.inviteMember(trimmed, 'member');
+      await entity.inviteMember(trimmed, ['reader']);
       setEmail('');
       notify.success({ title: t`Invitation sent`, message: t`Invited ${trimmed}.`, id: 'org-invite' });
       onInvited();

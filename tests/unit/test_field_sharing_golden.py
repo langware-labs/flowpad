@@ -193,7 +193,7 @@ CONVERGED_TO_PRIVATE = {
 # APIField for security". Born private: fields added since, which were PRIVATE
 # from their first line — `published` is a cache of the project manifest row,
 # reconciled from a local FILE that no receiver has.
-NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "published", "visitor_role"}
+NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "published", "visitor_role", "public_roles", "authenticated_roles", "visitor_roles"}
 BASE_LOCAL_ONLY = ["asset_occurrences", "asset_ref", "fetched_at", "remote", "system"]
 HUB_AUTHORITATIVE = ["updated_date"]
 

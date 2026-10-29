@@ -348,7 +348,9 @@ class Entity(DBEntity):
     # Auth projection for the requesting caller — computed per request, never
     # another machine's business. EntityField (not APIField) keeps it off the API
     # surface exactly as the plain `Field` did.
-    visitor_role: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
+    visitor_roles: list[str] = EntityField(default_factory=list, sharing=Sharing.PRIVATE)
+    authenticated_roles: list[str] = EntityField(default_factory=list, sharing=Sharing.PRIVATE)
+    public_roles: list[str] = EntityField(default_factory=list, sharing=Sharing.PRIVATE)
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     system: bool = APIField(
@@ -371,7 +373,7 @@ class Entity(DBEntity):
         persist=Persist.TRUE,
         description="Listed in its project's manifest (a cache; the manifest file is the truth)",
     )
-    # Hub-authoritative role roster cache: [{user_id, email, name, role, status}].
+    # Hub-authoritative role roster cache: [{user_id, email, name, roles, status}].
     # Membership is a generic capability of any remote entity — a user always has
     # a hub-set role on it. This field is a pure READ CACHE: the hub is the source
     # of truth (resolved from RoleRelationship edges), written here by the reflected
@@ -381,7 +383,7 @@ class Entity(DBEntity):
     members: List[dict] = APIField(
         sharing=Sharing.PRIVATE,
         default_factory=list,
-        description="Hub role roster cache: [{user_id, email, name, role, status}]. Hub-authoritative; local is a read cache.",
+        description="Hub role roster cache: [{user_id, email, name, roles, status}]. Hub-authoritative; local is a read cache.",
     )
     # Portable Git provenance + placement for a file-backed asset. The value is
     # shared with the Hub, while ``persist=TRUE`` writes only backend record
@@ -2035,8 +2037,8 @@ class Entity(DBEntity):
         for key, value in fields.items():
             setattr(self, key, value)
 
-    async def set_visitor_role(self, role: str | None) -> Entity:
-        self.visitor_role = role
+    async def set_visitor_roles(self, roles: list[str]) -> Entity:
+        self.visitor_roles = roles
         return await self.save()
 
     @classmethod
@@ -3395,7 +3397,7 @@ class Entity(DBEntity):
         }
         return data
 
-    async def grant_access_to_public_data(self: EntityType, public_role=AuthRole.ANONYMOUS_VIEWER.value) -> EntityType:
+    async def grant_access_to_public_data(self: EntityType, public_role=AuthRole.READER.value) -> EntityType:
         from flow_sdk.builtin.group import Group  # noqa: PLC0415
 
         # Make sure the public entity is a child of the saved entity

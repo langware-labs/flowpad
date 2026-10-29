@@ -1,3 +1,4 @@
+import { normalizeMembershipRoles } from '../models/roles';
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
@@ -71,12 +72,12 @@ export async function clearAccess(child: TypeId, parent: TypeId): Promise<ChildA
 export type PublicAudience = 'visitor' | 'authenticated';
 
 /** The role an owner grants to make an agent readable — the row only, no files or verbs. */
-export const PUBLIC_VIEWER_ROLE = 'anonymous_viewer';
+export const PUBLIC_VIEWER_ROLE = 'reader';
 
 /** The hub's `PublicAccess`: the role one audience holds on the target, or null when private to it. */
 export interface PublicAccess {
   audience: PublicAudience;
-  role: string | null;
+  roles: string[];
 }
 
 function publicAccessAction(target: TypeId, audience: PublicAudience, method: 'GET' | 'PUT' | 'DELETE'): ActionInfo {
@@ -103,9 +104,9 @@ export async function getPublicAccess(target: TypeId, audience: PublicAudience):
  * refusal (403 not the owner, 400 a type or role that cannot be public) is thrown for
  * the caller to surface. Applies to the target only — its children stay private.
  */
-export async function setPublicAccess(target: TypeId, audience: PublicAudience, role: string): Promise<PublicAccess> {
+export async function setPublicAccess(target: TypeId, audience: PublicAudience, roles: string[] | string): Promise<PublicAccess> {
   const info = publicAccessAction(target, audience, 'PUT');
-  info.bodyParameters = { role };
+  info.bodyParameters = { roles: normalizeMembershipRoles(roles) };
   return await dataManager.callAction<unknown, PublicAccess>(info);
 }
 

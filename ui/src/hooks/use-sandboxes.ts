@@ -1,3 +1,4 @@
+import { ROLE_ORDER } from '@sdk';
 import { t } from '@lingui/core/macro';
 import {
   ActionInfo,
@@ -278,10 +279,10 @@ export interface LoginAccess {
 }
 
 /** The roles that mean anything on a machine, highest first (the hub's `LOGIN_ROLE_CHOICES`). */
-export const LOGIN_ROLE_CHOICES = ['owner', 'full-access', 'admin', 'editor', 'reader'] as const;
+export const LOGIN_ROLE_CHOICES = ROLE_ORDER.filter(role => role !== 'owner_by_api');
 
 /** What the hub gives a new box: admin and everything above it. */
-export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'full-access', 'admin'] };
+export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'admin'] };
 
 /** A box's current login access, the hub default where it has never been set. */
 export function loginAccessOf(node: ComputeNode): LoginAccess {

@@ -254,7 +254,7 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
     return out
 
 
-def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_authoritative: bool) -> list[Candidate]:
+def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candidate]:
     """The hub endpoints this harness could spend.
 
     Availability is *presumed*: whether a chain ends in a root with a live credential is
@@ -267,17 +267,10 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
         return []
     bound_typeid = bound.endpoint_typeid if bound else ""
     rows: dict[str, "LLMEndpoint"] = {str(e.typeid): e for e in endpoints}
-    if bound_typeid and bound_typeid not in rows and not listing_authoritative:
-        # The push is authoritative even when the listing has not caught up: a freshly
-        # bound (or freshly shared) endpoint must work before any cache has heard of it.
-        #
-        # But only while we have not managed to ask. Once a listing has SUCCEEDED and does not
-        # contain the bound endpoint, its absence is an answer rather than a gap -- the endpoint
-        # was deleted, or the role that made it spendable was revoked -- and synthesising it
-        # anyway is what strands a box: the stub is eligible, a bound endpoint outranks an
-        # unproven device login, and every spawn then posts to an invoke URL that answers
-        # "Entity ... not found" until the harness exhausts its retries. Leaving it out makes
-        # the ladder fall through to whatever the box can actually spend.
+    if bound_typeid and bound_typeid not in rows:
+        # A Reader listing is not invocation authority: Runner-only grants are absent.
+        # Preserve the hub's explicit choice and let invoke enforce current access. Never
+        # silently switch to a personal subscription because the budget was not readable.
         rows[bound_typeid] = _hub_stub(
             bound_typeid,
             name=bound.name if bound else "",
@@ -342,7 +335,6 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     from flow_sdk.instance_settings.llm_endpoint import (
         fetch_hub_llm_endpoints,
         get_hub_llm_endpoint,
-        listing_supersedes_binding,
     )
 
     spec = driver_api_auth_spec(worker_type)
@@ -366,7 +358,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
         else []
     )
     candidates += _key_sources(spec, rows, stored, hints)
-    candidates += _endpoint_sources(spec, endpoints, bound, _hub_has_token(), listing_supersedes_binding())
+    candidates += _endpoint_sources(spec, endpoints, bound, _hub_has_token())
     if install not in (InstallState.INSTALLED, InstallState.BUILT_IN):
         # Nothing funds a harness that cannot run: a stored key or a hub budget would only be
         # spent by a CLI that is not on this machine. Every source stays LISTED (the picker

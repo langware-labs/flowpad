@@ -3,8 +3,9 @@ import logging
 import random
 import string
 from datetime import datetime, timedelta
-from flow_sdk._compat import UTC
 from typing import TYPE_CHECKING, ClassVar, Optional
+
+from flow_sdk._compat import UTC
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.api_key import ApiKey
@@ -13,10 +14,10 @@ from fastapi import HTTPException
 from pydantic import field_validator
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.visitor import Visitor
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.type_id import TypeId
 
 char_set = string.ascii_lowercase + string.digits
 
@@ -120,7 +121,7 @@ class User(Entity):
     # locally as a remote=True Organization at this id. Role lives on the edge here,
     # not on the shared Organization entity. Defaults to "member".
     organization_id: str | None = APIField(None)
-    organization_role: str = APIField(default="member")
+    organization_roles: list[str] = APIField(default_factory=lambda: ["reader"])
     # Credentials never leave this machine. They were bare pydantic defaults —
     # no policy at all — which resolved to SHARED, i.e. they would have ridden a
     # User share to the hub.
@@ -369,7 +370,7 @@ class User(Entity):
                 await self.attach_child(child.value)
                 await visitor.detach_child(child.value.typeid)
                 # the chat belongs to the user now, we don't want it to be available to random visitors
-                child.value.visitor_role = None
+                child.value.visitor_roles = []
                 await child.value.save()
         except Exception as e:
             logging.error(f"Error migrating visitor to user: {e}")

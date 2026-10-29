@@ -23,7 +23,7 @@ import {
 import { useInstancePreferences } from '@sdk/react/hooks';
 import { useShareOwnerProject } from '@src/hooks/use-share-owner-project';
 import { useLinkProjectToCloud } from '@src/hooks/use-link-project-to-cloud';
-import { NO_PROJECT_ROLE, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
+import { useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
@@ -99,7 +99,7 @@ interface ShareToConversationDialogProps {
 const MAX_CONVERSATIONS = 5;
 
 /** The role Fix gives a non-member: one that can read the project's files, so the share goes by git. */
-const FIX_ROLE = 'member';
+const FIX_ROLE = 'reader';
 
 /** Sentinel for the "start a new conversation" row (never a real UUID). */
 const NEW_CONVERSATION = '__new__';
@@ -173,7 +173,7 @@ export function ShareToConversationDialog({
   const [noteExpanded, setNoteExpanded] = useState(false);
   const [excludedRefs, setExcludedRefs] = useState<Set<string>>(new Set());
   const [skipMembership, setSkipMembership] = useState(false);
-  const [roleChoices, setRoleChoices] = useState<Record<string, string>>({});
+  const [roleChoices, setRoleChoices] = useState<Record<string, string[]>>({});
   const shareInFlight = useRef(false);
   const openGeneration = useRef(0);
   useEffect(
@@ -209,7 +209,7 @@ export function ShareToConversationDialog({
     setSkipMembership(false);
   }, [membershipRecipients, owningProject?.id]);
   // No role until the sender presses Fix on a non-member (which picks Member).
-  const selectedRoles = Object.fromEntries(membership.nonMembers.map((r) => [r, roleChoices[r] ?? NO_PROJECT_ROLE]));
+  const selectedRoles = Object.fromEntries(membership.nonMembers.map((r) => [r, roleChoices[r] ?? []]));
   const [titleInput, setTitleInput] = useState('');
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -844,7 +844,7 @@ export function ShareToConversationDialog({
                       type="button"
                       className="font-medium underline hover:text-foreground"
                       disabled={busy || !membership.roles.includes(FIX_ROLE)}
-                      onClick={() => setRoleChoices((current) => ({ ...current, [recipient]: FIX_ROLE }))}
+                      onClick={() => setRoleChoices((current) => ({ ...current, [recipient]: [FIX_ROLE] }))}
                       data-testid="share-non-member-fix"
                     >
                       <Trans>Fix</Trans>
@@ -865,11 +865,11 @@ export function ShareToConversationDialog({
                       id={`role-${recipient}`}
                       className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
                       disabled={busy}
+                      multiple
                       value={selectedRoles[recipient]}
-                      onChange={(e) => setRoleChoices((current) => ({ ...current, [recipient]: e.target.value }))}
+                      onChange={(e) => setRoleChoices((current) => ({ ...current, [recipient]: Array.from(e.target.selectedOptions, option => option.value) }))}
                       data-testid="share-project-role"
                     >
-                      <option value={NO_PROJECT_ROLE}>{t`None`}</option>
                       {membership.roles.map((role) => (
                         <option key={role} value={role}>
                           {role.charAt(0).toUpperCase() + role.slice(1)}

@@ -1,6 +1,6 @@
 """``ShareRequestSpec`` — the typed body of ``POST /graph/<type>/<id>/share``.
 
-``recipients`` arrive as a bare ``idOrEmail`` string or ``{idOrEmail, role?}``
+``recipients`` arrive as a bare ``idOrEmail`` string or ``{idOrEmail, roles?}``
 and resolve to a ``ShareInvitee``; ``teams`` are ``team-<uuid>`` typeids.
 The handler lives in ``flow_sdk/app/actions/share_action.py``.
 """
@@ -19,9 +19,11 @@ from pydantic import (
     model_validator,
 )
 
+from flow_sdk.flowpad_types.enums.auth_enums import normalize_roles
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
+InviteRoles = Annotated[list[str], Field(min_length=1), AfterValidator(lambda roles: normalize_roles(roles, membership=True))]
 
 
 class ShareInvitee(BaseModel):
@@ -34,7 +36,7 @@ class ShareInvitee(BaseModel):
 
     email: Optional[str] = None
     user_id: Optional[str] = None
-    role: Optional[str] = None
+    roles: Optional[InviteRoles] = None
 
     @model_validator(mode="after")
     def _exactly_one_identifier(self) -> "ShareInvitee":
@@ -48,12 +50,12 @@ class ShareInvitee(BaseModel):
 
 
 class _InviteeWireObject(BaseModel):
-    """The ``{idOrEmail, role?}`` wire shape, used when a role is needed."""
+    """The ``{idOrEmail, roles?}`` wire shape, used when a role is needed."""
 
     model_config = ConfigDict(extra="forbid")
 
     id_or_email: NonEmptyStr = Field(alias="idOrEmail")
-    role: Optional[str] = None
+    roles: Optional[InviteRoles] = None
 
 
 def _resolve(item: Union[str, _InviteeWireObject]) -> ShareInvitee:
@@ -64,18 +66,18 @@ def _resolve(item: Union[str, _InviteeWireObject]) -> ShareInvitee:
     from flow_sdk.builtin.user import normalize_email, recipient_user_id  # noqa: PLC0415
 
     if isinstance(item, str):
-        id_or_email, role = item, None
+        id_or_email, roles = item, None
     else:
-        id_or_email, role = item.id_or_email, item.role
+        id_or_email, roles = item.id_or_email, item.roles
 
     if user_id := recipient_user_id(id_or_email):
-        return ShareInvitee(user_id=user_id, role=role)
-    return ShareInvitee(email=normalize_email(id_or_email), role=role)
+        return ShareInvitee(user_id=user_id, roles=roles)
+    return ShareInvitee(email=normalize_email(id_or_email), roles=roles)
 
 
 # A ``recipients`` entry on the wire: either a bare "email-or-id" string (the
 # original flat shape, kept so existing callers don't break) or
-# ``{idOrEmail, role?}``. Validates straight to a resolved ``ShareInvitee``.
+# ``{idOrEmail, roles?}``. Validates straight to a resolved ``ShareInvitee``.
 WireInvitee = Annotated[
     Union[NonEmptyStr, _InviteeWireObject],
     Field(union_mode="left_to_right"),
@@ -112,7 +114,7 @@ class ShareRequestSpec(DataSpec):
     """The body of ``POST /graph/<type>/<id>/share``.
 
     * ``recipients`` — people to invite, each a bare ``idOrEmail`` string or
-      ``{idOrEmail, role?}``, resolved to a ``ShareInvitee``.
+      ``{idOrEmail, roles?}``, resolved to a ``ShareInvitee``.
     * ``teams`` — ``team-<uuid>`` typeids, each granted on the hub as ONE group
       principal by ``Project.share`` (no expansion into people).
     * ``note`` — the sharer's personal message, carried in each invite message.

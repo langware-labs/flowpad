@@ -386,7 +386,7 @@ describe('create / launch state machine', () => {
     // exists, and turning it off then is a sign-out, not a setting.
     expect(h.onLaunch.mock.calls[0][1]).toEqual({
       autoLogin: false,
-      loginAccess: { allowLogin: true, roles: ['owner', 'full-access', 'admin'] },
+      loginAccess: { allowLogin: true, roles: ['owner', 'admin'] },
     });
   });
 
@@ -398,7 +398,7 @@ describe('create / launch state machine', () => {
 
     expect(h.onLaunch.mock.calls[0][1]).toEqual({
       autoLogin: true,
-      loginAccess: { allowLogin: true, roles: ['owner', 'full-access', 'admin'] },
+      loginAccess: { allowLogin: true, roles: ['owner', 'admin'] },
     });
   });
 
@@ -415,7 +415,7 @@ describe('create / launch state machine', () => {
 
     expect(h.onLaunch.mock.calls[0][1]).toEqual({
       autoLogin: true,
-      loginAccess: { allowLogin: false, roles: ['owner', 'full-access', 'admin', 'editor'] },
+      loginAccess: { allowLogin: false, roles: ['owner', 'admin', 'editor'] },
     });
   });
 

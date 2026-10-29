@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@sdk';
 import { outsidersAfter, projectNonMembers, projectOutsiders, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 const mocks = vi.hoisted(() => ({ roster: vi.fn(), roles: vi.fn(), invite: vi.fn() }));
-vi.mock('@sdk', () => ({
+vi.mock('@sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sdk')>()),
   membershipService: { fetchMembershipsStrict: mocks.roster, fetchShareRoles: mocks.roles },
-  Role: { GUEST: 'guest', ANONYMOUS_VIEWER: 'anonymous_viewer' },
 }));
 const project = {
   id: 'p',
@@ -17,7 +17,7 @@ const result = { invited: [], skipped: [], failed: [], failed_teams: [], granted
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.roster.mockResolvedValue([]);
-  mocks.roles.mockResolvedValue(['guest', 'member']);
+  mocks.roles.mockResolvedValue(['runner', 'reader']);
   mocks.invite.mockResolvedValue(result);
 });
 afterEach(cleanup);
@@ -26,7 +26,7 @@ describe('sharing project membership', () => {
     expect(
       projectNonMembers(
         ['ALICE@example.com', 'user-id', 'new@example.com'],
-        [{ user_id: 'id', user_email: 'alice@example.com', role: 'guest', status: 'pending' }],
+        [{ user_id: 'id', user_email: 'alice@example.com', roles: ['runner'], status: 'pending' }],
       ),
     ).toEqual(['new@example.com']);
   });
@@ -36,9 +36,9 @@ describe('sharing project membership', () => {
       projectOutsiders(
         ['editor@example.com', 'guest@example.com', 'pending@example.com', 'new@example.com'],
         [
-          { user_id: 'e', user_email: 'Editor@example.com', role: 'editor', status: 'approved' },
-          { user_id: 'g', user_email: 'guest@example.com', role: 'guest', status: 'approved' },
-          { user_id: 'p', user_email: 'pending@example.com', role: 'editor', status: 'pending' },
+          { user_id: 'e', user_email: 'Editor@example.com', roles: ['editor'], status: 'approved' },
+          { user_id: 'g', user_email: 'guest@example.com', roles: ['runner'], status: 'approved' },
+          { user_id: 'p', user_email: 'pending@example.com', roles: ['editor'], status: 'pending' },
         ],
       ),
     ).toEqual(['guest@example.com', 'pending@example.com', 'new@example.com']);
@@ -48,7 +48,7 @@ describe('sharing project membership', () => {
     const { result: hook } = renderHook(() => useShareProjectMembership(project, ['a@example.com'], true));
     await waitFor(() => expect(hook.current.status).toBe('error'));
     expect(hook.current.nonMembers).toEqual([]);
-    await expect(hook.current.invite({ 'a@example.com': 'guest' })).rejects.toThrow('not been confirmed');
+    await expect(hook.current.invite({ 'a@example.com': ['runner'] })).rejects.toThrow('not been confirmed');
     expect(mocks.invite).not.toHaveBeenCalled();
   });
   it('ignores a roster response after switching projects', async () => {
@@ -66,13 +66,13 @@ describe('sharing project membership', () => {
     );
     rerender({ target: other });
     await waitFor(() => expect(hook.current.status).toBe('ready'));
-    await act(async () => resolveOld([{ user_email: 'a@example.com', user_id: 'a', role: 'member' }]));
+    await act(async () => resolveOld([{ user_email: 'a@example.com', user_id: 'a', roles: ['reader'] }]));
     expect(hook.current.nonMembers).toEqual(['a@example.com']);
   });
   it('None makes no membership mutation', async () => {
     const { result: hook } = renderHook(() => useShareProjectMembership(project, ['a@example.com'], true));
     await waitFor(() => expect(hook.current.status).toBe('ready'));
-    await act(() => hook.current.invite({ 'a@example.com': 'none' }));
+    await act(() => hook.current.invite({ 'a@example.com': [] }));
     expect(mocks.invite).not.toHaveBeenCalled();
   });
   it('checks membership afresh after closing and reopening the draft', async () => {
@@ -82,7 +82,7 @@ describe('sharing project membership', () => {
       { initialProps: { enabled: true } },
     );
     await waitFor(() => expect(hook.current.status).toBe('ready'));
-    await act(() => hook.current.invite({ 'a@example.com': 'guest' }));
+    await act(() => hook.current.invite({ 'a@example.com': ['runner'] }));
     expect(hook.current.nonMembers).toEqual([]);
     rerender({ enabled: false });
     rerender({ enabled: true });
@@ -100,20 +100,20 @@ describe('sharing project membership', () => {
     );
     await waitFor(() => expect(hook.current.status).toBe('ready'));
     await act(async () => {
-      await expect(hook.current.invite({ 'a@example.com': 'guest', 'b@example.com': 'member' })).rejects.toThrow(
+      await expect(hook.current.invite({ 'a@example.com': ['runner'], 'b@example.com': ['reader'] })).rejects.toThrow(
         'Denied',
       );
     });
     expect(hook.current.nonMembers).toEqual(['b@example.com']);
-    await act(() => hook.current.invite({ 'a@example.com': 'guest', 'b@example.com': 'member' }));
-    expect(mocks.invite.mock.calls[1][0]).toEqual([{ idOrEmail: 'b@example.com', role: 'member' }]);
+    await act(() => hook.current.invite({ 'a@example.com': ['runner'], 'b@example.com': ['reader'] }));
+    expect(mocks.invite.mock.calls[1][0]).toEqual([{ idOrEmail: 'b@example.com', roles: ['reader'] }]);
   });
 });
 
 describe('outsidersAfter', () => {
   it('takes out recipients given a role with file access; None and Guest stay outside', () => {
     const outsiders = ['a@x.com', 'b@x.com', 'c@x.com', 'd@x.com'];
-    expect(outsidersAfter(outsiders, { 'a@x.com': 'member', 'b@x.com': 'guest', 'c@x.com': 'none' })).toEqual([
+    expect(outsidersAfter(outsiders, { 'a@x.com': ['reader'], 'b@x.com': ['runner'], 'c@x.com': [] })).toEqual([
       'b@x.com',
       'c@x.com',
       'd@x.com',

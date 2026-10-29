@@ -1297,7 +1297,7 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
             and (
                 (conv.initiated_by and cloud_user_id == conv.initiated_by)
                 or any(
-                    (p or {}).get("user_id") == cloud_user_id and str((p or {}).get("role") or "").lower() == "owner"
+                    (p or {}).get("user_id") == cloud_user_id and "owner" in ((p or {}).get("roles") or [])
                     for p in (conv.members or [])
                 )
             )
@@ -2684,7 +2684,7 @@ async def _materialize_membership_invitation(
     target_type = target.get("type")
     target_id = target.get("id")
     target_name = target.get("name")
-    target_role = target.get("role")
+    target_roles = target.get("roles") or []
 
     # Mirror the target org/team/project so name/icon resolve locally
     # (best-effort — the invitation row still renders from target_* even if
@@ -2712,7 +2712,7 @@ async def _materialize_membership_invitation(
         "target_type": target_type,
         "target_id": target_id,
         "target_name": target_name,
-        "target_role": target_role,
+        "target_roles": target_roles,
         "remote": True,
     }
     existing_inv = await LocalInvitation.get_one({"id": inv_id})

@@ -66,7 +66,7 @@ describe('Agent.inviteMember', () => {
     expect(info.fullActionUrl).toContain(`agent/${AGENT_ID}/members`);
     expect(info.bodyParameters).toEqual({
       recipient_email: 'bob@x.com',
-      invitation_targets: [{ typeid: `agent-${AGENT_ID}`, role: 'reader' }],
+      invitation_targets: [{ typeid: `agent-${AGENT_ID}`, roles: ['reader'] }],
       callback_override: `/agent/${AGENT_ID}`,
     });
     call.mockRestore();

@@ -1,4 +1,4 @@
-import type { ConversationParticipant } from '@sdk';
+import { ROLE_ORDER, ROLE_GRANTS, newInviteRoles, grantableRoleSet, canManageRoles, type ConversationParticipant } from '@sdk';
 import type { ContactKey } from '@src/hooks/use-contact-permissions';
 
 /** Identity passed to {@link ContactPermissionsDialog} — a permissions key plus
@@ -105,100 +105,27 @@ export function warnUnresolvedSender(
 
 /** Short display label for a participant's role. Returns an empty string
  *  when the role is absent so callers can render conditionally. */
+export function participantRoles(participant: ConversationParticipant | null | undefined): string[] {
+  return participant?.roles ?? [];
+}
 export function participantRoleLabel(participant: ConversationParticipant | null | undefined): string {
-  return participant?.role?.trim() || '';
+  return participantRoles(participant).join(', ');
 }
-
-/** Standard role ladder, highest first — mirrors the hub's ``ROLE_RANK``
- *  (``hub role_hierarchy.py``), the single source of truth
- *  the hub's ``can_assign`` gate enforces. Index = rank (lower index = more
- *  privileged). Custom/unknown roles rank as ``null`` (not on the ladder). */
-const ROLE_LADDER = ['owner', 'full-access', 'admin', 'editor', 'member', 'reader', 'guest'] as const;
-
-/** The ladder as a plain list, highest first. Exported for surfaces that pick a
- *  role with no member row to rank against -- e.g. the child-access editor,
- *  whose `from_role` is a role held on the PARENT and so has no participant to
- *  compare with. Assignment ceilings still apply server-side. */
-export const LADDER_ROLES: readonly string[] = ROLE_LADDER;
-
-/** Rank of a single standard role (0 = owner), or null for custom/unknown. */
-function roleRank(role: string | null | undefined): number | null {
-  const idx = ROLE_LADDER.indexOf((role ?? '').trim().toLowerCase() as (typeof ROLE_LADDER)[number]);
-  return idx === -1 ? null : idx;
+export const PARENT_ROLES: readonly string[] = ROLE_ORDER;
+export const CONFERRABLE_ROLES: readonly string[] = ROLE_GRANTS.owner;
+export function participantIsOwner(participant: ConversationParticipant | null | undefined): boolean {
+  return participantRoles(participant).includes('owner');
 }
-
-/** Highest (most privileged) standard rank from a participant's role field.
- *  The hub joins multi-role members as ``"a, b"`` — take the best rank. */
-export function participantRank(participant: ConversationParticipant | null | undefined): number | null {
-  const raw = participant?.role ?? '';
-  let best: number | null = null;
-  for (const part of raw.split(',')) {
-    const r = roleRank(part);
-    if (r !== null && (best === null || r < best)) best = r;
-  }
-  return best;
+export function assignableRoles(me: ConversationParticipant | null | undefined, target: ConversationParticipant | null | undefined): string[] {
+  if (!target?.user_id || me?.user_id === target.user_id) return [];
+  if (!canManageRoles(participantRoles(me), participantRoles(target))) return [];
+  return grantableRoleSet(participantRoles(me));
 }
-
-/** Membership roles the picker may offer — the ladder minus ``owner`` (not
- *  strictly below anyone, ownership moves via ``leave``) and the
- *  non-membership ``full-access``/``guest`` (rankable, never assignable). */
-const ASSIGNABLE_ROLES = ['admin', 'editor', 'member', 'reader'] as const;
-
-/** Roles a rule may CONFER, before the caller's own ceiling narrows it. Same
- *  list `assignableRoles` filters, exported for the same reason as
- *  `LADDER_ROLES`. */
-export const CONFERRABLE_ROLES: readonly string[] = ASSIGNABLE_ROLES;
-
-/** Roles the caller may assign to a given member, mirroring the hub's
- *  ``can_assign`` ceiling: assigned role strictly below the caller's rank AND
- *  the member's current rank strictly below the caller's; never self, never a
- *  row without a resolved rank or user id (the role-change PUT selects the
- *  member by ``user_id``). Empty array = no role-change affordance. */
-export function assignableRoles(
-  me: ConversationParticipant | null | undefined,
-  target: ConversationParticipant | null | undefined,
-): string[] {
-  const myRank = participantRank(me);
-  const targetRank = participantRank(target);
-  if (myRank === null || targetRank === null) return [];
-  if (!target?.user_id) return [];
-  if (me?.user_id === target.user_id) return []; // self-change is hub-banned
-  if (targetRank <= myRank) return []; // peers and above are untouchable
-  return ASSIGNABLE_ROLES.filter((r) => (roleRank(r) as number) > myRank);
+export function grantableRoles(me: ConversationParticipant | null | undefined, entityType?: string): string[] {
+  return newInviteRoles(participantRoles(me), entityType ?? "");
 }
-
-/**
- * Roles the caller may confer on someone NEW, mirroring the same `can_assign` ceiling
- * `assignableRoles` applies to an existing member: strictly below the caller's own rank.
- *
- * Separate from `assignableRoles` because an invite has no target yet — no current rank to compare
- * against and no `user_id` to select — so that function correctly bails, and a picker built on it
- * would offer nothing. The ceiling is the half that still applies, and it is the half that matters:
- * an organization's admin inviting someone must not be offered `admin`, because the hub refuses to
- * grant a role at or above the granter's own. Offering it produced a dropdown whose top entry
- * always failed.
- */
-export function grantableRoles(me: ConversationParticipant | null | undefined): string[] {
-  const myRank = participantRank(me);
-  // An unknown standing grants nothing. Both call sites already render the picker only once the
-  // roster has resolved (`canInviteMembers` is false without a rank, and the share panel waits for
-  // `ready`), so this is unreachable in practice -- and answering "the whole ladder" when we do not
-  // know who is asking is the wrong direction to guess in.
-  if (myRank === null) return [];
-  return ASSIGNABLE_ROLES.filter((r) => (roleRank(r) as number) > myRank);
-}
-
-/** True when the caller may invite new members: the hub policy grants the
- *  mutating ``members`` action to admin and above (owner via the default
- *  ``owner: *`` policy). ``lowestInviter`` lowers that line for an entity whose
- *  policy opens invites further down — ``editor`` on a project, ``member`` on a
- *  DIRECT conversation (the hub lets a member invite a member there). */
-export function canInviteMembers(
-  me: ConversationParticipant | null | undefined,
-  lowestInviter: (typeof ROLE_LADDER)[number] = 'admin',
-): boolean {
-  const rank = participantRank(me);
-  return rank !== null && rank <= (roleRank(lowestInviter) as number);
+export function canInviteMembers(me: ConversationParticipant | null | undefined, entityType?: string): boolean {
+  return grantableRoles(me, entityType).length > 0;
 }
 
 /** Initials of any display label — the avatar fallback for participants AND

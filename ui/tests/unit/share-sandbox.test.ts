@@ -111,7 +111,7 @@ describe('shareSandboxByEmail wire contract', () => {
 
     const body = lastBody();
     expect(body.recipient_email).toBe('bob@example.com');
-    expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
+    expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, roles: [SANDBOX_SHARE_ROLE] }]);
     // The override IS sent. It used to be deliberately absent, on the reasoning
     // that the hub's own post-accept landing is `build_entity_url(target.typeid)`
     // — true, and sufficient, while the box was the only target. It is not the
@@ -127,9 +127,9 @@ describe('shareSandboxByEmail wire contract', () => {
     await shareSandboxByEmail(node(), ['bob@example.com'], { transfer: true, roleToKeep: 'reader' });
 
     const body = lastBody();
-    expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, role: 'owner' }]);
+    expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, roles: ['owner'] }]);
     expect(body.transfer).toBe(true);
-    expect(body.role_to_keep).toBe('reader');
+    expect(body.roles_to_keep).toEqual(['reader']);
   });
 
   it('sends role_to_keep: null for a complete handover', async () => {
@@ -137,7 +137,7 @@ describe('shareSandboxByEmail wire contract', () => {
 
     // null is meaningful to the hub ("keep nothing") and must not be dropped as
     // if it were an omitted field.
-    expect(lastBody().role_to_keep).toBeNull();
+    expect(lastBody().roles_to_keep).toEqual([]);
   });
 
   it('does not lose the other grants when one address fails', async () => {
@@ -309,8 +309,8 @@ describe('sharing grants the project too', () => {
     } as never);
   }
 
-  function targets(): { typeid: string; role: string }[] {
-    return (lastBody().invitation_targets ?? []) as { typeid: string; role: string }[];
+  function targets(): { typeid: string; roles: string[] }[] {
+    return (lastBody().invitation_targets ?? []) as { typeid: string; roles: string[] }[];
   }
 
   it('sends ONE invitation carrying both the machine and the project', async () => {
@@ -318,8 +318,8 @@ describe('sharing grants the project too', () => {
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
     expect(callAction).toHaveBeenCalledTimes(1);
     expect(targets()).toEqual([
-      { typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE },
-      { typeid: `project-${PROJECT_ID}`, role: SANDBOX_PROJECT_ROLE },
+      { typeid: `compute_node-${NODE_ID}`, roles: [SANDBOX_SHARE_ROLE] },
+      { typeid: `project-${PROJECT_ID}`, roles: [SANDBOX_PROJECT_ROLE] },
     ]);
   });
 
@@ -349,7 +349,7 @@ describe('sharing grants the project too', () => {
     // On `project`, reader also allows `secret`. Being handed a sandbox is not a
     // reason to reach its secrets.
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
-    expect(targets()[1].role).toBe('member');
+    expect(targets()[1].roles).toEqual(['reader']);
   });
 
   it('carries BOTH in a handover, with the box at owner and the project at member', async () => {
@@ -359,8 +359,8 @@ describe('sharing grants the project too', () => {
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com'], { transfer: true });
     expect(callAction).toHaveBeenCalledTimes(1);
     expect(targets()).toEqual([
-      { typeid: `compute_node-${NODE_ID}`, role: 'owner' },
-      { typeid: `project-${PROJECT_ID}`, role: SANDBOX_PROJECT_ROLE },
+      { typeid: `compute_node-${NODE_ID}`, roles: ['owner'] },
+      { typeid: `project-${PROJECT_ID}`, roles: [SANDBOX_PROJECT_ROLE] },
     ]);
     expect(lastBody().transfer).toBe(true);
   });
@@ -368,7 +368,7 @@ describe('sharing grants the project too', () => {
   it('sends the machine alone when the box has no project', async () => {
     // An empty sandbox is a machine and nothing else.
     await shareSandboxByEmail(node(), ['someone@example.com']);
-    expect(targets()).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
+    expect(targets()).toEqual([{ typeid: `compute_node-${NODE_ID}`, roles: [SANDBOX_SHARE_ROLE] }]);
   });
 
   it('counts "already a member" as granted, not as a failed share', async () => {

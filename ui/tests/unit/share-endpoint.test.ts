@@ -15,7 +15,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  ENDPOINT_SHARE_ROLE,
+  ENDPOINT_SHARE_ROLES,
   shareEndpointByEmail,
   shareEndpointFailureText,
 } from '@src/components/llm-endpoints/share-endpoint';
@@ -37,11 +37,11 @@ describe('shareEndpointByEmail', () => {
     const outcome = await shareEndpointByEmail(fakeEndpoint(inviteMember), ['bob@x.com', 'carol@x.com']);
 
     expect(inviteMember).toHaveBeenCalledTimes(2);
-    expect(inviteMember).toHaveBeenNthCalledWith(1, 'bob@x.com', ENDPOINT_SHARE_ROLE, {
+    expect(inviteMember).toHaveBeenNthCalledWith(1, 'bob@x.com', ['reader', 'runner'], {
       callbackOverride: '/dock/hub/llm-endpoints/e1',
       notifyByEmail: false,
     });
-    expect(inviteMember).toHaveBeenNthCalledWith(2, 'carol@x.com', ENDPOINT_SHARE_ROLE, {
+    expect(inviteMember).toHaveBeenNthCalledWith(2, 'carol@x.com', ['reader', 'runner'], {
       callbackOverride: '/dock/hub/llm-endpoints/e1',
       notifyByEmail: false,
     });
@@ -55,7 +55,7 @@ describe('shareEndpointByEmail', () => {
 
     await shareEndpointByEmail(fakeEndpoint(inviteMember), ['bob@x.com']);
 
-    expect(inviteMember).toHaveBeenCalledWith('bob@x.com', ENDPOINT_SHARE_ROLE, {
+    expect(inviteMember).toHaveBeenCalledWith('bob@x.com', ['reader', 'runner'], {
       callbackOverride: '/dock/hub/llm-endpoints/e1',
       notifyByEmail: false,
     });
@@ -64,7 +64,7 @@ describe('shareEndpointByEmail', () => {
   it('shares at reader — spend and watch, never configure', () => {
     // Anything above `reader` would make the endpoint's cap advisory: the recipient could raise it.
     // Mirrors SHARE_ROLE in `flow_sdk/builtin/llm_endpoint.py` and the hub's own share suite.
-    expect(ENDPOINT_SHARE_ROLE).toBe('reader');
+    expect(ENDPOINT_SHARE_ROLES).toEqual(['reader', 'runner']);
   });
 
   it('keeps going after one address fails, and says which', async () => {

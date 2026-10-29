@@ -147,7 +147,7 @@ function MembershipInvitationRow({
   const targetLabel = targetName ? t`${noun} “${targetName}”` : noun;
   const senderName: string | undefined = inv.sender_name;
   const who = senderName ? t`${senderName} invited you` : t`You’ve been invited`;
-  const role: string | undefined = inv.target_role;
+  const role: string | undefined = inv.target_roles?.join(', ');
 
   const accept = useCallback(async () => {
     if (!invitation.id) return;

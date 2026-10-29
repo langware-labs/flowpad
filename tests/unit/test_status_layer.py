@@ -175,14 +175,14 @@ async def test_the_version_is_the_number_not_the_sentence_around_it(output, vers
     assert build_mod._version(_Checked()) == version
 
 
-@pytest.mark.parametrize(("records", "pruned", "published"), [(["a", "a"], False, 0), (["a", "b"], False, 1), (["a", "a"], True, 1)])
-async def test_a_refresh_pushes_only_when_something_changed(monkeypatch, records, pruned, published):
+@pytest.mark.parametrize(("records", "published"), [(["a", "a"], 0), (["a", "b"], 1)])
+async def test_a_refresh_pushes_only_when_something_changed(monkeypatch, records, published):
     """Every client re-reads status, funding and connections on a push, and screens refresh on
     arrival -- a sweep that found what was already known must not set all of that off."""
-    import flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding as binding
     import flow_sdk.core.capabilities.discovery as discovery
     import flow_sdk.core.status.build as build
     import flow_sdk.core.status.refresh as refresh
+    import flow_sdk.instance_settings.llm_endpoint as endpoints
 
     answers = iter(records)
     pushes: list[int] = []
@@ -193,12 +193,9 @@ async def test_a_refresh_pushes_only_when_something_changed(monkeypatch, records
     async def _nothing(*_a, **_k):
         return None
 
-    async def _prune():
-        return pruned
-
     monkeypatch.setattr(build, "build_status", _build)
     monkeypatch.setattr(discovery, "run_discovery", _nothing)
-    monkeypatch.setattr(binding, "prune_dead_binding", _prune)
+    monkeypatch.setattr(endpoints, "fetch_hub_llm_endpoints", _nothing)
     monkeypatch.setattr(refresh, "publish_status_changed", lambda: pushes.append(1))
 
     await refresh.refresh_status(["harness.claude.cli"])

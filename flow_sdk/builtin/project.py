@@ -10,7 +10,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, Callable, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 from pydantic import (
     BaseModel,
@@ -37,6 +37,7 @@ from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.flowpad_types.enums.auth_enums import ROLE_GRANTS, ROLE_ORDER
 from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
 from flow_sdk.fs_store.origin.field import as_project_origin
 from flow_sdk.fs_store.origin.git_origin import GitOrigin, fresh_clone_slot
@@ -273,10 +274,11 @@ class HelpdeskConfig(BaseModel):
 
 
 # Roles a project invite may carry. The hub's ``can_assign`` is the authority
-# (strictly below the inviter's rank); this only rejects anything else up front.
-ProjectInviteRole = Literal["guest", "member", "admin", "editor"]
-PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("guest", "member", "admin", "editor")
-PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "member"
+# role-set grant policy remains authoritative; reject unknown roles up front.
+
+ProjectInviteRole = str
+PROJECT_INVITE_ROLES: tuple[str, ...] = tuple(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"])
+PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "reader"
 
 
 class ProjectInviteRoleError(ValueError):
@@ -311,7 +313,7 @@ class _SharePerson:
 
     user_id: Optional[str] = None
     email: Optional[str] = None
-    role: Optional[str] = None
+    roles: Optional[list[str]] = None
 
     def identity(self) -> dict[str, Optional[str]]:
         return {"user_id": self.user_id, "email": self.email}
@@ -329,12 +331,12 @@ def _merge_share_people(people: list[_SharePerson]) -> list[_SharePerson]:
     for person in people:
         found = (person.user_id and by_user_id.get(person.user_id)) or (person.email and by_email.get(person.email))
         if not found:
-            found = _SharePerson(**person.identity(), role=person.role)
+            found = _SharePerson(**person.identity(), roles=person.roles)
             merged.append(found)
         else:
             found.user_id = found.user_id or person.user_id
             found.email = found.email or person.email
-            found.role = found.role or person.role
+            found.roles = found.roles or person.roles
         if found.user_id:
             by_user_id[found.user_id] = found
         if found.email:
@@ -363,8 +365,8 @@ def _invite_credentials(invitees: Optional[List["ShareInvitee"]]):
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
 
     for inv in invitees or []:
-        if inv.role is not None and inv.role not in PROJECT_INVITE_ROLES:
-            raise ProjectInviteRoleError(f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.role!r}")
+        if inv.roles is not None and any(role not in PROJECT_INVITE_ROLES for role in inv.roles):
+            raise ProjectInviteRoleError(f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.roles!r}")
     creds = load_credentials()
     if not creds or not creds.api_key:
         raise RuntimeError("Cloud login required")
@@ -1835,9 +1837,9 @@ class Project(SetupSkippable, Entity):
             if inv.user_id:
                 user_id = parse_recipient_user_id(inv.user_id)
                 if user_id:
-                    people.append(_SharePerson(user_id=user_id, role=inv.role))
+                    people.append(_SharePerson(user_id=user_id, roles=inv.roles))
             elif email := normalize_email(inv.email or ""):
-                people.append(_SharePerson(email=email, role=inv.role))
+                people.append(_SharePerson(email=email, roles=inv.roles))
         people = _merge_share_people(people)
 
         # A grant is idempotent in intent, but inviting someone who already
@@ -1894,7 +1896,7 @@ class Project(SetupSkippable, Entity):
                 # on the project; the conversation invite below sends no email.
                 request = {
                     field: recipient_key,
-                    "invitation_targets": [{"typeid": project_ref, "role": person.role or PROJECT_DEFAULT_INVITE_ROLE}],
+                    "invitation_targets": [{"typeid": project_ref, "roles": person.roles if person.roles is not None else [PROJECT_DEFAULT_INVITE_ROLE]}],
                     # Set on the invitation rather than left to the hub's
                     # fallback, so it holds whichever target the hub picks.
                     "callback_override": project_share_landing_path(self.id),
@@ -1915,7 +1917,7 @@ class Project(SetupSkippable, Entity):
             # so the link and note ride on the project grant, as in ``send_person``.
             request = {
                 "principal": team_ref,
-                "invitation_targets": [{"typeid": project_ref, "role": PROJECT_DEFAULT_INVITE_ROLE}],
+                "invitation_targets": [{"typeid": project_ref, "roles": [PROJECT_DEFAULT_INVITE_ROLE]}],
                 "callback_override": project_share_landing_path(self.id),
             }
             if note and note.strip():

@@ -7,7 +7,7 @@ contacts group are created through the normal graph routes, then the group
 fan-out runs with `share`/`create_child` and ``HubProxy.call``/``try_call``
 faked. Asserts the plan's contract: title-only clone, deduped
 member rows keyed (parent_id, assignee), child-first invitation targets with
-editor/guest roles, idempotent re-run, and owner-side member-field sync (LWW).
+editor/reader roles, idempotent re-run, and owner-side member-field sync (LWW).
 """
 
 from __future__ import annotations
@@ -72,15 +72,15 @@ async def test_create_group_task_fans_out_and_is_idempotent(bootstrapped_client,
         assert c.remote is True
     assert len(hub_faked["children"]) == 2  # created via create_child (is_child edge)
 
-    # One invitation per member: child target FIRST (editor), parent guest.
+    # One invitation per member: child target FIRST (editor), parent Reader without inherited child access.
     member_posts = [p for p in hub_faked["posts"] if p[0].endswith("/members")]
     assert len(member_posts) == 2
     for path, body in member_posts:
         child = by_assignee[body["recipient_email"]]
         assert path == f"/graph/task/{child.id}/members"
         targets = body["invitation_targets"]
-        assert targets[0] == {"typeid": f"task-{child.id}", "role": "editor"}
-        assert targets[1] == {"typeid": f"task-{parent['id']}", "role": "guest"}
+        assert targets[0] == {"typeid": f"task-{child.id}", "roles": ["editor"]}
+        assert targets[1] == {"typeid": f"task-{parent['id']}", "roles": ["reader"], "is_final": True}
 
     # Idempotent re-run: nothing new, both skipped (invites re-attempted).
     resp2 = await bootstrapped_client.post(

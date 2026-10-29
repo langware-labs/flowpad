@@ -33,7 +33,7 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 
 import {
-  TEAM_INVITE_ROLE,
+  TEAM_INVITE_ROLES,
   inviteToTeamByEmail,
   isAlreadyOnTeam,
   teamInviteFailureText,
@@ -64,10 +64,10 @@ describe('inviteToTeamByEmail', () => {
     expect(h.getByTypeId).toHaveBeenCalledTimes(1);
     expect(String(h.getByTypeId.mock.calls[0][0])).toBe(`team-${TEAM}`);
     expect(h.inviteMember).toHaveBeenCalledTimes(2);
-    expect(h.inviteMember).toHaveBeenNthCalledWith(1, 'bob@x.com', TEAM_INVITE_ROLE, {
+    expect(h.inviteMember).toHaveBeenNthCalledWith(1, 'bob@x.com', TEAM_INVITE_ROLES, {
       callbackOverride: '/dock/hub/organization',
     });
-    expect(h.inviteMember).toHaveBeenNthCalledWith(2, 'carol@x.com', TEAM_INVITE_ROLE, {
+    expect(h.inviteMember).toHaveBeenNthCalledWith(2, 'carol@x.com', TEAM_INVITE_ROLES, {
       callbackOverride: '/dock/hub/organization',
     });
     expect(outcome).toEqual({ invited: ['bob@x.com', 'carol@x.com'], already: [], failed: [] });
@@ -76,7 +76,7 @@ describe('inviteToTeamByEmail', () => {
   it('invites at member — never at or above what an admin holds', () => {
     // `member` is the hub's own default for `inviteMember`; anything higher would be refused by
     // `can_assign` for an admin caller, which is most of the people pressing this button.
-    expect(TEAM_INVITE_ROLE).toBe('member');
+    expect(TEAM_INVITE_ROLES).toEqual(['reader']);
   });
 
   it('names a landing path, because the hub falls back to a URL the app has no route for', () => {
@@ -92,7 +92,7 @@ describe('inviteToTeamByEmail', () => {
 
     const outcome = await inviteToTeamByEmail(TEAM, ['never-signed-up@x.com']);
 
-    expect(h.inviteMember).toHaveBeenCalledWith('never-signed-up@x.com', TEAM_INVITE_ROLE, {
+    expect(h.inviteMember).toHaveBeenCalledWith('never-signed-up@x.com', TEAM_INVITE_ROLES, {
       callbackOverride: '/dock/hub/organization',
     });
     expect(outcome).toEqual({ invited: ['never-signed-up@x.com'], already: [], failed: [] });
