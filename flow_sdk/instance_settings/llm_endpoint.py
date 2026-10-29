@@ -282,13 +282,6 @@ def _root_provider(row: dict) -> str | None:
     return provider if isinstance(provider, str) and provider else None
 
 
-def _chain_models_allow(row: dict) -> list[str]:
-    """The chain's permitted models, out of the hub's permission expansion; ``[]`` when it carries none."""
-    expand = row.get("expand") if isinstance(row, dict) else None
-    models = expand.get("models_allow") if isinstance(expand, dict) else None
-    return [m for m in models if isinstance(m, str)] if isinstance(models, list) else []
-
-
 def _is_mine(row: dict) -> bool | None:
     """Whether this endpoint is the caller's OWN to spend, out of the hub's permission expansion.
 
@@ -442,7 +435,6 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             payload["can_allocate"] = _allows(row, "allocate") if row_id in held else None
             # Off the SAME expansion block as ``can_administer`` above -- one read answers both.
             payload["is_mine"] = _is_mine(row) if row_id in held else None
-            payload["chain_models_allow"] = _chain_models_allow(row)
             # Name who pays, not the entity default a chain row carries.
             if root_provider := _root_provider(row):
                 payload["provider"] = root_provider
