@@ -8,23 +8,13 @@ back as NDJSON, one ``flow_sdk.core.headless_turn`` event per line.
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
-from flow_sdk.core.headless_turn import headless_turn
+from flow_sdk.core.headless_turn import HeadlessTurnRequest, headless_turn
 
 router = APIRouter()
-
-
-class HeadlessTurnRequest(BaseModel):
-    prompt: str
-    worker: Optional[str] = None
-    model: Optional[str] = None
-    workdir: Optional[str] = None
-    llm: Optional[str] = None  # an endpoint typeid; the CLI resolves row numbers and names first
 
 
 @router.post("/api/v1/agentic_process/headless-turn")

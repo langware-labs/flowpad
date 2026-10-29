@@ -66,6 +66,7 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
+from flow_sdk.core.headless_turn import HeadlessTurnRequest, headless_turn
 
 process_app = typer.Typer(
     name="process",
@@ -180,91 +181,75 @@ def start_process(
 
         endpoint_typeid = _pick(_rows(_status()), llm).typeid
     port = _discover_port(required=False)
+    request = HeadlessTurnRequest(prompt=prompt, worker=worker_type, model=model, workdir=workdir, llm=endpoint_typeid)
     if port is not None:
-        raise typer.Exit(
-            _run_on_server(
-                port, prompt, worker_type=worker_type, model=model, workdir=workdir, endpoint_typeid=endpoint_typeid
-            )
-        )
+        raise typer.Exit(_run_on_server(port, request))
     # ERROR too: a turn that fails says why through its own verdict, so the log would only repeat it.
     quiet_logs(logging.ERROR)
-    raise typer.Exit(
-        run_async(
-            _run_start(prompt, worker_type=worker_type, model=model, workdir=workdir, endpoint_typeid=endpoint_typeid)
-        )
-    )
+    raise typer.Exit(run_async(_run_start(request)))
 
 
-def _print_event(event: dict) -> int | None:
-    """Print one turn event as ``flow process start`` always has: the process id and tool steps on
-    stderr, the agent's words on stdout. The last event returns the turn's exit code; others ``None``."""
-    kind = event.get("kind")
-    if kind == "process":
-        safe_echo(f"running agentic process {event.get('id')}…", err=True)
-    elif kind == "tool":
-        safe_echo(f"· {event.get('name')}", err=True)
-    elif kind == "text":
-        safe_echo(event.get("text") or "")
-    elif kind == "done":
-        if event.get("text"):
-            safe_echo(event["text"])
-        if not event.get("ok"):
-            safe_echo(event.get("detail") or "The turn did not finish.", err=True)
-        return int(event.get("exit_code") or 0)
-    return None
+class _Printer:
+    """Prints a turn's events as ``flow process start`` always has -- the process id and tool steps on
+    stderr, the agent's words on stdout -- and keeps the turn's exit code: 1 until a ``done`` arrives."""
+
+    def __init__(self) -> None:
+        self.exit_code: int | None = None
+
+    def feed(self, event: dict) -> None:
+        kind = event.get("kind")
+        if kind == "process":
+            safe_echo(f"running agentic process {event.get('id')}…", err=True)
+        elif kind == "tool":
+            safe_echo(f"· {event.get('name')}", err=True)
+        elif kind == "text":
+            safe_echo(event.get("text") or "")
+        elif kind == "done":
+            if event.get("text"):
+                safe_echo(event["text"])
+            if not event.get("ok"):
+                safe_echo(event.get("detail") or "The turn did not finish.", err=True)
+            self.exit_code = int(event.get("exit_code") or 0)
+
+    def result(self) -> int:
+        if self.exit_code is None:
+            safe_echo("The turn ended before it reported a result.", err=True)
+            return 1
+        return self.exit_code
 
 
-def _print_events(events) -> int:
-    """Print a whole stream; the exit code of its last event, or 1 when it ended without one."""
-    for event in events:
-        code = _print_event(event)
-        if code is not None:
-            return code
-    safe_echo("The turn ended before it reported a result.", err=True)
-    return 1
-
-
-def _run_on_server(port: int, prompt: str, **fields) -> int:
+def _run_on_server(port: int, request: HeadlessTurnRequest) -> int:
     """The turn, run by the live backend (one SQLite writer) and streamed back as NDJSON."""
     import json  # noqa: PLC0415
 
     url = f"http://127.0.0.1:{port}/api/v1/agentic_process/headless-turn"
-    body = {
-        "prompt": prompt,
-        "worker": fields.get("worker_type"),
-        "model": fields.get("model"),
-        "workdir": fields.get("workdir"),
-        "llm": fields.get("endpoint_typeid"),
-    }
     try:
-        resp = _local_post(url, json=body, stream=True, timeout=(10, None))
+        resp = _local_post(url, json=request.model_dump(), stream=True, timeout=(10, None))
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return 1
     if resp.status_code != 200:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return 1
-    return _print_events(json.loads(line) for line in resp.iter_lines(decode_unicode=True) if line)
+    printer = _Printer()
+    for line in resp.iter_lines(decode_unicode=True):
+        if line:
+            printer.feed(json.loads(line))
+    return printer.result()
 
 
-async def _run_start(
-    prompt: str,
-    *,
-    worker_type: Optional[str] = None,
-    model: Optional[str] = None,
-    workdir: Optional[str] = None,
-    endpoint_typeid: Optional[str] = None,
-) -> int:
+async def _run_start(request: HeadlessTurnRequest) -> int:
     """One turn in THIS process (no backend up), printed as it streams."""
-    from flow_sdk.core.headless_turn import headless_turn  # noqa: PLC0415
     from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
 
     await _bootstrap_local()
-    code = 1
+    printer = _Printer()
     async for event in headless_turn(
-        prompt, worker_type=worker_type, model=model, workdir=workdir, endpoint_typeid=endpoint_typeid
+        request.prompt,
+        worker_type=request.worker,
+        model=request.model,
+        workdir=request.workdir,
+        endpoint_typeid=request.llm,
     ):
-        result = _print_event(event)
-        if result is not None:
-            code = result
-    return code
+        printer.feed(event)
+    return printer.result()

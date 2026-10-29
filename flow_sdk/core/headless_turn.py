@@ -17,6 +17,18 @@ import tempfile
 import uuid
 from typing import AsyncIterator, Optional
 
+from pydantic import BaseModel
+
+
+class HeadlessTurnRequest(BaseModel):
+    """What ``POST /api/v1/agentic_process/headless-turn`` takes -- one turn, as ``flow process start`` names it."""
+
+    prompt: str
+    worker: Optional[str] = None
+    model: Optional[str] = None
+    workdir: Optional[str] = None
+    llm: Optional[str] = None  # an endpoint typeid; the CLI resolves row numbers and names first
+
 
 async def headless_turn(
     prompt: str,
