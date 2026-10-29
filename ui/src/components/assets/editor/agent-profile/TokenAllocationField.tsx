@@ -15,8 +15,11 @@ import { Label } from '@src/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { endpointTypeId, openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
-import { useLlmEndpointChain, useLlmEndpointModels } from '@src/components/llm-endpoints/use-llm-endpoints';
-import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
+import {
+  useLlmEndpointChain,
+  useLlmEndpointModels,
+  useLlmEndpoints,
+} from '@src/components/llm-endpoints/use-llm-endpoints';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /** What a new cloud deployment gets per day when nobody changes it. */
@@ -51,13 +54,11 @@ export function TokenAllocationField({
   disabled,
 }: TokenAllocationFieldProps) {
   const { t } = useLingui();
-  // The hub endpoints offered to this person, as the desk's funding view knows them: the ones they may
-  // allocate from (the hub's `allocate` right -- an admin's pools, and their own allowance as its holder).
-  const { status, isLoading } = useLlmSources();
-  const sources = useMemo(
-    () => (status?.available ?? []).filter((e) => e.kind === 'hub' && (e.can_allocate ?? e.can_administer) === true),
-    [status],
-  );
+  // The hub's own list of the budgets this person may carve a sub-budget from (its `allocate` right: an
+  // admin's pools, and their own allowance as its holder). Read from the HUB, not the desktop's funding
+  // view, so the hub page works with no desktop attached.
+  const { endpoints, isLoading } = useLlmEndpoints();
+  const sources = useMemo(() => endpoints.filter((e) => e.canAllocate), [endpoints]);
   const checked = value !== null;
 
   // A source picked, or the only one there is: fill what the user has not chosen yet.
@@ -93,6 +94,12 @@ export function TokenAllocationField({
         <Label htmlFor="token-allocation" className="text-xs">
           <Trans>Token allocation</Trans>
         </Label>
+        {noSources && (
+          // Never a silently disabled box: say why it cannot be checked.
+          <span className="text-xs text-destructive" data-testid="token-allocation-no-sources">
+            <Trans>No budget you can allocate from — ask its admin for an allowance.</Trans>
+          </span>
+        )}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

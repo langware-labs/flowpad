@@ -13,27 +13,19 @@ const SOURCE_ID = 'a8473a10-74e5-4ce1-9fda-2babd551a399';
 const SOURCE = `llm_endpoint-${SOURCE_ID}`;
 
 const h = vi.hoisted(() => ({ models: vi.fn(), chain: vi.fn(() => ({ data: undefined })) }));
+/** A hub row as the listing serves it: the caller's permitted actions ride its expansion. */
+const row = (id: string, name: string, actions: string[]) => ({ id, name, canAllocate: actions.includes('allocate') });
 vi.mock('@src/components/llm-endpoints/use-llm-endpoints', () => ({
   useLlmEndpointModels: (id: string | undefined) => h.models(id),
   useLlmEndpointChain: (id: string | undefined) => h.chain(id),
-}));
-vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
-  useLlmSources: () => ({
-    status: {
-      available: [
-        { id: SOURCE_ID, name: 'Team budget', kind: 'hub', can_administer: true },
-        { id: 'b8473a10-74e5-4ce1-9fda-2babd551a399', name: 'Other budget', kind: 'hub', can_administer: true },
-        // Held, not administered: its holder may still carve a sub-budget from it.
-        {
-          id: 'c8473a10-74e5-4ce1-9fda-2babd551a399',
-          name: 'My allowance',
-          kind: 'hub',
-          can_administer: false,
-          can_allocate: true,
-        },
-        { id: 'd8473a10-74e5-4ce1-9fda-2babd551a399', name: 'Spend only', kind: 'hub', can_administer: false },
-      ],
-    },
+  useLlmEndpoints: () => ({
+    endpoints: [
+      row(SOURCE_ID, 'Team budget', ['read', 'update', 'allocate']),
+      row('b8473a10-74e5-4ce1-9fda-2babd551a399', 'Other budget', ['read', 'update', 'allocate']),
+      // Held, not administered: its holder may still carve a sub-budget from it.
+      row('c8473a10-74e5-4ce1-9fda-2babd551a399', 'My allowance', ['read', 'invoke', 'allocate']),
+      row('d8473a10-74e5-4ce1-9fda-2babd551a399', 'Spend only', ['read', 'invoke']),
+    ],
     isLoading: false,
   }),
 }));

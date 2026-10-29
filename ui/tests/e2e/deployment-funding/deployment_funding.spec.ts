@@ -109,8 +109,12 @@ test('a user moves a deployment onto an lg sub-budget of their own allowance, fr
 
   // Its page: the funding card, then Change allocation → my allowance, lg, $5/day → Save.
   await row.click();
+  await page.waitForURL(/\/child\/deployment\//);
+  await page.waitForLoadState('networkidle');
   const card = page.getByTestId('deployment-funding');
   await expect(card).toBeVisible();
+  // On its owner's default, which declares no lg model: red, and the user was told.
+  await expect(card.getByTestId('deployment-funding-problem')).toContainText("'lg'");
   await card.getByTestId('deployment-change-allocation').click();
   const editor = page.getByTestId('deployment-allocation-editor');
   await editor.getByTestId('token-allocation-toggle').click();
