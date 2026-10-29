@@ -306,6 +306,20 @@ function isResolutionError(err) {
 }
 
 /**
+ * uv could not find the ENGINE release itself (`flowpad==X` is not in its cached index), as opposed
+ * to a dependency conflict, a cut-off exclusion, or a network/policy failure. The usual cause: the
+ * release was JUST published — PyPI serves `/simple/flowpad/` with `max-age=600`, so for up to ~10
+ * minutes uv's cached index predates the upload and the pin is "unsatisfiable" (RCA: the 0.2.238
+ * upgrade three minutes after the publish). Decided on uv's own words, the same way as
+ * isResolutionError above.
+ */
+function isEnginePinResolutionError(err) {
+  const own = err && (err.stderr || err.stdout);
+  const text = String(own || String((err && err.message) || '').replace(/^Command failed:[^\n]*\n?/, ''));
+  return new RegExp(`(?:there (?:is|are) )?no versions? of ${PYPI_PACKAGE}(?:==|\\s|$)`, 'im').test(text);
+}
+
+/**
  * Parse `netstat -ano` output into the PIDs LISTENING on exactly `port`.
  *
  * Pure (no I/O) so it can be unit-tested. Matches the port off the LOCAL
@@ -1356,15 +1370,19 @@ class UvManager {
    * PyPI answered and NO release is compatible — installing anything would be wrong.
    * @returns {Promise<{version: string, minDesktopVersion: string|null}|null>}
    */
-  async resolveCompatibleEngineVersion() {
-    if (!this._appVersion) return null;
+  async resolveCompatibleEngineVersion({ desktopVersion = null } = {}) {
+    // `desktopVersion`: pick for a desktop ABOUT to be installed (update:both substitutes the
+    // engine that fits the TARGET), instead of the running one.
+    const targetDesktop = desktopVersion || this._appVersion;
+    if (!targetDesktop) return null;
     // Update-cycle harness: a forced engine spec wins over resolution (engineSpec()), so don't
     // spend staged metadata reads on a scenario that has already decided what to install.
     if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) return null;
     this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
-    const data = await this._getPypiData();
+    const data = await this._getPypiData({ fresh: true }); // the pick before an install must see a just-published release
     if (!data || !data.releases) return null;
     this._pypiDoc = data;
+    this._pypiDocFetchedAt = Date.now();
     const releases = Object.entries(data.releases).map(([version, files]) => ({
       version,
       // Same rule as the backend's release list (routes/version.py): a release with no files left, or only
@@ -1375,7 +1393,7 @@ class UvManager {
     const stats = {};
     const picked = await engineCompat.selectCompatibleRelease({
       releases,
-      desktopVersion: this._appVersion,
+      desktopVersion: targetDesktop,
       minBackendVersion,
       readEngineCompat: (v) => this._readCandidateMinDesktop(v),
       log: (msg) => this.log.info(`[uv] ${msg}`),
@@ -1383,7 +1401,7 @@ class UvManager {
     });
     if (!picked) {
       throw installFailure(
-        `No compatible FlowPad engine release found for Desktop ${this._appVersion} ` +
+        `No compatible FlowPad engine release found for Desktop ${targetDesktop} ` +
         `(the desktop requires engine ${minBackendVersion || 'any'} or newer; ` +
         `${stats.checked ? `checked the newest ${stats.checked}${stats.stoppedAtLimit ? ', older ones were not looked at' : ''}` : 'none was eligible'}). ` +
         'Update the desktop app, then try again. Your existing installation has been preserved.'
@@ -1391,7 +1409,7 @@ class UvManager {
     }
     const latest = data.info && data.info.version;
     if (latest && picked.version !== latest) {
-      this.log.warn(`[compat] latest ${PYPI_PACKAGE} ${latest} is not compatible with Desktop ${this._appVersion} — using ${picked.version}`);
+      this.log.warn(`[compat] latest ${PYPI_PACKAGE} ${latest} is not compatible with Desktop ${targetDesktop} — using ${picked.version}`);
     }
     return picked;
   }
@@ -1667,6 +1685,36 @@ class UvManager {
     const strategies = baseArgs.includes('--exclude-newer')
       ? [{ label: 'caller', flags: [] }]
       : await this._excludeNewerStrategies(baseArgs);
+    try {
+      return await this._runStrategyLadder(baseArgs, strategies, { onProgress });
+    } catch (err) {
+      // The whole ladder failed because the ENGINE release itself is not in uv's cached index — a
+      // just-published release (PyPI's /simple/ is cached for 10 minutes). Revalidate that one index
+      // entry and run the ladder ONCE more; no delay, no extra attempts (changing a cut-off cannot
+      // fix a stale cache, which is why the ladder's own retries never could). Not a bigger retry
+      // budget: the input CHANGES (--refresh-package removes the stale index, the root cause) and
+      // there is exactly one immediate re-run — nothing is waited out or masked.
+      const refreshable = !baseArgs.includes('--offline') && !baseArgs.includes('--refresh') && !baseArgs.includes('--refresh-package');
+      const errText = String((err && (err.stderr || err.stdout)) || (err && err.message) || '');
+      // A version shut out by a --exclude-newer cut-off is not a cache problem; and a pin the FRESH
+      // PyPI document does not list (a typo, a withdrawn release) cannot be conjured by a refresh —
+      // re-running the whole ladder would only double the time to the real error.
+      const excludedByCutoff = /were excluded because they were published after/i.test(errText);
+      const pinned = engineVersionFromInstallArgs(baseArgs);
+      // Only a FRESH document may veto the retry: a release published after an old fetch is exactly
+      // the stale-index case the retry exists for (the 0.2.238 incident, minutes after the upload).
+      const docFresh = this._pypiDocFetchedAt && Date.now() - this._pypiDocFetchedAt < 60 * 1000;
+      const knownMissing = !!(pinned && docFresh && this._pypiDoc && this._pypiDoc.releases && !this._pypiDoc.releases[pinned]);
+      if (refreshable && !excludedByCutoff && !knownMissing && isEnginePinResolutionError(err)) {
+        this.log.warn(`[uv] the requested ${PYPI_PACKAGE} release is not in uv's cached index (likely just published) — refreshing the registry cache and retrying once`);
+        return await this._runStrategyLadder([...baseArgs, '--refresh-package', PYPI_PACKAGE], strategies, { onProgress });
+      }
+      throw err;
+    }
+  }
+
+  /** The `--exclude-newer` strategy ladder: strictest cut-off first, the next when uv finds no solution under it. */
+  async _runStrategyLadder(baseArgs, strategies, { onProgress } = {}) {
     for (let s = 0; s < strategies.length; s++) {
       const args = [...baseArgs, ...strategies[s].flags];
       if (strategies[s].flags.length) this.log.info(`[uv] dependencies cut off at ${strategies[s].flags[1]} (${strategies[s].label})`);
@@ -2539,23 +2587,26 @@ class UvManager {
    * Latest published flowpad version on PyPI, or null on any failure. Hits
    * pypi.org only — works even when the local backend is down.
    */
-  async getLatestPypiVersion() {
-    const info = await this._getLatestPypiInfo();
+  async getLatestPypiVersion(fresh = false) {
+    const info = await this._getLatestPypiInfo(fresh);
     return (info && info.version) || null;
   }
 
   /** `info` block of the latest flowpad release on PyPI, or null on any failure. */
-  async _getLatestPypiInfo() {
-    const data = await this._getPypiData();
+  async _getLatestPypiInfo(fresh = false) {
+    const data = await this._getPypiData({ fresh });
     return (data && data.info) || null;
   }
 
-  /** The whole PyPI JSON document for flowpad (`info` + `releases` map), or null on any failure. */
-  async _getPypiData() {
+  /** The whole PyPI JSON document for flowpad (`info` + `releases` map), or null on any failure.
+   *  `fresh` busts PyPI's CDN edge cache (the `t=` trick of the backend's routes/version.py) — used only
+   *  on the upgrade paths, where "offered" must match what the install will see. The periodic background
+   *  checks keep riding the CDN: a release they miss is offered on the next tick. */
+  async _getPypiData({ fresh = false } = {}) {
     try {
       // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): "latest" comes from a local stub, so a scenario controls the verdict.
       const url = (updateTest.isEnabled() && process.env.FLOWPAD_PYPI_JSON_URL)
-        || `https://pypi.org/pypi/${PYPI_PACKAGE}/json`;
+        || `https://pypi.org/pypi/${PYPI_PACKAGE}/json${fresh ? `?t=${Date.now()}` : ''}`;
       const res = await fetch(url, {
         headers: { Accept: 'application/json' },
       });
@@ -2790,6 +2841,67 @@ class UvManager {
   }
 
   /**
+   * Pre-flight for the UI's version panel: BEFORE the panel starts an engine upgrade, does the latest
+   * PyPI release run on THIS desktop? Pure metadata (installed version from `_version.py`, latest from
+   * PyPI, the candidate's floor via the cheap wheel read) — nothing is installed or stopped here, and
+   * the install-time gates (`_assertCandidateCompatible`, `_verifyInstalledPairOrRollback`) stay the
+   * authoritative check.
+   *
+   * @returns {Promise<{installed: string|null, latest: string|null, updateAvailable: boolean,
+   *   latestMinDesktop: string|null, latestCompatible: boolean|null, newestCompatible: string|null}>}
+   *   `latestCompatible` is null when it cannot be decided (offline, unreadable metadata, no app
+   *   version) — the panel then proceeds as if compatible and the install gates decide.
+   *   `newestCompatible` is filled only when the latest release is incompatible: the newest release
+   *   this desktop CAN run (null when none, or when that could not be resolved).
+   */
+  async engineUpdatePreflight({ fresh = false } = {}) {
+    // A popover open followed by an Upgrade click repeats the whole round (fresh PyPI document, a
+    // wheel range read, and a resolve walk when the latest is incompatible): one short-lived snapshot
+    // covers both. Keyed on the INSTALLED version (re-read every time, local and cheap), so an engine
+    // change invalidates it; an offline answer is never cached; the install-time gates stay the
+    // authoritative check either way.
+    const TTL_MS = 60 * 1000;
+    const installed = this.getInstalledVersionSync() || null;
+    const c = this._preflightCache;
+    if (!fresh && c && c.installed === installed && Date.now() - c.at < TTL_MS) return c.value;
+    // Display rides the CDN (a popover open is not an install); the ACTION paths (upgrade, the
+    // version pick before an install) ask fresh themselves, right before locking a version.
+    const latest = await this.getLatestPypiVersion(fresh);
+    const info = {
+      installed,
+      latest,
+      updateAvailable: !!(installed && latest && isNewer(installed, latest)),
+      latestMinDesktop: null,
+      latestCompatible: null,
+      newestCompatible: null,
+    };
+    if (!latest) return info; // offline: not cached — the next ask tries again
+    if (!this._appVersion) return this._cachePreflight(installed, info);
+    const compat = await this._readCandidateMinDesktop(latest);
+    if (compat === 'invalid' || compat === null) return this._cachePreflight(installed, info); // indeterminate: the install gates decide
+    info.latestMinDesktop = compat.minDesktopVersion;
+    const ok = engineCompat.meetsFloor(this._appVersion, compat.minDesktopVersion);
+    info.latestCompatible = ok === null ? null : ok;
+    if (info.latestCompatible === false) {
+      try {
+        const picked = await this.resolveCompatibleEngineVersion();
+        // Only an UPGRADE is a fallback offer: an installed-by-hand engine newer than the newest
+        // compatible release must not get a one-click downgrade dressed as an update.
+        if (picked && (!installed || isNewer(installed, picked.version))) info.newestCompatible = picked.version;
+      } catch (err) {
+        // PyPI answered and NO release is compatible: newestCompatible stays null and the panel says so.
+        this.log.warn(`[compat] panel pre-flight: ${String(err.message).split('\n')[0]}`);
+      }
+    }
+    return this._cachePreflight(installed, info);
+  }
+
+  _cachePreflight(installed, value) {
+    this._preflightCache = { at: Date.now(), installed, value };
+    return value;
+  }
+
+  /**
    * Remember that the user answered "Later" to `version` (from any dialog), so
    * the periodic check does not re-offer it this session.
    */
@@ -2826,6 +2938,10 @@ class UvManager {
     mainWindow,
     { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }
   ) {
+    // Scoped to THIS attempt: a failure BEFORE the capture below (stop() throwing) must restore
+    // nothing — an instance field would hand recovery a leftover from an EARLIER upgrade and
+    // force-downgrade a healthy newer engine.
+    let versionBeforeUpgrade = null;
     try {
       // Pre-start: the backend is down and the install may even be broken, so
       // decide with the standalone PyPI-vs-installed check — no cloud, no CLI,
@@ -2890,6 +3006,9 @@ class UvManager {
       }
 
       if (sendStatus) sendStatus('Upgrading Flowpad');
+      // Captured before the install: the recovery below must know what to put BACK when the new
+      // engine installs fine but never becomes healthy (uv --force already replaced the old one).
+      versionBeforeUpgrade = this.getInstalledVersionSync() || null;
       await this.upgrade();
 
       // Pre-start: hand back to startApp's normal start path to boot the
@@ -2906,8 +3025,11 @@ class UvManager {
       // a false "failed to start" error. A backend that never gets healthy is
       // a failed upgrade: fall into the recovery path below instead of loading
       // a dead URL.
-      if (waitForBackend && !(await waitForBackend({ maxChecks: 240 }))) {
-        throw new Error('upgraded backend did not become healthy');
+      if (waitForBackend) {
+        // waitForBackend answers with an OBJECT ({ ready, reason, … } — backend-wait.js), and an
+        // object is always truthy: testing the answer itself never caught a dead backend here.
+        const { ready } = (await waitForBackend({ maxChecks: 240 })) || {};
+        if (!ready) throw new Error('upgraded backend did not become healthy');
       }
 
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
@@ -2924,7 +3046,7 @@ class UvManager {
       // exists in the startup path). Restore the running app instead.
       if (!beforeBackendStart) {
         const restored = await this._recoverRunningBackendAfterFailedUpgrade(
-          mainWindow, { waitForBackend, backendUrl, sendStatus }
+          mainWindow, { waitForBackend, backendUrl, sendStatus, restoreVersion: versionBeforeUpgrade }
         );
         if (!restored && mainWindow && !mainWindow.isDestroyed()) {
           await showFailureDialog({
@@ -2944,7 +3066,7 @@ class UvManager {
           // The window still shows "Upgrading Flowpad…" over a dead backend: replace it with the in-app panel
           // (Share, Copy, Open logs, Quit) so the user is not left on a splash that will never finish.
           if (onUnrecovered && mainWindow && !mainWindow.isDestroyed()) {
-            try { await onUnrecovered(err); } catch (e) { this.log.warn(`[uv] onUnrecovered failed: ${e && e.message}`); }
+            try { await onUnrecovered(err, { restoreVersion: versionBeforeUpgrade }); } catch (e) { this.log.warn(`[uv] onUnrecovered failed: ${e && e.message}`); }
           }
         }
       }
@@ -2965,12 +3087,40 @@ class UvManager {
    * Returns true if the app was restored, false if recovery itself failed (the
    * caller then surfaces a real error instead of a frozen splash).
    */
-  async _recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl, sendStatus }) {
+  /** Put `version` back (uv's cache first — works offline). The health gate's rollback for an
+   *  agreed engine that installed fine but never became healthy. */
+  restoreEngine(version) {
+    return this._restoreEngine(version, {});
+  }
+
+  /** Public seam for main.js: the panel's upgrade path (`upgrade-flowpad` IPC) restores the old
+   *  engine after a failed upgrade exactly the way the dialog path does — without it the user was
+   *  left on the loading splash over a dead backend (the "stuck update" incident). */
+  recoverAfterFailedUpgrade(mainWindow, opts) {
+    return this._recoverRunningBackendAfterFailedUpgrade(mainWindow, opts);
+  }
+
+  async _recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl, sendStatus, restoreVersion = null }) {
     try {
       if (sendStatus) sendStatus('Update failed — restoring Flowpad');
       this.isShuttingDown = false;
       // The failed `--force` may have left the tool dir partially removed.
       this._flowBin = this.getInstalledFlowBin() || this._flowBin;
+      // The upgrade may have INSTALLED the new engine and failed only at the health gate: restarting
+      // "the running version" would boot the same unhealthy release and wait the whole window again.
+      // Put the release that was running before the upgrade back (it ran here minutes ago — no
+      // candidate-compat gate needed; _restoreEngine prefers uv's cache, so offline still works).
+      const installedNow = this.getInstalledVersionSync() || null;
+      if (restoreVersion && installedNow && installedNow !== restoreVersion
+          && engineCompat.isInstallableVersion(restoreVersion)) {
+        this.log.warn(`[uv] reinstalling ${restoreVersion} — the failed upgrade left ${installedNow} on disk`);
+        try {
+          await this._restoreEngine(restoreVersion, {});
+          this._flowBin = this.getInstalledFlowBin() || this._flowBin;
+        } catch (restoreErr) {
+          this.log.warn(`[uv] could not reinstall ${restoreVersion} (${String(restoreErr.message).split('\n')[0]}) — starting what is installed`);
+        }
+      }
       if (!this._flowBin) {
         this.log.warn('[uv] flow binary missing after failed upgrade — repairing install…');
         await this.reinstall();
@@ -2984,8 +3134,10 @@ class UvManager {
         await this.reinstall();
         await this.start();
       }
-      if (waitForBackend && !(await waitForBackend({ maxChecks: 240 }))) {
-        throw new Error('restored backend did not become healthy');
+      if (waitForBackend) {
+        // Same object-not-boolean contract as above: only `ready` says the restore worked.
+        const { ready } = (await waitForBackend({ maxChecks: 240 })) || {};
+        if (!ready) throw new Error('restored backend did not become healthy');
       }
       if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
         mainWindow.loadURL(backendUrl);
@@ -3033,7 +3185,11 @@ class UvManager {
       }
     }
     await this._uvToolInstallForce(
-      ['tool', 'install', spec, '--python', pin, '--force'],
+      // --refresh-package: an upgrade usually targets a JUST-published release, which may not be in
+      // uv's cached /simple index yet (PyPI caches it for 10 minutes) — without this, the pin fails
+      // with "there is no version of flowpad==X" right after a publish (the 0.2.238 incident). One
+      // conditional request revalidating this one package; dependencies stay cached.
+      ['tool', 'install', spec, '--python', pin, '--force', '--refresh-package', PYPI_PACKAGE],
       { onProgress },
     );
     await this._ensureShimOnPath();
@@ -3632,6 +3788,7 @@ module.exports.NATIVE_DEPS = NATIVE_DEPS;
 module.exports.engineVersionFromInstallArgs = engineVersionFromInstallArgs;
 module.exports.excludeNewerFlagSets = excludeNewerFlagSets;
 module.exports.isResolutionError = isResolutionError;
+module.exports.isEnginePinResolutionError = isEnginePinResolutionError;
 module.exports.isUnknownFlagError = isUnknownFlagError;
 module.exports.parseNetstatPids = parseNetstatPids;
 module.exports.isInstallProgressLine = isInstallProgressLine;

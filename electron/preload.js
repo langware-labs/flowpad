@@ -1,5 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Push-channel subscription that hands the page a DISPOSER — never ipcRenderer.on()'s return value,
+// which is ipcRenderer itself (a handle to send on any channel). Also lets React effects clean up.
+function subscribe(channel, callback) {
+  const handler = (_event, data) => callback(data);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
+
 // Expose desktop backend API (matches FlowPad pattern)
 contextBridge.exposeInMainWorld('flowpadDesktop', {
   // Returns "http://127.0.0.1:<port>"
@@ -28,21 +36,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
 
   // Startup status updates (loading screen)
-  onStartupStatus: (callback) => ipcRenderer.on('startup-status', (_event, message) => callback(message)),
+  onStartupStatus: (callback) => subscribe('startup-status', callback),
+  // The loading screen's update notice ({title, detail} or null): see sendStartupNotice in main.js.
+  onStartupNotice: (callback) => subscribe('startup-notice', callback),
 
   // Startup logs
   getStartupLogs: () => ipcRenderer.invoke('get-startup-logs'),
   watchStartupLogs: () => ipcRenderer.send('watch-startup-logs'),
   unwatchStartupLogs: () => ipcRenderer.send('unwatch-startup-logs'),
-  onStartupLogsUpdate: (callback) => ipcRenderer.on('startup-logs-update', (_event, updates) => callback(updates)),
+  onStartupLogsUpdate: (callback) => subscribe('startup-logs-update', callback),
 
-  // Update management
-  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
-  upgradeFlowpad: () => ipcRenderer.invoke('upgrade-flowpad'),
+  // Update management (FLOWPAD-2310): the version panel's own update flow.
+  // getUpdateInfo        → desktop + engine update status and the compat pre-flight
+  // takeResumedUpdate    → the one-shot outcome of an update resumed or finished by this launch
+  // downloadDesktopUpdate → start downloading the available desktop build (no native prompt)
+  // applyDesktopUpdate   → install the downloaded build now (restarts the app)
+  // updateBoth           → desktop first, then the named engine version after the restart (pending-engine.json)
+  // Optional { version }: the popup's "works with this desktop" fallback pins the release it named.
+  upgradeFlowpad: (opts) => ipcRenderer.invoke('upgrade-flowpad', opts),
+  // Optional { fresh }: the Upgrade click's pre-flight skips the snapshot and PyPI's CDN.
+  getUpdateInfo: (opts) => ipcRenderer.invoke('update:get-info', opts),
+  downloadDesktopUpdate: () => ipcRenderer.invoke('update:download-desktop'),
+  applyDesktopUpdate: () => ipcRenderer.invoke('update:apply-desktop'),
+  updateBoth: (engineVersion) => ipcRenderer.invoke('update:both', engineVersion),
+  takeResumedUpdate: () => ipcRenderer.invoke('update:take-resumed'),
+  onDesktopUpdateState: (callback) => subscribe('desktop-update-state', callback),
+  onEngineUpdateResumed: (callback) => subscribe('engine-update-resumed', callback),
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.
-  onStartupError: (callback) => ipcRenderer.on('startup-error', (_event, data) => callback(data)),
+  onStartupError: (callback) => subscribe('startup-error', callback),
   copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text),
   openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
   shareLogs: (detail, email) => ipcRenderer.invoke('share-logs', detail, email),
@@ -80,11 +103,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Returns a disposer. The renderer mounts this from a React effect, so without
   // one every remount left another listener on the channel — and each listener
   // navigates, so one banner click fired the navigation once per leak.
-  onNotificationClick: (callback) => {
-    const handler = (_event, data) => callback(data);
-    ipcRenderer.on('notification-click', handler);
-    return () => ipcRenderer.removeListener('notification-click', handler);
-  },
+  onNotificationClick: (callback) => subscribe('notification-click', callback),
 
   // Show/hide the application menu. The renderer calls this with the current
   // "is advanced view mode" boolean; the menu is only shown in Advanced/Dev.

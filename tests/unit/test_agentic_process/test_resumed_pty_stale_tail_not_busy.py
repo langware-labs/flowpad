@@ -115,5 +115,11 @@ async def test_a_turn_the_resumed_worker_starts_is_still_busy(initialize_test_db
         datetime.now(timezone.utc) + timedelta(seconds=1),
         {"type": "user", "message": {"role": "user", "content": "why can't I switch to chat?"}},
     )
+    # The entry SAYS one second after the launch; make the file stat say it too. The launch record is
+    # µs-precise while the fs stamp moves per kernel jiffy, so a same-moment append can stat EARLIER
+    # than the launch on a fast machine (first seen on Blacksmith runners) and read as the dead
+    # worker's stale tail.
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
 
     assert (await ap.get_status()).data["busy"] is True

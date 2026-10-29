@@ -45,8 +45,9 @@ rejected, with one deliberate exception: invalid metadata found in an already-in
 only logs a warning (it must not brick startup); upgrades to such a release are refused.
 
 Logic lives in `electron/engine-compat.js` and `flow_sdk/utils/compat.py` (twins, with matching
-failure wording). Both floors currently sit at `0.2.0`, so nothing changes until release
-engineering raises one.
+failure wording). The floors are raised by release engineering and are read from the files, not from
+here — at the time of writing `min_backend_version: 0.2.231` (electron/engine-compat.json) and
+`min_desktop_version: 0.2.58` (flow_sdk/compat.json).
 
 `compat.json` is deliberately **not** a `DataSpec` schema, and that exception to the "every shape that
 travels is a `DataSpec`" rule was **approved by the repository owner on 2026-10-19**. The reason is the
@@ -88,7 +89,14 @@ and are not part of it.
    plus the post-install check in step 4; PyPI's whole-file digest cannot cover a partial read.
 3. The newest release passing both directions is installed with the existing pinned
    `uv tool install flowpad==X` path — all existing recovery machinery (interrupted-install
-   marker, failed-upgrade restore, tool-dir lock handling) is unchanged.
+   marker, failed-upgrade restore, tool-dir lock handling) is unchanged. The target usually
+   comes from PyPI's JSON API while uv resolves the pin against its own cached `/simple/` index
+   (served with `max-age=600`), so a release published minutes ago can be "unsatisfiable" to uv
+   (the 0.2.238 incident). Two defenses: `upgrade()` always passes `--refresh-package flowpad`
+   (one conditional request revalidating that single index entry), and any other pinned install
+   whose whole strategy ladder fails with uv naming the engine pin itself
+   (`isEnginePinResolutionError`) is retried exactly once with the refreshed index — never under
+   `--offline`, and never for a dependency conflict a refresh cannot fix.
 4. After `installLatest` and `upgrade` the installed pair is re-verified from disk
    (`_verifyInstalledPairOrRollback`); if it fails (the selection ran on indeterminate
    metadata, or the engine ships invalid `compat.json`), the previous release is put back — from
@@ -122,6 +130,63 @@ and are not part of it.
 
 When the contract cannot be evaluated (PyPI unreachable, no app version in dev runs), the
 pre-contract behaviour is kept — install `latest` — and step 4 has the last word.
+
+**The version panel** (FLOWPAD-2310): the UI's version popover drives the same machinery over IPC,
+with in-app surfaces instead of native dialogs. Before `upgrade-flowpad`, the panel pre-flights the
+latest release through `update:get-info` (`uv-manager.engineUpdatePreflight`: the candidate's floor
+via the step-2 wheel read against this desktop). An incompatible latest opens the "Desktop Update
+Required" popup — *Update Both* saves a consented `pending-engine.json` with `source: 'panel'` and
+downloads the desktop (`update:both`); there is deliberately no desktop-only choice in the popup (a
+desktop update never leaves the engine behind). When no published desktop build satisfies the
+engine's floor, the popup instead offers the newest flow SDK this desktop CAN run. The desktop row's
+own Download goes through `update:both` whenever a newer flow SDK exists (the shell substitutes the
+newest engine the target desktop accepts, or lets the desktop go alone when none is newer), and is a
+plain `update:download-desktop` only when there is no engine update;
+the panel's *Update Now* (`update:apply-desktop`) restarts into the new desktop, which installs the
+saved engine version exactly as in the dialog flow and reports the outcome back to the panel
+(`engine-update-resumed`, or pulled once at panel mount via `update:take-resumed`). A desktop update downloaded in the
+background and postponed with the native "Later" shows in the panel as ready, so it can be installed
+from there at any time without waiting for the next quit. An indeterminate pre-flight
+(`latestCompatible: null` — offline, unreadable metadata) proceeds, and steps 3–4 stay the
+authoritative gates. The panel's engine upgrade (`upgrade-flowpad` →
+`upgradeFlowpadAndRestart`) resolves its target while the backend still runs — a definitive
+refusal returns as an error with nothing stopped — and a failure after the stop restores the old
+engine through the same recovery the dialog path uses (`recoverAfterFailedUpgrade`), so the app
+is never left on the loading splash over a dead backend.
+
+Applying a desktop update (`update-restart.js`) resolves with the **real** outcome — `'quitting'` once
+the app's quit began, `'failed'` when the updater's `error` event arrives, even after `quitAndInstall`
+returned (an asynchronous NSIS spawn error, Squirrel.Mac) — so the panel, the desktop-first startup
+and the recovery update each fall back instead of trusting "quitAndInstall was called". On macOS an
+update is *ready* only once Electron's own `autoUpdater` (Squirrel.Mac) has staged it; a Squirrel
+failure offers the download again, never a re-apply. A newer feed build the updater does not offer
+this machine (`isUpdateAvailable: false` — staged rollout, `minimumSystemVersion`) counts as no
+desktop update, so the engine is not held behind it.
+
+**First setup restarts into a newer desktop** (`updateDesktopBeforeEngineInstall`): when no engine is
+installed yet and the feed has a newer desktop, the desktop is updated first and the new desktop
+installs the engine. The loading screen says so in the window for the whole download ("Updating
+FlowPad to X … closes for a moment and reopens by itself"), stays on screen until the quit takes it
+(`restartApplier.apply({ keepWindow: true })`), and the relaunched app confirms the outcome once
+(`desktop-first-update.json` → "FlowPad was updated to X", or "the update to X did not finish").
+A build older than the published release therefore replaces itself on first run — test a dry-run
+build with a version above the feed's.
+
+**Manual verification on each OS** (the CI runs the update flow against stubs only — nothing in the
+repo performs a real `quitAndInstall`). Before a release that changes the update flow, run once per
+row against a real GitHub feed with a packaged build one version behind:
+
+| Platform | Install type | Check |
+|---|---|---|
+| Windows | NSIS, per-user | Update Both → Update Now: app closes, reinstalls silently, reopens, engine toast shows both versions |
+| Windows | NSIS, per-machine | Same; then cancel the UAC prompt once — the app must come back (or be restartable) with the old version |
+| macOS | zip/dmg in /Applications | Download → row shows progress until Squirrel stages it, then Update Now; reopen confirms both versions |
+| macOS | run from Downloads | Update Now fails → row offers the download again, dialog points at /Applications |
+| Linux | AppImage | Update Now relaunches the new AppImage; engine resumes |
+| Linux | deb/rpm | Password prompt appears; cancelling it leaves the app running with the error row |
+
+Each row also checks the incompatible-engine path: a PyPI release whose `min_desktop_version` is above
+the installed desktop opens "Desktop Update Required", and Cancel leaves both versions unchanged.
 
 **Backend self-update** (`flow upgrade`, `POST /api/v1/version/install`):
 

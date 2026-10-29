@@ -15,6 +15,19 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   });
 }
 
+// A desktop update notice (first setup / recovery): FlowPad says IN the window that it is about to
+// close and reopen. null hides it.
+if (window.electronAPI && window.electronAPI.onStartupNotice) {
+  window.electronAPI.onStartupNotice((notice) => {
+    const box = document.getElementById('update-notice');
+    if (!box) return;
+    if (!notice) { box.hidden = true; return; }
+    document.getElementById('update-notice-title').textContent = notice.title || '';
+    document.getElementById('update-notice-detail').textContent = notice.detail || '';
+    box.hidden = false;
+  });
+}
+
 // Logs panel
 (function () {
   const btn = document.getElementById('show-logs-btn');

@@ -128,6 +128,18 @@ MAX_HEALTH_CHECKS = 240       // 120 seconds max wait
 | `get-app-version` | `app.getVersion()`        | App version string |
 | `restart-backend` | `boolean`                 | Restart backend (flow stop + flow start) |
 | `open-external` | `void`                    | Open URL in system browser |
+| `upgrade-flowpad` | `{success, error?, desktopUpdatePending?}` | Engine upgrade from the version panel; an optional `{version}` pin must be newer than installed |
+| `update:get-info` | `{desktop, engine, busy, pairWarning}` | Version panel snapshot: desktop feed state + engine compat pre-flight (`{fresh}` skips caches) |
+| `update:take-resumed` | outcome \| `null` | One-shot outcome of an update this launch finished (`kind: 'coordinated' \| 'engine'`) |
+| `update:download-desktop` | `{started, ready?, version?, reason?}` | Download the desktop update without a native prompt |
+| `update:apply-desktop` | `{started, version?, reason?}` | Install the downloaded desktop now; `started:false, reason:'apply-failed'` when the updater fails |
+| `update:both` | `{started, version?, engineVersion?, reason?}` | Desktop first, then the named engine after the restart (`pending-engine.json`) |
+
+Push channels (main → renderer): `desktop-update-state` (`downloading`/`ready`/`installing`/`error`), `engine-update-resumed`.
+
+The handlers that change what is installed (`upgrade-flowpad`, `update:*`, `restart-backend`,
+`secrets:provision-sod-key`) answer only the top frame of a window on the backend origin
+(`isTrustedSender` in `main.js`); anything else is refused with `untrusted sender`.
 
 **Dev mode:** Set `MINIHUB_DEV=true` to skip backend installation/spawning and assume it runs externally (e.g., `uv run -m flow_sdk.server.run`).
 
@@ -161,7 +173,11 @@ Exposes two API objects to the renderer via `contextBridge.exposeInMainWorld`:
   getAppVersion:    () => ipcRenderer.invoke('get-app-version'),
   restartBackend:   () => ipcRenderer.invoke('restart-backend'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  platform:         process.platform   // "darwin", "win32", "linux"
+  platform:         process.platform,  // "darwin", "win32", "linux"
+  // …plus the version panel's update calls (upgradeFlowpad, getUpdateInfo, downloadDesktopUpdate,
+  // applyDesktopUpdate, updateBoth, takeResumedUpdate) and push subscriptions (onDesktopUpdateState,
+  // onEngineUpdateResumed, onStartupStatus, …). Every `on…` subscription returns a disposer —
+  // never `ipcRenderer` itself.
 }
 ```
 

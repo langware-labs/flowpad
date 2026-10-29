@@ -54,9 +54,11 @@ function engineChangePolicy({ desktop, mustInstall = false }) {
 
 // ── the engine version saved for the new desktop to install ─────────────────
 
-/** Remember which engine version was offered alongside `desktopVersion`. Consent comes later (see markConsented). */
-function savePendingEngine(store, { engineVersion, desktopVersion, now = new Date() }) {
-  store.write({ engineVersion, desktopVersion, savedAt: now.toISOString(), consented: false });
+/** Remember which engine version was offered alongside `desktopVersion`. Consent comes later (see markConsented).
+ *  `source: 'panel'` marks a coordinated update started from the UI's version panel (its popup click is the
+ *  consent), so the new desktop can report the resumed engine install back to that panel. */
+function savePendingEngine(store, { engineVersion, desktopVersion, source = null, now = new Date() }) {
+  store.write({ engineVersion, desktopVersion, source, savedAt: now.toISOString(), consented: false });
 }
 
 /** The user agreed to restart into the new desktop: installing the saved engine version afterwards is agreed too. */
@@ -70,18 +72,36 @@ function markPendingEngineConsented(store) {
 /**
  * What the freshly started desktop does about a saved engine version.
  * @param {{state: object|null, appVersion: string, installedEngine: string|null, isNewer: (current: string, latest: string) => boolean}} a
- * @returns {{action: 'none'|'dialog'|'install', version?: string, clear: boolean}}
+ * @returns {{action: 'none'|'dialog'|'install', version?: string, clear: boolean, source: string|null}}
  *   'install' — the user agreed: install exactly `version`, silently.
  *   'dialog'  — the desktop was updated without an answer (closed after "Later"): fall back to today's engine dialog.
  *   'none'    — nothing to do. `clear` says whether the saved state is spent.
+ *   `source` echoes where the pending update came from ('panel' = the UI's version panel), so a panel-initiated
+ *   resume can report its outcome back to the panel. Records saved before the field existed carry null.
  */
 function planAfterDesktopUpdate({ state, appVersion, installedEngine, isNewer }) {
-  if (!state || !state.engineVersion) return { action: 'none', clear: false };
+  const source = (state && state.source) || null;
+  if (!state || !state.engineVersion) return { action: 'none', clear: false, source };
   // The desktop update it was saved for has not been applied yet (still the old build): keep waiting.
-  if (state.desktopVersion && isNewer(appVersion, state.desktopVersion)) return { action: 'none', clear: false };
-  if (!state.consented) return { action: 'dialog', clear: true };
-  if (installedEngine && !isNewer(installedEngine, state.engineVersion)) return { action: 'none', clear: true };
-  return { action: 'install', version: state.engineVersion, clear: true };
+  if (state.desktopVersion && isNewer(appVersion, state.desktopVersion)) return { action: 'none', clear: false, source };
+  // Installed, not yet proven healthy: the record carries previousEngine, and only the health gate
+  // spends it (healthy → clear, never healthy → restore). A re-run of the startup (Retry after an
+  // unrelated failure, or a relaunch after a kill) must not erase the one way back.
+  if (state.phase === 'installed') return { action: 'none', clear: false, source };
+  if (!state.consented) return { action: 'dialog', clear: true, source };
+  if (installedEngine && !isNewer(installedEngine, state.engineVersion)) return { action: 'none', clear: true, source };
+  return { action: 'install', version: state.engineVersion, clear: true, source };
+}
+
+/**
+ * The agreed-engine record at the health gate — the ONE place it is spent. `healthy`: the backend
+ * answered. Returns 'spend' (installed and answering: done), 'restore' (installed, never answered, and
+ * the previous engine is known: put it back) or 'keep' (nothing installed by this flow).
+ */
+function engineRecordAtHealthGate(state, { healthy }) {
+  if (!state || state.phase !== 'installed') return 'keep';
+  if (healthy) return 'spend';
+  return state.previousEngine ? 'restore' : 'keep';
 }
 
 // ── the periodic "update ready" reminder ────────────────────────────────────
@@ -127,6 +147,7 @@ function createReadyReminder({ isReady, show, intervalMs = READY_REMINDER_MS, ti
 
 module.exports = {
   READY_REMINDER_MS,
+  engineRecordAtHealthGate,
   decideOffer,
   engineChangePolicy,
   savePendingEngine,

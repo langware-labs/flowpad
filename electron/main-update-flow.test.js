@@ -23,11 +23,13 @@ const EXPOSE = `
 module.exports.__t = {
   offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
-  runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer,
+  runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer, runRecoveryUpdate,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
   disarmAccountWatch: () => { accountWatcher = { close() {} }; },
   getDesktopStatus: () => desktopStatus,
+  getStartupFailed: () => startupFailed,
+  createWindow, getMainWindow: () => mainWindow, startupUpdateNotice,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
@@ -35,6 +37,8 @@ module.exports.__t = {
   setQuitting: (v) => { isQuitting = v; },
   setUvManager: (u) => { uvManager = u; },
   getUvManager: () => uvManager,
+  setSquirrelStages: (v) => { squirrelStages = v; },
+  BACKEND_URL,
 };`;
 
 let passed = 0;
@@ -80,6 +84,7 @@ function load(opts = {}) {
   global.setInterval = (fn, ms) => { const h = { fn, ms, unref() {} }; intervals.push(h); return h; };
 
   const ipc = {};
+  const once = {};
   const dialogCalls = [];
   const responses = [...(opts.dialogResponses || [])];
   let releaseDialog = () => {};
@@ -94,12 +99,23 @@ function load(opts = {}) {
       return { updateInfo: { version: opts.desktopFeed || opts.appVersion || '0.2.47' } };
     },
     downloadUpdate() { autoUpdater.downloads.push(1); return new Promise((r, j) => { autoUpdater.finishDownload = r; autoUpdater.failDownload = j; }); },
-    quitAndInstall: (...a) => { autoUpdater.quits.push(a); },
+    // Like the real updater on success: the installer is spawned and the app's quit begins on the next
+    // turn (before-quit). A scenario that simulates a failing install sets quitOnInstall = false and
+    // emits the updater's 'error' itself.
+    quitOnInstall: true,
+    quitAndInstall: (...a) => {
+      autoUpdater.quits.push(a);
+      if (autoUpdater.quitOnInstall) setImmediate(() => emitApp('before-quit', { preventDefault() {} }));
+    },
   });
+  // Electron's own autoUpdater — Squirrel.Mac, which stages a fetched update (opts.squirrel scenarios).
+  const nativeUpdater = new EventEmitter();
+  const appHandlers = {};
+  const emitApp = (ev, ...a) => (appHandlers[ev] || []).forEach((fn) => fn(...a));
   const electron = {
     app: {
       requestSingleInstanceLock: () => true, setAsDefaultProtocolClient() {}, getPath: () => userData, whenReady: () => new Promise(() => {}),
-      on() {}, isPackaged: true, getVersion: () => opts.appVersion || '0.2.47', quit() {}, exit() {}, commandLine: { appendSwitch() {} }, setName() {}, setAppUserModelId() {},
+      on(ev, fn) { (appHandlers[ev] = appHandlers[ev] || []).push(fn); }, isPackaged: true, getVersion: () => opts.appVersion || '0.2.47', quit() {}, exit() {}, commandLine: { appendSwitch() {} }, setName() {}, setAppUserModelId() {},
     },
     BrowserWindow: BW,
     dialog: { showMessageBox: async (...a) => {
@@ -112,7 +128,10 @@ function load(opts = {}) {
       if (o && o.signal && o.signal.aborted) return { response: o.cancelId !== undefined ? o.cancelId : 1 };
       return { response: responses.length ? responses.shift() : 1 };
     }, showErrorBox() {} },
-    ipcMain: { on() {}, handle(ch, fn) { ipc[ch] = fn; }, once() {} },
+    // A test calls a handler with no event (or null): it is the app's own page — the top frame of the
+    // window, on the backend's origin. A scenario passes its own event to exercise the sender check.
+    ipcMain: { on() {}, handle(ch, fn) { ipc[ch] = (ev, ...a) => fn(ev || trustedEvent(), ...a); }, once(ch, fn) { once[ch] = fn; } },
+    autoUpdater: nativeUpdater,
     shell: mk(), clipboard: mk(), Menu: mk(), nativeImage: mk(), session: mk(), screen: mk(), Tray: mk(), globalShortcut: mk(), powerMonitor: mk(), protocol: mk(), net: mk(), desktopCapturer: mk(), systemPreferences: mk(), Notification: mk(),
   };
   const logLines = [];
@@ -125,8 +144,25 @@ function load(opts = {}) {
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.168'; }
     installedPairIssue() { return opts.pairIssue || null; }
-    async resolveCompatibleEngineVersion() { return opts.compatibleRelease || null; }
+    async resolveCompatibleEngineVersion() { if (opts.resolveThrows) throw new Error(opts.resolveThrows); return opts.compatibleRelease || null; }
+    async _readCandidateMinDesktop() {
+      if (opts.candidateFloor === 'unreadable') return null;
+      if (opts.candidateFloor === 'invalid') return 'invalid';
+      return { minDesktopVersion: opts.candidateFloor || null };
+    }
+    async _flowStop() { uv.flowStops = (uv.flowStops || 0) + 1; }
+    async _killPort() {}
+    async recoverAfterFailedUpgrade() {
+      uv.recovered = (uv.recovered || 0) + 1;
+      const fails = opts.recoveryFails === true ? Infinity : (opts.recoveryFails || 0);
+      return uv.recovered > fails;
+    }
     async _pypiUpdateStatus() { return opts.engineStatus === undefined ? { currentVersion: '0.2.168', latestVersion: '0.2.180', required: true } : opts.engineStatus; }
+    async engineUpdatePreflight() {
+      return opts.preflight === undefined
+        ? { installed: '0.2.168', latest: '0.2.180', updateAvailable: true, latestMinDesktop: null, latestCompatible: true, newestCompatible: null }
+        : opts.preflight;
+    }
     deferPackageVersion(v) { uv.deferred.push(v); }
     undeferPackageVersion(v) { uv.undeferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }
@@ -139,7 +175,7 @@ function load(opts = {}) {
     async reinstall() { uv.reinstalls = (uv.reinstalls || 0) + 1; }
     async start() { uv.started = (uv.started || 0) + 1; }
     async stop() { uv.stopped = (uv.stopped || 0) + 1; }
-    isInstalling() { return false; }
+    isInstalling() { return this._isInstalling; }
     setFailureSharer(fn) { this.sharer = fn; }
     openPackageDialogVersion() { return null; }
     async getLatestPypiVersion() { return null; }
@@ -170,11 +206,13 @@ function load(opts = {}) {
     t = m.exports.__t;
   } finally { Module._load = origLoad; process.on = realProcessOn; } // global.setInterval stays captured: setupElectronAutoUpdater() arms its tick later
 
-  const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], loadFile: async () => {}, loadURL() {}, show() {}, hide() {}, focus() {} };
+  const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], loadedFiles: [], loadFile: async (p) => { win.loadedFiles.push(p); }, loadURL() {}, show() {}, hide() { win.hides = (win.hides || 0) + 1; }, focus() {} };
+  const trustedEvent = () => ({ sender: win.webContents, senderFrame: { url: `${t.BACKEND_URL}/dock/home`, parent: null } });
   t.setMainWindow(win);
+  t.setSquirrelStages(!!opts.squirrel); // the macOS staging step is a scenario choice, not the host's platform
   t.setUvManager(new FakeUv());
   t.setBackendReady(opts.backendReady !== false); // the app is up unless a test says it is still starting
-  return { t, ipc, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
+  return { t, ipc, once, processHandlers, nativeUpdater, emitApp, trustedEvent, win, sent: win.sent, loadedFiles: win.loadedFiles, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
 }
 
 const REMINDER_MS = 90 * 60 * 1000;
@@ -312,8 +350,11 @@ const HOUR = 60 * 60 * 1000;
     await env.t.getDesktopUpdateVersion();
     await env.t.offerDesktopUpdate('0.2.48');
     eq(env.t.engineChangeAllowed('test'), 'hold', 'held while the desktop is pending');
-    await env.t.restartApplier.apply();
+    env.autoUpdater.quitOnInstall = false; // the installer never takes over
+    const applying = env.t.restartApplier.apply();
+    await tick();
     env.t.restartApplier.failed(new Error('could not restart'));
+    eq(await applying, 'failed', 'apply() reports the failure, not "quitting"');
     eq(env.t.engineChangeAllowed('test'), 'hold', 'still held after "Restart now" failed: the new desktop is not running');
     await env.t.checkPackageUpdateInBackground();
     eq(env.uv.checks, 0, 'after a failed restart: no engine check');
@@ -1137,6 +1178,17 @@ const HOUR = 60 * 60 * 1000;
       }
     }
     {
+      // Fix: the ENGINE is the old side and the FEED CHECK FAILED ('unknown' → engine changes held):
+      // the repair still runs — it installs a release chosen for the RUNNING desktop, so the hold
+      // (which protects a PENDING newer desktop) is irrelevant in this direction. Holding it left
+      // an incompatible pair running with only a log line.
+      const env = load({ appVersion: '0.2.47', desktopCheckThrows: 'feed offline', pairIssue: engineOld, compatibleRelease: compatible });
+      await env.t.getDesktopUpdateVersion();
+      eq(env.t.engineChangeAllowed('test'), 'hold', 'the failed feed check holds ordinary engine changes');
+      const r = await env.t.installAndStartBackend();
+      eq([r.ok, upgradedTo(env)], [true, ['0.2.65']], 'engine too old: repaired despite the hold');
+    }
+    {
       // A repair that FAILS must not break startup either.
       const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', pairIssue: engineOld, compatibleRelease: compatible, upgradeThrows: 'uv failed' });
       await env.t.getDesktopUpdateVersion();
@@ -1153,7 +1205,8 @@ const HOUR = 60 * 60 * 1000;
     const r = await env.t.installAndStartBackend();
     eq(r.ok, true, 'startup succeeds');
     eq(env.uv.upgrades, [Object.assign({ version: '0.2.180' }, { onProgress: env.uv.upgrades[0] && env.uv.upgrades[0].onProgress })], 'installs flowpad==0.2.180 — the version that was agreed, not "latest"');
-    eq(env.readState(), null, 'the saved version is spent');
+    eq([env.readState().phase, env.readState().consented, env.readState().previousEngine], ['installed', false, '0.2.168'],
+      'the record waits for the HEALTHY gate, demoted meanwhile — a crash in between ASKS next launch');
     eq(env.dialogCalls.length, 0, 'no dialog: the user already agreed');
     eq(r.backendJustUpgraded, true, 'the start waits the longer post-upgrade window');
   }
@@ -1248,6 +1301,633 @@ const HOUR = 60 * 60 * 1000;
     const plain = { ...launch, stderr: 'Traceback …\nModuleNotFoundError: No module named flow_sdk\n' };
     eq((await env.t.waitForBackend({ maxChecks: 2, launch: plain })).reason, 'launcher-failed', 'any other launcher failure stays launcher-failed');
     delete global.fetch;
+  }
+
+  // ── the version panel's update IPC (FLOWPAD-2310) ────────────────────────
+  const pushes = (env) => env.sent.filter(([ch]) => ch === 'desktop-update-state').map(([, d]) => d);
+  {
+    // update:get-info — the one snapshot the panel renders from.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', preflight: { installed: '0.2.168', latest: '0.2.180', updateAvailable: true, latestMinDesktop: '0.2.48', latestCompatible: false, newestCompatible: '0.2.175' } });
+    const info = await env.ipc['update:get-info']();
+    eq(info.desktop, { installed: '0.2.47', state: 'available', available: '0.2.48', downloadState: 'idle', meetsEngineFloor: true }, 'get-info: a newer desktop on the feed is reported (and it satisfies the engine floor), nothing downloading yet');
+    eq(info.engine && info.engine.latestCompatible, false, "get-info: the engine pre-flight is the shell's verdict, passed through");
+    eq(info.busy, false, 'get-info: idle');
+    eq(await env.ipc['update:take-resumed'](), null, 'nothing resumed');
+  }
+  {
+    // update:download-desktop — one download, no dialog, engine held; Update Now applies it.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    const r = await env.ipc['update:download-desktop']();
+    eq(r, { started: true, version: '0.2.48' }, 'download-desktop: starts and names the version');
+    eq(env.autoUpdater.downloads.length, 1, 'download-desktop: exactly one download');
+    eq(env.dialogCalls.length, 0, 'download-desktop: NO native dialog — the panel is the surface');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'download-desktop: engine changes hold for the whole window');
+    eq(await env.ipc['update:download-desktop'](), { started: true, version: '0.2.48' }, 'a second click: no second download');
+    eq(env.autoUpdater.downloads.length, 1, 'still one download');
+
+    env.autoUpdater.emit('download-progress', { percent: 42, transferred: 42, total: 100 }); await tick();
+    ok(pushes(env).some((d) => d.state === 'downloading' && d.percent === 42), 'progress reaches the panel');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.dialogCalls.length, 0, 'downloaded: still no native prompt (panel flow)');
+    ok(pushes(env).some((d) => d.state === 'ready' && d.version === '0.2.48'), 'the panel hears the download is ready');
+    eq((await env.ipc['update:get-info']()).desktop.downloadState, 'ready', 'get-info now says ready');
+
+    env.autoUpdater.quitOnInstall = false; // the installer fails AFTER quitAndInstall returned (async NSIS spawn)
+    const applying = env.ipc['update:apply-desktop']();
+    await tick(); await tick();
+    eq(env.autoUpdater.quits, [[true, true]], 'quitAndInstall(silent, relaunch)');
+    eq(env.uv.stopped, 1, 'the backend was stopped first');
+    ok(pushes(env).some((d) => d.state === 'installing'), 'and the panel hears it is installing');
+
+    // The installer could NOT start (cancelled pkexec, a spawn error): apply() had already stopped
+    // the backend, so the failure must bring it back — and reach the panel as an APPLY error
+    // (Retry re-applies the landed artifact, not the download).
+    env.autoUpdater.emit('error', new Error('cannot find the installer')); await tick(); await tick();
+    eq(await applying, { started: false, reason: 'apply-failed' }, 'apply-desktop answers with the REAL outcome, not "started"');
+    ok(pushes(env).some((d) => d.state === 'error' && d.apply === true && /installer/.test(d.error)),
+      'the panel hears the apply failure, marked as apply');
+    eq(env.uv.recovered, 1, 'the stopped backend is brought back (recovery ran)');
+
+    // …and a retry that the installer DOES take over answers "started".
+    env.autoUpdater.quitOnInstall = true;
+    eq(await env.ipc['update:apply-desktop'](), { started: true, version: '0.2.48' }, 'apply-desktop: Update Now installs');
+  }
+  {
+    // update:apply-desktop refusals — nothing downloaded, or another update running.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    eq(await env.ipc['update:apply-desktop'](), { started: false, reason: 'not-downloaded' }, 'apply-desktop: nothing downloaded → refused');
+    env.uv.instance._isInstalling = true;
+    eq((await env.ipc['update:download-desktop']()).reason, 'busy', 'download-desktop: refused while an engine install runs');
+    eq((await env.ipc['update:apply-desktop']()).reason, 'busy', 'apply-desktop: refused while an engine install runs');
+    env.uv.instance._isInstalling = false;
+    eq(env.autoUpdater.downloads.length, 0, 'nothing was downloaded by the refused calls');
+  }
+  {
+    // update:download-desktop with no newer desktop.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    eq(await env.ipc['update:download-desktop'](), { started: false, reason: 'no-update' }, 'download-desktop: running the latest → no-update');
+  }
+  {
+    // update:both — the popup's consent is saved BEFORE the download, so quitting early still finishes both.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    eq(await env.ipc['update:both'](null, 'not a version'), { started: false, reason: 'invalid-version' }, 'update:both: a malformed version never becomes an install argument');
+    const r = await env.ipc['update:both'](null, '0.2.180');
+    eq(r, { started: true, version: '0.2.48', engineVersion: '0.2.180' }, 'update:both: starts the desktop download, engine riding along');
+    eq(env.readState(), Object.assign({}, env.readState(), { engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }), 'the engine version is saved, marked panel-initiated, and ALREADY consented (the popup click was the consent)');
+    eq(env.uv.deferred, ['0.2.180'], 'no separate engine dialog for that version');
+    eq(env.dialogCalls.length, 0, 'no native dialog anywhere in the panel flow');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'the engine holds until the new desktop runs');
+
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.dialogCalls.length, 0, 'downloaded: still no native prompt');
+    // The scheduled pass must not re-offer or prompt over the panel flow.
+    await env.t.runScheduledUpdateCheck({ bypassSchedule: true }); await tick();
+    eq(env.dialogCalls.length, 0, 'the periodic check stays quiet while the panel flow is pending');
+    const applied = await env.ipc['update:apply-desktop']();
+    eq([applied.started, env.autoUpdater.quits.length], [true, 1], 'Update Now restarts into the new desktop');
+    eq(env.readState().consented, true, 'the pending engine rides along, consented');
+  }
+  {
+    // A background download the user postponed with the native "Later" surfaces in the panel as ready.
+    const env = load({ engineStatus: null, dialogResponses: [1 /* Later at the ready prompt */] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    const info = await env.ipc['update:get-info']();
+    eq(info.desktop.downloadState, 'ready', 'a "Later"-deferred download reads as ready in the panel');
+    eq(info.desktop.available, '0.2.48', 'and names the version');
+    const applied = await env.ipc['update:apply-desktop']();
+    eq([applied.started, env.autoUpdater.quits.length], [true, 1], 'Update Now installs the postponed update without waiting for a restart');
+  }
+  {
+    // Next launch after a panel-initiated coordinated update: the agreed engine installs and the panel is told, once.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }));
+    const r = await env.t.installAndStartBackend();
+    eq([r.ok, env.uv.upgrades.map((u) => u.version)], [true, ['0.2.180']], 'the agreed engine version is installed by the new desktop');
+    eq([env.readState().phase, env.readState().consented], ['installed', false],
+      'the record is spent only at the HEALTHY gate — a kill between install and health asks next launch');
+    eq(await env.ipc['update:take-resumed'](), { kind: 'coordinated', success: true, engineVersion: '0.2.180', desktopVersion: '0.2.48' }, 'take-resumed reports the resumed outcome');
+    eq(await env.ipc['update:take-resumed'](), null, '…exactly once');
+  }
+  {
+    // Same, but the resumed engine install fails: the panel is told that too, and the engine is preserved.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', upgradeThrows: 'uv failed' });
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }));
+    const r = await env.t.installAndStartBackend();
+    eq(r.ok, true, 'startup still succeeds with the current engine');
+    eq(await env.ipc['update:take-resumed'](), { kind: 'coordinated', success: false, engineVersion: '0.2.180', desktopVersion: '0.2.48', error: 'uv failed' }, 'the failure reaches the panel');
+    eq(env.readState() && env.readState().consented, false, "the intent survives as a QUESTION for the next launch ('FlowPad will offer it again' is now true)");
+  }
+  {
+    // A native-dialog coordinated update (no source) resumes silently — nothing pushed at the panel.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: true }));
+    await env.t.installAndStartBackend();
+    eq(await env.ipc['update:take-resumed'](), null, 'a dialog-initiated resume stays out of the panel');
+  }
+  {
+    // A failed download surfaces in the panel from the download's OWN catch (the Retry re-invokes
+    // download-desktop); stray 'error' events on the shared emitter never touch the row.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.emit('error', new Error('emitter noise')); await tick();
+    eq(pushes(env).filter((d) => d.state === 'error').length, 0, 'emitter noise is not a download error');
+    env.autoUpdater.failDownload(new Error('download failed: network dropped')); await tick(); await tick();
+    ok(pushes(env).some((d) => d.state === 'error' && /network dropped/.test(d.error)), "the download's own failure reaches the panel");
+  }
+  {
+    // After a FAILED panel download the periodic tick retries it WITHOUT a native prompt: the panel
+    // still owns that version's flow (it shows Ready/Update Now; the native "Restart now" never pops).
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.emit('error', new Error('network dropped'));
+    env.autoUpdater.finishDownload(); await tick(); await tick(); // the failed download settles; the in-flight flags reset
+    await env.t.runScheduledUpdateCheck({ bypassSchedule: true }); await tick();
+    eq(env.autoUpdater.downloads.length, 2, 'the scheduled pass re-downloads the panel-owned version');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.dialogCalls.length, 0, 'no native prompt: the panel owns this version');
+    ok(pushes(env).some((d) => d.state === 'ready' && d.version === '0.2.48'), 'the panel hears it is ready instead');
+  }
+  {
+    // The panel ADOPTS a download the background flow already started WITH a prompt: Update Both over
+    // an in-flight download turns the native "Restart now" off — the panel's own flow wins.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48'); // desktop-only: downloads in the background, prompt on ready
+    eq(env.autoUpdater.downloads.length, 1, 'the background download is running');
+    const r = await env.ipc['update:both'](null, '0.2.180');
+    eq([r.started, r.engineVersion, env.autoUpdater.downloads.length], [true, '0.2.180', 1], 'adopted: started, engine named, and no second download');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.dialogCalls.length, 0, 'no native "Restart now" over the adopted panel flow');
+    eq(env.readState().consented, true, 'the engine rides along, consented');
+  }
+  {
+    // The pinned engine does not fit even the TARGET desktop: Update Both SUBSTITUTES the newest
+    // engine that desktop accepts — a doomed pin never rides, and the update is never refused.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0', compatibleRelease: { version: '0.2.200', minDesktopVersion: null } });
+    env.t.setupElectronAutoUpdater();
+    const r = await env.ipc['update:both'](null, '0.2.240');
+    eq([r.started, r.version], [true, '0.2.48'], 'started — with a substitute, not a refusal');
+    eq([env.readState().engineVersion, env.readState().consented], ['0.2.200', true], 'the pending engine is the newest the target desktop accepts');
+  }
+  {
+    // ...and when no compatible engine is newer than the installed one, the desktop goes ALONE
+    // (the installed engine was selected for a desktop this one supersedes; the startup pair
+    // repair has the last word) — never a refusal, never a doomed pin. The answer SAYS the engine
+    // stayed behind (engineVersion: null), and a stale record cannot ride along.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0', compatibleRelease: { version: '0.2.100', minDesktopVersion: null } });
+    env.t.setupElectronAutoUpdater();
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.150', desktopVersion: '0.2.40', consented: true })); // a stale agreement
+    const r = await env.ipc['update:both'](null, '0.2.240');
+    eq([r.started, r.engineVersion], [true, null], 'started as a desktop-only update, and the answer says so');
+    eq(env.readState(), null, 'no pending engine was saved — and the stale record is cleared');
+    eq(env.autoUpdater.downloads.length, 1, 'the desktop download runs');
+  }
+  {
+    // An UNREADABLE floor (offline wheel read) is not a verdict: the pin stays, the install gates
+    // decide — dropping the engine on "unknown" contradicted the product rule.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: 'unreadable' });
+    env.t.setupElectronAutoUpdater();
+    const r = await env.ipc['update:both'](null, '0.2.240');
+    eq([r.started, r.engineVersion], [true, '0.2.240'], 'unreadable floor: the pin is kept');
+    eq(env.readState().engineVersion, '0.2.240', 'and saved for the new desktop to install');
+  }
+  {
+    // A relaunch of the OLD desktop (install-on-quit did not run) re-offers the update: the
+    // already-consented agreement for the SAME desktop must survive, not be overwritten unconsented.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1 /* Later */] });
+    env.t.setupElectronAutoUpdater();
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }));
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48');
+    eq([env.readState().consented, env.readState().source], [true, 'panel'], "the user's earlier agreement is kept");
+  }
+  {
+    // Fix א (mid-session): the installed engine is below the RUNNING desktop's own floor and the
+    // feed check failed ('unknown' → hold): the engine check proceeds anyway — the repair targets
+    // THIS desktop, so the hold is irrelevant, and an incompatible pair must not run until relaunch.
+    const env = load({ appVersion: '0.2.48', desktopCheckThrows: 'feed offline', engineStatus: null,
+      pairIssue: { message: 'pair broken', reasons: ['engine below floor'], engineVersion: '0.2.100', minDesktopVersion: null, desktopTooOld: false } });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion(); // 'unknown' → engine changes held
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'the feed failure holds engine changes');
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 1, 'the engine-old-side repair passes the hold (the pair must not wait for a relaunch)');
+  }
+  {
+    // Fix א (surface): a pair that runs incompatible anyway is SHOWN by update:get-info.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48',
+      pairIssue: { message: 'FlowPad Desktop 0.2.47 is not compatible with FlowPad Backend 0.2.100.', reasons: ['x'], engineVersion: '0.2.100', minDesktopVersion: null, desktopTooOld: false } });
+    const info = await env.ipc['update:get-info']();
+    ok(/not compatible/.test(info.pairWarning), 'the panel hears about the incompatible running pair');
+  }
+  {
+    // "Later" at the native ready prompt starts the 90-minute reminder; ADOPTING the update from the
+    // panel stops it, and the native ready prompt never pops over the panel's Ready state again.
+    const env = load({ engineStatus: null, dialogResponses: [1 /* Later */] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq([env.dialogCalls.length, env.t.readyReminder.running], [1, true], 'Later at the prompt: the reminder is armed');
+    ok(pushes(env).some((d) => d.state === 'ready' && d.version === '0.2.48'),
+      'and the panel hears READY — its last word must not stay "downloading… 100%"');
+    const r = await env.ipc['update:download-desktop']();
+    eq([r.started, r.ready], [true, true], 'the panel adopts the already-downloaded update');
+    eq(env.t.readyReminder.running, false, 'adoption stops the 90-minute reminder');
+    await env.t.showDesktopReadyPrompt('0.2.48');
+    eq(env.dialogCalls.length, 1, 'the native ready prompt stays away from a panel-owned version');
+  }
+  {
+    // Once the download LANDED, a late stray error (a periodic feed check failing) does not replace
+    // the panel's Ready state with a dead "Retry the download".
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    env.autoUpdater.finishDownload(); await tick(); // the download promise settles with the event
+    env.sent.length = 0;
+    env.autoUpdater.emit('error', new Error('periodic feed check failed')); await tick();
+    eq(pushes(env).length, 0, 'ready is not replaced by a stray error after the download landed');
+  }
+  {
+    // The panel's silencing is scoped to ITS version: a DIFFERENT release downloaded natively later
+    // still gets the native ready prompt — panel ownership of 0.2.48 must not mute updates for ever.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop'](); // the panel owns 0.2.48
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    env.autoUpdater.finishDownload(); await tick();
+    eq(env.dialogCalls.length, 0, 'panel-owned 0.2.48: no native prompt');
+    env.sent.length = 0;
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.49' }); await tick(); await tick();
+    eq(env.dialogCalls.length, 1, 'a different, natively-downloaded release still prompts');
+    // While the prompt is OPEN it is the ready surface (no push beside it); once the user says
+    // "Later" the PANEL becomes the surface, so exactly one ready push follows the answer.
+    eq(pushes(env).filter((d) => d.state === 'ready' && d.version === '0.2.49').length, 1,
+      'after "Later" the panel hears READY (and not before)');
+  }
+  {
+    // 'update:get-info' asks the feed at most once a minute: the popover open and the Upgrade click
+    // right after it share one answer (the scheduled pass calls the check directly, unthrottled).
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    let checks = 0;
+    const orig = env.autoUpdater.checkForUpdates;
+    env.autoUpdater.checkForUpdates = async (...a) => { checks += 1; return orig(...a); };
+    await env.ipc['update:get-info']();
+    await env.ipc['update:get-info']();
+    eq(checks, 1, 'two get-info calls within the TTL: one feed check');
+  }
+  {
+    // A FAILED feed check is not stamped into the TTL: "Check again" right after a failure really
+    // asks again; only an ANSWERED check starts the quiet minute.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    let checks = 0; let failCheck = true;
+    const orig = env.autoUpdater.checkForUpdates;
+    env.autoUpdater.checkForUpdates = async (...a) => { checks += 1; if (failCheck) throw new Error('offline'); return orig(...a); };
+    await env.ipc['update:get-info']();
+    failCheck = false;
+    await env.ipc['update:get-info']();
+    eq(checks, 2, 'the failed check did not start the TTL — Check again really checked');
+    await env.ipc['update:get-info']();
+    eq(checks, 2, 'the ANSWERED check did: a third call within the minute is served from the snapshot');
+  }
+  {
+    // An UNPARSEABLE floor is not positive knowledge: the pin stays held and nothing is stopped.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '1.0' });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['upgrade-flowpad'](null, { version: '0.2.240' });
+    eq([r.desktopUpdatePending, env.uv.upgrades.length, env.uv.flowStops || 0], [true, 0, 0],
+      'an unparseable floor: held, server untouched');
+  }
+  {
+    // A release published WHILE the panel downloads: the panel keeps ownership of the superseding
+    // version — its row restarts at 0% and no native dialog pops over it.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop'](); // the panel downloads 0.2.48
+    env.autoUpdater.checkForUpdates = async () => ({ updateInfo: { version: '0.2.49' } });
+    const run = env.t.runScheduledUpdateCheck({ bypassSchedule: true });
+    await tick(); env.autoUpdater.finishDownload(); // the cancelled 0.2.48 download settles
+    await run; await tick();
+    eq(env.dialogCalls.length, 0, 'no native dialog for the superseding release');
+    eq(env.autoUpdater.downloads.length, 2, 'the superseding download started');
+    ok(pushes(env).some((d) => d.state === 'downloading' && d.version === '0.2.49'), "the panel's row restarts for 0.2.49");
+  }
+  {
+    // The panel owns a READY update and a newer release appears: ownership carries over — no native
+    // dialog, and the consented panel record follows the new desktop instead of being overwritten.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:both'](null, '0.2.180');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    env.autoUpdater.finishDownload(); await tick();
+    env.autoUpdater.checkForUpdates = async () => ({ updateInfo: { version: '0.2.49' } });
+    await env.t.runScheduledUpdateCheck({ bypassSchedule: true }); await tick();
+    eq(env.dialogCalls.length, 0, 'no native dialog over the panel-owned READY update');
+    eq([env.readState().desktopVersion, env.readState().consented, env.readState().source], ['0.2.49', true, 'panel'],
+      'the consented record follows the superseding desktop');
+    ok(pushes(env).some((d) => d.state === 'downloading' && d.version === '0.2.49'), 'the panel row restarts for 0.2.49');
+    eq(env.autoUpdater.downloads.length, 2, 'the superseding download started');
+  }
+  {
+    // A transient FEED-CHECK failure during a live panel download must not flip the row to "Retry":
+    // the feed check's 'error' lands on the same emitter as download errors.
+    const env = load({ engineStatus: null, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.checkForUpdates = async () => { env.autoUpdater.emit('error', new Error('feed offline')); throw new Error('feed offline'); };
+    await env.t.getDesktopUpdateVersion(); await tick();
+    eq(pushes(env).filter((d) => d.state === 'error').length, 0, 'a feed-check error does not touch the live download row');
+    env.autoUpdater.failDownload(new Error('download broke')); await tick(); await tick();
+    ok(pushes(env).some((d) => d.state === 'error' && /download broke/.test(d.error)), 'a real download error still lands');
+  }
+  {
+    // The popup's "works with this desktop" fallback: a pinned release whose floor the RUNNING
+    // desktop meets passes the desktop-first hold; an unmet floor is still refused.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.2.40', upgradeThrows: 'stub stops the flow here' });
+    await env.t.getDesktopUpdateVersion(); // a newer desktop is pending → engine changes hold
+    const refused = await env.ipc['upgrade-flowpad']();
+    eq([refused.desktopUpdatePending, env.uv.upgrades.length], [true, 0], 'a plain upgrade is still held');
+    const r = await env.ipc['upgrade-flowpad'](null, { version: '0.2.180' });
+    eq(r.desktopUpdatePending, undefined, 'the floor-compatible pin passes the hold');
+    eq(env.uv.upgrades.map((u) => u.version), ['0.2.180'], 'and targets exactly the promised release');
+  }
+  {
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0' });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['upgrade-flowpad'](null, { version: '0.2.240' });
+    eq([r.desktopUpdatePending, env.uv.upgrades.length], [true, 0], 'a pin whose floor the desktop does NOT meet stays held');
+  }
+
+  // ── the panel's engine upgrade never strands the user (the "stuck update" incident) ──
+  {
+    // A failed upgrade (e.g. "no version of flowpad==0.2.238") restores the old engine — the window is
+    // never left on the loading splash over a dead backend.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', compatibleRelease: { version: '0.2.238', minDesktopVersion: null }, upgradeThrows: 'there is no version of flowpad==0.2.238' });
+    await env.t.getDesktopUpdateVersion(); // desktop current → engine changes allowed
+    const r = await env.ipc['upgrade-flowpad']();
+    eq([r.success, r.error], [false, 'there is no version of flowpad==0.2.238'], 'the failure reaches the caller (the popover shows it)');
+    eq(env.uv.recovered, 1, 'the old engine was restored, not a frozen splash');
+    eq(env.uv.upgrades.map((u) => u.version), ['0.2.238'], 'the upgrade targeted the pre-resolved compatible release');
+    const resumed = await env.ipc['update:take-resumed']();
+    eq([resumed.kind, resumed.success, resumed.restored, resumed.desktopVersion], ['engine', false, true, '0.2.48'],
+      'the reloaded panel learns an ENGINE-only upgrade failed and the old one is back — not "Desktop updated to…"');
+  }
+  {
+    // Even recovery failing is surfaced: the startup error panel names the cause — WITH a Retry.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', upgradeThrows: 'uv exploded', recoveryFails: true });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['upgrade-flowpad']();
+    eq(r.success, false, 'the failure is returned');
+    await tick(); await tick(); // the panel comes from the DETACHED retry loop
+    ok(env.sent.some(([ch, d]) => ch === 'startup-error' && /uv exploded/.test(d.detail) && d.retryable === true),
+      'the error panel names it and offers Retry (Quit-only was a dead end)');
+  }
+  {
+    // ...and the Retry actually re-runs the recovery until it lands.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', upgradeThrows: 'uv exploded', recoveryFails: 1 });
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['upgrade-flowpad']();
+    await tick(); await tick();
+    eq(env.uv.recovered, 1, 'the first recovery failed; the panel is up');
+    eq(env.t.getStartupFailed(), true, 'the error panel marks the startup failed');
+    env.once['retry-startup'](); await tick(); await tick();
+    eq(env.uv.recovered, 2, "the panel's Retry re-ran the recovery (and it landed)");
+    eq(env.t.getStartupFailed(), false, 'a landed recovery clears startupFailed — a Dock click must not relaunch a healthy app');
+  }
+  {
+    // Resolution is checked while the backend still RUNS: a definitive refusal returns before the
+    // server is stopped or the window leaves the app.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', resolveThrows: 'No compatible FlowPad engine release found for Desktop 0.2.48' });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['upgrade-flowpad']();
+    eq([r.success, /No compatible/.test(r.error)], [false, true], "refused with the resolver's own words");
+    eq(env.uv.flowStops || 0, 0, 'the backend was not stopped');
+    eq(env.uv.upgrades.length, 0, 'nothing was installed');
+    eq(env.loadedFiles.length, 0, 'the window never left the app');
+    eq(env.uv.recovered || 0, 0, 'and there was nothing to recover');
+  }
+
+
+  {
+    // Review (stuck case): the agreed engine installed, then an unrelated startup failure and Retry ran
+    // installAndStartBackend AGAIN. The installed-but-unproven record must survive the re-run — it
+    // carries previousEngine, the only way back if the new engine never answers.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', engine: '0.2.180' });
+    const record = { engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false, phase: 'installed', previousEngine: '0.2.168', source: 'panel' };
+    fs.writeFileSync(env.statePath, JSON.stringify(record));
+    await env.t.installAndStartBackend();
+    eq(env.readState(), record, 'Retry re-runs the startup: the rollback record is kept for the health gate');
+    eq(env.uv.upgrades.length, 0, 'and nothing is reinstalled');
+  }
+
+  {
+    // Retry after the unhealthy-engine restore re-runs startApp(): its createWindow() must reuse the
+    // live window (back to the loading screen), not open a second one and orphan the error panel.
+    const env = load({});
+    const before = env.t.getMainWindow();
+    env.t.createWindow();
+    ok(env.t.getMainWindow() === before, 'the live window is reused');
+    ok(env.loadedFiles.some((f) => /loading\.html$/.test(f)), 'and put back on the loading screen');
+  }
+
+  {
+    // First setup restarts into a newer desktop: the WINDOW says so (a missed OS toast used to make the
+    // closing window read as a crash), stays on screen until the quit, and the next launch confirms.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const notices = () => env.sent.filter(([ch]) => ch === 'startup-notice').map(([, d]) => d);
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    ok(notices().some((n) => n && /Updating FlowPad to 0\.2\.48/.test(n.title) && /reopens by itself/.test(n.detail)),
+      'desktop-first: the window explains, from the download on, that FlowPad will close and reopen');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload();
+    const r = await p;
+    eq(r.ok, false, 'desktop-first: this launch ends in the update');
+    ok(notices().some((n) => n && /Installing FlowPad 0\.2\.48/.test(n.title)), 'desktop-first: "installing — closes and reopens" before the quit');
+    eq(env.win.hides || 0, 0, 'desktop-first: the window is not hidden — the quit takes it with the notice on screen');
+
+    // The NEW launch (same userData) confirms the update landed, once.
+    const next = load({ installed: false, appVersion: '0.2.48', desktopFeed: '0.2.48', userDataDir: env.userData });
+    eq(next.t.startupUpdateNotice(), { title: 'FlowPad was updated to 0.2.48', detail: 'Finishing the setup — this takes a moment.' },
+      'the relaunched app says the update landed');
+    eq(next.t.startupUpdateNotice(), null, '…once');
+  }
+  {
+    // The relaunch is still the OLD version (a cancelled UAC / password prompt): say so, don't pretend.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload();
+    await p;
+    const again = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48', userDataDir: env.userData });
+    ok(/did not finish/.test(again.t.startupUpdateNotice().title), 'an update that did not land is reported as such');
+  }
+  {
+    // The desktop download fails: the notice is withdrawn and the engine is installed with this desktop.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    env.autoUpdater.finishDownload(); // no update-downloaded: failed
+    await p;
+    const last = env.sent.filter(([ch]) => ch === 'startup-notice').map(([, d]) => d).pop();
+    eq(last, null, 'a failed download withdraws the notice');
+    eq(env.t.startupUpdateNotice(), null, 'and leaves no marker for the next launch');
+  }
+
+  // ── review round 10: apply outcomes, macOS staging, IPC senders (FLOWPAD-2310) ──
+  const ticks = async (n = 10) => { for (let i = 0; i < n; i++) await tick(); };
+  {
+    // Desktop first, and the installer fails AFTER quitAndInstall returned (an async NSIS spawn error,
+    // Squirrel): the startup must fall back to installing the engine with this desktop — not end on a
+    // splash nobody manages.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    env.autoUpdater.quitOnInstall = false;
+    await env.t.getDesktopUpdateVersion();
+    const p = env.t.installAndStartBackend();
+    await ticks(2);
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload();
+    for (let i = 0; i < 20 && !env.autoUpdater.quits.length; i++) await tick();
+    eq(env.autoUpdater.quits.length, 1, 'async apply failure: the installer was handed over first');
+    env.autoUpdater.emit('error', new Error('spawn UNKNOWN'));
+    const r = await p;
+    eq(r.ok, true, 'async apply failure: the startup continues');
+    eq(env.uv.installs, 1, 'async apply failure: the engine is installed with this desktop');
+  }
+  {
+    // The recovery update: a failure inside the updater's own error event (a dismissed pkexec) is a
+    // FAILED attempt — not { ok: true } over a recovery screen nobody listens to.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    env.autoUpdater.quitOnInstall = false;
+    const p = env.t.runRecoveryUpdate({ version: '0.2.48', fingerprint: 'recovery|0.2.47' });
+    await tick();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' });
+    env.autoUpdater.finishDownload();
+    for (let i = 0; i < 20 && !env.autoUpdater.quits.length; i++) await tick();
+    env.autoUpdater.emit('error', new Error('pkexec: Request dismissed'));
+    const r = await p;
+    eq(r.ok, false, 'recovery update: the failure is reported');
+    ok(/could not be installed/.test(r.error), 'recovery update: with a reason');
+  }
+  {
+    // macOS: a FETCHED update is not installable until Squirrel staged it — Update Now waits, the row
+    // keeps showing it as in progress, and staging makes it ready.
+    const env = load({ squirrel: true, appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    eq((await env.ipc['update:download-desktop']()).started, true, 'macOS: the panel download starts');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' });
+    env.autoUpdater.finishDownload(); await ticks(3);
+    eq((await env.ipc['update:get-info']()).desktop.downloadState, 'downloading', 'macOS: fetched but not staged reads as still in progress');
+    eq(await env.ipc['update:apply-desktop'](), { started: false, reason: 'not-downloaded' }, 'macOS: Update Now is not offered before staging');
+    eq(env.autoUpdater.quits.length, 0, 'macOS: quitAndInstall is never called on an unstaged update');
+    eq(await env.ipc['update:download-desktop'](), { started: true, version: '0.2.48' }, 'macOS: a second click adopts the staging, no second download');
+    eq(env.autoUpdater.downloads.length, 1, 'macOS: still one download');
+    env.nativeUpdater.emit('update-downloaded'); await ticks(2);
+    ok(pushes(env).some((d) => d.state === 'ready' && d.version === '0.2.48'), 'macOS: staged → the panel hears it is ready');
+    eq(await env.ipc['update:apply-desktop'](), { started: true, version: '0.2.48' }, 'macOS: Update Now installs the staged update');
+  }
+  {
+    // macOS: Squirrel could not stage it (signature mismatch, read-only location): the row offers the
+    // DOWNLOAD again — never an apply that would wait for a staging that is not coming.
+    const env = load({ squirrel: true, appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' });
+    env.autoUpdater.finishDownload(); await ticks(3);
+    env.nativeUpdater.emit('error', new Error('code signature mismatch')); await tick();
+    ok(pushes(env).some((d) => d.state === 'error' && !d.apply && /signature/.test(d.error)), 'staging failed: an error row whose Retry downloads again');
+    eq(env.t.getState().desktopDownloadedVersion, null, 'staging failed: nothing reads as installable');
+    eq((await env.ipc['update:get-info']()).desktop.downloadState, 'idle', 'staging failed: the snapshot is idle (Download again)');
+  }
+  {
+    // macOS: an apply that Squirrel fails also offers the download again, and the ready state is gone.
+    const env = load({ squirrel: true, appVersion: '0.2.47', desktopFeed: '0.2.48', engineStatus: null });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['update:download-desktop']();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' });
+    env.autoUpdater.finishDownload(); await ticks(3);
+    env.nativeUpdater.emit('update-downloaded'); await ticks(2);
+    env.autoUpdater.quitOnInstall = false;
+    const applying = env.ipc['update:apply-desktop']();
+    for (let i = 0; i < 20 && !env.autoUpdater.quits.length; i++) await tick();
+    env.autoUpdater.emit('error', new Error('Squirrel could not install'));
+    eq(await applying, { started: false, reason: 'apply-failed' }, 'macOS apply failure: the real outcome');
+    ok(pushes(env).some((d) => d.state === 'error' && d.apply === false), 'macOS apply failure: Retry downloads again, not "Retry the update"');
+    eq(env.t.getState().desktopDownloadedVersion, null, 'macOS apply failure: no longer reads as ready');
+  }
+  {
+    // Every handler that changes what is installed answers only the app's own top-level page.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const foreign = { sender: {}, senderFrame: { url: 'https://evil.example/', parent: null } };
+    const subframe = { sender: {}, senderFrame: { url: `${env.t.BACKEND_URL}/embed`, parent: {} } };
+    const refused = async (ch, ev, ...a) => {
+      await assert.rejects(() => Promise.resolve().then(() => env.ipc[ch](ev, ...a)), /untrusted sender/, `${ch} refuses ${ev.senderFrame.url}`);
+      passed++;
+    };
+    for (const ch of ['update:get-info', 'update:take-resumed', 'update:download-desktop', 'update:apply-desktop', 'update:both', 'upgrade-flowpad', 'restart-backend', 'secrets:provision-sod-key']) {
+      await refused(ch, foreign, '0.2.180');
+    }
+    await refused('update:both', subframe, '0.2.180');
+    eq([env.autoUpdater.downloads.length, env.uv.upgrades.length, env.autoUpdater.quits.length], [0, 0, 0], 'refused senders changed nothing');
+    eq((await env.ipc['update:get-info']()).desktop.state, 'available', "the app's own page is still answered");
+  }
+  {
+    // upgrade-flowpad's pin is validated BEFORE anything stops: no downgrades, no malformed versions.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', engine: '0.2.180' });
+    await env.t.getDesktopUpdateVersion();
+    const down = await env.ipc['upgrade-flowpad'](null, { version: '0.2.170' });
+    eq([down.success, /not newer/.test(down.error)], [false, true], 'a downgrade pin is refused');
+    const same = await env.ipc['upgrade-flowpad'](null, { version: '0.2.180' });
+    eq(same.success, false, 'the installed version itself is refused');
+    const bad = await env.ipc['upgrade-flowpad'](null, { version: '0.2.181 & calc' });
+    eq([bad.success, /not an installable version/.test(bad.error)], [false, true], 'a malformed pin is refused');
+    eq([env.uv.flowStops || 0, env.uv.upgrades.length, env.loadedFiles.length], [0, 0, 0], 'nothing stopped, nothing installed, the window untouched');
+  }
+  {
+    // A newer build this machine is not offered (staged rollout, minimumSystemVersion): no desktop
+    // update for THIS machine — the engine must not be held behind a download that would fail.
+    const env = load({ appVersion: '0.2.47' });
+    env.autoUpdater.checkForUpdates = async () => { env.autoUpdater.checks++; return { updateInfo: { version: '0.2.48' }, isUpdateAvailable: false }; };
+    eq(await env.t.getDesktopUpdateVersion(), null, 'not offered: no desktop version to update to');
+    eq(env.t.getDesktopStatus().state, 'current', 'not offered: reads as current for this machine');
+    eq(env.t.engineChangeAllowed('test'), 'allow', 'not offered: the engine is not held');
+  }
+  {
+    // While an install is being applied, the scheduled pass leaves the feed alone.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    env.autoUpdater.quitOnInstall = false;
+    const applying = env.t.restartApplier.apply();
+    await ticks(3);
+    const before = env.autoUpdater.checks;
+    await env.t.runScheduledUpdateCheck({ bypassSchedule: true });
+    eq(env.autoUpdater.checks, before, 'no feed check while an install is being applied');
+    env.t.restartApplier.failed(new Error('done'));
+    eq(await applying, 'failed', 'and the apply settles');
   }
 
 console.log(`main-update-flow.test.js: ${passed} assertions passed`);
