@@ -3955,7 +3955,7 @@ msgstr "مشروع آخر"
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "خطوة أخرى تستخدم هذا المعرّف بالفعل — ستستبدل نتائجهما بعضها بعضًا."
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr ""
 
@@ -5472,7 +5472,7 @@ msgid "call"
 msgstr "استدعاء"
 
 #: src/components/voice/CallControls.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Call"
 msgstr "مكالمة"
 
@@ -7641,6 +7641,7 @@ msgstr "تم التحويل إلى لوحة Excalidraw"
 #: src/components/ui/media-lightbox.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/webapp-viewer.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Copied"
 msgstr "تم النسخ"
 
@@ -10800,7 +10801,6 @@ msgstr "محرّك الإدخال/الإخراج للقرص"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
-#: src/components/webapp-display/WebappErrorBanner.tsx
 msgid "Dismiss"
 msgstr "إغلاق"
 
@@ -11619,7 +11619,7 @@ msgstr "منتهية"
 msgid "Ended · {when}"
 msgstr "انتهت · {when}"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Endpoint"
 msgstr ""
 
@@ -11784,7 +11784,7 @@ msgstr "خطأ"
 msgid "Error"
 msgstr "خطأ"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Error code"
 msgstr ""
 
@@ -13297,7 +13297,7 @@ msgstr "مرات التشغيل: <0>{fireCount}</0>"
 #~ msgid "Firing…"
 #~ msgstr "جارٍ البث…"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "First"
 msgstr ""
 
@@ -13351,7 +13351,6 @@ msgid "Fix All"
 msgstr "إصلاح الكل"
 
 #: src/components/project-setup/SetupFailureActions.tsx
-#: src/components/webapp-display/WebappErrorBanner.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fix it"
 msgstr "إصلاح"
@@ -13849,7 +13848,7 @@ msgstr "كامل — إعادة مسح شاملة"
 msgid "Full access"
 msgstr "وصول كامل"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Full answer"
 msgstr ""
 
@@ -14567,6 +14566,7 @@ msgstr ""
 msgid "Hey <0>{firstName}</0>"
 msgstr "مرحباً <0>{firstName}</0>"
 
+#: src/notifications/error-detail.ts
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Hidden errors"
 msgstr ""
@@ -16263,7 +16263,7 @@ msgstr "أكبر تشغيل"
 msgid "last"
 msgstr "آخر"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Last"
 msgstr ""
 
@@ -16596,7 +16596,7 @@ msgstr "تمييز الرسائل الـ {messageCount} المرفق بها هذ
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Limit"
 msgstr "الحد الأقصى"
 
@@ -17351,7 +17351,7 @@ msgstr "الموقع"
 msgid "locked after first message"
 msgstr "مقفل بعد الرسالة الأولى"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Log"
 msgstr ""
 
@@ -17503,7 +17503,7 @@ msgstr ""
 msgid "Machines that are running"
 msgstr ""
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Made by"
 msgstr ""
 
@@ -17919,7 +17919,7 @@ msgstr "مصدر Mermaid"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Message"
 msgstr "رسالة"
 
@@ -19084,6 +19084,10 @@ msgstr "بدون ميزانية — يستخدم الزوار وصولهم ال�
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No budget set"
 msgstr "لم تُحدَّد ميزانية"
+
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "No budget you can allocate from — ask its admin for an allowance."
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "No budget you can hand out"
@@ -25445,7 +25449,7 @@ msgid "Repository URL:"
 msgstr "رابط المستودع:"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Request"
 msgstr "الطلب"
 
@@ -25453,7 +25457,7 @@ msgstr "الطلب"
 msgid "Request access"
 msgstr "طلب الوصول"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Request id"
 msgstr ""
 
@@ -26082,7 +26086,7 @@ msgstr "الصفوف"
 msgid "Rows at"
 msgstr "الصفوف في"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Rule"
 msgstr ""
 
@@ -29782,7 +29786,7 @@ msgstr "الحالة"
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Status"
 msgstr "الحالة"
 
@@ -31502,7 +31506,7 @@ msgstr "عنوان URL لصندوق التدفق الوارد الخاص بال�
 msgid "this app"
 msgstr ""
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "This app"
 msgstr ""
 
@@ -32403,7 +32407,7 @@ msgstr "المهلة (بالثواني)"
 msgid "Timeout for Anthropic API calls in ms"
 msgstr "المهلة الزمنية لاستدعاءات Anthropic API بالميلي ثانية"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Times"
 msgstr ""
 
@@ -33522,7 +33526,7 @@ msgstr "استخدام بيئة عزل أضعف للأوامر المتداخل�
 msgid "used"
 msgstr "مستخدَم"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Used / cap"
 msgstr ""
 
@@ -33781,7 +33785,7 @@ msgstr "رمز التحقق: عند حفظ العنوان يستدعيه الخ�
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Version"
 msgstr "الإصدار"
 
@@ -34478,7 +34482,7 @@ msgstr ""
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "When"
 msgstr "متى"
 

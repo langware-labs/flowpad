@@ -3986,7 +3986,7 @@ msgstr "another project"
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "Another step already uses this id — their results will overwrite each other."
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr "Answer"
 
@@ -5510,7 +5510,7 @@ msgid "call"
 msgstr "call"
 
 #: src/components/voice/CallControls.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Call"
 msgstr "Call"
 
@@ -7693,6 +7693,7 @@ msgstr "Converted to an Excalidraw board"
 #: src/components/ui/media-lightbox.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/webapp-viewer.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Copied"
 msgstr "Copied"
 
@@ -10867,7 +10868,6 @@ msgstr "Disk I/O backend"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
-#: src/components/webapp-display/WebappErrorBanner.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
 
@@ -11696,7 +11696,7 @@ msgstr "Ended"
 msgid "Ended · {when}"
 msgstr "Ended · {when}"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Endpoint"
 msgstr "Endpoint"
 
@@ -11861,7 +11861,7 @@ msgstr "error"
 msgid "Error"
 msgstr "Error"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Error code"
 msgstr "Error code"
 
@@ -13388,7 +13388,7 @@ msgstr "fires: <0>{fireCount}</0>"
 #~ msgid "Firing…"
 #~ msgstr "Firing…"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "First"
 msgstr "First"
 
@@ -13442,7 +13442,6 @@ msgid "Fix All"
 msgstr "Fix All"
 
 #: src/components/project-setup/SetupFailureActions.tsx
-#: src/components/webapp-display/WebappErrorBanner.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fix it"
 msgstr "Fix it"
@@ -13952,7 +13951,7 @@ msgstr "Full — complete rescan"
 msgid "Full access"
 msgstr "Full access"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Full answer"
 msgstr "Full answer"
 
@@ -14673,6 +14672,7 @@ msgstr "Here is what was tried. Try again, or open Edit app → Setup for the er
 msgid "Hey <0>{firstName}</0>"
 msgstr "Hey <0>{firstName}</0>"
 
+#: src/notifications/error-detail.ts
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Hidden errors"
 msgstr "Hidden errors"
@@ -16385,7 +16385,7 @@ msgstr "Largest run"
 msgid "last"
 msgstr "last"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Last"
 msgstr "Last"
 
@@ -16724,7 +16724,7 @@ msgstr "Light up the {messageCount} messages this is attached to"
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Limit"
 msgstr "Limit"
 
@@ -17489,7 +17489,7 @@ msgstr "Location"
 msgid "locked after first message"
 msgstr "locked after first message"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Log"
 msgstr "Log"
 
@@ -17643,7 +17643,7 @@ msgstr "Machines"
 msgid "Machines that are running"
 msgstr "Machines that are running"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Made by"
 msgstr "Made by"
 
@@ -18061,7 +18061,7 @@ msgstr "Mermaid source"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Message"
 msgstr "Message"
 
@@ -19236,6 +19236,10 @@ msgstr "No budget — visitors bring their own"
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No budget set"
 msgstr "No budget set"
+
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "No budget you can allocate from — ask its admin for an allowance."
+msgstr "No budget you can allocate from — ask its admin for an allowance."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "No budget you can hand out"
@@ -25642,7 +25646,7 @@ msgid "Repository URL:"
 msgstr "Repository URL:"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Request"
 msgstr "Request"
 
@@ -25650,7 +25654,7 @@ msgstr "Request"
 msgid "Request access"
 msgstr "Request access"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Request id"
 msgstr "Request id"
 
@@ -26286,7 +26290,7 @@ msgstr "Rows"
 msgid "Rows at"
 msgstr "Rows at"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Rule"
 msgstr "Rule"
 
@@ -30010,7 +30014,7 @@ msgstr "status"
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Status"
 msgstr "Status"
 
@@ -31750,7 +31754,7 @@ msgstr "This Agent stream inbox URL is malformed."
 msgid "this app"
 msgstr "this app"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "This app"
 msgstr "This app"
 
@@ -32656,7 +32660,7 @@ msgstr "Timeout (seconds)"
 msgid "Timeout for Anthropic API calls in ms"
 msgstr "Timeout for Anthropic API calls in ms"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Times"
 msgstr "Times"
 
@@ -33779,7 +33783,7 @@ msgstr "Use weaker sandbox for nested commands"
 msgid "used"
 msgstr "used"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Used / cap"
 msgstr "Used / cap"
 
@@ -34041,7 +34045,7 @@ msgstr "Verify token: when you save the URL, your server calls it once with this
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Version"
 msgstr "Version"
 
@@ -34748,7 +34752,7 @@ msgstr "WhatsApp Business account ID"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "When"
 msgstr "When"
 

@@ -3955,7 +3955,7 @@ msgstr "פרויקט אחר"
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "שלב אחר כבר משתמש במזהה הזה — התוצאות שלהם ידרסו זו את זו."
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr ""
 
@@ -5472,7 +5472,7 @@ msgid "call"
 msgstr "קריאה"
 
 #: src/components/voice/CallControls.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Call"
 msgstr "התקשרו"
 
@@ -7641,6 +7641,7 @@ msgstr "הומר ללוח Excalidraw"
 #: src/components/ui/media-lightbox.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/webapp-viewer.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Copied"
 msgstr "הועתק"
 
@@ -10800,7 +10801,6 @@ msgstr "מנוע קלט/פלט לדיסק"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
-#: src/components/webapp-display/WebappErrorBanner.tsx
 msgid "Dismiss"
 msgstr "סגרו"
 
@@ -11619,7 +11619,7 @@ msgstr "הסתיימה"
 msgid "Ended · {when}"
 msgstr "הסתיים · {when}"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Endpoint"
 msgstr ""
 
@@ -11784,7 +11784,7 @@ msgstr "שגיאה"
 msgid "Error"
 msgstr "שגיאה"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Error code"
 msgstr ""
 
@@ -13297,7 +13297,7 @@ msgstr "הפעלות: <0>{fireCount}</0>"
 #~ msgid "Firing…"
 #~ msgstr "בשיגור…"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "First"
 msgstr ""
 
@@ -13351,7 +13351,6 @@ msgid "Fix All"
 msgstr "תקנו הכל"
 
 #: src/components/project-setup/SetupFailureActions.tsx
-#: src/components/webapp-display/WebappErrorBanner.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fix it"
 msgstr "תיקון"
@@ -13849,7 +13848,7 @@ msgstr "מלא — סריקה מחדש מלאה"
 msgid "Full access"
 msgstr "גישה מלאה"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Full answer"
 msgstr ""
 
@@ -14567,6 +14566,7 @@ msgstr ""
 msgid "Hey <0>{firstName}</0>"
 msgstr "היי <0>{firstName}</0>"
 
+#: src/notifications/error-detail.ts
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Hidden errors"
 msgstr ""
@@ -16263,7 +16263,7 @@ msgstr "הרצה מקסימלית"
 msgid "last"
 msgstr "אחרונה"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Last"
 msgstr ""
 
@@ -16596,7 +16596,7 @@ msgstr "הדגישו את {messageCount} ההודעות שזה מצורף אלי
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Limit"
 msgstr "גבול"
 
@@ -17351,7 +17351,7 @@ msgstr "מיקום"
 msgid "locked after first message"
 msgstr "נעול לאחר ההודעה הראשונה"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Log"
 msgstr ""
 
@@ -17503,7 +17503,7 @@ msgstr ""
 msgid "Machines that are running"
 msgstr ""
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Made by"
 msgstr ""
 
@@ -17919,7 +17919,7 @@ msgstr "קוד Mermaid"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Message"
 msgstr "הודעה"
 
@@ -19084,6 +19084,10 @@ msgstr "ללא תקציב — המבקרים משתמשים בגישה משלה�
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No budget set"
 msgstr "לא הוגדר תקציב"
+
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "No budget you can allocate from — ask its admin for an allowance."
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "No budget you can hand out"
@@ -25441,7 +25445,7 @@ msgid "Repository URL:"
 msgstr "כתובת המאגר:"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Request"
 msgstr "בקשה"
 
@@ -25449,7 +25453,7 @@ msgstr "בקשה"
 msgid "Request access"
 msgstr "בקשו גישה"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Request id"
 msgstr ""
 
@@ -26078,7 +26082,7 @@ msgstr "שורות"
 msgid "Rows at"
 msgstr "השורות ב"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Rule"
 msgstr ""
 
@@ -29778,7 +29782,7 @@ msgstr "סטטוס"
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Status"
 msgstr "סטטוס"
 
@@ -31498,7 +31502,7 @@ msgstr "כתובת ה-URL של הדואר הנכנס של הסוכן שגויה.
 msgid "this app"
 msgstr ""
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "This app"
 msgstr ""
 
@@ -32399,7 +32403,7 @@ msgstr "Timeout (שניות)"
 msgid "Timeout for Anthropic API calls in ms"
 msgstr "פסק זמן לקריאות ה-API של Anthropic במילישניות"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Times"
 msgstr ""
 
@@ -33518,7 +33522,7 @@ msgstr "שימוש בסנדבוקס מוחלש עבור פקודות מקוננ�
 msgid "used"
 msgstr "בשימוש"
 
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Used / cap"
 msgstr ""
 
@@ -33777,7 +33781,7 @@ msgstr "אסימון אימות: כששומרים את הכתובת, השרת ש
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "Version"
 msgstr "גרסה"
 
@@ -34474,7 +34478,7 @@ msgstr ""
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
-#: src/notifications/ErrorDetailsDialog.tsx
+#: src/notifications/error-detail.ts
 msgid "When"
 msgstr "מתי"
 
