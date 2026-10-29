@@ -267,8 +267,11 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             if failed:
                 raise ValueError(f"Dependency {failed.project_id}: {failed.detail}")
             tree = tree or await ProjectTree(project, display=display).load()
-            if getattr(tree, "gaps", None):
-                raise ValueError("; ".join(gap.note or gap.name for gap in tree.gaps))
+            # Showing one app: only ITS gaps hold it — another root's undeclared variable is that root's problem.
+            gaps = [gap for gap in getattr(tree, "gaps", None) or []
+                    if not target or any(root.typeid == target for root in gap.roots)]
+            if gaps:
+                raise ValueError("; ".join(gap.note or gap.name for gap in gaps))
             common = dict(subject_entity=f"project-{pid}", cwd=getattr(project, "fs_storage_mount_path", None),
                           check_only=True, approved=True)
             prerequisites = await execute_setup(tree.root, resolve_node=tree.resolve_node,

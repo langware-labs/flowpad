@@ -2,7 +2,7 @@ import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryFilter, QueryRequest } from '../FlowSync/query';
 import type { AgenticProcess } from '../process/agentic-process';
-import { lastChatQuery, mostRecentProcess } from '../process/last-chat';
+import { lastChatQuery, recencyOf } from '../process/last-chat';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
@@ -400,10 +400,15 @@ export class Agent extends APIEntity<Agent> {
     })) as AgentUseResult;
   }
 
+  /** This agent's opened chats in `projectId`, newest first (at most `limit`). */
+  async recentChats(projectId: string, limit = 20): Promise<AgenticProcess[]> {
+    const rows = await dataManager.query<AgenticProcess>(lastChatQuery(projectId, this.typeId.toString()));
+    return [...rows].sort((a, b) => recencyOf(b) - recencyOf(a)).slice(0, limit);
+  }
+
   /** This agent's last opened chat in `projectId`, or null — the rule every opener shares (`lastChatQuery`). */
   async lastChat(projectId: string): Promise<AgenticProcess | null> {
-    const rows = await dataManager.query<AgenticProcess>(lastChatQuery(projectId, this.typeId.toString()));
-    return mostRecentProcess(rows);
+    return (await this.recentChats(projectId, 1))[0] ?? null;
   }
 
   /**

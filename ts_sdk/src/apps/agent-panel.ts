@@ -27,6 +27,7 @@ import { asyncSdkInit, initSdk } from '../main';
 import { TypeId } from '../models/TypeId';
 import type { AgenticProcess } from '../process/agentic-process';
 import { getDisplayStatus, isBusy } from '../process/agentic-types';
+import { recencyOf, toMs } from '../process/last-chat';
 import { PROCESS_STATUS_LABEL, WORKER_STATUS_LABEL } from '../process/status-labels';
 import { appTypeId, resolveAppHost } from './host';
 
@@ -75,7 +76,7 @@ const PANEL_CSS = `
   font: 14px/1.45 var(--font-sans, system-ui, sans-serif); color: hsl(var(--foreground, 0 0% 3.9%)); }
 :host([open]) { transform: none; visibility: visible; }
 @media (prefers-reduced-motion: reduce) { :host { transition: none; } }
-.panel { box-sizing: border-box; height: 100%; display: flex; flex-direction: column;
+.panel { position: relative; box-sizing: border-box; height: 100%; display: flex; flex-direction: column;
   background: hsl(var(--background, 0 0% 100%)); border-right: 1px solid hsl(var(--border, 0 0% 89.8%));
   box-shadow: 6px 0 24px -18px rgba(0,0,0,.35); }
 header { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
@@ -87,16 +88,27 @@ header .name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-o
 .btn:hover { background: hsl(var(--muted, 0 0% 96%)); color: hsl(var(--foreground, 0 0% 3.9%)); }
 .btn:focus-visible { outline: 2px solid hsl(var(--ring, 0 0% 3.9%)); }
 .btn[disabled] { opacity: .5; pointer-events: none; }
-.log { flex: 1; overflow-y: auto; padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 10px; }
+.log { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; scrollbar-width: thin; padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 10px; }
 .empty { margin: auto; text-align: center; color: hsl(var(--muted-foreground, 0 0% 45%)); font-size: 13px; padding: 0 12px; }
 .me { align-self: flex-end; max-width: 85%; padding: 7px 11px; border-radius: 14px 14px 4px 14px;
   background: hsl(var(--muted, 0 0% 96%)); white-space: pre-wrap; overflow-wrap: anywhere; }
-.agent { white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent { min-width: 0; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tool { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   padding: 3px 8px; border-radius: var(--radius-md, 6px); border: 1px solid hsl(var(--border, 0 0% 89.8%) / .7);
   background: hsl(var(--muted, 0 0% 96%) / .45); color: hsl(var(--muted-foreground, 0 0% 45%)); font-size: 12.5px; }
 .tool b { font-weight: 500; white-space: nowrap; }
 .tool span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--font-mono, ui-monospace, monospace); }
+.agent code, .agent pre { font: 12.5px var(--font-mono, ui-monospace, monospace); background: hsl(var(--muted, 0 0% 96%)); border-radius: 4px; }
+.agent code { padding: 1px 4px; }
+.agent pre { margin: 4px 0; padding: 8px 10px; }
+.recent { position: absolute; top: 47px; left: 0; right: 0; bottom: 0; z-index: 1; overflow-y: auto; overflow-x: hidden;
+  background: hsl(var(--background, 0 0% 100%)); padding: 6px 8px; }
+.recent h4 { margin: 6px 8px; font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground, 0 0% 45%)); }
+.recent button { all: unset; box-sizing: border-box; cursor: pointer; display: flex; gap: 8px; width: 100%; padding: 7px 8px;
+  border-radius: var(--radius-md, 6px); font-size: 13px; }
+.recent button:hover, .recent button[aria-current="true"] { background: hsl(var(--muted, 0 0% 96%)); }
+.recent button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent button time { flex: none; font-size: 11.5px; color: hsl(var(--muted-foreground, 0 0% 45%)); }
 .err { color: hsl(var(--destructive-text, 0 72% 45%)); font-size: 13px; }
 .status { padding: 0 14px 6px; font-size: 12px; color: hsl(var(--muted-foreground, 0 0% 45%)); min-height: 18px;
   display: flex; align-items: center; gap: 8px; }
@@ -110,6 +122,24 @@ textarea:focus { border-color: hsl(var(--ring, 0 0% 3.9%)); }
 .send[disabled] { opacity: .5; pointer-events: none; }
 ${AVATAR_CSS}
 `;
+
+const CHAT_DATE = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+/** A chat's name in the recent list: its own name, or when it started if it is named after its agent. */
+function chatName(p: AgenticProcess, agent: Agent): string {
+  const x = p as AgenticProcess & { name?: string | null; created_at?: string };
+  const name = x.name?.trim();
+  if (name && name !== agent.name && name !== agent.displayName) return name;
+  const at = toMs(x.created_at) || recencyOf(p);
+  return at ? `Chat · ${CHAT_DATE.format(at)}` : 'Chat';
+}
+
+/** "5m", "3h", "2d" — how long ago, short. */
+function ago(ms: number): string {
+  if (!ms) return '';
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  return m < 1 ? 'now' : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
+}
 
 const MESSAGE_TYPES = new Set<string>([FlowElementTypes.USER_MESSAGE, FlowElementTypes.CHAT, FlowElementTypes.TEXT]);
 const LIVE_STATUSES = new Set(['working', 'thinking', 'tool_call', 'tool_running', 'initializing', 'starting', 'new']);
@@ -152,6 +182,14 @@ export function chatRows(items: readonly FlowData[]): ChatRow[] {
 
 function esc(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+/** An agent reply's light Markdown — code blocks, inline code, bold — on top of escaped text. */
+export function replyHtml(text: string): string {
+  return esc(text)
+    .replace(/```[\w-]*\n?([\s\S]*?)```/g, (_m, code: string) => `<pre>${code.replace(/\n$/, '')}</pre>`)
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
 }
 
 function avatarHtml(agent: Agent): string {
@@ -229,9 +267,11 @@ class AgentPanel {
         <header>
           <span class="face">${avatarHtml(agent)}</span>
           <span class="name">${esc(agent.displayName || agent.name || 'Agent')}</span>
+          <button type="button" class="btn" data-act="recent" title="Recent chats" aria-label="Recent chats" aria-expanded="false">🕘</button>
           <button type="button" class="btn" data-act="new" title="New chat">＋ New chat</button>
           <button type="button" class="btn" data-act="close" aria-label="Close" title="Close">⟨</button>
         </header>
+        <div class="recent" hidden role="list" aria-label="Recent chats"></div>
         <div class="log" aria-live="polite"></div>
         <div class="status"></div>
         <form>
@@ -241,8 +281,14 @@ class AgentPanel {
       </div>`;
     this.root.addEventListener('click', (e) => {
       const act = (e.target as Element).closest<HTMLElement>('[data-act]')?.dataset.act;
+      if (act !== 'recent') void this.showRecent(false);
       if (act === 'close') this.onClose();
-      else if (act === 'new') void this.load(() => this.agent.newChat(this.projectId));
+      else if (act === 'recent') void this.showRecent(this.recentEl.hidden);
+      else if (act === 'pick') {
+        const id = (e.target as Element).closest<HTMLElement>('[data-id]')?.dataset.id;
+        const chosen = this.recentList.find((p) => p.id === id);
+        if (chosen && chosen.id !== this.process?.id) void this.load(async () => chosen);
+      } else if (act === 'new') void this.load(() => this.agent.newChat(this.projectId));
       else if (act === 'stop') void this.process?.interruptTurn().catch((err) => this.fail(err, () => {}));
       else if (act === 'retry') this.error?.retry();
     });
@@ -259,6 +305,38 @@ class AgentPanel {
     });
   }
 
+  private recentList: AgenticProcess[] = [];
+
+  private get recentEl(): HTMLElement {
+    return this.root.querySelector('.recent')!;
+  }
+
+  /** The recent-chats list over the chat: newest first, the open one marked. */
+  async showRecent(show: boolean): Promise<void> {
+    const el = this.recentEl;
+    el.hidden = !show;
+    this.root.querySelector('[data-act="recent"]')!.setAttribute('aria-expanded', String(show));
+    if (!show) return;
+    el.innerHTML = '<h4>Loading…</h4>';
+    try {
+      this.recentList = await this.agent.recentChats(this.projectId);
+    } catch (err) {
+      el.innerHTML = `<h4 class="err">${esc(String((err as Error)?.message ?? err))}</h4>`;
+      return;
+    }
+    if (el.hidden) return;
+    el.innerHTML = this.recentList.length
+      ? `<h4>Recent chats</h4>${this.recentList
+          .map(
+            (p) =>
+              `<button type="button" role="listitem" data-act="pick" data-id="${esc(p.id)}" aria-current="${p.id === this.process?.id}"><span>${esc(
+                chatName(p, this.agent),
+              )}</span><time>${esc(ago(recencyOf(p)))}</time></button>`,
+          )
+          .join('')}`
+      : '<h4>No chats yet.</h4>';
+  }
+
   get isOpen(): boolean {
     return this.host.hasAttribute('open');
   }
@@ -270,6 +348,7 @@ class AgentPanel {
   }
 
   close(): void {
+    this.showRecent(false);
     this.host.removeAttribute('open');
   }
 
@@ -308,6 +387,8 @@ class AgentPanel {
     const text = input.value.trim();
     if (!text || !this.process) return;
     input.value = '';
+    // The worker never streams the person's turn back: show it now, the way the app's chat does.
+    this.process.appendUserMessage(text);
     try {
       await this.process.enqueue(text, 'page');
     } catch (err) {
@@ -333,7 +414,7 @@ class AgentPanel {
               ? `<div class="tool" data-row="tool"><b>${esc(row.label)}</b>${row.detail ? `<span>${esc(row.detail)}</span>` : ''}${
                   row.count > 1 ? `<span>· ${row.count}</span>` : ''
                 }</div>`
-              : `<div class="${row.kind}" data-row="${row.kind}">${esc(row.text)}</div>`,
+              : `<div class="${row.kind}" data-row="${row.kind}">${row.kind === 'agent' ? replyHtml(row.text) : esc(row.text)}</div>`,
           )
           .join('')
       : `<div class="empty">${this.loading ? 'Opening the chat…' : this.process ? `Ask ${esc(this.agent.displayName || 'me')} anything.` : ''}</div>`;

@@ -195,6 +195,30 @@ async def test_an_app_that_is_not_set_up_does_not_block_the_app_beside_it(machin
 
 
 @pytest.mark.asyncio
+async def test_another_roots_undeclared_variable_does_not_block_the_app_being_shown(machine):
+    """GTM Studio's site must open though GTM Report Creator names GA4 variables no credential declares;
+    a gap of the app itself still holds it, and a load of the whole project still reports every gap."""
+    good, _broken = apps(machine)
+    machine.installed.update(("prepare", "install", "service", "home", "app"))
+
+    def gap(owner):
+        root = SimpleNamespace(typeid=owner)
+        return SimpleNamespace(roots=[root], note=f"{owner} needs GA4_PROPERTY_ID, and no credential declares it", name="GA4")
+
+    machine.tree.gaps = [gap("agent-report-creator")]
+    shown = await load_project(machine.project, tree=machine.tree, asset=good)
+    assert shown.state is LoadState.READY
+
+    project_wide = await load_project(machine.project, tree=machine.tree)
+    assert project_wide.state is LoadState.FAILED and "agent-report-creator" in project_wide.detail
+
+    forget(machine.project.id)
+    machine.tree.gaps = [gap("good")]
+    own = await load_project(machine.project, tree=machine.tree, asset=good)
+    assert own.state is LoadState.FAILED and "good needs GA4_PROPERTY_ID" in own.detail
+
+
+@pytest.mark.asyncio
 async def test_the_app_being_shown_still_has_to_be_set_up_itself(machine):
     _good, broken = apps(machine)
     result = await load_project(machine.project, tree=machine.tree, asset=broken)

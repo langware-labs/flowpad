@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dataManager } from '@sdk/APIEntity';
 import { Agent } from '@sdk/entities/agent';
-import { chatRows, defineAgentElement, FlowpadAgentElement } from '@sdk/apps/agent-panel';
+import { chatRows, defineAgentElement, FlowpadAgentElement, replyHtml } from '@sdk/apps/agent-panel';
 
 const ENDPOINT = '9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d';
 const WEBAPP = 'b9312997-b348-57f9-8f6b-1a970e33e9a9';
@@ -40,6 +40,10 @@ function fakeProcess(id: string, items: Row[] = []) {
     watch: vi.fn(async () => async () => {}),
     loadHistory: vi.fn(async () => {}),
     enqueue: vi.fn(async () => {}),
+    appendUserMessage: vi.fn((text: string) => {
+      items.push(msg('user-message', text));
+      (listeners.data ?? []).forEach((fn) => fn());
+    }),
     interruptTurn: vi.fn(async () => {}),
   };
 }
@@ -102,6 +106,14 @@ describe('chatRows', () => {
   });
 });
 
+describe('replyHtml', () => {
+  it('renders bold, inline code and code blocks, and escapes everything else', () => {
+    expect(replyHtml('**Done** with `x` <b>no</b>\n```bash\nls\n```')).toBe(
+      '<b>Done</b> with <code>x</code> &lt;b&gt;no&lt;/b&gt;\n<pre>ls</pre>',
+    );
+  });
+});
+
 describe('<flowpad-agent>', () => {
   it('finds the agent the app is nested in and starts nothing until opened', async () => {
     const open = vi.spyOn(Agent.prototype, 'openChat');
@@ -153,6 +165,8 @@ describe('<flowpad-agent>', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await flush();
     expect(chat.enqueue).toHaveBeenCalledWith('next question', 'page');
+    // The worker never streams the person's turn back: the panel shows it at once.
+    expect(shadow(panel()).querySelector('[data-row="me"]')?.textContent).toBe('next question');
   });
 
   it('New chat swaps the chat and stops listening to the old one', async () => {
@@ -171,6 +185,29 @@ describe('<flowpad-agent>', () => {
     expect(last.listening()).toBe(0);
     expect(fresh.listening()).toBe(2);
     expect(shadow(panel()).querySelector('[data-row]')).toBeNull();
+  });
+
+  it('the recent-chats list shows the agent\'s chats and opens the one picked', async () => {
+    const last = fakeProcess('p-last', [msg('chat', 'newest')]);
+    const older = Object.assign(fakeProcess('p-old', [msg('chat', 'older reply')]), { name: 'Pipeline question' });
+    vi.spyOn(Agent.prototype, 'openChat').mockResolvedValue(last as never);
+    const recent = vi.spyOn(Agent.prototype, 'recentChats').mockResolvedValue([Object.assign(last, { name: 'Now' }), older] as never);
+    const el = await mount();
+    shadow(el).querySelector('button')!.click();
+    await flush();
+
+    (shadow(panel()).querySelector('[data-act="recent"]') as HTMLButtonElement).click();
+    await flush();
+    expect(recent).toHaveBeenCalledWith('p-1');
+    const items = [...shadow(panel()).querySelectorAll('[data-act="pick"]')];
+    expect(items.map((b) => b.querySelector('span')?.textContent)).toEqual(['Now', 'Pipeline question']);
+    expect(items[0].getAttribute('aria-current')).toBe('true');
+
+    (items[1] as HTMLButtonElement).click();
+    await flush();
+    expect((shadow(panel()).querySelector('.recent') as HTMLElement).hidden).toBe(true);
+    expect(last.listening()).toBe(0);
+    expect(shadow(panel()).querySelector('[data-row="agent"]')?.textContent).toBe('older reply');
   });
 
   it('a failed open says why and offers Try again', async () => {
