@@ -81,11 +81,63 @@ async def test_a_reply_the_stream_missed_is_still_printed(mock_driver, tmp_path,
     assert rc == 0 and out.strip() == "hello late"
 
 
-def test_refuses_beside_a_running_backend():
-    with patch.object(process_cmd, "_discover_port", return_value=9999):
-        result = CliRunner().invoke(process_cmd.process_app, ["start", "hi"])
-    assert result.exit_code == process_cmd.EXIT_INSTANCE_RUNNING
-    assert "INSTANCE_RUNNING" in result.output
+async def test_the_server_route_streams_the_turn_as_ndjson(mock_driver, tmp_path):
+    """With a backend up the turn runs INSIDE it: the route answers one JSON event per line."""
+    import json
+
+    import httpx
+    from fastapi import FastAPI
+
+    from flow_sdk.server.routes.headless_turn import router
+
+    mock_driver(response_for=lambda prompt: "pong")
+    app = FastAPI()
+    app.include_router(router)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://box") as client:
+        resp = await client.post(
+            "/api/v1/agentic_process/headless-turn",
+            json={"prompt": "say pong", "worker": "claude_code", "workdir": str(tmp_path)},
+        )
+    events = [json.loads(line) for line in resp.text.splitlines() if line]
+    assert resp.status_code == 200
+    assert events[0]["kind"] == "process" and events[0]["id"].startswith("agentic_process-")
+    assert any(e["kind"] == "text" and e["text"] == "pong" for e in events)
+    assert events[-1]["kind"] == "done" and events[-1]["ok"] is True and events[-1]["exit_code"] == 0
+
+
+def test_beside_a_running_backend_the_cli_prints_the_servers_stream(capsys):
+    """The CLI half: a live HTTP server answering NDJSON is printed exactly like an in-process turn."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    lines = (
+        b'{"kind": "process", "id": "agentic_process-x"}\n'
+        b'{"kind": "tool", "name": "Write"}\n'
+        b'{"kind": "text", "text": "built it"}\n'
+        b'{"kind": "done", "ok": true, "exit_code": 0, "text": "", "detail": ""}\n'
+    )
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 -- http.server's name
+            self.rfile.read(int(self.headers.get("content-length") or 0))
+            self.send_response(200)
+            self.send_header("content-type", "application/x-ndjson")
+            self.end_headers()
+            self.wfile.write(lines)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        rc = process_cmd._run_on_server(server.server_port, "build it", worker_type="claude")
+    finally:
+        server.shutdown()
+    out, err = capsys.readouterr()
+    assert rc == 0
+    assert out.strip() == "built it"
+    assert "running agentic process agentic_process-x" in err and "· Write" in err
 
 
 def test_an_unknown_worker_is_an_invalid_argument():

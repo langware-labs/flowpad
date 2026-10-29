@@ -12,6 +12,7 @@ import { gitResolvePrompt } from '@src/lib/git-resolve-prompt';
 import { notify } from './notify';
 import { settleAsk } from './pending-asks';
 import type { NotificationAction } from './types';
+import { commandFor, registerCommand, type CommandArgs } from './command-registry';
 
 /**
  * Imperative command registry for notification actions. A `NotificationAction`
@@ -20,25 +21,16 @@ import type { NotificationAction } from './types';
  *
  * Navigation actions use `action.href` instead (URL-first) — see `navigateTo`.
  */
-export type CommandArgs = Record<string, string | number | boolean>;
-type CommandHandler = (args: CommandArgs, ctx: { id: string }) => void;
+export { registerCommand, type CommandArgs } from './command-registry';
 
-const registry = new Map<string, CommandHandler>();
-
-export function registerCommand(name: string, fn: CommandHandler): void {
-  registry.set(name, fn);
-}
-
-// The answer to an `askNotification` button. Built in here rather than registered by ask.ts as it
-// loads: ask.ts can load while THIS module is still loading (notify → the toast UI → … → the
-// notifications index → ask.ts), and a registration then reaches `registry` before it exists.
-registry.set('notification.answer', (args, ctx) => {
+// The answer to an `askNotification` button. Built in here so it exists as soon as commands.ts loads.
+registerCommand('notification.answer', (args, ctx) => {
   settleAsk(ctx.id, { value: String(args.value), remember: args.remember === true });
   notify.dismiss(ctx.id);
 });
 
 export function runCommand(name: string, args: CommandArgs, ctx: { id: string }): void {
-  const fn = registry.get(name);
+  const fn = commandFor(name);
   if (fn) fn(args, ctx);
   else console.warn(`[notify] unknown command '${name}'`);
 }

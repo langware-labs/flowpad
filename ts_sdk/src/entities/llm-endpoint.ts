@@ -46,6 +46,14 @@ export interface LLMEndpointLimits {
 
 export type LLMEndpointKind = 'root' | 'chain';
 
+/** The portable model sizes a worker asks an endpoint for. */
+export type LLMModelSize = 'sm' | 'md' | 'lg';
+export const LLM_MODEL_SIZES: readonly LLMModelSize[] = ['sm', 'md', 'lg'];
+
+/** Which model this endpoint serves for each size; `null` = inherit from the next hop up. */
+export type LLMEndpointTiers = Record<LLMModelSize, string | null>;
+export const EMPTY_LLM_TIERS: LLMEndpointTiers = { sm: null, md: null, lg: null };
+
 export const DEFAULT_LLM_FILTERS: LLMEndpointFilters = {
   models_allow: [],
   models_deny: [],
@@ -84,6 +92,8 @@ export interface ILLMEndpoint extends IEntity {
   member_default_limits?: Partial<LLMEndpointLimits>;
   credential_hint?: string;
   public?: boolean;
+  tiers?: Partial<LLMEndpointTiers>;
+  models?: string[];
 }
 
 @registerEntity
@@ -111,6 +121,11 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
    * toggled by the hub's `public` action, which refuses an endpoint with no cost limit.
    */
   public: boolean = false;
+  /** The model each size runs, as set on THIS endpoint (`null` = inherited; the resolved map is
+   *  `expand.tiers` on a permissions read, and `effective_tiers` on the chain). */
+  tiers: LLMEndpointTiers = { ...EMPTY_LLM_TIERS };
+  /** Root only: the catalog this root offers. Empty = the provider's own listing. */
+  models: string[] = [];
 
   constructor(entity: Partial<ILLMEndpoint> = {}) {
     super(entity);
@@ -124,6 +139,13 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     this.member_default_limits = { ...DEFAULT_LLM_LIMITS, ...(entity.member_default_limits ?? {}) };
     this.credential_hint = entity.credential_hint ?? this.credential_hint;
     this.public = entity.public ?? this.public;
+    this.tiers = { ...EMPTY_LLM_TIERS, ...(entity.tiers ?? {}) };
+    this.models = entity.models ?? this.models;
+  }
+
+  /** The model each size resolves to down this endpoint's chain, from the hub's expansion. */
+  get effectiveTiers(): LLMEndpointTiers {
+    return { ...EMPTY_LLM_TIERS, ...(this.expand?.tiers ?? {}) };
   }
 
   /** What this endpoint draws from, as bare ids (the form `id` takes): the hub's answer on a

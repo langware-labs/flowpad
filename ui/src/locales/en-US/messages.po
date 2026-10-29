@@ -15407,8 +15407,18 @@ msgid "Info"
 msgstr "Info"
 
 #: src/components/graph-view/ui/AccessTab.tsx
+#: src/components/llm-endpoints/TiersEditor.tsx
 msgid "Inherit"
 msgstr "Inherit"
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "inherited"
+msgstr "inherited"
+
+#. placeholder {0}: inherited.model
+#: src/components/llm-endpoints/TiersEditor.tsx
+msgid "Inherits {0}"
+msgstr "Inherits {0}"
 
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "inherits the budget above"
@@ -16244,6 +16254,7 @@ msgstr "lapsed"
 msgid "Lapsed"
 msgstr "Lapsed"
 
+#: src/components/llm-endpoints/TiersEditor.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -16853,6 +16864,10 @@ msgstr "Live session with {otherName}"
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "live stream connection"
 msgstr "live stream connection"
+
+#: src/i18n/pref-labels.ts
+msgid "LLM"
+msgstr "LLM"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -17799,6 +17814,7 @@ msgstr "Me"
 msgid "Meaning"
 msgstr "Meaning"
 
+#: src/components/llm-endpoints/TiersEditor.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -18140,6 +18156,10 @@ msgstr "Model"
 msgid "Model & Performance"
 msgstr "Model & Performance"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Model catalog"
+msgstr "Model catalog"
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Model map (rewrite before forwarding)"
 msgstr "Model map (rewrite before forwarding)"
@@ -18173,6 +18193,11 @@ msgstr "model provider · {0}"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "model size"
 msgstr "model size"
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Model sizes"
+msgstr "Model sizes"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -19688,6 +19713,10 @@ msgstr "No messages yet."
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "No metrics data available"
 msgstr "No metrics data available"
+
+#: src/components/llm-endpoints/TiersEditor.tsx
+msgid "No model declared up the chain"
+msgstr "No model declared up the chain"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/llm-endpoints/ModelsList.tsx
@@ -21241,6 +21270,10 @@ msgstr "One group"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "One line: what this project uses it for"
 msgstr "One line: what this project uses it for"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "One model per line. Empty = whatever the provider lists."
+msgstr "One model per line. Empty = whatever the provider lists."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "one of"
@@ -29161,6 +29194,7 @@ msgstr "Slower. To wipe rows first, use Clear Index then Full."
 #~ msgid "sm / md / lg"
 #~ msgstr "sm / md / lg"
 
+#: src/components/llm-endpoints/TiersEditor.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx

@@ -15294,8 +15294,18 @@ msgid "Info"
 msgstr "معلومات"
 
 #: src/components/graph-view/ui/AccessTab.tsx
+#: src/components/llm-endpoints/TiersEditor.tsx
 msgid "Inherit"
 msgstr "وراثة"
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "inherited"
+msgstr ""
+
+#. placeholder {0}: inherited.model
+#: src/components/llm-endpoints/TiersEditor.tsx
+msgid "Inherits {0}"
+msgstr ""
 
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "inherits the budget above"
@@ -16122,6 +16132,7 @@ msgstr "منتهٍ"
 msgid "Lapsed"
 msgstr ""
 
+#: src/components/llm-endpoints/TiersEditor.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -16721,6 +16732,10 @@ msgstr "جلسة مباشرة مع {otherName}"
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "live stream connection"
 msgstr "اتصال البث المباشر"
+
+#: src/i18n/pref-labels.ts
+msgid "LLM"
+msgstr ""
 
 #~ msgid "LLM API keys"
 #~ msgstr "مفاتيح API الخاصة بـ LLM"
@@ -17658,6 +17673,7 @@ msgstr "أنا"
 msgid "Meaning"
 msgstr "المعنى"
 
+#: src/components/llm-endpoints/TiersEditor.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -17997,6 +18013,10 @@ msgstr "النموذج"
 msgid "Model & Performance"
 msgstr "النموذج والأداء"
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Model catalog"
+msgstr ""
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Model map (rewrite before forwarding)"
 msgstr "خريطة النماذج (إعادة كتابة قبل التمرير)"
@@ -18030,6 +18050,11 @@ msgstr "مزوّد النموذج · {0}"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "model size"
 msgstr "حجم النموذج"
+
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "Model sizes"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -19533,6 +19558,10 @@ msgstr "لا توجد رسائل بعد."
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "No metrics data available"
 msgstr "لا توجد بيانات مقاييس متاحة"
+
+#: src/components/llm-endpoints/TiersEditor.tsx
+msgid "No model declared up the chain"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/llm-endpoints/ModelsList.tsx
@@ -21068,6 +21097,10 @@ msgstr "مجموعة واحدة"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "One line: what this project uses it for"
 msgstr "سطر واحد: فيمَ يستخدمه هذا المشروع"
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "One model per line. Empty = whatever the provider lists."
+msgstr ""
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "one of"
@@ -28935,6 +28968,7 @@ msgstr "أبطأ. لحذف الصفوف أولاً، يمكن استخدام م�
 #~ msgid "sm / md / lg"
 #~ msgstr ""
 
+#: src/components/llm-endpoints/TiersEditor.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx

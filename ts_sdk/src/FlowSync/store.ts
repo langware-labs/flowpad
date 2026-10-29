@@ -68,6 +68,8 @@ export interface EntityExpansion {
   scope_kind?: string | null;
   /** The row's own limits with used / remaining / resets_at (llm_endpoint). */
   remaining?: RemainingEntry[] | null;
+  /** The model each size (sm/md/lg) resolves to down the row's chain (llm_endpoint); `null` = none declared. */
+  tiers?: Record<string, string | null> | null;
 }
 
 /** One limit of a row with what is used of it, as the hub reports it. */

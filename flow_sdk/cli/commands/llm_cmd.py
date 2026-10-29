@@ -489,6 +489,31 @@ def _use_shell(
     _emit_exports(binding, workers)
 
 
+@llm_app.command(
+    "size",
+    help="Show or set the model size (sm/md/lg) workers run when none is named. "
+    "Each endpoint says which model that size is.",
+)
+def size_cmd(
+    size: Annotated[Optional[str], typer.Argument(help="sm, md or lg. Omit to show the current one.")] = None,
+) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import default_size  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.model_tiers import is_model_tier  # noqa: PLC0415
+    from flow_sdk.preferences import PREF_LLM_DEFAULT_SIZE, write_instance_pref  # noqa: PLC0415
+
+    if size is None:
+        typer.echo(default_size())
+        return
+    size = size.strip().lower()
+    if not is_model_tier(size):
+        typer.echo(f"unknown size {size!r}: use sm, md or lg", err=True)
+        raise typer.Exit(2)
+    if not write_instance_pref(PREF_LLM_DEFAULT_SIZE, size):
+        typer.echo("could not write the preference", err=True)
+        raise typer.Exit(1)
+    typer.echo(size)
+
+
 @llm_app.command("clear", help="Print unsets that undo `flow llm use` in this shell.")
 def _clear_shell() -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import managed_env_vars

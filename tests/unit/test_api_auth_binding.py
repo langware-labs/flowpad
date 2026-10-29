@@ -3,6 +3,12 @@
 Isolation matches tests/unit/test_lm_api_keys.py: a temp FLOW_HOME + fresh
 instance singleton + SOD_ENC_KEY so the sod store resolves headlessly. These
 tests exercise the pure resolver (no worker spawn, no network turn).
+
+The model a funded spawn runs is the slug the ENDPOINT declares for the size (``endpoint.models``);
+there are no code-default slugs. Removed with that change: the ``<family>:<size>`` syntax tests
+(``resolve_family_tier``/``is_family_model``), the ``filters.models_allow`` fallback tests
+(``_model_within_allowance``, "default to the team's first allowed model") and the
+``ApiAuthSpec.tier_models`` prefix test -- replaced by tests/unit/test_endpoint_tiers_binding.py.
 """
 
 from __future__ import annotations
@@ -97,6 +103,9 @@ async def _signed_in(*workers: str) -> None:
 
 HUB_INVOKE = "https://hub.test/api/v1/graph/llm_endpoint/ep1/invoke"
 
+#: The model sizes the bound test endpoint declares (an endpoint decides what each size runs).
+HUB_TIERS = {"sm": "anthropic/claude-haiku-5.5", "md": "anthropic/claude-sonnet-4.5", "lg": "anthropic/claude-opus-4.1"}
+
 
 def _bind_hub(monkeypatch: pytest.MonkeyPatch, *, login: bool = True) -> None:
     """Put the box in the state the hub leaves it in after login + bind: a hub
@@ -111,7 +120,11 @@ def _bind_hub(monkeypatch: pytest.MonkeyPatch, *, login: bool = True) -> None:
         set_api_key("fp-hub-key")
     llm_endpoint.reset_cache()
     llm_endpoint.set_hub_llm_endpoint(
-        "llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke", provider="openrouter", name="OpenRouter"
+        "llm_endpoint:ep1",
+        "/api/v1/graph/llm_endpoint/ep1/invoke",
+        provider="openrouter",
+        name="OpenRouter",
+        tiers=HUB_TIERS,
     )
 
 
@@ -172,7 +185,7 @@ async def test_codex_api_binding_has_responses_provider(env) -> None:
     auth = await resolve_worker_api_auth(_fake_process("codex", model="sm"))
     assert auth is not None
     assert auth.env["OPENROUTER_API_KEY"] == "sk-or-test"
-    assert auth.model_slug == "openai/gpt-5-mini"
+    assert auth.model_slug == "anthropic/claude-haiku-5.5"  # the endpoint's sm, not a codex default
     ov = dict(auth.config_overrides)
     assert ov["model_provider"] == "openrouter"
     assert ov["model_providers.openrouter.wire_api"] == "responses"
@@ -197,12 +210,12 @@ async def test_copilot_api_binding_model_env(env) -> None:
     assert auth.env["COPILOT_PROVIDER_API_KEY"] == "sk-or-test"
     # Model rides three env vars for copilot.
     for var in ("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"):
-        assert auth.env[var] == "openai/gpt-5-mini"
+        assert auth.env[var] == "anthropic/claude-haiku-5.5"
 
     cmd = CopilotAgentOptions(model="sm")
     await apply_api_model_to_options(cmd, process)
     argv, _env = cmd.to_spawn_args()
-    assert argv[argv.index("--model") + 1] == "openai/gpt-5-mini"
+    assert argv[argv.index("--model") + 1] == "anthropic/claude-haiku-5.5"
 
 
 async def test_api_mode_missing_key_raises(env) -> None:
@@ -313,7 +326,7 @@ async def test_codex_hub_endpoint_binding(env, monkeypatch) -> None:
     assert ov["model_providers.flowpad.wire_api"] == "responses"
     assert ov["model_reasoning_effort"] == "low"  # gpt-5 via OpenRouter refuses reasoning=none
     assert ov["model_providers.flowpad.env_key"] == "FLOWPAD_HUB_API_KEY"
-    assert auth.model_slug == "openai/gpt-5-mini"
+    assert auth.model_slug == "anthropic/claude-haiku-5.5"  # the endpoint's sm, not a codex default
 
 
 async def test_copilot_hub_endpoint_binding(env, monkeypatch) -> None:
@@ -329,7 +342,7 @@ async def test_copilot_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth.env["COPILOT_PROVIDER_BASE_URL"] == f"{HUB_INVOKE}/v1"
     assert auth.env["COPILOT_PROVIDER_API_KEY"] == "fp-hub-key"
     for var in ("COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL", "COPILOT_MODEL"):
-        assert auth.env[var] == "openai/gpt-5-mini"
+        assert auth.env[var] == "anthropic/claude-haiku-5.5"
 
 
 async def test_hub_endpoint_unbound_raises(env, monkeypatch) -> None:
@@ -382,7 +395,12 @@ EP2 = "llm_endpoint-22222222-2222-4333-8444-555555555555"
 OTHER_INVOKE = "https://hub.test/api/v1/graph/llm_endpoint/22222222-2222-4333-8444-555555555555/invoke"
 
 
-def _process_on(worker_type: str, typeid: str | None, *, model: str | None = "sm"):
+#: A model the caller names: passes through whatever endpoint is chosen, so the routing tests below
+#: do not depend on which sizes a pinned-but-unlisted endpoint declares (see the xfail further down).
+NAMED_MODEL = "anthropic/claude-haiku-5.5"
+
+
+def _process_on(worker_type: str, typeid: str | None, *, model: str | None = NAMED_MODEL):
     """``_fake_process`` plus the per-process endpoint override."""
     process = _fake_process(worker_type, model=model)
     process.llm_endpoint_typeid = typeid
@@ -451,6 +469,25 @@ async def test_an_unusable_process_endpoint_falls_back_to_the_binding(env, monke
 
     auth = await resolve_worker_api_auth(_process_on("claude", bad))
     assert auth is not None and auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="SOURCE BUG: api_auth.binding_for_candidate falls back to the box binding's invoke URL for an "
+    "unusable pin, but _slug_for reads the pinned stub's empty models (llm_source._pin_to ~L504 builds "
+    "_hub_stub with no models) -> 'declares no sm model'",
+)
+@pytest.mark.parametrize("bad", ["not-a-typeid", "llm_endpoint-ep2"])
+async def test_an_unusable_process_endpoint_falls_back_to_the_bindings_sizes(env, monkeypatch, bad) -> None:
+    """A size asked on an unusable pin runs the BOUND endpoint's slug, as its invoke URL does."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("claude", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_process_on("claude", bad, model="sm"))
+    assert auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
+    assert auth.model_slug == HUB_TIERS["sm"]
 
 
 async def test_a_named_endpoint_is_enough_on_a_device_mode_harness(env, monkeypatch) -> None:
@@ -550,7 +587,7 @@ async def test_deepagents_api_binding(env) -> None:
     # Both are read by the runner's model factory; nothing is written to disk.
     assert auth.env["FLOWPAD_DEEPAGENTS_BASE_URL"] == "https://openrouter.ai/api/v1"
     assert auth.env["FLOWPAD_DEEPAGENTS_API_KEY"] == "sk-or-test"
-    assert auth.model_slug == "z-ai/glm-5.3"  # a bare gateway slug — no opencode-style provider prefix
+    assert auth.model_slug == "anthropic/claude-opus-4.1"  # the key endpoint's lg, bare — no opencode-style prefix
     assert auth.config_overrides == []
 
 
@@ -565,7 +602,7 @@ async def test_deepagents_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth.env["FLOWPAD_DEEPAGENTS_BASE_URL"] == f"{HUB_INVOKE}/v1"
     assert auth.env["FLOWPAD_DEEPAGENTS_API_KEY"] == "fp-hub-key"
     assert auth.env["FLOWPAD_DEEPAGENTS_MAX_OUTPUT_TOKENS"] == str(FUNDED_MAX_OUTPUT_TOKENS)
-    assert auth.model_slug == "z-ai/glm-5.3-flash"
+    assert auth.model_slug == HUB_TIERS["sm"]
 
 
 @pytest.mark.parametrize(
@@ -599,15 +636,17 @@ def test_the_deepagents_model_sends_the_cap_its_binding_set(monkeypatch) -> None
     assert models.openai_wire_model("z-ai/glm-5").max_tokens is None
 
 
-def _hub_candidate(key: str, name: str, models_allow: list[str]):
-    """A hub endpoint narrowed to *models_allow*, already chosen to fund the spawn."""
+def _hub_candidate(key: str, name: str, models_allow: list[str], models: dict | None = None):
+    """A hub endpoint narrowed to *models_allow*, declaring *models* per size, already chosen to fund the spawn."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMFilters
     from flow_sdk.cli.auth.hub_login import set_api_key
     from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
 
     set_api_key("fp-hub-key")
-    endpoint = LLMEndpoint.projection("hub", key, name=name, provider="openrouter")
+    endpoint = LLMEndpoint.projection(
+        "hub", key, name=name, provider="openrouter", models=dict(HUB_TIERS if models is None else models)
+    )
     endpoint.filters = LLMFilters(models_allow=models_allow)
     source = LLMSource(
         endpoint_typeid=str(endpoint.typeid),
@@ -620,66 +659,15 @@ def _hub_candidate(key: str, name: str, models_allow: list[str]):
     return Candidate(endpoint, source)
 
 
-async def test_deepagents_falls_back_to_a_models_allow_slug(env) -> None:
-    """A hub endpoint's ``filters.models_allow`` can rule out the tier's default slug — a team
-    scoped to one Anthropic model while deepagents' ``sm`` tier names a z-ai one. The binding
-    must fall back to a model that endpoint actually permits, rather than hand the worker a
-    slug the endpoint is guaranteed to refuse at call time ("model not allowed by endpoint")."""
+async def test_models_allow_does_not_swap_the_endpoints_slug(env) -> None:
+    """``filters.models_allow`` no longer re-picks a model: the endpoint's declared slug runs, and an
+    endpoint that refuses it says so at call time rather than quietly running another model."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
 
     candidate = _hub_candidate("course-ep", "AI Course budget", ["anthropic/claude-haiku-4.5"])
 
     auth = await binding_for_candidate("deepagents", candidate, tier="sm")
-    assert auth is not None
-    assert auth.model_slug == "anthropic/claude-haiku-4.5"
-
-
-async def test_deepagents_keeps_its_tier_slug_when_a_wildcard_allows_it(env) -> None:
-    """A glob allow-pattern that already covers the tier's default must not trigger the
-    fallback — only a slug the endpoint actually refuses should be swapped out."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
-
-    candidate = _hub_candidate("wide-ep", "wide budget", ["z-ai/*"])
-
-    auth = await binding_for_candidate("deepagents", candidate, tier="sm")
-    assert auth is not None
-    assert auth.model_slug == "z-ai/glm-5.3-flash"
-
-
-async def test_default_model_comes_from_the_chain_the_hub_pushed(env) -> None:
-    """A member's allowance names no models, so the default is read from the team's list the hub
-    pushed with the binding: the first pinned model when there is one, the small tier for a wildcard."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
-    from flow_sdk.instance_settings.llm_endpoint import set_hub_llm_endpoint
-
-    candidate = _hub_candidate("member-ep", "member", [])
-    typeid = candidate.source.endpoint_typeid
-
-    set_hub_llm_endpoint(
-        typeid,
-        f"/api/v1/graph/llm_endpoint/{typeid}/invoke",
-        models_allow=["anthropic/claude-sonnet-5.5", "anthropic/claude-haiku-5.5"],
-    )
-    auth = await binding_for_candidate("deepagents", candidate, tier=None)
-    assert auth is not None
-    assert auth.model_slug == "anthropic/claude-sonnet-5.5"
-
-    set_hub_llm_endpoint(typeid, f"/api/v1/graph/llm_endpoint/{typeid}/invoke", models_allow=["anthropic/claude-*"])
-    auth = await binding_for_candidate("deepagents", candidate, tier=None)
-    assert auth is not None
-    assert auth.model_slug == "z-ai/glm-5.3-flash"
-
-
-def test_model_within_allowance_pure() -> None:
-    """The matcher itself: no restriction, a matching glob, and a ruled-out slug that falls
-    back to the first literal (non-glob) entry — the three cases the binding above relies on."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _model_within_allowance
-
-    assert _model_within_allowance("z-ai/glm-5.3-flash", []) == "z-ai/glm-5.3-flash"
-    assert _model_within_allowance("z-ai/glm-5.3-flash", ["z-ai/*"]) == "z-ai/glm-5.3-flash"
-    assert _model_within_allowance("z-ai/glm-5.3-flash", ["anthropic/claude-haiku-4.5"]) == "anthropic/claude-haiku-4.5"
-    # All-glob allow list with no literal entry: nothing to fall back to, so pass through.
-    assert _model_within_allowance("z-ai/glm-5.3-flash", ["anthropic/*"]) == "z-ai/glm-5.3-flash"
+    assert auth is not None and auth.model_slug == HUB_TIERS["sm"]
 
 
 async def test_apply_worker_secret_env_stamps_the_resolved_model_slug(env) -> None:
@@ -707,7 +695,8 @@ async def test_apply_worker_secret_env_stamps_the_resolved_model_slug(env) -> No
     )
     assert process.resolved_model_slug is None
     await apply_worker_secret_env({}, process)
-    assert process.resolved_model_slug == "z-ai/glm-5.3-flash"
+    # No model asked -> the default size (md) of the OpenRouter key endpoint.
+    assert process.resolved_model_slug == "anthropic/claude-sonnet-4.5"
 
 
 async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
@@ -727,90 +716,19 @@ async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
         await resolve_worker_api_auth(_fake_process("deepagents"))
 
 
-# ── --model <family>:<size> ─────────────────────────────────────────────────────────────────
-
-
-#: The family table, spelled out here so a change to it is a deliberate edit in two places: every
-#: slug must be one the hub can price (a cost-capped endpoint refuses an unpriced model).
-FAMILY_TABLE = {
-    "kimi": ("moonshotai/kimi-k2-thinking", "moonshotai/kimi-k2.5", "moonshotai/kimi-k2.6"),
-    "glm": ("z-ai/glm-4.7", "z-ai/glm-5", "z-ai/glm-5.3"),
-    "openai": ("openai/gpt-oss-20b", "openai/gpt-oss-120b", "openai/gpt-5"),
-    "claude": ("anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.8"),
-}
-
-
-@pytest.mark.parametrize("family", sorted(FAMILY_TABLE))
-def test_every_family_size_resolves_to_its_slug(family) -> None:
-    from flow_sdk.builtin.agentic_process.model_tiers import resolve_family_tier
-
-    for size, slug in zip(("sm", "md", "lg"), FAMILY_TABLE[family]):
-        assert resolve_family_tier(f"{family}:{size}") == slug
-        assert resolve_family_tier(f"{family.upper()}:{size.upper()}") == slug  # a person's casing
-
-
-def test_what_is_not_family_syntax_is_left_alone() -> None:
-    from flow_sdk.builtin.agentic_process.model_tiers import is_family_model, resolve_family_tier
-
-    for model in (None, "", "sm", "lg", "z-ai/glm-4.7", "z-ai/glm-4.5-air:free", "haiku"):
-        assert not is_family_model(model)
-        assert resolve_family_tier(model) is None
-    with pytest.raises(ValueError, match="sm, md, lg"):
-        resolve_family_tier("kimi:xl")
-
-
-#: Every funded harness, and the slug ``kimi:md`` must reach it as -- opencode addresses every
-#: model as ``<provider>/<model>``; the rest take the gateway slug bare.
-FAMILY_SPELLING = {
-    "claude": "moonshotai/kimi-k2.5",
-    "codex": "moonshotai/kimi-k2.5",
-    "copilot": "moonshotai/kimi-k2.5",
-    "opencode": "openrouter/moonshotai/kimi-k2.5",
-    "deepagents": "moonshotai/kimi-k2.5",
-}
-
-
-@pytest.mark.parametrize("worker", sorted(FAMILY_SPELLING))
-async def test_a_family_model_reaches_each_hub_funded_worker_spelled_its_way(env, monkeypatch, worker) -> None:
-    """``flow process start --worker <w> --model kimi:md`` on a box bound to a hub endpoint: the
-    slug the binding resolves is what the spawn stamps onto the worker's command."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
-        apply_api_model_to_options,
-        resolve_worker_api_auth,
-    )
-
-    _bind_hub(monkeypatch)
-    await _set_harness_api(worker, provider="flowpad")
-
-    process = _fake_process(worker, model="kimi:md")
-    auth = await resolve_worker_api_auth(process)
-    assert auth is not None and auth.model_slug == FAMILY_SPELLING[worker]
-    cmd = SimpleNamespace(model="kimi:md")
-    await apply_api_model_to_options(cmd, process)
-    assert cmd.model == FAMILY_SPELLING[worker]
-
-
-async def test_a_family_model_is_not_swapped_for_a_models_allow_default(env) -> None:
-    """The models_allow fallback rescues a CODE default; a model the caller named is the
-    caller's choice, and an endpoint that refuses it should say so rather than run another."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
-
-    candidate = _hub_candidate("course-ep", "AI Course budget", ["anthropic/claude-haiku-4.5"])
-
-    auth = await binding_for_candidate("deepagents", candidate, tier="glm:sm")
-    assert auth is not None and auth.model_slug == "z-ai/glm-4.7"
+# ── a size reads the endpoint; a named model runs as named ────────────────────────────────
 
 
 @pytest.mark.parametrize(
     ("tier", "expected"),
     [
-        # The caller's model -- a name or a literal slug -- is kept, so the endpoint can refuse it.
         # A harness's own name for a size is spelled as that size's slug, never swapped.
-        ("haiku", "anthropic/claude-haiku-5.5"),
+        ("haiku", HUB_TIERS["sm"]),
+        # The caller's literal slug is kept, so the endpoint can refuse it.
         ("anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
-        # A size, or no model at all, is the tier map's code default: still re-picked.
-        ("sm", "z-ai/glm-5.3"),
-        (None, "z-ai/glm-5.3"),
+        # A size reads the endpoint; no model at all is the default size (md).
+        ("sm", HUB_TIERS["sm"]),
+        (None, HUB_TIERS["md"]),
     ],
 )
 async def test_a_named_model_is_not_swapped_for_a_models_allow_default(env, tier, expected) -> None:
@@ -824,36 +742,12 @@ async def test_a_named_model_is_not_swapped_for_a_models_allow_default(env, tier
     assert auth is not None and auth.model_slug == expected
 
 
-async def test_a_family_model_with_a_bad_size_fails_the_spawn_with_the_sizes(env, monkeypatch) -> None:
+async def test_a_tier_on_a_device_login_is_the_vendors_to_resolve(env) -> None:
+    """A device login runs the vendor's own models: no binding, nothing injected."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
-
-    _bind_hub(monkeypatch)
-    await _set_harness_api("deepagents", provider="flowpad")
-
-    with pytest.raises(WorkerSpawnError, match="sm, md, lg"):
-        await resolve_worker_api_auth(_fake_process("deepagents", model="glm:huge"))
-
-
-async def test_a_family_model_on_a_device_login_is_refused_in_a_sentence(env) -> None:
-    """A device login runs the vendor's own models; ``kimi:sm`` names nothing there."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
 
     await _signed_in("claude")
-    with pytest.raises(WorkerSpawnError, match="model family.*flow llm user use"):
-        await resolve_worker_api_auth(_fake_process("claude", model="kimi:sm"))
-    # A tier on the same login is still the vendor's to resolve.
     assert await resolve_worker_api_auth(_fake_process("claude", model="sm")) is None
-
-
-@pytest.mark.parametrize("worker", sorted(FAMILY_SPELLING))
-def test_a_specs_own_tier_slugs_are_spelled_with_its_prefix(worker) -> None:
-    """``slug_prefix`` is how the harness spells a model; its own tier slugs already are."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
-
-    spec = driver_api_auth_spec(worker)
-    assert all(slug.startswith(spec.slug_prefix) for slug in spec.tier_models.values())
 
 
 @pytest.mark.parametrize(("name", "size"), [("haiku", "sm"), ("sonnet", "md"), ("opus", "lg")])

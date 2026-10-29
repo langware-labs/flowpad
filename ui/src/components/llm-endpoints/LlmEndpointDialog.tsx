@@ -31,6 +31,7 @@ import {
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
+import { Textarea } from '@src/components/ui/textarea';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
@@ -39,11 +40,13 @@ import { FiltersEditor } from './FiltersEditor';
 import { LimitsEditor } from './LimitsEditor';
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 import { SourcePicker } from './SourcePicker';
-import { useLlmEndpointChain } from './use-llm-endpoints';
+import { TiersEditor } from './TiersEditor';
+import { useLlmEndpointChain, useLlmEndpointModels } from './use-llm-endpoints';
 import {
   buildAllocateBody,
   buildEntityJson,
   canConfigure,
+  catalogFromText,
   draftFrom,
   emptyDraft,
   kindFromChain,
@@ -77,6 +80,9 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
   // chain to ask, so fetch one here. Cheap: react-query, and the detail's fetch is the same key.
   const ownChain = useLlmEndpointChain(open && editing && !editingKind ? editing.id : undefined);
   const resolvedKind = editingKind ?? (editing ? kindFromChain(ownChain.data, editing.id) : null);
+  // Sizes: what each one resolves to today (for "Inherit"), and the models the chain may name.
+  const tierChain = useLlmEndpointChain(open && editing ? editing.id : undefined);
+  const allowedModels = useLlmEndpointModels(open && editing ? editing.id : undefined);
   const [draft, setDraft] = useState<EndpointDraft>(() => emptyDraft('root'));
   const [busy, setBusy] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -282,6 +288,40 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
               checked={draft.enabled}
               disabled={readOnly}
               onCheckedChange={(v) => setDraft((d) => ({ ...d, enabled: v }))}
+            />
+          </div>
+
+          {draft.kind === 'root' && (
+            <div className="space-y-1">
+              <Label htmlFor="llm-models">
+                <Trans>Model catalog</Trans>
+              </Label>
+              <Textarea
+                id="llm-models"
+                data-testid="llm-models"
+                rows={3}
+                value={draft.models}
+                disabled={readOnly}
+                placeholder={t`One model per line. Empty = whatever the provider lists.`}
+                onChange={(e) => setDraft((d) => ({ ...d, models: e.target.value }))}
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">
+              <Trans>Model sizes</Trans>
+            </h4>
+            <TiersEditor
+              value={draft.tiers}
+              onChange={(tiers) => setDraft((d) => ({ ...d, tiers }))}
+              models={
+                draft.kind === 'root' && catalogFromText(draft.models).length
+                  ? catalogFromText(draft.models)
+                  : (allowedModels.data ?? []).map((m) => m.id)
+              }
+              effective={tierChain.data?.effective_tiers}
+              disabled={readOnly}
             />
           </div>
 

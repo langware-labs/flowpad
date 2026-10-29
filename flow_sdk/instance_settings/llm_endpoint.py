@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING
 
 from flow_sdk.cli import app_config
@@ -62,6 +62,9 @@ class HubLLMEndpoint:
     #: them. A person's allowance states no filters of its own, so this is where a box learns
     #: what its default model may be.
     models_allow: tuple[str, ...] = ()
+    #: ``{sm, md, lg}`` -> model, inherited down the endpoint's chain, as the hub pushed it -- so a
+    #: spawn knows each size's model before any listing has been read.
+    tiers: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -72,7 +75,7 @@ _cache: dict[str, HubLLMEndpoint | None] = {}
 
 
 def _validated(
-    endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="", models_allow=()
+    endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="", models_allow=(), tiers=None
 ) -> HubLLMEndpoint:
     """The ONE rule for a usable binding: a non-empty id and a hub-relative path.
     Raises ``ValueError`` -- callers decide whether that is a 400 or "unbound"."""
@@ -93,6 +96,9 @@ def _validated(
         public=bool(public),
         hub_origin=hub_origin if public else "",
         models_allow=tuple(str(m) for m in (models_allow or ()) if str(m).strip()),
+        tiers={str(k): str(v) for k, v in (tiers or {}).items() if isinstance(v, str) and v}
+        if isinstance(tiers, dict)
+        else {},
     )
 
 
@@ -108,6 +114,7 @@ def _parse(raw) -> HubLLMEndpoint | None:
             raw.get("public") is True,
             raw.get("hub_origin"),
             raw.get("models_allow"),
+            raw.get("tiers"),
         )
     except ValueError:
         # A record written by a newer/older build must not brick spawn: unbound.
@@ -133,13 +140,14 @@ def set_hub_llm_endpoint(
     public: bool = False,
     hub_origin: str = "",
     models_allow=(),
+    tiers=None,
 ) -> HubLLMEndpoint:
     """Persist the hub's binding for this instance and return it.
 
     Raises ``ValueError`` on an empty id or a path that is not hub-relative. The
     sole writer is the ``llm-endpoint`` box action, which only the hub calls.
     """
-    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin, models_allow)
+    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin, models_allow, tiers)
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
     instance = get_instance_settings().instance_name
     _cache[instance] = bound
@@ -291,6 +299,22 @@ def _is_mine(row: dict) -> bool | None:
     return mine if isinstance(mine, bool) else None
 
 
+def _tier_models(row: dict) -> dict[str, str]:
+    """``{sm, md, lg}`` -> model, from the hub's ``expand.tiers`` (sizes inherited down the row's chain).
+
+    A size the chain does not declare is left out, so a spawn asking for it is refused in words
+    rather than handed a guess. A row with no expansion (a catalog row) falls back to its OWN
+    ``tiers`` -- exact for a root, which is what the catalog serves; ``{}`` from an older hub.
+    """
+    expand = row.get("expand") if isinstance(row, dict) else None
+    tiers = expand.get("tiers") if isinstance(expand, dict) else None
+    if not isinstance(tiers, dict):
+        tiers = row.get("tiers") if isinstance(row, dict) else None
+    if not isinstance(tiers, dict):
+        return {}
+    return {size: model for size, model in tiers.items() if isinstance(model, str) and model}
+
+
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:
     """Every ``LLMEndpoint`` the signed-in hub user may spend, as the hub serializes them.
 
@@ -411,6 +435,9 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             # Name who pays, not the entity default a chain row carries.
             if root_provider := _root_provider(row):
                 payload["provider"] = root_provider
+            # The model each size runs, inherited down the hub chain. The hub's own ``models`` is the
+            # ROOT's catalog (a list) and is not what this field means, so it never passes through.
+            payload["models"] = _tier_models(row)
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)

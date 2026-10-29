@@ -339,11 +339,19 @@ async def test_by_provider_config_changes_one_tier_and_persists(env):
     from flow_sdk.builtin.llm_endpoint import LLMEndpointConfig
 
     plain = await LLMEndpoint.by_provider("openrouter", key="sk-or-test")
-    tuned = await LLMEndpoint.by_provider("openrouter", config=LLMEndpointConfig(models={"sm": "z-ai/glm-4.7-flash"}))
-    assert tuned.id == plain.id
-    loaded = await LLMEndpoint.find_by_secret("lm_api.openrouter")
-    assert loaded.models["sm"] == "z-ai/glm-4.7-flash"
-    assert loaded.models["md"] == plain.models["md"]
+    original_sm = plain.models["sm"]
+    try:
+        tuned = await LLMEndpoint.by_provider(
+            "openrouter", config=LLMEndpointConfig(models={"sm": "z-ai/glm-4.7-flash"})
+        )
+        assert tuned.id == plain.id
+        loaded = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+        assert loaded.models["sm"] == "z-ai/glm-4.7-flash"
+        assert loaded.models["md"] == plain.models["md"]
+    finally:
+        # The row lives in the shared session DB, and a funded spawn now RUNS endpoint.models[size]:
+        # left tuned, later tests on the OpenRouter key would run glm-4.7-flash for ``sm``.
+        await LLMEndpoint.by_provider("openrouter", config=LLMEndpointConfig(models={"sm": original_sm}))
 
 
 @pytest.mark.asyncio

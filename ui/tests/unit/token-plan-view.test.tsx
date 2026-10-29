@@ -257,4 +257,16 @@ describe('TokenPlanView', () => {
     renderView(undefined);
     expect(await screen.findByTestId('token-plan-error')).toBeTruthy();
   });
+  it('a row shows the model each size runs, inherited down its chain', async () => {
+    const mine = ep(ME_EP, 'default-alice', [TEAM_EP], 'user', { mine: true, left: [1.8, 5] });
+    mine.expand = {
+      ...mine.expand,
+      tiers: { sm: 'google/gemini-3.1-flash-lite', md: 'google/gemini-3.1-pro-preview', lg: null },
+    };
+    h.endpoints = [mine];
+    renderView(undefined);
+    const chip = await screen.findByTestId(`sizes-${ME_EP}`);
+    expect(chip.textContent).toBe('sm gemini-3.1-flash-lite · md gemini-3.1-pro-preview');
+    expect(chip.getAttribute('title')).toContain('md: google/gemini-3.1-pro-preview');
+  });
 });

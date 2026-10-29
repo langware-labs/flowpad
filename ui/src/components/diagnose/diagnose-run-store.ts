@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { DiagnosisSpec, HelpRecipient } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { notify } from '@src/notifications';
-import { registerCommand } from '@src/notifications/commands';
+import { registerCommand } from '@src/notifications/command-registry';
 import { DockPointer } from '@src/navigation/DockPointer';
 import {
   sendDiagnosis,

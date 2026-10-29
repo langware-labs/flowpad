@@ -27,6 +27,23 @@ const CHIP = 'rounded-full border px-2 py-0.5 text-xs font-medium';
 const ALLOCATION_TONE = 'border-foreground/25 bg-foreground/5 text-foreground/80';
 const ACTION_CHIP = 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20';
 
+/** The model each size (sm/md/lg) runs on this row, inherited down its chain. Hidden when none is declared. */
+function SizesChip({ endpoint }: { endpoint: LLMEndpoint }) {
+  const tiers = endpoint.effectiveTiers;
+  const sizes = (['sm', 'md', 'lg'] as const).filter((size) => tiers[size]);
+  if (!sizes.length) return null;
+  const short = (model: string) => model.split('/').pop() ?? model;
+  return (
+    <span
+      className={cn(CHIP, 'ms-2 shrink-0 whitespace-nowrap border-border font-mono text-muted-foreground')}
+      title={sizes.map((size) => `${size}: ${tiers[size]}`).join('\n')}
+      data-testid={`sizes-${endpoint.id}`}
+    >
+      {sizes.map((size) => `${size} ${short(tiers[size] as string)}`).join(' · ')}
+    </span>
+  );
+}
+
 export function TokenSourcesTree({
   endpoints,
   selectedId,
@@ -138,6 +155,7 @@ export function TokenSourcesTree({
                   <Plural value={kids.length} one="# allocation" other="# allocations" />
                 </button>
               )}
+              <SizesChip endpoint={e} />
             </div>
           </td>
           <td className="whitespace-nowrap px-2 py-2">

@@ -247,6 +247,7 @@ async def bind_hub_llm_endpoint(payload: dict) -> dict:
             provider=payload.get("provider"),
             name=payload.get("name"),
             models_allow=payload.get("models_allow"),
+            tiers=payload.get("tiers"),
         )
     except ValueError as exc:
         raise HubEndpointBindError(str(exc), 400) from exc

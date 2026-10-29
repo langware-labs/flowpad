@@ -60,10 +60,6 @@ export interface LLMChainRemaining {
 export interface LLMChainHop {
   id: string;
   name: string;
-  /** What the hop is in the scope ladder: `global` | `organization` | `team` | `user`. */
-  source_kind?: string | null;
-  /** The team or organization whose pool this hop is. */
-  scope_name?: string | null;
   provider: string | null;
   is_root: boolean;
   /** What this hop is on the scope ladder: `global` | `organization` | `team` | `user`. */
@@ -85,6 +81,15 @@ export interface LLMChain {
   paths: string[][];
   missing_sources: string[];
   sticky_root_for_me: string | null;
+  /** Per size: the model a caller of the entry gets, the hop that set it (`inherited` when that
+   *  hop is not readable to the caller), and why there is none. */
+  effective_tiers?: Record<'sm' | 'md' | 'lg', LLMChainTier>;
+}
+
+export interface LLMChainTier {
+  model: string | null;
+  set_by: string | null;
+  reason: string;
 }
 
 export type LLMUsageGranularity = 'hour' | 'day';
