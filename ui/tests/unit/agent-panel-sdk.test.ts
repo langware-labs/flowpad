@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dataManager } from '@sdk/APIEntity';
 import { Agent } from '@sdk/entities/agent';
-import { chatRows, defineAgentElement } from '@sdk/apps/agent-panel';
+import { chatRows, defineAgentElement, FlowpadAgentElement } from '@sdk/apps/agent-panel';
 
 const ENDPOINT = '9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d';
 const WEBAPP = 'b9312997-b348-57f9-8f6b-1a970e33e9a9';
@@ -65,8 +65,8 @@ beforeEach(() => {
     /* none */
   }
   window.history.replaceState(null, '', `/api/v1/graph/service_endpoint/${ENDPOINT}/service/`);
-  // The unit tier has no backend: the SDK's bootstrap answers at once instead of waiting on DNS.
-  vi.spyOn(dataManager, 'bootstrap').mockRejectedValue(new Error('no backend in the unit tier'));
+  // The unit tier has no backend to initialise against (and shares one thread with other files).
+  FlowpadAgentElement.ready = async () => {};
   const scrooge = new Agent({ id: AGENT, name: 'scrooge', title: 'Scrooge' } as never);
   vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: { toString(): string }) => {
     const rows: Record<string, unknown> = {

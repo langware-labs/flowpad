@@ -40,8 +40,8 @@ const PAGE_STYLE_ID = 'flowpad-agent-css';
 const PAGE_CSS = `
 :root { --fp-agent-w: 0px; }
 :root[${OPEN_ATTR}="open"] { --fp-agent-w: ${AGENT_PANEL_WIDTH}px; }
-body { margin-left: var(--fp-agent-w); transition: margin-left .25s ease; }
-@media (prefers-reduced-motion: reduce) { body { transition: none; } }
+:root body { margin-left: var(--fp-agent-w); transition: margin-left .25s ease; }
+@media (prefers-reduced-motion: reduce) { :root body { transition: none; } }
 `;
 
 const BUTTON_CSS = `
@@ -358,6 +358,10 @@ class AgentPanel {
 
 /** The toggle: the agent's icon where the tag is placed; it owns the panel. */
 export class FlowpadAgentElement extends HTMLElement {
+  /** What the tag waits for before it looks its agent up: the SDK's own init (memoised, so the page's
+   *  call and this one are the same). A seam for a page that initialises the SDK some other way. */
+  static ready: () => Promise<void> = () => initSdk();
+
   private readonly root = this.attachShadow({ mode: 'open' });
   private panel: AgentPanel | null = null;
   private key = '';
@@ -388,7 +392,7 @@ export class FlowpadAgentElement extends HTMLElement {
   private async setup(): Promise<void> {
     if (!appTypeId() && !this.getAttribute('agent')) return; // opened on its own: nothing to talk to
     try {
-      await initSdk();
+      await FlowpadAgentElement.ready();
       const host = appTypeId() ? await resolveAppHost().catch(() => null) : null;
       const named = this.getAttribute('agent');
       const subject = host?.subject as Agent | null | undefined;

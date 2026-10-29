@@ -135,6 +135,11 @@ def static_dev_cmd() -> str:
     return STATIC_DEV_CMD.format(python=sys.executable)
 
 
+def is_static_dev(command: str) -> bool:
+    """*command* runs the static dev server — as written, or once :func:`dev_command` upgrades it."""
+    return "-m flow_sdk.server.dev_front" in dev_command(command or "")
+
+
 def dev_command(command: str) -> str:
     """*command* as it is run: a bare ``python -m http.server <port>`` becomes the static dev server on the
     same port; anything else is the author's own and runs unchanged."""

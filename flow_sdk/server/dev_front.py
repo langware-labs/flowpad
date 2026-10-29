@@ -6,7 +6,9 @@ different origin: a bare file server answers those paths 404 and the page never 
 answers them the way the served app does:
 
 * the folder through :func:`serve_app_bytes` — the SAME document handling as the served route (the
-  API-origin injection, the index fallback, the content version), never cached so an edit shows on reload;
+  API-origin injection, the index fallback, the content version), never cached so an edit shows on reload.
+  Flowpad opens it at the app's own service path (``…/service_endpoint/<id>/service/<mount>/``, see
+  ``static_dev_address``), where the page resolves its app exactly as when served; ``/`` serves it too;
 * ``/sdk/*`` and ``/api/*`` (HTTP and WebSocket) forwarded to this instance's backend, cookies included:
   the browser is on the same host, so the gate cookie the backend set is the one it sends here.
 
@@ -32,7 +34,13 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
 from flow_sdk.core.dev_server import LOOPBACK_HOST
-from flow_sdk.server.service_proxy import inbound_headers, upstream_path
+from flow_sdk.server.service_proxy import (
+    SERVICE_ROUTE,
+    SERVICE_ROUTE_PREFIX,
+    inbound_headers,
+    service_path,
+    upstream_path,
+)
 from flow_sdk.server.service_serving import WS_UNAVAILABLE, close, fail, http_client, relay_websocket
 
 #: The backend's own paths a page calls from its origin — what this server forwards.
@@ -121,7 +129,23 @@ def create_app(root: Path) -> Starlette:
     async def folder(request: Request) -> Response:
         return await serve_app_bytes(root, request.path_params.get("path", ""), request, cache_control="no-cache")
 
-    routes: list = []
+    async def at_service_path(request: Request) -> Response:
+        """The folder at the app's own service path — how Flowpad addresses it (``static_dev_address``),
+        so the page resolves its app from ``location.pathname`` as the served one does. Its documents
+        are based there, like a served route's (``serve_static``)."""
+        params = request.path_params
+        mount = params.get("mount") or ""
+        base = f"{request.url.scheme}://{request.url.netloc}{service_path(params['endpoint'])}"
+        base += f"{mount}/" if mount else ""
+        return await serve_app_bytes(root, params.get("path", ""), request, base_url=base, cache_control="no-cache")
+
+    # Before the forwarded ``/api``: this one ``/api`` path is the page itself, never the backend's.
+    service = SERVICE_ROUTE_PREFIX + SERVICE_ROUTE.replace("{endpoint_id}", "{endpoint}")
+    routes: list = [
+        Route(service + "/", at_service_path),
+        Route(service + "/{mount}/", at_service_path),
+        Route(service + "/{mount}/{path:path}", at_service_path),
+    ]
     for prefix in FORWARDED:
         routes += [
             Route(f"/{prefix}/{{rest:path}}", _forward, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),

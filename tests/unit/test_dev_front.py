@@ -129,3 +129,41 @@ def test_the_started_dev_runtime_serves_the_sdk(backend, app_dir, how):
         stop_group(proc.pid)
     assert sdk.status_code == 200 and sdk.content == SDK_BODY
     assert "__FLOWPAD_API_URL__" in page.text
+
+
+ENDPOINT = "4c46354c-c3d5-4fb5-9ed9-3ac6772cf6c2"
+SERVICE = f"/api/v1/graph/service_endpoint/{ENDPOINT}/service/gtm-pipeline-dev/"
+
+
+async def test_the_page_at_its_service_path_resolves_its_app_like_the_served_one(backend, app_dir):
+    """The SDK reads the app from ``location.pathname`` (``ts_sdk/src/apps/host.ts``): a dev page
+    served at ``/`` names no app and the app's startup throws."""
+    async with _client(app_dir) as client:
+        page = await client.get(SERVICE + "?theme=dark")
+        js = await client.get(SERVICE + "app.js")
+        other_api = await client.get(f"/api/v1/graph/service_endpoint/{ENDPOINT}", headers={"cookie": "g=1"})
+    assert page.status_code == 200
+    assert f'<base href="http://127.0.0.1:8001{SERVICE}?theme=dark"' in page.text
+    assert js.status_code == 200 and "flowpad-sdk" in js.text
+    assert other_api.text == "g=1"  # the endpoint's own record is still the backend's
+
+
+def test_flowpad_addresses_a_static_dev_route_at_its_service_path():
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint, static_dev_address
+
+    def endpoint(start_cmd):
+        return ServiceEndpoint(
+            id=ENDPOINT,
+            name="app",
+            subkind="app",
+            protocol={"spec_kind": "web.app", "entry": "index.html"},
+            backend={
+                "type": "routed",
+                "routes": {"gtm-pipeline-dev": {"backend": {"type": "proxy", "port": 8001, "start_cmd": start_cmd}}},
+            },
+        )
+
+    legacy = endpoint('"/py/bin/python3" -m http.server 8001')
+    assert static_dev_address(legacy, "gtm-pipeline-dev", "http://localhost:8001") == f"http://localhost:8001{SERVICE}"
+    vite = endpoint("npm run dev")
+    assert static_dev_address(vite, "gtm-pipeline-dev", "http://localhost:8001") == "http://localhost:8001"

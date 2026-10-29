@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Literal, Optional
+from urllib.parse import quote
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
@@ -308,6 +309,7 @@ class ServiceEndpoint(Entity):
                 return ApiFailResponse(
                     message="a static route has no address of its own on this machine", status_code=409
                 )
+            url = static_dev_address(self, route, url)
         if str(redirect).lower() in ("1", "true", "yes"):
             return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
         return ApiSuccessResponse(data={"url": url})
@@ -419,6 +421,24 @@ def local_direct_url(endpoint, route: Optional[str] = None) -> Optional[str]:
         return sandbox_public_url(audience_ports()[endpoint.subkind], sandbox_id) + (f"/{route}/" if route else "/")
     backend = endpoint.proxy_of(route)
     return f"http://localhost:{int(backend.port)}" if backend is not None else None
+
+
+def static_dev_address(endpoint, route: Optional[str], origin: str) -> str:
+    """*origin* with the app's service path, when the route runs the static dev server.
+
+    A page learns which app it is from its own path (``…/service_endpoint/<id>/service/<mount>/``,
+    ``ts_sdk/src/apps/host.ts``). The static dev server (``server/dev_front.py``) serves its folder
+    under that same path on its own origin, so a dev page resolves its app exactly as the served one.
+    Any other dev server is addressed at its root, as it always was.
+    """
+    from flow_sdk.core.dev_server import is_static_dev  # noqa: PLC0415
+    from flow_sdk.server.service_proxy import service_path  # noqa: PLC0415
+
+    backend = endpoint.proxy_of(route)
+    if backend is None or not is_static_dev(backend.start_cmd or ""):
+        return origin
+    mount = f"{quote(route, safe='')}/" if route else ""
+    return origin.rstrip("/") + service_path(endpoint.id) + mount
 
 
 async def _http_state(port: int, path: str, timeout: float) -> tuple[str, str]:
