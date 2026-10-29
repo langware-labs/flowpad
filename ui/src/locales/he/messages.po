@@ -5166,8 +5166,8 @@ msgid "Budget in dollars"
 msgstr "תקציב בדולרים"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Budget removed"
-msgstr "התקציב הוסר"
+#~ msgid "Budget removed"
+#~ msgstr "התקציב הוסר"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Budget settings"
@@ -5464,6 +5464,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/tabs/GeneralTab.tsx
 #: src/components/organization/tabs/shared.tsx
@@ -5984,6 +5985,10 @@ msgstr "בחרו מסמך מהסרגל הצדדי כדי לצפות בתוכנו
 #: src/components/credentials/FileValueInput.tsx
 msgid "Choose a file instead"
 msgstr "בחרו קובץ במקום"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Choose a model for these teams"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Choose a model…"
@@ -8244,8 +8249,8 @@ msgid "Could not remove public access"
 msgstr "לא ניתן להסיר את הגישה הציבורית"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Could not remove the budget"
-msgstr "לא ניתן היה להסיר את התקציב"
+#~ msgid "Could not remove the budget"
+#~ msgstr "לא ניתן היה להסיר את התקציב"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -20477,6 +20482,7 @@ msgstr "תקין"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/notifications/NotificationOutlet.tsx
 msgid "OK"
 msgstr "אישור"
@@ -22337,8 +22343,8 @@ msgid "Pick a project on this machine. It is used where it is — nothing is sen
 msgstr "בחרו פרויקט במחשב הזה. הוא נשאר במקומו — שום דבר לא נשלח לענן."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Pick a provider and paste a key to set it up again."
-msgstr "בחרו ספק והדביקו מפתח כדי להגדיר מחדש."
+#~ msgid "Pick a provider and paste a key to set it up again."
+#~ msgstr "בחרו ספק והדביקו מפתח כדי להגדיר מחדש."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Pick a provider."
@@ -23277,6 +23283,10 @@ msgstr "מפתח API של הספק"
 msgid "Provider ID:"
 msgstr "מזהה ספק:"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Provider switched"
+msgstr ""
+
 #: src/components/hooks-manager/index.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Provider:"
@@ -24158,8 +24168,8 @@ msgid "Remove bookmark"
 msgstr "הסר סימנייה"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Remove budget"
-msgstr "הסירו את התקציב"
+#~ msgid "Remove budget"
+#~ msgstr "הסירו את התקציב"
 
 #~ msgid "Remove context folder"
 #~ msgstr "הסרת תיקיית ההקשר"
@@ -24294,8 +24304,8 @@ msgid "Remove this argument"
 msgstr "הסרת הארגומנט הזה"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Remove this budget and start again?"
-msgstr "להסיר את התקציב הזה ולהתחיל מחדש?"
+#~ msgid "Remove this budget and start again?"
+#~ msgstr "להסיר את התקציב הזה ולהתחיל מחדש?"
 
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove this budget?"
@@ -29208,6 +29218,10 @@ msgstr "החליפו פרויקט"
 msgid "Switch Project"
 msgstr "החליפו פרויקט"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Switch provider"
+msgstr ""
+
 #. placeholder {0}: workerLabel(workerType)
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Switch to {0}?"
@@ -30066,13 +30080,18 @@ msgstr "ההודעה שממנה הגעתם — או הדביקו כל הודעה
 msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
 msgstr "התקציב החדש נכנס לתוקף מיד, והנוכחי נסגר. מה שכבר נוצל נשאר מנוצל."
 
+#. placeholder {0}: needing .map((n) => `${n.scope_name ?? n.name} (${n.models.join(', ')})`) .join('; ')
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "The new provider does not offer the models these budgets are set to. Open each team and pick a model it can use, or its members will be refused: {0}"
+msgstr ""
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The number before the colon in the bot token."
 msgstr ""
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
-msgstr "התקציב של הארגון והמפתח השמור שלו יימחקו, וכל צוות שמשתמש בו יפסיק להוציא עד שיוגדר תקציב חדש. הקצאות שכבר ניתנו לצוותים ולאנשים לא יוחזרו — הן יצביעו על תקציב שכבר אינו קיים."
+#~ msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
+#~ msgstr "התקציב של הארגון והמפתח השמור שלו יימחקו, וכל צוות שמשתמש בו יפסיק להוציא עד שיוגדר תקציב חדש. הקצאות שכבר ניתנו לצוותים ולאנשים לא יוחזרו — הן יצביעו על תקציב שכבר אינו קיים."
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx

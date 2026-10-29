@@ -216,8 +216,19 @@ describe('reconcileAliases', () => {
     expect(reconcileAliases({ 'google/gemini-*': GEMINI, 'gemini-*': GEMINI }, ['google/gemini-*'])).toEqual({});
   });
 
-  it('drops a hand-written redirect that would point at a model the list no longer allows', () => {
-    expect(reconcileAliases({ 'claude-*': 'google/gemini-9' }, [GEMINI])).toEqual(aliasesForPinnedModel([GEMINI]));
+  it('keeps a redirect whose target is not the pinned model but is of the family the list allows', () => {
+    // An org opened the family and a team pinned one model: the hub follows the redirect to the pin.
+    const pinned = 'google/gemini-3.1-pro-preview';
+    expect(reconcileAliases({ 'claude-*': GEMINI }, [pinned])).toEqual({
+      'claude-*': GEMINI,
+      ...aliasesForPinnedModel([pinned]),
+    });
+  });
+
+  it('drops a hand-written redirect into a family the list does not allow at all', () => {
+    expect(reconcileAliases({ 'claude-*': GEMINI }, ['openai/gpt-5-mini'])).toEqual(
+      aliasesForPinnedModel(['openai/gpt-5-mini']),
+    );
   });
 
   it('compares maps regardless of key order', () => {

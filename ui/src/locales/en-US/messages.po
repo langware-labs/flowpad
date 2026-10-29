@@ -5204,8 +5204,8 @@ msgid "Budget in dollars"
 msgstr "Budget in dollars"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Budget removed"
-msgstr "Budget removed"
+#~ msgid "Budget removed"
+#~ msgstr "Budget removed"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Budget settings"
@@ -5502,6 +5502,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/tabs/GeneralTab.tsx
 #: src/components/organization/tabs/shared.tsx
@@ -6023,6 +6024,10 @@ msgstr "Choose a document from the sidebar to view its contents"
 #: src/components/credentials/FileValueInput.tsx
 msgid "Choose a file instead"
 msgstr "Choose a file instead"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Choose a model for these teams"
+msgstr "Choose a model for these teams"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Choose a model…"
@@ -8302,8 +8307,8 @@ msgid "Could not remove public access"
 msgstr "Could not remove public access"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Could not remove the budget"
-msgstr "Could not remove the budget"
+#~ msgid "Could not remove the budget"
+#~ msgstr "Could not remove the budget"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -20649,6 +20654,7 @@ msgstr "ok"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/notifications/NotificationOutlet.tsx
 msgid "OK"
 msgstr "OK"
@@ -22527,8 +22533,8 @@ msgid "Pick a project on this machine. It is used where it is — nothing is sen
 msgstr "Pick a project on this machine. It is used where it is — nothing is sent to the cloud."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Pick a provider and paste a key to set it up again."
-msgstr "Pick a provider and paste a key to set it up again."
+#~ msgid "Pick a provider and paste a key to set it up again."
+#~ msgstr "Pick a provider and paste a key to set it up again."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Pick a provider."
@@ -23472,6 +23478,10 @@ msgstr "Provider API key"
 msgid "Provider ID:"
 msgstr "Provider ID:"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Provider switched"
+msgstr "Provider switched"
+
 #: src/components/hooks-manager/index.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Provider:"
@@ -24357,8 +24367,8 @@ msgid "Remove bookmark"
 msgstr "Remove bookmark"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Remove budget"
-msgstr "Remove budget"
+#~ msgid "Remove budget"
+#~ msgstr "Remove budget"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #~ msgid "Remove context folder"
@@ -24495,8 +24505,8 @@ msgid "Remove this argument"
 msgstr "Remove this argument"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Remove this budget and start again?"
-msgstr "Remove this budget and start again?"
+#~ msgid "Remove this budget and start again?"
+#~ msgstr "Remove this budget and start again?"
 
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove this budget?"
@@ -29448,6 +29458,10 @@ msgstr "Switch project"
 msgid "Switch Project"
 msgstr "Switch Project"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Switch provider"
+msgstr "Switch provider"
+
 #. placeholder {0}: workerLabel(workerType)
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Switch to {0}?"
@@ -30315,13 +30329,18 @@ msgstr "The message you came from — or paste any message"
 msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
 msgstr "The new budget takes over at once; the current one is closed. What was spent stays spent."
 
+#. placeholder {0}: needing .map((n) => `${n.scope_name ?? n.name} (${n.models.join(', ')})`) .join('; ')
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "The new provider does not offer the models these budgets are set to. Open each team and pick a model it can use, or its members will be refused: {0}"
+msgstr "The new provider does not offer the models these budgets are set to. Open each team and pick a model it can use, or its members will be refused: {0}"
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The number before the colon in the bot token."
 msgstr "The number before the colon in the bot token."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
-msgstr "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
+#~ msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
+#~ msgstr "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
