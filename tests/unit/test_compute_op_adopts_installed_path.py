@@ -52,6 +52,18 @@ def test_a_converged_install_adopts_the_path_a_new_terminal_gets(tmp_path, monke
     monkeypatch.setenv("PATH", os.environ["PATH"])  # restored after the test, whatever the op adopts
     assert str(tool_bin) not in os.environ["PATH"].split(os.pathsep)
 
+    # The whole fixture lives in a FAKE $HOME. A runner image whose system profile pins HOME (seen
+    # on Blacksmith: the login chain resets it to the real user's home) sends the op's touch, its
+    # check AND the login-shell read to the real home — the mechanism under test cannot exist there.
+    import subprocess
+
+    probed_home = subprocess.run(
+        [os.environ["SHELL"], "-ilc", 'printf %s "$HOME"'],
+        capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL,
+    ).stdout.strip()
+    if probed_home != str(home):
+        pytest.skip(f"this image's login profile pins $HOME ({probed_home!r}); the fake-HOME fixture cannot exist here")
+
     answer = asyncio.run(
         run_op(_install_op(), trusted=True, workdir=tmp_path, platform="darwin" if sys.platform == "darwin" else "linux")
     )
@@ -64,7 +76,15 @@ def test_a_converged_install_adopts_the_path_a_new_terminal_gets(tmp_path, monke
         from flow_sdk.core.capabilities.env_probe import read_terminal_path
 
         terminal, why = read_terminal_path()
+        import subprocess
+
+        seen = subprocess.run(
+            [os.environ["SHELL"], "-ilc",
+             'echo "H=$HOME"; shopt -q login_shell && echo LOGIN; [ -f "$HOME/.bash_profile" ] && echo HAVE_PROFILE; [ -f "$HOME/installed" ] && echo INSTALLED'],
+            capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL,
+        )
         pytest.fail(
             "the install converged, but what this process spawns next still has the PATH it booted with\n"
-            f"read_terminal_path() -> {terminal!r}\nwhy: {why!r}\nSHELL: {os.environ.get('SHELL')!r}"
+            f"read_terminal_path() -> {terminal!r}\nwhy: {why!r}\nSHELL: {os.environ.get('SHELL')!r}\n"
+            f"login shell sees: {seen.stdout!r} (stderr: {seen.stderr[-200:]!r})"
         )
