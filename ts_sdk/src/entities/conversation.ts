@@ -6,7 +6,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
 import { ViewType } from '../utils/ui/view-types';
-import { ConversationEvents, FlowMessage, type IFlowMessage } from './flow-message';
+import { ConversationEvents, FlowMessage, type IFlowMessage, type IMessageMark } from './flow-message';
 
 export interface ConversationMessage {
   role: string;       // "sender" | "recipient" | "bot"
@@ -154,6 +154,8 @@ export interface IConversation extends IEntity {
   started_at?: string | Date | null;
   /** When it ended: a call hung up, or a thread retired by its channel's timeout. */
   ended_at?: string | Date | null;
+  /** Chips its source puts on the whole conversation (a PR's repository, the bot that opened it). */
+  marks?: IMessageMark[];
   /** User-set display title. Set at creation in NewConversationDialog and
    *  shipped through the bundle on cross-user send. */
   title?: string | null;
@@ -218,6 +220,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   address?: string[];
   started_at?: string | Date | null;
   ended_at?: string | Date | null;
+  marks: IMessageMark[];
   // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
   git_sharing_enabled?: boolean;
@@ -248,6 +251,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.address = entity.address ?? [];
     this.started_at = entity.started_at ?? null;
     this.ended_at = entity.ended_at ?? null;
+    this.marks = entity.marks ?? [];
     this.title = entity.title;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;

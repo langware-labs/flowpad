@@ -87,6 +87,10 @@ FILTERS = {
     "review_requested": ("review-requested",),
 }
 DEFAULT_FILTER = "mine"
+#: Dependabot's search author and its login on a PR.
+BOT_AUTHOR = "app/dependabot"
+BOT_LOGIN = "dependabot[bot]"
+BOT_MARK = MessageMarkSpec(key="dependabot", label="Dependabot")
 #: PRs read at once in one search page.
 PR_CONCURRENCY = 6
 SIGN_IN = "GitHub sign-in is missing or expired"
@@ -151,6 +155,8 @@ class GithubPrConfig(SourceConfig):
     filter: Union[Literal["mine", "assigned", "review_requested"], ChoiceEntry] = DEFAULT_FILTER
     #: ``owner/repo`` each; empty reads every repository the token reaches.
     repos: list[str] = []
+    #: Also list Dependabot's open PRs — in ``repos``, else in your organisations and your own account.
+    bots: bool = True
     #: Empty is GitHub itself; a test points a row at a local double. Never a secret.
     base_url: str = GITHUB_API_BASE
 
@@ -182,6 +188,7 @@ class GithubPrSource(MessageSource):
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
         self._client: Any = None
+        self._owners: Optional[list[str]] = None
 
     # ── config ──────────────────────────────────────────────────────────────
     @property
@@ -193,6 +200,10 @@ class GithubPrSource(MessageSource):
         entry = self.config.get("filter") or DEFAULT_FILTER
         value = str(entry.get("id") if isinstance(entry, dict) else entry)
         return value if value in FILTERS else DEFAULT_FILTER
+
+    @property
+    def bots(self) -> bool:
+        return self.config.get("bots") is not False
 
     @property
     def repos(self) -> list[str]:
@@ -296,7 +307,7 @@ class GithubPrSource(MessageSource):
         """Every open PR the searches list now, as ``<owner>/<repo>#<n>``, oldest update first.
         ``prs`` — this pass's own unnarrowed first search page — is reused when it held them all."""
         if prs is None:
-            prs = _merge(await asyncio.gather(*(self._every_open(q) for q in self._searches(None))))
+            prs = _merge(await asyncio.gather(*(self._every_open(q) for q in await self._searches(None))))
         return [_key(pr) for pr in prs]
 
     async def _every_open(self, query: str) -> list[dict]:
@@ -318,7 +329,7 @@ class GithubPrSource(MessageSource):
             return []
         title = str(head.get("title") or "") or None
         found: list[MessageItem] = []
-        add = self._adder(found, key, title)
+        add = self._adder(found, key, title, _login(head.get("user")))
         self._events(timeline, add, head, head)
         ending = [item for item in found if item.data.ends_conversation]
         if ending:
@@ -326,7 +337,10 @@ class GithubPrSource(MessageSource):
         state = "merged" if head.get("merged") or head.get("merged_at") else str(head.get("state") or "open")
         line = {"merged": "merged", "closed": "closed", "open": "You are no longer on this pull request"}.get(state, state)
         when = head.get("merged_at") or head.get("closed_at") or head.get("updated_at")
-        return [self._item(f"ended-{key}-{state}", key, line, "", when, head.get("html_url"), raw=head, subject=title, ends=True, mark=_MARKS.get(state))]
+        return [self._item(
+            f"ended-{key}-{state}", key, line, "", when, head.get("html_url"), raw=head, subject=title, ends=True, mark=_MARKS.get(state),
+            author=_login(head.get("user")),
+        )]
 
     async def iterate(
         self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
@@ -339,14 +353,28 @@ class GithubPrSource(MessageSource):
             if (cursor := page.next_cursor) is None:
                 return
 
-    def _searches(self, since: Optional[datetime], extra: str = "") -> list[str]:
-        """One search query per qualifier of the filter; their open PRs together are the list."""
+    async def _searches(self, since: Optional[datetime], extra: str = "") -> list[str]:
+        """One search query per qualifier of the filter, plus Dependabot's per scope; their open PRs
+        together are the list. A bot search is never unscoped — that is every public repository."""
         tail = [f"repo:{r}" for r in self.repos]
         if since is not None:
             tail.append(f"updated:>={_gh_stamp(since)}")
         if extra:
             tail.append(extra)
-        return [" ".join(["is:pr", "is:open", f"{qualifier}:@me", *tail]) for qualifier in FILTERS[self.filter]]
+        queries = [" ".join(["is:pr", "is:open", f"{qualifier}:@me", *tail]) for qualifier in FILTERS[self.filter]]
+        if self.bots:
+            scopes = [""] if self.repos else await self._bot_scopes()
+            queries += [" ".join(p for p in ("is:pr", "is:open", f"author:{BOT_AUTHOR}", scope, *tail) if p) for scope in scopes]
+        return queries
+
+    async def _bot_scopes(self) -> list[str]:
+        """``org:<org>`` for each of your organisations and ``user:<you>``, read once per session."""
+        if self._owners is None:
+            orgs = await self._list("/user/orgs")
+            self._owners = [f"org:{o['login']}" for o in orgs if isinstance(o, dict) and o.get("login")]
+            if self.binding.account_key:
+                self._owners.append(f"user:{self.binding.account_key}")
+        return self._owners
 
     async def _search_page(
         self, since: Optional[datetime], *, page: int = 1, extra: str = "", order: str = "asc", per_page: Optional[int] = None
@@ -355,7 +383,7 @@ class GithubPrSource(MessageSource):
         whether any query has a further page."""
         per_page = per_page or SEARCH_PAGE
         results = await asyncio.gather(*(
-            self._get("/search/issues", q=q, sort="updated", order=order, per_page=per_page, page=page) for q in self._searches(since, extra)
+            self._get("/search/issues", q=q, sort="updated", order=order, per_page=per_page, page=page) for q in await self._searches(since, extra)
         ))
         more = any(len(_prs(r)) == per_page and page * per_page < int(r.get("total_count") or 0) for r in results)
         return _merge([_prs(r) for r in results], reverse=order == "desc"), more
@@ -370,7 +398,7 @@ class GithubPrSource(MessageSource):
         base = f"/repos/{repo}"
         out: list[MessageItem] = []
 
-        add = self._adder(out, key, title)
+        add = self._adder(out, key, title, _login(pr.get("user")))
 
         comments, review_comments, reviews, timeline, head = await asyncio.gather(
             self._list(f"{base}/issues/{n}/comments", since=since),
@@ -405,15 +433,17 @@ class GithubPrSource(MessageSource):
         out.sort(key=lambda item: (item.data.sent_at or datetime.min.replace(tzinfo=timezone.utc), item.origin.key))
         return out
 
-    def _adder(self, out: list[MessageItem], key: str, title: Optional[str]):
+    def _adder(self, out: list[MessageItem], key: str, title: Optional[str], author: str = ""):
         """``add(kind_id, sender, text, when, url, raw, in_reply_to=None, *, ends=False, mark=None)``
-        appending one message of PR ``key`` to ``out``."""
+        appending one message of PR ``key`` (opened by ``author``) to ``out``."""
 
         def add(
             kind_id: str, sender: str, text: str, when: Any, url: Any, raw: dict, in_reply_to: Optional[str] = None, *,
             ends: bool = False, mark: Optional[MessageMarkSpec] = None,
         ) -> None:
-            out.append(self._item(kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends, mark=mark))
+            out.append(self._item(
+                kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends, mark=mark, author=author,
+            ))
 
         return add
 
@@ -490,7 +520,7 @@ class GithubPrSource(MessageSource):
                 return Verdict(ready=False, detail=f"The GitHub sign-in lacks the `{'`, `'.join(missing)}` scope — reconnect GitHub and grant it.")
         login = _login(response.json())
         try:
-            await self._get("/search/issues", q=self._searches(None)[0], per_page=1)
+            await self._get("/search/issues", q=(await self._searches(None))[0], per_page=1)
         except SourceError as exc:
             return Verdict(ready=False, detail=f"GitHub refused the pull-request search: {exc}")
         who = "you" if not login else f"@{login}"
@@ -572,9 +602,10 @@ class GithubPrSource(MessageSource):
     def _item(
         self, key: str, pr: str, text: Optional[str], sender: str, when: Any, url: Any, *,
         raw: Optional[dict] = None, subject: Optional[str] = None, in_reply_to: Optional[str] = None, ends: bool = False,
-        mark: Optional[MessageMarkSpec] = None,
+        mark: Optional[MessageMarkSpec] = None, author: Optional[str] = None,
     ) -> MessageItem:
-        """One message of PR ``pr``, keyed ``key`` — the one shape ``fetch`` and a send's echo share."""
+        """One message of PR ``pr``, keyed ``key`` — the one shape ``fetch`` and a send's echo share.
+        ``author`` (who opened the PR) names the conversation's chips; ``None`` (an echo) names none."""
         data = GithubPrMessageData(
             text=text,
             conversation=self.conversation_origin(pr),
@@ -585,6 +616,7 @@ class GithubPrSource(MessageSource):
             raw=raw,
             ends_conversation=ends,
             mark=mark,
+            conversation_marks=_conversation_marks(pr, author) if author is not None else (),
         )
         origin = self.origin(key, pr)
         return MessageItem(origin=origin.model_copy(update={"url": str(url)}) if url else origin, data=data)
@@ -671,6 +703,13 @@ def _check_outgoing(data: object, *, reply: bool) -> None:
     check_outgoing(data, reply=reply)
     if not (data.text or "").strip():
         raise ValueError("a GitHub comment needs text")
+
+
+def _conversation_marks(pr: str, author: str) -> tuple[MessageMarkSpec, ...]:
+    """The PR's chips: its repository (by name), and Dependabot when the bot opened it."""
+    repo = pr.split("#", 1)[0]
+    marks = (MessageMarkSpec(key=f"repo:{repo}", label=repo.rsplit("/", 1)[-1]),)
+    return marks + (BOT_MARK,) if author == BOT_LOGIN else marks
 
 
 def _repo_of(pr: dict) -> str:

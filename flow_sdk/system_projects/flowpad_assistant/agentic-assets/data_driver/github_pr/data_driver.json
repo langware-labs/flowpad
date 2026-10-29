@@ -35,6 +35,11 @@
       "placeholder": "octo-org/octo-repo",
       "hint": "owner/repo per line; empty = every repository you can reach"
     },
+    "bots": {
+      "type": "bool",
+      "label": "Include Dependabot PRs",
+      "hint": "Dependabot's open PRs in these repositories — or, with none listed, in your organisations and your own account."
+    },
     "base_url": {
       "type": "text",
       "advanced": true,

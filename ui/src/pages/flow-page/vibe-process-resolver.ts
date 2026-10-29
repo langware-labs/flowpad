@@ -1,34 +1,11 @@
-import { AgenticProcess, type ExpressionNode, ProcessKind, QueryFilter, QueryRequest } from '@sdk';
+import { AgenticProcess, lastChatQuery } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback, useRef } from 'react';
 
-/** The latest real Chat that was opened in this project (the project home page's
- *  agent resume uses it).
- *  `target` narrows it to one entity's chats — an agent's sessions carry the
- *  agent's TypeId as `target_typeid_str` (`Deployment.use`).
- *  `openedOnly` (default) keeps only chats that were opened; Discuss on an asset
- *  passes false — a chat made by Discuss is the asset's even before its first turn. */
-export function lastVibeChatQuery(
-  /** Null = a project-less chat (the chat-scratch folder): matches `project_id` unset. */
-  projectId: string | null,
-  target?: string,
-  { openedOnly = true }: { openedOnly?: boolean } = {},
-): QueryRequest {
-  const operands: Partial<ExpressionNode>[] = [
-    projectId ? { op: '$EQ', operands: ['project_id', projectId] } : { op: '$IS_NULL', operands: ['project_id'] },
-    { op: '$EQ', operands: ['process_type', ProcessKind.Chat] },
-  ];
-  if (openedOnly) operands.push({ op: '$IS_NOT_NULL', operands: ['last_active_at'] });
-  if (target) operands.push({ op: '$EQ', operands: ['target_typeid_str', target] });
-  return new QueryRequest({
-    type: AgenticProcess.type,
-    scope: [],
-    name: `lastVibeChat:${projectId ?? 'scratch'}${target ? `:${target}` : ''}${openedOnly ? '' : ':any'}`,
-    query: new QueryFilter({ match: { op: '$AND', operands } }),
-  });
-}
+/** The latest real Chat opened in this project — the SDK's rule (`lastChatQuery`), shared with served pages. */
+export const lastVibeChatQuery = lastChatQuery;
 
 export const pickLastVibeChat = mostRecentProcess;
 

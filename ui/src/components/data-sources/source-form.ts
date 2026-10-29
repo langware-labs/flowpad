@@ -226,6 +226,7 @@ export function buildConfig(draft: SourceDraft, spec?: DataDriver): Record<strin
     if (!raw) continue;
     if (field.type === FieldType.LINES) config[key] = splitLines(raw);
     else if (field.type === FieldType.CSV) config[key] = splitCsv(raw);
+    else if (field.type === FieldType.BOOL) config[key] = raw === 'true';
     else if (field.type === FieldType.NUMBER) {
       const n = Number(raw);
       if (!Number.isNaN(n)) config[key] = n;

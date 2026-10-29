@@ -80,3 +80,18 @@ async def test_a_source_that_is_not_runnable_is_not_read_and_says_why(status):
     assert answer["ran"] is False and answer["created"] == 0
     assert answer["status"] == status
     assert answer["detail"] == src.poll_refusal() and answer["detail"]
+
+
+@pytest.mark.parametrize("windowed, kept", [(True, 0), (False, 1)])
+async def test_a_source_with_no_window_keeps_a_message_older_than_the_window(windowed, kept):
+    """``windowed = False`` (open pull requests, however quiet) floors neither the read nor what it hands back."""
+    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
+
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+
+    old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    with scripted_provider(MESSAGES, pages=[[{"key": "m1", "text": "a month ago", "occurred_at": old}]]):
+        DRIVERS.get(MESSAGES)._cls.windowed = windowed
+        src = await _source(MESSAGES)
+        answer = await _pull(src)
+    assert answer["created"] == kept

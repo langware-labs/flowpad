@@ -88,6 +88,7 @@ import {
 } from '@src/components/conversation/conversation-category';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
+import { ConversationMarkChips } from '@src/components/conversation/ChannelMessageExtras';
 import { MembershipInvitations } from './MembershipInvitations';
 import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
@@ -546,6 +547,7 @@ export function ConversationListRow({
           </button>
         )}
         <SourceChip attribution={attribution} className="me-1" />
+        <ConversationMarkChips marks={conv.marks} />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>

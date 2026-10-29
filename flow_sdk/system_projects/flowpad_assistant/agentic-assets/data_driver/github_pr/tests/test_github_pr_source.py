@@ -55,6 +55,8 @@ class _FakeGithub:
         self.scopes: str | None = "repo, read:org"
         #: Entries per list page GitHub answers with (a ``Link: rel="next"`` beyond it); None = all.
         self.list_page: int | None = None
+        #: The organisations ``/user/orgs`` lists for me.
+        self.orgs: list[str] = ["octo"]
 
     def tick(self) -> str:
         """A second later than any stamp so far and never behind the wall clock."""
@@ -105,6 +107,8 @@ class _FakeGithub:
         if route == "/user":
             extra = {"X-OAuth-Scopes": self.scopes} if self.scopes is not None else {}
             return self._json({"login": self.me}, **extra)
+        if route == "/user/orgs":
+            return self._json([{"login": o} for o in self.orgs])
         if route == "/search/issues":
             return self._search(params)
         parts = route.strip("/").split("/")  # repos/<owner>/<repo>/<kind>/<n>/...
@@ -133,7 +137,7 @@ class _FakeGithub:
             self.posts.append({"to": key, "text": body, "thread": key, "external_id": ("review-comment-" if "in_reply_to_id" in made else "comment-") + str(made["id"])})
             return self._json(made, status=201)
         if parts[3] == "pulls" and not tail:
-            return self._json({"number": pr["number"], "title": pr["title"], "head": {"sha": pr["sha"]}, "state": pr["state"],
+            return self._json({"number": pr["number"], "title": pr["title"], "user": {"login": pr["author"]}, "head": {"sha": pr["sha"]}, "state": pr["state"],
                                "merged": pr["merged"], "updated_at": pr["updated_at"], "html_url": f"https://github.com/{key.replace('#', '/pull/')}"})
         lists = {("issues", "comments"): "comments", ("pulls", "comments"): "review_comments", ("pulls", "reviews"): "reviews", ("issues", "timeline"): "timeline"}
         name = lists.get((parts[3], tail[0] if tail else ""))
@@ -181,15 +185,19 @@ class _FakeGithub:
         repos = [t[5:] for t in terms if t.startswith("repo:")]
         since = next((t[len("updated:>="):] for t in terms if t.startswith("updated:>=")), None)
         created_before = next((t[len("created:<"):] for t in terms if t.startswith("created:<")), None)
-        who = "review-requested" if "review-requested:@me" in terms else "author" if "author:@me" in terms else "assignee"
-        matches = {"review-requested": lambda p: self.me in p["reviewers"], "author": lambda p: p["author"] == self.me, "assignee": lambda p: p["assignee"] == self.me}[who]
+        owners = [t.split(":", 1)[1] for t in terms if t.startswith(("org:", "user:"))]
+        who = ("bot" if "author:app/dependabot" in terms else "review-requested" if "review-requested:@me" in terms
+               else "author" if "author:@me" in terms else "assignee")
+        matches = {"bot": lambda p: p["author"] == "dependabot[bot]", "review-requested": lambda p: self.me in p["reviewers"],
+                   "author": lambda p: p["author"] == self.me, "assignee": lambda p: p["assignee"] == self.me}[who]
         rows = [p for p in self.prs.values() if p["state"] == "open" and (not repos or p["repo"] in repos) and (since is None or p["updated_at"] >= since)
+                and (not owners or p["repo"].split("/")[0] in owners)
                 and (created_before is None or p["created_at"] < created_before) and matches(p)]
         rows.sort(key=lambda p: (p["updated_at"], p["repo"], p["number"]), reverse=params.get("order") == "desc")
         per, page = int(params.get("per_page") or 30), int(params.get("page") or 1)
         chunk = rows[(page - 1) * per: page * per]
         return self._json({"total_count": len(rows), "items": [{
-            "number": p["number"], "title": p["title"], "updated_at": p["updated_at"],
+            "number": p["number"], "title": p["title"], "updated_at": p["updated_at"], "user": {"login": p["author"]},
             "repository_url": f"https://api.github.com/repos/{p['repo']}",
             "html_url": f"https://github.com/{p['repo']}/pull/{p['number']}",
         } for p in chunk]})
@@ -375,6 +383,45 @@ async def test_by_default_my_prs_and_my_review_requests_are_listed_once_each(git
 def test_a_new_source_config_defaults_to_my_prs_not_assigned_ones():
     """The app saves ``GithubPrConfig()``'s dump, so the field default is what a new source runs."""
     assert GithubPrConfig().filter == "mine"
+
+
+def _chips(items, key: str) -> list[str]:
+    return [m.label for m in next(i for i in items if i.data.conversation.key == key).data.conversation_marks]
+
+
+async def test_by_default_dependabot_prs_in_my_orgs_are_listed_and_chipped(github):
+    gh = github.gh
+    gh.pr("octo/deps#50", reviewers=())["author"] = "dependabot[bot]"
+    gh.pr("strangers/lib#51", reviewers=())["author"] = "dependabot[bot]"  # not my org: never listed
+    gh.pr("octo/app#52", reviewers=())["author"] = ME
+    for key in ("octo/deps#50", "strangers/lib#51", "octo/app#52"):
+        gh.comment(key, "hi", user="dana")
+    items, _, _ = await _all(_source(github.base))
+    assert {i.data.conversation.key for i in items} == {"octo/deps#50", "octo/app#52"}
+    assert _chips(items, "octo/deps#50") == ["deps", "Dependabot"]
+    assert _chips(items, "octo/app#52") == ["app"]
+    bot = [q for _, q in gh.calls if "author:app/dependabot" in q]
+    assert bot and all("org:octo" in q or f"user:{ME}" in q for q in bot), "a bot search is never unscoped"
+
+
+async def test_dependabot_prs_can_be_turned_off(github):
+    gh = github.gh
+    gh.pr("octo/deps#60", reviewers=())["author"] = "dependabot[bot]"
+    gh.comment("octo/deps#60", "bump", user="dependabot[bot]")
+    items, _, _ = await _all(_source(github.base, bots=False))
+    assert items == []
+    assert not any("dependabot" in q for _, q in gh.calls)
+
+
+async def test_with_repos_set_the_bot_search_is_scoped_to_them(github):
+    gh = github.gh
+    gh.pr("octo/deps#70", reviewers=())["author"] = "dependabot[bot]"
+    gh.pr("octo/other#71", reviewers=())["author"] = "dependabot[bot]"
+    for key in ("octo/deps#70", "octo/other#71"):
+        gh.comment(key, "bump", user="dependabot[bot]")
+    items, _, _ = await _all(_source(github.base, repos=["octo/deps"]))
+    assert {i.data.conversation.key for i in items} == {"octo/deps#70"}
+    assert not any(q == "/user/orgs" for _, q in gh.calls)
 
 
 async def test_the_assigned_filter_lists_only_prs_assigned_to_me(github):
