@@ -174,7 +174,7 @@
   display: inline-block;
   font-size: 0.625rem;
   font-weight: 500;
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
   background: none;
   border: none;
   padding: 0;
@@ -185,7 +185,7 @@
 }
 
 .activity-analysis-link:hover {
-  color: hsl(var(--primary) / 0.75);
+  color: hsl(var(--primary-text) / 0.75);
 }
 
 .activity-classification-link {
@@ -195,7 +195,7 @@
   font-size: 0.6875rem;
   line-height: 1.4;
   font-weight: 500;
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
   background: hsl(var(--primary) / 0.08);
   border: 1px solid hsl(var(--primary) / 0.2);
   border-radius: var(--radius);
@@ -324,7 +324,7 @@
 
 .activity-resume-button:hover {
   background: hsl(var(--primary) / 0.15);
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
   border-color: hsl(var(--primary) / 0.4);
 }
 
@@ -387,7 +387,7 @@
 
 .learning-card-archive:hover {
   background: hsl(var(--destructive) / 0.1);
-  color: hsl(var(--destructive));
+  color: hsl(var(--destructive-text));
 }
 
 .learning-card-title {
@@ -431,7 +431,7 @@
 .learning-card-error {
   font-size: 0.625rem;
   font-weight: 500;
-  color: hsl(var(--destructive));
+  color: hsl(var(--destructive-text));
 }
 
 .learning-card-artifacts {
@@ -445,7 +445,7 @@
 
 .learning-card-artifact-link {
   font-size: 0.625rem;
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
   text-decoration: underline;
   cursor: pointer;
   background: none;
@@ -454,7 +454,7 @@
 }
 
 .learning-card-artifact-link:hover {
-  color: hsl(var(--primary) / 0.8);
+  color: hsl(var(--primary-text) / 0.8);
 }
 
 /* Bookmark cards */
@@ -548,7 +548,7 @@
 
 .bookmark-card-action-btn--close:hover {
   background: hsl(var(--destructive) / 0.1);
-  color: hsl(var(--destructive));
+  color: hsl(var(--destructive-text));
 }
 
 /* Bookmark filter select */

@@ -815,7 +815,12 @@ class Project(SetupSkippable, Entity):
         # What the pull added or changed is re-indexed; what it deleted takes its row with it.
         result, issues = await reconcile_under(root, write=False)
         if issues or result.skipped:
-            raise RuntimeError("Some pulled project assets could not be indexed")
+            # Best effort: the pull landed and the files are on disk. An asset that cannot index is
+            # logged and left for a person to fix; it never fails the update of everything else.
+            log.warning(
+                "project %s: %d pulled asset(s) could not be indexed: skipped=%s issues=%s",
+                self.id, len(result.skipped) + len(issues), result.skipped, issues,
+            )
         _LOAD_READY.difference_update(key for key in tuple(_LOAD_READY) if key[0] == self.id)
 
     async def _index_home_page(self, typeid: str) -> None:
@@ -978,13 +983,15 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"apps": results})
 
     @action.get(action_name="setup-requirements")
-    async def setup_requirements_action(self) -> "ApiResponse":
-        """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.
-        Every MUST value and needed connection counts; OPTIONAL values never do. Names only."""
+    async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":
+        """`GET /project/<id>/setup-requirements?include_ready=` — ``ready``, what is left to set up, and the gaps.
+        Every MUST value and needed connection counts; OPTIONAL values never do. Names only. ``include_ready``
+        (the Project setup page) also lists what is set up and each step's tree node."""
         from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
 
         try:
-            return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+            readiness = await readiness_of(self, include_ready=include_ready)
+            return ApiSuccessResponse(data=readiness.model_dump(mode="json"))
         except Exception as exc:  # noqa: BLE001 — the caller shows why, not a bare 500
             log.warning("project setup requirements failed for %s: %s", self.id, exc, exc_info=True)
             return ApiFailResponse(message=f"Couldn't check what this project needs here: {exc}")

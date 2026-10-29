@@ -17,6 +17,10 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 AutomationKind = Literal["schedule", "event", "file", "agent_hook"]
 #: Where a rule sits in the list: this project, mine (everywhere), or Flowpad's own.
 AutomationGroup = Literal["project", "mine", "builtin"]
+#: Where a rule runs: this computer, a cloud machine (its own clock), or the Flowpad cloud (the hub's clock).
+PlaceKind = Literal["local", "cloud_machine", "hub"]
+#: Which store holds the row: this instance, or the hub (act on it through the hub).
+AutomationSource = Literal["local", "hub"]
 #: One run's state. ``launched`` = an agent was started and its end is not known yet.
 RunStatus = Literal["running", "launched", "succeeded", "failed", "skipped"]
 
@@ -190,6 +194,25 @@ class RunMark(DataSpec):
 # ── The list ──────────────────────────────────────────────────────────────────
 
 
+class AutomationPlace(DataSpec):
+    """Where an automation runs, in words the screen shows next to it."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.place"
+
+    kind: PlaceKind
+    #: "This computer", "Cloud · <machine>" or "Flowpad cloud".
+    label: str
+    #: The Deployment it is pinned to (``runs_on``), when it is, and that machine's name.
+    deployment_id: Optional[str] = None
+    deployment_name: Optional[str] = None
+    #: Pinned to no machine: every machine that has the rule arms it.
+    every_machine: bool = False
+
+
+LOCAL_PLACE = AutomationPlace(kind="local", label="This computer")
+
+
 class AutomationSummary(DataSpec):
     """One row of the Automations list: what it is, what it does, how it is doing."""
 
@@ -222,6 +245,12 @@ class AutomationSummary(DataSpec):
     read_only: bool = False
     #: The rule is a file asset; edits write its trigger.json.
     asset_ref: Optional[str] = None
+    place: AutomationPlace = LOCAL_PLACE
+    #: The agent it runs: the ``run_agent`` target, else the agent the rule belongs to.
+    agent_type_id: Optional[str] = None
+    #: What the rule belongs to (an agent's own schedule: that agent), when anything.
+    parent_type_id: Optional[str] = None
+    source: AutomationSource = "local"
 
 
 # ── Check (a dry run) ─────────────────────────────────────────────────────────

@@ -38,6 +38,7 @@ const CATEGORY_LABELS: Record<string, MessageDescriptor> = {
   errors: msg`Errors`,
   debug: msg`Debug`,
   onboarding: msg`Onboarding`,
+  llm: msg`LLM`,
 };
 
 /** Row titles. Keyed by the dotted `PrefKey`. */

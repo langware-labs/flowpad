@@ -8,6 +8,7 @@ hits — no business logic lives here (mirrors ``flow record``). Commands:
     flow conversation show <id> [--last N] [--thread T] — full messages, oldest-first
     flow conversation message <msg-id>           — one message in full
     flow conversation send <id> <message>        — add a text message
+    flow conversation live-session <id>          — start (or show) the live session on the other's machine
     flow conversation new <who> <message>        — start one with an email / contact (`flow contacts find`)
     flow conversation attach <id> <target> <msg> — add a message + attachment
 
@@ -33,6 +34,7 @@ import requests
 import typer
 from typing_extensions import Annotated
 
+from flow_sdk.builtin.remote_worker_session import ReplyPolicy
 from flow_sdk.cli.commands._common import (
     bad_response_message as _bad_response_message,
 )
@@ -71,6 +73,7 @@ EXIT_ACTION_FAILED = 7
 
 _CONV_ID_HELP = "Conversation id: the bare uuid or its TypeId (conversation-<uuid> / conversation/<uuid>)."
 _MSG_ID_HELP = "Message id: the bare uuid or its TypeId (flow_message-<uuid>)."
+_SIGN_IN_FIRST = "Not signed in to Flowpad: sign in (`flow auth login`) and retry."
 
 
 def _post_json(
@@ -358,7 +361,10 @@ def send_message(
     ] = None,
     session: Annotated[
         Optional[str],
-        typer.Option("--session", help="Live-session id (remote_worker_session) to send into."),
+        typer.Option(
+            "--session",
+            help="Live-session id (remote_worker_session) to send into. Needs --prompt: a session runs prompts.",
+        ),
     ] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
@@ -371,6 +377,9 @@ def send_message(
     if prompt and prompt.strip():
         body["prompt_text"] = prompt
     if session:
+        # Without a prompt the host's machine gets a chat line and runs nothing.
+        if not (prompt and prompt.strip()):
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--session needs --prompt: the text alone is not run")
         body["remote_worker_session_id"] = session.strip()
     data = _post_json(
         _add_message_url(port, cid),
@@ -378,6 +387,46 @@ def send_message(
         not_found_hint=f"Conversation not found: {cid}",
     )
     _emit_send_result(cid, data)
+
+
+def _signed_in() -> bool:
+    """Whether a hub request from this instance carries credentials (the UI's cloud-login gate)."""
+    from flow_sdk.cli.auth import hub_login  # noqa: PLC0415
+
+    return hub_login.hub_auth_available()
+
+
+@conversation_app.command(
+    "live-session",
+    help=(
+        "Start a live session on the other person's machine (they approve it), or show the one already "
+        "open. Answers the session id and status; once it is past `pending`, send prompts with "
+        "`flow conversation send <id> \"<what they read>\" --prompt \"<what they run>\" --session <session id>`. "
+        "Run it again to re-check the status."
+    ),
+)
+def start_live_session(
+    conversation_id: Annotated[str, typer.Argument(help=_CONV_ID_HELP)],
+    reply_policy: Annotated[
+        Optional[ReplyPolicy],
+        typer.Option(
+            "--reply-policy",
+            help="auto (default): their replies come back as soon as captured; review: kept as their draft first.",
+        ),
+    ] = None,
+) -> None:
+    cid = _conversation_id(conversation_id)
+    # Signed out, the request is saved here as pending and never reaches the host, while the
+    # action still answers success -- refuse up front, as the UI's login gate does.
+    if not _signed_in():
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
+    data = _post_json(
+        _graph_url(_discover_port(), f"conversation/{cid}/live-session"),
+        {"reply_policy": reply_policy.value} if reply_policy else {},
+        not_found_hint=f"Conversation not found: {cid}",
+    )
+    session_fields = ("status", "host_user_id", "host_name", "reply_policy")
+    _ok({"conversation_id": cid, "session_id": data.get("id"), **{k: data.get(k) for k in session_fields}})
 
 
 def _resolve_contact(contacts: list, who: str) -> dict:
@@ -431,7 +480,7 @@ def new_conversation(
     port = _discover_port()
     listing = _post_json(_graph_url(port, "conversation-list"), {})
     if listing.get("auth_required"):
-        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", "Not signed in to Flowpad: sign in (`flow auth login`) and retry.")
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
     from flow_sdk.cli.commands.contacts_cmd import load_contacts  # noqa: PLC0415
 
     # Resolved before anything is written: one unknown or ambiguous name stops the whole call. Two

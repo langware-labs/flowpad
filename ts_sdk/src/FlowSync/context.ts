@@ -23,7 +23,7 @@ import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
 import { isHubOnly } from '../utils/hub-runtime';
 import { isHiddenProject } from '../constants/system-projects';
-import { RuntimeInfo, RuntimeKind } from '../utils/runtime';
+import { RuntimeCaps, RuntimeInfo, RuntimeKind, runtimeCaps } from '../utils/runtime';
 import { SnifferHook } from '../services/sniffer-hook';
 import { HubConnectionStatus, HubLoginStatus, LocalConnectionStatus, LocalLoginStatus } from '../services/cloud_status';
 import { ConnectionManager } from '../websocket';
@@ -273,6 +273,11 @@ class DataContext extends EventEmitter {
   get runtimeKind(): RuntimeKind {
     if (this.bootstrapInfo?.runtime?.kind) return this.bootstrapInfo.runtime.kind;
     return isHubOnly() ? RuntimeKind.HUB : RuntimeKind.DESKTOP;
+  }
+
+  /** What this runtime can do. Gate desktop-only features on these, not on `isHubOnly()`. */
+  get caps(): RuntimeCaps {
+    return runtimeCaps(this.runtimeKind);
   }
 
   /** The full aggregate, inputs included. For diagnostics; render off `runtimeKind`. */

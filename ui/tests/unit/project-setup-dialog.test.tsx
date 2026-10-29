@@ -131,10 +131,10 @@ describe('ProjectSetupDialog — skipping', () => {
     const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue(after);
 
     fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud'));
-    // The row's Skip opens the same bar as a selection: Locally | Always | Cancel.
-    expect(screen.getByTestId('project-setup-selection-bar')).toHaveTextContent('1 selected');
-    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeInTheDocument();
-    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-selected')));
+    // The row's Skip opens Locally | Always | Cancel inline in the row, not the selection bar.
+    expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
+    expect(screen.getByTestId('project-setup-skip-always-google-cloud')).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-google-cloud')));
 
     expect(skip).toHaveBeenCalledWith('p1', GCP_TYPEID, 'local', { name: 'google-cloud' });
     const skipped = await screen.findByTestId('project-setup-skipped');
@@ -192,17 +192,17 @@ describe('ProjectSetupDialog — skipping', () => {
     });
     await open({ ...NOT_READY, to_do: [gmail] });
     fireEvent.click(screen.getByTestId('project-setup-skip-gmail'));
-    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeEnabled();
-    expect(screen.getByTestId('project-setup-removes-selected')).toHaveTextContent('Removes: Gmail (data source)');
+    expect(screen.getByTestId('project-setup-skip-always-gmail')).toBeEnabled();
+    expect(screen.getByTestId('project-setup-removes-gmail')).toHaveTextContent('Removes: Gmail (data source)');
     cleanup();
 
     const why =
       "the data source 'Gmail' is not this project's own (it lives outside the project folder) — skip it locally";
     await open({ ...NOT_READY, to_do: [{ ...gmail, can_skip_always: false, why_not_always: why }] });
     fireEvent.click(screen.getByTestId('project-setup-skip-gmail'));
-    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeDisabled();
-    expect(screen.getByTestId('project-setup-skip-always-selected').parentElement).toHaveAttribute('title', why);
-    expect(screen.queryByTestId('project-setup-removes-selected')).toBeNull();
+    expect(screen.getByTestId('project-setup-skip-always-gmail')).toBeDisabled();
+    expect(screen.getByTestId('project-setup-skip-always-gmail').parentElement).toHaveAttribute('title', why);
+    expect(screen.queryByTestId('project-setup-removes-gmail')).toBeNull();
   });
 
   it('Undo un-skips it', async () => {

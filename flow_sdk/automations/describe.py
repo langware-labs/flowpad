@@ -151,6 +151,10 @@ async def _describe_actions(trigger: Any, names: _Names) -> list[ThenPart]:
         atype = str(action.action_type)
         target = action.target_type_id or None
         if atype == ActionType.RUN_AGENT.value:
+            from flow_sdk.automations.overview import agent_of  # noqa: PLC0415
+
+            # An agent's own schedule names no target: it runs the agent it belongs to.
+            target = target or agent_of(trigger)
             who = await names.name(target)
             parts.append(ThenPart(kind="run_agent", text=f"Run {who or 'an agent'}",
                                   target=target, target_name=who, prompt=action.prompt))

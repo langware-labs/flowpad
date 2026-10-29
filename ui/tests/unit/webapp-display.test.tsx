@@ -113,10 +113,10 @@ describe('WebappDisplay', () => {
     expect(screen.queryByTestId('webapp-detail-body')).toBeNull();
   });
 
-  it('keeps the app on screen and warns when it still works', () => {
+  it('keeps a degraded app on screen with no banner over it (the website view stays clean)', () => {
     setVerdict({ severity: 'degraded', code: 'console_errors' });
     renderDisplay();
-    expect(screen.getByTestId('webapp-error-banner')).toBeTruthy();
+    expect(screen.queryByTestId('webapp-error-banner')).toBeNull();
     expect(screen.getByTestId('stub-iframe')).toBeTruthy();
   });
 

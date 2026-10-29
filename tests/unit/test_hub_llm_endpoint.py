@@ -288,7 +288,13 @@ async def test_bind_offers_the_endpoint_without_rewriting_the_users_choice(env) 
 
     _login()
     status = await bind_hub_llm_endpoint(
-        {"endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH, "provider": "openrouter", "name": "OR"}
+        {
+            "endpoint_typeid": "llm_endpoint:ep1",
+            "invoke_path": INVOKE_PATH,
+            "provider": "openrouter",
+            "name": "OR",
+            "tiers": {"sm": "anthropic/claude-haiku-5.5", "md": "anthropic/claude-sonnet-4.5"},
+        }
     )
     assert _bound(status) == "llm_endpoint:ep1"
     assert status["binding"]["invoke_url"] == "https://hub.test" + INVOKE_PATH
@@ -303,6 +309,7 @@ async def test_bind_offers_the_endpoint_without_rewriting_the_users_choice(env) 
     auth = await resolve_worker_api_auth(process)
     assert auth.env["ANTHROPIC_BASE_URL"] == "https://hub.test" + INVOKE_PATH
     assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"
+    assert auth.model_slug == "anthropic/claude-haiku-5.5", "the pushed binding's sizes reach the spawn"
 
 
 async def test_bind_is_idempotent(env) -> None:

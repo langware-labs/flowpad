@@ -50,7 +50,7 @@ async def test_skipping_an_undeclared_template_marks_this_project_not_the_templa
     async def listed(_project, *_a, **_k):
         return [template_req]
 
-    async def nothing_running(_project, *_a):
+    async def nothing_running(_project, *_a, **_k):
         return []
 
     async def no_record(_req):
@@ -78,7 +78,7 @@ async def test_a_setup_question_skips_the_step_that_asked(project, monkeypatch):
     async def listed(_project, *_a, **_k):
         return [source, template_req]
 
-    async def nothing_running(_project, *_a):
+    async def nothing_running(_project, *_a, **_k):
         return []
 
     async def this_project(_query):

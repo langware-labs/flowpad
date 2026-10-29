@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ExternalLink, FolderOpen } from 'lucide-react';
-import { FSRef, TypeId } from '@sdk';
+import { FSRef, TypeId, dataContext } from '@sdk';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { useCloseOnIframeFocus } from '@src/hooks/use-close-on-iframe-focus';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -79,9 +79,11 @@ export function CrumbDetailsPopover({
 
   // Reveal through the compute node the path actually belongs to, so it keeps
   // working for an asset on a remote node; `localComputeNodeId` is null there,
-  // which is what hides the button. Same gate the editors' own reveals use.
+  // which is what hides the button.
   const fsRef = new FSRef(path, new TypeId('compute_node', '@local'));
-  const canReveal = !!fsRef.localComputeNodeId;
+  // A file-manager window only reaches a person on a desktop — not on the hub (no @local),
+  // not on a cloud box (no screen).
+  const canReveal = dataContext.caps.osDialogs && !!fsRef.localComputeNodeId;
 
   return (
     <HoverCard open={open} onOpenChange={onOpenChange} openDelay={200} closeDelay={100}>

@@ -25,6 +25,8 @@ MICRO_APP = TypeInfo(
     type_name=EntityType.MICRO_APP,
     api_visible=True,
     icon="AppWindow",
+    # The app editor (`ui/src/components/assets/editor/app-profile/`): webapp.json as a form.
+    editor="app",
     display_name="Apps",
     # Authored in a folder next to the thing it serves, not from a New button.
     creatable=False,

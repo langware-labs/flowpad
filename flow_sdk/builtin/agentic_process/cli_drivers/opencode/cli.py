@@ -25,15 +25,10 @@ from __future__ import annotations
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
-from flow_sdk.builtin.agentic_process.model_tiers import OPENCODE_MODEL_TIERS
 
 
 class OpenCodeAgentOptions(AgentOptions):
     """Builds OpenCode CLI argv for headless JSON streaming or visible PTY mode."""
-
-    # sm/md/lg → provider-qualified open-model slugs, applied when emitting the
-    # worker command. Every opencode model id carries its provider prefix.
-    MODEL_TIERS = OPENCODE_MODEL_TIERS
 
     EXECUTABLE = "opencode"
     # ``opencode run [message..]`` takes the prompt as a positional; there is no

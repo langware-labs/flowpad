@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro';
+import { formatBytes } from '@src/utils/format-bytes';
 import { FSEntry, TypeId, VFSPath, fsStore } from '@sdk';
 import { File, Folder } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -168,7 +170,33 @@ function dragDataFor(ctx: FsNodeCtx, id: string, rel: string, label: string, isD
   return { kind: 'fs-item', id, label, relPath: normalizeRel(rel), isDir };
 }
 
-function fileNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
+const DATE_TIME = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/** Hover card for a file row: name, size, created, modified. A component, so it is
+ *  built only when the tooltip opens, not for every listed file. */
+function FileTooltip({ label, entry }: { label: string; entry: FSEntry }) {
+  const when = (secs?: number) => (secs ? DATE_TIME.format(secs * 1000) : undefined);
+  const rows: [string, string | undefined][] = [
+    [t`Size`, entry.size != null ? formatBytes(entry.size) : undefined],
+    [t`Created`, when(entry.created)],
+    [t`Modified`, when(entry.last_modified)],
+  ];
+  return (
+    <div className="space-y-1 text-xs">
+      <div className="break-all font-medium">{label}</div>
+      {rows
+        .filter(([, v]) => v)
+        .map(([k, v]) => (
+          <div key={k} className="flex gap-2">
+            <span className="text-muted-foreground">{k}</span>
+            <span>{v}</span>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function fileNode(ctx: FsNodeCtx, rel: string, label: string, entry?: FSEntry): Browseable {
   const id = `fs-file:${ctx.typeId.toString()}:${normalizeRel(rel)}`;
   return {
     id,
@@ -177,6 +205,7 @@ function fileNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     icon: <File className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
     hasChildren: false,
     pointer: (ctx.filePointerFor ?? ctx.pointerFor)(vfsForRel(ctx, rel)),
+    tooltip: entry ? <FileTooltip label={label} entry={entry} /> : undefined,
     dragData: dragDataFor(ctx, id, rel, label, false),
   };
 }
@@ -254,7 +283,7 @@ async function listChildrenAt(ctx: FsNodeCtx, dirRel: string, opts?: { refresh?:
     if (!childRel) continue;
     const name = basename(childRel) || item.name || childRel;
     if (item.is_dir) dirs.push(folderNode(ctx, childRel, name));
-    else files.push(fileNode(ctx, childRel, name));
+    else files.push(fileNode(ctx, childRel, name, item));
   }
   dirs.sort((a, b) => a.label.localeCompare(b.label));
   files.sort((a, b) => a.label.localeCompare(b.label));

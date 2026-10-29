@@ -2,8 +2,9 @@ import errno
 import logging
 import os
 import shutil
+import sys
 from io import BytesIO
-from typing import Any, AsyncIterator, BinaryIO, List
+from typing import Any, AsyncIterator, BinaryIO, List, Optional
 
 import anyio
 from starlette.concurrency import run_in_threadpool
@@ -91,6 +92,15 @@ async def delete_folder_content(folder_path: str, skip_list: List | None = None,
             remaining_items = [f async for f in item.iterdir()]
             if not remaining_items:  # Directory is empty
                 await item.rmdir()
+
+
+def _birth_time(st: os.stat_result) -> Optional[int]:
+    """Creation time: st_birthtime on macOS/BSD, st_ctime on Windows (where it
+    IS creation). Linux st_ctime is inode change, not creation — report none."""
+    birth = getattr(st, "st_birthtime", None)
+    if birth is None and sys.platform == "win32":
+        birth = st.st_ctime
+    return int(birth) if birth is not None else None
 
 
 class LocalStorageDriver(StorageDriver):
@@ -273,6 +283,7 @@ class LocalStorageDriver(StorageDriver):
                             is_dir=is_directory,
                             size=None if is_directory else stat.st_size,
                             last_modified=int(stat.st_mtime),
+                            created=_birth_time(stat),
                             symlink_target=symlink_target,
                             display_name=entry.name,
                         )

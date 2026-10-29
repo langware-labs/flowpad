@@ -3,6 +3,7 @@ export { askNotification, type AskInput, type AskAnswer } from './ask';
 export { NotificationOutlet } from './NotificationOutlet';
 export { NotificationCommandBridge } from './command-bridge';
 export { DiagnoseErrorModal } from './diagnose/DiagnoseErrorModal';
+export { ErrorDetailsDialog } from './ErrorDetailsDialog';
 export { useDiagnoseErrorStore } from './diagnose/diagnose-error-store';
 export { initNotificationIngest } from './ingest';
 export { NotificationFeed } from './feed';

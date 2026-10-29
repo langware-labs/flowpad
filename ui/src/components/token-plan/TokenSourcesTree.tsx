@@ -4,7 +4,7 @@
  * where the caller may carve from it, and ⚙ to configure it. What was allocated FROM a source is
  * not a source; the centre lists it under the selected one.
  */
-import type { LLMEndpoint } from '@sdk';
+import { LLM_MODEL_SIZES, type LLMEndpoint } from '@sdk';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, ChevronDown, ChevronRight, Plus, Settings } from 'lucide-react';
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
@@ -17,6 +17,8 @@ import { TONE } from '@src/components/llm-endpoints/tone';
 import { formatUsd } from '@src/components/llm-endpoints/usage-math';
 import { cn } from '@src/lib/utils';
 
+import { FundedByChip, SourceName, useResetLabel } from './FundingChain';
+import { RenameButton } from './RenameButton';
 import { childrenOf, costLeft, sourceRows } from './source-tree';
 
 const PROVIDER_NAME: Record<string, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI' };
@@ -24,6 +26,25 @@ const PROVIDER_NAME: Record<string, string> = { openrouter: 'OpenRouter', anthro
 const CHIP = 'rounded-full border px-2 py-0.5 text-xs font-medium';
 const ALLOCATION_TONE = 'border-foreground/25 bg-foreground/5 text-foreground/80';
 const ACTION_CHIP = 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20';
+
+/** The model each size (sm/md/lg) runs on this row, inherited down its chain. Hidden when none is declared. */
+function SizesChip({ endpoint, indent }: { endpoint: LLMEndpoint; indent: number }) {
+  const tiers = endpoint.effectiveTiers;
+  const sizes = LLM_MODEL_SIZES.filter((size) => tiers[size]);
+  if (!sizes.length) return null;
+  const short = (model: string) => model.split('/').pop() ?? model;
+  // Its own line under the name, truncated: inline it pushed the row's other columns aside.
+  return (
+    <div
+      className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground"
+      style={{ paddingInlineStart: indent }}
+      title={sizes.map((size) => `${size}: ${tiers[size]}`).join('\n')}
+      data-testid={`sizes-${endpoint.id}`}
+    >
+      {sizes.map((size) => `${size} ${short(tiers[size] as string)}`).join(' · ')}
+    </div>
+  );
+}
 
 export function TokenSourcesTree({
   endpoints,
@@ -34,6 +55,7 @@ export function TokenSourcesTree({
   onConfigure,
   onAdd,
   onAllEndpoints,
+  onRenamed,
 }: {
   endpoints: readonly LLMEndpoint[];
   selectedId: string | null;
@@ -44,8 +66,11 @@ export function TokenSourcesTree({
   onConfigure: (endpoint: LLMEndpoint) => void;
   onAdd: () => void;
   onAllEndpoints: () => void;
+  /** A row was renamed: reload what shows names. */
+  onRenamed?: () => void;
 }) {
   const { t } = useLingui();
+  const resetLabel = useResetLabel();
   const rows = useMemo(() => sourceRows(endpoints), [endpoints]);
 
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
@@ -62,7 +87,14 @@ export function TokenSourcesTree({
   const renderRow = (
     e: LLMEndpoint,
     depth: number,
-    o: { chip: { label: string; tone: string }; mark: string | null; name: string; canAllocate: boolean },
+    o: {
+      chip: { label: string; tone: string };
+      mark: string | null;
+      name: string;
+      canAllocate: boolean;
+      /** A top-level source: its name carries the funding line and its chip names who pays. */
+      source?: { label?: string; funded: boolean };
+    },
   ): ReactNode => {
     const left = costLeft(e);
     const selected = e.id === selectedId;
@@ -97,13 +129,18 @@ export function TokenSourcesTree({
                   </TooltipContent>
                 </Tooltip>
               )}
-              <button
-                type="button"
-                className={cn('truncate text-left', selected && 'font-medium')}
-                onClick={() => onSelect(e)}
-              >
-                {o.name}
-              </button>
+              {o.source ? (
+                <SourceName endpoint={e} label={o.source.label} selected={selected} onSelect={() => onSelect(e)} />
+              ) : (
+                <button
+                  type="button"
+                  className={cn('truncate text-left', selected && 'font-medium')}
+                  onClick={() => onSelect(e)}
+                >
+                  {o.name}
+                </button>
+              )}
+              <RenameButton endpoint={e} onRenamed={onRenamed ?? (() => {})} />
               {kids.length > 0 && (
                 <button
                   type="button"
@@ -121,17 +158,27 @@ export function TokenSourcesTree({
                 </button>
               )}
             </div>
+            <SizesChip endpoint={e} indent={depth * 20} />
           </td>
           <td className="whitespace-nowrap px-2 py-2">
-            <span className={cn(CHIP, o.chip.tone)} data-testid={`source-type-${e.id}`}>
-              {o.chip.label}
-            </span>
+            {o.source?.funded ? (
+              <FundedByChip endpointId={e.id} entryName={e.name} fallback={o.chip} />
+            ) : (
+              <span className={cn(CHIP, o.chip.tone)} data-testid={`source-type-${e.id}`}>
+                {o.chip.label}
+              </span>
+            )}
           </td>
           <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">
             {left ? (
               <>
                 {formatUsd(Math.max(0, left.remaining))}
                 <span className="text-muted-foreground"> / {formatUsd(left.limit)}</span>
+                {o.source && resetLabel(left) && (
+                  <div className="text-xs font-normal text-muted-foreground" data-testid={`reset-${e.id}`}>
+                    {resetLabel(left)}
+                  </div>
+                )}
               </>
             ) : (
               <span className="text-xs text-muted-foreground">
@@ -168,7 +215,8 @@ export function TokenSourcesTree({
             renderRow(k, depth + 1, {
               chip: { label: t`Allocation`, tone: ALLOCATION_TONE },
               mark: null,
-              name: k.name || t`Unnamed`,
+              // An unnamed allocation is labelled by the budget it is carved from.
+              name: k.name || t`${o.name} allocation`,
               canAllocate: k.canAllocate,
             }),
           )}
@@ -234,6 +282,10 @@ export function TokenSourcesTree({
                 mark,
                 name: row.flowpadAccount ? t`Flowpad account` : e.name || t`Unnamed`,
                 canAllocate: e.canAllocate && row.type !== 'unfunded',
+                source: {
+                  label: row.flowpadAccount ? t`Flowpad account` : undefined,
+                  funded: row.type === 'received' && !row.flowpadAccount,
+                },
               });
             })}
           </tbody>

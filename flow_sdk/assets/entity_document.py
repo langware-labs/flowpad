@@ -31,7 +31,10 @@ def entity_info_for(path: str | Path) -> Any:
         info = SchemaRegistry.get(SchemaRegistry.type_for(target) or "")
     except Exception:  # noqa: BLE001 — a registry that cannot classify means "not an entity document"
         return None
-    if info is None or not info.is_entity_document or target.name != info.shape.main:
+    # An entity document, or a manifest that DECLARES itself flat JSON (``webapp.json``): both are one
+    # spec-validated object. An undeclared layout is not assumed flat.
+    single_object = info is not None and (info.is_entity_document or info.manifest_layout == "flat")
+    if not single_object or info.asset_spec is None or target.name != info.shape.main:
         return None
     return info
 
@@ -99,9 +102,17 @@ def patch_entity_document_bytes(
         return before, raw, body
     # The file's keys are the spec's ALIASES where it declares one (``data_driver_name``), its names otherwise.
     spec_keys = {f.alias or name for name, f in info.asset_spec.model_fields.items()}
-    info.asset_spec.model_validate({key: value for key, value in fields.items() if key in spec_keys})
+    # What this patch writes must validate. A value it only carries over from the file, and that the file
+    # already held invalid, is the author's to fix -- kept as is, never a reason to refuse the save.
+    from flow_sdk.assets.serialization import value_fits_field  # noqa: PLC0415
+
+    info.asset_spec.model_validate({
+        key: value for key, value in fields.items()
+        if key in spec_keys and (key in patch.set_fields or value_fits_field(info.asset_spec, key, value))
+    })
     identity = {key: doc[key] for key in ("type", "id") if key in doc}
-    document = {"type": info.type_name, **identity, **fields}
+    # A flat manifest carries no ``type`` of its own; only an entity document gets one stamped.
+    document = ({"type": info.type_name} if info.is_entity_document else {}) | identity | fields
     # Decide the version against the dicts, then render once — the text is the OUTPUT, not a comparison key.
     if version_base is not None and (body_changed or strip_version(version_base) != strip_version_fields(document)):
         fields["version"] = document["version"] = bumped_version(fields.get("version", 1))

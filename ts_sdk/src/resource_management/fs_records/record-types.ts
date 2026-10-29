@@ -85,4 +85,6 @@ export enum RecordType {
   DIAGNOSIS_REQUEST = 'diagnosis_request',
   ASSET_SETUP = 'asset_setup',
   COMPUTE_OP = 'compute_op',
+  // A web app (agentic-assets/webapp/<name>/webapp.json); its editor is the app editor.
+  MICRO_APP = 'micro_app',
 }

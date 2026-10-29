@@ -64,12 +64,11 @@ describe('LlmEndpointDialog', () => {
   });
   afterEach(() => cleanup());
 
-  it('root create: name required, then saves provider + base_url and sends the key separately', async () => {
+  it('root create: name optional, then saves provider + base_url and sends the key separately', async () => {
     renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
 
     const submit = screen.getByTestId('llm-submit');
-    expect(submit).toHaveProperty('disabled', true);
-    expect(screen.getByTestId('llm-problems').textContent).toContain('Name is required.');
+    expect(screen.queryByTestId('llm-problems')?.textContent ?? '').not.toContain('Name is required.');
 
     await userEvent.type(screen.getByTestId('llm-name'), 'Anthropic prod');
     await userEvent.click(screen.getByTestId('provider-anthropic'));

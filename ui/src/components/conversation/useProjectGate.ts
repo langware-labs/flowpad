@@ -44,14 +44,17 @@ export function useProjectGate(opts: {
   const { mapped, apply, trigger, remoteProjectName, taskId, remoteProjectId, ready = true } = opts;
   const [open, setOpen] = useState(false);
   const continuationRef = useRef<(() => void | Promise<void>) | null>(null);
+  // The pending action's no-project path, when it has one ("Run (Skip project)").
+  const [onSkip, setOnSkip] = useState<(() => void | Promise<void>) | null>(null);
 
   const ensureMapped = useCallback(
-    (continuation: () => void | Promise<void>) => {
+    (continuation: () => void | Promise<void>, opts?: { onSkip?: () => void | Promise<void> }) => {
       if (mapped) {
         void continuation();
         return;
       }
       continuationRef.current = continuation;
+      setOnSkip(() => opts?.onSkip ?? null);
       if (ready) setOpen(true);
     },
     [mapped, ready],
@@ -88,6 +91,14 @@ export function useProjectGate(opts: {
       if (!next && !mapped) continuationRef.current = null;
     },
     onPicked: apply,
+    onSkipProject: onSkip
+      ? () => {
+          continuationRef.current = null;
+          setOpen(false);
+          setOnSkip(null);
+          void onSkip();
+        }
+      : undefined,
     trigger: trigger ?? 'gate',
     remoteProjectName: remoteProjectName ?? undefined,
     taskId: taskId ?? undefined,

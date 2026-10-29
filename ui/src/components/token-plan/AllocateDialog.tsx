@@ -69,8 +69,7 @@ export function AllocateDialog({
   const [busy, setBusy] = useState(false);
   const left = costLeft(source);
   const usd = Number(limit);
-  const valid =
-    usd > 0 && (target === 'team' ? !!teamId : target === 'member' ? /.+@.+/.test(email) : name.trim().length > 0);
+  const valid = usd > 0 && (target === 'team' ? !!teamId : target === 'member' ? /.+@.+/.test(email) : true);
 
   const submit = async () => {
     setBusy(true);
@@ -173,7 +172,7 @@ export function AllocateDialog({
           {target !== 'team' && (
             <div className="space-y-1">
               <Label htmlFor="allocate-name">
-                <Trans>Name</Trans>
+                <Trans>Name (optional)</Trans>
               </Label>
               <Input
                 id="allocate-name"

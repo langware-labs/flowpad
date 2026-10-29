@@ -1,7 +1,7 @@
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import type { LLMChain, LLMEndpoint, LLMEndpointKind, LLMEndpointProvider } from '@sdk';
-import { LLM_ENDPOINT_PROVIDERS } from '@sdk';
+import type { LLMChain, LLMEndpoint, LLMEndpointKind, LLMEndpointProvider, LLMEndpointTiers } from '@sdk';
+import { EMPTY_LLM_TIERS, LLM_ENDPOINT_PROVIDERS } from '@sdk';
 
 import {
   badNonNegative,
@@ -203,6 +203,10 @@ export interface EndpointDraft {
   source: string;
   filters: FiltersForm;
   limits: LimitsForm;
+  /** The model each size runs; `null` = inherit from the endpoint this one draws on. */
+  tiers: LLMEndpointTiers;
+  /** Root only: the catalog this root offers, one model per line. Empty = the provider's listing. */
+  models: string;
   /** Root only, create only; NEVER part of the entity payload. */
   key: string;
 }
@@ -221,6 +225,8 @@ export function emptyDraft(kind: LLMEndpointKind = 'root'): EndpointDraft {
     // inheriting a 400-model aggregator catalogue by saying nothing.
     filters: { ...filtersToForm(null), models_allow: MODELS_ALLOW_DEFAULT },
     limits: limitsToForm(null),
+    tiers: { ...EMPTY_LLM_TIERS },
+    models: '',
     key: '',
   };
 }
@@ -271,8 +277,22 @@ export function draftFrom(entity: LLMEndpoint, kind?: LLMEndpointKind | null): E
     source: entity.sources?.[0] ?? '',
     filters: filtersToForm(entity.filters),
     limits: limitsToForm(entity.limits),
+    tiers: { ...EMPTY_LLM_TIERS, ...(entity.tiers ?? {}) },
+    models: (entity.models ?? []).join('\n'),
     key: '',
   };
+}
+
+/** The catalog textarea as a list: one model per line, blanks and duplicates dropped. */
+export function catalogFromText(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 /**
@@ -286,7 +306,7 @@ export function draftFrom(entity: LLMEndpoint, kind?: LLMEndpointKind | null): E
  */
 export function validateDraft(draft: EndpointDraft): MessageDescriptor[] {
   const problems: MessageDescriptor[] = [];
-  if (!draft.name.trim()) problems.push(msg`Name is required.`);
+  // The name is optional: an unnamed source is labelled by who funds it (`useSourceLabel`).
 
   if (draft.kind === 'root') {
     if (!isProvider(draft.provider)) problems.push(msg`Pick a provider.`);
@@ -325,7 +345,9 @@ export function buildEntityJson(draft: EndpointDraft, editing: boolean): Record<
     enabled: draft.enabled,
     filters: formToFilters(draft.filters),
     limits: formToLimits(draft.limits),
+    tiers: { ...draft.tiers },
   };
+  if (draft.kind === 'root') json.models = catalogFromText(draft.models);
   if (draft.kind === 'root' && !editing) {
     json.provider = draft.provider;
     json.base_url = rootBaseUrl(draft.provider, draft.base_url.trim(), draft.key);

@@ -20,8 +20,9 @@ and on each step `id`, `app`, `title`, `note`, `branch_of` + `when` for a branch
 rest (no reloads). A decision shown on a screen is `data-decision="D2"`.
 
 A control that moves the journey says where it leads: **`data-next="<step id>"`** — and nothing else (no
-`onclick`): a click on it moves the journey. Where a screen goes ON is its step's `next`, else the next
-main-path screen; Next and the hints follow that one rule. On every screen the bar marks the controls in
+`onclick`): a click on it moves the journey. Where a screen goes ON is its step's `next` when that lies
+ahead, else the next screen depth-first (a step, then its branches, then the next main step); Next, Back
+and the hints follow that one order. With branches, screens are numbered 1, 1.1, 1.2, 2. On every screen the bar marks the controls in
 the page: the one going on gets `.mk-next` (a soft glow in the bar's accent, a few gentle pulses unless the
 reviewer prefers reduced motion), every other one `.mk-path` (a faint ring); with no control going on,
 the bar's own Next glows. Both use `box-shadow`, so a screen's own outlines (an open decision) stay. A

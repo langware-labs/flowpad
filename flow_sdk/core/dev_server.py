@@ -79,7 +79,9 @@ def _listed(port: int) -> Optional[bool]:
 
     try:
         table = psutil.net_connections(kind="tcp")
-    except (psutil.Error, OSError):
+    except (psutil.Error, OSError, RuntimeError):
+        # RuntimeError: macOS's proc_pidinfo fails for a process that exits mid-scan (a restart) — the
+        # table is unreadable this once, and the connect below answers instead.
         return None
     return any(
         one.status == psutil.CONN_LISTEN and one.laddr and one.laddr.port == port and one.laddr.ip in _LOCAL_BINDS

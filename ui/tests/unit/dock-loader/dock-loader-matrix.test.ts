@@ -81,6 +81,7 @@ const worldRows: Row[] = [
     url: `/dock/project/${P}/editor/chart/vfs/compute_node-%40local/w/p/docs/network/acme-net`,
   },
   { name: 'project: the project page', url: `/dock/project/${P}` },
+  { name: 'project: the project setup page (Project Home ☰ → Project setup)', url: `/dock/project/${P}/project-setup` },
   { name: 'vibe: an agentic process as the Vibe host (aligned to its project)', url: `/dock/vibe/agentic_process-${PROC}` },
   {
     name: 'vibe: an agentic process as the Vibe host (scoped)',

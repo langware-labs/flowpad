@@ -145,8 +145,10 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
     assert dict(node["stage:w1:waha-server-stage"].inputs) == {"source": "w1", "owner": "agent-a"}
     assert [g.name for g in tree.gaps] == ["MYSTERY"] and "gap:MYSTERY" not in node
     assert node["asset_setup:waha-container"].trusted is False, "a connector's own wizard is not ours"
-    assert [s.ref for s in node["micro_app-a1"].run.steps] == ["micro_app-a1:install", "micro_app-a1:build"]
-    assert [s.ref for s in node["micro_app-a1"].on_load.steps] == ["micro_app-a1:start", "micro_app-a1:present"]
+    assert node["micro_app-a1"].run is None, "a web app has no separate setup: its one step brings it up"
+    assert [s.ref for s in node["micro_app-a1"].on_load.steps] == ["micro_app-a1:up"]
+    up = tree.ops["micro_app-a1:up"]
+    assert up.completion_check.webapp_step == "up" and [r.subkind for r in up.attempts] == ["agent", "cli"]
     assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
 
 

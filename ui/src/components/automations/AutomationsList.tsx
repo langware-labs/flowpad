@@ -8,11 +8,15 @@
  */
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { AutomationKind, AutomationSummary } from '@sdk';
-import { AlertTriangle, ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, CloudOff, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { useContext } from '@src/hooks/useContext';
-import { useAutomations, useRunOnce, useSetAutomationEnabled } from '@src/hooks/automations/useAutomations';
+import {
+  useAutomations,
+  useRunOnce,
+  useSetAutomationEnabled,
+} from '@src/hooks/automations/useAutomations';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -32,7 +36,7 @@ export function AutomationsList() {
   const words = useAutomationWords();
   const { navigation } = useDockNavigation();
   const projectId = useContext().project?.id ?? null;
-  const { data: automations = [], isLoading, error } = useAutomations();
+  const { data: automations = [], isLoading, error, cloudWarning } = useAutomations();
   const runOnce = useRunOnce();
   const setEnabled = useSetAutomationEnabled();
   const [kind, setKind] = useState<AutomationKind | null>(null);
@@ -62,7 +66,7 @@ export function AutomationsList() {
 
   const onRunOnce = (a: AutomationSummary) =>
     runOnce.mutate(
-      { triggerId: a.id },
+      { triggerId: a.id, source: a.source },
       {
         onSuccess: () => notify.success({ title: t`Running ${a.name}`, message: t`It shows up in Runs as a test.` }),
         onError: (e) =>
@@ -165,6 +169,17 @@ export function AutomationsList() {
           </div>
         )}
 
+        {cloudWarning && (
+          <p
+            data-testid="automations-cloud-warning"
+            className="mb-3 flex items-center gap-2 text-xs text-muted-foreground"
+            title={cloudWarning.error_code}
+          >
+            <CloudOff className="size-3.5 shrink-0" aria-hidden />
+            <Trans>Cloud automations not shown: {cloudWarning.message}</Trans>
+          </p>
+        )}
+
         {failing.length > 0 && (
           <button
             type="button"
@@ -203,7 +218,7 @@ export function AutomationsList() {
                 testId="automations-chip"
                 label={t`Filter by kind`}
                 value={kind ?? 'all'}
-                onChange={(v) => setKind(v === 'all' || v === kind ? null : (v as AutomationKind))}
+                onChange={(v) => setKind(v === 'all' || v === kind ? null : v)}
                 options={[
                   {
                     value: 'all',

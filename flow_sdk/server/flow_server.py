@@ -100,6 +100,7 @@ class FlowServer:
         app = FastAPI(lifespan=self._build_lifespan())
 
         # 4. Middleware (added in reverse execution order)
+        from .middleware.caller_middleware import CallerMiddleware
         from .middleware.catch_all_exception_middleware import CatchAllExceptionMiddleware
         from .middleware.cookie_gate_middleware import CookieGateMiddleware
         from .middleware.http_timing_middleware import HttpTimingMiddleware
@@ -107,6 +108,8 @@ class FlowServer:
         from .middleware.request_transaction_middleware import RequestTransactionMiddleware
 
         app.add_middleware(CatchAllExceptionMiddleware)
+        # Who made a request, for the "Made by" line of a hub error's details.
+        app.add_middleware(CallerMiddleware)
         app.add_middleware(RequestTransactionMiddleware)
         app.add_middleware(CORSMiddleware, **self._cors_config)
         # Outside RequestTransactionMiddleware, which parses the body into RequestInfo: the

@@ -1,3 +1,4 @@
+import { dataContext } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitStatusProvider } from '@src/components/status-bar/GitStatusContext';
 import { GitPullButton } from '@src/components/status-bar/GitPullButton';
@@ -118,7 +119,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             {project.displayName}
           </button>
         </WikiTip>
-        {projectPath && computeNode && (
+        {projectPath && computeNode && dataContext.caps.osDialogs && (
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <button

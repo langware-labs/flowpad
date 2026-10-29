@@ -5,6 +5,8 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { documentsTreeType, isDocumentFilePath, isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import apiClient from '@sdk/client';
+import { RecordType } from '@sdk';
+import { subscribeToEntityOps } from '@sdk/FlowSync/entity-ops';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
 import { RagToggleGlyph } from '@src/components/rag/RagToggleGlyph';
 import { toggleRoot } from '@src/components/rag/rag-service';
@@ -18,7 +20,7 @@ import type {
   ToolbarAction,
 } from '@src/components/browseable-tree/types';
 import { AssetTypeCountBadge, parseAssetPointer } from './assetTypeRoot';
-import { isAllScope, scopeFilterKey, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
+import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { DEFAULT_ASSET_FILTER } from '@src/components/assets/assetFilter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 
@@ -170,12 +172,26 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
  */
 const _vaultFilesCache = new Map<string, Promise<string[]>>();
 
+// The walk outlives any one tree (a remounted tree starts with no state but this
+// module keeps its cache), so a create or delete of a listed file drops it here,
+// once — otherwise the next expand serves a walk from before the change.
+let _walksWatched = false;
+function forgetWalksOnFileChanges(): void {
+  if (_walksWatched) return;
+  _walksWatched = true;
+  subscribeToEntityOps([RecordType.MARKDOWN, RecordType.DOCUMENT_FILE], () => _vaultFilesCache.clear(), {
+    ops: ['create', 'delete'],
+  });
+}
+
 /** Test-only: drop the per-vault walk memoisation so each case fetches fresh. */
 export function __resetVaultFilesCacheForTests(): void {
   _vaultFilesCache.clear();
+  _walksWatched = false;
 }
 
 function fetchVaultFiles(vaultAbsPath: string, refresh = false): Promise<string[]> {
+  forgetWalksOnFileChanges();
   if (refresh) _vaultFilesCache.delete(vaultAbsPath);
   const cached = _vaultFilesCache.get(vaultAbsPath);
   if (cached) return cached;
@@ -482,17 +498,13 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
   });
 
   const visibleVaults = vaults.filter((v) => keepVault(v, filter));
-  // Include filter signature so the tree refetches children when the user
-  // toggles scope/picker — otherwise children are cached against the stale
-  // visibleVaults from the previous expansion. Also include the source
-  // ``vaults.length`` so the cache invalidates when the /assets/types
-  // response arrives AFTER the initial render — otherwise the root keeps
-  // serving the empty ``listChildren`` closure that was captured before
-  // the API populated ``type.vaults``.
-  const filterSig = `${scopeFilterKey(filter.scope)}:v${vaults.length}`;
+  // STABLE id, like assetTypeRoot's: a scope or vault-list change must not
+  // remount the root (dropping its children — the sidebar blink). Those changes
+  // re-list it through an invalidate instead: the scope-change effect in
+  // useAssetTreeRefresh, and the vault-list effect in useAssetsModel.
 
   const root: BrowseableRoot = {
-    id: `asset-type:${type.type_name}:${filterSig}`,
+    id: `asset-type:${type.type_name}`,
     kind: 'root',
     label: type.label,
     icon: resolveAssetIcon(type.icon),

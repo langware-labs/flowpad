@@ -121,7 +121,7 @@ def _listening_by_pid() -> Optional[dict[int, list[int]]]:
 
     try:
         connections = psutil.net_connections(kind="tcp")
-    except (psutil.Error, OSError):
+    except (psutil.Error, OSError, RuntimeError):  # RuntimeError: a process exited mid-scan (macOS)
         return None
     found: dict[int, set[int]] = {}
     for connection in connections:

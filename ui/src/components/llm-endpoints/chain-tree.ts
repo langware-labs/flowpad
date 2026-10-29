@@ -36,7 +36,7 @@ export interface ChainTreeNode {
 
 export function hopHealth(hop: LLMChainHop | null | undefined): HopHealth {
   if (!hop) return 'missing';
-  if (!hop.enabled) return 'disabled';
+  if (hop.enabled === false) return 'disabled';
   if (hop.breaker?.state === 'open') return 'breaker_open';
   if (hop.is_root && !hop.has_credential) return 'no_credential';
   return 'ok';
@@ -76,7 +76,7 @@ export function buildChainTree(chain: LLMChain | null | undefined): ChainTreeNod
     const key = keyPrefix ? `${keyPrefix}/${node.id}` : node.id;
     out.push({
       id: node.id,
-      name: hop?.name ?? node.id,
+      name: hop?.name || hop?.scope_name || node.id,
       depth,
       hop,
       isOnPath: node.pathIndexes.includes(0),

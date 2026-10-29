@@ -37,9 +37,8 @@ import { replyPickedUp, ticketAffordances } from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
-import { syncConversationMessages, updateMessage } from '@src/components/stream-inbox-view/stream-inbox-api';
+import { syncConversationMessages } from '@src/components/stream-inbox-view/stream-inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
-import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
@@ -48,6 +47,7 @@ import { MessageComposer } from './MessageComposer';
 import { ConversationActions, ConversationEndedLine } from './ConversationActions';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
+import { useMarkLatestRead } from './useMarkLatestRead';
 import { useMembers } from '@src/hooks/use-members';
 import {
   buildConversationItems,
@@ -878,32 +878,11 @@ export function ConversationView({
     ((!!conversation?.initiated_by && conversation.initiated_by === cloudUserId) ||
       (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
 
-  // Open-to-read (URL-first): viewing a conversation marks its latest received
-  // message read — the mutation lives HERE, on the mounted view, so the Stream Inbox
-  // row click / banner click / direct link only navigate (single writer:
-  // navigation → view → action; the backend then reconciles
-  // StreamInboxManager.unread). Focus-gated: a message arriving while the window is
-  // backgrounded must stay unread (it drives the badge) until the user
-  // actually returns — hence the re-run on window focus.
-  const readMarkedRef = useRef<string | null>(null);
-  useEffect(() => {
-    const markLatestRead = () => {
-      if (!document.hasFocus()) return;
-      const latestId = latestPointer(pointers)?.id;
-      const latest = latestId ? messagesById.get(latestId) : undefined;
-      if (!latest?.id || latest.is_read) return;
-      if (authoredBy(senderOf(latest), [cloudUserId, localUser?.id])) return;
-      const key = `${conversationId}:${latest.id}`;
-      if (readMarkedRef.current === key) return;
-      readMarkedRef.current = key;
-      void updateMessage(latest.id, { is_read: true }, agentId ?? undefined).catch(() => {
-        readMarkedRef.current = null; // transient failure — retry on next tick/focus
-      });
-    };
-    markLatestRead();
-    window.addEventListener('focus', markLatestRead);
-    return () => window.removeEventListener('focus', markLatestRead);
-  }, [agentId, conversationId, pointers, messagesById, cloudUserId, localUser?.id]);
+  // Open-to-read (URL-first): viewing a conversation marks its latest received message read —
+  // the mutation lives on the mounted view, so the Stream Inbox row click / banner click / direct
+  // link only navigate (single writer: navigation → view → action).
+  const latestId = latestPointer(pointers)?.id;
+  useMarkLatestRead(latestId ? messagesById.get(latestId) : undefined, cloudUserId, localUser?.id, agentId);
 
   // Delete a message everywhere. The loader/live-query owns the list, so we
   // only fire the SDK action and let the resulting data-op re-render the view
