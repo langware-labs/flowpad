@@ -89,6 +89,12 @@ DM ds-put <mock project>/agentic-assets/dataset/mocks <slug> '{"input": {"title"
 
 Send the user the step table (id · title · scenario · controls that move on), one line per step.
 
+**Then go straight on to Phase 2 — do not stop to ask.** The step table is a status line, not a
+checkpoint: open decisions go ON the screens (`data-decision`), where the reviewer answers them while
+walking the mock. Stop before building ONLY for a real blocker: the app cannot run here, a screen's state
+cannot be reached (and fast mode was not asked for), or the request is too unclear to plan a single
+screen. "The user may want to change the plan" is not a blocker — they change it through feedback.
+
 ### The mode is real — fast only when the person says so
 
 | mode | when | fidelity |
