@@ -171,6 +171,12 @@ function initApiClient(client: ApiAxiosInstance) {
         request.headers['Authorization'] = `Bearer ${extendedClient.testUserToken}`;
       }
 
+      // Who is asking — the screen this call came from — so a hub error it causes says "Made by".
+      if (typeof window !== 'undefined' && !request.headers?.['X-Flow-Caller']) {
+        request.headers = request.headers || {};
+        request.headers['X-Flow-Caller'] = window.location.pathname.slice(0, 200);
+      }
+
       return request;
     },
     function (error) {
@@ -206,6 +212,7 @@ function initApiClient(client: ApiAxiosInstance) {
       // Do something with response error
       const method = error.config?.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementFailed(method);
+      rememberFailedCall(error);
 
       // A sandbox waking from E2B's idle pause: retry silently, a few times,
       // with a short delay — see SANDBOX_WAKING_RETRY_STATUS above.
@@ -244,6 +251,26 @@ function initApiClient(client: ApiAxiosInstance) {
       //return Promise.reject(error);
     },
   );
+}
+
+/**
+ * The last few failed backend calls, newest first. An alert raised from a caught error that was
+ * not handed to `notify` (it shows only "Request failed with status code 409") is matched back to
+ * its call here, so its details popup still shows the request and the backend's answer.
+ */
+export interface FailedCall {
+  at: number;
+  error: unknown;
+  status?: number;
+  message: string;
+}
+
+const MAX_FAILED_CALLS = 20;
+export const recentFailedCalls: FailedCall[] = [];
+
+function rememberFailedCall(error: { response?: { status?: number }; message?: string }): void {
+  recentFailedCalls.unshift({ at: Date.now(), error, status: error.response?.status, message: error.message ?? '' });
+  recentFailedCalls.length = Math.min(recentFailedCalls.length, MAX_FAILED_CALLS);
 }
 
 export function getApiClient(): ApiAxiosInstance {

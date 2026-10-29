@@ -10,6 +10,7 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { SetupFailureActions } from './SetupFailureActions';
 import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
+import { Step } from '@src/components/webapp-display/PageCheckPanel';
 import { projectLoadKey, useProjectLoad, validLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
 
@@ -172,6 +173,38 @@ export function ProjectLoadGate({
           {busy ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : null}
           {status}
         </p>
+        {/* An app being opened: the lanes as steps — what happened, what runs now, what comes next. */}
+        {asset && !lifecycle.questionId && result?.phase !== 'setup' && result?.state !== 'setup_required' && (
+          <ul className="flex flex-col divide-y rounded-md border" data-testid="project-load-steps">
+            <Step
+              mark={valid === false ? 'failed' : 'running'}
+              title={
+                valid === false ? (
+                  <Trans>Check — the app is not ready to show</Trans>
+                ) : (
+                  <Trans>Check — is the app running and its page clean?</Trans>
+                )
+              }
+              detail={
+                valid === false ? (
+                  <Trans>It is not answering on its port, or its page failed the last time it opened.</Trans>
+                ) : undefined
+              }
+            />
+            {valid === false && (
+              <Step
+                mark={result?.state === 'failed' ? 'failed' : result?.state === 'ready' ? 'done' : 'running'}
+                title={<Trans>Start — starting the app's server</Trans>}
+                detail={result?.state === 'failed' ? result.detail : undefined}
+              />
+            )}
+            <Step
+              mark="next"
+              title={<Trans>Next: open the page and check it for errors</Trans>}
+              detail={<Trans>A known error is fixed on the spot; an unknown one goes to recovery.</Trans>}
+            />
+          </ul>
+        )}
         {lifecycle.error && (
           <p role="alert" className="text-destructive">
             {lifecycle.error}

@@ -101,6 +101,17 @@ class HubClientErrorMessage(BaseMessage):
     path: str
     message: str
     suppressed_count: int = 0
+    # Debug context for the error's details popup (all optional: an older backend omits them).
+    url: str = ""
+    body: str = ""
+    error_code: str = ""
+    request_id: str = ""
+    caller: str = ""
+    first_at: float = 0.0
+    last_at: float = 0.0
+    count: int = 1
+    log_file: str = ""
+    hidden: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class HubClientRecoveredMessage(BaseMessage):

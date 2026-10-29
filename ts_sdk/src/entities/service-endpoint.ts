@@ -174,6 +174,23 @@ export function browserDoorUrl(endpoint: Pick<IServiceEndpoint, 'id' | 'subkind'
 }
 
 /**
+/** One thing the app's page threw while it loaded (`server/reporter_relay.py`). */
+export interface PageError {
+  source: 'page' | 'console' | 'network' | string;
+  text: string;
+}
+
+/** The backend's decision on a page report (`service_endpoint/<id>/page-report`). */
+export interface PageReportVerdict {
+  usable: boolean;
+  settled: boolean;
+  webapp_id: string;
+  /** The app's folder on this machine (its `setup/` lives there). */
+  app_folder: string;
+  decisions: { source: string; text: string; action: 'ignore' | 'recover'; rule: string | null; fix: string }[];
+}
+
+/**
  * One app as it is served on a placement — what a display loads, probes and repairs.
  *
  * An app is a ROUTE of its placement's audience proxy (`mount` on `endpoint`), so its address is
@@ -234,6 +251,11 @@ export class ServedApp {
   /** What is wrong with the app's process, asked of the machine it runs on. */
   probe<T = Record<string, unknown>>(): Promise<T> {
     return this.endpoint.probe<T>(this.mount);
+  }
+
+  /** Hand the page's reported errors to the backend; answers whether the app is usable. */
+  pageReport(errors: PageError[], settled = true): Promise<PageReportVerdict | null> {
+    return this.endpoint.pageReport(errors, settled, this.mount);
   }
 }
 
@@ -312,6 +334,13 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
     const info = new ActionInfo('probe', this.getType(), this.id, 'POST' as HttpMethod);
     if (route !== null && route !== undefined) info.queryParameters = { route };
     return (await dataManager.callAction<undefined, T>(info)) as T;
+  }
+
+  /** `POST page-report` — the page's errors, decided by the app's `setup/webapp_errors.json`. */
+  async pageReport(errors: PageError[], settled = true, route?: string | null): Promise<PageReportVerdict | null> {
+    const info = new ActionInfo('page-report', this.getType(), this.id, 'POST' as HttpMethod);
+    info.bodyParameters = { errors, settled, ...(route !== null && route !== undefined ? { route } : {}) };
+    return (await dataManager.callAction<unknown, PageReportVerdict>(info)) ?? null;
   }
 
   /** Check the service now, where it runs; the result is also recorded on the row. */

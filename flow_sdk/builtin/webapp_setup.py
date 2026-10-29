@@ -41,6 +41,8 @@ PROBE_SECONDS = 2.0
 INSTALL_SECONDS = 300.0
 
 STEPS = ("install", "build", "start", "present")
+#: The one step a web app's node runs: every step above in order, each only when its check says so.
+UP = "up"
 
 
 def _answer(code: ExitCode, detail: str, *, ran: bool = True, value: Any = None) -> ReturnedValue:
@@ -57,10 +59,37 @@ def health_answers(port: int, path: str = "/") -> bool:
     return loopback_answers(port, path, timeout=PROBE_SECONDS, healthy=lambda status: status < 500)
 
 
+#: The app's own start contract, when it has one: ``setup/start_app.py`` with two commands —
+#: ``start <port>`` runs the server in the foreground on ``port`` (in place of ``start_cmd``) and
+#: ``check <port>`` exits 0 when the app is usable. Recovery (``recover``) is not code: it is the fixer agent
+#: reading ``setup/recovery.md`` and ``setup/webapp_errors.json`` (``builtin/webapp_check``).
+START_APP = "setup/start_app.py"
+START_APP_CHECK_SECONDS = 20.0
+
+
+def start_app_command(folder: Path, port: int) -> Optional[str]:
+    """The command that starts the app through its ``setup/start_app.py``, or None when it has none."""
+    return f"python3 {START_APP} start {int(port)}" if (Path(folder) / START_APP).is_file() else None
+
+
+def start_app_check(folder: Path, port: int) -> bool:
+    """The app's own ``check``: True when it has none, or when ``start_app.py check <port>`` exits 0."""
+    import subprocess  # noqa: PLC0415
+
+    if not (Path(folder) / START_APP).is_file():
+        return True
+    try:
+        done = subprocess.run(["python3", START_APP, "check", str(int(port))], cwd=folder, capture_output=True,
+                              timeout=START_APP_CHECK_SECONDS, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0
+
+
 async def _app(webapp_id: str):
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
-    bare = webapp_id.split("-", 1)[1] if webapp_id.startswith("micro_app-") else webapp_id
+    bare = webapp_id.removeprefix("micro_app-")
     app = await WebApp.get_by_id(bare)
     # As ``webapp.json`` declares it NOW (the setup-fixer may just have changed it): re-parsed only when
     # the file changed (``webapp_asset_hash``).
@@ -114,6 +143,8 @@ async def step(webapp_id: str, which: str, *, check: bool, display: str = "") ->
     app = await _app(webapp_id)
     if app is None or not app.asset_ref:
         return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
+    if which == UP:
+        return await _up(webapp_id, check=check, display=display)
     if which not in STEPS:
         return _answer(
             ExitCode.NOT_FOUND, f"a web app has no setup step {which!r} (it has {', '.join(STEPS)})", ran=False
@@ -135,6 +166,25 @@ async def step(webapp_id: str, which: str, *, check: bool, display: str = "") ->
     if which == "install":
         return await _install(app, folder, serving, check=check)
     return await _build(app, folder, serving, check=check)
+
+
+async def _up(webapp_id: str, *, check: bool, display: str = "") -> ReturnedValue:
+    """The app up and shown: install → build → start → present, each run only when its own check fails.
+    Checking runs every check and answers the first that does not hold. The first step that fails ends it."""
+    ran = False
+    answer = _answer(ExitCode.OK, "up", ran=False)
+    for which in STEPS:
+        held = await step(webapp_id, which, check=True, display=display)
+        if held.ok:
+            answer = held if which == "start" else answer
+            continue
+        if check:
+            return held
+        answer = await step(webapp_id, which, check=False, display=display)
+        ran = ran or answer.ran
+        if not answer.ok:
+            return answer
+    return answer if answer.ran == ran else _answer(answer.exit_code, answer.detail, ran=ran, value=answer.value)
 
 
 async def _install(app, folder: Path, serving, *, check: bool) -> ReturnedValue:
@@ -278,8 +328,9 @@ def _look(
 
 
 async def answers_now(webapp_id: str) -> bool:
-    """Every process of the app answers its health path where its route says it runs now — one probe each,
-    side by side: no process table, no start, no write. The check an open of an app it already loaded asks."""
+    """The app is usable where it runs now: every process answers its health path (one probe each, side by
+    side), its page loaded clean the last time it was checked, and its ``setup/start_app.py check`` holds.
+    No process table, no start, no write. The check an open of an app it already loaded asks."""
     from flow_sdk.builtin.webapp_placement import service_endpoint_name, service_endpoint_ports  # noqa: PLC0415
 
     app = await _app(webapp_id)
@@ -299,7 +350,14 @@ async def answers_now(webapp_id: str) -> bool:
     probes = (
         asyncio.to_thread(health_answers, int(port), process.serving.health) for port, process in zip(ports, processes)
     )
-    return all(await asyncio.gather(*probes))
+    if not all(await asyncio.gather(*probes)):
+        return False
+    # Usable, not only answering: the page loaded clean the last time it was checked, and the app's own check holds.
+    from flow_sdk.builtin import webapp_check  # noqa: PLC0415
+
+    if app.report_errors and not webapp_check.page_was_clean(app.asset_ref):
+        return False
+    return await asyncio.to_thread(start_app_check, Path(app.asset_ref), int(ports[-1]))
 
 
 async def where(app, serving) -> app_ports.PortAnswer:
@@ -396,7 +454,7 @@ async def _launch(app, folder: Path, process: _Process, found: app_ports.PortAns
     who = process.label(app)
     declared = _declared(serving)
     port = found.port
-    command = serving.start_cmd.replace("{port}", str(port))
+    command = start_app_command(folder, port) or serving.start_cmd.replace("{port}", str(port))
     began = time.monotonic()
     oom_before = await asyncio.to_thread(dev_server.oom_kills)
     _STARTING.add(port)

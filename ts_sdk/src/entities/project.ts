@@ -1155,10 +1155,18 @@ export class Project extends APIEntity<Project> {
 
   /** Stop an app of the project on this machine, whoever started it (`POST project/<id>/app-stop`); `restart`
    *  starts it again on its port. Answers whether it worked, and why not. */
-  static async stopApp(projectId: string, app: string, restart = false): Promise<{ ok: boolean; detail: string }> {
+  static async stopApp(
+    projectId: string,
+    app: string,
+    restart = false,
+    wait = false,
+  ): Promise<{ ok: boolean; detail: string }> {
     const actionInfo = new ActionInfo('app-stop', Project.type, projectId, 'POST');
-    actionInfo.bodyParameters = { app, restart };
-    const data = await dataManager.callAction<{ app: string; restart: boolean }, { apps: { ok: boolean; detail: string }[] }>(
+    actionInfo.bodyParameters = { app, restart, ...(wait ? { wait } : {}) };
+    const data = await dataManager.callAction<
+      { app: string; restart: boolean; wait?: boolean },
+      { apps: { ok: boolean; detail: string }[] }
+    >(
       actionInfo,
     );
     return data?.apps?.[0] ?? { ok: false, detail: `no app named ${app}` };

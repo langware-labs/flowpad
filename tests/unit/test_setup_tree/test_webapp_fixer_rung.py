@@ -20,3 +20,21 @@ def test_the_fixer_is_told_which_app_and_where():
     app = SimpleNamespace(name="shop", typeid="micro_app-1", asset_ref="/p/shop")
     said = _fixer_prompt("p1", app)
     assert all(part in said for part in ("setup-fixer", "micro_app-1", "/p/shop", "p1"))
+
+
+async def test_a_load_keeps_the_fixer_only_of_a_step_marked_fix_on_load():
+    from types import SimpleNamespace
+
+    from flow_sdk.core.setup.load import LoadTree
+
+    ops = {"app:up": _op("app:up", "Start shop", "up", fixer="repair it", fix_on_load=True),
+           "other:start": _op("other:start", "Start other", "start", fixer="repair it")}
+
+    from flow_sdk.core.wizard.runner import Resolved
+
+    async def resolve_op(name):
+        return Resolved(spec=ops[name])
+
+    load = LoadTree(SimpleNamespace(root="r", resolve_op=resolve_op, resolve_node=None))
+    assert [r.subkind for r in (await load.resolve_op("app:up")).spec.attempts] == ["agent", "cli"]
+    assert (await load.resolve_op("other:start")).spec.attempts == []

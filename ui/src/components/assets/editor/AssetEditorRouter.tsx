@@ -334,6 +334,13 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
     return <DiagnosisRequestView value={ptr.value} />;
   }
 
+  // A deployment's page reads the agent and deployment RECORDS (funding, threads, health), never the
+  // agent's files: an agent not linked to git still opens it on the hub.
+  if (gitBlocked && nestedChild?.section === 'deployment' && typeIdEntity?.getType() === Agent.type) {
+    return (
+      <AgentChildView agent={typeIdEntity as Agent} section={nestedChild.section} typeIdString={nestedChild.typeId} />
+    );
+  }
   if (gitBlocked && typeIdEntity) {
     return (
       <GitConnectionRequiredCard

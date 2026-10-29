@@ -5,8 +5,6 @@ import { useCallback, useEffect, useRef } from 'react';
 import { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
-import { AppStatusLine } from '@src/components/webapp-display/AppStatusLine';
-import { WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
@@ -21,6 +19,7 @@ import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
+import { Pencil } from 'lucide-react';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -220,18 +219,20 @@ export function AppDisplayViewer({
 
   const display = (
     <div className="flex h-full flex-col">
-      <WebappDisplayToolbar
-        host={appDisplay.src}
-        // A dev server is loaded at its own address, which is worth showing; a
-        // served build's address is this backend's own path.
-        address={appDisplay.runtime === 'dev' ? directHost(appDisplay.src) : ''}
-        runtime={appDisplay.runtime}
-        runtimes={appDisplay.available}
-        onRuntimeChange={setRuntime}
-        onRefresh={() => frameRef.current?.refresh()}
-      />
-      {definition?.project_id && definition.name ? (
-        <AppStatusLine projectId={definition.project_id} app={definition.name} />
+      {/* The website view is the app: one header button to edit it, nothing else. */}
+      {definition ? (
+        <div className="flex items-center justify-end border-b px-3 py-1" data-testid="webapp-header">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            data-testid="webapp-edit"
+            onClick={() => navigation.openDock(DockPointer.forAssetEditorByTypeId(WebApp.type, definition.typeId))}
+          >
+            <Pencil className="size-3.5" />
+            <Trans>Edit app</Trans>
+          </Button>
+        </div>
       ) : null}
       {relayed ? (
         <div

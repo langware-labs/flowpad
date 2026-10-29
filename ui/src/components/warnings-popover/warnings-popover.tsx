@@ -12,6 +12,7 @@ import { openProjectSetup } from '@src/components/project-setup/project-setup-st
 import { notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
 import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
+import { ErrorDetailsButton } from '@src/notifications/ErrorDetailsDialog';
 import {
   AlertCircle,
   AlertOctagon,
@@ -199,24 +200,23 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">{alert.title}</p>
         {alert.message && <p className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{alert.message}</p>}
-        {alert.actions && alert.actions.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {alert.actions.map((action, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => runAction(action, alert.id)}
-                className={`rounded px-2 py-1 text-xs font-medium ${
-                  i === 0
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                }`}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(alert.actions ?? []).map((action, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => runAction(action, alert.id)}
+              className={`rounded px-2 py-1 text-xs font-medium ${
+                i === 0
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              {action.label}
+            </button>
+          ))}
+          <ErrorDetailsButton data={alert} />
+        </div>
       </div>
       <div className="flex shrink-0 items-start gap-0.5">
         <CopyButton text={notificationText(alert)} />

@@ -7,6 +7,7 @@ import { isLaunched, useSandboxes } from '@src/hooks/use-sandboxes';
 import { ALL_DEPLOYMENTS, DeploymentBadges, deploymentsByAgent, toAgentRows, type AgentRow } from './agent-counters';
 import { StatusDot } from './AssetItems';
 import type { AssetCounterGroup } from './types';
+import { FundedBy } from '@src/components/assets/editor/agent-profile/deployment/DeploymentFunding';
 
 /**
  * The hub home's counters. Org-wide graph queries with no project scope: the
@@ -184,12 +185,14 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
   },
   itemKey: (d) => d.id,
   searchText: (d) => [d.name, d.target.provider].filter(Boolean).join(' '),
-  itemPointer: (d) => d.dockPointer,
+  // Its own page (funding, threads, health) when it places an agent; else where it sits in the world view.
+  itemPointer: (d) => d.agentPagePointer ?? d.dockPointer,
   card: (d) => {
     const live = isLiveDeployment(d);
     return {
       title: d.name,
       status: { label: live ? <Trans>Live</Trans> : <Trans>Paused</Trans>, active: live },
+      description: <FundedBy deployment={d} />,
       footer: d.target.provider || d.status.provider_state || undefined,
     };
   },
@@ -198,7 +201,7 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
       key: 'deployment',
       header: <Trans>Deployment</Trans>,
       cell: (d) => <span className="truncate font-medium text-foreground">{d.name}</span>,
-      className: 'w-[60%] max-w-0',
+      className: 'w-[45%] max-w-0',
     },
     {
       key: 'status',
@@ -206,6 +209,12 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
       cell: (d) => (
         <StatusDot active={isLiveDeployment(d)}>{d.target.provider || d.status.provider_state || '—'}</StatusDot>
       ),
+    },
+    {
+      key: 'funding',
+      header: <Trans>Funded by</Trans>,
+      cell: (d) => <FundedBy deployment={d} />,
+      className: 'w-[30%] max-w-0',
     },
   ],
 };

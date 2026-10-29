@@ -58,3 +58,42 @@ async def test_only_a_failed_request_that_is_answered_again_clears_its_error():
     assert [(m.method, m.path) for m in recovered] == [("GET", "/x")], (
         "/x was answered once after failing; /y never was, so its error stays"
     )
+
+
+@pytest.mark.asyncio
+async def test_repeats_of_one_call_carry_first_last_and_count_until_it_recovers():
+    messages = []
+    wall = iter([1000.0, 1005.0, 1010.0])
+
+    async def broadcast(message):
+        messages.append(message)
+
+    reporter = _HubErrorReporter(broadcast_func=broadcast, wall_clock=lambda: next(wall))
+
+    await reporter.report(status_code=422, method="GET", path="/issue", message="bad filter", body='{"x":1}')
+    await reporter.report(status_code=422, method="GET", path="/issue", message="bad filter")
+    assert (messages[-1].first_at, messages[-1].last_at, messages[-1].count) == (1000.0, 1005.0, 2)
+    assert messages[0].body == '{"x":1}'
+
+    await reporter.recovered(method="GET", path="/issue")
+    await reporter.report(status_code=422, method="GET", path="/issue", message="bad filter")
+    assert (messages[-1].first_at, messages[-1].count) == (1010.0, 1), "a recovered call starts a new run"
+
+
+@pytest.mark.asyncio
+async def test_suppressed_errors_are_kept_and_sent_with_the_notice():
+    now = 0.0
+    messages = []
+
+    async def broadcast(message):
+        messages.append(message)
+
+    reporter = _HubErrorReporter(max_per_window=1, window_seconds=60.0, clock=lambda: now, broadcast_func=broadcast)
+    await reporter.report(status_code=500, method="GET", path="/a", message="shown")
+    await reporter.report(status_code=402, method="POST", path="/b", message="limit hit")
+    now = 61.0
+    await reporter.report(status_code=500, method="GET", path="/c", message="next")
+
+    notice = messages[1]
+    assert notice.suppressed_count == 1
+    assert [(h["method"], h["path"], h["message"]) for h in notice.hidden] == [("POST", "/b", "limit hit")]

@@ -2,7 +2,6 @@ import { t } from '@lingui/core/macro';
 import {
   oauthService,
   OAUTH_PROVIDERS,
-  copyToClipboard,
   AgenticProcess,
   dataContext,
   snifferManager,
@@ -101,27 +100,6 @@ registerCommand('sniffer.disable', (_args, ctx) => {
 registerCommand('notification.dismiss', (_args, ctx) => {
   // One dismiss path for all three surfaces — toast, sidebar badge, alert log.
   notify.dismiss(ctx.id);
-});
-
-// `Detail` on a cloud-error toast. Surfaces the raw transport detail the
-// headline hides — visibly (a follow-up toast) AND on the clipboard — instead
-// of only writing it to the console (which a user without DevTools never sees).
-registerCommand('debug.logHubError', (args) => {
-  console.warn('[hub error]', args);
-
-  const str = (v: unknown) =>
-    (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : '').trim();
-  const requestLine = `${str(args.method)} ${str(args.path)}`.trim() + (args.statusCode ? ` → ${args.statusCode}` : '');
-  const detail = [requestLine, str(args.message)].filter(Boolean).join('\n');
-
-  void copyToClipboard(detail);
-
-  notify.info({
-    id: 'cloud-error-detail',
-    title: t`Cloud error detail (copied to clipboard)`,
-    message: detail || 'No additional detail was provided.',
-    durationMs: 15000,
-  });
 });
 
 // `terminal.resume` is hook-bound (useResumeInTerminal) and is registered at

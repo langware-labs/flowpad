@@ -1,4 +1,4 @@
-import { TypeId, type Agent, type AgentTokenAllocation, type CloudDeployProvider } from '@sdk';
+import { LLM_MODEL_SIZES, TypeId, type Agent, type AgentTokenAllocation, type CloudDeployProvider } from '@sdk';
 import { useDebounceCallback } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
@@ -15,7 +15,7 @@ import { Label } from '@src/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { endpointTypeId, openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
-import { useLlmEndpointModels } from '@src/components/llm-endpoints/use-llm-endpoints';
+import { useLlmEndpointChain, useLlmEndpointModels } from '@src/components/llm-endpoints/use-llm-endpoints';
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
@@ -51,11 +51,11 @@ export function TokenAllocationField({
   disabled,
 }: TokenAllocationFieldProps) {
   const { t } = useLingui();
-  // The hub endpoints offered to this person, as the desk's funding view knows them; allocating from one
-  // takes administering it (the hub checks the same right).
+  // The hub endpoints offered to this person, as the desk's funding view knows them: the ones they may
+  // allocate from (the hub's `allocate` right -- an admin's pools, and their own allowance as its holder).
   const { status, isLoading } = useLlmSources();
   const sources = useMemo(
-    () => (status?.available ?? []).filter((e) => e.kind === 'hub' && e.can_administer === true),
+    () => (status?.available ?? []).filter((e) => e.kind === 'hub' && (e.can_allocate ?? e.can_administer) === true),
     [status],
   );
   const checked = value !== null;
@@ -162,7 +162,7 @@ export function TokenAllocationField({
   );
 }
 
-/** The one model: picked from the models the chosen source offers, as the hub lists them. */
+/** The model: a SIZE (sm/md/lg — the source's chain says which model each is) or one model the source offers. */
 function ModelField({
   value,
   onChange,
@@ -178,14 +178,22 @@ function ModelField({
   const [typed, setTyped] = useState('');
   const [needle, setNeedle] = useState('');
   const filterBy = useDebounceCallback(setNeedle, MODEL_FILTER_DEBOUNCE_MS, []);
-  const models = useLlmEndpointModels(value.source ? new TypeId(value.source).id : undefined);
+  const sourceId = value.source ? new TypeId(value.source).id : undefined;
+  const models = useLlmEndpointModels(sourceId);
+  const chain = useLlmEndpointChain(sourceId);
   const ids = useMemo(() => [...new Set((models.data ?? []).map((m) => m.id))].sort(), [models.data]);
-  // The only model the source offers: nothing to choose, so it is the one.
+  // The sizes the source's chain declares, each with the model it resolves to.
+  const sizes = LLM_MODEL_SIZES.flatMap((size) => {
+    const model = chain.data?.effective_tiers?.[size]?.model;
+    return model ? [{ size, model }] : [];
+  });
+  // The only model the source offers and no size to choose instead: nothing to choose, so it is the one.
   useEffect(() => {
-    if (ids.length === 1 && value.model !== ids[0]) onChange({ ...value, model: ids[0] });
-  }, [ids, value, onChange]);
+    if (!sizes.length && ids.length === 1 && value.model !== ids[0]) onChange({ ...value, model: ids[0] });
+  }, [ids, sizes.length, value, onChange]);
+  const sizeOf = (model: string) => sizes.find((s) => s.size === model);
   // Until the source's models are known (none picked, loading, or the hub refused), the model is typed.
-  if (ids.length === 0) {
+  if (ids.length === 0 && sizes.length === 0) {
     return (
       <Input
         className="h-8 min-w-0 flex-1 font-mono text-xs"
@@ -199,7 +207,7 @@ function ModelField({
     );
   }
   // The agent's own model, kept selectable when the source does not list it under that name.
-  const offered = value.model && !ids.includes(value.model) ? [value.model, ...ids] : ids;
+  const offered = value.model && !ids.includes(value.model) && !sizeOf(value.model) ? [value.model, ...ids] : ids;
   const q = needle.trim().toLowerCase();
   const rows = q ? offered.filter((id) => id.toLowerCase().includes(q)) : offered;
   return (
@@ -216,7 +224,7 @@ function ModelField({
           data-testid="token-allocation-model"
         >
           <span className={cn('truncate', !value.model && 'text-muted-foreground')}>
-            {value.model || t`Choose a model…`}
+            {sizeOf(value.model) ? `${value.model} · ${sizeOf(value.model)?.model}` : value.model || t`Choose a model…`}
           </span>
           <ChevronsUpDown className="ms-1 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
@@ -235,6 +243,22 @@ function ModelField({
             <CommandEmpty>
               <Trans>No models.</Trans>
             </CommandEmpty>
+            {!q &&
+              sizes.map(({ size, model }) => (
+                <CommandItem
+                  key={size}
+                  value={size}
+                  onSelect={() => {
+                    onChange({ ...value, model: size });
+                    setOpen(false);
+                  }}
+                  data-testid={`token-allocation-size-${size}`}
+                >
+                  <Check className={cn('me-2 h-3.5 w-3.5', value.model === size ? 'opacity-100' : 'opacity-0')} />
+                  <span className="w-6 font-mono text-xs font-medium">{size}</span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">{model}</span>
+                </CommandItem>
+              ))}
             {rows.map((id) => (
               <CommandItem
                 key={id}

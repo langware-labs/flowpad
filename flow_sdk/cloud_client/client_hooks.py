@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from typing import Any
+from urllib.parse import parse_qsl, urlencode
 
 import httpx
 
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login
+from flow_sdk.cloud_client.caller import current_caller
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 from flow_sdk.cloud_client.error_reporter import hub_error_reporter
 
@@ -150,14 +153,17 @@ async def _on_response(response: httpx.Response) -> None:
             # check, not a WS-handshake reject — drop login state.
             await invalidate_hub_login("rejected", detail=_auth_signal_detail(response))
             return
-        await hub_error_reporter.recovered(method=response.request.method, path=request_path(response.request.url))
+        await hub_error_reporter.recovered(
+            method=response.request.method, path=redact_query(request_path(response.request.url))
+        )
         return
 
-    if passthrough and status_code == 401 and "json" in response.headers.get("content-type", ""):
-        # A forwarded 401 is a small JSON envelope: read it (``relay`` sends the read copy), so a
-        # dead credential still signs this box out when the call was a verbatim forward.
+    body_read = not passthrough or _is_small_json(response)
+    if passthrough and body_read:
+        # A forwarded error is a small JSON envelope: read it (``relay`` sends the read copy), so
+        # the report carries the hub's own reason and a dead credential still signs this box out.
         await response.aread()
-        if not anonymous and _error_code(response) == "unauthenticated":
+        if status_code == 401 and not anonymous and _error_code(response) == "unauthenticated":
             await invalidate_hub_login("rejected", detail=_auth_signal_detail(response))
     if not passthrough:
         await response.aread()
@@ -176,11 +182,41 @@ async def _on_response(response: httpx.Response) -> None:
     await hub_error_reporter.report(
         status_code=status_code,
         method=response.request.method,
-        path=request_path(response.request.url),
-        # The body is off-limits on a passthrough; the status still gets reported,
-        # and the caller receives the hub's message verbatim in the proxied body.
-        message=f"HTTP {status_code}" if passthrough else _response_message(response),
+        path=redact_query(request_path(response.request.url)),
+        # A large or non-JSON passthrough body stays unread (the proxy streams it); the
+        # status still gets reported, and the caller receives the body verbatim.
+        message=_response_message(response) if body_read else f"HTTP {status_code}",
+        body=(response.text or "")[:MAX_BODY_CHARS] if body_read else "",
+        error_code=(_error_code(response) or "") if body_read else "",
+        request_id=next((response.headers[h] for h in REQUEST_ID_HEADERS if h in response.headers), ""),
+        url=str(response.request.url.copy_with(query=None)),
+        caller=current_caller(),
     )
+
+
+# A forwarded error body is read only when it is small JSON — an envelope, not a download.
+MAX_READ_BYTES = 64 * 1024
+MAX_BODY_CHARS = 4096
+REQUEST_ID_HEADERS = ("x-request-id", "x-correlation-id", "x-amzn-trace-id")
+_SECRET_PARAM = re.compile(r"(token|key|secret|password|signature|code)", re.I)
+
+
+def _is_small_json(response: httpx.Response) -> bool:
+    if "json" not in response.headers.get("content-type", ""):
+        return False
+    length = response.headers.get("content-length")
+    return length is not None and length.isdigit() and int(length) <= MAX_READ_BYTES
+
+
+def redact_query(path: str) -> str:
+    """``path?query`` with secret-looking parameter values replaced, so the report is safe to show and send."""
+    if "?" not in path:
+        return path
+    base, query = path.split("?", 1)
+    pairs = [
+        (k, "***" if _SECRET_PARAM.search(k) else v) for k, v in parse_qsl(query, keep_blank_values=True)
+    ]
+    return f"{base}?{urlencode(pairs)}"
 
 
 def _auth_signal_detail(response: httpx.Response) -> str:

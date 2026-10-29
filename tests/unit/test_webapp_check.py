@@ -58,3 +58,22 @@ def test_unreadable_rules_file_reads_as_none(tmp_path):
     setup_dir(tmp_path).mkdir(parents=True)
     (setup_dir(tmp_path) / ERRORS_FILE).write_text("{not json")
     assert load_rules(tmp_path) == []
+
+
+def test_setup_state_and_rule_toggle(tmp_path):
+    from flow_sdk.builtin.webapp_check import set_rule_action, setup_state
+
+    _write_rules(tmp_path, [{"id": "stale-vite", "pattern": "export named", "fix": "restart"}])
+    (setup_dir(tmp_path) / "recovery.md").write_text("# Recovery\\n")
+    record(tmp_path, triage([PageError(CHIP)], load_rules(tmp_path)), "recover")
+    state = setup_state(tmp_path)
+    assert state["recovery_md"].startswith("# Recovery")
+    assert state["errors"][0]["rule"] == "stale-vite"
+    assert set_rule_action(tmp_path, "stale-vite", "ignore")
+    assert not set_rule_action(tmp_path, "nope", "ignore")
+    assert triage([PageError(CHIP)], load_rules(tmp_path)).usable
+
+
+def test_not_answering_is_a_builtin_restart():
+    decision = triage([PageError("not_answering", source="relay")], [])
+    assert (decision.decisions[0].rule.id, decision.decisions[0].rule.fix) == ("builtin:not-answering", "restart")

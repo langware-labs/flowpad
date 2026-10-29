@@ -159,6 +159,9 @@ class WebappManifestSpec(DataSpec):
     mounts: list[WebappMountSpec] = []
     #: The machine-called services the app brings along (its API), each an endpoint of its own.
     services: list[WebappServiceSpec] = []
+    #: Report the page's JS errors to Flowpad while it loads (``server/reporter_relay.py``): the app opens
+    #: only when its page loads clean, and an error starts recovery. Off: the dev server is loaded directly.
+    report_errors: bool = True
 
 
 def effective_mounts(mounts: list, services: list = ()) -> list:

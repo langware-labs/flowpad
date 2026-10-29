@@ -52,7 +52,7 @@ class LoadTree:
         resolved = await self.tree.resolve_op(name)
         rungs = list(getattr(resolved.spec, "attempts", None) or []) if resolved is not None else []
         agent = next((at for at, rung in enumerate(rungs) if rung.subkind == "agent"), None)
-        if self.fix or agent is None:
+        if self.fix or agent is None or resolved.spec.fix_on_load:
             return resolved
         return dataclasses.replace(resolved, spec=resolved.spec.model_copy(update={"attempts": rungs[:agent]}))
 

@@ -11,6 +11,7 @@ import { IssueBanners } from '@src/components/asset-counters/issue-counters';
 import { AgentPlaceCard } from '../AgentPlaceCard';
 import { usePlaceDisplay } from '../use-place-display';
 import { useAgentPlaces } from '../use-agent-places';
+import { DeploymentFundingCard } from './DeploymentFunding';
 import { DeploymentHealth } from './DeploymentHealth';
 import { DeploymentProcessPanel } from './DeploymentProcessPanel';
 import { DeploymentThreads } from './DeploymentThreads';
@@ -118,6 +119,7 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
       {deployment && (
         <div className="px-4">
           <DeploymentHealth deployment={deployment} />
+          <DeploymentFundingCard agent={agent} deployment={deployment} />
         </div>
       )}
       {settings && place && (

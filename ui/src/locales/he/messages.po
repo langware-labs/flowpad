@@ -591,6 +591,11 @@ msgstr "זמינים: {0}"
 msgid "{0} can now spend {1}."
 msgstr "{0} יכולים עכשיו להשתמש ב-{1}."
 
+#. placeholder {0}: deployment.name
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "{0} cannot pay for its next turn"
+msgstr ""
+
 #. placeholder {0}: a.fires
 #. placeholder {1}: a.passed_over ?? 0
 #: src/components/automations/AutomationRow.tsx
@@ -2347,6 +2352,14 @@ msgstr "לרתמה יש כאן סשנים, או שהפרויקט נפתח לאח
 msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "מפתח שה-Hub מחזיק (לא ניתן לקרוא את השרשרת מכאן)"
 
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "A known error is fixed on the spot; an unknown one goes to recovery."
+msgstr ""
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "A known fix for this error (setup/webapp_errors.json)."
+msgstr ""
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A machine"
 msgstr "מכונה"
@@ -3577,6 +3590,10 @@ msgstr ""
 msgid "Allocation"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "Allocation saved"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "אפשרו"
@@ -3937,6 +3954,10 @@ msgstr "פרויקט אחר"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "שלב אחר כבר משתמש במזהה הזה — התוצאות שלהם ידרסו זו את זו."
+
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Answer"
+msgstr ""
 
 #~ msgid "Answer here instead"
 #~ msgstr ""
@@ -4946,6 +4967,10 @@ msgstr "אזור AWS עבור Bedrock"
 msgid "Back"
 msgstr "חזרו"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "Back on the owner's default"
+msgstr ""
+
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Back to Data sources"
 msgstr "חזרה למקורות נתונים"
@@ -5447,6 +5472,7 @@ msgid "call"
 msgstr "קריאה"
 
 #: src/components/voice/CallControls.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Call"
 msgstr "התקשרו"
 
@@ -5527,6 +5553,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
@@ -5765,6 +5792,10 @@ msgstr "שרשרת"
 msgid "Change"
 msgstr "שנו"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "Change allocation"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Change avatar"
 msgstr "החלפת תמונה"
@@ -5968,6 +5999,22 @@ msgstr "בדיקה"
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Check"
 msgstr "בדיקה"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Check — is the app running and its page clean?"
+msgstr ""
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Check — loading the page and watching for errors"
+msgstr ""
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Check — the app is not ready to show"
+msgstr ""
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Check — the page threw an error while loading"
+msgstr ""
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
@@ -6654,6 +6701,7 @@ msgstr "משבוט…"
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Close"
 msgstr "סגרו"
 
@@ -6783,8 +6831,8 @@ msgid "Cloud disconnected"
 msgstr "הענן מנותק"
 
 #: src/notifications/commands.ts
-msgid "Cloud error detail (copied to clipboard)"
-msgstr "פירוט שגיאת הענן (הועתק ללוח)"
+#~ msgid "Cloud error detail (copied to clipboard)"
+#~ msgstr "פירוט שגיאת הענן (הועתק ללוח)"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Cloud hub"
@@ -7657,6 +7705,7 @@ msgstr "העתיקו קישור או הורידו את {entityType} כחבילה
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Copy all"
 msgstr "העתיקו הכל"
 
@@ -7964,6 +8013,10 @@ msgstr "לא ניתן היה לשנות את התפקיד"
 
 #~ msgid "Could not change sign-in method"
 #~ msgstr "לא ניתן היה לשנות את שיטת ההתחברות"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "Could not change the allocation"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Could not change where the agent runs"
@@ -9751,6 +9804,7 @@ msgstr "מוגדרת ב-"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Definition"
 msgstr "הגדרה"
 
@@ -10275,6 +10329,7 @@ msgstr "מבט־על של הפריסה"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -10373,7 +10428,6 @@ msgid "Destination already has an item with that name"
 msgstr "בתיקיית היעד כבר קיים פריט בשם זה"
 
 #: src/components/asset-counters/issue-counters.tsx
-#: src/notifications/ingest.ts
 msgid "Detail"
 msgstr "פרטים"
 
@@ -10388,6 +10442,7 @@ msgstr "פרטים"
 #: src/components/harness-login/StatusRow.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Details"
 msgstr "פרטים"
 
@@ -10437,6 +10492,7 @@ msgid "Device logins"
 msgstr "התחברויות מכשיר"
 
 #: src/components/version-popover/version-popover.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Diagnose"
 msgstr "אבחון"
 
@@ -11256,6 +11312,7 @@ msgstr "עריכת {0}"
 #~ msgstr "ערוך בכל זאת"
 
 #: src/components/top-nav-bar/AppButton.tsx
+#: src/pages/flow-page/app-display-viewer.tsx
 msgid "Edit app"
 msgstr ""
 
@@ -11562,6 +11619,10 @@ msgstr "הסתיימה"
 msgid "Ended · {when}"
 msgstr "הסתיים · {when}"
 
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Endpoint"
+msgstr ""
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Endpoint id"
 msgstr "מזהה נקודת הקצה"
@@ -11723,6 +11784,10 @@ msgstr "שגיאה"
 msgid "Error"
 msgstr "שגיאה"
 
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Error code"
+msgstr ""
+
 #: src/components/app-host/AppHost.tsx
 msgid "Error Loading App"
 msgstr "שגיאה בטעינת אפליקציה"
@@ -11748,6 +11813,10 @@ msgstr "שגיאה בטעינת הפרויקטים: {projectsError}"
 msgid "Error Loading Transcript"
 msgstr "שגיאה בטעינת הטרנסקריפט"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Error rules — webapp_errors.json"
+msgstr ""
+
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Error while displaying the suggestion, contact support"
 msgstr "שגיאה בהצגת ההצעה, יש לפנות לתמיכה"
@@ -11761,6 +11830,7 @@ msgid "errors"
 msgstr "שגיאות"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/i18n/pref-labels.ts
@@ -13227,6 +13297,10 @@ msgstr "הפעלות: <0>{fireCount}</0>"
 #~ msgid "Firing…"
 #~ msgstr "בשיגור…"
 
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "First"
+msgstr ""
+
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "first by path — nothing else separated them"
 msgstr "הראשון לפי נתיב — שום דבר אחר לא הבדיל ביניהם"
@@ -13442,6 +13516,10 @@ msgstr "FlowPad לא נפתח? התקינו אותו וחזרו לדף הזה."
 
 #~ msgid "FlowPad didn't open. Install it from flowpad.ai, then try again."
 #~ msgstr ""
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
+msgstr ""
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -13771,6 +13849,10 @@ msgstr "מלא — סריקה מחדש מלאה"
 msgid "Full access"
 msgstr "גישה מלאה"
 
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Full answer"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Full environment variable dictionary"
 msgstr "מילון משתני סביבה מלא"
@@ -13791,6 +13873,7 @@ msgstr "מסך מלא"
 msgid "function (registry)"
 msgstr "פונקציה (registry)"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Funded by"
 msgstr ""
@@ -13821,6 +13904,10 @@ msgstr "ממומן על ידי המנוי שלכם אצל הספק"
 #: src/components/token-plan/FundingChain.tsx
 #: src/components/token-plan/FundingChain.tsx
 msgid "Funded through"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "Funding"
 msgstr ""
 
 #~ msgid "Funding for"
@@ -14470,11 +14557,19 @@ msgstr "כתובת עזרה"
 msgid "Helpers used"
 msgstr "עוזרים ששימשו"
 
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
+msgstr ""
+
 #: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Hey <0>{firstName}</0>"
 msgstr "היי <0>{firstName}</0>"
+
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Hidden errors"
+msgstr ""
 
 #: src/components/simple-file-manager/filters.ts
 msgid "Hidden files"
@@ -14784,6 +14879,10 @@ msgstr "איך רוצים לחבר את {group}?"
 msgid "How does improving an asset work?"
 msgstr "איך עובד שיפור נכסים?"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "How it comes up"
+msgstr ""
+
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "How it is judged done"
 msgstr "איך נקבע שזה הושלם"
@@ -15009,6 +15108,10 @@ msgstr "אם הדפדפן ישאל, בחרו באפשרות 'פתח'. לאחר �
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "ignore"
 msgstr "התעלמות"
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Ignore"
+msgstr ""
 
 #~ msgid "ignore patterns"
 #~ msgstr "דפוסים להתעלמות"
@@ -15740,6 +15843,10 @@ msgstr "{trimmed} הוזמן."
 #~ msgid "Inviting…"
 #~ msgstr "משלוח הזמנה…"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Is it usable?"
+msgstr ""
+
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Issue"
 msgstr ""
@@ -15795,6 +15902,10 @@ msgstr "עוד לא הורצה. כדי לנסות, הריצו פעם אחת עכ
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 msgstr "היא כבר אינה בין נקודות הקצה ש-Hub מציג עבורכם — או שהמחשב הזה מנותק מ-Hub."
 
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "It is not answering on its port, or its page failed the last time it opened."
+msgstr ""
+
 #: src/pages/entry/EntityLanding.tsx
 msgid "It lives in git under {repoPath}. Clone it, and open it in the FlowPad desktop app."
 msgstr "הוא נמצא ב-git תחת {repoPath}. שכפלו אותו ופתחו אותו באפליקציית FlowPad למחשב."
@@ -15812,6 +15923,10 @@ msgstr "ייתכן שהוא הוסר רק חלקית."
 #: src/pages/entry/entry-shell.tsx
 msgid "It may have been deleted, or it wasn't shared with this account."
 msgstr "ייתכן שהוא נמחק, או שהוא לא שותף עם החשבון הזה."
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "It runs again the next time the project opens."
@@ -16148,6 +16263,10 @@ msgstr "הרצה מקסימלית"
 msgid "last"
 msgstr "אחרונה"
 
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Last"
+msgstr ""
+
 #. placeholder {0}: new Date(row.last_run.ts).toLocaleString()
 #. placeholder {0}: new Date(trigger.last_run).toLocaleString()
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
@@ -16171,6 +16290,12 @@ msgstr "7 הימים האחרונים"
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last attempt"
 msgstr "הניסיון האחרון"
+
+#. placeholder {0}: check.errors
+#. placeholder {1}: check.at
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Last check found {0} error(s) · {1}"
+msgstr ""
 
 #. placeholder {0}: clockTime(last)
 #: src/components/inbound/InboundView.tsx
@@ -16372,6 +16497,10 @@ msgstr "למדו עוד על הנתונים שלכם"
 msgid "Learn more"
 msgstr "למידע נוסף"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Learnings — recovery.md"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave"
 msgstr "עזבו"
@@ -16467,6 +16596,7 @@ msgstr "הדגישו את {messageCount} ההודעות שזה מצורף אלי
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Limit"
 msgstr "גבול"
 
@@ -17221,6 +17351,10 @@ msgstr "מיקום"
 msgid "locked after first message"
 msgstr "נעול לאחר ההודעה הראשונה"
 
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Log"
+msgstr ""
+
 #: src/components/session-taken-over-overlay.tsx
 #: src/navigation/smart-ask.ts
 #: src/pages/entry/MessageLanding.tsx
@@ -17367,6 +17501,10 @@ msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Machines that are running"
+msgstr ""
+
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Made by"
 msgstr ""
 
 #: src/components/automations/KindGallery.tsx
@@ -17781,6 +17919,7 @@ msgstr "קוד Mermaid"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Message"
 msgstr "הודעה"
 
@@ -18815,6 +18954,18 @@ msgstr "הבא: {0}"
 msgid "Next: {0}"
 msgstr "הרצה הבאה: {0}"
 
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Next: check again"
+msgstr ""
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Next: open the page and check it for errors"
+msgstr ""
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Next: show the app"
+msgstr ""
+
 #: src/components/data-sources/DataDriversView.tsx
 msgid "no"
 msgstr "לא"
@@ -19224,6 +19375,10 @@ msgstr "לא נמצאו שגיאות"
 msgid "No errors match the current filters."
 msgstr "אין שגיאות שתואמות את המסננים הנוכחיים."
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "No errors recorded."
+msgstr ""
+
 #: src/components/automations/BusView.tsx
 msgid "No event like this has happened yet"
 msgstr "עדיין לא התרחש אירוע כזה"
@@ -19285,6 +19440,10 @@ msgstr "עדיין אין תיקיות. הוסיפו תיקייה והיא תא�
 
 #~ msgid "No FSOp triggers visible. Toggle <0>Include system</0> above to see system-installed watchers."
 #~ msgstr "אין עירובי FSOp גלויים. הפעל <0>כלול מערכת</0> למעלה כדי לראות משקיפים המותקנים במערכת."
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "No funding"
+msgstr ""
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "No future run."
@@ -19858,6 +20017,10 @@ msgstr "לא נבחר חדר."
 msgid "No rule code to show."
 msgstr "אין קוד כלל להצגה."
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "No run"
 msgstr "לא הופעל"
@@ -20285,6 +20448,7 @@ msgstr "לא זמין במצב מקומי"
 msgid "Not checked"
 msgstr "לא בדוק"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Not checked yet"
 msgstr "טרם נבדק"
@@ -20689,6 +20853,10 @@ msgstr "לא שואלים כלום: כל השלבים רצים, והתוצאה �
 #: src/components/footer/ActivityDetailsModal.tsx
 msgid "Nothing is running at this address anymore."
 msgstr "שום דבר כבר לא רץ בכתובת הזו."
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Nothing learned yet. Each recovery adds what it learns here — only when it is new."
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 msgid "Nothing listens for this yet."
@@ -22112,6 +22280,10 @@ msgstr "פתיחת מרכז העזרה…"
 msgid "Opening your agent…"
 msgstr "Opening your agent…"
 
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Opening your app…"
+msgstr ""
+
 #: src/pages/entry/InvitePage.tsx
 msgid "Opening your invite…"
 msgstr "ההזמנה שלכם נפתחת…"
@@ -22195,6 +22367,10 @@ msgstr "או פתחו את הקישור בטלפון שלכם"
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Or pick a person, or type an email"
 msgstr "או בחרו אדם, או הקלידו כתובת דוא״ל"
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Or recover it, if the page throws an error."
+msgstr ""
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "or script (relative to the flow folder)"
@@ -22407,6 +22583,11 @@ msgstr "דרסו"
 msgid "Owner"
 msgstr "בעלים"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "owner default"
+msgstr ""
+
 #~ msgid "Owner: {0}"
 #~ msgstr ""
 
@@ -22455,6 +22636,10 @@ msgstr "דף"
 #: src/components/assets/AssetDataTable.tsx
 msgid "Page {page} of {totalPages}"
 msgstr "עמוד {page} מתוך {totalPages}"
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Page errors are not reported — the app opens without a check."
+msgstr ""
 
 #: src/components/ui/pagination.tsx
 msgid "pagination"
@@ -24228,6 +24413,10 @@ msgstr "קורא חבילות…"
 msgid "Reading projects…"
 msgstr "קורא פרויקטים…"
 
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Reading setup/recovery.md first · {toolCount} steps so far"
+msgstr ""
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Reading the data model…"
 msgstr "קורא את מודל הנתונים…"
@@ -24251,6 +24440,10 @@ msgstr ""
 msgid "Reading…"
 msgstr "קריאה…"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Reads and updates setup/recovery.md and setup/webapp_errors.json."
+msgstr ""
+
 #: src/components/assets/DependencyChips.tsx
 msgid "ready"
 msgstr "מוכן"
@@ -24260,6 +24453,11 @@ msgstr "מוכן"
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
 msgstr "מוכן"
+
+#. placeholder {0}: check.at
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Ready · last check {0}"
+msgstr ""
 
 #: src/components/conversation/ConversationAutomationChip.tsx
 msgid "ready · Open"
@@ -24470,6 +24668,14 @@ msgstr "סורק רשומות"
 msgid "recover"
 msgstr "שחזור"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Recover"
+msgstr ""
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Recover — an agent repairs the app"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Recover it from the workdir, or pick a new project via the project chip."
 msgstr "שחזרו אותו מתיקיית העבודה, או בחרו פרויקט חדש דרך תווית הפרויקט."
@@ -24497,6 +24703,7 @@ msgstr "הפחתת אנימציות ואפקטי תנועה"
 msgid "referenced but not in entities table"
 msgstr "מרובט אך לא בטבלת הישויות"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
@@ -25056,6 +25263,10 @@ msgstr "פתיחה מחדש ל…"
 msgid "Reopen this ticket"
 msgstr "פתיחה מחדש של הפנייה"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Repair with an agent"
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
@@ -25183,6 +25394,10 @@ msgstr "הדוח נכשל."
 msgid "Report issue"
 msgstr "דווחו בעיה"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "Report page errors"
+msgstr ""
+
 #: src/components/diagnose/use-diagnosis-report.ts
 msgid "Report sent to the Flowpad team"
 msgstr "הדוח נשלח לצוות Flowpad"
@@ -25226,12 +25441,17 @@ msgid "Repository URL:"
 msgstr "כתובת המאגר:"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Request"
 msgstr "בקשה"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Request access"
 msgstr "בקשו גישה"
+
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Request id"
+msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Request status"
@@ -25483,6 +25703,10 @@ msgstr "הפעילו מחדש את הסשן"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Restart setup"
 msgstr "הפעלה מחדש של ההגדרה"
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Restart the app's server"
+msgstr ""
 
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
@@ -25853,6 +26077,10 @@ msgstr "שורות"
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Rows at"
 msgstr "השורות ב"
+
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Rule"
+msgstr ""
 
 #. placeholder {0}: i + 1
 #. placeholder {1}: claimTitle(r)
@@ -26361,6 +26589,7 @@ msgstr "ארגז החול שודרג"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
@@ -27857,6 +28086,8 @@ msgid "Settings changed since this session started."
 msgstr ""
 
 #: src/components/account/settings-section.tsx
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/SourceSetupButton.tsx
@@ -29316,6 +29547,10 @@ msgstr "סימון כוכב"
 msgid "Start"
 msgstr "התחילו"
 
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Start — starting the app's server"
+msgstr ""
+
 #. placeholder {0}: workerLabel(worker)
 #: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Start {0}"
@@ -29407,6 +29642,10 @@ msgstr "להתחיל שיחה חדשה · {title}"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Start OpenCode"
 msgstr "הפעלת OpenCode"
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Start or restart"
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Start over"
@@ -29539,6 +29778,7 @@ msgstr "סטטוס"
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Status"
 msgstr "סטטוס"
 
@@ -30491,6 +30731,10 @@ msgstr "הניתוח מצא שכל הדרישות מולאו ושנרשמה הג
 msgid "The annotated image was attached but could not be copied to the clipboard."
 msgstr "התמונה צורפה בהצלחה, אך לא ניתן היה להעתיק אותה ללוח."
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+msgid "The app opens only when its page loads without errors; an error starts recovery (Setup tab)."
+msgstr ""
+
 #: src/components/artifacts/artifacts-list.tsx
 msgid "The artifact has been removed successfully."
 msgstr "הקובץ הוסר בהצלחה."
@@ -30851,6 +31095,14 @@ msgstr ""
 msgid "the other participant"
 msgstr "הצד השני"
 
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "The page is loading. It opens as soon as it loads without errors."
+msgstr ""
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "The page loads and reports its errors; each is decided by the rules below."
+msgstr ""
+
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
 msgstr "לא ניתן היה להתקין את הפרויקט."
@@ -30916,6 +31168,10 @@ msgstr "הנמען"
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
 msgstr "הנמען יראה פרומפט לאישור."
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "The repair counts only when the page loads clean."
+msgstr ""
 
 #~ msgid "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
 #~ msgstr ""
@@ -31013,6 +31269,10 @@ msgstr "המקור לא ענה"
 #: src/components/data-sources/use-source-delete.ts
 msgid "The source was not removed."
 msgstr "המקור לא הוסר."
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "The start command; a rule whose fix is “restart” restarts it without an agent."
+msgstr ""
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "The stored API key for this provider is removed from this machine. You can add it again later."
@@ -31236,6 +31496,10 @@ msgstr "כתובת ה-URL של הדואר הנכנס של הסוכן שגויה.
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "this app"
+msgstr ""
+
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "This app"
 msgstr ""
 
 #~ msgid "This app could not be set up"
@@ -32135,6 +32399,10 @@ msgstr "Timeout (שניות)"
 msgid "Timeout for Anthropic API calls in ms"
 msgstr "פסק זמן לקריאות ה-API של Anthropic במילישניות"
 
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Times"
+msgstr ""
+
 #~ msgid "Times seen since the app started"
 #~ msgstr ""
 
@@ -32550,6 +32818,7 @@ msgstr "טריגרים"
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
+#: src/components/webapp-display/PageCheckPanel.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
@@ -33249,6 +33518,10 @@ msgstr "שימוש בסנדבוקס מוחלש עבור פקודות מקוננ�
 msgid "used"
 msgstr "בשימוש"
 
+#: src/notifications/ErrorDetailsDialog.tsx
+msgid "Used / cap"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Used assets"
 msgstr "נכסים בשימוש"
@@ -33504,6 +33777,7 @@ msgstr "אסימון אימות: כששומרים את הכתובת, השרת ש
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "Version"
 msgstr "גרסה"
 
@@ -33873,6 +34147,10 @@ msgstr "משקיפים רושמים דפוסים דרך <0>Shell.addTrigger</0>;
 msgid "Ways to answer"
 msgstr "דרכים לענות"
 
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "We could not recover the app"
+msgstr ""
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "We couldn't confirm this sign-in: {statusReason}"
 msgstr "לא הצלחנו לאשר את ההתחברות: {statusReason}"
@@ -34196,6 +34474,7 @@ msgstr ""
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
+#: src/notifications/ErrorDetailsDialog.tsx
 msgid "When"
 msgstr "מתי"
 
@@ -34923,6 +35202,10 @@ msgstr "מפתח ה-API שלכם לאימות בקשות API ל-FlowPad"
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Your API Keys"
 msgstr "מפתחות ה-API שלכם"
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Your app crashed while loading — recovering it"
+msgstr ""
 
 #: src/components/webapp-display/messages.tsx
 msgid "Your app is running, but parts of it may not work."
