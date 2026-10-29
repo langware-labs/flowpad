@@ -26,6 +26,7 @@ from flow_sdk.sources.testing import Subject, checks_for
 from flow_sdk.sources.values.items import MessageData
 
 GithubPrSource = asset_module("github_pr").GithubPrSource
+GithubPrConfig = asset_module("github_pr").GithubPrConfig
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -369,6 +370,11 @@ async def test_by_default_my_prs_and_my_review_requests_are_listed_once_each(git
     assert sorted(convs) == ["octo/app#20", "octo/app#21", "octo/app#22"]
     searches = [p for m, p in gh.calls if p.startswith("/search/issues")]
     assert any("author:@me" in q for q in searches) and any("review-requested:@me" in q for q in searches)
+
+
+def test_a_new_source_config_defaults_to_my_prs_not_assigned_ones():
+    """The app saves ``GithubPrConfig()``'s dump, so the field default is what a new source runs."""
+    assert GithubPrConfig().filter == "mine"
 
 
 async def test_the_assigned_filter_lists_only_prs_assigned_to_me(github):

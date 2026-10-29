@@ -13,7 +13,7 @@
     "permission.github.pull_requests.read": {
       "mechanism": "oauth",
       "oauth_scopes": ["repo", "read:org"],
-      "why": "Reads the pull requests assigned to you, with their comments, reviews, pushes and checks."
+      "why": "Reads the pull requests you opened or that await your review, with their comments, reviews, pushes and checks."
     },
     "permission.github.pull_requests.comment": {
       "mechanism": "oauth",

@@ -53,6 +53,8 @@ import {
   buildConversationItems,
   groupThreadItems,
   itemThreadId,
+  partitionThreaded,
+  flatThreadIdsOf,
   ConversationItemKind,
   anchorSessionItems,
   shouldShowSoloSendNotice,
@@ -557,6 +559,7 @@ export function ConversationView({
       ),
     [agentId, agentScope?.thread_ids, threads],
   );
+  const flatThreadIds = useMemo(() => flatThreadIdsOf(threads), [threads]);
 
   // Two views of one feed, chosen by the URL:
   //   ?thread=<id> → only that thread's messages, unpacked
@@ -598,16 +601,12 @@ export function ConversationView({
       const inThread = feed.filter((it) => itemThreadId(it, getFm) === threadId);
       return anchorSessionItems(inThread, getFm, sessionAnchors);
     }
-    const threaded: ConversationItem[] = [];
-    const plain: ConversationItem[] = [];
-    for (const item of feed) {
-      (itemThreadId(item, getFm) ? threaded : plain).push(item);
-    }
+    const { threaded, plain } = partitionThreaded(feed, getFm, flatThreadIds);
     return [
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors, calls]);
+  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls]);
 
   // A message right under one from the same sender, moments later, drops its avatar and name.
   const continuations = useMemo(() => {

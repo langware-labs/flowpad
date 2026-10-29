@@ -1,4 +1,4 @@
-"""``GithubPrSource`` — the open pull requests assigned to you (or awaiting your review), each a conversation.
+"""``GithubPrSource`` — the open pull requests you opened or that await your review, each a conversation.
 
 **A PR is the conversation; what happens on it is the messages.** Issue comments, review comments,
 reviews, the timeline's assignments, pushes, merges, closes and reopens, and one CI summary for the
@@ -148,7 +148,7 @@ class GithubPrMessageData(MessageData):
 class GithubPrConfig(SourceConfig):
     """What a github_pr source is configured with."""
 
-    filter: Union[Literal["assigned", "review_requested"], ChoiceEntry] = "assigned"
+    filter: Union[Literal["mine", "assigned", "review_requested"], ChoiceEntry] = DEFAULT_FILTER
     #: ``owner/repo`` each; empty reads every repository the token reaches.
     repos: list[str] = []
     #: Empty is GitHub itself; a test points a row at a local double. Never a secret.
