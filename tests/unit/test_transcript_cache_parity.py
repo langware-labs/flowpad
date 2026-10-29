@@ -199,15 +199,17 @@ def test_opencode_projection_is_rebuilt_after_a_new_turn(worker_session_stores):
     stores = worker_session_stores
     sid = f"ses_{uuid.uuid4().hex}"
     _add_turn(stores.opencode_db, sid, 1)
-    # The resolve cursor snapshots the source's (size, mtime_ns) at the first view, and the second
-    # turn below can land in the SAME kernel clock tick on a fast machine (first seen on Blacksmith
-    # runners) — pin the snapshot one tick back so the new turn's own stamp can never equal it.
-    st = stores.opencode_db.stat()
-    os.utime(stores.opencode_db, ns=(st.st_atime_ns, st.st_mtime_ns - 1))
     process = _proc(WorkerType.OPENCODE, session_id=sid)
     view(process)
     projection = process.transcript_path
     lines_before = projection.read_text(encoding="utf-8").count("\n")
+    # The projection is reused while out.mtime >= the store's mtime (session_history.py). On a fast
+    # machine the projection's build and turn 2's commit can land in the SAME kernel clock tick
+    # (first seen on Blacksmith runners), and `>=` then reads the stale projection as fresh. Pin the
+    # projection one tick back so turn 2's stamp must beat it — the mechanism under test is "a newer
+    # store rebuilds the projection", not the tick width.
+    st = projection.stat()
+    os.utime(projection, ns=(st.st_atime_ns, st.st_mtime_ns - 1))
     _add_turn(stores.opencode_db, sid, 2)
 
     def rebuilt_by_the_warm_serialization():
