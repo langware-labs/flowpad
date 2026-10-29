@@ -513,7 +513,10 @@ async def test_hub_llm_endpoint(payload: dict) -> dict:
     _require_hub_login()
 
     try:
-        return await HubProxy.call("POST", "llm_endpoint", endpoint_id, "test", payload={})
+        model = str(payload.get("model") or "").strip()
+        return await HubProxy.call(
+            "POST", "llm_endpoint", endpoint_id, "test", payload={"model": model} if model else {}
+        )
     except HubError as exc:
         if exc.kind is HubFailureKind.NOT_CONFIGURED:
             raise HubEndpointBindError("no hub is configured for this box", 409) from exc

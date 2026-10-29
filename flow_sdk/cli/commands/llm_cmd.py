@@ -502,9 +502,19 @@ def _clear_shell() -> None:
 @llm_app.command("test", help="Spend one live call through a source and report the verdict.")
 def _test(
     ref: Annotated[str, typer.Argument(help="Row number, endpoint id, or name prefix.")],
+    harness: Annotated[
+        str, typer.Option("--harness", help="Test the model this harness would spend (claude/codex/…).")
+    ] = "claude",
+    model: Annotated[Optional[str], typer.Option("--model", "-m", help="Test this model slug instead.")] = None,
 ) -> None:
     row = _pick(_rows(_status()), ref)
-    verdict = _op("test", {"endpoint_typeid": row.typeid})
+    if not model and row.kind == "endpoint":
+        # The model the harness would actually spend, so a green verdict is about that model
+        # rather than whichever one the hub finds cheapest.
+        binding = _op("binding", {"endpoint_typeid": row.typeid, "harness": harness})
+        entry = (binding.get("harnesses") or {}).get(harness) or {}
+        model = entry.get("model")
+    verdict = _op("test", {"endpoint_typeid": row.typeid, "model": model or ""})
     _ok({"source": row.name, **verdict})
 
 
@@ -676,7 +686,11 @@ def _project_for_cwd(*, required: bool = True) -> str:
                 EXIT_NOT_FOUND, "NO_INSTANCE", "Project scope needs a running instance. Start one, or pass --project."
             )
         return ""
-    rows = _call("GET", f"http://127.0.0.1:{port}/api/v1/graph/project", params={"filter": json.dumps({"match": {}, "limit": 500})})
+    rows = _call(
+        "GET",
+        f"http://127.0.0.1:{port}/api/v1/graph/project",
+        params={"filter": json.dumps({"match": {}, "limit": 500})},
+    )
     best_mount, best_id = "", ""
     for row in rows if isinstance(rows, list) else []:
         mount = str(row.get("fs_storage_mount_path") or "")

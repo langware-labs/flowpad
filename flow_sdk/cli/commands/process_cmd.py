@@ -165,6 +165,14 @@ def start_process(
     workdir: Annotated[
         Optional[str], typer.Option("--workdir", help="Where the agent works. Default: a fresh temp directory.")
     ] = None,
+    llm: Annotated[
+        Optional[str],
+        typer.Option(
+            "--llm",
+            help="Source that funds this run only: a `flow llm list` number, endpoint id or name prefix. "
+            "Pins the process, never the box default.",
+        ),
+    ] = None,
 ) -> None:
     if _discover_port(required=False) is not None:
         _fail(
@@ -181,9 +189,18 @@ def start_process(
         if vendor is None:
             _fail(EXIT_INVALID_ARG, "UNKNOWN_WORKER", f"No worker named {worker!r}.")
         worker_type = vendor.worker_type
+    endpoint_typeid = None
+    if llm:
+        from flow_sdk.cli.commands.llm_cmd import _pick, _rows, _status  # noqa: PLC0415
+
+        endpoint_typeid = _pick(_rows(_status()), llm).typeid
     # ERROR too: a turn that fails says why through its own verdict, so the log would only repeat it.
     quiet_logs(logging.ERROR)
-    raise typer.Exit(run_async(_run_start(prompt, worker_type=worker_type, model=model, workdir=workdir)))
+    raise typer.Exit(
+        run_async(
+            _run_start(prompt, worker_type=worker_type, model=model, workdir=workdir, endpoint_typeid=endpoint_typeid)
+        )
+    )
 
 
 async def _run_start(
@@ -192,6 +209,7 @@ async def _run_start(
     worker_type: Optional[str] = None,
     model: Optional[str] = None,
     workdir: Optional[str] = None,
+    endpoint_typeid: Optional[str] = None,
 ) -> int:
     """One turn, streamed: the process id and tool steps to stderr, the agent's messages to
     stdout. No ``worker_type`` takes the builtin-process rule — the selected harness when
@@ -212,6 +230,7 @@ async def _run_start(
         pty_mode=False,
         visible=False,
         load_flowpad_assistant=False,
+        llm_endpoint_typeid=endpoint_typeid,
     ).save()
     safe_echo(f"running agentic process {ap.typeid}…", err=True)
     answer = None
