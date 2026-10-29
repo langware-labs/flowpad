@@ -192,7 +192,7 @@ describe('the Desktop section row', () => {
     expect(api.downloadDesktopUpdate).not.toHaveBeenCalled();
   });
 
-  it("the feed build is below the engine's floor: Download falls back to desktop-only", async () => {
+  it("the feed build is below the engine's floor: Download still updates both (the shell substitutes)", async () => {
     const api = electronApi({
       getUpdateInfo: vi.fn().mockResolvedValue({
         ...INCOMPATIBLE_INFO,
@@ -202,8 +202,9 @@ describe('the Desktop section row', () => {
     (window as { electronAPI?: unknown }).electronAPI = api;
     await openPopover();
     fireEvent.click(await screen.findByTestId('desktop-download-button'));
-    await waitFor(() => expect(api.downloadDesktopUpdate).toHaveBeenCalledTimes(1));
-    expect(api.updateBoth).not.toHaveBeenCalled(); // update:both would refuse (desktop-too-old)
+    // Product rule: never a desktop-only branch in the panel — the shell substitutes a fitting engine.
+    await waitFor(() => expect(api.updateBoth).toHaveBeenCalledWith('0.2.240'));
+    expect(api.downloadDesktopUpdate).not.toHaveBeenCalled();
   });
 
   it("a stale error push does not outlive the shell's idle snapshot", async () => {
@@ -225,17 +226,17 @@ describe('the Desktop section row', () => {
     expect(screen.queryByTestId('desktop-update-retry-button')).toBeNull();
   });
 
-  it("the shell refuses desktop-too-old (pre-flight floor was unknown): Download retries desktop-only", async () => {
+  it('a running pair the contract forbids is SHOWN in the panel, not only logged', async () => {
     const api = electronApi({
-      getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO), // meetsEngineFloor undefined → both attempted
-      updateBoth: vi.fn().mockResolvedValue({ started: false, reason: 'desktop-too-old', minDesktop: '0.3.0' }),
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        ...INCOMPATIBLE_INFO,
+        pairWarning: 'FlowPad Desktop 0.2.50 is not compatible with FlowPad Backend 0.2.100.',
+      }),
     });
     (window as { electronAPI?: unknown }).electronAPI = api;
     await openPopover();
-    fireEvent.click(await screen.findByTestId('desktop-download-button'));
-    await waitFor(() => expect(api.downloadDesktopUpdate).toHaveBeenCalledTimes(1));
-    expect(api.updateBoth).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(/older than this release requires/)).toBeNull(); // no error shown — it fell back
+    const banner = await screen.findByTestId('incompatible-pair-warning');
+    expect(banner.textContent).toContain('not compatible');
   });
 
   it('no newer flow SDK: Download stays a plain desktop download', async () => {

@@ -29884,8 +29884,8 @@ msgid "The attachments of this message could not be delivered."
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
-msgid "The available desktop build is older than this release requires — check again after the next desktop release."
-msgstr "إصدار سطح المكتب المتاح أقدم مما يتطلبه هذا الإصدار — تحقق مجددًا بعد إصدار سطح المكتب القادم."
+#~ msgid "The available desktop build is older than this release requires — check again after the next desktop release."
+#~ msgstr "إصدار سطح المكتب المتاح أقدم مما يتطلبه هذا الإصدار — تحقق مجددًا بعد إصدار سطح المكتب القادم."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The backend may have restarted. Click to reattach."

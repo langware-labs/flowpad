@@ -561,8 +561,15 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
     // A newer desktop is on its way — or we could not tell whether one is. The engine is updated BY the new
     // desktop (it may need a Python pin, or a start contract, that only the new desktop knows) — an old desktop
     // upgrading it first is what left users stuck. So: no separate engine dialog until the desktop is current.
-    log.info(`[uv] ${label} package check skipped: the desktop is updated first`);
-    return 'held'; // the desktop goes first; a hold only lifts via a restart, which re-checks the engine itself
+    // ONE exception: the installed engine is below the RUNNING desktop's own floor (the pair is broken
+    // today) and the repair targets THIS desktop — waiting for a feed that is not answering would keep
+    // an incompatible pair running until the next relaunch.
+    const pair = uvManager.installedPairIssue();
+    if (!(pair && !pair.desktopTooOld)) {
+      log.info(`[uv] ${label} package check skipped: the desktop is updated first`);
+      return 'held'; // the desktop goes first; a hold only lifts via a restart, which re-checks the engine itself
+    }
+    log.info(`[uv] ${label} package check proceeds despite the hold: the installed engine is below the running desktop's floor`);
   }
   if (packageUpdateInFlight) {
     // A package dialog is on screen: if PyPI now has something newer than what it
@@ -595,7 +602,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
     // at worst duplicate) a failure that happened during this check.
     const lookupFailuresBefore = uvManager.pypiLookupFailures || 0;
     await uvManager.checkForUpdatesInBackground(mainWindow, {
-      onUnrecovered: (err) => showStartupErrorPanel(describeStartupFailure(err), { retryable: false }),
+      onUnrecovered: (err, { restoreVersion = null } = {}) => offerRecoveryRetry(err, { restoreVersion }),
       sendStatus,
       waitForBackend,
       backendUrl: BACKEND_URL,
@@ -1016,9 +1023,17 @@ async function updateDesktopBeforeEngineInstall(reason) {
   log.info(`[update] ${reason}: desktop ${app.getVersion()} → ${version} first, the engine is installed after the restart`);
   sendStatus('Updating Flowpad');
   // We restart ourselves: a download that finishes meanwhile must not open the "Restart now?" prompt.
+  // The loading screen shows the download's progress — an unbounded silent "Updating Flowpad" read
+  // as frozen. (No watchdog here: a wait budget is a CLAUDE.md decision for the owner.)
+  const onDesktopDlProgress = (p) => sendStatus(`Updating Flowpad — downloading ${Math.round(p.percent)}%`);
+  autoUpdater.on('download-progress', onDesktopDlProgress);
   downloadDesktopUpdateInBackground({ promptOnReady: false, version });
   suppressDesktopRestartPrompt = true;
-  await desktopDownloadDone;
+  try {
+    await desktopDownloadDone;
+  } finally {
+    autoUpdater.removeListener('download-progress', onDesktopDlProgress);
+  }
   if (isQuitting) return true;
   if (!desktopDownloadedVersion) {
     suppressDesktopRestartPrompt = false;
@@ -2319,13 +2334,16 @@ async function installAndStartBackend({ quiet = false } = {}) {
         installedEngine: uvManager.getInstalledVersionSync(flowBin),
         isNewer,
       });
-      if (enginePlan.clear) pendingEngineStore.clear();
+      if (enginePlan.clear && enginePlan.action !== 'install') pendingEngineStore.clear();
       if (enginePlan.action === 'install') {
         log.info(`[update] installing the engine version agreed before the restart: ${enginePlan.version}`);
         updateTest.event('agreed-engine-install', { version: enginePlan.version, desktop: app.getVersion() });
         sendStatus(`Updating the FlowPad engine to ${enginePlan.version}`);
         try {
           await uvManager.upgrade({ version: enginePlan.version, onProgress: installProgress('Updating the FlowPad engine') });
+          // Spent only now: a process killed mid-install keeps the intent on disk ("the process must
+          // survive application restarts without losing the pending update state").
+          pendingEngineStore.clear();
           activeBin = uvManager.getInstalledFlowBin() || flowBin;
           backendJustUpgraded = true;
           if (enginePlan.source === 'panel') {
@@ -2333,6 +2351,10 @@ async function installAndStartBackend({ quiet = false } = {}) {
           }
         } catch (upgradeErr) {
           log.warn(`[uv] installing the agreed engine ${enginePlan.version} failed, starting the current engine: ${upgradeErr.message}`);
+          // Not a retry: the intent survives to the NEXT launch as a QUESTION — consented:false makes
+          // planAfterDesktopUpdate answer 'dialog', so "FlowPad will offer it again" is true.
+          const saved = pendingEngineStore.read();
+          if (saved) pendingEngineStore.write({ ...saved, consented: false });
           if (enginePlan.source === 'panel') {
             resumedPanelUpdate = { success: false, engineVersion: enginePlan.version, desktopVersion: app.getVersion(), error: upgradeErr.message };
           }
@@ -2393,7 +2415,14 @@ async function installAndStartBackend({ quiet = false } = {}) {
       const pairIssue = uvManager.installedPairIssue(activeBin);
       if (pairIssue) {
         log.warn(`[compat] installed desktop/engine pair is incompatible: ${pairIssue.reasons.join('; ')}`);
-        if (engineChangeAllowed('repairing an incompatible engine') === 'allow') {
+        // The repair installs a release chosen to fit the RUNNING desktop, so when the ENGINE is the
+        // old side a pending/unknown newer desktop is irrelevant — holding the repair behind a failed
+        // GitHub feed check left an incompatible pair running with only a log line. Only the backward
+        // move (the DESKTOP is the old side → the engine would move DOWN) defers to desktop-first.
+        const mayRepair = pairIssue.desktopTooOld
+          ? engineChangeAllowed('repairing an incompatible engine') === 'allow'
+          : true;
+        if (mayRepair) {
           try {
             const picked = await uvManager.resolveCompatibleEngineVersion();
             if (picked && picked.version !== pairIssue.engineVersion) {
@@ -2411,6 +2440,12 @@ async function installAndStartBackend({ quiet = false } = {}) {
           } catch (compatErr) {
             log.warn(`[compat] could not repair the incompatible pair, starting the installed engine: ${compatErr.message}`);
           }
+        }
+        // Whatever path was taken, a pair that is STILL incompatible starts with a visible warning
+        // ('update:get-info' reads the live pair state and the panel shows it) — "start what is
+        // installed and warn" used to warn only the log.
+        if (uvManager.installedPairIssue(activeBin)) {
+          log.warn('[compat] starting an incompatible pair — the version panel shows the warning');
         }
       }
 
@@ -3373,13 +3408,16 @@ ipcMain.handle('update:get-info', async (_event, opts) => {
     desktopUpdateInfo(),
     uvManager ? uvManager.engineUpdatePreflight({ fresh }) : null,
   ]);
+  // A pair the contract forbids that is RUNNING anyway (repair offline/held/declined at launch):
+  // the panel shows it — "start what is installed and warn" must reach the user, not just the log.
+  const runningPair = uvManager && uvManager.getInstalledFlowBin() ? uvManager.installedPairIssue() : null;
   // Would the desktop on the feed satisfy the latest engine's floor? false → the popup must not
   // offer Update Both yet ("wait for the next desktop release" is the honest advice).
   desktop.meetsEngineFloor = engine && engine.latestMinDesktop && desktop.available
     ? engineCompat.meetsFloor(desktop.available, engine.latestMinDesktop)
     : null;
   const busy = desktopUpdateRefusal() === 'busy';
-  return { desktop, engine, busy };
+  return { desktop, engine, busy, pairWarning: runningPair ? runningPair.message : null };
 });
 
 // The resumed outcome's pull channel: the panel takes this the moment it mounts (no feed check), so
@@ -3437,7 +3475,8 @@ ipcMain.handle('update:apply-desktop', async () => {
   return { started: true, version };
 });
 
-ipcMain.handle('update:both', async (_event, engineVersion) => {
+ipcMain.handle('update:both', async (_event, requestedEngineVersion) => {
+  let engineVersion = requestedEngineVersion;
   if (!uvManager) return { started: false, reason: 'unsupported' };
   const refusal = desktopUpdateRefusal();
   if (refusal) return { started: false, reason: refusal };
@@ -3447,22 +3486,33 @@ ipcMain.handle('update:both', async (_event, engineVersion) => {
   }
   const desktopVersion = effectiveDesktopVersion();
   if (!desktopVersion) return { started: false, reason: 'no-update' };
-  // The engine's own floor must accept the desktop about to be installed — otherwise the whole
-  // coordinated flow is doomed: the new desktop would refuse the engine (_assertCandidateCompatible),
-  // clear the pending state, and the panel would offer the same lost round again. Positive knowledge
-  // only (engineFloorAllows): an unknown floor refuses — a failed round after a restart costs far
-  // more than an early refusal.
+  // The engine's own floor must accept the desktop about to be installed — a pin the TARGET desktop
+  // cannot run would doom the round (the new desktop refuses it, clears the pending state, and the
+  // panel offers the same lost round again). Product rule: a desktop update never leaves the engine
+  // behind AND never refuses outright — an unfit pin is SUBSTITUTED by the newest engine the target
+  // desktop accepts; none newer than installed → the desktop goes alone (the installed engine was
+  // selected for a desktop this one supersedes, and the startup pair repair has the last word).
   const verdict = await engineFloorAllows(engineVersion, desktopVersion);
   if (!verdict.allowed) {
-    log.warn(`[update] panel: refusing Update Both — engine ${engineVersion} needs desktop ${verdict.floor || 'unknown'}, the feed offers ${desktopVersion}`);
-    return { started: false, reason: 'desktop-too-old', minDesktop: verdict.floor };
+    let substitute = null;
+    try { substitute = await uvManager.resolveCompatibleEngineVersion({ desktopVersion }); } catch { substitute = null; }
+    const installedEngine = uvManager.getInstalledVersionSync() || null;
+    if (substitute && installedEngine && isNewer(installedEngine, substitute.version)) {
+      log.info(`[update] panel: engine ${engineVersion} needs desktop ${verdict.floor || 'unknown'}; riding with ${substitute.version} instead (fits ${desktopVersion})`);
+      engineVersion = substitute.version;
+    } else {
+      log.info(`[update] panel: no newer engine fits desktop ${desktopVersion} — updating the desktop alone`);
+      engineVersion = null;
+    }
   }
-  log.info(`[update] panel: coordinated update — desktop ${desktopVersion}, then engine ${engineVersion}`);
-  // The popup click is the agreement to BOTH versions: save and consent in one go, so quitting before
-  // the panel's "Update Now" still completes both on the next launch (autoInstallOnAppQuit + resume).
-  savePendingEngine(pendingEngineStore, { engineVersion, desktopVersion, source: 'panel' });
-  markPendingEngineConsented(pendingEngineStore);
-  uvManager.deferPackageVersion(engineVersion); // no separate engine dialog for this version
+  log.info(`[update] panel: coordinated update — desktop ${desktopVersion}${engineVersion ? `, then engine ${engineVersion}` : ' (no engine rides along)'}`);
+  if (engineVersion) {
+    // The popup click is the agreement to BOTH versions: save and consent in one go, so quitting before
+    // the panel's "Update Now" still completes both on the next launch (autoInstallOnAppQuit + resume).
+    savePendingEngine(pendingEngineStore, { engineVersion, desktopVersion, source: 'panel' });
+    markPendingEngineConsented(pendingEngineStore);
+    uvManager.deferPackageVersion(engineVersion); // no separate engine dialog for this version
+  }
   pendingDesktopVersion = desktopVersion;
   offeredDesktopVersion = desktopVersion;
   panelDesktopVersion = desktopVersion;
@@ -3533,9 +3583,33 @@ async function upgradeFlowpadAndRestart({ version = null } = {}) {
       restoreVersion: versionBeforeUpgrade,
     });
     if (!restored) {
-      await showStartupErrorPanel(describeStartupFailure(err), { retryable: false });
+      // Detached: the IPC answers now; the panel's Retry keeps re-running the recovery (it works
+      // from uv's local cache, so it has a real chance even offline). Quit-only was a dead end.
+      void offerRecoveryRetry(err, { restoreVersion: versionBeforeUpgrade });
     }
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * The error panel after a FAILED recovery, with a Retry that actually works: 'retry-startup' is
+ * only listened for during the startup loop, so this re-arms it and re-runs the recovery until it
+ * lands or the app quits. Each attempt is user-driven (a click), never a timer.
+ */
+async function offerRecoveryRetry(err, { restoreVersion = null } = {}) {
+  for (;;) {
+    await showStartupErrorPanel(describeStartupFailure(err), { retryable: true });
+    if (isQuitting) return;
+    await waitForRetryRequest();
+    if (isQuitting) return;
+    sendStatus('Retrying');
+    const restored = await uvManager.recoverAfterFailedUpgrade(mainWindow, {
+      waitForBackend,
+      backendUrl: BACKEND_URL,
+      sendStatus,
+      restoreVersion,
+    });
+    if (restored) return;
   }
 }
 

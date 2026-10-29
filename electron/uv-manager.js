@@ -1370,8 +1370,11 @@ class UvManager {
    * PyPI answered and NO release is compatible — installing anything would be wrong.
    * @returns {Promise<{version: string, minDesktopVersion: string|null}|null>}
    */
-  async resolveCompatibleEngineVersion() {
-    if (!this._appVersion) return null;
+  async resolveCompatibleEngineVersion({ desktopVersion = null } = {}) {
+    // `desktopVersion`: pick for a desktop ABOUT to be installed (update:both substitutes the
+    // engine that fits the TARGET), instead of the running one.
+    const targetDesktop = desktopVersion || this._appVersion;
+    if (!targetDesktop) return null;
     // Update-cycle harness: a forced engine spec wins over resolution (engineSpec()), so don't
     // spend staged metadata reads on a scenario that has already decided what to install.
     if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) return null;
@@ -1390,7 +1393,7 @@ class UvManager {
     const stats = {};
     const picked = await engineCompat.selectCompatibleRelease({
       releases,
-      desktopVersion: this._appVersion,
+      desktopVersion: targetDesktop,
       minBackendVersion,
       readEngineCompat: (v) => this._readCandidateMinDesktop(v),
       log: (msg) => this.log.info(`[uv] ${msg}`),
@@ -1398,7 +1401,7 @@ class UvManager {
     });
     if (!picked) {
       throw installFailure(
-        `No compatible FlowPad engine release found for Desktop ${this._appVersion} ` +
+        `No compatible FlowPad engine release found for Desktop ${targetDesktop} ` +
         `(the desktop requires engine ${minBackendVersion || 'any'} or newer; ` +
         `${stats.checked ? `checked the newest ${stats.checked}${stats.stoppedAtLimit ? ', older ones were not looked at' : ''}` : 'none was eligible'}). ` +
         'Update the desktop app, then try again. Your existing installation has been preserved.'
@@ -1406,7 +1409,7 @@ class UvManager {
     }
     const latest = data.info && data.info.version;
     if (latest && picked.version !== latest) {
-      this.log.warn(`[compat] latest ${PYPI_PACKAGE} ${latest} is not compatible with Desktop ${this._appVersion} — using ${picked.version}`);
+      this.log.warn(`[compat] latest ${PYPI_PACKAGE} ${latest} is not compatible with Desktop ${targetDesktop} — using ${picked.version}`);
     }
     return picked;
   }
@@ -3057,7 +3060,7 @@ class UvManager {
           // The window still shows "Upgrading Flowpad…" over a dead backend: replace it with the in-app panel
           // (Share, Copy, Open logs, Quit) so the user is not left on a splash that will never finish.
           if (onUnrecovered && mainWindow && !mainWindow.isDestroyed()) {
-            try { await onUnrecovered(err); } catch (e) { this.log.warn(`[uv] onUnrecovered failed: ${e && e.message}`); }
+            try { await onUnrecovered(err, { restoreVersion: versionBeforeUpgrade }); } catch (e) { this.log.warn(`[uv] onUnrecovered failed: ${e && e.message}`); }
           }
         }
       }

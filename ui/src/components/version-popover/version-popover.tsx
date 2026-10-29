@@ -104,6 +104,8 @@ interface UpdateInfo {
   desktop: DesktopUpdateInfo;
   engine: EnginePreflight | null;
   busy: boolean;
+  /** A running desktop/engine pair the contract forbids (repair offline/held/declined at launch). */
+  pairWarning?: string | null;
 }
 
 /** Live desktop-update progress pushed by the shell ('desktop-update-state'). */
@@ -434,8 +436,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           return t`No desktop update is available.`;
         case 'not-downloaded':
           return t`The update has not finished downloading yet.`;
-        case 'desktop-too-old':
-          return t`The available desktop build is older than this release requires — check again after the next desktop release.`;
         default:
           return t`The update could not be started${reason ? ` (${reason})` : ''}.`;
       }
@@ -590,21 +590,14 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     if (!electronApi?.downloadDesktopUpdate) return;
     setDesktopActionError(null);
     const engine = updateInfo?.engine ?? null;
-    // The engine rides along only when the desktop about to be installed satisfies its floor —
-    // update:both would refuse otherwise (desktop-too-old), making a perfectly valid desktop-only
-    // update impossible to start. The startup pair repair brings the engine along later.
-    const engineTarget =
-      engine?.updateAvailable && updateInfo?.desktop.meetsEngineFloor !== false ? engine.latest : null;
-    let r =
+    // Product rule: a desktop update never leaves the engine behind. The shell SUBSTITUTES an
+    // engine the target desktop accepts when the latest does not fit (or lets the desktop go alone
+    // when none is newer than installed) — so there is no desktop-only branch here.
+    const engineTarget = engine?.updateAvailable ? engine.latest : null;
+    const r =
       engineTarget && electronApi.updateBoth
         ? await electronApi.updateBoth(engineTarget)
         : await electronApi.downloadDesktopUpdate();
-    if (!r.started && r.reason === 'desktop-too-old') {
-      // The shell read the REAL floor (the pre-flight's meetsEngineFloor was null/stale) and the
-      // engine cannot ride along — a desktop-only download is still valid; the startup pair repair
-      // brings the engine later.
-      r = await electronApi.downloadDesktopUpdate();
-    }
     if (!r.started) {
       setDesktopActionError(updateRefusalText(r.reason));
       return;
@@ -832,6 +825,15 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
               <Trans>Couldn't check for updates: {error}</Trans>
+            </div>
+          )}
+
+          {updateInfo?.pairWarning && (
+            <div
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive"
+              data-testid="incompatible-pair-warning"
+            >
+              {updateInfo.pairWarning}
             </div>
           )}
 

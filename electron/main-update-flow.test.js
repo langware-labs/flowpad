@@ -80,6 +80,7 @@ function load(opts = {}) {
   global.setInterval = (fn, ms) => { const h = { fn, ms, unref() {} }; intervals.push(h); return h; };
 
   const ipc = {};
+  const once = {};
   const dialogCalls = [];
   const responses = [...(opts.dialogResponses || [])];
   let releaseDialog = () => {};
@@ -112,7 +113,7 @@ function load(opts = {}) {
       if (o && o.signal && o.signal.aborted) return { response: o.cancelId !== undefined ? o.cancelId : 1 };
       return { response: responses.length ? responses.shift() : 1 };
     }, showErrorBox() {} },
-    ipcMain: { on() {}, handle(ch, fn) { ipc[ch] = fn; }, once() {} },
+    ipcMain: { on() {}, handle(ch, fn) { ipc[ch] = fn; }, once(ch, fn) { once[ch] = fn; } },
     shell: mk(), clipboard: mk(), Menu: mk(), nativeImage: mk(), session: mk(), screen: mk(), Tray: mk(), globalShortcut: mk(), powerMonitor: mk(), protocol: mk(), net: mk(), desktopCapturer: mk(), systemPreferences: mk(), Notification: mk(),
   };
   const logLines = [];
@@ -129,7 +130,11 @@ function load(opts = {}) {
     async _readCandidateMinDesktop() { return { minDesktopVersion: opts.candidateFloor || null }; }
     async _flowStop() { uv.flowStops = (uv.flowStops || 0) + 1; }
     async _killPort() {}
-    async recoverAfterFailedUpgrade() { uv.recovered = (uv.recovered || 0) + 1; return !opts.recoveryFails; }
+    async recoverAfterFailedUpgrade() {
+      uv.recovered = (uv.recovered || 0) + 1;
+      const fails = opts.recoveryFails === true ? Infinity : (opts.recoveryFails || 0);
+      return uv.recovered > fails;
+    }
     async _pypiUpdateStatus() { return opts.engineStatus === undefined ? { currentVersion: '0.2.168', latestVersion: '0.2.180', required: true } : opts.engineStatus; }
     async engineUpdatePreflight() {
       return opts.preflight === undefined
@@ -183,7 +188,7 @@ function load(opts = {}) {
   t.setMainWindow(win);
   t.setUvManager(new FakeUv());
   t.setBackendReady(opts.backendReady !== false); // the app is up unless a test says it is still starting
-  return { t, ipc, processHandlers, sent: win.sent, loadedFiles: win.loadedFiles, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
+  return { t, ipc, once, processHandlers, sent: win.sent, loadedFiles: win.loadedFiles, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
 }
 
 const REMINDER_MS = 90 * 60 * 1000;
@@ -1146,6 +1151,17 @@ const HOUR = 60 * 60 * 1000;
       }
     }
     {
+      // Fix: the ENGINE is the old side and the FEED CHECK FAILED ('unknown' → engine changes held):
+      // the repair still runs — it installs a release chosen for the RUNNING desktop, so the hold
+      // (which protects a PENDING newer desktop) is irrelevant in this direction. Holding it left
+      // an incompatible pair running with only a log line.
+      const env = load({ appVersion: '0.2.47', desktopCheckThrows: 'feed offline', pairIssue: engineOld, compatibleRelease: compatible });
+      await env.t.getDesktopUpdateVersion();
+      eq(env.t.engineChangeAllowed('test'), 'hold', 'the failed feed check holds ordinary engine changes');
+      const r = await env.t.installAndStartBackend();
+      eq([r.ok, upgradedTo(env)], [true, ['0.2.65']], 'engine too old: repaired despite the hold');
+    }
+    {
       // A repair that FAILS must not break startup either.
       const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', pairIssue: engineOld, compatibleRelease: compatible, upgradeThrows: 'uv failed' });
       await env.t.getDesktopUpdateVersion();
@@ -1350,6 +1366,7 @@ const HOUR = 60 * 60 * 1000;
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }));
     const r = await env.t.installAndStartBackend();
     eq([r.ok, env.uv.upgrades.map((u) => u.version)], [true, ['0.2.180']], 'the agreed engine version is installed by the new desktop');
+    eq(env.readState(), null, 'the record is spent only once the install LANDED');
     eq(await env.ipc['update:take-resumed'](), { success: true, engineVersion: '0.2.180', desktopVersion: '0.2.48' }, 'take-resumed reports the resumed outcome');
     eq(await env.ipc['update:take-resumed'](), null, '…exactly once');
   }
@@ -1360,6 +1377,7 @@ const HOUR = 60 * 60 * 1000;
     const r = await env.t.installAndStartBackend();
     eq(r.ok, true, 'startup still succeeds with the current engine');
     eq(await env.ipc['update:take-resumed'](), { success: false, engineVersion: '0.2.180', desktopVersion: '0.2.48', error: 'uv failed' }, 'the failure reaches the panel');
+    eq(env.readState() && env.readState().consented, false, "the intent survives as a QUESTION for the next launch ('FlowPad will offer it again' is now true)");
   }
   {
     // A native-dialog coordinated update (no source) resumes silently — nothing pushed at the panel.
@@ -1408,13 +1426,43 @@ const HOUR = 60 * 60 * 1000;
     eq(env.readState().consented, true, 'the engine rides along, consented');
   }
   {
-    // Update Both is refused OUTRIGHT when the engine's own floor is above the desktop the feed
-    // offers — the doomed round (install desktop, restart, refuse engine, clear pending) never starts.
-    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0' });
+    // The pinned engine does not fit even the TARGET desktop: Update Both SUBSTITUTES the newest
+    // engine that desktop accepts — a doomed pin never rides, and the update is never refused.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0', compatibleRelease: { version: '0.2.200', minDesktopVersion: null } });
+    env.t.setupElectronAutoUpdater();
     const r = await env.ipc['update:both'](null, '0.2.240');
-    eq([r.started, r.reason, r.minDesktop], [false, 'desktop-too-old', '0.3.0'], 'refused, with the floor named');
-    eq(env.readState(), null, 'nothing was saved for a flow that cannot finish');
-    eq(env.autoUpdater.downloads.length, 0, 'nothing was downloaded');
+    eq([r.started, r.version], [true, '0.2.48'], 'started — with a substitute, not a refusal');
+    eq([env.readState().engineVersion, env.readState().consented], ['0.2.200', true], 'the pending engine is the newest the target desktop accepts');
+  }
+  {
+    // ...and when no compatible engine is newer than the installed one, the desktop goes ALONE
+    // (the installed engine was selected for a desktop this one supersedes; the startup pair
+    // repair has the last word) — never a refusal, never a doomed pin.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0', compatibleRelease: { version: '0.2.100', minDesktopVersion: null } });
+    env.t.setupElectronAutoUpdater();
+    const r = await env.ipc['update:both'](null, '0.2.240');
+    eq(r.started, true, 'started as a desktop-only update');
+    eq(env.readState(), null, 'no pending engine was saved');
+    eq(env.autoUpdater.downloads.length, 1, 'the desktop download runs');
+  }
+  {
+    // Fix א (mid-session): the installed engine is below the RUNNING desktop's own floor and the
+    // feed check failed ('unknown' → hold): the engine check proceeds anyway — the repair targets
+    // THIS desktop, so the hold is irrelevant, and an incompatible pair must not run until relaunch.
+    const env = load({ appVersion: '0.2.48', desktopCheckThrows: 'feed offline', engineStatus: null,
+      pairIssue: { message: 'pair broken', reasons: ['engine below floor'], engineVersion: '0.2.100', minDesktopVersion: null, desktopTooOld: false } });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion(); // 'unknown' → engine changes held
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'the feed failure holds engine changes');
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 1, 'the engine-old-side repair passes the hold (the pair must not wait for a relaunch)');
+  }
+  {
+    // Fix א (surface): a pair that runs incompatible anyway is SHOWN by update:get-info.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48',
+      pairIssue: { message: 'FlowPad Desktop 0.2.47 is not compatible with FlowPad Backend 0.2.100.', reasons: ['x'], engineVersion: '0.2.100', minDesktopVersion: null, desktopTooOld: false } });
+    const info = await env.ipc['update:get-info']();
+    ok(/not compatible/.test(info.pairWarning), 'the panel hears about the incompatible running pair');
   }
   {
     // "Later" at the native ready prompt starts the 90-minute reminder; ADOPTING the update from the
@@ -1562,12 +1610,24 @@ const HOUR = 60 * 60 * 1000;
     eq(env.uv.upgrades.map((u) => u.version), ['0.2.238'], 'the upgrade targeted the pre-resolved compatible release');
   }
   {
-    // Even recovery failing is surfaced: the startup error panel names the cause.
+    // Even recovery failing is surfaced: the startup error panel names the cause — WITH a Retry.
     const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', upgradeThrows: 'uv exploded', recoveryFails: true });
     await env.t.getDesktopUpdateVersion();
     const r = await env.ipc['upgrade-flowpad']();
     eq(r.success, false, 'the failure is returned');
-    ok(env.sent.some(([ch, d]) => ch === 'startup-error' && /uv exploded/.test(d.detail)), 'and the error panel names it');
+    await tick(); await tick(); // the panel comes from the DETACHED retry loop
+    ok(env.sent.some(([ch, d]) => ch === 'startup-error' && /uv exploded/.test(d.detail) && d.retryable === true),
+      'the error panel names it and offers Retry (Quit-only was a dead end)');
+  }
+  {
+    // ...and the Retry actually re-runs the recovery until it lands.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', upgradeThrows: 'uv exploded', recoveryFails: 1 });
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['upgrade-flowpad']();
+    await tick(); await tick();
+    eq(env.uv.recovered, 1, 'the first recovery failed; the panel is up');
+    env.once['retry-startup'](); await tick(); await tick();
+    eq(env.uv.recovered, 2, "the panel's Retry re-ran the recovery (and it landed)");
   }
   {
     // Resolution is checked while the backend still RUNS: a definitive refusal returns before the
