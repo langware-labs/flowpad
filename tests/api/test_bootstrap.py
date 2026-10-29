@@ -14,7 +14,7 @@ def _assert_local_entity(entity: dict, entity_type: str) -> None:
     assert entity["id"]
     assert entity["type"] == entity_type
     assert entity["uname"] == "local"
-    assert entity["visitor_role"] == "owner"
+    assert entity["visitor_roles"] == ["owner"]
 
 
 async def test_bootstrap_returns_local_user_and_schemas(client):
