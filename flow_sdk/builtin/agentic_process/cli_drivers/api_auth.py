@@ -546,7 +546,7 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     except ValueError as exc:
         raise WorkerSpawnError(worker_type, str(exc)) from exc
 
-    sizes = dict(endpoint.models or {})
+    sizes = dict(endpoint.tiers or {})
     if is_hub and not sizes:
         # Known only by id so far (no listing yet): the sizes the hub pushed with the box binding
         # apply when the spawn is routed down that binding -- the same endpoint, or a pin that

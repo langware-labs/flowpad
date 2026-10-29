@@ -88,7 +88,7 @@ def _rank(kind: str) -> int:
 
 
 def _hub_stub(
-    typeid: str, *, name: str = "", provider: str = "", public: bool = False, models: dict | None = None
+    typeid: str, *, name: str = "", provider: str = "", public: bool = False, tiers: dict | None = None
 ) -> "LLMEndpoint":
     """A hub endpoint we know only by typeid.
 
@@ -103,7 +103,7 @@ def _hub_stub(
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
 
     return LLMEndpoint.projection(
-        "hub", typeid, name=name, provider=provider, public=public, models=dict(models or {})
+        "hub", typeid, name=name, provider=provider, public=public, tiers=dict(tiers or {})
     )
 
 
@@ -283,7 +283,7 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
             name=bound.name if bound else "",
             provider=bound.provider if bound else "",
             public=bool(bound and bound.public),
-            models=bound.tiers if bound else None,
+            tiers=bound.tiers if bound else None,
         )
     out: list[Candidate] = []
     for typeid, endpoint in rows.items():

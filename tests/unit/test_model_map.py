@@ -118,7 +118,7 @@ async def test_override_scoped_per_provider(env) -> None:
     # The key endpoint's own ``sm`` -- read from the row, since the session DB is shared and a
     # docs snippet (docs/snippets/llm-endpoints.md) legitimately retunes it.
     row = await LLMEndpoint.ensure_for_secret("openrouter")
-    assert auth.model_slug == row.models["sm"]
+    assert auth.model_slug == row.tiers["sm"]
 
 
 def test_models_endpoint_resolver_covers_all_providers(env) -> None:

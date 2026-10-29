@@ -224,7 +224,7 @@ export function LlmEndpointAssetView({ value }: LlmEndpointAssetViewProps) {
         </Section>
 
         <Section title={<Trans>Models</Trans>}>
-          <Models filters={endpoint.filters} models={endpoint.models} />
+          <Models filters={endpoint.filters} models={endpoint.tiers} />
         </Section>
 
         <Section title={<Trans>Details</Trans>}>

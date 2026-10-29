@@ -4,7 +4,7 @@ Isolation matches tests/unit/test_lm_api_keys.py: a temp FLOW_HOME + fresh
 instance singleton + SOD_ENC_KEY so the sod store resolves headlessly. These
 tests exercise the pure resolver (no worker spawn, no network turn).
 
-The model a funded spawn runs is the slug the ENDPOINT declares for the size (``endpoint.models``);
+The model a funded spawn runs is the slug the ENDPOINT declares for the size (``endpoint.tiers``);
 there are no code-default slugs. Removed with that change: the ``<family>:<size>`` syntax tests
 (``resolve_family_tier``/``is_family_model``), the ``filters.models_allow`` fallback tests
 (``_model_within_allowance``, "default to the team's first allowed model") and the
@@ -639,7 +639,7 @@ def _hub_candidate(key: str, name: str, models_allow: list[str], models: dict | 
 
     set_api_key("fp-hub-key")
     endpoint = LLMEndpoint.projection(
-        "hub", key, name=name, provider="openrouter", models=dict(HUB_TIERS if models is None else models)
+        "hub", key, name=name, provider="openrouter", tiers=dict(HUB_TIERS if models is None else models)
     )
     endpoint.filters = LLMFilters(models_allow=models_allow)
     source = LLMSource(

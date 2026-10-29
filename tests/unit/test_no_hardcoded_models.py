@@ -1,6 +1,6 @@
 """Grep guard: no model slug is hard-coded in flow_sdk.
 
-An LLM endpoint declares the model each size runs (``LLMEndpoint.models``); code that names a model
+An LLM endpoint declares the model each size runs (``LLMEndpoint.tiers``); code that names a model
 quietly decides for the endpoint. This walks every ``flow_sdk/**/*.py`` string constant (via ``ast``,
 so docstrings and comments are skipped) for a gateway slug (``anthropic/...``, ``z-ai/...``) or a bare
 ``claude-<size>-<n>`` id. A file that legitimately holds slugs goes on ``ALLOWED`` with its reason.

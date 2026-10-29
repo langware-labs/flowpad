@@ -2,7 +2,7 @@
 
 ``binding_for_candidate`` -> ``api_auth._slug_for``: a size (``sm``/``md``/``lg``, a harness's own word
 for one, or nothing -> ``preferences.llm.default_size``) reads ``Capability.model_map`` then
-``endpoint.models``; a size the endpoint does not declare is refused in words; anything else is a
+``endpoint.tiers``; a size the endpoint does not declare is refused in words; anything else is a
 named model and runs as named. Isolation copies tests/unit/test_api_auth_binding.py.
 """
 
@@ -56,7 +56,7 @@ def _candidate(models: dict):
     from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
 
     set_api_key("fp-hub-key")
-    endpoint = LLMEndpoint.projection("hub", "tiers-ep", name="Tiers", provider="openrouter", models=dict(models))
+    endpoint = LLMEndpoint.projection("hub", "tiers-ep", name="Tiers", provider="openrouter", tiers=dict(models))
     source = LLMSource(
         endpoint_typeid=str(endpoint.typeid),
         name=endpoint.name,

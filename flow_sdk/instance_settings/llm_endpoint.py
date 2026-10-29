@@ -269,6 +269,13 @@ def _can_administer(row: dict) -> bool | None:
     return ("update" in actions) if isinstance(actions, list) else None
 
 
+def _can_allocate(row: dict) -> bool | None:
+    """Whether the caller may carve a sub-budget from this endpoint (``allocate``), off the same expansion."""
+    expand = row.get("expand") if isinstance(row, dict) else None
+    actions = expand.get("allowed_actions") if isinstance(expand, dict) else None
+    return ("allocate" in actions) if isinstance(actions, list) else None
+
+
 def _root_provider(row: dict) -> str | None:
     """Who actually pays for this endpoint, out of the hub's permission expansion.
 
@@ -431,14 +438,14 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             payload["kind"] = LLMEndpointKind.HUB
             # ``None`` unless this row came from the scoped listing WITH an answer -- see the field.
             payload["can_administer"] = _can_administer(row) if row_id in held else None
+            payload["can_allocate"] = _can_allocate(row) if row_id in held else None
             # Off the SAME expansion block as ``can_administer`` above -- one read answers both.
             payload["is_mine"] = _is_mine(row) if row_id in held else None
             # Name who pays, not the entity default a chain row carries.
             if root_provider := _root_provider(row):
                 payload["provider"] = root_provider
-            # The model each size runs, inherited down the hub chain. The hub's own ``models`` is the
-            # ROOT's catalog (a list) and is not what this field means, so it never passes through.
-            payload["models"] = _tier_models(row)
+            # The model each size runs, inherited down the hub chain.
+            payload["tiers"] = _tier_models(row)
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)

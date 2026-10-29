@@ -167,7 +167,7 @@ def _grant(monkeypatch, *, typeid: str = EP1) -> None:
         provider="openrouter",
         kind="hub",
         invoke_url=f"/api/v1/graph/{typeid}/invoke",
-        models=dict(TIERS),
+        tiers=dict(TIERS),
     )
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [granted])
     assert settings.get_hub_llm_endpoint() is None, "a grant is not a binding"
@@ -1289,15 +1289,15 @@ async def test_a_process_pinned_to_a_public_endpoint_spends_it_without_a_login(e
 @pytest.fixture
 async def _openrouter_key_models_restored():
     """The page tunes the shared OpenRouter key row's ``sm`` (``LLMEndpointConfig``) and a funded spawn
-    RUNS ``endpoint.models[size]`` -- left tuned, every later test on that key runs the page's model."""
+    RUNS ``endpoint.tiers[size]`` -- left tuned, every later test on that key runs the page's model."""
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
     before = await LLMEndpoint.find_by_secret("lm_api.openrouter")
-    saved = dict(before.models) if before is not None else None
+    saved = dict(before.tiers) if before is not None else None
     yield
     after = await LLMEndpoint.find_by_secret("lm_api.openrouter")
-    if after is not None and saved is not None and after.models != saved:
-        after.models = saved
+    if after is not None and saved is not None and after.tiers != saved:
+        after.tiers = saved
         await after.save()
 
 
