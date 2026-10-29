@@ -8,7 +8,7 @@ const { offerMoveToApplications } = require('./app-location');
 const { showFailureDialog } = require('./failure-dialog');
 const { createRendererWatchdog } = require('./renderer-watchdog');
 const { bounded, collectFailureReport, writeFailureReport } = require('./hang-report');
-const { decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
+const { decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, engineRecordAtHealthGate, createReadyReminder } = require('./update-plan');
 const engineCompat = require('./engine-compat');
 const updateTest = require('./update-test');
 const updateSchedule = require('./update-schedule');
@@ -1707,6 +1707,12 @@ function cleanRestartWindow({ hung, url: hungUrl }) {
 }
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    // A startup re-run (Retry after the unhealthy-engine restore) reuses the window it has: a second
+    // window orphaned the error panel. Back to the loading screen — startApp waits for it to load.
+    mainWindow.loadFile(path.join(__dirname, 'loading.html'));
+    return;
+  }
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -2917,7 +2923,7 @@ async function startApp() {
     // network needed), mark the attempt failed (the next launch ASKS, never a silent retry of the
     // same unhealthy build), tell the panel, and offer a Retry that starts the restored engine.
     const unhealthyInstall = pendingEngineStore.read();
-    if (unhealthyInstall && unhealthyInstall.phase === 'installed' && unhealthyInstall.previousEngine && uvManager && !isQuitting) {
+    if (engineRecordAtHealthGate(unhealthyInstall, { healthy: false }) === 'restore' && uvManager && !isQuitting) {
       log.warn(`[update] engine ${unhealthyInstall.engineVersion} installed but never became healthy — restoring ${unhealthyInstall.previousEngine}`);
       pendingEngineStore.write({ ...unhealthyInstall, phase: 'failed-unhealthy', failedVersion: unhealthyInstall.engineVersion });
       if (unhealthyInstall.source === 'panel') {
@@ -2962,10 +2968,9 @@ async function startApp() {
   // fatal record (the monitor clears its own; this covers a record the monitor did not get to) gone.
   markPhase('backend-healthy');
   {
-    // The agreed-engine record is spent only HERE: installed AND answering. (A crash anywhere in
-    // between leaves the demoted record — the next launch asks.)
-    const rec = pendingEngineStore.read();
-    if (rec && rec.phase === 'installed') pendingEngineStore.clear();
+    // The agreed-engine record is spent only HERE: installed AND answering. Until then a re-run of the
+    // startup keeps it (planAfterDesktopUpdate), so the unhealthy gate can still restore previousEngine.
+    if (engineRecordAtHealthGate(pendingEngineStore.read(), { healthy: true }) === 'spend') pendingEngineStore.clear();
   }
   writeRecoveryState(updateRecovery.markStartupHealthy());
   clearFailureRecord('the backend is healthy');
@@ -3825,7 +3830,12 @@ async function offerRecoveryRetry(err, { restoreVersion = null } = {}) {
       sendStatus,
       restoreVersion,
     });
-    if (restored) return;
+    if (restored) {
+      // The error panel set startupFailed; the backend is healthy again — without this a macOS Dock
+      // click (activate) treated the app as stuck and relaunched it over the healthy backend.
+      startupFailed = false;
+      return;
+    }
   }
 }
 

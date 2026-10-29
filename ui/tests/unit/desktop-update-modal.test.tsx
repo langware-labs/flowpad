@@ -47,6 +47,18 @@ describe('DesktopUpdateModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('cannot be dismissed while a call is in flight (its refusal would land on a closed popup)', () => {
+    const { onClose } = renderModal({ busy: true });
+    fireEvent.keyDown(screen.getByTestId('desktop-update-required-modal'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('is dismissed with Escape when idle', () => {
+    const { onClose } = renderModal();
+    fireEvent.keyDown(screen.getByTestId('desktop-update-required-modal'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('names both floors: the version asked for and the desktop it requires', () => {
     renderModal();
     const text = screen.getByTestId('desktop-update-required-modal').textContent ?? '';

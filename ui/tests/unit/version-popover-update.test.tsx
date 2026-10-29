@@ -127,6 +127,38 @@ describe('Upgrade pre-flight (desktop app)', () => {
     await waitFor(() => expect(screen.queryByTestId('desktop-update-required-modal')).toBeNull());
   });
 
+  it('Update Both: when the shell rides with a different flow SDK, the row says which', async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO),
+      updateBoth: vi.fn().mockResolvedValue({ started: true, version: '0.2.62', engineVersion: '0.2.235' }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(screen.getByTestId('version-upgrade-button'));
+    fireEvent.click(await screen.findByTestId('update-both-button'));
+    await waitFor(() => expect(screen.queryByTestId('desktop-update-required-modal')).toBeNull());
+    // Interacting with the popup closes the popover under it; the note waits for the next open.
+    if (!screen.queryByTestId('version-upgrade-button')) fireEvent.click(screen.getByTestId('version-popover-trigger'));
+    expect((await screen.findByTestId('desktop-action-note')).textContent).toContain('v0.2.235');
+  });
+
+  it('a double click on Download starts ONE shell call', async () => {
+    let release: (v: unknown) => void = () => {};
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO),
+      updateBoth: vi.fn(() => new Promise((r) => { release = r; })),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    const btn = await screen.findByTestId('desktop-download-button');
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    await waitFor(() => expect(api.updateBoth).toHaveBeenCalledTimes(1));
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    release({ started: true, version: '0.2.62', engineVersion: '0.2.240' });
+    await waitFor(() => expect(api.updateBoth).toHaveBeenCalledTimes(1));
+  });
+
   it('a compatible release upgrades through the shell, with no popup and no warnings', async () => {
     const api = electronApi();
     (window as { electronAPI?: unknown }).electronAPI = api;

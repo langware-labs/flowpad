@@ -84,9 +84,24 @@ function planAfterDesktopUpdate({ state, appVersion, installedEngine, isNewer })
   if (!state || !state.engineVersion) return { action: 'none', clear: false, source };
   // The desktop update it was saved for has not been applied yet (still the old build): keep waiting.
   if (state.desktopVersion && isNewer(appVersion, state.desktopVersion)) return { action: 'none', clear: false, source };
+  // Installed, not yet proven healthy: the record carries previousEngine, and only the health gate
+  // spends it (healthy → clear, never healthy → restore). A re-run of the startup (Retry after an
+  // unrelated failure, or a relaunch after a kill) must not erase the one way back.
+  if (state.phase === 'installed') return { action: 'none', clear: false, source };
   if (!state.consented) return { action: 'dialog', clear: true, source };
   if (installedEngine && !isNewer(installedEngine, state.engineVersion)) return { action: 'none', clear: true, source };
   return { action: 'install', version: state.engineVersion, clear: true, source };
+}
+
+/**
+ * The agreed-engine record at the health gate — the ONE place it is spent. `healthy`: the backend
+ * answered. Returns 'spend' (installed and answering: done), 'restore' (installed, never answered, and
+ * the previous engine is known: put it back) or 'keep' (nothing installed by this flow).
+ */
+function engineRecordAtHealthGate(state, { healthy }) {
+  if (!state || state.phase !== 'installed') return 'keep';
+  if (healthy) return 'spend';
+  return state.previousEngine ? 'restore' : 'keep';
 }
 
 // ── the periodic "update ready" reminder ────────────────────────────────────
@@ -132,6 +147,7 @@ function createReadyReminder({ isReady, show, intervalMs = READY_REMINDER_MS, ti
 
 module.exports = {
   READY_REMINDER_MS,
+  engineRecordAtHealthGate,
   decideOffer,
   engineChangePolicy,
   savePendingEngine,

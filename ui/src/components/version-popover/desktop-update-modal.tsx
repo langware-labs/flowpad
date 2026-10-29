@@ -50,7 +50,8 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onUp
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o) onClose();
+        // Not while a call is in flight: Escape / an overlay click would hide the refusal it may still bring.
+        if (!o && !busy) onClose();
       }}
     >
       <DialogContent className="max-w-md" data-testid="desktop-update-required-modal">

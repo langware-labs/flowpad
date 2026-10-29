@@ -367,6 +367,21 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [desktopPush, setDesktopPush] = useState<DesktopUpdatePush | null>(null);
   const [desktopActionNote, setDesktopActionNote] = useState<string | null>(null);
+  // One desktop action (Download / Update Now / Retry) at a time: a double click used to start a
+  // second call, which the shell answered with a false "another update is already in progress".
+  const [desktopActionBusy, setDesktopActionBusy] = useState(false);
+  const desktopActionBusyRef = useRef(false);
+  const runDesktopAction = useCallback(async (action: () => Promise<void>) => {
+    if (desktopActionBusyRef.current) return;
+    desktopActionBusyRef.current = true;
+    setDesktopActionBusy(true);
+    try {
+      await action();
+    } finally {
+      desktopActionBusyRef.current = false;
+      setDesktopActionBusy(false);
+    }
+  }, []);
   const [justReady, setJustReady] = useState(false); // a download finished while the user watched: ask to install now
   const [compatInfo, setCompatInfo] = useState<DesktopUpdateRequiredInfo | null>(null);
   const [modalBusy, setModalBusy] = useState(false);
@@ -678,11 +693,20 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         return;
       }
       setCompatInfo(null);
+      // The shell may ride with a different flow SDK than asked (the newest the target desktop accepts),
+      // or none: the row says so — silently changing what the user agreed to is not an option.
+      if (r.engineVersion === null) {
+        setDesktopActionNote(t`No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays.`);
+      } else if (r.engineVersion && r.engineVersion !== compatInfo.engineTarget) {
+        setDesktopActionNote(t`flow SDK v${r.engineVersion} will be installed after the restart — the newest that works with this desktop build.`);
+      } else {
+        setDesktopActionNote(null);
+      }
       notePanelStart(r);
     } finally {
       setModalBusy(false);
     }
-  }, [electronApi, compatInfo, updateRefusalText, notePanelStart]);
+  }, [electronApi, compatInfo, updateRefusalText, notePanelStart, t]);
 
   // Wait for the backend to go down and come back healthy, then reload so the
   // (possibly different-version) UI is reloaded fresh. The python monitor restart
@@ -1089,9 +1113,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 {desktopView.phase === 'available' && (
                   <button
                     type="button"
-                    onClick={() => void handleDesktopDownload()}
+                    onClick={() => void runDesktopAction(handleDesktopDownload)}
+                    disabled={desktopActionBusy}
                     data-testid="desktop-download-button"
-                    className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                    className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {desktopView.version ? t`Download v${desktopView.version}` : t`Download the desktop update`}
                   </button>
@@ -1123,9 +1148,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                     )}
                     <button
                       type="button"
-                      onClick={() => void handleDesktopApply()}
+                      onClick={() => void runDesktopAction(handleDesktopApply)}
+                      disabled={desktopActionBusy}
                       data-testid="desktop-update-now-button"
-                      className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                      className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {desktopView.version ? t`Update Now to v${desktopView.version}` : t`Update Now`}
                     </button>
@@ -1149,9 +1175,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                     </p>
                     <button
                       type="button"
-                      onClick={() => void (desktopView.applyFailed ? handleDesktopApply() : handleDesktopDownload())}
+                      onClick={() => void runDesktopAction(desktopView.applyFailed ? handleDesktopApply : handleDesktopDownload)}
+                      disabled={desktopActionBusy}
                       data-testid="desktop-update-retry-button"
-                      className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                      className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {desktopView.applyFailed ? <Trans>Retry the update</Trans> : <Trans>Retry the download</Trans>}
                     </button>

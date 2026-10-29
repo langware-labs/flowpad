@@ -28,6 +28,8 @@ module.exports.__t = {
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
   disarmAccountWatch: () => { accountWatcher = { close() {} }; },
   getDesktopStatus: () => desktopStatus,
+  getStartupFailed: () => startupFailed,
+  createWindow, getMainWindow: () => mainWindow,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
@@ -1696,8 +1698,10 @@ const HOUR = 60 * 60 * 1000;
     await env.ipc['upgrade-flowpad']();
     await tick(); await tick();
     eq(env.uv.recovered, 1, 'the first recovery failed; the panel is up');
+    eq(env.t.getStartupFailed(), true, 'the error panel marks the startup failed');
     env.once['retry-startup'](); await tick(); await tick();
     eq(env.uv.recovered, 2, "the panel's Retry re-ran the recovery (and it landed)");
+    eq(env.t.getStartupFailed(), false, 'a landed recovery clears startupFailed — a Dock click must not relaunch a healthy app');
   }
   {
     // Resolution is checked while the backend still RUNS: a definitive refusal returns before the
@@ -1712,6 +1716,28 @@ const HOUR = 60 * 60 * 1000;
     eq(env.uv.recovered || 0, 0, 'and there was nothing to recover');
   }
 
+
+  {
+    // Review (stuck case): the agreed engine installed, then an unrelated startup failure and Retry ran
+    // installAndStartBackend AGAIN. The installed-but-unproven record must survive the re-run — it
+    // carries previousEngine, the only way back if the new engine never answers.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', engine: '0.2.180' });
+    const record = { engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false, phase: 'installed', previousEngine: '0.2.168', source: 'panel' };
+    fs.writeFileSync(env.statePath, JSON.stringify(record));
+    await env.t.installAndStartBackend();
+    eq(env.readState(), record, 'Retry re-runs the startup: the rollback record is kept for the health gate');
+    eq(env.uv.upgrades.length, 0, 'and nothing is reinstalled');
+  }
+
+  {
+    // Retry after the unhealthy-engine restore re-runs startApp(): its createWindow() must reuse the
+    // live window (back to the loading screen), not open a second one and orphan the error panel.
+    const env = load({});
+    const before = env.t.getMainWindow();
+    env.t.createWindow();
+    ok(env.t.getMainWindow() === before, 'the live window is reused');
+    ok(env.loadedFiles.some((f) => /loading\.html$/.test(f)), 'and put back on the loading screen');
+  }
 
   // ── review round 10: apply outcomes, macOS staging, IPC senders (FLOWPAD-2310) ──
   const ticks = async (n = 10) => { for (let i = 0; i < n; i++) await tick(); };

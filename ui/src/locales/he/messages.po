@@ -13511,6 +13511,11 @@ msgstr "flow SDK v{0} מותקן."
 msgid "flow SDK v{0} requires FlowPad Desktop {1} or newer — you have v{2}."
 msgstr "flow SDK v{0} דורש FlowPad Desktop ‏{1} ומעלה — מותקן אצלך v{2}."
 
+#. placeholder {0}: r.engineVersion
+#: src/components/version-popover/version-popover.tsx
+msgid "flow SDK v{0} will be installed after the restart — the newest that works with this desktop build."
+msgstr "flow SDK v{0} יותקן אחרי ההפעלה מחדש — הגרסה החדשה ביותר שעובדת עם גרסת הדסקטופ הזו."
+
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/token-plan/FundingChain.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -19857,6 +19862,7 @@ msgstr "אין מודלים."
 msgid "No narrowing — everything the roots allow."
 msgstr "ללא צמצום — כל מה שהשורשים מאפשרים."
 
+#: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays."
 msgstr "אין flow SDK חדש יותר שמתאים ל-build הזה של הדסקטופ — הדסקטופ מתעדכן לבדו וה-flow SDK המותקן נשאר."

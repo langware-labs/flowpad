@@ -13603,6 +13603,11 @@ msgstr "flow SDK v{0} is installed."
 msgid "flow SDK v{0} requires FlowPad Desktop {1} or newer — you have v{2}."
 msgstr "flow SDK v{0} requires FlowPad Desktop {1} or newer — you have v{2}."
 
+#. placeholder {0}: r.engineVersion
+#: src/components/version-popover/version-popover.tsx
+msgid "flow SDK v{0} will be installed after the restart — the newest that works with this desktop build."
+msgstr "flow SDK v{0} will be installed after the restart — the newest that works with this desktop build."
+
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/token-plan/FundingChain.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -20012,6 +20017,7 @@ msgstr "No models."
 msgid "No narrowing — everything the roots allow."
 msgstr "No narrowing — everything the roots allow."
 
+#: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays."
 msgstr "No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays."

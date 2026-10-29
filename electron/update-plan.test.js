@@ -8,7 +8,7 @@
 const assert = require('assert');
 const { isNewer } = require('./semver');
 const {
-  READY_REMINDER_MS, decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder,
+  READY_REMINDER_MS, decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, engineRecordAtHealthGate, createReadyReminder,
 } = require('./update-plan');
 
 let passed = 0;
@@ -67,6 +67,21 @@ eq(plan({ installedEngine: '0.2.181' }), { action: 'none', clear: true, source: 
 eq(plan({ installedEngine: null }), { action: 'install', version: '0.2.180', clear: true, source: null }, 'engine version unreadable → still installs what was agreed');
 eq(plan({ state: { ...saved, source: 'panel' } }), { action: 'install', version: '0.2.180', clear: true, source: 'panel' }, 'a panel-initiated update carries its source through to the resume');
 eq(plan({ state: { ...saved, source: 'panel', consented: false } }), { action: 'dialog', clear: true, source: 'panel' }, 'and through the no-answer fallback');
+
+// An INSTALLED record (installed, not yet healthy) is the health gate's, whatever re-runs the startup
+// in between (Retry after an unrelated failure, a relaunch after a kill): erasing it lost previousEngine,
+// and a broken engine then started on every launch with no way back.
+const installed = { engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false, phase: 'installed', previousEngine: '0.2.168', source: 'panel' };
+eq(plan({ state: installed, installedEngine: '0.2.180' }), { action: 'none', clear: false, source: 'panel' }, 'an installed, unproven record survives a startup re-run');
+eq(plan({ state: { ...installed, phase: 'installing' } }), { action: 'dialog', clear: true, source: 'panel' }, 'a crash MID-install still asks next launch');
+
+// ── the health gate: the only place the record is spent ─────────────────────
+eq(engineRecordAtHealthGate(installed, { healthy: true }), 'spend', 'installed and answering: the record is spent');
+eq(engineRecordAtHealthGate(installed, { healthy: false }), 'restore', 'installed, never answered: restore the previous engine');
+eq(engineRecordAtHealthGate({ ...installed, previousEngine: null }, { healthy: false }), 'keep', 'no previous engine known: nothing to restore');
+eq(engineRecordAtHealthGate({ ...installed, phase: 'installing' }, { healthy: true }), 'keep', 'an unfinished install is not spent by a healthy OLD engine');
+eq(engineRecordAtHealthGate(saved, { healthy: true }), 'keep', 'a record nothing installed yet is kept');
+eq(engineRecordAtHealthGate(null, { healthy: true }), 'keep', 'no record: nothing to do');
 
 // ── the reminder ────────────────────────────────────────────────────────────
 function fakeTimers() {
