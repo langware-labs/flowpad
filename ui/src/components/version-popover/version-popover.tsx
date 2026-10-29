@@ -95,9 +95,14 @@ interface EnginePreflight {
 
 /** Outcome of a panel-initiated coordinated update resumed after the desktop restart. */
 interface ResumedUpdate {
+  /** 'coordinated': the desktop was updated and the flow SDK followed it; 'engine': a flow SDK
+   *  upgrade from this panel, the desktop untouched. Absent on older shells (read as coordinated). */
+  kind?: 'coordinated' | 'engine';
   success: boolean;
-  engineVersion: string;
+  engineVersion: string | null;
   desktopVersion: string;
+  /** On failure: the previous flow SDK was put back. */
+  restored?: boolean;
   error?: string;
 }
 
@@ -449,27 +454,38 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     [t],
   );
 
-  /** One-shot resume outcome of a coordinated update (pushed at startup, or pulled with the status).
+  /** One-shot outcome of an update this launch finished (pushed at startup, or pulled at mount).
    *  Both channels can deliver the same outcome — the push for a panel that was already mounted, the
-   *  'update:get-info' pull for one that mounted late — so the ref shows it exactly once. */
+   *  'update:take-resumed' pull for one that mounted late — so the ref shows it exactly once. */
   const resumedShownRef = useRef<string | null>(null);
   const showResumed = useCallback(
     (r: ResumedUpdate) => {
-      const key = `${r.desktopVersion}->${r.engineVersion}:${String(r.success)}`;
+      const key = `${r.kind ?? 'coordinated'}:${r.desktopVersion}->${r.engineVersion}:${String(r.success)}`;
       if (resumedShownRef.current === key) return;
       resumedShownRef.current = key;
+      const engineOnly = r.kind === 'engine';
+      const reason = r.error ? `: ${r.error}.` : '.';
       if (r.success) {
         notify.success({
           id: 'engine-update-resumed',
           title: t`FlowPad updated`,
-          message: t`Desktop v${r.desktopVersion}, flow SDK v${r.engineVersion}.`,
+          message: engineOnly
+            ? r.engineVersion
+              ? t`flow SDK v${r.engineVersion} is installed.`
+              : t`The flow SDK is up to date.`
+            : t`Desktop v${r.desktopVersion}, flow SDK v${r.engineVersion}.`,
         });
       } else {
         // The only feedback that the update the user agreed to did not finish — toast in every mode.
+        const target = r.engineVersion ? t` to v${r.engineVersion}` : '';
         notify.error({
           id: 'engine-update-resumed',
-          title: t`FlowPad engine update failed`,
-          message: t`Desktop updated to v${r.desktopVersion}, but the flow SDK update to v${r.engineVersion} failed${r.error ? `: ${r.error}.` : '.'} FlowPad will offer it again.`,
+          title: t`flow SDK update failed`,
+          message: engineOnly
+            ? r.restored
+              ? t`The flow SDK update${target} failed${reason} Your previous version was restored.`
+              : t`The flow SDK update${target} failed${reason}`
+            : t`Desktop updated to v${r.desktopVersion}, but the flow SDK update${target} failed${reason} FlowPad will offer it again.`,
           forceToast: true,
         });
       }
@@ -627,7 +643,8 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     if (!electronApi?.applyDesktopUpdate) return;
     setDesktopActionError(null);
     const r = await electronApi.applyDesktopUpdate();
-    if (!r.started) setDesktopActionError(updateRefusalText(r.reason));
+    // 'apply-failed': the shell already pushed the error row (with its Retry) — no second message.
+    if (!r.started && r.reason !== 'apply-failed') setDesktopActionError(updateRefusalText(r.reason));
     // started → the shell pushes {state:'installing'} and restarts the app.
   }, [electronApi, updateRefusalText]);
 
@@ -1142,7 +1159,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 )}
                 {desktopView.phase === 'current' && (
                   <p className="text-[10px] text-muted-foreground" data-testid="desktop-up-to-date">
-                    <Trans>Up to date. Auto-updates check every 20 minutes.</Trans>
+                    <Trans>Up to date. FlowPad checks for updates automatically.</Trans>
                   </p>
                 )}
                 {desktopView.phase === 'unknown' && (
@@ -1172,7 +1189,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             )}
             {mode === 'Desktop' && !desktopView && !githubUpdateAvailable && !data?.github_error && (
               <p className="text-[10px] text-muted-foreground">
-                <Trans>Auto-updates check every 20 minutes.</Trans>
+                <Trans>FlowPad checks for updates automatically.</Trans>
               </p>
             )}
             {githubLatest?.html_url && (

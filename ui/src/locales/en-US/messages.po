@@ -65,6 +65,11 @@ msgstr " (you)"
 msgid " or "
 msgstr " or "
 
+#. placeholder {0}: r.engineVersion
+#: src/components/version-popover/version-popover.tsx
+msgid " to v{0}"
+msgstr " to v{0}"
+
 #: src/components/assets/editor/revisions/RevisionDiffModal.tsx
 msgid "— {label} vs current"
 msgstr "— {label} vs current"
@@ -2399,8 +2404,12 @@ msgid "A new project folder — everything you create is scoped to it"
 msgstr "A new project folder — everything you create is scoped to it"
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "A newer version of FlowPad Desktop is required before upgrading the Python backend."
-msgstr "A newer version of FlowPad Desktop is required before upgrading the Python backend."
+msgid "A newer version of FlowPad Desktop is required before upgrading the flow SDK."
+msgstr "A newer version of FlowPad Desktop is required before upgrading the flow SDK."
+
+#: src/components/version-popover/desktop-update-modal.tsx
+#~ msgid "A newer version of FlowPad Desktop is required before upgrading the Python backend."
+#~ msgstr "A newer version of FlowPad Desktop is required before upgrading the Python backend."
 
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A place and channel by hand…"
@@ -4892,8 +4901,8 @@ msgid "Auto-send"
 msgstr "Auto-send"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check every 20 minutes."
-msgstr "Auto-updates check every 20 minutes."
+#~ msgid "Auto-updates check every 20 minutes."
+#~ msgstr "Auto-updates check every 20 minutes."
 
 #: src/components/version-popover/version-popover.tsx
 #~ msgid "Auto-updates check hourly."
@@ -10510,12 +10519,14 @@ msgstr "Desktop instance"
 msgid "Desktop Update Required"
 msgstr "Desktop Update Required"
 
-#. placeholder {0}: r.desktopVersion
-#. placeholder {1}: r.engineVersion
-#. placeholder {2}: r.error ? `: ${r.error}.` : '.'
 #: src/components/version-popover/version-popover.tsx
-msgid "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
-msgstr "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
+#~ msgid "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
+#~ msgstr "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
+
+#. placeholder {0}: r.desktopVersion
+#: src/components/version-popover/version-popover.tsx
+msgid "Desktop updated to v{0}, but the flow SDK update{target} failed{reason} FlowPad will offer it again."
+msgstr "Desktop updated to v{0}, but the flow SDK update{target} failed{reason} FlowPad will offer it again."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop updates are not available for this build."
@@ -13576,6 +13587,15 @@ msgstr "Flow Message"
 msgid "flow name…"
 msgstr "flow name…"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "flow SDK update failed"
+msgstr "flow SDK update failed"
+
+#. placeholder {0}: r.engineVersion
+#: src/components/version-popover/version-popover.tsx
+msgid "flow SDK v{0} is installed."
+msgstr "flow SDK v{0} is installed."
+
 #. placeholder {0}: info.engineTarget
 #. placeholder {1}: info.minDesktop
 #. placeholder {2}: info.desktopInstalled ?? '?'
@@ -13640,6 +13660,10 @@ msgstr "Flowpad Assistant project not available."
 msgid "Flowpad can’t see any of {owner}’s repos. {owner} most likely restricts third-party apps: grant Flowpad access to it on GitHub (Settings → Applications → Flowpad → Organization access), or paste a repo URL above."
 msgstr "Flowpad can’t see any of {owner}’s repos. {owner} most likely restricts third-party apps: grant Flowpad access to it on GitHub (Settings → Applications → Flowpad → Organization access), or paste a repo URL above."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad checks for updates automatically."
+msgstr "FlowPad checks for updates automatically."
+
 #: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "Flowpad cloud"
 msgstr "Flowpad cloud"
@@ -13694,8 +13718,8 @@ msgstr "FlowPad didn't open? Install it, then come back to this page."
 #~ msgstr "FlowPad didn't open. Install it from flowpad.ai, then try again."
 
 #: src/components/version-popover/version-popover.tsx
-msgid "FlowPad engine update failed"
-msgstr "FlowPad engine update failed"
+#~ msgid "FlowPad engine update failed"
+#~ msgstr "FlowPad engine update failed"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
 msgid "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
@@ -19993,8 +20017,12 @@ msgid "No newer flow SDK fits this desktop build — the desktop updates alone a
 msgstr "No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays."
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
-msgstr "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
+#~ msgid "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
+#~ msgstr "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
+
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "No newer FlowPad Desktop build is available yet, so this flow SDK version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
+msgstr "No newer FlowPad Desktop build is available yet, so this flow SDK version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
 
 #: src/components/tabs/TabStrip.tsx
 msgid "No notes yet"
@@ -31208,8 +31236,12 @@ msgid "The desktop update failed."
 msgstr "The desktop update failed."
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
-msgstr "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+#~ msgid "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+#~ msgstr "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "The desktop update feed could not be checked, so this flow SDK version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+msgstr "The desktop update feed could not be checked, so this flow SDK version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
 
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -31274,6 +31306,18 @@ msgstr "The fixer could not repair this setup. The step above says what it found
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "The fixer could not start."
 #~ msgstr "The fixer could not start."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The flow SDK is up to date."
+msgstr "The flow SDK is up to date."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The flow SDK update{target} failed{reason}"
+msgstr "The flow SDK update{target} failed{reason}"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The flow SDK update{target} failed{reason} Your previous version was restored."
+msgstr "The flow SDK update{target} failed{reason} Your previous version was restored."
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"
@@ -33630,8 +33674,12 @@ msgid "Up to date"
 msgstr "Up to date"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Up to date. Auto-updates check every 20 minutes."
-msgstr "Up to date. Auto-updates check every 20 minutes."
+#~ msgid "Up to date. Auto-updates check every 20 minutes."
+#~ msgstr "Up to date. Auto-updates check every 20 minutes."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Up to date. FlowPad checks for updates automatically."
+msgstr "Up to date. FlowPad checks for updates automatically."
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/hooks-view/HookEditor.tsx

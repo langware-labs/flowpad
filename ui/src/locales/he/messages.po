@@ -64,6 +64,11 @@ msgstr " (אתם)"
 msgid " or "
 msgstr " או "
 
+#. placeholder {0}: r.engineVersion
+#: src/components/version-popover/version-popover.tsx
+msgid " to v{0}"
+msgstr " לגרסה v{0}"
+
 #: src/components/assets/editor/revisions/RevisionDiffModal.tsx
 msgid "— {label} vs current"
 msgstr "— {label} לעומת הנוכחי"
@@ -2384,8 +2389,12 @@ msgid "A new project folder — everything you create is scoped to it"
 msgstr "תיקיית פרויקט חדשה — כל מה שייווצר בה ישויך אליה"
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "A newer version of FlowPad Desktop is required before upgrading the Python backend."
-msgstr "נדרשת גרסה חדשה יותר של FlowPad Desktop לפני שדרוג ה-backend של Python."
+msgid "A newer version of FlowPad Desktop is required before upgrading the flow SDK."
+msgstr "נדרשת גרסה חדשה יותר של FlowPad Desktop לפני שדרוג ה-flow SDK."
+
+#: src/components/version-popover/desktop-update-modal.tsx
+#~ msgid "A newer version of FlowPad Desktop is required before upgrading the Python backend."
+#~ msgstr "נדרשת גרסה חדשה יותר של FlowPad Desktop לפני שדרוג ה-backend של Python."
 
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A place and channel by hand…"
@@ -4857,8 +4866,8 @@ msgid "Auto-send"
 msgstr "שליחה אוטומטית"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check every 20 minutes."
-msgstr "עדכונים אוטומטיים נבדקים כל 20 דקות."
+#~ msgid "Auto-updates check every 20 minutes."
+#~ msgstr "עדכונים אוטומטיים נבדקים כל 20 דקות."
 
 #: src/components/version-popover/version-popover.tsx
 #~ msgid "Auto-updates check hourly."
@@ -10446,12 +10455,14 @@ msgstr "מופע Desktop"
 msgid "Desktop Update Required"
 msgstr "נדרש עדכון דסקטופ"
 
-#. placeholder {0}: r.desktopVersion
-#. placeholder {1}: r.engineVersion
-#. placeholder {2}: r.error ? `: ${r.error}.` : '.'
 #: src/components/version-popover/version-popover.tsx
-msgid "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
-msgstr "הדסקטופ עודכן ל-v{0}, אך עדכון ה-flow SDK ל-v{1} נכשל{2} FlowPad יציע אותו שוב."
+#~ msgid "Desktop updated to v{0}, but the flow SDK update to v{1} failed{2} FlowPad will offer it again."
+#~ msgstr "הדסקטופ עודכן ל-v{0}, אך עדכון ה-flow SDK ל-v{1} נכשל{2} FlowPad יציע אותו שוב."
+
+#. placeholder {0}: r.desktopVersion
+#: src/components/version-popover/version-popover.tsx
+msgid "Desktop updated to v{0}, but the flow SDK update{target} failed{reason} FlowPad will offer it again."
+msgstr "הדסקטופ עודכן לגרסה v{0}, אך עדכון ה-flow SDK{target} נכשל{reason} FlowPad יציע אותו שוב."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop updates are not available for this build."
@@ -13484,6 +13495,15 @@ msgstr "הודעת זרימה"
 msgid "flow name…"
 msgstr "שם ה-Flow…"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "flow SDK update failed"
+msgstr "עדכון ה-flow SDK נכשל"
+
+#. placeholder {0}: r.engineVersion
+#: src/components/version-popover/version-popover.tsx
+msgid "flow SDK v{0} is installed."
+msgstr "flow SDK v{0} מותקן."
+
 #. placeholder {0}: info.engineTarget
 #. placeholder {1}: info.minDesktop
 #. placeholder {2}: info.desktopInstalled ?? '?'
@@ -13546,6 +13566,10 @@ msgstr "פרויקט עוזר Flowpad אינו זמין."
 msgid "Flowpad can’t see any of {owner}’s repos. {owner} most likely restricts third-party apps: grant Flowpad access to it on GitHub (Settings → Applications → Flowpad → Organization access), or paste a repo URL above."
 msgstr "Flowpad לא רואה אף אחד מהמאגרים של {owner}. סביר ש-{owner} מגביל אפליקציות של צד שלישי: הענקו ל-Flowpad גישה ב-GitHub (Settings → Applications → Flowpad → Organization access), או הדביקו כתובת מאגר למעלה."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad checks for updates automatically."
+msgstr "FlowPad בודק עדכונים באופן אוטומטי."
+
 #: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "Flowpad cloud"
 msgstr ""
@@ -13599,8 +13623,8 @@ msgstr "FlowPad לא נפתח? התקינו אותו וחזרו לדף הזה."
 #~ msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
-msgid "FlowPad engine update failed"
-msgstr "עדכון מנוע FlowPad נכשל"
+#~ msgid "FlowPad engine update failed"
+#~ msgstr "עדכון מנוע FlowPad נכשל"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
 msgid "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
@@ -19838,8 +19862,12 @@ msgid "No newer flow SDK fits this desktop build — the desktop updates alone a
 msgstr "אין flow SDK חדש יותר שמתאים ל-build הזה של הדסקטופ — הדסקטופ מתעדכן לבדו וה-flow SDK המותקן נשאר."
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
-msgstr "עדיין אין build חדש יותר של FlowPad Desktop, ולכן לא ניתן להתקין את גרסת ה-backend הזו. ההתקנה הנוכחית לא שונתה — בדקו שוב אחרי רילוס הדסקטופ הבא."
+#~ msgid "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
+#~ msgstr "עדיין אין build חדש יותר של FlowPad Desktop, ולכן לא ניתן להתקין את גרסת ה-backend הזו. ההתקנה הנוכחית לא שונתה — בדקו שוב אחרי רילוס הדסקטופ הבא."
+
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "No newer FlowPad Desktop build is available yet, so this flow SDK version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
+msgstr "עדיין אין גרסת FlowPad Desktop חדשה יותר, ולכן לא ניתן להתקין את גרסת ה-flow SDK הזו. ההתקנה הנוכחית שלך לא השתנתה — בדוק שוב אחרי גרסת הדסקטופ הבאה."
 
 #: src/components/tabs/TabStrip.tsx
 msgid "No notes yet"
@@ -25963,7 +25991,7 @@ msgstr "ניסיון הורדה חוזר"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Retry the update"
-msgstr ""
+msgstr "נסה שוב את העדכון"
 
 #: src/components/data-sources/health-style.ts
 msgid "Retrying"
@@ -30965,8 +30993,12 @@ msgid "The desktop update failed."
 msgstr "עדכון הדסקטופ נכשל."
 
 #: src/components/version-popover/desktop-update-modal.tsx
-msgid "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
-msgstr "לא ניתן היה לבדוק את ערוץ עדכוני הדסקטופ, ולכן לא ניתן להתקין כעת את גרסת ה-backend הזו. ההתקנה הנוכחית לא שונתה — בדקו את החיבור ונסו שוב."
+#~ msgid "The desktop update feed could not be checked, so this backend version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+#~ msgstr "לא ניתן היה לבדוק את ערוץ עדכוני הדסקטופ, ולכן לא ניתן להתקין כעת את גרסת ה-backend הזו. ההתקנה הנוכחית לא שונתה — בדקו את החיבור ונסו שוב."
+
+#: src/components/version-popover/desktop-update-modal.tsx
+msgid "The desktop update feed could not be checked, so this flow SDK version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
+msgstr "לא ניתן היה לבדוק את ערוץ עדכוני הדסקטופ, ולכן לא ניתן להתקין כעת את גרסת ה-flow SDK הזו. ההתקנה הנוכחית שלך לא השתנתה — בדוק את החיבור ונסה שוב."
 
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -31031,6 +31063,18 @@ msgstr "הכלי לתיקון לא הצליח לתקן את ההגדרה. השל
 #: src/components/project-setup/use-setup-fix.ts
 #~ msgid "The fixer could not start."
 #~ msgstr "לא ניתן היה להפעיל את התיקון."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The flow SDK is up to date."
+msgstr "ה-flow SDK מעודכן."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The flow SDK update{target} failed{reason}"
+msgstr "עדכון ה-flow SDK{target} נכשל{reason}"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The flow SDK update{target} failed{reason} Your previous version was restored."
+msgstr "עדכון ה-flow SDK{target} נכשל{reason} הגרסה הקודמת שלך שוחזרה."
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"
@@ -33370,8 +33414,12 @@ msgid "Up to date"
 msgstr "מעודכן"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Up to date. Auto-updates check every 20 minutes."
-msgstr "מעודכן. עדכונים אוטומטיים נבדקים כל 20 דקות."
+#~ msgid "Up to date. Auto-updates check every 20 minutes."
+#~ msgstr "מעודכן. עדכונים אוטומטיים נבדקים כל 20 דקות."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Up to date. FlowPad checks for updates automatically."
+msgstr "מעודכן. FlowPad בודק עדכונים באופן אוטומטי."
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/hooks-view/HookEditor.tsx

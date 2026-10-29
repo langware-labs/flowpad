@@ -40,8 +40,9 @@ interface DesktopUpdateModalProps {
 /**
  * The in-app popup shown when an engine (PyPI) upgrade needs a newer desktop first.
  * Everything happens inside the app: no external download pages, no other screens.
- * One way forward: a desktop update never leaves the engine behind, so the only
- * update action is Update Both — there is no "desktop only".
+ * A desktop update never leaves the engine behind, so there is no "desktop only": the update
+ * actions are Update Both, or — when no suitable desktop build exists yet — installing the
+ * newest flow SDK that works with THIS desktop (onUpgradeCompatible).
  */
 export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onUpgradeCompatible, onClose }: DesktopUpdateModalProps) {
   if (!info) return null;
@@ -71,7 +72,7 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onUp
                 {info.desktopInstalled ?? '?'}.
               </Trans>
             ) : (
-              <Trans>A newer version of FlowPad Desktop is required before upgrading the Python backend.</Trans>
+              <Trans>A newer version of FlowPad Desktop is required before upgrading the flow SDK.</Trans>
             )}
           </p>
           {info.desktopAvailable && info.engineTarget ? (
@@ -91,14 +92,14 @@ export function DesktopUpdateModal({ open, info, busy, error, onUpdateBoth, onUp
           ) : info.checkFailed ? (
             <p className="text-muted-foreground">
               <Trans>
-                The desktop update feed could not be checked, so this backend version cannot be installed right now.
+                The desktop update feed could not be checked, so this flow SDK version cannot be installed right now.
                 Your current installation is unchanged — check your connection and try again.
               </Trans>
             </p>
           ) : (
             <p className="text-muted-foreground">
               <Trans>
-                No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your
+                No newer FlowPad Desktop build is available yet, so this flow SDK version cannot be installed. Your
                 current installation is unchanged — check again after the next desktop release.
               </Trans>
             </p>

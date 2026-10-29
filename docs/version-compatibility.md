@@ -138,8 +138,10 @@ via the step-2 wheel read against this desktop). An incompatible latest opens th
 Required" popup — *Update Both* saves a consented `pending-engine.json` with `source: 'panel'` and
 downloads the desktop (`update:both`); there is deliberately no desktop-only choice in the popup (a
 desktop update never leaves the engine behind). When no published desktop build satisfies the
-engine's floor, the popup instead offers the newest flow SDK this desktop CAN run, and the desktop
-row's own Download falls back to a plain desktop download (`update:download-desktop`);
+engine's floor, the popup instead offers the newest flow SDK this desktop CAN run. The desktop row's
+own Download goes through `update:both` whenever a newer flow SDK exists (the shell substitutes the
+newest engine the target desktop accepts, or lets the desktop go alone when none is newer), and is a
+plain `update:download-desktop` only when there is no engine update;
 the panel's *Update Now* (`update:apply-desktop`) restarts into the new desktop, which installs the
 saved engine version exactly as in the dialog flow and reports the outcome back to the panel
 (`engine-update-resumed`, or pulled once at panel mount via `update:take-resumed`). A desktop update downloaded in the
@@ -151,6 +153,31 @@ authoritative gates. The panel's engine upgrade (`upgrade-flowpad` →
 refusal returns as an error with nothing stopped — and a failure after the stop restores the old
 engine through the same recovery the dialog path uses (`recoverAfterFailedUpgrade`), so the app
 is never left on the loading splash over a dead backend.
+
+Applying a desktop update (`update-restart.js`) resolves with the **real** outcome — `'quitting'` once
+the app's quit began, `'failed'` when the updater's `error` event arrives, even after `quitAndInstall`
+returned (an asynchronous NSIS spawn error, Squirrel.Mac) — so the panel, the desktop-first startup
+and the recovery update each fall back instead of trusting "quitAndInstall was called". On macOS an
+update is *ready* only once Electron's own `autoUpdater` (Squirrel.Mac) has staged it; a Squirrel
+failure offers the download again, never a re-apply. A newer feed build the updater does not offer
+this machine (`isUpdateAvailable: false` — staged rollout, `minimumSystemVersion`) counts as no
+desktop update, so the engine is not held behind it.
+
+**Manual verification on each OS** (the CI runs the update flow against stubs only — nothing in the
+repo performs a real `quitAndInstall`). Before a release that changes the update flow, run once per
+row against a real GitHub feed with a packaged build one version behind:
+
+| Platform | Install type | Check |
+|---|---|---|
+| Windows | NSIS, per-user | Update Both → Update Now: app closes, reinstalls silently, reopens, engine toast shows both versions |
+| Windows | NSIS, per-machine | Same; then cancel the UAC prompt once — the app must come back (or be restartable) with the old version |
+| macOS | zip/dmg in /Applications | Download → row shows progress until Squirrel stages it, then Update Now; reopen confirms both versions |
+| macOS | run from Downloads | Update Now fails → row offers the download again, dialog points at /Applications |
+| Linux | AppImage | Update Now relaunches the new AppImage; engine resumes |
+| Linux | deb/rpm | Password prompt appears; cancelling it leaves the app running with the error row |
+
+Each row also checks the incompatible-engine path: a PyPI release whose `min_desktop_version` is above
+the installed desktop opens "Desktop Update Required", and Cancel leaves both versions unchanged.
 
 **Backend self-update** (`flow upgrade`, `POST /api/v1/version/install`):
 

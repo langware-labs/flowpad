@@ -344,6 +344,46 @@ describe('the Desktop section row', () => {
     pushResumed?.(resumed); // the startup push races the mount pull: same outcome, no second toast
     expect(h.notifySuccess).toHaveBeenCalledTimes(1);
   });
+
+  it('a failed flow SDK upgrade from this panel does not claim the desktop was updated', async () => {
+    (window as { electronAPI?: unknown }).electronAPI = electronApi({
+      takeResumedUpdate: vi.fn().mockResolvedValue({
+        kind: 'engine', success: false, restored: true, engineVersion: '0.2.240', desktopVersion: '0.2.50', error: 'no healthy backend',
+      }),
+    });
+    await openPopover();
+    await waitFor(() => expect(h.notifyError).toHaveBeenCalledTimes(1));
+    const { message } = h.notifyError.mock.calls[0][0] as { message: string };
+    expect(message).toContain('v0.2.240');
+    expect(message).toContain('previous version was restored');
+    expect(message).not.toContain('Desktop updated');
+  });
+
+  it('a successful flow SDK upgrade from this panel names only the flow SDK', async () => {
+    (window as { electronAPI?: unknown }).electronAPI = electronApi({
+      takeResumedUpdate: vi.fn().mockResolvedValue({ kind: 'engine', success: true, engineVersion: '0.2.240', desktopVersion: '0.2.50' }),
+    });
+    await openPopover();
+    await waitFor(() => expect(h.notifySuccess).toHaveBeenCalledTimes(1));
+    const { message } = h.notifySuccess.mock.calls[0][0] as { message: string };
+    expect(message).toContain('0.2.240');
+    expect(message).not.toContain('Desktop');
+  });
+
+  it("Update Now that fails inside the updater: the shell's error row is the one message", async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        ...INCOMPATIBLE_INFO,
+        desktop: { installed: '0.2.50', state: 'available', available: '0.2.62', downloadState: 'ready' },
+      }),
+      applyDesktopUpdate: vi.fn().mockResolvedValue({ started: false, reason: 'apply-failed' }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(await screen.findByTestId('desktop-update-now-button'));
+    await waitFor(() => expect(api.applyDesktopUpdate).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/could not be started/)).toBeNull();
+  });
 });
 
 describe('browser mode (no Electron)', () => {

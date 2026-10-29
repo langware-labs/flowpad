@@ -38,7 +38,11 @@ describe('DesktopUpdateModal', () => {
 
     fireEvent.click(screen.getByTestId('update-both-button'));
     expect(onUpdateBoth).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId('update-desktop-only-button')).toBeNull();
+    // The update ACTIONS on offer are exactly Update Both and Cancel (a third would be a desktop-only path).
+    const actions = Array.from(
+      screen.getByTestId('desktop-update-required-modal').querySelectorAll('[data-testid^="update-"]'),
+    ).map((el) => el.getAttribute('data-testid'));
+    expect(actions).toEqual(['update-both-button', 'update-cancel-button']);
     fireEvent.click(screen.getByTestId('update-cancel-button'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor, session, autoUpdater: squirrelUpdater } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 const { buildSupportZip, redact } = require('./support-bundle');
@@ -139,6 +139,18 @@ let resumedPanelUpdate = null;
 // the panel shows its own Ready state instead ('desktop-update-state').
 let panelDesktopVersion = null;
 
+// macOS: electron-updater's 'update-downloaded' fires when the zip is FETCHED, but Squirrel.Mac still has
+// to verify and stage it — quitAndInstall() before that only registers a listener that may never fire
+// (window hidden, engine stopped, nothing happens). So on macOS an update is READY only once Electron's
+// own autoUpdater says 'update-downloaded'; until then it waits here, shown as still downloading.
+// A test seam, not a platform sniff at every use: the harness pins it per scenario (and a stubbed
+// Electron without Squirrel never takes this path, whatever OS the tests run on).
+let squirrelStages = process.platform === 'darwin' && !!squirrelUpdater;
+let squirrelPendingInfo = null;  // fetched, waiting for Squirrel to stage it
+let squirrelStaged = false;      // Squirrel staged the current download
+let squirrelStaging = Promise.resolve(false); // settles true (staged) / false (staging failed) per download
+let settleSquirrelStaging = () => {};
+
 /** Desktop-update progress for the version panel ('desktop-update-state' channel). Best-effort: a
  *  missing window just means nobody is watching. */
 function sendDesktopUpdateState(payload) {
@@ -155,25 +167,33 @@ const restartApplier = createRestartApplier({
   setQuitting: (v) => { isQuitting = v; },
   hideWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); },
   showWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } },
-  // The silent installer runs with no window of ours for ~30s, then the new desktop installs the engine: say so.
+  // The silent installer runs with no window of ours for ~30s, then the new desktop installs the engine: say so —
+  // without promising a reopen the OS can veto (a cancelled UAC or password prompt ends the install quietly).
   notifyInstalling: () => {
     if (Notification.isSupported()) {
-      new Notification({ title: 'FlowPad is updating', body: 'Installing the update. FlowPad will reopen by itself in about a minute.', silent: true }).show();
+      const asksPassword = process.platform === 'linux' && !process.env.APPIMAGE; // deb/rpm install through pkexec
+      const body = `Installing the update.${asksPassword ? ' Your system may ask for your password.' : ''} FlowPad reopens when it is done — if it does not, start it again.`;
+      new Notification({ title: 'FlowPad is updating', body, silent: true }).show();
     }
   },
   onFailure: (err) => {
     // The desktop could not be applied (for example an app running from a temporary macOS location). It stays
-    // pending: the engine changes only after the NEW desktop is installed and running, and the update is downloaded,
-    // so it still installs on the next quit (the dialog below says so).
-    // The panel's row flips to error with a "Retry the update" (apply, not download — the artifact landed).
-    sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err), apply: true });
+    // pending: the engine changes only after the NEW desktop is installed and running.
+    // Elsewhere the artifact is still on disk, so the row offers "Retry the update" (apply) and quitting installs
+    // it too. On macOS a failure here is Squirrel's: retrying the apply would wait on a staging that never comes,
+    // and install-on-quit fails the same way — the row offers the download again instead.
+    const squirrelFailed = squirrelStages;
+    if (squirrelFailed) { desktopDownloadedVersion = null; squirrelStaged = false; }
+    sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err), apply: !squirrelFailed });
     showFailureDialog({
       dialog,
       parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
       type: 'warning',
       title: 'Update could not be applied',
       message: 'FlowPad could not restart to finish the update.',
-      detail: `The update is downloaded and will be applied the next time FlowPad is closed.\n\n${err && err.message ? err.message : err}`,
+      detail: `${squirrelFailed
+        ? 'macOS could not install the update. Download it again from the version panel, or check that FlowPad runs from the Applications folder.'
+        : 'The update is downloaded: retry it from the version panel, or it is applied the next time FlowPad is closed.'}\n\n${err && err.message ? err.message : err}`,
       share: (text) => shareDiagnostics(text, 'could not restart to apply an update'),
       log,
     });
@@ -247,28 +267,37 @@ function setupElectronAutoUpdater() {
 
     // Fires only after an explicit downloadUpdate() completes. Restarting to
     // apply is the one unavoidable step of a desktop self-update, so prompt for it.
-    autoUpdater.on('update-downloaded', async (info) => {
+    autoUpdater.on('update-downloaded', (info) => {
       log.info(`[electron-updater] update downloaded: ${info.version}`);
-      desktopDownloadedVersion = info.version;
-      // The panel shows "ready" for a download it owns, or one downloaded quietly (deferred/"Later")
-      // — not while the native "Restart now" prompt is about to open for it (that prompt IS the
-      // ready surface; a second one in the panel just answered 'busy').
-      if (suppressDesktopRestartPrompt || panelDesktopVersion === info.version) {
-        sendDesktopUpdateState({ state: 'ready', version: info.version });
-      }
-      if (suppressDesktopRestartPrompt) {
-        // The user said "Later" at launch: no prompt now. The reminder offers it every 90 minutes
-        // (shown right away only if a reminder already came due while the download was running), and
-        // autoInstallOnAppQuit applies it if the app is closed first.
-        suppressDesktopRestartPrompt = false;
-        deferredDesktopVersion = info.version;
-        log.info('[electron-updater] deferred — the reminder will offer it; it also installs on the next quit');
-        readyReminder.notifyReady();
+      if (squirrelStages && !squirrelStaged) {
+        squirrelPendingInfo = info;
+        log.info('[electron-updater] waiting for macOS (Squirrel) to prepare the update');
         return;
       }
-      await showDesktopReadyPrompt(info.version);
+      return onDesktopUpdateReady(info);
     });
 
+    if (squirrelStages) {
+      // Electron's own autoUpdater IS Squirrel.Mac — the one that knows when the update is staged.
+      const nativeUpdater = squirrelUpdater;
+      nativeUpdater.on('update-downloaded', () => {
+        squirrelStaged = true;
+        log.info('[electron-updater] macOS prepared the update');
+        settleSquirrelStaging(true);
+        const info = squirrelPendingInfo;
+        squirrelPendingInfo = null;
+        if (info) void onDesktopUpdateReady(info).catch((err) => log.warn(`[electron-updater] ready handling failed: ${err.message}`));
+      });
+      // A staging failure (signature mismatch, read-only location) — electron-updater forwards it as its own
+      // 'error' too, but that emitter is shared with feed-check noise: only HERE is it known to be staging.
+      nativeUpdater.on('error', (err) => {
+        if (squirrelStaged || !squirrelPendingInfo) return; // an apply failure: restartApplier's onFailure owns it
+        squirrelPendingInfo = null;
+        settleSquirrelStaging(false);
+        log.warn(`[electron-updater] macOS could not prepare the update: ${err && err.message}`);
+        sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err) });
+      });
+    }
   }
 
   // (offeredDesktopVersion stays session-only: cross-restart dedupe is the persisted
@@ -306,6 +335,28 @@ function setupElectronAutoUpdater() {
   watchAccountChanges();
 }
 
+/** The downloaded update is installable (on macOS: Squirrel staged it) — the panel's Ready, or the prompt. */
+async function onDesktopUpdateReady(info) {
+  desktopDownloadedVersion = info.version;
+  // The panel shows "ready" for a download it owns, or one downloaded quietly (deferred/"Later")
+  // — not while the native "Restart now" prompt is about to open for it (that prompt IS the
+  // ready surface; a second one in the panel just answered 'busy').
+  if (suppressDesktopRestartPrompt || panelDesktopVersion === info.version) {
+    sendDesktopUpdateState({ state: 'ready', version: info.version });
+  }
+  if (suppressDesktopRestartPrompt) {
+    // The user said "Later" at launch: no prompt now. The reminder offers it every 90 minutes
+    // (shown right away only if a reminder already came due while the download was running), and
+    // autoInstallOnAppQuit applies it if the app is closed first.
+    suppressDesktopRestartPrompt = false;
+    deferredDesktopVersion = info.version;
+    log.info('[electron-updater] deferred — the reminder will offer it; it also installs on the next quit');
+    readyReminder.notifyReady();
+    return;
+  }
+  await showDesktopReadyPrompt(info.version);
+}
+
 // One automatic pass at a time: a tick that lands while the previous one still awaits the feed or
 // a dialog does nothing ("prevent duplicate or concurrent update checks").
 let autoCheckInFlight = false;
@@ -318,6 +369,9 @@ let autoCheckInFlight = false;
  */
 async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
   if (autoCheckInFlight) return;
+  // An install is being applied: a feed check now could only add noise to the updater's shared
+  // 'error' emitter (and nothing it finds can be acted on before the restart).
+  if (restartApplier.busy) return;
   armAccountWatch(); // a watch that died (or never armed on a fresh install) is back within one tick
   const state = scheduleStore.read(); // one read per pass; the record* writers re-read at their write
   // Pass shape: 'scheduled' hits the feed and runs both halves; 'engine-retry' is the ENGINE
@@ -937,6 +991,13 @@ async function getDesktopUpdateVersion() {
     if (!result) return recordCheck({ state: 'unsupported' }).version; // the updater is inactive
     const latest = result.updateInfo && result.updateInfo.version;
     if (!latest) return recordCheck({ state: 'unknown', reason: 'the update feed returned no version' }).version;
+    if (isNewer(app.getVersion(), latest) && result.isUpdateAvailable === false) {
+      // A newer build this machine is NOT offered (staged rollout, minimumSystemVersion): downloadUpdate()
+      // would fail with "Please check update first" while the engine stayed held behind it. For this
+      // machine there is no desktop update.
+      log.info(`[electron-updater] ${latest} is on the feed but not offered to this machine (rollout or OS requirement)`);
+      return recordCheck({ state: 'current', reason: `${latest} is not offered to this machine yet` }).version;
+    }
     return recordCheck(isNewer(app.getVersion(), latest) ? { state: 'available', version: latest } : { state: 'current' }).version;
   } catch (err) {
     log.warn(`[electron-updater] desktop update check failed: ${err.message}`);
@@ -964,7 +1025,7 @@ function recordCheck(status) {
 // check answers: a check that failed or is still running is NOT "no newer desktop".
 let desktopStatus = { state: 'unknown', reason: 'not checked yet' };
 // When the feed last ANSWERED — the panel's 'update:get-info' re-checks at most once a minute (the
-// 20-minute tick calls getDesktopUpdateVersion directly and is not throttled by this). A FAILED
+// scheduled pass calls getDesktopUpdateVersion directly and is not throttled by this). A FAILED
 // check is not stamped: "Check again" after a failure must actually ask again, not no-op silently
 // for the rest of the window.
 let desktopFeedCheckedAt = 0;
@@ -1008,10 +1069,15 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
   desktopDownloadVersion = version;
   desktopDownloadToken = new CancellationToken();
   suppressDesktopRestartPrompt = !promptOnReady;
+  // A fresh download needs a fresh Squirrel staging (macOS): an earlier staged build is not this one.
+  squirrelStaged = false;
+  squirrelPendingInfo = null;
+  squirrelStaging = new Promise((r) => { settleSquirrelStaging = r; });
   desktopDownloadDone = autoUpdater
     .downloadUpdate(desktopDownloadToken)
     .then(() => { if (onDownloaded) onDownloaded(); })
     .catch((err) => {
+      if (squirrelPendingInfo) { squirrelPendingInfo = null; settleSquirrelStaging(false); }
       if (desktopDownloadToken && desktopDownloadToken.cancelled) {
         log.info(`[electron-updater] download of ${version || 'update'} cancelled (superseded)`);
       } else {
@@ -1026,6 +1092,24 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
       desktopDownloadVersion = null;
       desktopDownloadToken = null;
     });
+}
+
+/**
+ * The current download is over AND, on macOS, Squirrel has staged it or failed to — so
+ * `desktopDownloadedVersion` is the final answer. (Staging is local work — verify + unzip — and always
+ * ends in Squirrel's 'update-downloaded' or 'error'; no wait budget is added here.)
+ */
+async function desktopDownloadSettled() {
+  await desktopDownloadDone;
+  if (squirrelPendingInfo) await squirrelStaging;
+}
+
+/** A download the panel can adopt: still transferring, or fetched and being staged by Squirrel (macOS). */
+function desktopDownloadPending() {
+  return desktopDownloadInFlight || !!squirrelPendingInfo;
+}
+function pendingDownloadVersion() {
+  return desktopDownloadVersion || (squirrelPendingInfo && squirrelPendingInfo.version) || null;
 }
 
 /**
@@ -1049,7 +1133,7 @@ async function updateDesktopBeforeEngineInstall(reason) {
   downloadDesktopUpdateInBackground({ promptOnReady: false, version });
   suppressDesktopRestartPrompt = true;
   try {
-    await desktopDownloadDone;
+    await desktopDownloadSettled();
   } finally {
     autoUpdater.removeListener('download-progress', onDesktopDlProgress);
   }
@@ -1059,10 +1143,11 @@ async function updateDesktopBeforeEngineInstall(reason) {
     log.warn(`[update] ${reason}: the desktop update did not download — installing the engine with this desktop`);
     return false;
   }
-  await restartApplier.apply();
-  if (isQuitting) return true; // handed to the installer (or a restart already under way)
-  // quitAndInstall failed SYNCHRONOUSLY (failed() undid isQuitting and restored the window): same
-  // fallback as a failed download — install the engine with THIS desktop instead of a dead splash.
+  // apply() resolves with the REAL outcome: 'quitting' once the quit began, 'failed' even when the
+  // failure arrives after quitAndInstall returned (Squirrel, an async NSIS spawn error).
+  if ((await restartApplier.apply()) === 'quitting') return true;
+  // Not applied: same fallback as a failed download — install the engine with THIS desktop instead of
+  // a dead splash nobody manages.
   suppressDesktopRestartPrompt = false;
   log.warn(`[update] ${reason}: the desktop update could not be applied — installing the engine with this desktop`);
   return false;
@@ -1118,6 +1203,23 @@ function isBackendUrl(url) {
   } catch {
     return false;
   }
+}
+/**
+ * IPC that changes what is installed (or mints a secret) answers only the app's own pages: the TOP
+ * frame of a window showing the backend's origin. The preload never runs in iframes, but a window that
+ * ended up on another origin (or a future preload-bearing subframe) must not be able to restart the app
+ * into an installer. This does not defend against script running INSIDE the backend origin (XSS there
+ * already owns the UI); it narrows everything else.
+ */
+function isTrustedSender(event) {
+  const frame = event && event.senderFrame;
+  return !!frame && !frame.parent && isBackendUrl(frame.url);
+}
+function assertTrustedSender(event, channel) {
+  if (isTrustedSender(event)) return;
+  const url = event && event.senderFrame ? redactUrl(event.senderFrame.url) : 'unknown';
+  log.warn(`[ipc] ${channel} refused: untrusted sender ${url}`);
+  throw new Error('untrusted sender');
 }
 const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
@@ -1713,7 +1815,7 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isBackendUrl(url)) {
       try {
-        if (new URL(url).pathname.includes('/win/')) {
+        if (new URL(url).pathname.startsWith('/win/')) {
           return { action: 'allow' };
         }
       } catch {
@@ -2203,11 +2305,15 @@ async function runRecoveryUpdate({ version, fingerprint }) {
   try {
     if (!app.isPackaged || process.windowsStore) throw new Error('desktop updates are not available for this build');
     downloadDesktopUpdateInBackground({ promptOnReady: false, version });
-    await desktopDownloadDone;
+    await desktopDownloadSettled();
     if (desktopDownloadedVersion !== version) throw new Error('the download did not complete (see the updater lines in the log)');
     log.info(`[update-recovery] ${version} downloaded and verified by the updater; installing and relaunching`);
     sendStatus(`Installing FlowPad ${version}`);
-    if (!(await restartApplier.apply())) throw new Error('another install is already in progress');
+    // A failure inside the updater's own 'error' event (a cancelled pkexec, no $APPIMAGE, no dpkg) is
+    // 'failed', not success: the attempt is marked failed below instead of leaving a dead recovery screen.
+    const outcome = await restartApplier.apply();
+    if (outcome === 'busy') throw new Error('another install is already in progress');
+    if (outcome !== 'quitting') throw new Error('the update could not be installed (see the updater lines in the log)');
     return { ok: true };
   } catch (err) {
     log.error(`[update-recovery] failed: ${err.message}`);
@@ -2382,13 +2488,13 @@ async function installAndStartBackend({ quiet = false } = {}) {
             activeBin = uvManager.getInstalledFlowBin() || flowBin;
             backendJustUpgraded = true;
             if (enginePlan.source === 'panel') {
-              resumedPanelUpdate = { success: true, engineVersion: enginePlan.version, desktopVersion: app.getVersion() };
+              resumedPanelUpdate = { kind: 'coordinated', success: true, engineVersion: enginePlan.version, desktopVersion: app.getVersion() };
             }
           } catch (upgradeErr) {
             log.warn(`[uv] installing the agreed engine ${enginePlan.version} failed, starting the current engine: ${upgradeErr.message}`);
             // Already demoted on disk — the next launch ASKS ("FlowPad will offer it again" is true).
             if (enginePlan.source === 'panel') {
-              resumedPanelUpdate = { success: false, engineVersion: enginePlan.version, desktopVersion: app.getVersion(), error: upgradeErr.message };
+              resumedPanelUpdate = { kind: 'coordinated', success: false, engineVersion: enginePlan.version, desktopVersion: app.getVersion(), error: upgradeErr.message };
             }
           }
         }
@@ -2815,7 +2921,7 @@ async function startApp() {
       log.warn(`[update] engine ${unhealthyInstall.engineVersion} installed but never became healthy — restoring ${unhealthyInstall.previousEngine}`);
       pendingEngineStore.write({ ...unhealthyInstall, phase: 'failed-unhealthy', failedVersion: unhealthyInstall.engineVersion });
       if (unhealthyInstall.source === 'panel') {
-        resumedPanelUpdate = { success: false, engineVersion: unhealthyInstall.engineVersion, desktopVersion: app.getVersion(), error: 'the installed engine never became healthy' };
+        resumedPanelUpdate = { kind: 'coordinated', success: false, restored: true, engineVersion: unhealthyInstall.engineVersion, desktopVersion: app.getVersion(), error: 'the installed engine never became healthy' };
       }
       try {
         await pendingBackendStop;
@@ -2835,6 +2941,7 @@ async function startApp() {
         }
         return;
       } catch (restoreErr) {
+        if (resumedPanelUpdate && resumedPanelUpdate.restored) resumedPanelUpdate.restored = false;
         log.warn(`[update] could not restore ${unhealthyInstall.previousEngine}: ${restoreErr.message} — showing the normal panel`);
       }
     }
@@ -2972,6 +3079,7 @@ app.on('activate', () => {
 // exit) or when the startup already failed (the backend is stopped; the panel
 // has its own Quit button).
 app.on('before-quit', (event) => {
+  restartApplier.quitStarted(); // an apply in flight: its quitAndInstall really is quitting the app
   if (isQuitting) return;
   const askFirst = !quitGate.isConfirmed() && !startupFailed && mainWindow && !mainWindow.isDestroyed();
   if (askFirst) {
@@ -3306,7 +3414,8 @@ ipcMain.on('unwatch-startup-logs', () => {
   }
 });
 
-ipcMain.handle('restart-backend', async () => {
+ipcMain.handle('restart-backend', async (event) => {
+  assertTrustedSender(event, 'restart-backend');
   if (!uvManager) return false;
   // One backend start at a time: a restart asked for while startup (or another restart) is still
   // starting the backend is refused, never run under it.
@@ -3377,9 +3486,20 @@ function supportFailureRecordText() {
   try { return `\n\nserver-failure.json:\n${fs.readFileSync(fatalFailure.failureRecordPath(INSTANCE_DIR), 'utf8')}`; } catch { return ''; }
 }
 
-ipcMain.handle('upgrade-flowpad', async (_event, opts) => {
+ipcMain.handle('upgrade-flowpad', async (event, opts) => {
+  assertTrustedSender(event, 'upgrade-flowpad');
   if (!uvManager) return { success: false, error: 'No uv manager' };
   const requested = (opts && opts.version) || null;
+  // A pin is validated HERE, before the server is stopped or the window swapped: the panel's only pin
+  // is the popup's "newest that works with this desktop", which is always an UPGRADE — this channel
+  // never downgrades (that is the backend's version picker, with its own checks).
+  if (requested) {
+    if (!engineCompat.isInstallableVersion(requested)) return { success: false, error: `"${requested}" is not an installable version` };
+    const installed = uvManager.getInstalledVersionSync() || null;
+    if (installed && !isNewer(installed, requested)) {
+      return { success: false, error: `${requested} is not newer than the installed ${installed}` };
+    }
+  }
   // Desktop first: refuse before touching the running server or the window.
   if (engineChangeAllowed('upgrade-flowpad IPC') !== 'allow') {
     // One exception, and only on POSITIVE knowledge (engineFloorAllows): a pinned release whose
@@ -3448,7 +3568,7 @@ function panelAdoptsSupersedingRelease(desktopLatest) {
  *  then the one downloading, then the feed's offer. A downloaded or in-flight update IS available,
  *  whatever the last feed check said: that is what lets a postponed update install from the panel. */
 function effectiveDesktopVersion() {
-  return desktopDownloadedVersion || desktopDownloadVersion
+  return desktopDownloadedVersion || pendingDownloadVersion()
     || (desktopStatus.state === 'available' ? desktopStatus.version : null);
 }
 
@@ -3456,7 +3576,7 @@ function effectiveDesktopVersion() {
 async function desktopUpdateInfo() {
   if (desktopStatus.state !== 'unsupported'
       && Date.now() - desktopFeedCheckedAt > 60 * 1000
-      && !desktopDownloadInFlight && !desktopDownloadedVersion && !restartApplier.busy) {
+      && !desktopDownloadPending() && !desktopDownloadedVersion && !restartApplier.busy) {
     // Unpackaged / Store builds: getDesktopUpdateVersion answers 'unsupported' by itself, without a
     // network call — skipping it here left desktopStatus on 'unknown' ("not checked yet") for ever,
     // and the panel showed a hopeless "Could not check / Check again" row in dev and Store builds.
@@ -3464,14 +3584,15 @@ async function desktopUpdateInfo() {
   }
   const downloadState = restartApplier.busy ? 'installing'
     : desktopDownloadedVersion ? 'ready'
-      : desktopDownloadInFlight ? 'downloading'
+      : desktopDownloadPending() ? 'downloading' // on macOS this includes Squirrel preparing it
         : 'idle';
   const available = effectiveDesktopVersion();
   const state = available ? 'available' : desktopStatus.state;
   return { installed: app.getVersion(), state, available, downloadState };
 }
 
-ipcMain.handle('update:get-info', async (_event, opts) => {
+ipcMain.handle('update:get-info', async (event, opts) => {
+  assertTrustedSender(event, 'update:get-info');
   // Two independent sides, in parallel: serially every popover open paid the desktop feed check,
   // then the PyPI document, then the wheel range read, end to end. `fresh` (the Upgrade click) skips
   // the engine snapshot and PyPI's CDN — a release published a minute ago must shape the popup.
@@ -3495,13 +3616,15 @@ ipcMain.handle('update:get-info', async (_event, opts) => {
 // The resumed outcome's pull channel: the panel takes this the moment it mounts (no feed check), so
 // it is reported even when the startup push beat the listener and the popover is never opened. The
 // renderer-side key dedups the overlap with the push.
-ipcMain.handle('update:take-resumed', () => {
+ipcMain.handle('update:take-resumed', (event) => {
+  assertTrustedSender(event, 'update:take-resumed');
   const resumed = resumedPanelUpdate;
   resumedPanelUpdate = null;
   return resumed;
 });
 
-ipcMain.handle('update:download-desktop', async () => {
+ipcMain.handle('update:download-desktop', async (event) => {
+  assertTrustedSender(event, 'update:download-desktop');
   const refusal = desktopUpdateRefusal();
   if (refusal) return { started: false, reason: refusal };
   if (desktopDownloadedVersion) {
@@ -3509,13 +3632,13 @@ ipcMain.handle('update:download-desktop', async () => {
     readyReminder.stop(); // …including the 90-minute native reminder a "Later" may have started
     return { started: true, ready: true, version: desktopDownloadedVersion };
   }
-  if (desktopDownloadInFlight) {
+  if (desktopDownloadPending()) {
     // A background (tick-started) download is adopted: its native "Restart now" prompt is turned off
     // — without this the prompt would pop over the panel's own progress when the download lands.
-    panelDesktopVersion = desktopDownloadVersion;
+    panelDesktopVersion = pendingDownloadVersion();
     suppressDesktopRestartPrompt = true;
     readyReminder.stop();
-    return { started: true, version: desktopDownloadVersion };
+    return { started: true, version: panelDesktopVersion };
   }
   if (desktopStatus.state !== 'available') await getDesktopUpdateVersion();
   if (desktopStatus.state !== 'available') {
@@ -3531,7 +3654,8 @@ ipcMain.handle('update:download-desktop', async () => {
   return { started: true, version };
 });
 
-ipcMain.handle('update:apply-desktop', async () => {
+ipcMain.handle('update:apply-desktop', async (event) => {
+  assertTrustedSender(event, 'update:apply-desktop');
   const refusal = desktopUpdateRefusal();
   if (refusal) return { started: false, reason: refusal };
   if (!desktopDownloadedVersion) return { started: false, reason: 'not-downloaded' };
@@ -3543,17 +3667,21 @@ ipcMain.handle('update:apply-desktop', async () => {
   // agreement the native prompt's "Restart now" gives.
   markPendingEngineConsented(pendingEngineStore);
   sendDesktopUpdateState({ state: 'installing', version });
-  await restartApplier.apply();
-  return { started: true, version };
+  // The REAL outcome: when the updater fails (even after quitAndInstall returned), onFailure has
+  // already pushed the error row and brought the backend back — the answer must not say "started".
+  const outcome = await restartApplier.apply();
+  if (outcome === 'quitting') return { started: true, version };
+  return { started: false, reason: outcome === 'busy' ? 'busy' : 'apply-failed' };
 });
 
-ipcMain.handle('update:both', async (_event, requestedEngineVersion) => {
+ipcMain.handle('update:both', async (event, requestedEngineVersion) => {
+  assertTrustedSender(event, 'update:both');
   let engineVersion = requestedEngineVersion;
   if (!uvManager) return { started: false, reason: 'unsupported' };
   const refusal = desktopUpdateRefusal();
   if (refusal) return { started: false, reason: refusal };
   if (!engineCompat.isInstallableVersion(engineVersion)) return { started: false, reason: 'invalid-version' };
-  if (desktopStatus.state !== 'available' && !desktopDownloadedVersion && !desktopDownloadInFlight) {
+  if (desktopStatus.state !== 'available' && !desktopDownloadedVersion && !desktopDownloadPending()) {
     await getDesktopUpdateVersion();
   }
   const desktopVersion = effectiveDesktopVersion();
@@ -3599,7 +3727,7 @@ ipcMain.handle('update:both', async (_event, requestedEngineVersion) => {
   readyReminder.stop(); // the panel owns the flow now — no 90-minute native reminder over it
   // `engineVersion` tells the panel whether an engine rides along (null → the desktop goes alone).
   if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopVersion, engineVersion };
-  if (desktopDownloadInFlight) {
+  if (desktopDownloadPending()) {
     suppressDesktopRestartPrompt = true; // adopt the background download: its native prompt is off
     return { started: true, version: desktopVersion, engineVersion };
   }
@@ -3649,7 +3777,8 @@ async function upgradeFlowpadAndRestart({ version = null } = {}) {
 
     // The IPC's answer goes to a page loadFile() destroyed: the reloaded panel PULLS the outcome
     // (update:take-resumed, the same channel a post-restart resume uses).
-    resumedPanelUpdate = { success: true, engineVersion: uvManager.getInstalledVersionSync() || (picked && picked.version) || 'latest', desktopVersion: app.getVersion() };
+    // kind 'engine': the desktop did not change — the toast must not claim it was updated.
+    resumedPanelUpdate = { kind: 'engine', success: true, engineVersion: uvManager.getInstalledVersionSync() || (picked && picked.version) || null, desktopVersion: app.getVersion() };
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);
     }
@@ -3668,7 +3797,7 @@ async function upgradeFlowpadAndRestart({ version = null } = {}) {
     });
     if (restored) {
       // The page the IPC answered was destroyed by loadFile(): the reloaded panel pulls the failure.
-      resumedPanelUpdate = { success: false, engineVersion: (picked && picked.version) || version || 'latest', desktopVersion: app.getVersion(), error: err.message };
+      resumedPanelUpdate = { kind: 'engine', success: false, restored: true, engineVersion: (picked && picked.version) || version || null, desktopVersion: app.getVersion(), error: err.message };
     } else {
       // Detached: the IPC answers now; the panel's Retry keeps re-running the recovery (it works
       // from uv's local cache, so it has a real chance even offline). Quit-only was a dead end.
@@ -3719,7 +3848,8 @@ async function offerRecoveryRetry(err, { restoreVersion = null } = {}) {
  * Idempotent: if an entry already exists at the flow-rs slot, returns
  * it unchanged (skips both mint AND re-write).
  */
-ipcMain.handle('secrets:provision-sod-key', async (_event, existingValue) => {
+ipcMain.handle('secrets:provision-sod-key', async (event, existingValue) => {
+  assertTrustedSender(event, 'secrets:provision-sod-key');
   let flowRs;
   try {
     flowRs = require('./flow-rs-keychain');
