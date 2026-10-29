@@ -670,6 +670,49 @@ async def test_default_model_comes_from_the_chain_the_hub_pushed(env) -> None:
     assert auth.model_slug == "z-ai/glm-5.3-flash"
 
 
+async def test_a_member_on_a_desktop_gets_the_default_their_team_pinned(env, monkeypatch) -> None:
+    """No box binding (a desktop signed in to the hub) and a member allowance that names no models:
+    the team's pinned model is the default, not the code's small tier (haiku).
+
+    The hub is stubbed, with the user's approval: its listing answers the one row, whose permission
+    expansion carries the chain's ``models_allow`` -- the only way a desktop learns it."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints, get_hub_llm_endpoint
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
+
+    set_api_key("fp-hub-key")
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda: True)
+    row = {
+        "id": "5b0c8a52-3f0e-4d7e-9a43-2f6a1c9d7e11",
+        "name": "member",
+        "provider": "openrouter",
+        "filters": {"models_allow": []},
+        "expand": {"models_allow": ["anthropic/claude-sonnet-5.5", "openai/gpt-5-mini"]},
+    }
+
+    async def hub(method, entity_type, *args, **kwargs):
+        return [] if kwargs.get("action") == "catalog" else {"data": [row]}
+
+    monkeypatch.setattr(HubProxy, "try_call", classmethod(lambda cls, *a, **k: hub(*a, **k)))
+
+    assert get_hub_llm_endpoint() is None  # a desktop: nothing pushed a binding
+    (endpoint,) = await fetch_hub_llm_endpoints()
+    source = LLMSource(
+        endpoint_typeid=str(endpoint.typeid),
+        name=endpoint.name,
+        rank=0,
+        eligible=True,
+        auto=True,
+        authority=LLMSourceAuthority.CACHED,
+    )
+    auth = await binding_for_candidate("claude", Candidate(endpoint, source), tier=None)
+    assert auth is not None
+    assert auth.model_slug == "anthropic/claude-sonnet-5.5"
+
+
 def test_model_within_allowance_pure() -> None:
     """The matcher itself: no restriction, a matching glob, and a ruled-out slug that falls
     back to the first literal (non-glob) entry — the three cases the binding above relies on."""

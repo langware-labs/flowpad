@@ -457,7 +457,8 @@ def _model_within_allowance(slug: str | None, allow: list[str]) -> str | None:
 
 
 def _effective_models_allow(endpoint, endpoint_typeid: str) -> list[str]:
-    """The endpoint's own ``models_allow``, else the chain's the hub pushed with the binding.
+    """The endpoint's own ``models_allow``, else the chain's: the one the hub pushed with the binding
+    (a box), else the one its listing carried (a desktop, which is pushed nothing).
 
     A person's allowance names no models itself and inherits its team's, so the row alone is
     empty for exactly the members whose team pinned a model.
@@ -470,7 +471,7 @@ def _effective_models_allow(endpoint, endpoint_typeid: str) -> list[str]:
     bound = get_hub_llm_endpoint()
     if bound is not None and bound.endpoint_typeid == endpoint_typeid:
         return list(bound.models_allow)
-    return []
+    return list(endpoint.chain_models_allow)
 
 
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:

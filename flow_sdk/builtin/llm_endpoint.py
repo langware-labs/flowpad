@@ -173,6 +173,11 @@ class LLMEndpoint(Entity):
     #: else's id that can never be true. ``None`` means unanswered (a catalog row, an older hub),
     #: which is not "no". Runtime-only, never a row: a hub endpoint is never stored on a box.
     is_mine: bool | None = APIField(default=None, persist=Persist.FALSE)
+    #: The models the hub says this budget's whole chain permits, in the order the admins wrote them.
+    #: A member's allowance names none itself and inherits its team's, so ``filters.models_allow`` is
+    #: empty for exactly the people whose team pinned one -- and a desktop gets no pushed binding to
+    #: say otherwise. Off the same expansion as ``is_mine``; empty when the hub did not answer.
+    chain_models_allow: list[str] = APIField(default_factory=list, persist=Persist.FALSE)
 
     #: Which of the three funding kinds this is. Defaults to HUB so every existing projection
     #: keeps its meaning; ``fetch_hub_llm_endpoints`` forces it, and the before-validator below
