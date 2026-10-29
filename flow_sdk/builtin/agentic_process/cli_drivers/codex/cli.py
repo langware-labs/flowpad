@@ -31,7 +31,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     insert_capability_path_dir,
     worker_bin_folder,
 )
-from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,6 @@ class CodexAgentOptions(AgentOptions):
     """
 
     # sm/md/lg → gpt-5.6-luna/gpt-5.6-terra/gpt-5.6-sol, applied when emitting command.
-    MODEL_TIERS = CODEX_MODEL_TIERS
 
     def __init__(
         self,

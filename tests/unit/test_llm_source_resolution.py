@@ -521,11 +521,9 @@ def test_no_harness_collapses_its_model_tiers() -> None:
 def test_every_harness_declares_all_three_tiers() -> None:
     from flow_sdk.builtin.agentic_process import model_tiers
 
-    for name in ("CLAUDE", "CODEX", "COPILOT", "OPENCODE", "DEEPAGENTS"):
-        tiers = getattr(model_tiers, f"{name}_MODEL_TIERS")
-        assert set(tiers) >= {"sm", "md", "lg"}, name
+    assert set(model_tiers.CLAUDE_MODEL_TIERS) >= {"sm", "md", "lg"}
     # Every vendor CLI but claude picks its own default: no model ids in code.
-    assert model_tiers.CODEX_MODEL_TIERS == {"sm": None, "md": None, "lg": None}
+    assert dict(model_tiers.VENDOR_DEFAULT_TIERS) == {"sm": None, "md": None, "lg": None}
 
 
 # ── the device rung's verdict has to actually be resolved ────────────────────────

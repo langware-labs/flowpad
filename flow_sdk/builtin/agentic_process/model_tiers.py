@@ -18,6 +18,9 @@ frontend can pass ``WorkerModelTier.SM`` as ``context.model``.
 
 from __future__ import annotations
 
+from types import MappingProxyType
+from typing import Mapping
+
 from flow_sdk._compat import StrEnum
 
 
@@ -44,12 +47,8 @@ CLAUDE_MODEL_TIERS: dict[str, str | None] = {
 # (``ApiAuthSpec.native_tiers``) so the endpoint's slug for that size runs.
 CLAUDE_CLI_ALIASES: dict[str, str] = {name: size for size, name in CLAUDE_MODEL_TIERS.items() if name}
 
-#: The vendor chooses at every size.
-VENDOR_DEFAULT_TIERS: dict[str, str | None] = {tier.value: None for tier in ModelTier}
-CODEX_MODEL_TIERS = VENDOR_DEFAULT_TIERS
-COPILOT_MODEL_TIERS = VENDOR_DEFAULT_TIERS
-OPENCODE_MODEL_TIERS = VENDOR_DEFAULT_TIERS
-DEEPAGENTS_MODEL_TIERS = VENDOR_DEFAULT_TIERS
+#: The vendor chooses at every size: the default for every harness but claude (read-only, shared).
+VENDOR_DEFAULT_TIERS: Mapping[str, str | None] = MappingProxyType({tier.value: None for tier in ModelTier})
 
 
 _TIER_VALUES = frozenset(tier.value for tier in ModelTier)
@@ -60,7 +59,7 @@ def is_model_tier(model: str | None) -> bool:
     return model in _TIER_VALUES
 
 
-def resolve_model_tier(tier_map: dict[str, str | None], model: str | None) -> str | None:
+def resolve_model_tier(tier_map: Mapping[str, str | None], model: str | None) -> str | None:
     """Map a tier to a concrete model or vendor-auto via *tier_map*.
 
     Idempotent and pass-through: a non-tier value (a real model name, or a tier
