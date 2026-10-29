@@ -10,6 +10,7 @@ const { createRendererWatchdog } = require('./renderer-watchdog');
 const { bounded, collectFailureReport, writeFailureReport } = require('./hang-report');
 const { decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
 const updateTest = require('./update-test');
+const updateSchedule = require('./update-schedule');
 const { createRestartApplier } = require('./update-restart');
 const cookieGate = require('./cookie-gate');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
@@ -174,7 +175,7 @@ function setupElectronAutoUpdater() {
 
   if (process.windowsStore) {
     // Microsoft Store build: the Store delivers desktop updates (and electron-updater
-    // does not support AppX). The hourly PyPI package check below still runs.
+    // does not support AppX). The scheduled PyPI package check below still runs.
     log.info('[electron-updater] skipped: Microsoft Store build');
   } else {
     autoUpdater.logger = log;
@@ -231,14 +232,90 @@ function setupElectronAutoUpdater() {
 
   }
 
-  // Long-lived sessions: re-check periodically (UPDATE_CHECK_INTERVAL_MS).
-  // Desktop: if a newer build appears, download it in the background (the
-  // update-downloaded handler then prompts to restart). Package (PyPI): offer
-  // the upgrade dialog — the launch-time checks only run at launch, so without
-  // this a user who keeps the app open across a backend release never hears
-  // about it. Launch-time is handled by the pre-start flow, not here.
-  setInterval(async () => {
-    const desktopLatest = await getDesktopUpdateVersion();
+  // (offeredDesktopVersion stays session-only: cross-restart dedupe is the persisted
+  //  lastOfferedDesktopVersion watermark, read through decideDesktopAction.)
+
+  // A crash between atomicWrite's tmp and rename leaves a uniquely-named orphan no later write
+  // touches: sweep them once per launch.
+  try {
+    const userData = app.getPath('userData');
+    for (const f of fs.readdirSync(userData)) {
+      // Only OTHER processes' OLD orphans: never a tmp this process may be mid-writing, and never
+      // one younger than a minute — an atomic write finishes in milliseconds, so age, not pid
+      // reuse, is what makes a tmp provably dead (a fixed age check, not a wait or a retry).
+      const m = /^(?:update-schedule|pending-engine)\.json\.(\d+)\..+\.tmp$/.exec(f);
+      if (m && Number(m[1]) !== process.pid) {
+        const full = path.join(userData, f);
+        try {
+          if (Date.now() - fs.statSync(full).mtimeMs > 60 * 1000) fs.rmSync(full, { force: true });
+        } catch { /* best effort */ }
+      }
+    }
+  } catch { /* best effort */ }
+
+  // Long-lived sessions: re-check periodically. The tick is cheap and only ASKS update-schedule.js
+  // whether a check is DUE — hourly for an @langware.ai account, daily otherwise, anchored to the
+  // persisted last check so a restart does not reset it (FLOWPAD-2308). The update-cycle harness
+  // interval bypasses the schedule: that interval IS the cadence under test. Launch-time is
+  // handled by the pre-start flow, not here.
+  const harnessTickMs = updateTest.checkIntervalMs();
+  const tick = setInterval(() => {
+    runScheduledUpdateCheck({ bypassSchedule: !!harnessTickMs })
+      .catch((err) => log.warn(`[update] scheduled pass failed: ${err.message}`)); // a sync throw must not become an unhandled rejection
+  }, harnessTickMs || updateSchedule.SCHEDULER_TICK_MS);
+  if (typeof tick.unref === 'function') tick.unref();
+  watchAccountChanges();
+}
+
+// One automatic pass at a time: a tick that lands while the previous one still awaits the feed or
+// a dialog does nothing ("prevent duplicate or concurrent update checks").
+let autoCheckInFlight = false;
+
+/**
+ * One periodic pass over BOTH channels, behind the schedule. Desktop: a newer build is announced
+ * once (persisted offer dedupe), or re-downloaded from cache when its prompt was postponed.
+ * Package (PyPI): the upgrade dialog — without this a user who keeps the app open across a backend
+ * release never hears about it.
+ */
+async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
+  if (autoCheckInFlight) return;
+  armAccountWatch(); // a watch that died (or never armed on a fresh install) is back within one tick
+  const state = scheduleStore.read(); // one read per pass; the record* writers re-read at their write
+  // Pass shape: 'scheduled' hits the feed and runs both halves; 'engine-retry' is the ENGINE
+  // channel's own backoff (its failure must not drag the desktop feed along); 'follow-up' finishes
+  // a half blocked by a dialog/download, from the cached answer, and never records failures —
+  // otherwise every 5-minute tick would inflate a streak the backoff never paced.
+  let pass = 'scheduled';
+  let feedBackoffOnly = false; // due only to retry the failing FEED: the engine keeps its own cadence
+  if (!bypassSchedule) {
+    const check = updateSchedule.shouldAutoCheck({ state, intervalMs: currentIntervalMs(), now: Date.now() });
+    if (check.due) {
+      feedBackoffOnly = check.reason === 'backoff';
+      followUpRetries = 0; // a fresh interval starts a fresh retry streak
+      log.info(`[update] periodic check due (${check.reason})`);
+    } else if (followUpDesktop || followUpPackage) {
+      // Follow-up outranks the engine retry: a stuck engine (held behind a pending desktop) stays
+      // "due" tick after tick, and the blocked DESKTOP work is exactly what unblocks it.
+      pass = 'follow-up';
+    } else if (updateSchedule.engineRetryDue({ state, now: Date.now() })) {
+      pass = 'engine-retry';
+      log.info('[update] engine check retry due (engine backoff)');
+    } else {
+      return;
+    }
+  }
+  autoCheckInFlight = true;
+  const desktopWasBlocked = followUpDesktop;
+  const packageWasBlocked = followUpPackage;
+  if (pass !== 'engine-retry') followUpDesktop = false; // an engine-retry never runs the desktop half: its debt is kept
+  followUpPackage = false;
+  try {
+    const last = state.lastResult || {};
+    // A follow-up works from the cached answer — guarded against a stale 'available' naming a
+    // version the running app already is (a scheduled pass always gets a fresh answer instead).
+    const cached = (pass === 'follow-up' && desktopWasBlocked && last.state === 'available'
+      && last.version && isNewer(app.getVersion(), last.version)) ? last.version : null;
+    const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion() : cached;
     if (desktopLatest) {
       // A newer release than the one on screen / being downloaded: close that
       // prompt (as "Later") or cancel that download, so the user only ever sees
@@ -253,24 +330,148 @@ function setupElectronAutoUpdater() {
         desktopDownloadToken.cancel();
         await desktopDownloadDone;
       }
-      if (desktopLatest !== offeredDesktopVersion) {
-        // A release we have not offered yet: same screen as at launch (desktop only, or desktop + engine).
-        // Not while a download is running, the restart prompt is up, or another update dialog is open.
-        if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
-          await offerDesktopUpdate(desktopLatest);
+      if (offerVersion && isNewer(offerVersion, desktopLatest)) {
+        log.info(`[electron-updater] ${desktopLatest} supersedes the open offer for ${offerVersion}`);
+        offerAbort.abort();
+        await offerClosed;
+        // The superseded offer settles and releases offerInProgress; its own failure was already
+        // logged by startOffer's caller and must not fail THIS pass (which announces the newer one).
+        await offerPromise.catch(() => {});
+      }
+      const action = updateSchedule.decideDesktopAction({
+        state: scheduleStore.read(), // fresh: the awaits above may have recorded an offer/adoption meanwhile
+        version: desktopLatest, isNewer,
+        deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
+      });
+      if (action === 'announce') {
+        // This exact version already on screen or on its way is NOT a debt — re-arming follow-up
+        // for it would spin a pass every tick (starving the engine retry) for nothing. A NEWER
+        // version never lands here: the supersede above already closed the old window for it.
+        const alreadyHandling = (offerInProgress && desktopLatest === offerVersion)
+          || (desktopDownloadInFlight && desktopLatest === desktopDownloadVersion)
+          || (desktopRestartPromptOpen && desktopLatest === desktopPromptVersion);
+        if (alreadyHandling) {
+          // nothing owed
+        // Not while a window is up or a download is running — ONE update window, ever. The offer is
+        // LAUNCHED (through the one-window guard), not awaited: the dialog can sit for hours and
+        // must not freeze the scheduler.
+        } else if (!offerInProgress && !desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
+          startOffer(desktopLatest)
+            // The streak resets when the offer SUCCEEDS — never at launch, where a deterministically
+            // failing offer would reset itself every tick and the retry cap would never bite.
+            .then(() => { followUpRetries = 0; })
+            .catch((err) => {
+              log.warn(`[update] offer failed: ${err.message}`);
+              rearmFollowUp({ desktop: true }); // retried from the cache on a near tick, capped
+            })
+            // The engine debt is armed ONCE, when the dialog settles — not every tick under it.
+            .finally(() => { followUpPackage = true; });
+          return;
+        } else {
+          followUpDesktop = true; // a DIFFERENT window/download is up: retried on a near tick, not in a day
         }
-      } else if (!desktopDownloadInFlight && !desktopRestartPromptOpen && desktopLatest !== deferredDesktopVersion) {
-        // Offered already and the prompt was postponed: re-emit it from the cached download.
-        // (Skipped for a version the user deferred — the 90-minute reminder handles that one.)
-        downloadDesktopUpdateInBackground({ version: desktopLatest });
+      } else if (action === 'resume' && desktopDownloadedVersion !== desktopLatest
+          && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
+        // Announced this session (the user may have said "Update now") and the download was lost:
+        // continue it — no deferral, no reminder, nothing the user did not ask for. The watermark
+        // is still spent on landing, exactly like the original desktop-only announcement.
+        downloadDesktopUpdateInBackground({ version: desktopLatest, onDownloaded: recordOfferedWhenDownloaded(desktopLatest) });
+      } else if ((action === 'adopt' || action === 'redownload') && !desktopDownloadInFlight && !desktopRestartPromptOpen) {
+        adoptDesktopUpdateSilently(desktopLatest, action);
       }
     }
-    await checkPackageUpdateInBackground();
-  }, updateTest.checkIntervalMs() || UPDATE_CHECK_INTERVAL_MS);
+    // The engine half runs on scheduled passes (but not ones due only to the FEED's backoff — the
+    // engine is not what failed), on its own retry, and on a follow-up that owes it.
+    if ((pass === 'scheduled' && !feedBackoffOnly) || pass === 'engine-retry' || packageWasBlocked) {
+      const pkg = await checkPackageUpdateInBackground();
+      if (pkg === 'blocked') followUpPackage = true;
+      // 'offer-open': the offer's .finally re-arms the engine debt once, when its dialog closes.
+      // 'held': nothing owed — the hold lifts only via a restart, which re-checks the engine; an
+      // engine-RETRY that was held is paced forward so engineRetryDue stops firing every tick.
+      else if (pkg === 'held' && pass === 'engine-retry') scheduleStore.write(updateSchedule.recordEngineAttempt(scheduleStore.read(), { at: Date.now() }));
+      // The engine channel keeps its own streak (recordEngineFailure/engineRetryDue): a PyPI error
+      // retries on the engine backoff without sending the desktop feed back to the network — and a
+      // follow-up pass never records, it only finishes what a dialog blocked.
+      else if (pkg === 'failed' && pass !== 'follow-up') scheduleStore.write(updateSchedule.recordEngineFailure(scheduleStore.read(), { at: Date.now() }));
+      else if (pkg === 'ran' && (Number(scheduleStore.read().engineFailureCount) || 0) > 0) scheduleStore.write(updateSchedule.recordEngineSuccess(scheduleStore.read()));
+    }
+    followUpRetries = 0; // the pass completed without throwing
+  } catch (err) {
+    log.warn(`[update] periodic check failed: ${err.message}`);
+    // The debt this pass was carrying was not paid: give it back so a near tick retries it, capped.
+    rearmFollowUp({ desktop: desktopWasBlocked && pass !== 'engine-retry', pkg: packageWasBlocked });
+  } finally {
+    autoCheckInFlight = false;
+  }
 }
 
-// How often a long-running session re-checks both update channels.
-const UPDATE_CHECK_INTERVAL_MS = 20 * 60 * 1000;
+// A pass left work behind a transient blocker (an open update dialog, a running download): the next
+// tick finishes that half from the cached answer instead of waiting out the whole interval. One debt
+// flag per half — an engine-retry pass must not erase the desktop's, and vice versa.
+let followUpDesktop = false;
+let followUpPackage = false;
+
+// A deterministic error must not retry a debt every 5 minutes forever: after this many consecutive
+// FAILED passes the debt is dropped (logged) and the next regular interval starts clean. This CAPS
+// existing retries; any pass that completes resets the streak.
+const MAX_FOLLOW_UP_RETRIES = 3;
+let followUpRetries = 0;
+function rearmFollowUp({ desktop = false, pkg = false } = {}) {
+  if (++followUpRetries > MAX_FOLLOW_UP_RETRIES) {
+    log.warn(`[update] follow-up gave up after ${MAX_FOLLOW_UP_RETRIES} failed passes; waiting for the next interval`);
+    return;
+  }
+  if (desktop) followUpDesktop = true;
+  if (pkg) followUpPackage = true;
+}
+
+// ONE update window at a time, without freezing the scheduler under it: a tick LAUNCHES the offer
+// and moves on (engine checks, retries and follow-ups keep running while the dialog waits for the
+// user). `offerInProgress` is set synchronously — it closes the async gap before the offer turns
+// packageUpdateInFlight on. The open "Updates available" screen is closable when a newer release
+// supersedes it, the same pattern as the restart prompt (desktopPromptAbort) and the engine dialog
+// (supersedePackageDialog).
+let offerInProgress = false;
+let offerPromise = Promise.resolve();
+let offerAbort = null;        // AbortController of the open "Updates available" dialog
+let offerVersion = null;      // the version it shows
+let offerClosed = Promise.resolve();
+
+/** The desktop-only announcement is spent only when its download LANDS (see offerDesktopUpdate). */
+function recordOfferedWhenDownloaded(version) {
+  return () => scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version }));
+}
+
+/**
+ * Launch an offer, from any path: `offerInProgress` is set SYNCHRONOUSLY (closing the async gap
+ * before the offer turns packageUpdateInFlight on) and `offerPromise` is what a supersede awaits.
+ * Every offer must go through here — a bare offerDesktopUpdate() call is invisible to the
+ * one-window guard and to alreadyHandling, and re-creates the phantom follow-up loop.
+ */
+function startOffer(version) {
+  offerInProgress = true;
+  offerPromise = offerDesktopUpdate(version).finally(() => { offerInProgress = false; });
+  return offerPromise;
+}
+
+/**
+ * Take a desktop update WITHOUT announcing it (decideDesktopAction said 'adopt' or 'redownload') —
+ * the version was announced before a restart, or the feed regressed to an older (still
+ * newer-than-running) release after a pull. Deferred, exactly as if the user had said "Later":
+ * the download runs, applies on the next quit (autoInstallOnAppQuit), and the 90-minute reminder
+ * offers the restart — so a held engine always has a way forward. A fresh adoption is persisted
+ * (recordAdopted); a 'redownload' only resumes one recorded before.
+ */
+function adoptDesktopUpdateSilently(version, action) {
+  log.info(`[electron-updater] ${version} ${action === 'redownload'
+    ? 'was adopted before; resuming its download' : 'is not announceable (offered before, or a feed regression); downloading without a prompt'}`);
+  offeredDesktopVersion = version;
+  pendingDesktopVersion = version;
+  deferredDesktopVersion = version;
+  if (action === 'adopt') scheduleStore.write(updateSchedule.recordAdopted(scheduleStore.read(), { version }));
+  downloadDesktopUpdateInBackground({ promptOnReady: false, version });
+  readyReminder.start();
+}
 
 // True while the desktop "update ready" dialog is on screen (the package
 // check waits for it) / while a package check, its dialog or its upgrade is in
@@ -314,7 +515,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
     // desktop (it may need a Python pin, or a start contract, that only the new desktop knows) — an old desktop
     // upgrading it first is what left users stuck. So: no separate engine dialog until the desktop is current.
     log.info(`[uv] ${label} package check skipped: the desktop is updated first`);
-    return;
+    return 'held'; // the desktop goes first; a hold only lifts via a restart, which re-checks the engine itself
   }
   if (packageUpdateInFlight) {
     // A package dialog is on screen: if PyPI now has something newer than what it
@@ -327,18 +528,25 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       await packageCheckDone;
     } else {
       log.info(`[uv] ${label} package check skipped: previous check/upgrade still running`);
-      return;
+      // An open OFFER re-arms the engine debt itself when its dialog closes — re-arming here would
+      // spin a follow-up every tick under the dialog. Anything else is an ordinary transient block.
+      return offerInProgress ? 'offer-open' : 'blocked';
     }
   }
   if (desktopRestartPromptOpen) {
     log.info(`[uv] ${label} package check skipped: desktop restart prompt is open`);
-    return;
+    return 'blocked'; // transient: the scheduler retries on a near tick
   }
   packageUpdateInFlight = true;
   let done;
   packageCheckDone = new Promise((r) => { done = r; });
   try {
     log.info(`[uv] ${label} package check`);
+    // uv-manager swallows PyPI failures into null answers ("no update"), so a thrown error almost
+    // never reaches us — its failure counter is how THIS window reports an unreachable PyPI.
+    // Before/after comparison, not a shared flag: a concurrent lookup elsewhere cannot mask (only
+    // at worst duplicate) a failure that happened during this check.
+    const lookupFailuresBefore = uvManager.pypiLookupFailures || 0;
     await uvManager.checkForUpdatesInBackground(mainWindow, {
       onUnrecovered: (err) => showStartupErrorPanel(describeStartupFailure(err), { retryable: false }),
       sendStatus,
@@ -347,8 +555,10 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       cloudUrl: FLOWPAD_CLOUD_URL,
       compareWithPypi,
     });
+    return (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore ? 'failed' : 'ran';
   } catch (err) {
     log.warn(`[uv] ${label} package check failed: ${err.message}`);
+    return 'failed'; // the scheduler starts the ENGINE backoff — a transient PyPI failure is not a day's wait
   } finally {
     packageUpdateInFlight = false;
     done();
@@ -376,10 +586,103 @@ function pendingEnginePath() {
 const pendingEngineStore = {
   read() { try { return JSON.parse(fs.readFileSync(pendingEnginePath(), 'utf8')); } catch { return null; } },
   write(state) {
-    try { fs.writeFileSync(pendingEnginePath(), JSON.stringify(state), 'utf8'); } catch (err) { log.warn(`[update] could not save the pending engine version: ${err.message}`); }
+    try { atomicWrite(pendingEnginePath(), JSON.stringify(state)); } catch (err) { log.warn(`[update] could not save the pending engine version: ${err.message}`); }
   },
   clear() { try { fs.rmSync(pendingEnginePath(), { force: true }); } catch { /* best effort */ } },
 };
+
+// FLOWPAD-2308: the persisted check schedule — when the last check happened and what it answered,
+// the failure streak, the last version announced. update-schedule.js owns the shape and every decision.
+function schedulePath() { return path.join(app.getPath('userData'), updateSchedule.SCHEDULE_FILE); }
+const scheduleStore = {
+  read() { return updateSchedule.readScheduleState((p) => fs.readFileSync(p, 'utf8'), schedulePath()); },
+  write(state) {
+    try { updateSchedule.writeScheduleState((p, text) => atomicWrite(p, text), schedulePath(), state); }
+    catch (err) { log.warn(`[update] could not save the update schedule: ${err.message}`); }
+  },
+};
+// tmp + rename, the same pattern as the backend's app_config writes: a crash mid-write leaves the
+// previous file, never a truncated one. The tmp name is unique (overlapping writers must not race
+// on one name), and a failed rename does not leave it behind.
+function atomicWrite(p, text) {
+  const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text, 'utf8');
+    try {
+      fs.renameSync(tmp, p);
+    } catch (err) {
+      // Only a lock held by another process (Windows anti-virus / indexer) is worth the in-place
+      // overwrite — the pre-PR behavior. Anything else (ENOSPC, EROFS…) would fail the overwrite
+      // too, and half-writing the target is exactly what this function exists to prevent.
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
+      fs.writeFileSync(p, text, 'utf8');
+    }
+  } finally {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+  }
+}
+
+// The account the schedule follows: the hub-validated email the backend writes to the instance's
+// config.json on login/logout/switch. Locally editable, but editing it only changes this machine's
+// own check cadence.
+const currentAccountEmail = () => updateSchedule.readAccountEmail((p) => fs.readFileSync(p, 'utf8'), path.join(INSTANCE_DIR, 'config.json'));
+const currentIntervalMs = () => updateSchedule.intervalForEmail(currentAccountEmail());
+
+/**
+ * Login, logout and an account switch rewrite config.json (atomically, via os.replace — so the
+ * DIRECTORY is watched; a watch on the file itself dies with the first replace). An interval-class
+ * change re-evaluates the schedule right away; a missed event only waits for the next tick, which
+ * re-reads the email anyway.
+ */
+// The watch callback, kept reachable at module level: tests drive it directly, because the OS's
+// event delivery (fs.watch arming is itself async) is the one part that cannot be awaited deterministically.
+let accountWatchEvent = null;
+// In the update-cycle harness the debounce is zero so tests never wait on the wall clock.
+const ACCOUNT_DEBOUNCE_MS = updateTest.isEnabled() ? 0 : 500;
+let accountWatchInstalled = false;
+function watchAccountChanges() {
+  if (accountWatchInstalled) return; // a re-install would orphan the previous handler's live debounce
+  accountWatchInstalled = true;
+  let wasInternal = updateSchedule.isInternalEmail(currentAccountEmail());
+  let debounce = null;
+  accountWatchEvent = (filename) => {
+    if (filename && filename !== 'config.json') return;
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      const internal = updateSchedule.isInternalEmail(currentAccountEmail());
+      if (internal === wasInternal) return;
+      wasInternal = internal;
+      log.info(`[update] account change: update checks now run ${internal ? 'hourly' : 'daily'}`);
+      runScheduledUpdateCheck({ bypassSchedule: !!updateTest.checkIntervalMs() }) // the harness interval bypasses the schedule here too
+        .catch((err) => log.warn(`[update] account-change pass failed: ${err.message}`));
+    }, ACCOUNT_DEBOUNCE_MS);
+    if (typeof debounce.unref === 'function') debounce.unref();
+  };
+  armAccountWatch();
+}
+
+// The live fs.watch handle, re-armed by every tick when it is down: on a fresh install the instance
+// dir may not exist yet, and on Windows deleting the watched dir raises an async 'error' that —
+// without a listener — would CRASH the main process. A dead watch is back within one tick; the
+// per-tick email re-read keeps the schedule correct meanwhile.
+let accountWatcher = null;
+function armAccountWatch() {
+  if (accountWatcher || !accountWatchEvent) return;
+  try {
+    fs.mkdirSync(INSTANCE_DIR, { recursive: true });
+    const watcher = fs.watch(INSTANCE_DIR, (eventType, filename) => accountWatchEvent(filename));
+    watcher.on('error', (err) => {
+      log.warn(`[update] account watch stopped (${err.message}); re-armed on the next tick`);
+      try { watcher.close(); } catch { /* already dead */ }
+      if (accountWatcher === watcher) accountWatcher = null;
+    });
+    if (typeof watcher.unref === 'function') watcher.unref(); // never keeps the app alive
+    accountWatcher = watcher;
+  } catch (err) {
+    accountWatcher = null;
+    log.warn(`[update] not watching for account changes (${err.message}); re-armed on the next tick`);
+  }
+}
 
 // "Update ready — restart now?" offered again every 90 minutes to a user who said Later (update-plan.js).
 const readyReminder = createReadyReminder({
@@ -463,16 +766,41 @@ async function showDesktopReadyPrompt(version) {
  *   "Update now" → ask to restart as soon as the download is done.   "Later" → ask every 90 minutes.
  */
 async function offerDesktopUpdate(desktopLatest) {
-  offeredDesktopVersion = desktopLatest;
+  offeredDesktopVersion = desktopLatest; // session dedupe is immediate; the persisted watermark waits for the screen
   pendingDesktopVersion = desktopLatest;
-  const engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
+  let engineStatus = null;
+  let engineStatusUnknown = false;
+  const lookupFailuresBefore = (uvManager && uvManager.pypiLookupFailures) || 0;
+  try {
+    engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
+  } catch (err) {
+    // resolveCompatibleEngineVersion inside the status can throw: fall back to the desktop-only
+    // offer — the desktop update must not be lost to an engine-status hiccup.
+    engineStatusUnknown = true;
+    log.warn(`[update] engine status unavailable for the offer: ${err.message}`);
+  }
+  if (uvManager && (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore) engineStatusUnknown = true;
   if (decideOffer({ desktopLatest, engineStatus }) !== 'both') {
-    downloadDesktopUpdateInBackground({ version: desktopLatest }); // desktop only: download, then the restart prompt
+    // An engine version agreed alongside an earlier, withdrawn offer must not ride this desktop —
+    // but only when we KNOW there is no engine to offer; an unanswered PyPI is not a withdrawal.
+    if (!engineStatusUnknown) pendingEngineStore.clear();
+    // Desktop only: its "announcement" is the download + ready prompt, so the watermark is spent
+    // only when the download LANDS — a failed or interrupted one leaves the version announceable,
+    // the same as a 'both' screen nobody answered.
+    downloadDesktopUpdateInBackground({ version: desktopLatest, onDownloaded: recordOfferedWhenDownloaded(desktopLatest) });
     return 'desktop';
   }
   savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
   uvManager.deferPackageVersion(engineStatus.latestVersion); // no separate engine dialog for this version
   packageUpdateInFlight = true; // one update dialog at a time
+  // Abortable: a newer release found while this screen waits closes it and shows its own instead
+  // (the restart prompt and the engine dialog behave the same way). The controller is LOCAL: the
+  // checks below must read this dialog's own signal, whatever offerAbort points at by then.
+  const abort = new AbortController();
+  offerAbort = abort;
+  offerVersion = desktopLatest;
+  let closeOffer;
+  offerClosed = new Promise((r) => { closeOffer = r; });
   let response;
   try {
     response = updateTest.answerFor('both', {
@@ -489,10 +817,24 @@ async function offerDesktopUpdate(desktopLatest) {
       buttons: ['Update now', 'Later'],
       defaultId: 0,
       cancelId: 1,
+      signal: abort.signal,
     }));
   } finally {
     packageUpdateInFlight = false;
+    offerVersion = null;
+    closeOffer();
   }
+  if (abort.signal.aborted) {
+    // Closed by a newer release, not answered: nothing is spent — the new offer records itself —
+    // and the engine state saved for THIS offer is withdrawn with it (nothing was agreed).
+    log.info(`[electron-updater] the offer for ${desktopLatest} closed: superseded by a newer release`);
+    pendingEngineStore.clear();
+    uvManager.undeferPackageVersion(engineStatus.latestVersion);
+    return 'superseded';
+  }
+  // The screen was shown (or scripted): only now is the announcement spent — a crash or a throw
+  // before the dialog must not burn the version.
+  scheduleStore.write(updateSchedule.recordOffered(scheduleStore.read(), { version: desktopLatest }));
   if (response === 0) {
     downloadDesktopUpdateInBackground({ version: desktopLatest }); // prompt to restart as soon as it is ready
   } else {
@@ -509,17 +851,29 @@ async function offerDesktopUpdate(desktopLatest) {
  * decide whether to fold the desktop update into the pre-start prompt.
  */
 async function getDesktopUpdateVersion() {
-  if (!app.isPackaged || process.windowsStore) return setDesktopStatus({ state: 'unsupported' }).version;
+  if (!app.isPackaged || process.windowsStore) return recordCheck({ state: 'unsupported' }).version;
   try {
     const result = await autoUpdater.checkForUpdates();
-    if (!result) return setDesktopStatus({ state: 'unsupported' }).version; // the updater is inactive
+    if (!result) return recordCheck({ state: 'unsupported' }).version; // the updater is inactive
     const latest = result.updateInfo && result.updateInfo.version;
-    if (!latest) return setDesktopStatus({ state: 'unknown', reason: 'the update feed returned no version' }).version;
-    return setDesktopStatus(isNewer(app.getVersion(), latest) ? { state: 'available', version: latest } : { state: 'current' }).version;
+    if (!latest) return recordCheck({ state: 'unknown', reason: 'the update feed returned no version' }).version;
+    return recordCheck(isNewer(app.getVersion(), latest) ? { state: 'available', version: latest } : { state: 'current' }).version;
   } catch (err) {
     log.warn(`[electron-updater] desktop update check failed: ${err.message}`);
-    return setDesktopStatus({ state: 'unknown', reason: `update check failed: ${err.message}` }).version;
+    return recordCheck({ state: 'unknown', reason: `update check failed: ${err.message}` }).version;
   }
+}
+
+/**
+ * setDesktopStatus + feed the schedule: every check — launch, periodic or recovery — anchors the
+ * cadence; a failed one starts the backoff instead (FLOWPAD-2308).
+ */
+function recordCheck(status) {
+  const answered = setDesktopStatus(status);
+  scheduleStore.write(answered.state === 'unknown'
+    ? updateSchedule.recordFailure(scheduleStore.read(), { at: Date.now() })
+    : updateSchedule.recordSuccess(scheduleStore.read(), { result: answered, at: Date.now() }));
+  return answered;
 }
 
 // What the last desktop update check found — the input of engineChangePolicy (update-plan.js). 'unknown' until a
@@ -556,7 +910,7 @@ function engineChangeAllowed(context, { mustInstall = false } = {}) {
  * promptOnReady=false → deferred: no prompt; it applies on the next quit/restart
  *                       (autoInstallOnAppQuit), so the user isn't nagged.
  */
-function downloadDesktopUpdateInBackground({ promptOnReady = true, version = null } = {}) {
+function downloadDesktopUpdateInBackground({ promptOnReady = true, version = null, onDownloaded = null } = {}) {
   if (desktopDownloadInFlight) {
     log.info('[electron-updater] download already in progress; not restarting it');
     return;
@@ -567,6 +921,7 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
   suppressDesktopRestartPrompt = !promptOnReady;
   desktopDownloadDone = autoUpdater
     .downloadUpdate(desktopDownloadToken)
+    .then(() => { if (onDownloaded) onDownloaded(); })
     .catch((err) => {
       if (desktopDownloadToken && desktopDownloadToken.cancelled) {
         log.info(`[electron-updater] download of ${version || 'update'} cancelled (superseded)`);
@@ -778,7 +1133,37 @@ let backendReady = false;
 // what the failure panel offers (update-recovery.js). All state files live in userData / the instance dir.
 let journal = null;
 const startGuard = createStartGuard({ log });
+// Armed in startApp — scheduled: a recent 'current' answer is reused instead of the network
+// (update-schedule.planLaunchCheck), so a restart does not reset the check interval. The recovery
+// paths call forcedLaunchDesktopCheck(): their "Update FlowPad" offer is the way out of a broken
+// install and never depends on the schedule.
 let launchDesktopCheck = Promise.resolve(null);
+let launchDesktopCheckRan = false;
+function boundedDesktopCheck() {
+  launchDesktopCheckRan = true;
+  return updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log, ms: updateTest.checkBoundMs() });
+}
+/**
+ * The scheduled launch check: the real one when due or useful, the seeded persisted answer otherwise.
+ * The seed can be up to one interval old. That is safe for the ENGINE gate (engineChangeAllowed):
+ * the gate only orders updates (desktop first when one is pending) — the hard guarantee that no
+ * engine lands that this desktop cannot run is the compat contract, enforced on every install by
+ * uv-manager's resolveCompatibleEngineVersion / _assertCandidateCompatible.
+ */
+function startLaunchDesktopCheck() {
+  const plan = updateTest.isEnabled()
+    ? { run: true, reason: 'update-test' } // the update-cycle harness drives the cadence itself
+    : updateSchedule.planLaunchCheck({ state: scheduleStore.read(), intervalMs: currentIntervalMs(), now: Date.now() });
+  if (plan.run) return boundedDesktopCheck();
+  log.info(`[update] launch desktop check skipped (${plan.reason})${plan.seed ? '; reusing the last answer' : ''}`);
+  if (plan.seed) setDesktopStatus(plan.seed);
+  return Promise.resolve(null);
+}
+/** The recovery panels' check: runs for real if the scheduled one was skipped. */
+function forcedLaunchDesktopCheck() {
+  if (!launchDesktopCheckRan) launchDesktopCheck = boundedDesktopCheck();
+  return launchDesktopCheck;
+}
 function markPhase(phase, extra) { if (journal) journal.mark(phase, extra); }
 function recoveryStatePath() { return path.join(app.getPath('userData'), updateRecovery.RECOVERY_FILE); }
 function readRecoveryState() { return updateRecovery.readRecoveryState((p) => fs.readFileSync(p, 'utf8'), recoveryStatePath()); }
@@ -1563,10 +1948,11 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
     const blockedModule = record ? record.module : (match && match.module);
     const moduleRepairable = !blockedModule || isInterpreterModule(blockedModule);
     const repairable = process.platform === 'win32' && !!uvManager && fatalFailure.isRepairableKind(kind) && moduleRepairable && canAttemptRepair(state, versions);
-    // The desktop update as a way out: the launch-time check already ran (bounded, no backend needed);
-    // offered once per target version and failure fingerprint, never as a downgrade.
+    // The desktop update as a way out: bounded, no backend needed; forced — a launch check the
+    // schedule skipped is run now, the failure panel never trusts a stale answer. Offered once per
+    // target version and failure fingerprint, never as a downgrade.
     const fingerprintKey = failureFingerprintKey(record);
-    const latest = await launchDesktopCheck;
+    const latest = await forcedLaunchDesktopCheck();
     const plan = updateRecovery.planRecoveryUpdate({ state: readRecoveryState(), appVersion: app.getVersion(), latestVersion: latest, fingerprint: fingerprintKey, isNewer });
     const updateVersion = plan.action === 'offer' ? plan.version : null;
 
@@ -1734,7 +2120,7 @@ async function runRecoveryUpdate({ version, fingerprint }) {
 async function showRecoveryEntry(why) {
   let extraDetail = '';
   for (;;) {
-    const latest = await launchDesktopCheck;
+    const latest = await forcedLaunchDesktopCheck(); // a skipped launch check is run for real: recovery never trusts a stale answer
     const fingerprintKey = `recovery|${app.getVersion()}`;
     const plan = updateRecovery.planRecoveryUpdate({ state: readRecoveryState(), appVersion: app.getVersion(), latestVersion: latest, fingerprint: fingerprintKey, isNewer });
     const updateVersion = plan.action === 'offer' ? plan.version : null;
@@ -1893,7 +2279,15 @@ async function installAndStartBackend({ quiet = false } = {}) {
       if (isQuitting) return { ok: false };
 
       if (desktopLatest) {
-        await offerDesktopUpdate(desktopLatest);
+        // One decision ladder with the periodic tick (update-schedule.decideDesktopAction); at this
+        // point in startup nothing can be deferred, offered, downloading or on screen yet, so no
+        // local blockers and never 'resume'/'ignore' — only announce, adopt or redownload.
+        const action = updateSchedule.decideDesktopAction({
+          state: scheduleStore.read(), version: desktopLatest, isNewer,
+          deferredVersion: deferredDesktopVersion, offeredThisSession: offeredDesktopVersion,
+        });
+        if (action === 'announce') await startOffer(desktopLatest); // through the one-window guard, like the tick's offers
+        else if (action !== 'ignore') adoptDesktopUpdateSilently(desktopLatest, action);
       } else if (engineChangeAllowed('pre-start engine prompt') === 'allow') {
         // No desktop update (and the check did answer) → the standalone engine prompt handles the "newer on
         // PyPI" case (and no-ops otherwise). Reads the installed version from `_version.py`, so it works even
@@ -2083,12 +2477,14 @@ async function startApp() {
     if (r.installed) log.info(`[update-recovery] running ${app.getVersion()} after the recovery update from ${r.installed.fromVersion} (${r.installed.at})`);
   }
 
-  // Kick off the desktop wrapper update check immediately at launch — runs in
-  // parallel with backend startup and is a no-op when the app isn't packaged.
+  // Kick off the desktop wrapper update check at launch — runs in parallel with backend startup
+  // and is a no-op when the app isn't packaged. Scheduled (FLOWPAD-2308): when a recent check
+  // answered 'current', the persisted answer is reused and the network is not touched.
   setupElectronAutoUpdater();
   // The check itself, started now, bounded, and independent of the backend: a backend that cannot start
-  // must not hide the way out, and the failure panel must not wait on a slow or absent network for it.
-  launchDesktopCheck = updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log, ms: updateTest.checkBoundMs() });
+  // must not hide the way out, and the failure panel must not wait on a slow or absent network for it
+  // (the recovery paths force the real check if the schedule skipped it here).
+  launchDesktopCheck = startLaunchDesktopCheck();
 
   createWindow();
 

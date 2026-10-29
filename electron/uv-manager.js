@@ -1515,11 +1515,15 @@ class UvManager {
     if (IS_WIN) {
       try {
         const escaped = venvDir.replace(/'/g, "''");
+        // Get-Process, not Get-CimInstance: the WMI scan of every process took >8s cold on a busy
+        // machine (log 2026-10-05 22:23: the drain timed out, nothing was killed, and uv then hit
+        // "failed to remove directory …\Scripts: Access is denied"). Get-Process reads the same
+        // Path without the WMI service; both returned identical pids on a real Windows (VM-verified).
         const { stdout } = await execFileAsync('powershell.exe', [
           '-NoProfile', '-Command',
-          `Get-CimInstance Win32_Process | ` +
-          `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
-          `Select-Object -ExpandProperty ProcessId`,
+          `Get-Process | ` +
+          `Where-Object { $_.Path -like '${escaped}\\*' } | ` +
+          `Select-Object -ExpandProperty Id`,
         ], { timeout: 8000, windowsHide: true, env: { ...process.env, PSModulePath: windowsPowerShellModulePath() } });
         const pids = stdout.split(/\r?\n/)
           .map((s) => parseInt(s.trim(), 10))
@@ -2557,11 +2561,18 @@ class UvManager {
       });
       if (!res.ok) {
         this.log.warn(`[uv] PyPI version lookup failed: HTTP ${res.status}`);
+        // "No update" and "PyPI down" both answer null — the COUNTER tells them apart. A counter,
+        // not a flag: concurrent lookups (the offer's own status call, the launch path) can only
+        // add failures, never mask one that happened during the caller's window.
+        this.pypiLookupFailures = (this.pypiLookupFailures || 0) + 1;
         return null;
       }
-      return (await res.json()) || null;
+      const data = (await res.json()) || null;
+      if (data === null) this.pypiLookupFailures = (this.pypiLookupFailures || 0) + 1;
+      return data;
     } catch (err) {
       this.log.warn(`[uv] PyPI version lookup failed: ${err.message}`);
+      this.pypiLookupFailures = (this.pypiLookupFailures || 0) + 1;
       return null;
     }
   }
@@ -2779,16 +2790,16 @@ class UvManager {
   }
 
   /**
-   * Run a background update check after the UI is loaded.
-   * Non-blocking — failures are logged and silently ignored.
-   * Shows a native OS dialog if an update is required.
-   */
-  /**
    * Remember that the user answered "Later" to `version` (from any dialog), so
    * the periodic check does not re-offer it this session.
    */
   deferPackageVersion(version) {
     if (version) this._deferredPackageVersion = version;
+  }
+
+  /** Undo deferPackageVersion for a version whose offer was withdrawn (superseded, never answered). */
+  undeferPackageVersion(version) {
+    if (version && this._deferredPackageVersion === version) this._deferredPackageVersion = null;
   }
 
   /** @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} fn */
@@ -2806,6 +2817,11 @@ class UvManager {
     if (this._packageDialog) this._packageDialog.abort.abort();
   }
 
+  /**
+   * Run a background update check after the UI is loaded.
+   * Non-blocking — failures are logged and silently ignored.
+   * Shows a native OS dialog if an update is required.
+   */
   async checkForUpdatesInBackground(
     mainWindow,
     { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }

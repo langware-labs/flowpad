@@ -47,7 +47,8 @@ verification gates, `appx.identityName/publisher/publisherDisplayName` from the 
 
 In the app, `process.windowsStore` is true inside an AppX. `main.js` then skips
 electron-updater entirely (the Store delivers desktop updates; electron-updater does not
-support AppX) while the hourly PyPI package check keeps running.
+support AppX) while the periodic PyPI package check keeps running (per account: hourly for
+@langware.ai, daily otherwise, with backoff — see `update-schedule.js`).
 
 CI: run the workflow with `store_package=true`; the `build-windows-store` job builds, checks
 the package is unsigned and that the manifest `<Identity>` matches the variables, and
