@@ -16,11 +16,16 @@ const h = vi.hoisted(() => ({
   setCredential: vi.fn(),
   invalidate: vi.fn(() => Promise.resolve()),
   del: vi.fn(() => Promise.resolve()),
+  aliases: {} as Record<string, string>,
 }));
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useSetPayingProvider: () => ({ mutateAsync: h.mutateAsync, isPending: false }),
   useInvalidateBudgets: () => h.invalidate,
+}));
+// The note under the key field reads the row's own redirects; this suite has no query client.
+vi.mock('@src/components/llm-endpoints/use-llm-endpoints', () => ({
+  useLlmEndpoint: () => ({ filters: { aliases: h.aliases } }),
 }));
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -52,6 +57,7 @@ const OPENROUTER_KEY = `sk-or-v1-${'a'.repeat(40)}`;
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  h.aliases = {};
 });
 
 describe('PayingProviderSetup — no budget yet', () => {
@@ -339,5 +345,37 @@ describe('PayingProviderSetup — an existing shared-pool chain', () => {
     expect(screen.getByTestId('org-root-legacy-chain')).toBeTruthy();
     expect(screen.queryByTestId('org-root-setup')).toBeNull();
     expect(screen.queryByTestId('org-root-key')).toBeNull();
+  });
+});
+
+describe("PayingProviderSetup — the provider's suggested redirects", () => {
+  const root = {
+    endpoint_id: ENDPOINT_TYPEID,
+    is_root: true,
+    provider: 'vertex',
+    credential_hint: 'service account llm@acme-prod.iam.gserviceaccount.com',
+    can_set_credential: true,
+    can_set_up_budget: true,
+  };
+
+  it('says what was suggested once the key is stored, naming the families it redirects', () => {
+    h.aliases = { 'anthropic/claude-opus-*': 'google/gemini-3.1-pro-preview', 'claude-*': 'google/gemini-3.5-flash' };
+    render(<PayingProviderSetup orgId={ORG_ID} org={root} />);
+
+    const note = screen.getByTestId('org-root-redirects').textContent ?? '';
+    expect(note).toMatch(/Suggested for this provider/);
+    expect(note).toContain('claude');
+    expect(note).toContain('gemini');
+    expect(note).toMatch(/Advanced/);
+  });
+
+  it('shows nothing when the row carries no cross-family redirect, or before a key is stored', () => {
+    render(<PayingProviderSetup orgId={ORG_ID} org={root} />);
+    expect(screen.queryByTestId('org-root-redirects')).toBeNull();
+    cleanup();
+
+    h.aliases = { 'claude-*': 'google/gemini-3.5-flash' };
+    render(<PayingProviderSetup orgId={ORG_ID} org={{ ...root, credential_hint: '' }} />);
+    expect(screen.queryByTestId('org-root-redirects')).toBeNull();
   });
 });
