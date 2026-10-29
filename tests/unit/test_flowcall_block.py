@@ -116,19 +116,19 @@ def test_legacy_output_spelling_and_conflict():
 @pytest.mark.asyncio
 async def test_authority_input_output_and_relative_import(tmp_path):
     spec, ctx = block(tmp_path, "from .helper import inc\nfrom flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue\ndef call(input, *, context):\n return ReturnedValue.satisfied(value=[inc(x) for x in input])\n", input=["int"], output=["int"])
-    (ctx.asset_folder / "helper.py").write_text("def inc(x): return x + 1\n")
+    helper = ctx.asset_folder / "helper.py"
+    helper.write_text("def inc(x): return x + 1\n")
+    # The module cache is keyed on (path, mtime_ns, size); the rewrite below keeps the SIZE, and on a
+    # fast machine it can land in the SAME kernel clock tick as this write (Linux file stamps move
+    # per jiffy, first seen on Blacksmith runners) — pin v1's stamp one tick back BEFORE the first
+    # import reads it, so the rewrite's own stamp can never equal the cached key.
+    st = helper.stat()
+    os.utime(helper, ns=(st.st_atime_ns, st.st_mtime_ns - 1))
     assert (await run_op(spec, input=[1], context=ctx)).exit_code == ExitCode.REFUSED
     with pytest.raises(DeclaredShapeError):
         await run_op(spec, input=["bad"], context=ctx, trusted=True)
     assert (await run_op(spec, input=[1], context=ctx, trusted=True)).value == [2]
     assert (await run_op(spec, input=[], context=ctx, trusted=True)).value == []
-    # The module cache is keyed on (path, mtime_ns, size) and this rewrite keeps the SIZE: on a fast
-    # machine both writes can land in the same kernel clock tick and the OLD helper is served (first
-    # seen on Blacksmith runners). Pin the first write's stamp one tick back so the edit must move
-    # the key — the mechanism under test is "a changed file re-imports", not the tick width.
-    helper = ctx.asset_folder / "helper.py"
-    st = helper.stat()
-    os.utime(helper, ns=(st.st_atime_ns, st.st_mtime_ns - 1))
     helper.write_text("def inc(x): return x + 2\n")
     assert (await run_op(spec, input=[1], context=ctx, trusted=True)).value == [3]
 
