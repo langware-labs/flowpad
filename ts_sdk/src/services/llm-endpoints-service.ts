@@ -52,9 +52,18 @@ export interface LLMChainRemaining {
   resets_at: number | null;
 }
 
+/**
+ * One hop of a chain report. A hop the caller may not `read` is narrowed by the hub: the entry's
+ * direct source keeps only `id`, `source_kind`, `scope_name` and `is_root` (every other field is
+ * absent), and a deeper one is left out of `hops`, `paths` and `missing_sources` altogether.
+ */
 export interface LLMChainHop {
   id: string;
   name: string;
+  /** What the hop is in the scope ladder: `global` | `organization` | `team` | `user`. */
+  source_kind?: string | null;
+  /** The team or organization whose pool this hop is. */
+  scope_name?: string | null;
   provider: string | null;
   is_root: boolean;
   has_credential: boolean;
@@ -236,6 +245,13 @@ export class LlmEndpointsService {
   ): Promise<LLMEndpoint> {
     const info = action('allocate', parentId, 'POST');
     info.bodyParameters = { ...body };
+    return dataManager.callAction<undefined, LLMEndpoint>(info);
+  }
+
+  /** Change only the endpoint's name (the hub's `rename`): open to the budget's holder, who may not `update`. */
+  rename(id: string, name: string): Promise<LLMEndpoint> {
+    const info = action('rename', id, 'POST');
+    info.bodyParameters = { name };
     return dataManager.callAction<undefined, LLMEndpoint>(info);
   }
 

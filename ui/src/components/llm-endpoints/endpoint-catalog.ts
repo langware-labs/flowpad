@@ -240,7 +240,7 @@ export function draftFrom(entity: LLMEndpoint, kind?: LLMEndpointKind | null): E
  */
 export function validateDraft(draft: EndpointDraft): MessageDescriptor[] {
   const problems: MessageDescriptor[] = [];
-  if (!draft.name.trim()) problems.push(msg`Name is required.`);
+  // The name is optional: an unnamed source is labelled by who funds it (`useSourceLabel`).
 
   if (draft.kind === 'root') {
     if (!isProvider(draft.provider)) problems.push(msg`Pick a provider.`);

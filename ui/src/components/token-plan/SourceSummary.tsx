@@ -7,7 +7,7 @@
 import type { LLMEndpoint, LLMUsageReport } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQueries } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 
 import { TimeCohortTabs } from '@src/components/cost-dashboard/TimeCohortTabs';
@@ -36,6 +36,8 @@ export function SourceSummary({
   breakdown,
   breakdownTitle,
   onOpen,
+  subtitle,
+  afterBudget,
 }: {
   title: string;
   /** What the budget and consumption are of: one selected row, or every source. */
@@ -44,6 +46,10 @@ export function SourceSummary({
   breakdown: readonly SummaryItem[];
   breakdownTitle: string;
   onOpen: (endpoint: LLMEndpoint) => void;
+  /** The line under the headline: the window the limit is judged over and when it resets. */
+  subtitle?: string | null;
+  /** Rendered between the budget and consumption (the selected row's "Funded through"). */
+  afterBudget?: ReactNode;
 }) {
   const { t } = useLingui();
   const [cohort, setCohort] = useState<TimeCohort>('today');
@@ -89,6 +95,11 @@ export function SourceSummary({
             <Trans>No limit</Trans>
           )}
         </div>
+        {budget && subtitle && (
+          <div className="mt-1 text-xs text-muted-foreground" data-testid="budget-subtitle">
+            {subtitle}
+          </div>
+        )}
         {budget && (
           <div className="mt-3 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-primary/20">
             <div
@@ -103,6 +114,8 @@ export function SourceSummary({
           </p>
         )}
       </section>
+
+      {afterBudget}
 
       <section className="space-y-3" data-testid="consumption-panel">
         <div className="flex flex-wrap items-center justify-between gap-2">

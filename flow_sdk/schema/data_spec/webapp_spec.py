@@ -166,3 +166,30 @@ def effective_mounts(mounts: list, services: list = ()) -> list:
 
     An app that declares only ``services`` is an API: it has no page, so no mount is implied."""
     return list(mounts) or ([] if services else [WebappMountSpec()])
+
+
+#: What a known page error means for opening the app.
+ErrorAction = Literal["ignore", "recover"]
+
+
+class WebappErrorRule(DataSpec):
+    """One entry of ``setup/webapp_errors.json``: a page error matched by ``pattern`` is decided at once.
+
+    ``ignore`` opens the app despite it; ``recover`` sends the open to recovery with ``fix`` as its hint.
+    The recover agent appends a rule when it learns one, so the next match needs no agent."""
+
+    spec_kind: ClassVar[str] = "webapp.error_rule"
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    #: The error's family: ``js_syntax``, ``js_runtime``, ``console``, ``request``, ``not_answering``.
+    type: str = ""
+    #: Where it comes from: ``page``, ``console``, ``network``, ``server``.
+    source: str = ""
+    #: A Python regex searched in the error's text.
+    pattern: str
+    action: ErrorAction = "recover"
+    #: What fixes it, for the recover step (``restart`` restarts the server without an agent).
+    fix: str = ""
+    learned_at: str = ""
+    seen: int = 0

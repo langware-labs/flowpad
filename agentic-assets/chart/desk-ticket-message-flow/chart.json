@@ -1,0 +1,20 @@
+{"participants": [
+  {"id": "asker", "label": "Asker's Flowpad", "sublabel": "desktop app (Ami)", "icon": "lucide.user", "note": "flow_sdk backend on the asker's machine"},
+  {"id": "outbox", "label": "Outbox", "sublabel": "Conversation.deliver", "icon": "lucide.send", "note": "flow_sdk/builtin/conversation.py:788"},
+  {"id": "hub", "label": "Flowpad hub", "sublabel": "app.flowpad.ai", "icon": "lucide.cloud"},
+  {"id": "staff", "label": "Staff's Flowpad", "sublabel": "desk member's desktop (Eran)", "icon": "lucide.life-buoy"}],
+ "messages": [
+  {"id": "m1", "from": "asker", "to": "asker", "label": "write ticket + message locally", "note": "HELPDESK conversation, remote_project_id = desk queue, awaits_hub; message owed (outbound). ask_for_help_action.py _capture_conversation / diagnose/share.py _capture"},
+  {"id": "m2", "from": "asker", "to": "outbox", "label": "deliver() / kick_delivery()", "note": "also retried on startup, sign-in, reconnect (stream_inbox/catchup.py)"},
+  {"id": "m3", "from": "outbox", "to": "hub", "label": "POST project/<desk>/start_guest_conversation", "note": "stage 0, open_on_hub → _open_ticket; opening message rides along. ask_for_help_action.py:379"},
+  {"id": "m4", "from": "hub", "to": "hub", "label": "create ticket in desk queue", "note": "stamps kind=helpdesk, title (first line, 60 chars + …), initiated_by"},
+  {"id": "m5", "from": "hub", "to": "outbox", "label": "{id, title, initiated_by}", "style": "dashed", "note": "opening message mark_sent(); conv.remote = True"},
+  {"id": "m6", "from": "outbox", "to": "hub", "label": "POST conversation/<id>/add_message", "note": "every later message (e.g. the diagnosis), in order; body upload follows (_upload_body_and_finalize)"},
+  {"id": "m7", "from": "staff", "to": "staff", "label": "sees ticket in the desk queue", "note": "desk queue view; how the staffer is told a NEW ticket exists was not traced here"},
+  {"id": "m8", "from": "staff", "to": "hub", "label": "POST conversation/<id>/pickup", "note": "local pickup action relays it. flow_message_action.py:1585; the hub checks desk membership"},
+  {"id": "m9", "from": "hub", "to": "hub", "label": "add staffer to picked_up_by", "note": "conversation.py:299"},
+  {"id": "m10", "from": "staff", "to": "hub", "label": "GET conversation/<id> + messages", "note": "upsert kind=helpdesk metadata, then fetch messages (pickup materializes the ticket locally)"},
+  {"id": "m11", "from": "hub", "to": "staff", "label": "ticket + messages", "style": "dashed"},
+  {"id": "m12", "from": "staff", "to": "hub", "label": "reply: add_message", "note": "shown to the asker as the desk's display_name, not the staffer"},
+  {"id": "m13", "from": "hub", "to": "asker", "label": "WS: new message", "note": "hub_bridge persists it, bumps unread, notify_desktop → popup (hub_bridge.py:781)"},
+  {"id": "m14", "from": "asker", "to": "outbox", "label": "next message → same path as m6", "note": "after pickup the ticket is an ordinary conversation for both sides"}]}

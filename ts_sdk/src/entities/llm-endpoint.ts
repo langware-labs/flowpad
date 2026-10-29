@@ -155,6 +155,11 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     return !!this.expand?.allowed_actions && this.isAllowedAction('allocate' as never);
   }
 
+  /** The hub lets this caller change this endpoint's name (`rename`: its holder or an admin). */
+  get canRename(): boolean {
+    return !!this.expand?.allowed_actions && this.isAllowedAction('rename' as never);
+  }
+
   /** The caller's own budget (an allowance they hold), as the hub answers it. */
   get isMine(): boolean {
     return this.expand?.mine === true;
