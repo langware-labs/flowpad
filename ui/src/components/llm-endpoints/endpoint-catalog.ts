@@ -18,6 +18,9 @@ import {
 } from './filters-limits-forms';
 import { endpointTypeId } from './llm-endpoints-pointer';
 
+/** Mirrors hub `vertex.VERTEX_DEFAULT_BASE_URL`. */
+const VERTEX_BASE_URL = 'https://aiplatform.googleapis.com/v1';
+
 /**
  * A base URL must be http(s). This used to be imported from the data-sources
  * `provider-catalog`, which is gone — per-provider validators there became
@@ -39,7 +42,7 @@ export { ENDPOINT_TYPE, endpointIdFromTypeId, endpointTypeId } from './llm-endpo
  * The endpoint dialog's vocabulary and rules, as values and pure functions.
  *
  * **Hardcoded provider list, deliberately.** The hub's `LLMProvider` enum has
- * three members and no listing endpoint; a form needs a label, a default
+ * four members and no listing endpoint; a form needs a label, a default
  * `base_url` and a key placeholder per provider — none of which the hub ships.
  * Mirrors `hub providers.py` dialect defaults.
  *
@@ -86,7 +89,43 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     keyPlaceholder: 'sk-…',
     keyPrefix: 'sk-',
   },
+  {
+    // The key is a whole service-account JSON file, not a branded string: Vertex refuses a plain API
+    // key on Claude's `rawPredict`, so the JSON is the only credential that reaches every model.
+    id: 'vertex',
+    label: msg`Google Vertex AI`,
+    brand: 'Google Vertex AI',
+    defaultBaseUrl: VERTEX_BASE_URL,
+    keyPlaceholder: '{ "type": "service_account", … }',
+    keyPrefix: '{',
+  },
 ];
+
+/**
+ * The project a service-account JSON belongs to, or `null` when `key` is not one.
+ *
+ * A Vertex root's `base_url` has to name the project (`…/v1/projects/<id>/locations/global`), and
+ * the key file already carries it — so the URL is derived rather than asked for a second time.
+ */
+export function vertexProjectOf(key: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(key);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const sa = parsed as Record<string, unknown>;
+    const ok = sa.type === 'service_account' && sa.private_key && sa.client_email;
+    return ok && typeof sa.project_id === 'string' && sa.project_id ? sa.project_id : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The `base_url` a new root is created with: as given, except a Vertex root still on the bare
+ *  default, which gets the key's own project in the global location. */
+export function rootBaseUrl(provider: string, baseUrl: string, key: string): string {
+  if (provider !== 'vertex' || baseUrl.includes('/projects/')) return baseUrl;
+  const project = vertexProjectOf(key.trim());
+  return project ? `${VERTEX_BASE_URL}/projects/${project}/locations/global` : baseUrl;
+}
 
 /** The shortest a real provider key runs. Well under every provider's actual length — this catches
  *  a half-selected paste, not a key one character shy of some exact format. */
@@ -113,14 +152,21 @@ export function keyShapeProblem(provider: string | null | undefined, key: string
   const trimmed = key.trim();
   if (!spec || !trimmed) return null;
 
-  if (/\s/.test(trimmed)) {
-    return msg`This key contains a space or line break. It was probably copied along with the text around it.`;
+  // A whole JSON file: spaces and line breaks are part of it, and no prefix brands it.
+  if (spec.id === 'vertex') {
+    return vertexProjectOf(trimmed)
+      ? null
+      : msg`Paste the whole service-account JSON file from Google Cloud (IAM → Service accounts → Keys → JSON).`;
   }
   // Checked BEFORE the expected-prefix rule: OpenAI's `sk-` also prefixes the other two, so an
-  // OpenRouter key pasted into an OpenAI root passes that rule and must be caught by this one.
+  // OpenRouter key pasted into an OpenAI root passes that rule and must be caught by this one. And
+  // before the whitespace rule, so a Vertex JSON file pasted here is named, not called sloppy.
   const foreign = PROVIDERS.find((p) => p.id !== spec.id && p.keyPrefix !== 'sk-' && trimmed.startsWith(p.keyPrefix));
   if (foreign) {
     return msg`That looks like an ${foreign.brand} key. This endpoint calls ${spec.brand}, whose keys start with ${spec.keyPrefix}.`;
+  }
+  if (/\s/.test(trimmed)) {
+    return msg`This key contains a space or line break. It was probably copied along with the text around it.`;
   }
   if (!trimmed.startsWith(spec.keyPrefix)) {
     return msg`${spec.brand} keys start with ${spec.keyPrefix} — this one does not.`;
@@ -282,7 +328,7 @@ export function buildEntityJson(draft: EndpointDraft, editing: boolean): Record<
   };
   if (draft.kind === 'root' && !editing) {
     json.provider = draft.provider;
-    json.base_url = draft.base_url.trim();
+    json.base_url = rootBaseUrl(draft.provider, draft.base_url.trim(), draft.key);
   }
   return json;
 }

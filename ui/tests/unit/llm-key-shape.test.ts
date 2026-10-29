@@ -9,7 +9,7 @@
 import type { MessageDescriptor } from '@lingui/core';
 import { describe, expect, it } from 'vitest';
 
-import { keyShapeProblem } from '@src/components/llm-endpoints/endpoint-catalog';
+import { keyShapeProblem, rootBaseUrl } from '@src/components/llm-endpoints/endpoint-catalog';
 
 /** A `msg` descriptor keeps its template in `message` (`"That looks like an {0} key…"`) and the
  *  interpolated values alongside it, so an assertion about WHICH provider was named reads the
@@ -84,5 +84,46 @@ describe('keyShapeProblem — malformed', () => {
   it('reports a key cut short, which a half-selected paste produces', () => {
     const problem = keyShapeProblem('openrouter', 'sk-or-v1-abc');
     expect(problem?.message).toMatch(/cut short/i);
+  });
+});
+
+/** A Vertex key is a whole service-account JSON file: line breaks belong to it, no prefix brands it. */
+const VERTEX = JSON.stringify(
+  {
+    type: 'service_account',
+    project_id: 'acme-prod',
+    private_key: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n',
+    client_email: 'llm@acme-prod.iam.gserviceaccount.com',
+  },
+  null,
+  2,
+);
+
+describe('keyShapeProblem — Google Vertex AI', () => {
+  it('accepts a pretty-printed service-account JSON despite its line breaks', () => {
+    expect(keyShapeProblem('vertex', VERTEX)).toBeNull();
+  });
+
+  it('refuses something that is not a service-account file', () => {
+    expect(keyShapeProblem('vertex', OPENROUTER)?.message).toMatch(/service-account JSON/);
+    expect(keyShapeProblem('vertex', JSON.stringify({ type: 'authorized_user' }))?.message).toMatch(/service-account/);
+  });
+
+  it('names Vertex when its JSON is pasted into another provider', () => {
+    expect(said(keyShapeProblem('openrouter', VERTEX))).toContain('Google Vertex AI');
+  });
+});
+
+describe('rootBaseUrl', () => {
+  it('builds a Vertex URL from the key file project', () => {
+    expect(rootBaseUrl('vertex', 'https://aiplatform.googleapis.com/v1', VERTEX)).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/acme-prod/locations/global',
+    );
+  });
+
+  it('keeps a URL that already names a project, and every other provider as given', () => {
+    const own = 'https://aiplatform.googleapis.com/v1/projects/other/locations/us-east5';
+    expect(rootBaseUrl('vertex', own, VERTEX)).toBe(own);
+    expect(rootBaseUrl('openrouter', 'https://openrouter.ai/api', VERTEX)).toBe('https://openrouter.ai/api');
   });
 });

@@ -5247,8 +5247,8 @@ msgid "Budget in dollars"
 msgstr "الميزانية بالدولار"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Budget removed"
-msgstr "تمت إزالة الميزانية"
+#~ msgid "Budget removed"
+#~ msgstr "تمت إزالة الميزانية"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Budget settings"
@@ -5558,6 +5558,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/tabs/GeneralTab.tsx
 #: src/components/organization/tabs/shared.tsx
@@ -6106,6 +6107,10 @@ msgstr "يمكن اختيار مستند من الشريط الجانبي لعر
 #: src/components/credentials/FileValueInput.tsx
 msgid "Choose a file instead"
 msgstr "اختيار ملف بدلاً من ذلك"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Choose a model for these teams"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Choose a model…"
@@ -8323,6 +8328,10 @@ msgstr "تعذّر الوصول إلى هذا الجهاز السحابي. قد 
 msgid "Could not read the diagnosis"
 msgstr "تعذّرت قراءة التشخيص"
 
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Could not read the file"
+msgstr ""
+
 #: src/components/rag/RagChunkBrowser.tsx
 msgid "Could not read the index"
 msgstr "تعذّرت قراءة الفهرس"
@@ -8366,7 +8375,9 @@ msgstr "تعذّر استرجاع مشروع هذه الجلسة."
 msgid "Could not remove"
 msgstr "تعذر الحذف"
 
+#. placeholder {0}: row.name
 #. placeholder {0}: target.name
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not remove {0}"
 msgstr "تعذّرت إزالة {0}"
@@ -8384,8 +8395,8 @@ msgid "Could not remove public access"
 msgstr "تعذّر إزالة الوصول العام"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Could not remove the budget"
-msgstr "تعذّرت إزالة الميزانية"
+#~ msgid "Could not remove the budget"
+#~ msgstr "تعذّرت إزالة الميزانية"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -14160,6 +14171,10 @@ msgstr "تُوجَّه إلى"
 msgid "good"
 msgstr "جيد"
 
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Google Vertex AI"
+msgstr ""
+
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "تم استقبال مرجع يبدو نسبياً مع عدة مقاطع: <0>{ref}</0>"
@@ -18046,6 +18061,7 @@ msgstr "المزيد"
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/ui/breadcrumb.tsx
@@ -20861,6 +20877,7 @@ msgstr "سليم"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/notifications/NotificationOutlet.tsx
 msgid "OK"
 msgstr "موافق"
@@ -22173,6 +22190,10 @@ msgstr "العرض الشامل للهيكل التنظيمي"
 msgid "Organization:"
 msgstr "المؤسسة:"
 
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Organization: {organization}"
+msgstr "المؤسسة: {organization}"
+
 #: src/components/organization/organization-page.tsx
 msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 msgstr "تُحفظ المؤسسات والفرق في السحابة. للإدارة، يلزم الخروج من الوضع المحلي."
@@ -22538,6 +22559,10 @@ msgstr "لصق مسار {0}"
 msgid "Paste the token it gives you here."
 msgstr ""
 
+#: src/components/llm-endpoints/endpoint-catalog.ts
+msgid "Paste the whole service-account JSON file from Google Cloud (IAM → Service accounts → Keys → JSON)."
+msgstr ""
+
 #~ msgid "path"
 #~ msgstr "المسار"
 
@@ -22763,8 +22788,8 @@ msgid "Pick a project on this machine. It is used where it is — nothing is sen
 msgstr "يُرجى اختيار مشروع على هذا الجهاز. يُستخدم في مكانه، ولا يُرسل أي شيء إلى السحابة."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Pick a provider and paste a key to set it up again."
-msgstr "اختاروا المزوّد والصقوا المفتاح لإعادة الإعداد."
+#~ msgid "Pick a provider and paste a key to set it up again."
+#~ msgstr "اختاروا المزوّد والصقوا المفتاح لإعادة الإعداد."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Pick a provider."
@@ -23729,6 +23754,10 @@ msgstr "مفتاح API الخاص بالمزوّد"
 msgid "Provider ID:"
 msgstr "معرّف المزود:"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Provider switched"
+msgstr ""
+
 #: src/components/hooks-manager/index.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Provider:"
@@ -24567,6 +24596,7 @@ msgstr "remote: {remote}"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
+#: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -24584,6 +24614,15 @@ msgstr "إزالة"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
 msgstr "إزالة {0}"
+
+#. placeholder {0}: removing.row.name
+#. placeholder {0}: removing?.row.name ?? ''
+#. placeholder {1}: data.org.name
+#. placeholder {1}: removing.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove {0} from {1}?"
+msgstr "إزالة {0} من {1}؟"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Remove {0} from {teamName}"
@@ -24619,8 +24658,8 @@ msgid "Remove bookmark"
 msgstr "إزالة الإشارة المرجعية"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Remove budget"
-msgstr "إزالة الميزانية"
+#~ msgid "Remove budget"
+#~ msgstr "إزالة الميزانية"
 
 #: src/components/assets/editor/changes/useDocChanges.tsx
 msgid "Remove change"
@@ -24656,6 +24695,11 @@ msgstr "إزالة الملف"
 #~ msgid "Remove folder"
 #~ msgstr ""
 
+#. placeholder {0}: m.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove from {0}"
+msgstr "إزالة من {0}"
+
 #. placeholder {0}: team.name
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from {0}?"
@@ -24672,6 +24716,10 @@ msgstr "إزالة من Flowpad"
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "إزالة من المجلد"
+
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "Remove from organization"
+msgstr "إزالة من المؤسسة"
 
 #: src/components/connections-manager.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -24755,8 +24803,8 @@ msgid "Remove this argument"
 msgstr "إزالة هذه الوسيطة"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "Remove this budget and start again?"
-msgstr "إزالة هذه الميزانية والبدء من جديد؟"
+#~ msgid "Remove this budget and start again?"
+#~ msgstr "إزالة هذه الميزانية والبدء من جديد؟"
 
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove this budget?"
@@ -29702,6 +29750,12 @@ msgstr "«عملية فرعية» يشغّل مسح الملفات في عملي
 msgid "Succeeded"
 msgstr "نجح"
 
+#. placeholder {0}: redirects.map(([from]) => from).join(', ')
+#. placeholder {1}: redirects.map(([, to]) => to).join(', ')
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Suggested for this provider: requests for {0} models are answered by {1} models. You can change this under Advanced."
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Summarize what changed since yesterday and list what needs me."
 msgstr "لخِّص التغييرات منذ أمس، واذكر ما يحتاج إلى متابعة."
@@ -29803,6 +29857,10 @@ msgstr "تبديل المشروع"
 #: src/components/status-bar.tsx
 msgid "Switch Project"
 msgstr "تبديل المشروع"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Switch provider"
+msgstr ""
 
 #. placeholder {0}: workerLabel(workerType)
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
@@ -30057,6 +30115,10 @@ msgstr ""
 #: src/components/organization/tabs/shared.tsx
 msgid "Team name…"
 msgstr "اسم الفريق…"
+
+#: src/components/llm-sources/LlmEndpointsSection.tsx
+msgid "Team: {team}"
+msgstr "الفريق: {team}"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Teammate Mode"
@@ -30668,13 +30730,18 @@ msgstr "الرسالة التي جئتم منها — أو الصقوا أي ر�
 msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
 msgstr "تسري الميزانية الجديدة فورًا وتُغلق الحالية. ما أُنفق يبقى مُنفقًا."
 
+#. placeholder {0}: needing .map((n) => `${n.scope_name ?? n.name} (${n.models.join(', ')})`) .join('; ')
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "The new provider does not offer the models these budgets are set to. Open each team and pick a model it can use, or its members will be refused: {0}"
+msgstr ""
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The number before the colon in the bot token."
 msgstr ""
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
-msgstr "ستُحذف ميزانية المؤسسة ومفتاحها المحفوظ، وستتوقف جميع الفرق المعتمدة عليها عن الإنفاق حتى يتم إعداد بديل. لن تُستردّ المخصصات الممنوحة للفرق والأشخاص، وستشير إلى ميزانية لم تعد موجودة."
+#~ msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
+#~ msgstr "ستُحذف ميزانية المؤسسة ومفتاحها المحفوظ، وستتوقف جميع الفرق المعتمدة عليها عن الإنفاق حتى يتم إعداد بديل. لن تُستردّ المخصصات الممنوحة للفرق والأشخاص، وستشير إلى ميزانية لم تعد موجودة."
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -30980,6 +31047,16 @@ msgstr "أبلغوا"
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
 msgstr "سيتم تنزيلها مرة أخرى في المرة القادمة التي يُفتح فيها مكتب المساعدة."
+
+#. placeholder {0}: data.org.name
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "They will leave {0} and every team in it, and lose the budgets those gave them. Money already spent is not affected."
+msgstr "سيغادرون {0} وكل فريق فيها، ويفقدون الميزانيات التي منحتها لهم. لا تتأثر الأموال التي أُنفقت بالفعل."
+
+#. placeholder {0}: removing.teamName
+#: src/components/organization/tabs/MembersTab.tsx
+msgid "They will leave {0} and lose the budget it gave them. Money already spent is not affected."
+msgstr "سيغادرون {0} ويفقدون الميزانية التي منحها لهم. لا تتأثر الأموال التي أُنفقت بالفعل."
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "They'll get an email with a link that opens this budget."
@@ -32928,6 +33005,10 @@ msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Upload it to FlowPad on any machine to open the task."
+msgstr ""
+
+#: src/components/llm-endpoints/CredentialField.tsx
+msgid "Upload JSON file"
 msgstr ""
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx

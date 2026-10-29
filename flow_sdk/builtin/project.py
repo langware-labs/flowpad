@@ -1707,7 +1707,9 @@ class Project(SetupSkippable, Entity):
             author=author,
             project_typeid=str(self.typeid),
         )
-        await HubProxy.call("PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": origin.model_dump(mode="json")})
+        await HubProxy.call(
+            "PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": origin.model_dump(mode="json")}
+        )
         return origin
 
     # ── git share: members use the project's private GitHub repo through the hub ──
@@ -1719,7 +1721,9 @@ class Project(SetupSkippable, Entity):
 
         if not self.remote:
             return GitShare()
-        return GitShare.from_hub(await HubProxy.try_call("GET", BuiltinEntityType.PROJECT, str(self.id), action="git_share"))
+        return GitShare.from_hub(
+            await HubProxy.try_call("GET", BuiltinEntityType.PROJECT, str(self.id), action="git_share")
+        )
 
     async def share_git(self) -> "GitShare":
         """Let this project's members clone and push its private GitHub repo through the hub.
@@ -1737,14 +1741,20 @@ class Project(SetupSkippable, Entity):
 
         origin = await self._github_origin()
         data = await HubProxy.call(
-            "POST", BuiltinEntityType.PROJECT, str(self.id), "git_share", payload={"repo": f"{origin.owner}/{origin.name}"}
+            "POST",
+            BuiltinEntityType.PROJECT,
+            str(self.id),
+            "git_share",
+            payload={"repo": f"{origin.owner}/{origin.name}"},
         )
         share = GitShare.from_hub(data)
         if share.shared:
             if not share.git_repo:
                 raise GitShareError("The hub shared the repo but did not say where it serves it")
             served = HubRepoOrigin(repo=share.git_repo, rel_path=".")
-            await HubProxy.call("PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": served.model_dump(mode="json")})
+            await HubProxy.call(
+                "PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": served.model_dump(mode="json")}
+            )
         return share
 
     async def unshare_git(self) -> "GitShare":
@@ -1756,7 +1766,9 @@ class Project(SetupSkippable, Entity):
         origin = await self._github_origin()
         share = GitShare.from_hub(await HubProxy.call("DELETE", BuiltinEntityType.PROJECT, str(self.id), "git_share"))
         # Members who accept the project from now on are pointed at GitHub again.
-        await HubProxy.call("PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": origin.model_dump(mode="json")})
+        await HubProxy.call(
+            "PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": origin.model_dump(mode="json")}
+        )
         return share
 
     async def _github_origin(self) -> GitOrigin:
@@ -3758,7 +3770,10 @@ class Project(SetupSkippable, Entity):
 
                     folder_mechanism = trash_path(mount)
                 else:
-                    shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
+                    from flow_sdk.claude_env import _rmtree_safe  # noqa: PLC0415
+
+                    # git writes pack files read-only; on Windows a bare rmtree stops on them.
+                    _rmtree_safe(mount)  # idempotent — FileNotFoundError when absent
             except FileNotFoundError:
                 pass
             except OSError as exc:

@@ -57,6 +57,7 @@ vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useRemoveAllowance: () => ({ mutate: vi.fn(), isPending: false }),
   useAddPeople: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSetPayingProvider: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSwitchPayingProvider: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useInvalidateBudgets: () => vi.fn().mockResolvedValue(undefined),
 }));
 

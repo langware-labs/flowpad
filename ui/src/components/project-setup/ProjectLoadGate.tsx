@@ -38,8 +38,11 @@ export function ProjectLoadGate({
   // first frame and checks behind it; only a failed check falls through to load (and setup).
   const validKey = validLoad.key(projectId, asset, display);
   // true: show the app; null: no verdict held, its check in flight — a blank frame for its few
-  // milliseconds, never a status that flashes; false: load.
-  const [valid, setValid] = useState<boolean | null>(() => (!asset ? false : validLoad.has(validKey) || null));
+  // milliseconds, never a status that flashes; false: load. An app with no asset to validate (one shown
+  // on a bare port) is held on its last load instead: it shows at once while the load checks it.
+  const [valid, setValid] = useState<boolean | null>(() =>
+    asset ? validLoad.has(validKey) || null : validLoad.has(validKey),
+  );
   useEffect(() => {
     let live = true;
     void (async () => {
@@ -55,8 +58,14 @@ export function ProjectLoadGate({
           return;
         }
       }
-      await load();
-      if (live) setLoadedLocation(location.key);
+      const next = await load();
+      if (!live) return;
+      // Only a load that did not come back ready takes a held app off screen and brings the gate.
+      if (!asset && next?.state !== 'ready') {
+        validLoad.set(validKey, false);
+        setValid(false);
+      }
+      setLoadedLocation(location.key);
     })();
     return () => {
       live = false;

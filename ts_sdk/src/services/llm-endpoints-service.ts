@@ -66,6 +66,10 @@ export interface LLMChainHop {
   scope_name?: string | null;
   provider: string | null;
   is_root: boolean;
+  /** What this hop is on the scope ladder: `global` | `organization` | `team` | `user`. */
+  source_kind?: string | null;
+  /** The team or organization whose pool this hop is — who allocated the budget below it. */
+  scope_name?: string | null;
   has_credential: boolean;
   enabled: boolean;
   breaker: { state: LLMBreakerState; open_until: number | null };

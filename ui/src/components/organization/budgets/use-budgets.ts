@@ -104,6 +104,17 @@ export function useSetPayingProvider() {
   });
 }
 
+/** Move the org's own root to another provider in place; the tree below it stays. The caller sets the new
+ *  key afterwards with `llmEndpointsService.setCredential` on the returned `endpoint_id`. */
+export function useSwitchPayingProvider() {
+  const invalidate = useInvalidateBudgets();
+  return useMutation({
+    mutationFn: ({ orgId, provider, baseUrl }: { orgId: string; provider: string; baseUrl?: string }) =>
+      budgetsService.switchPayingProvider(orgId, { provider, base_url: baseUrl }),
+    onSuccess: () => invalidate(),
+  });
+}
+
 export function useRemoveAllowance() {
   const invalidate = useInvalidateBudgets();
   return useMutation({

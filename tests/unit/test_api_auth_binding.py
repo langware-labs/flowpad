@@ -646,6 +646,30 @@ async def test_deepagents_keeps_its_tier_slug_when_a_wildcard_allows_it(env) -> 
     assert auth.model_slug == "z-ai/glm-5.3-flash"
 
 
+async def test_default_model_comes_from_the_chain_the_hub_pushed(env) -> None:
+    """A member's allowance names no models, so the default is read from the team's list the hub
+    pushed with the binding: the first pinned model when there is one, the small tier for a wildcard."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+    from flow_sdk.instance_settings.llm_endpoint import set_hub_llm_endpoint
+
+    candidate = _hub_candidate("member-ep", "member", [])
+    typeid = candidate.source.endpoint_typeid
+
+    set_hub_llm_endpoint(
+        typeid,
+        f"/api/v1/graph/llm_endpoint/{typeid}/invoke",
+        models_allow=["anthropic/claude-sonnet-5.5", "anthropic/claude-haiku-5.5"],
+    )
+    auth = await binding_for_candidate("deepagents", candidate, tier=None)
+    assert auth is not None
+    assert auth.model_slug == "anthropic/claude-sonnet-5.5"
+
+    set_hub_llm_endpoint(typeid, f"/api/v1/graph/llm_endpoint/{typeid}/invoke", models_allow=["anthropic/claude-*"])
+    auth = await binding_for_candidate("deepagents", candidate, tier=None)
+    assert auth is not None
+    assert auth.model_slug == "z-ai/glm-5.3-flash"
+
+
 def test_model_within_allowance_pure() -> None:
     """The matcher itself: no restriction, a matching glob, and a ruled-out slug that falls
     back to the first literal (non-glob) entry — the three cases the binding above relies on."""

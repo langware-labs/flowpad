@@ -44,6 +44,7 @@ vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useRemoveTeamMember: () => ({ mutate: h.removeMember, isPending: false }),
   useAddPeople: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSetPayingProvider: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSwitchPayingProvider: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useInvalidateBudgets: () => vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@src/hooks/entity-hooks/useEntitiesQuery', () => ({
@@ -574,18 +575,28 @@ describe('Members tab', () => {
 
 describe('mergeOrgMembers', () => {
   const m = (over: Record<string, unknown> = {}) => ({ ...person(), ...over }) as never;
-  const teams = [{ name: 'Platform' }, { name: 'Growth' }] as never;
+  const teams = [
+    { id: 'T1', name: 'Platform' },
+    { id: 'T2', name: 'Growth' },
+  ] as never;
 
   it('merges one person across rosters by user_id, summing spend and listing each team', () => {
     const rows = mergeOrgMembers(
       { teams, people: [] },
-      [{ members: [m({ spent_usd: 2 })] }, { members: [m({ endpoint_id: EP(8), spent_usd: 3 })] }] as never,
+      [
+        { members: [m({ spent_usd: 2, can_remove: true })] },
+        { members: [m({ endpoint_id: EP(8), spent_usd: 3, can_remove: false })] },
+      ] as never,
       new Map([[UUID(3), 'owner']]),
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       key: UUID(3),
       teams: ['Platform', 'Growth'],
+      memberships: [
+        { teamId: 'T1', teamName: 'Platform', canRemove: true },
+        { teamId: 'T2', teamName: 'Growth', canRemove: false },
+      ],
       spent: 5,
       role: 'owner',
       pending: false,

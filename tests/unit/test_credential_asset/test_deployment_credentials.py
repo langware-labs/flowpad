@@ -142,6 +142,24 @@ async def test_a_production_value_lands_in_its_own_gitignored_file(home, project
     assert prod["DATABASE_URL"].get_secret_value() == "postgres://hosted/prod"
 
 
+@pytest.mark.parametrize("environment, written", [("production", ".env.production.local"), ("development", ".env.local")])
+async def test_a_value_written_at_this_computer_is_read_in_the_same_environment(home, project, environment, written):
+    """FLOWPAD-2303: a write addressed to this computer by id lands in the environment its reads use."""
+    environment_settings.set_default_environment(environment)
+    here = await Deployment.this_computer()
+
+    await save_credential(
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("mail", "MAIL_ADDRESS"),
+        values={"MAIL_ADDRESS": "username@gmail.com"},
+        deployment_id=str(here.id),
+    )
+
+    assert [f.name for f in Path(project.fs_storage_mount_path).glob(".env*.local")] == [written]
+    assert (await resolve_project_secrets(project))["MAIL_ADDRESS"].get_secret_value() == "username@gmail.com"
+
+
 async def test_a_vault_exception_keeps_production_out_of_every_file(home, project):
     mount = Path(project.fs_storage_mount_path)
     production = await _deployment("production", exceptions={"DATABASE_URL": VAULT})
