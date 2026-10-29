@@ -47,6 +47,7 @@ import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import {
   type ChannelOffer,
   channelOffers,
+  isMessageChannel,
   isMessageDriverSpec,
   sourcesQuery,
   useSourceSpecs,
@@ -87,7 +88,7 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
     () =>
       ownerKey
         ? sources
-            .filter((s) => (ownerOf(s) ?? localKey) === ownerKey && isMessageDriverSpec(specFor(s.provider)))
+            .filter((s) => (ownerOf(s) ?? localKey) === ownerKey && isMessageChannel(s, specFor(s.provider)))
             .sort((a, b) => (a.name || a.provider).localeCompare(b.name || b.provider))
         : EMPTY,
     [sources, specFor, ownerKey, localKey],

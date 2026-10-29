@@ -41,7 +41,7 @@ import {
   assetContextFolderNodeId,
   assetContextFoldersRoot,
 } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
-import { useDataSourcesRoot } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
+import { useDataSourcesRoots } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
 import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
 import {
   basename as fsBasename,
@@ -124,7 +124,6 @@ export function useAssetsModel() {
     reload: reloadTypes,
   } = useAssetTypes({ allUserTypes: true });
   const { indexType } = useSystemTools();
-  const dataSourcesRoot = useDataSourcesRoot();
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
   const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
@@ -146,6 +145,7 @@ export function useAssetsModel() {
   );
   const scopeProjectId = urlProjectId ?? pinnedProjectId(urlScope) ?? currentProjectId;
   const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
+  const { dataSourcesRoot, channelsRoot } = useDataSourcesRoots(scopeProjectId ?? null);
 
   // The scoped project entity, watched so `include_dirs` edits (add/remove
   // dependency) re-render the tree. Backs the "Dependencies" root.
@@ -782,6 +782,7 @@ export function useAssetsModel() {
     }
     list.push(...typeRoots);
     if (dataSourcesRoot) list.push(dataSourcesRoot);
+    if (channelsRoot) list.push(channelsRoot);
     // Dependencies (project flow.json) — shown whenever a project is in scope
     // (even with none yet, so the "+" add action is reachable).
     if (hasScopeProject) {
@@ -805,6 +806,7 @@ export function useAssetsModel() {
     return list;
   }, [
     dataSourcesRoot,
+    channelsRoot,
     displayTypes,
     indexType,
     handleNew,
