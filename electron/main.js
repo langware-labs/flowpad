@@ -2895,12 +2895,13 @@ ipcMain.handle('secrets:provision-sod-key', async (_event, existingValue) => {
 ipcMain.handle('open-external', async (_, url) => {
   const { shell } = require('electron');
   log.info(`[open-external] requested: ${redactUrl(url)}`);
-  // Only allow http/https URLs for security
-  if (typeof url === 'string' && /^https?:\/\//.test(url)) {
+  // Only allow http/https URLs for security — and mailto:, which hands a draft to the mail app
+  // (a page's "send by email"); no other scheme reaches the system.
+  if (typeof url === 'string' && /^(https?:\/\/|mailto:)/.test(url)) {
     await shell.openExternal(url);
     return true;
   }
-  log.warn(`[open-external] blocked non-http URL: ${redactUrl(url)}`);
+  log.warn(`[open-external] blocked URL: ${redactUrl(url)}`);
   return false;
 });
 
