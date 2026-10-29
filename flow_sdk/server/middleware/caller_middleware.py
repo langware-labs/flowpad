@@ -4,6 +4,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from flow_sdk.cloud_client.caller import CALLER_HEADER, as_caller
 
+_HEADER = CALLER_HEADER.encode()
+
 
 class CallerMiddleware:
     def __init__(self, app: ASGIApp):
@@ -13,7 +15,7 @@ class CallerMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        raw = dict(scope.get("headers") or []).get(CALLER_HEADER.encode(), b"")
+        raw = next((v for k, v in scope.get("headers") or [] if k == _HEADER), b"")
         caller = raw.decode("utf-8", "replace") or f"api {scope.get('method')} {scope.get('path')}"
         with as_caller(caller):
             await self.app(scope, receive, send)

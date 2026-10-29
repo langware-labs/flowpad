@@ -1,8 +1,9 @@
 import { useLingui } from '@lingui/react/macro';
-import { copyToClipboard } from '@sdk';
-import { Copy, Stethoscope } from 'lucide-react';
+import { Stethoscope } from 'lucide-react';
+import { useMemo } from 'react';
 import { Badge } from '@src/components/ui/badge';
-import { Button } from '@src/components/ui/button';
+import { Button, buttonVariants } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
 import {
   Dialog,
   DialogContent,
@@ -12,9 +13,11 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { useDiagnoseErrorStore } from './diagnose/diagnose-error-store';
-import { detailSections, detailText } from './error-detail';
+import { detailSections, detailText, hiddenLine } from './error-detail';
 import { useErrorDetailsStore } from './error-details-store';
 import type { NotificationData } from './types';
+
+const SECTION_TITLE = 'mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground';
 
 /**
  * The details popup behind every error/warning's Details button: what failed (request), what came
@@ -32,33 +35,12 @@ export function ErrorDetailsDialog() {
 }
 
 function ErrorDetailsContent({ data }: { data: NotificationData }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const open = useErrorDetailsStore((s) => s.open);
   const close = useErrorDetailsStore((s) => s.close);
   const diagnose = useDiagnoseErrorStore((s) => s.open);
-  const sections = detailSections(data, {
-    request: t`Request`,
-    call: t`Call`,
-    madeBy: t`Made by`,
-    answer: t`Answer`,
-    status: t`Status`,
-    message: t`Message`,
-    errorCode: t`Error code`,
-    said: t`Full answer`,
-    requestId: t`Request id`,
-    limit: t`Limit`,
-    rule: t`Rule`,
-    usedCap: t`Used / cap`,
-    endpoint: t`Endpoint`,
-    when: t`When`,
-    first: t`First`,
-    last: t`Last`,
-    times: t`Times`,
-    app: t`This app`,
-    version: t`Version`,
-    log: t`Log`,
-  });
-  const text = detailText(data, sections);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the locale changes the labels
+  const sections = useMemo(() => detailSections(data), [data, i18n.locale]);
   const status = data.detail?.response?.status;
   const hidden = data.detail?.hidden ?? [];
 
@@ -74,7 +56,7 @@ function ErrorDetailsContent({ data }: { data: NotificationData }) {
       <div className="max-h-[60vh] overflow-auto pr-1">
         {sections.map((s) => (
           <div key={s.title} className="mt-3">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{s.title}</div>
+            <div className={SECTION_TITLE}>{s.title}</div>
             {s.rows.map(([label, value]) => (
               <div key={label} className="grid grid-cols-[120px_1fr] gap-3 border-b border-border py-1.5 text-sm">
                 <div className="text-muted-foreground">{label}</div>
@@ -85,9 +67,7 @@ function ErrorDetailsContent({ data }: { data: NotificationData }) {
         ))}
         {hidden.length > 0 && (
           <div className="mt-3">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t`Hidden errors`}
-            </div>
+            <div className={SECTION_TITLE}>{t`Hidden errors`}</div>
             {hidden.map((h, i) => (
               <button
                 key={i}
@@ -104,23 +84,25 @@ function ErrorDetailsContent({ data }: { data: NotificationData }) {
                 }
                 className="block w-full border-b border-border py-1.5 text-left font-mono text-xs hover:bg-muted"
               >
-                {h.detail.request?.method} {h.detail.request?.url} → {h.detail.response?.status}{' '}
-                {h.detail.response?.message}
+                {hiddenLine(h)}
               </button>
             ))}
           </div>
         )}
       </div>
       <DialogFooter className="gap-2">
-        <Button variant="outline" onClick={() => void copyToClipboard(text)}>
-          <Copy className="h-4 w-4" />
-          {t`Copy all`}
-        </Button>
+        <CopyButton
+          value={() => detailText(data, sections)}
+          label={t`Copy all`}
+          copiedLabel={t`Copied`}
+          iconClassName="h-4 w-4"
+          className={buttonVariants({ variant: 'outline' })}
+        />
         <Button
           variant="outline"
           onClick={() => {
             close();
-            diagnose(text, data.level === 'warning' ? 'warning' : 'error');
+            diagnose(detailText(data, sections), data.level === 'warning' ? 'warning' : 'error');
           }}
         >
           <Stethoscope className="h-4 w-4" />
@@ -133,7 +115,7 @@ function ErrorDetailsContent({ data }: { data: NotificationData }) {
 }
 
 /** The Details button an error/warning shows wherever it is listed (toast, warnings popover). */
-export function ErrorDetailsButton({ data, className }: { data: NotificationData; className?: string }) {
+export function ErrorDetailsButton({ data }: { data: NotificationData }) {
   const { t } = useLingui();
   const open = useErrorDetailsStore((s) => s.open);
   if (data.level !== 'error' && data.level !== 'warning') return null;
@@ -145,7 +127,7 @@ export function ErrorDetailsButton({ data, className }: { data: NotificationData
         e.stopPropagation();
         open(data);
       }}
-      className={className ?? 'rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80'}
+      className="rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
     >
       {t`Details`}
     </button>

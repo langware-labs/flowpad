@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import re
 from functools import lru_cache
 from typing import Any
-from urllib.parse import parse_qsl, urlencode
 
 import httpx
 
@@ -13,6 +11,7 @@ from flow_sdk.cloud_client.auth_state import invalidate_hub_login
 from flow_sdk.cloud_client.caller import current_caller
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 from flow_sdk.cloud_client.error_reporter import hub_error_reporter
+from flow_sdk.diagnose.baseline import redact
 
 
 class HubAuthExpiredError(httpx.RequestError):
@@ -153,9 +152,10 @@ async def _on_response(response: httpx.Response) -> None:
             # check, not a WS-handshake reject — drop login state.
             await invalidate_hub_login("rejected", detail=_auth_signal_detail(response))
             return
-        await hub_error_reporter.recovered(
-            method=response.request.method, path=redact_query(request_path(response.request.url))
-        )
+        if hub_error_reporter.has_failing:  # skip the redaction on the common, nothing-failed path
+            await hub_error_reporter.recovered(
+                method=response.request.method, path=redact(request_path(response.request.url))
+            )
         return
 
     body_read = not passthrough or _is_small_json(response)
@@ -179,26 +179,43 @@ async def _on_response(response: httpx.Response) -> None:
     # elsewhere — by an auth-failure envelope on a 2xx (handled above), or
     # by the hub closing the WS with an auth close code (handled in
     # ws_client._handle_closed_connection).
+    path = redact(request_path(response.request.url))
+    # A large or non-JSON passthrough body stays unread (the proxy streams it); the status
+    # still gets reported, and the caller receives the body verbatim.
+    message = redact(_response_message(response)) if body_read else f"HTTP {status_code}"
     await hub_error_reporter.report(
         status_code=status_code,
         method=response.request.method,
-        path=redact_query(request_path(response.request.url)),
-        # A large or non-JSON passthrough body stays unread (the proxy streams it); the
-        # status still gets reported, and the caller receives the body verbatim.
-        message=_response_message(response) if body_read else f"HTTP {status_code}",
-        body=(response.text or "")[:MAX_BODY_CHARS] if body_read else "",
-        error_code=(_error_code(response) or "") if body_read else "",
-        request_id=next((response.headers[h] for h in REQUEST_ID_HEADERS if h in response.headers), ""),
-        url=str(response.request.url.copy_with(query=None)),
-        caller=current_caller(),
+        path=path,
+        message=message,
+        detail=_error_detail(response, path=path, message=message, body_read=body_read),
     )
+
+
+def _error_detail(response: httpx.Response, *, path: str, message: str, body_read: bool) -> dict[str, Any]:
+    """The failed call as the UI's ``ErrorDetail``: request, the hub's answer, who asked."""
+    url = response.request.url
+    request_id = next((response.headers[h] for h in REQUEST_ID_HEADERS if h in response.headers), None)
+    return {
+        "request": {
+            "method": response.request.method,
+            "url": f"{url.scheme}://{url.netloc.decode()}{path}",
+            "caller": current_caller() or None,
+        },
+        "response": {
+            "status": response.status_code,
+            "message": message,
+            "body": redact(response.text or "")[:MAX_BODY_CHARS] if body_read else None,
+            "errorCode": _error_code(response) if body_read else None,
+            "requestId": request_id,
+        },
+    }
 
 
 # A forwarded error body is read only when it is small JSON — an envelope, not a download.
 MAX_READ_BYTES = 64 * 1024
 MAX_BODY_CHARS = 4096
 REQUEST_ID_HEADERS = ("x-request-id", "x-correlation-id", "x-amzn-trace-id")
-_SECRET_PARAM = re.compile(r"(token|key|secret|password|signature|code)", re.I)
 
 
 def _is_small_json(response: httpx.Response) -> bool:
@@ -206,17 +223,6 @@ def _is_small_json(response: httpx.Response) -> bool:
         return False
     length = response.headers.get("content-length")
     return length is not None and length.isdigit() and int(length) <= MAX_READ_BYTES
-
-
-def redact_query(path: str) -> str:
-    """``path?query`` with secret-looking parameter values replaced, so the report is safe to show and send."""
-    if "?" not in path:
-        return path
-    base, query = path.split("?", 1)
-    pairs = [
-        (k, "***" if _SECRET_PARAM.search(k) else v) for k, v in parse_qsl(query, keep_blank_values=True)
-    ]
-    return f"{base}?{urlencode(pairs)}"
 
 
 def _auth_signal_detail(response: httpx.Response) -> str:

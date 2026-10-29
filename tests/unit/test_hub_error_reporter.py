@@ -70,14 +70,19 @@ async def test_repeats_of_one_call_carry_first_last_and_count_until_it_recovers(
 
     reporter = _HubErrorReporter(broadcast_func=broadcast, wall_clock=lambda: next(wall))
 
-    await reporter.report(status_code=422, method="GET", path="/issue", message="bad filter", body='{"x":1}')
+    await reporter.report(
+        status_code=422, method="GET", path="/issue", message="bad filter", detail={"response": {"body": '{"x":1}'}}
+    )
     await reporter.report(status_code=422, method="GET", path="/issue", message="bad filter")
-    assert (messages[-1].first_at, messages[-1].last_at, messages[-1].count) == (1000.0, 1005.0, 2)
-    assert messages[0].body == '{"x":1}'
+    d = messages[-1].detail
+    assert (d["firstAt"], d["lastAt"], d["count"]) == (1_000_000.0, 1_005_000.0, 2)
+    assert messages[0].detail["response"]["body"] == '{"x":1}'
 
     await reporter.recovered(method="GET", path="/issue")
     await reporter.report(status_code=422, method="GET", path="/issue", message="bad filter")
-    assert (messages[-1].first_at, messages[-1].count) == (1010.0, 1), "a recovered call starts a new run"
+    assert (messages[-1].detail["firstAt"], messages[-1].detail["count"]) == (1_010_000.0, 1), (
+        "a recovered call starts a new run"
+    )
 
 
 @pytest.mark.asyncio
@@ -96,4 +101,4 @@ async def test_suppressed_errors_are_kept_and_sent_with_the_notice():
 
     notice = messages[1]
     assert notice.suppressed_count == 1
-    assert [(h["method"], h["path"], h["message"]) for h in notice.hidden] == [("POST", "/b", "limit hit")]
+    assert [h["title"] for h in notice.detail["hidden"]] == ["POST /b"]

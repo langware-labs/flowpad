@@ -302,13 +302,6 @@ async def test_a_hub_answer_clears_the_error_of_the_same_request_only(monkeypatc
     assert recovered == ["/api/v1/flaky"], "only the request the hub went on to answer is cleared"
 
 
-def test_redact_query_hides_secret_values_and_keeps_the_rest():
-    from flow_sdk.cloud_client.client_hooks import redact_query
-
-    assert redact_query("/x?filter=a&api_key=s3cr3t&token=t") == "/x?filter=a&api_key=%2A%2A%2A&token=%2A%2A%2A"
-    assert redact_query("/plain") == "/plain"
-
-
 @pytest.mark.asyncio
 async def test_a_forwarded_small_json_error_reports_the_hubs_answer_and_still_relays_it(monkeypatch):
     from flow_sdk.cloud_client import client_hooks as hooks
@@ -330,14 +323,28 @@ async def test_a_forwarded_small_json_error_reports_the_hubs_answer_and_still_re
     async def handler(request: httpx.Request):
         return httpx.Response(422, json=body, headers={"x-request-id": "req-1"}, request=request)
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), event_hooks={"response": [hooks._on_response]}) as c:
-        req = c.build_request("GET", "https://hub.test/api/v1/graph/issue?filter=open", extensions={hooks.PASSTHROUGH_EXTENSION: True})
+    # Secrets in the query never reach the report.
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), event_hooks={"response": [hooks._on_response]}
+    ) as c:
+        req = c.build_request(
+            "GET",
+            "https://hub.test/api/v1/graph/issue?filter=open&api_key=s3cr3tvalue",
+            extensions={hooks.PASSTHROUGH_EXTENSION: True},
+        )
         with as_caller("help desk"):
             resp = await c.send(req, stream=True)
         relayed = HubProxy.relay(resp)
 
     [r] = reports
     assert r["message"] == "filter.status: not a valid value"
-    assert (r["error_code"], r["request_id"], r["caller"]) == ("validation", "req-1", "help desk")
-    assert r["path"] == "/api/v1/graph/issue?filter=open"
+    d = r["detail"]
+    assert (d["response"]["errorCode"], d["response"]["requestId"], d["request"]["caller"]) == (
+        "validation",
+        "req-1",
+        "help desk",
+    )
+    assert d["request"]["url"] == "https://hub.test/api/v1/graph/issue?filter=open&api_key=[redacted]"
+    assert r["path"] == "/api/v1/graph/issue?filter=open&api_key=[redacted]"
     assert b"not a valid value" in relayed.body, "the caller still gets the hub's full answer"

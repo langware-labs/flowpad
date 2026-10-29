@@ -28,42 +28,8 @@ interface HubClientErrorMsg {
   status_code?: number;
   message?: string;
   suppressed_count?: number;
-  url?: string;
-  body?: string;
-  error_code?: string;
-  request_id?: string;
-  caller?: string;
-  first_at?: number;
-  last_at?: number;
-  count?: number;
-  log_file?: string;
-  hidden?: HubClientErrorMsg[];
-}
-
-/** The details popup's view of one hub error (the backend sends seconds; the popup wants ms). */
-function hubDetail(msg: HubClientErrorMsg): ErrorDetail {
-  const ms = (s?: number) => (s ? s * 1000 : undefined);
-  const path = String(msg.path ?? '');
-  const query = path.includes('?') ? path.slice(path.indexOf('?')) : '';
-  return {
-    source: 'hub',
-    request: { method: msg.method, url: msg.url ? `${msg.url}${query}` : path, caller: msg.caller || undefined },
-    response: {
-      status: msg.status_code || undefined,
-      message: msg.message || undefined,
-      body: msg.body || undefined,
-      errorCode: msg.error_code || undefined,
-      requestId: msg.request_id || undefined,
-    },
-    firstAt: ms(msg.first_at),
-    lastAt: ms(msg.last_at),
-    count: msg.count,
-    logFile: msg.log_file || undefined,
-    hidden: (msg.hidden ?? []).map((h) => ({
-      title: `${h.method ?? ''} ${h.path ?? ''}`.trim(),
-      detail: hubDetail(h),
-    })),
-  };
+  /** The error's details, built by the backend in the `ErrorDetail` shape. */
+  detail?: ErrorDetail;
 }
 
 // What holds each cloud toast up: the failed requests it reports ("GET /path") and, for
@@ -103,13 +69,13 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       id: 'cloud-errors-suppressed',
       title: t`Hub errors suppressed`,
       message: t`${suppressed} hub errors were suppressed in the current window.`,
-      detail: hubDetail(msg),
+      detail: msg.detail,
     });
     return;
   }
 
   // Everything known about the failure, behind the alert's Details button — not the headline.
-  const detail = hubDetail(msg);
+  const detail = msg.detail;
 
   if (statusCode === 0) {
     notify.error({

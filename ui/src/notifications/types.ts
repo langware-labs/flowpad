@@ -28,8 +28,6 @@ export interface NotificationAction {
  * All fields optional: what a source does not know is simply not shown.
  */
 export interface ErrorDetail {
-  /** Where it came from: a cloud (hub) call, a call to this app's backend, or the app itself. */
-  source: 'hub' | 'api' | 'app';
   request?: { method?: string; url?: string; caller?: string };
   response?: { status?: number; message?: string; body?: string; errorCode?: string; requestId?: string };
   /** A spending/usage limit that stopped the work. */

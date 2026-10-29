@@ -6,9 +6,9 @@ middleware puts it here for the request's lifetime. Background work sets it with
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from collections.abc import Iterator
 
 CALLER_HEADER = "x-flow-caller"
 MAX_CALLER_CHARS = 200
