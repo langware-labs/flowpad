@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dataManager } from '@sdk/APIEntity';
 import { Agent } from '@sdk/entities/agent';
-import { chatRows, defineAgentElement, FlowpadAgentElement, replyHtml } from '@sdk/apps/agent-panel';
+import { chatRows, FlowpadAgentElement, replyHtml } from '@sdk/apps/agent-panel';
 
 const ENDPOINT = '9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d';
 const WEBAPP = 'b9312997-b348-57f9-8f6b-1a970e33e9a9';
@@ -48,13 +48,18 @@ function fakeProcess(id: string, items: Row[] = []) {
   };
 }
 
+// The unit tier shares one custom-element registry across files, so `flowpad-agent` may already
+// belong to another file's copy of this module: this one is drawn under a tag of its own.
+const TAG = 'flowpad-agent-under-test';
+if (!customElements.get(TAG)) customElements.define(TAG, class extends FlowpadAgentElement {});
+
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const shadow = (el: Element) => el.shadowRoot!;
 const panel = () => document.querySelector('[data-testid="flowpad-agent-panel"]') as HTMLElement;
 
 /** Mount the tag; `ready` waits until it found its agent (it draws its toggle). */
 async function mount({ ready = true } = {}): Promise<HTMLElement> {
-  const el = document.createElement('flowpad-agent');
+  const el = document.createElement(TAG);
   document.body.appendChild(el);
   if (ready) await vi.waitFor(() => expect(el.shadowRoot?.querySelector('button')).not.toBeNull());
   else for (let i = 0; i < 5; i++) await flush();
@@ -62,7 +67,6 @@ async function mount({ ready = true } = {}): Promise<HTMLElement> {
 }
 
 beforeEach(() => {
-  defineAgentElement();
   try {
     localStorage.clear();
   } catch {
@@ -71,6 +75,7 @@ beforeEach(() => {
   window.history.replaceState(null, '', `/api/v1/graph/service_endpoint/${ENDPOINT}/service/`);
   // The unit tier has no backend to initialise against (and shares one thread with other files).
   FlowpadAgentElement.ready = async () => {};
+  FlowpadAgentElement.live = async () => {};
   const scrooge = new Agent({ id: AGENT, name: 'scrooge', title: 'Scrooge' } as never);
   vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: { toString(): string }) => {
     const rows: Record<string, unknown> = {

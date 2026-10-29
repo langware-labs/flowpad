@@ -360,7 +360,7 @@ class AgentPanel {
     this.process = null;
     this.render();
     try {
-      void asyncSdkInit(); // the live connection that carries the stream
+      void FlowpadAgentElement.live(); // the live connection that carries the stream
       const process = await pick();
       this.process = process;
       const stream = process.flowDataStream;
@@ -442,6 +442,8 @@ export class FlowpadAgentElement extends HTMLElement {
   /** What the tag waits for before it looks its agent up: the SDK's own init (memoised, so the page's
    *  call and this one are the same). A seam for a page that initialises the SDK some other way. */
   static ready: () => Promise<void> = () => initSdk();
+  /** What opening a chat starts: the SDK's live connection, which carries the stream. Same seam. */
+  static live: () => Promise<void> = () => asyncSdkInit();
 
   private readonly root = this.attachShadow({ mode: 'open' });
   private panel: AgentPanel | null = null;
