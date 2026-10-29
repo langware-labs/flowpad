@@ -1,3 +1,4 @@
+import { normalizeMembershipRoles } from '../models/roles';
 import { dataManager, normalizeMember, type EntityMember } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
@@ -113,12 +114,12 @@ export interface InviteLink {
  * Expiry and domain allowlist are left to the hub (it defaults, and clamps
  * expiry to ``invitation_max_expiry_days``).
  */
-export async function mintInviteLink(typeId: TypeId, role: string = 'member'): Promise<InviteLink> {
+export async function mintInviteLink(typeId: TypeId, roles: string[] | string = typeId.type === 'conversation' ? ['reader', 'runner'] : ['reader']): Promise<InviteLink> {
   const info = new ActionInfo('members', typeId.type, typeId.id, 'POST');
   info.subpath = 'link';
   info.hubReflect = true; // links are hub-owned — reflect to the hub
   info.bodyParameters = {
-    invitation_targets: [{ typeid: `${typeId.type}-${typeId.id}`, role }],
+    invitation_targets: [{ typeid: `${typeId.type}-${typeId.id}`, roles: normalizeMembershipRoles(roles) }],
   };
   return await dataManager.callAction<unknown, InviteLink>(info);
 }

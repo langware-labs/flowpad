@@ -42,7 +42,7 @@ msgstr " · מושהה"
 msgid " · the way set up here"
 msgstr " · כפי שהוגדר כאן"
 
-#. placeholder {0}: me.role
+#. placeholder {0}: me.roles.join(', ')
 #: src/components/organization/org-detail-panel.tsx
 msgid " · you are {0}"
 msgstr " · התפקיד שלכם: {0}"
@@ -13845,8 +13845,8 @@ msgid "Full — complete rescan"
 msgstr "מלא — סריקה מחדש מלאה"
 
 #: src/pages/hub-home/LoginAccessField.tsx
-msgid "Full access"
-msgstr "גישה מלאה"
+#~ msgid "Full access"
+#~ msgstr "גישה מלאה"
 
 #: src/notifications/error-detail.ts
 msgid "Full answer"
@@ -20373,7 +20373,6 @@ msgstr "ללא"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -26354,6 +26353,10 @@ msgstr "באיזה פרויקט להריץ את סשן זמן האמת הזה?"
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "Run:"
+msgstr ""
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Runner"
 msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -35017,7 +35020,7 @@ msgstr ""
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "אישרתם רק את הסשן הזה — {guestName} יצטרך/תצטרך את האישור שלכם שוב בפעם הבאה."
 
-#. placeholder {0}: team.my_role
+#. placeholder {0}: team.my_roles?.join(', ')
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "you are {0}"
 msgstr ""

@@ -5,9 +5,9 @@
  * Plain functions, out of `member-list.tsx` so that file exports only components — a non-component
  * export there breaks React Fast Refresh.
  */
-import type { EntityMember } from '@sdk';
+import { canManageRoles, grantableRoleSet, type EntityMember } from '@sdk';
 
-import { assignableRoles, participantRank } from '@src/components/conversation/participant-display';
+import { assignableRoles } from '@src/components/conversation/participant-display';
 
 /** A team/org that holds a role appears in the roster as a first-class row with
  *  ``user_id === null`` — the principal id lives in ``id``. */
@@ -29,13 +29,10 @@ export function memberPrincipalId(member: EntityMember): string | undefined {
  * own path because that helper bails on a missing ``user_id``  — correctly, since
  * for a conversation such a row is a pending email invite that cannot be re-roled
  * by id. A group row is the opposite: it has no ``user_id`` by nature and is
- * always re-rolable, and it can never be "self", so only the ladder applies.
+ * always re-rolable, and it can never be "self", so the role-set grant policy applies.
  */
 export function assignableRolesForMember(me: EntityMember | null | undefined, member: EntityMember): string[] {
   if (!isGroupMember(member)) return assignableRoles(me as never, member as never);
-  const myRank = participantRank(me as never);
-  const targetRank = participantRank(member as never);
-  if (myRank === null || targetRank === null) return [];
-  if (targetRank <= myRank) return [];
-  return assignableRoles(me as never, { ...(member as object), user_id: 'group' } as never);
+  const heldRoles = me?.roles ?? [];
+  return canManageRoles(heldRoles, member.roles ?? []) ? grantableRoleSet(heldRoles) : [];
 }

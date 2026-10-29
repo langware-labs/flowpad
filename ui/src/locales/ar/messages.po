@@ -42,7 +42,7 @@ msgstr " · متوقف مؤقتاً"
 msgid " · the way set up here"
 msgstr " · كما أُعدّ هنا"
 
-#. placeholder {0}: me.role
+#. placeholder {0}: me.roles.join(', ')
 #: src/components/organization/org-detail-panel.tsx
 msgid " · you are {0}"
 msgstr " · دورك {0}"
@@ -13845,8 +13845,8 @@ msgid "Full — complete rescan"
 msgstr "كامل — إعادة مسح شاملة"
 
 #: src/pages/hub-home/LoginAccessField.tsx
-msgid "Full access"
-msgstr "وصول كامل"
+#~ msgid "Full access"
+#~ msgstr "وصول كامل"
 
 #: src/notifications/error-detail.ts
 msgid "Full answer"
@@ -20373,7 +20373,6 @@ msgstr "بدون"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -26358,6 +26357,10 @@ msgstr "في أي مشروع تريدون تشغيل هذه الجلسة الم�
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "Run:"
+msgstr ""
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Runner"
 msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -35021,7 +35024,7 @@ msgstr ""
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "وافقتم على هذه الجلسة فقط — سيحتاج {guestName} إلى موافقتكم مرة أخرى في المرة القادمة."
 
-#. placeholder {0}: team.my_role
+#. placeholder {0}: team.my_roles?.join(', ')
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "you are {0}"
 msgstr ""

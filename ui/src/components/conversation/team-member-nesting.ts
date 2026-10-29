@@ -12,18 +12,13 @@
  * ``member`` team) stays a top-level row, where that role can be managed.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { getMembers, TypeId, type ConversationParticipant } from '@sdk';
+import { getMembers, TypeId, roleCapabilities, type ConversationParticipant } from '@sdk';
 
 import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-roles';
 
 /** A roster row's roles; the hub comma-joins a principal's roles (``member, owner``). */
-export function roleSet(role: string | null | undefined): Set<string> {
-  return new Set(
-    (role ?? '')
-      .split(',')
-      .map((r) => r.trim().toLowerCase())
-      .filter(Boolean),
-  );
+export function roleSet(roles: string[] | null | undefined): Set<string> {
+  return roleCapabilities(roles ?? []);
 }
 
 export interface NestedRoster {
@@ -63,8 +58,8 @@ function coveredBy(
 ): boolean {
   const teamId = memberPrincipalId(team);
   if (!member.user_id || !teamId || !rosters.get(teamId)?.has(member.user_id)) return false;
-  const teamRoles = roleSet(team.role);
-  const roles = roleSet(member.role);
+  const teamRoles = roleSet(team.roles);
+  const roles = roleSet(member.roles);
   return roles.size > 0 && [...roles].every((r) => teamRoles.has(r));
 }
 

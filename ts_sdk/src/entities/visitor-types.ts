@@ -7,5 +7,5 @@ import { IEntity } from '../IEntity';
 export interface IVisitor extends IEntity {
   ga_client_id?: string | null;
   utm_params?: Record<string, string> | null;
-  visitor_role?: string;
+  visitor_roles?: string[];
 }

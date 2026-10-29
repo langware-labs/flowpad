@@ -21,6 +21,7 @@
     ],
     "withheld_by_declaration": [
       "asset_occurrences",
+      "authenticated_roles",
       "created_by",
       "created_date",
       "fetched_at",
@@ -32,6 +33,7 @@
       "private_context_entities_",
       "private_context_entity_data",
       "project_id",
+      "public_roles",
       "published",
       "remote",
       "scope",
@@ -41,7 +43,7 @@
       "tags",
       "updated_by",
       "updated_date",
-      "visitor_role"
+      "visitor_roles"
     ],
     "hub_when_set": [
       "created_through",
@@ -80,6 +82,7 @@
     "additional_dirs",
     "asset_occurrences",
     "asset_ref",
+    "authenticated_roles",
     "created_at",
     "created_by",
     "created_date",
@@ -107,6 +110,7 @@
     "private_context_entities_",
     "private_context_entity_data",
     "project_id",
+    "public_roles",
     "remote",
     "root_vfs_path",
     "schema_version",
@@ -122,7 +126,7 @@
     "updated_date",
     "updated_through",
     "vault_root",
-    "visitor_role",
+    "visitor_roles",
     "workdir"
   ],
   "doc_path": "docs/collab/cloud-sharing.md"

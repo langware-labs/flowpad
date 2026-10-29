@@ -613,46 +613,26 @@ async def test_the_sweeps_login_probe_does_not_undo_a_source_picked_while_it_ran
 # ── a binding the hub no longer honours ──────────────────────────────────────────
 
 
-async def test_a_bound_endpoint_a_successful_listing_denies_is_not_offered(env, monkeypatch) -> None:
-    """A deleted (or un-shared) endpoint must stop being a candidate once we can SEE that.
-
-    The box keeps spending whatever the hub last pushed, and nothing tells it when that endpoint
-    is deleted -- so the binding outlives the row. Because a bound endpoint outranks an unproven
-    device login, every spawn then posted to an invoke URL answering ``Entity ... not found``
-    and the harness burned its whole retry budget on it. Observed three times in one day on
-    prod, and the box never fell back to anything.
-
-    The signal that separates "gone" from "the cache has not caught up" is whether a listing has
-    ever SUCCEEDED: ``_list_cache`` is written only on a successful read, so an entry means the
-    hub has answered and its answer did not include this endpoint.
-    """
+async def test_runner_binding_survives_a_successful_read_listing_omission(env, monkeypatch) -> None:
+    """A readable-row omission must not silently spend a personal subscription instead."""
     import time
 
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_endpoint
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
     from flow_sdk.instance_settings import llm_endpoint as settings
 
-    await _signed_in("claude")
-    _bind(monkeypatch)  # box bound to EP1
-    # A listing that SUCCEEDED and does not mention EP1 -- what the hub answers once EP1 is gone.
+    _bind(monkeypatch)
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
-    assert settings.listing_supersedes_binding()
-
-    assert not _by_kind(await list_llm_candidates("claude"), "hub"), (
-        "the deleted endpoint is still being offered as a source"
-    )
-    # ...and the ladder falls through to what the box can actually spend.
-    assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "device"
+    endpoint, chosen = await resolve_llm_endpoint(_process())
+    assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
 
 
 async def test_a_bound_endpoint_is_still_trusted_before_any_listing_succeeds(env, monkeypatch) -> None:
-    """The other half, and the reason the rule is keyed on the listing rather than on absence:
-    a freshly bound or freshly shared endpoint has to work before any cache has heard of it."""
+    """A freshly bound endpoint works before any cache has heard of it."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
     from flow_sdk.instance_settings import llm_endpoint as settings
 
     _bind(monkeypatch)
     settings.reset_cache()  # nobody has managed to ask yet
-    assert not settings.listing_supersedes_binding()
 
     endpoint, chosen = await resolve_llm_endpoint(_process())
     assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
@@ -676,24 +656,14 @@ async def test_a_stale_listing_does_not_deny_a_freshly_pushed_binding(env, monke
     # ``_bind``'s own ``reset_cache`` and the test would pass on the empty-cache branch instead,
     # proving nothing about ordering.
     name = settings.get_instance_settings().instance_name
-    settings._list_cache[name] = (settings._bound_at[name] - 1.0, [])
+    settings._list_cache[name] = (0.0, [])
 
-    assert not settings.listing_supersedes_binding(), "a listing older than the binding cannot deny it"
     endpoint, chosen = await resolve_llm_endpoint(_process())
     assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
 
 
-async def test_a_process_constraint_on_a_vanished_endpoint_still_fails_loudly(env, monkeypatch) -> None:
-    """Dropping a DEFAULT binding must not soften an EXPLICIT one.
-
-    The default order is soft -- that is what lets a deleted endpoint fall through to whatever
-    the box can actually spend. A named endpoint is a constraint, and the whole point of a
-    constraint is that it is not silently substituted: quietly falling back would spend a
-    personal subscription the caller did not choose, which is worse than failing.
-
-    ``_apply_constraint`` is a separate path from ``_endpoint_sources`` and still stubs the
-    named typeid, so the listing's silence cannot turn a hard rung into a soft one.
-    """
+async def test_a_process_constraint_is_not_substituted_after_read_listing_omission(env, monkeypatch) -> None:
+    """An explicit endpoint remains the invocation target; a read cannot select another budget."""
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
@@ -701,7 +671,6 @@ async def test_a_process_constraint_on_a_vanished_endpoint_still_fails_loudly(en
 
     _bind(monkeypatch)
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
-    assert settings.listing_supersedes_binding()
 
     chosen = await _resolve_source(_process(endpoint=EP2))
     assert chosen.endpoint_typeid == EP2, "a named endpoint was substituted after the listing dropped it"
@@ -709,17 +678,11 @@ async def test_a_process_constraint_on_a_vanished_endpoint_still_fails_loudly(en
     assert not device.eligible and "this process requires" in device.reason
 
 
-async def test_an_explicit_hub_preference_fails_rather_than_spending_the_subscription(env, monkeypatch) -> None:
-    """The user picked "the hub endpoint" in LLM Sources. If it is gone, say so.
-
-    This is the case that would be worst to get wrong: silently resolving to the device login
-    means the turn succeeds and quietly bills a personal Claude subscription instead of the
-    budget the user chose.
-    """
+async def test_an_explicit_hub_preference_survives_read_listing_omission(env, monkeypatch) -> None:
+    """The chosen hub budget is an invocation constraint, independent of Reader visibility."""
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.instance_settings import llm_endpoint as settings
 
@@ -729,8 +692,7 @@ async def test_an_explicit_hub_preference_fails_rather_than_spending_the_subscri
     await cap.save(notify=False)
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
 
-    with pytest.raises(LLMSourceError):
-        await _resolve_source(_process())
+    assert (await _resolve_source(_process())).endpoint_typeid == EP1
 
 
 # ── what the auth-status action REPORTS about a key-funded harness ────────────────
@@ -918,13 +880,8 @@ async def test_a_key_on_the_machine_is_spent_before_an_assigned_wallet(env, monk
     assert hub.eligible and not hub.reason
 
 
-async def test_deleting_the_wallet_hands_a_signed_out_box_back_nothing(env, monkeypatch) -> None:
-    """Delete the budget out from under a box that has no other source and the spawn fails
-    naming both refusals -- it does not quietly find something else.
-
-    The listing is what makes the deletion visible (``listing_supersedes_binding``), and the
-    failure has to be a rendering of the list, so both sentences appear.
-    """
+async def test_explicit_unbinding_hands_a_signed_out_box_back_nothing(env, monkeypatch) -> None:
+    """Explicit unbinding clears the chosen wallet; signed-out fallbacks cannot spend."""
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
@@ -936,7 +893,7 @@ async def test_deleting_the_wallet_hands_a_signed_out_box_back_nothing(env, monk
     cap.login_state = DeviceLoginState.IDLE
     await cap.save(notify=False)
     _bind(monkeypatch)
-    # A listing that SUCCEEDED and does not contain the bound endpoint: the budget is gone.
+    settings.clear_hub_llm_endpoint()
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
 
     with pytest.raises(LLMSourceError) as excinfo:
@@ -1487,5 +1444,5 @@ def test_the_bound_endpoint_is_labelled_with_the_provider_the_hub_pushed() -> No
 
     row = LLMEndpoint.projection("hub", "allowance", name="allowance", provider="openrouter")
     bound = HubLLMEndpoint(endpoint_typeid=str(row.typeid), invoke_path="/x", provider="vertex", name="allowance")
-    (candidate,) = _endpoint_sources(driver_api_auth_spec("claude"), [row], bound, True, True)
+    (candidate,) = _endpoint_sources(driver_api_auth_spec("claude"), [row], bound, True)
     assert candidate.source.detail == "vertex"

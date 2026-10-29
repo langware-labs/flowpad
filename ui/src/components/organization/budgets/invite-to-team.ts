@@ -32,7 +32,7 @@ import { errorDetail, errorStatus } from '@src/lib/error-message';
 /** What an invitation to a team confers. Not from the `Role` enum: `member` is the hub's own
  *  default for `inviteMember` and is deliberately off that enum, which carries the standard ladder
  *  the UI picks from. The role is named explicitly so the call site is not reading a default. */
-export const TEAM_INVITE_ROLE = 'member';
+export const TEAM_INVITE_ROLES = ['reader'];
 
 export interface TeamInviteOutcome {
   /** An invitation was minted and the hub sent (or is sending) the mail. */
@@ -91,7 +91,7 @@ export async function inviteToTeamByEmail(teamId: string, emails: readonly strin
   if (emails.length === 0) return outcome;
 
   const typeId = new TypeId('team', teamId);
-  let team: { inviteMember: (email: string, role: string, opts?: object) => Promise<void> };
+  let team: { inviteMember: (email: string, roles: string[], opts?: object) => Promise<void> };
   try {
     team = (await dataManager.getByTypeId(typeId)) as never;
   } catch (err) {
@@ -103,7 +103,7 @@ export async function inviteToTeamByEmail(teamId: string, emails: readonly strin
 
   const callbackOverride = teamInviteLandingPath();
   const results = await Promise.allSettled(
-    emails.map((email) => team.inviteMember(email, TEAM_INVITE_ROLE, { callbackOverride })),
+    emails.map((email) => team.inviteMember(email, TEAM_INVITE_ROLES, { callbackOverride })),
   );
   results.forEach((result, i) => {
     const email = emails[i];

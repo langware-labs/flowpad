@@ -24,3 +24,4 @@ export * from './ProcessCall';
 export * from './ReturnedValue';
 // The `flow show` contract (target, placement, history entry) — models, not a process's own.
 export * from './ShowTarget';
+export * from './roles';

@@ -77,7 +77,7 @@ export function TeamDetail({
 
   const roleByUser = useMemo(() => {
     const map = new Map<string, string>();
-    for (const m of roster) if (!isGroupMember(m as never) && m.user_id && m.role) map.set(m.user_id, m.role);
+    for (const m of roster) if (!isGroupMember(m as never) && m.user_id && m.roles?.length) map.set(m.user_id, m.roles.join(', '));
     return map;
   }, [roster]);
   // `undefined` until the team's pool has loaded: before that nobody can be called default or custom.
@@ -154,10 +154,10 @@ export function TeamDetail({
           />
           <p className="text-sm text-muted-foreground">
             {team.member_count != null && <Plural value={team.member_count} one="# member" other="# members" />}
-            {team.my_role && (
+            {!!team.my_roles?.length && (
               <>
                 {' · '}
-                <Trans>you are {team.my_role}</Trans>
+                <Trans>you are {team.my_roles?.join(', ')}</Trans>
               </>
             )}
           </p>

@@ -82,7 +82,7 @@ describe('Project.invite — one share action; the backend orchestrates the invi
       share_result: outcome,
     });
 
-    const result = await p.invite([' New@Example.com ', '', { idOrEmail: `user-${THEM}`, role: 'admin' }], {
+    const result = await p.invite([' New@Example.com ', '', { idOrEmail: `user-${THEM}`, roles: ['admin'] }], {
       teams: [new TypeId('team', INITECH)],
       note: '  Welcome aboard ',
     });
@@ -93,7 +93,7 @@ describe('Project.invite — one share action; the backend orchestrates the invi
     expect(info.method).toBe('POST');
     // Only ShareRequestSpec's keys — never the entity's own JSON.
     expect(info.bodyParameters).toEqual({
-      recipients: ['New@Example.com', { idOrEmail: `user-${THEM}`, role: 'admin' }],
+      recipients: ['New@Example.com', { idOrEmail: `user-${THEM}`, roles: ['admin'] }],
       teams: [`team-${INITECH}`],
       note: 'Welcome aboard',
     });

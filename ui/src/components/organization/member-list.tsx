@@ -26,7 +26,7 @@ import { assignableRolesForMember, isGroupMember, memberPrincipalId } from '@src
 
 export interface MemberActions {
   /** Change a member's role. Receives the principal id (user or group). */
-  onSetRole: (principalId: string, role: string) => Promise<void>;
+  onSetRole: (principalId: string, roles: string[]) => Promise<void>;
   /** Remove a member. Receives the principal id (user or group). */
   onRemove: (principalId: string) => Promise<void>;
 }
@@ -56,7 +56,7 @@ export function MemberRow({
   const principalId = memberPrincipalId(member);
 
   const options = manage && actions ? assignableRolesForMember(me, member) : [];
-  const currentRole = (member.role || '').toLowerCase();
+  const currentRole = member.roles ?? [];
   // A group is rendered with its own glyph rather than initials, so a class
   // inside a school reads as a class and not as a person with odd initials.
   const GroupIcon = isGroup ? iconForType((member as { type?: string }).type || 'team') : null;
@@ -99,18 +99,11 @@ export function MemberRow({
           data-testid="member-role-select"
           aria-label={t`Role`}
           className="rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
+          multiple
           value={currentRole}
           disabled={busy}
-          onChange={(e) => void run(() => actions.onSetRole(principalId, e.target.value))}
+          onChange={(e) => void run(() => actions.onSetRole(principalId, Array.from(e.target.selectedOptions, option => option.value)))}
         >
-          {/* The current role may sit outside what the caller can assign (e.g.
-              ``guest``, or a comma-joined multi-role). Injected as disabled so the
-              control is never blank. */}
-          {!options.includes(currentRole) && (
-            <option value={currentRole} disabled>
-              {role || currentRole}
-            </option>
-          )}
           {options.map((r) => (
             <option key={r} value={r}>
               {r}

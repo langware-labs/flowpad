@@ -6,11 +6,8 @@
  * drawer it came from, and the plain People & teams page. Two copies of an invite box is two role
  * pickers that drift apart, and the role picker is the part with a rule in it.
  *
- * **The roles offered are capped by the caller's own rank** (`grantableRoles`), which mirrors the
- * hub's `can_assign`: a role at or above the granter's is refused. The list used to be the flat
- * `['admin', 'editor', 'member', 'reader']`, so an organization's ADMIN was shown `admin` as the
- * first option and every attempt to use it came back refused — the one entry that could never
- * work sitting at the top of the menu. An owner still sees it, because for an owner it works.
+ * The generated role registry determines the role sets the caller may grant.
+ * Reader and Runner can be selected independently or together.
  *
  * `me` is the caller's own roster row, and both call sites render this only once that has
  * resolved -- the drawer because `canInviteMembers` needs a rank to be true at all, the share panel
@@ -40,7 +37,7 @@ export function InviteRow({ entityTypeId, onInvited, me, testIdPrefix = 'org' }:
   const [email, setEmail] = useState('');
   // `member` when the caller may confer it, else the most privileged thing they can — never a role
   // that would be refused.
-  const [role, setRole] = useState(() => (roles.includes('member') ? 'member' : (roles[0] ?? '')));
+  const [role, setRole] = useState<string[]>(roles.includes('reader') ? ['reader'] : []);
   const [busy, setBusy] = useState(false);
 
   const submit = useCallback(async () => {
@@ -50,7 +47,7 @@ export function InviteRow({ entityTypeId, onInvited, me, testIdPrefix = 'org' }:
     try {
       const { dataManager } = await import('@sdk');
       const entity = await dataManager.getByTypeId<never>(entityTypeId);
-      await (entity as unknown as { inviteMember: (e: string, r: string) => Promise<void> }).inviteMember(
+      await (entity as unknown as { inviteMember: (e: string, r: string[]) => Promise<void> }).inviteMember(
         trimmed,
         role,
       );
@@ -85,8 +82,9 @@ export function InviteRow({ entityTypeId, onInvited, me, testIdPrefix = 'org' }:
       {/* The role is chosen at invite time rather than defaulted silently — the
           person doing the inviting is the one who knows what the invitee is for. */}
       <select
+        multiple
         value={role}
-        onChange={(e) => setRole(e.target.value)}
+        onChange={(e) => setRole(Array.from(e.target.selectedOptions, option => option.value))}
         data-testid={`${testIdPrefix}-invite-role`}
         aria-label={t`Role`}
         className="rounded-md border border-border bg-background px-2 py-1 text-sm"
@@ -99,7 +97,7 @@ export function InviteRow({ entityTypeId, onInvited, me, testIdPrefix = 'org' }:
       </select>
       <Button
         size="sm"
-        disabled={busy || !email.trim()}
+        disabled={busy || !email.trim() || !role.length}
         onClick={() => void submit()}
         data-testid={`${testIdPrefix}-invite-submit`}
       >

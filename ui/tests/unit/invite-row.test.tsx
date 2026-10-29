@@ -26,8 +26,8 @@ import { InviteRow } from '@src/components/organization/invite-row';
 
 const ORG = new TypeId('organization', '550e8400-e29b-41d4-a716-446655440001');
 
-const owner = { user_id: 'u-owner', email: 'o@x.test', role: 'owner' };
-const admin = { user_id: 'u-admin', email: 'a@x.test', role: 'admin' };
+const owner = { user_id: 'u-owner', email: 'o@x.test', roles: ['owner'] };
+const admin = { user_id: 'u-admin', email: 'a@x.test', roles: ['admin'] };
 
 function draw(me: unknown) {
   const onInvited = vi.fn();
@@ -50,17 +50,17 @@ afterEach(() => {
 describe('InviteRow', () => {
   it('offers an owner the whole ladder', () => {
     draw(owner);
-    expect(roleOptions()).toEqual(['admin', 'editor', 'member', 'reader']);
+    expect(roleOptions()).toEqual(['admin', 'editor', 'reader', 'runner']);
   });
 
   it('does not offer an admin the ability to create another admin', () => {
     draw(admin);
-    expect(roleOptions()).toEqual(['editor', 'member', 'reader']);
+    expect(roleOptions()).toEqual(['editor', 'reader', 'runner']);
   });
 
   it('defaults to member, which both of them may confer', () => {
     draw(admin);
-    expect(screen.getByTestId<HTMLSelectElement>('org-invite-role').value).toBe('member');
+    expect(screen.getByTestId<HTMLSelectElement>('org-invite-role').value).toBe('reader');
   });
 
   it('offers nothing to a caller with no resolvable rank', () => {
@@ -76,7 +76,7 @@ describe('InviteRow', () => {
     fireEvent.change(screen.getByTestId('org-invite-role'), { target: { value: 'reader' } });
     fireEvent.click(screen.getByTestId('org-invite-submit'));
 
-    await waitFor(() => expect(h.inviteMember).toHaveBeenCalledWith('new@example.com', 'reader'));
+    await waitFor(() => expect(h.inviteMember).toHaveBeenCalledWith('new@example.com', ['reader']));
     expect(onInvited).toHaveBeenCalled();
   });
 

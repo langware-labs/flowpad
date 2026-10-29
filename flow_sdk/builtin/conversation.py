@@ -54,7 +54,7 @@ def member_label(member: dict) -> str:
     """How a conversation member is named in plain text: ``name (role)``,
     falling back to email then user id."""
     label = member.get("name") or member.get("email") or member.get("user_id") or "?"
-    role = member.get("role")
+    role = ", ".join(member.get("roles") or [])
     return f"{label} ({role})" if role else str(label)
 
 
@@ -639,13 +639,14 @@ class Conversation(ProjectedFields, Entity):
             targets (conversation + any shared assets) and cannot drift
             apart."""
             extra = dict(invitation or {})
-            role = extra.pop("role", None) or "member"
             extra_targets = [t for t in (extra.pop("invitation_targets", None) or []) if isinstance(t, dict)]
             own = f"conversation-{self.id}"
+            roles = next((t["roles"] for t in extra_targets if t.get("typeid") == own and "roles" in t), None)
+            roles = roles if roles is not None else extra.pop("roles", ["reader", "runner"])
             body: dict = {
                 **identity,
                 "invitation_targets": [
-                    {"typeid": own, "role": role},
+                    {"typeid": own, "roles": roles},
                     *asset_targets,
                     *(t for t in extra_targets if t.get("typeid") != own),
                 ],
@@ -775,7 +776,7 @@ class Conversation(ProjectedFields, Entity):
                 # needs the wire spelling (subagent → agent until the hub
                 # renames) — same map as build_hub_url.
                 wire = TypeId(type=hub_wire_type(tid.type), id=tid.id)
-                targets.append({"typeid": str(wire), "role": "reader"})
+                targets.append({"typeid": str(wire), "roles": ["reader"]})
             except Exception as e:  # noqa: BLE001
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets

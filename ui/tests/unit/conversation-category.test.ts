@@ -158,8 +158,8 @@ describe('conversationFacets', () => {
 
 const REQUESTER = 'u-req';
 const STAFF = 'u-staff';
-const requesterMember = { user_id: REQUESTER, role: 'owner', name: 'Guest' };
-const staffMember = { user_id: STAFF, role: 'member', name: 'Dana' };
+const requesterMember = { user_id: REQUESTER, roles: ['owner'], name: 'Guest' };
+const staffMember = { user_id: STAFF, roles: ['reader', 'runner'], name: 'Dana' };
 
 function ticketInputs(over: {
   status?: ConversationStatus;

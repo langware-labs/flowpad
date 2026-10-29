@@ -21,7 +21,7 @@ class Visitor(Entity):
     utm_params: dict[str, str] | None = Field(default=None)  # Stores all utm_* query parameters
     # Not APIField, for security (stays off the API surface); PRIVATE so it
     # matches the base declaration instead of silently widening it.
-    visitor_role: str = EntityField(default=VISITOR_AUTH_ROLE.value.lower(), sharing=Sharing.PRIVATE)
+    visitor_roles: list[str] = EntityField(default_factory=lambda: [VISITOR_AUTH_ROLE.value.lower()], sharing=Sharing.PRIVATE)
 
     @staticmethod
     def _get_ga_client_id(cookies: dict[str, str]) -> str | None:

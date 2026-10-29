@@ -15,7 +15,7 @@ and nothing else. Anything above it would let them raise the very cap they were 
 
 import pytest
 
-from flow_sdk.builtin.llm_endpoint import SHARE_ROLE, LLMEndpoint
+from flow_sdk.builtin.llm_endpoint import SHARE_ROLES, LLMEndpoint
 from flow_sdk.cloud_client.hub_proxy import HubProxy
 
 ENDPOINT_ID = "11111111-1111-4111-8111-111111111111"
@@ -53,7 +53,7 @@ async def test_sharing_invites_each_recipient_as_a_reader(hub_calls):
         assert (entity_type, entity_id, action) == ("llm_endpoint", ENDPOINT_ID, "members")
         assert payload["recipient_email"] == email
         assert payload["invitation_targets"] == [
-            {"typeid": f"llm_endpoint-{ENDPOINT_ID}", "role": SHARE_ROLE}
+            {"typeid": f"llm_endpoint-{ENDPOINT_ID}", "roles": ["reader", "runner"]}
         ]
         assert payload["callback_override"] == f"/dock/hub/llm-endpoints/{ENDPOINT_ID}"
 
@@ -70,7 +70,7 @@ async def test_sharing_never_creates_the_endpoint_on_the_hub(hub_calls):
 async def test_the_share_role_is_spend_only():
     """Pinned as a constant, because raising it is a one-character change with a large blast radius:
     ``admin`` on an llm_endpoint may rewrite limits, replace the provider key, and allocate."""
-    assert SHARE_ROLE == "reader"
+    assert SHARE_ROLES == ["reader", "runner"]
 
 
 async def test_no_recipients_is_a_no_op(hub_calls):

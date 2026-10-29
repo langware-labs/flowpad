@@ -51,7 +51,7 @@ function useVisitorRole(agent: Agent, published: boolean): [string | null, (role
     if (!published) return;
     getPublicAccess(agentRef.current.typeId, 'visitor')
       // A hub without the public-access API answers this path with the agent row itself — no `audience`.
-      .then((access) => !cancelled && access?.audience === 'visitor' && setRole(access.role ?? null))
+      .then((access) => !cancelled && access?.audience === 'visitor' && setRole(access.roles.join(', ') ?? null))
       .catch(() => undefined);
     return () => {
       cancelled = true;
@@ -85,7 +85,7 @@ function PublicAccessButton({
       const access = isPublic
         ? await clearPublicAccess(agent.typeId, 'visitor')
         : await setPublicAccess(agent.typeId, 'visitor', PUBLIC_VIEWER_ROLE);
-      setRole(access.role ?? null);
+      setRole(access.roles.join(', ') ?? null);
       if (isPublic) {
         notify.success({
           title: t`Public access removed`,
