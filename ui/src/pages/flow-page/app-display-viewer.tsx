@@ -7,7 +7,7 @@ import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
+import { type AppRuntime } from '@src/navigation/app-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
@@ -179,12 +179,6 @@ export function AppDisplayViewer({
     return () => window.removeEventListener('message', onGuest);
   }, [pushSkin, appDisplay.src, navigation, project?.id]);
 
-  // URL-carried, so the choice survives a reload and the Back button — it used to
-  // be component state and vanished on both.
-  const setRuntime = (next: string) => {
-    if (currentDock) navigation.openDock(currentDock.withOption(APP_RUNTIME_PARAM, next));
-  };
-
   // A web app ASSET whose dev server does not answer is set up, not reported missing: its node of the
   // project's setup tree runs with the live tree on screen, and the app takes over once it answers.
   // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
@@ -282,13 +276,4 @@ export function AppDisplayViewer({
   ) : (
     display
   );
-}
-
-/** `host:port` of a direct address, for the toolbar label. */
-function directHost(src: string): string {
-  try {
-    return new URL(src).host;
-  } catch {
-    return '';
-  }
 }

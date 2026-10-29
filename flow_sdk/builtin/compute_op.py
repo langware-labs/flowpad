@@ -89,6 +89,9 @@ class ComputeOp(Entity):
     attempts: list[Rung] = APIField(
         default_factory=list, description="Further rungs (cli/prompt/agent) tried in order at the same goal."
     )
+    fix_on_load: bool = APIField(
+        default=False, description="Keep the agent rung on a plain load too (a web app's own step)."
+    )
     not_applicable_codes: list[int] = APIField(
         default_factory=list, description='Completion-check exit codes that mean "not this machine".'
     )

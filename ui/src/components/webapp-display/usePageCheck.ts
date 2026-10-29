@@ -57,8 +57,12 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
   const budget = useRef({ restart: false, agent: false });
   const decided = useRef(false);
   const agentWasRunning = useRef(false);
+  // This display reloaded the frame itself: the new page reports on its own, and asking would reach the
+  // OLD page first (its stale report) while the reload is in flight.
+  const reloadedHere = useRef(false);
 
   const recheck = useCallback(() => {
+    reloadedHere.current = true;
     decided.current = false;
     setState('checking');
     setReloads((n) => n + 1);
@@ -68,6 +72,7 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
   useEffect(() => {
     budget.current = { restart: false, agent: false };
     decided.current = false;
+    reloadedHere.current = false;
     setTried([]);
     setVerdict(null);
     setState('checking');
@@ -121,8 +126,10 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
 
   // While checking, ask the frame for its report: a frame this mount did not load reports only when asked.
   useEffect(() => {
-    if (state !== 'checking') return;
-    const ask = () => postToGuest({ type: PAGE_REPORT_REQUEST });
+    if (state !== 'checking' || reloadedHere.current) return;
+    const ask = () => {
+      if (!decided.current) postToGuest({ type: PAGE_REPORT_REQUEST });
+    };
     ask();
     const timer = setInterval(ask, 1000);
     return () => clearInterval(timer);
