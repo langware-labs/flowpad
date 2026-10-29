@@ -1129,6 +1129,7 @@ msgid "{0}: waiting for you…"
 msgstr "{0}: ממתין לכם…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "{active} active"
 msgstr "{active} פעילים"
 
@@ -1139,6 +1140,10 @@ msgstr "נותרו {amount} {windowText}"
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "{autoApproveLabel} from {who}"
 msgstr "{autoApproveLabel} מאת {who}"
+
+#: src/components/conversation/conversation-category.ts
+msgid "{base} help desk"
+msgstr ""
 
 #. placeholder {0}: deployment?.name ?? ''
 #: src/components/credentials/CredentialDialog.tsx
@@ -2273,6 +2278,10 @@ msgstr "ביטוי cron מורכב מחמישה חלקים."
 msgid "A deployment"
 msgstr "פריסה בשרת"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
+msgstr ""
+
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A desktop instance or a machine, and a channel id on it"
 msgstr "מופע Desktop או מחשב, ומזהה ערוץ בתוכו"
@@ -2613,6 +2622,7 @@ msgid "active"
 msgstr "פעיל"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
@@ -5852,7 +5862,7 @@ msgstr "מזהה ערוץ (מזהה מקור נתונים שם)"
 #: src/components/inbound/InboundView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
-#: src/pages/hub-home/HubSummaryLine.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 #: src/types/ViewType.ts
 msgid "Channels"
 msgstr "ערוצים"
@@ -6395,7 +6405,7 @@ msgstr "ניקוי היסטוריה"
 msgid "Clear Index"
 msgstr "נקו אינדקס"
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
@@ -6714,6 +6724,7 @@ msgstr "סגרו לימין"
 #~ msgid "Close workspace"
 #~ msgstr "סגירת סביבת העבודה"
 
+#: src/components/conversation/conversation-category.ts
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "סגרו"
@@ -9185,6 +9196,7 @@ msgid "created"
 msgstr "נוצר"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/tabs/provider-meta.tsx
@@ -10174,6 +10186,10 @@ msgstr "תלות"
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
 msgstr "פרסו"
+
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Deploy an agent"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy failed."
@@ -11668,6 +11684,7 @@ msgstr "שגיאה"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/machine-overview/node-secrets.tsx
@@ -12225,8 +12242,8 @@ msgid "Explain the result"
 msgstr "הסבירו את התוצאה"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Explore your organization and everything you can reach."
-msgstr "יש לחקור את הארגון שלכם וכל מה שניתן להגיע אליו."
+#~ msgid "Explore your organization and everything you can reach."
+#~ msgstr "יש לחקור את הארגון שלכם וכל מה שניתן להגיע אליו."
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Export"
@@ -14206,6 +14223,10 @@ msgstr "זרימות עבודה גרפיות"
 msgid "Graph Workflows"
 msgstr "זרימות עבודה גרפיות"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Grid view"
+msgstr ""
+
 #: src/components/inbound/InboundView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "group"
@@ -14372,6 +14393,7 @@ msgstr "מצב תקינות:"
 msgid "Held by"
 msgstr "מוחזק על ידי"
 
+#: src/components/conversation/conversation-category.ts
 #: src/components/diagnose/ShareWithRow.tsx
 #: src/components/footer.tsx
 #: src/components/footer.tsx
@@ -14920,6 +14942,7 @@ msgstr "חיבורי IDE (VS Code, Cursor, וכו')"
 msgid "Identity"
 msgstr "זהות"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Idle"
 msgstr ""
@@ -16545,6 +16568,7 @@ msgstr "רשימת המודלים הזמינים לבחירה"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "List view"
 msgstr "תצוגת רשימה"
 
@@ -16575,6 +16599,7 @@ msgstr "בהאזנה"
 msgid "live"
 msgstr "חי"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/automations/BusStream.tsx
 #: src/components/footer/LiveSessionsChip.tsx
 msgid "Live"
@@ -16705,6 +16730,7 @@ msgstr "טעינת עוזר Flowpad"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "Load more"
 msgstr "טענו עוד"
 
@@ -17297,6 +17323,10 @@ msgstr "הגדרות תיבת הדואר נשמרו"
 msgid "Make a todo app"
 msgstr "צרו אפליקציית משימות"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Make an agent"
+msgstr ""
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Make an agent in 60 seconds — where will you talk to it?"
 msgstr ""
@@ -17699,6 +17729,10 @@ msgstr "פעולות על ההודעה"
 msgid "Message Attachment"
 msgstr "קובץ מצורף להודעה"
 
+#: src/components/browseable-tree/adapters/dataSourcesRoot.tsx
+msgid "Message channels"
+msgstr "ערוצי הודעות"
+
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message downloaded"
 msgstr "ההודעה הורדה"
@@ -17987,6 +18021,7 @@ msgstr "מודלים חסומים (תבניות glob)"
 msgid "Models Used"
 msgstr "מודלים בשימוש"
 
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -18734,6 +18769,10 @@ msgstr "לא הוגדרו וו-וצקי סוכן"
 #~ msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
 #~ msgstr ""
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
+msgstr ""
+
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
 msgstr "לא נמצאו יומני התראות"
@@ -19324,6 +19363,10 @@ msgstr "אין מכונה שממתינה לקוד הזה. בדקו את הקוד
 msgid "No machine yet"
 msgstr ""
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No machines yet. Connect this computer or start a sandbox to run agents and terminals."
+msgstr ""
+
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
 msgstr "לא נבחר קובץ markdown"
@@ -19350,7 +19393,8 @@ msgstr "אין התאמות"
 msgid "No matches"
 msgstr "אין התאמות"
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "No matches for “{query}”."
 msgstr "לא נמצאו תוצאות עבור “{query}”."
 
@@ -20279,6 +20323,10 @@ msgstr "לא עכשיו"
 msgid "Not on this computer either — {0}"
 msgstr "גם לא במחשב הזה — {0}"
 
+#: src/components/conversation/conversation-category.ts
+msgid "Not picked up"
+msgstr ""
+
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Not published"
 msgstr "לא פורסם"
@@ -20525,7 +20573,7 @@ msgstr "עדיין לא הורץ כאן דבר."
 msgid "Nothing here yet — use the + below to add one."
 msgstr "אין כאן עדיין — השתמשו בפלוס למטה כדי להוסיף אחד."
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Nothing here yet."
 msgstr "אין כאן כלום עדיין"
@@ -22543,6 +22591,7 @@ msgid "paused"
 msgstr "מושהה"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/data-sources/status-style.ts
@@ -22805,6 +22854,18 @@ msgstr "בחרו מה לעשות עם הזמנה זו."
 #: src/components/automations/MessageRulePage.tsx
 msgid "Pick who handles it."
 msgstr "בחרו מי יטפל בזה."
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up"
+msgstr ""
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up by {by}"
+msgstr ""
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up by you"
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Picking up…"
@@ -23926,8 +23987,8 @@ msgstr "יצירה מהירה"
 msgid "quick requests open without an assistant turn"
 msgstr "בקשות מהירות נפתחות בלי תור של עוזר"
 
-#: src/components/asset-counters/AssetListView.tsx
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
+#: src/components/asset-counters/AssetItems.tsx
 msgid "Quick search"
 msgstr "חיפוש מהיר"
 
@@ -28211,6 +28272,12 @@ msgstr "הצגת commits שלא נדחפו"
 msgid "Show value"
 msgstr "הציגו את הערך"
 
+#. placeholder {0}: page.length
+#. placeholder {1}: rows.length
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Showing {0} of {1}"
+msgstr ""
+
 #: src/components/top-nav-bar/AppButton.tsx
 #~ msgid "Showing {name}"
 #~ msgstr "מוצג: {name}"
@@ -28548,6 +28615,7 @@ msgstr "החל מ- (לא חובה)"
 msgid "size"
 msgstr "גודל"
 
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -33494,6 +33562,10 @@ msgstr "ממתינים לפתיחת FlowPad…"
 msgid "Waiting for keychain approval…"
 msgstr "ממתין לאישור מפתחות…"
 
+#: src/components/conversation/conversation-category.ts
+msgid "Waiting for pickup"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Waiting for sign-in"
 msgstr "ממתינה להתחברות"
@@ -33581,6 +33653,7 @@ msgstr "בקשה להריץ במחשב שלך"
 msgid "wants to run prompts on your machine"
 msgstr "רוצה להריץ פרומפטים במחשב שלכם"
 
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Warning"
 msgstr "אזהרה"

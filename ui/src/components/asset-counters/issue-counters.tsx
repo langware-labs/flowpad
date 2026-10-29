@@ -130,6 +130,12 @@ export const hubIssueCounterGroup: AssetCounterGroup<Issue> = {
   itemKey: (i) => i.id,
   searchText: (i) => [i.title, i.detail, i.kind, i.subject_typeid].filter(Boolean).join(' '),
   itemPointer: fixPointer,
+  card: (i) => ({
+    title: i.title,
+    description: i.detail,
+    status: { label: i.severity === 'error' ? <Trans>Error</Trans> : <Trans>Warning</Trans>, active: false },
+    footer: <IssueFixButton issue={i} />,
+  }),
   columns: [
     {
       key: 'severity',

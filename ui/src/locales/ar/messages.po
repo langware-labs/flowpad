@@ -1129,6 +1129,7 @@ msgid "{0}: waiting for you…"
 msgstr "{0}: في انتظاركم…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "{active} active"
 msgstr "{active} نشط"
 
@@ -1139,6 +1140,10 @@ msgstr "تبقّى {amount} {windowText}"
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "{autoApproveLabel} from {who}"
 msgstr "{autoApproveLabel} من {who}"
+
+#: src/components/conversation/conversation-category.ts
+msgid "{base} help desk"
+msgstr ""
 
 #. placeholder {0}: deployment?.name ?? ''
 #: src/components/credentials/CredentialDialog.tsx
@@ -2274,6 +2279,10 @@ msgstr "تتكوّن صيغة cron من خمسة أجزاء."
 msgid "A deployment"
 msgstr "عملية نشر"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
+msgstr ""
+
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A desktop instance or a machine, and a channel id on it"
 msgstr "مثيل سطح مكتب أو جهاز، ومعرّف قناة عليه"
@@ -2614,6 +2623,7 @@ msgid "active"
 msgstr "نشط"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
@@ -5852,7 +5862,7 @@ msgstr "معرّف القناة (معرّف مصدر البيانات هناك)"
 #: src/components/inbound/InboundView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
-#: src/pages/hub-home/HubSummaryLine.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 #: src/types/ViewType.ts
 msgid "Channels"
 msgstr "القنوات"
@@ -6395,7 +6405,7 @@ msgstr "مسح السجل"
 msgid "Clear Index"
 msgstr "مسح الفهرس"
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
@@ -6714,6 +6724,7 @@ msgstr "إغلاق ما على اليمين"
 #~ msgid "Close workspace"
 #~ msgstr "إغلاق مساحة العمل"
 
+#: src/components/conversation/conversation-category.ts
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "مغلق"
@@ -9185,6 +9196,7 @@ msgid "created"
 msgstr "تم الإنشاء"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/tabs/provider-meta.tsx
@@ -10174,6 +10186,10 @@ msgstr "تبعية"
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
 msgstr "نشر"
+
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Deploy an agent"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy failed."
@@ -11668,6 +11684,7 @@ msgstr "خطأ"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/machine-overview/node-secrets.tsx
@@ -12225,8 +12242,8 @@ msgid "Explain the result"
 msgstr "اشرحوا النتيجة"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Explore your organization and everything you can reach."
-msgstr "استكشاف مؤسستكم وكل ما يمكنكم الوصول إليه."
+#~ msgid "Explore your organization and everything you can reach."
+#~ msgstr "استكشاف مؤسستكم وكل ما يمكنكم الوصول إليه."
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Export"
@@ -14206,6 +14223,10 @@ msgstr "سير عمل رسومية"
 msgid "Graph Workflows"
 msgstr "مسارات عمل الرسم البياني"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Grid view"
+msgstr ""
+
 #: src/components/inbound/InboundView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "group"
@@ -14372,6 +14393,7 @@ msgstr "الحالة:"
 msgid "Held by"
 msgstr "بحوزة"
 
+#: src/components/conversation/conversation-category.ts
 #: src/components/diagnose/ShareWithRow.tsx
 #: src/components/footer.tsx
 #: src/components/footer.tsx
@@ -14920,6 +14942,7 @@ msgstr "اتصالات بيئة التطوير (VS Code، Cursor، إلخ)"
 msgid "Identity"
 msgstr "الهوية"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Idle"
 msgstr ""
@@ -16545,6 +16568,7 @@ msgstr "قائمة النماذج المتاحة للاختيار"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "List view"
 msgstr "عرض القائمة"
 
@@ -16575,6 +16599,7 @@ msgstr "قيد الاستماع"
 msgid "live"
 msgstr "مباشر"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/automations/BusStream.tsx
 #: src/components/footer/LiveSessionsChip.tsx
 msgid "Live"
@@ -16705,6 +16730,7 @@ msgstr "تحميل مساعد Flowpad"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "Load more"
 msgstr "تحميل المزيد"
 
@@ -17297,6 +17323,10 @@ msgstr "تم حفظ إعدادات صندوق البريد"
 msgid "Make a todo app"
 msgstr "إنشاء تطبيق قائمة مهام"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Make an agent"
+msgstr ""
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Make an agent in 60 seconds — where will you talk to it?"
 msgstr ""
@@ -17699,6 +17729,10 @@ msgstr "إجراءات الرسالة"
 msgid "Message Attachment"
 msgstr "مرفق الرسالة"
 
+#: src/components/browseable-tree/adapters/dataSourcesRoot.tsx
+msgid "Message channels"
+msgstr "قنوات الرسائل"
+
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message downloaded"
 msgstr "تم تنزيل الرسالة"
@@ -17987,6 +18021,7 @@ msgstr "النماذج المحظورة (أنماط glob)"
 msgid "Models Used"
 msgstr "النماذج المستخدمة"
 
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -18734,6 +18769,10 @@ msgstr "لم يتم تكوين أي خطاطيف للوكيل"
 #~ msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
 #~ msgstr ""
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
+msgstr ""
+
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
 msgstr "لا توجد سجلات تنبيهات"
@@ -19324,6 +19363,10 @@ msgstr "لا يوجد جهاز بانتظار هذا الرمز. يُرجى ال
 msgid "No machine yet"
 msgstr ""
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No machines yet. Connect this computer or start a sandbox to run agents and terminals."
+msgstr ""
+
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
 msgstr "لم يتم تحديد ملف Markdown"
@@ -19350,7 +19393,8 @@ msgstr "لا توجد نتائج مطابقة"
 msgid "No matches"
 msgstr "لا توجد نتائج مطابقة"
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "No matches for “{query}”."
 msgstr "لا توجد نتائج لـ “{query}”."
 
@@ -20279,6 +20323,10 @@ msgstr "ليس الآن"
 msgid "Not on this computer either — {0}"
 msgstr "ولا على هذا الكمبيوتر أيضًا — {0}"
 
+#: src/components/conversation/conversation-category.ts
+msgid "Not picked up"
+msgstr ""
+
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Not published"
 msgstr "غير منشور"
@@ -20525,7 +20573,7 @@ msgstr "لم يتم تشغيل أي شيء هنا بعد."
 msgid "Nothing here yet — use the + below to add one."
 msgstr "لا شيء هنا بعد — يمكن استخدام + أدناه لإضافة عنصر واحد."
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Nothing here yet."
 msgstr "لا شيء هنا بعد."
@@ -22547,6 +22595,7 @@ msgid "paused"
 msgstr "متوقف مؤقتًا"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/data-sources/status-style.ts
@@ -22809,6 +22858,18 @@ msgstr "يُرجى تحديد الإجراء المطلوب لهذه الدعو�
 #: src/components/automations/MessageRulePage.tsx
 msgid "Pick who handles it."
 msgstr "حدِّدوا من يتولى المعالجة"
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up"
+msgstr ""
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up by {by}"
+msgstr ""
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up by you"
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Picking up…"
@@ -23930,8 +23991,8 @@ msgstr "الإنشاء السريع"
 msgid "quick requests open without an assistant turn"
 msgstr "تُفتح الطلبات السريعة دون دور للمساعد"
 
-#: src/components/asset-counters/AssetListView.tsx
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
+#: src/components/asset-counters/AssetItems.tsx
 msgid "Quick search"
 msgstr "بحث سريع"
 
@@ -28215,6 +28276,12 @@ msgstr "عرض الإيداعات غير المدفوعة"
 msgid "Show value"
 msgstr "إظهار القيمة"
 
+#. placeholder {0}: page.length
+#. placeholder {1}: rows.length
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Showing {0} of {1}"
+msgstr ""
+
 #: src/components/top-nav-bar/AppButton.tsx
 #~ msgid "Showing {name}"
 #~ msgstr "معروض: {name}"
@@ -28552,6 +28619,7 @@ msgstr "منذ (اختياري)"
 msgid "size"
 msgstr "الحجم"
 
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -33498,6 +33566,10 @@ msgstr "في انتظار فتح FlowPad…"
 msgid "Waiting for keychain approval…"
 msgstr "في انتظار موافقة Keychain…"
 
+#: src/components/conversation/conversation-category.ts
+msgid "Waiting for pickup"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Waiting for sign-in"
 msgstr "في انتظار تسجيل الدخول"
@@ -33585,6 +33657,7 @@ msgstr "يطلب التشغيل على جهازك"
 msgid "wants to run prompts on your machine"
 msgstr "يريد تشغيل موجّهات على جهازكم"
 
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Warning"
 msgstr "تحذير"

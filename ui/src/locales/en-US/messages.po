@@ -1132,6 +1132,7 @@ msgid "{0}: waiting for you…"
 msgstr "{0}: waiting for you…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "{active} active"
 msgstr "{active} active"
 
@@ -1142,6 +1143,10 @@ msgstr "{amount} left {windowText}"
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "{autoApproveLabel} from {who}"
 msgstr "{autoApproveLabel} from {who}"
+
+#: src/components/conversation/conversation-category.ts
+msgid "{base} help desk"
+msgstr "{base} help desk"
 
 #. placeholder {0}: deployment?.name ?? ''
 #: src/components/credentials/CredentialDialog.tsx
@@ -2288,6 +2293,10 @@ msgstr "A cron expression has five parts."
 msgid "A deployment"
 msgstr "A deployment"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
+msgstr "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
+
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A desktop instance or a machine, and a channel id on it"
 msgstr "A desktop instance or a machine, and a channel id on it"
@@ -2632,6 +2641,7 @@ msgid "active"
 msgstr "active"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
@@ -5890,7 +5900,7 @@ msgstr "Channel id (data source id there)"
 #: src/components/inbound/InboundView.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
-#: src/pages/hub-home/HubSummaryLine.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 #: src/types/ViewType.ts
 msgid "Channels"
 msgstr "Channels"
@@ -6434,7 +6444,7 @@ msgstr "Clear history"
 msgid "Clear Index"
 msgstr "Clear Index"
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
@@ -6758,6 +6768,7 @@ msgstr "Close to the Right"
 #~ msgid "Close workspace"
 #~ msgstr "Close workspace"
 
+#: src/components/conversation/conversation-category.ts
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "Closed"
@@ -9246,6 +9257,7 @@ msgid "created"
 msgstr "created"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/tabs/provider-meta.tsx
@@ -10237,6 +10249,10 @@ msgstr "Dependency"
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
 msgstr "Deploy"
+
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Deploy an agent"
+msgstr "Deploy an agent"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy failed."
@@ -11745,6 +11761,7 @@ msgstr "error"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/machine-overview/node-secrets.tsx
@@ -12305,8 +12322,8 @@ msgid "Explain the result"
 msgstr "Explain the result"
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Explore your organization and everything you can reach."
-msgstr "Explore your organization and everything you can reach."
+#~ msgid "Explore your organization and everything you can reach."
+#~ msgstr "Explore your organization and everything you can reach."
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Export"
@@ -14312,6 +14329,10 @@ msgstr "graph workflows"
 msgid "Graph Workflows"
 msgstr "Graph Workflows"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Grid view"
+msgstr "Grid view"
+
 #: src/components/inbound/InboundView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "group"
@@ -14478,6 +14499,7 @@ msgstr "Health:"
 msgid "Held by"
 msgstr "Held by"
 
+#: src/components/conversation/conversation-category.ts
 #: src/components/diagnose/ShareWithRow.tsx
 #: src/components/footer.tsx
 #: src/components/footer.tsx
@@ -15029,6 +15051,7 @@ msgstr "IDE Connections (VS Code, Cursor, etc.)"
 msgid "Identity"
 msgstr "Identity"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Idle"
 msgstr "Idle"
@@ -16673,6 +16696,7 @@ msgstr "List of models available for selection"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "List view"
 msgstr "List view"
 
@@ -16703,6 +16727,7 @@ msgstr "listening"
 msgid "live"
 msgstr "live"
 
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/automations/BusStream.tsx
 #: src/components/footer/LiveSessionsChip.tsx
 msgid "Live"
@@ -16841,6 +16866,7 @@ msgstr "Load Flowpad assistant"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "Load more"
 msgstr "Load more"
 
@@ -17437,6 +17463,10 @@ msgstr "Mailbox settings saved"
 msgid "Make a todo app"
 msgstr "Make a todo app"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Make an agent"
+msgstr "Make an agent"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Make an agent in 60 seconds — where will you talk to it?"
 msgstr "Make an agent in 60 seconds — where will you talk to it?"
@@ -17841,6 +17871,10 @@ msgstr "Message actions"
 msgid "Message Attachment"
 msgstr "Message Attachment"
 
+#: src/components/browseable-tree/adapters/dataSourcesRoot.tsx
+msgid "Message channels"
+msgstr "Message channels"
+
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message downloaded"
 msgstr "Message downloaded"
@@ -18130,6 +18164,7 @@ msgstr "Models denied (globs)"
 msgid "Models Used"
 msgstr "Models Used"
 
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -18885,6 +18920,10 @@ msgstr "No agent hooks configured"
 #~ msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
 #~ msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
+msgstr "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
+
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
 msgstr "No alert logs found"
@@ -19479,6 +19518,10 @@ msgstr "No machine is waiting on that code. Check the code, or run flow connect 
 msgid "No machine yet"
 msgstr "No machine yet"
 
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No machines yet. Connect this computer or start a sandbox to run agents and terminals."
+msgstr "No machines yet. Connect this computer or start a sandbox to run agents and terminals."
+
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
 msgstr "No markdown file selected"
@@ -19505,7 +19548,8 @@ msgstr "no matches"
 msgid "No matches"
 msgstr "No matches"
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 msgid "No matches for “{query}”."
 msgstr "No matches for “{query}”."
 
@@ -20445,6 +20489,10 @@ msgstr "Not Now"
 msgid "Not on this computer either — {0}"
 msgstr "Not on this computer either — {0}"
 
+#: src/components/conversation/conversation-category.ts
+msgid "Not picked up"
+msgstr "Not picked up"
+
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Not published"
 msgstr "Not published"
@@ -20693,7 +20741,7 @@ msgstr "Nothing has run here yet."
 msgid "Nothing here yet — use the + below to add one."
 msgstr "Nothing here yet — use the + below to add one."
 
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Nothing here yet."
 msgstr "Nothing here yet."
@@ -22730,6 +22778,7 @@ msgid "paused"
 msgstr "paused"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/data-sources/status-style.ts
@@ -22993,6 +23042,18 @@ msgstr "Pick what to do with this invitation."
 #: src/components/automations/MessageRulePage.tsx
 msgid "Pick who handles it."
 msgstr "Pick who handles it."
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up"
+msgstr "Picked up"
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up by {by}"
+msgstr "Picked up by {by}"
+
+#: src/components/conversation/conversation-category.ts
+msgid "Picked up by you"
+msgstr "Picked up by you"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Picking up…"
@@ -24121,8 +24182,8 @@ msgstr "Quick create"
 msgid "quick requests open without an assistant turn"
 msgstr "quick requests open without an assistant turn"
 
-#: src/components/asset-counters/AssetListView.tsx
-#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetItems.tsx
+#: src/components/asset-counters/AssetItems.tsx
 msgid "Quick search"
 msgstr "Quick search"
 
@@ -28437,6 +28498,12 @@ msgstr "Show unpushed commits"
 msgid "Show value"
 msgstr "Show value"
 
+#. placeholder {0}: page.length
+#. placeholder {1}: rows.length
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "Showing {0} of {1}"
+msgstr "Showing {0} of {1}"
+
 #: src/components/top-nav-bar/AppButton.tsx
 #~ msgid "Showing {name}"
 #~ msgstr "Showing {name}"
@@ -28778,6 +28845,7 @@ msgstr "Since (optional)"
 msgid "size"
 msgstr "size"
 
+#: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -33760,6 +33828,10 @@ msgstr "Waiting for FlowPad to open…"
 msgid "Waiting for keychain approval…"
 msgstr "Waiting for keychain approval…"
 
+#: src/components/conversation/conversation-category.ts
+msgid "Waiting for pickup"
+msgstr "Waiting for pickup"
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Waiting for sign-in"
 msgstr "Waiting for sign-in"
@@ -33848,6 +33920,7 @@ msgstr "wants to run on your machine"
 msgid "wants to run prompts on your machine"
 msgstr "wants to run prompts on your machine"
 
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Warning"
 msgstr "Warning"
