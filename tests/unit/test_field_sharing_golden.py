@@ -424,6 +424,8 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "status",
                 "last_active_at",
                 "last_edited_at",
+                # A list of mark values: the harness fills strings, not specs.
+                "marks",
                 "message_count",
                 "message_ids",
                 # A projection like `message_count`: only `recompute_unread` may write it.
