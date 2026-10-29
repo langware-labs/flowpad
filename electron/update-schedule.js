@@ -214,7 +214,6 @@ function decideDesktopAction({ state, version, isNewer, deferredVersion, offered
 module.exports = {
   REGULAR_INTERVAL_MS,
   INTERNAL_INTERVAL_MS,
-  INTERNAL_DOMAIN,
   SCHEDULE_FILE,
   SCHEDULER_TICK_MS,
   BACKOFF_BASE_MS,

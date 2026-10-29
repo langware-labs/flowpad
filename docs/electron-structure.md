@@ -46,6 +46,7 @@ Electron (main.js)
 | `flow-rs-keychain.js` | Reading keys from the keychain. |
 | `progress-watchdog.js` | Progress guard: 30 s windows, 3 quiet windows in a row = stalled. Gated by `canStall`, async sampling, overlap-safe. |
 | `update-restart.js` | `createRestartApplier` — "Restart now": stops the backend, installs, and recovers if the restart fails. |
+| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
 | `support-bundle.js` | "Send Report" zip: `collectLogs`, `buildSupportZip`, `redact`. |
@@ -168,7 +169,7 @@ On macOS, an app running from a transient location is offered, once per version,
 
 | File | Location |
 | --- | --- |
-| `desktop-version.json`, `app-location-prompt.json`, `pending-engine.json` | `app.getPath('userData')` |
+| `desktop-version.json`, `app-location-prompt.json`, `pending-engine.json`, `update-schedule.json` | `app.getPath('userData')` |
 | `desktop-install-in-progress.json` | `~/.flow/` |
 | Desktop log | `~/.flow/logs/main_desktop/<DDMonYYYY_HH_MM_SS>.log` |
 | Server / monitor logs | `~/.flow/instances/<FLOW_INSTANCE or prod>/logs/{server,monitor}` |
