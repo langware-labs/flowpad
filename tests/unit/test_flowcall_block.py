@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 from dataclasses import replace
 from typing import ClassVar
 
@@ -121,7 +122,14 @@ async def test_authority_input_output_and_relative_import(tmp_path):
         await run_op(spec, input=["bad"], context=ctx, trusted=True)
     assert (await run_op(spec, input=[1], context=ctx, trusted=True)).value == [2]
     assert (await run_op(spec, input=[], context=ctx, trusted=True)).value == []
-    (ctx.asset_folder / "helper.py").write_text("def inc(x): return x + 2\n")
+    # The module cache is keyed on (path, mtime_ns, size) and this rewrite keeps the SIZE: on a fast
+    # machine both writes can land in the same kernel clock tick and the OLD helper is served (first
+    # seen on Blacksmith runners). Pin the first write's stamp one tick back so the edit must move
+    # the key — the mechanism under test is "a changed file re-imports", not the tick width.
+    helper = ctx.asset_folder / "helper.py"
+    st = helper.stat()
+    os.utime(helper, ns=(st.st_atime_ns, st.st_mtime_ns - 1))
+    helper.write_text("def inc(x): return x + 2\n")
     assert (await run_op(spec, input=[1], context=ctx, trusted=True)).value == [3]
 
 
