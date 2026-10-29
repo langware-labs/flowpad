@@ -2595,6 +2595,7 @@ msgstr "رمز الوصول"
 msgid "Account key"
 msgstr "مفتاح الحساب"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Accurate"
 msgstr "دقيق"
@@ -5048,6 +5049,7 @@ msgstr "نسخ احتياطي"
 msgid "bad"
 msgstr "سيئ"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Balanced"
 msgstr "متوازن"
@@ -12867,6 +12869,7 @@ msgstr "الاحتياطيات"
 msgid "Family"
 msgstr "العائلة"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/i18n/pref-labels.ts
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -16528,6 +16531,10 @@ msgstr "مغادرة هذه المحادثة؟"
 msgid "Left / limit"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Left alone, the agent works with whatever model your budget gives it. Pick a size to require it: if your budget does not offer that size, the agent will not start and tells you why."
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
 msgstr "تمت مغادرة المحادثة"
@@ -18189,6 +18196,11 @@ msgstr "مزوّد النموذج · {0}"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "model size"
 msgstr "حجم النموذج"
+
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Model size"
+msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -30710,6 +30722,10 @@ msgstr "لا يزال الوكيل يعمل، أو ينتظر إجابتكم ف�
 msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
 msgstr "ترك الوكيل عملًا قيد التشغيل في الخلفية. يمكنكم متابعة المحادثة. إيقاف هذا العمل ينهيه."
 
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "The agent requires this model size"
+msgstr ""
+
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
 msgstr "الوكيل المذكور في هذا الرابط غير موجود في ملفات المشروع."
@@ -34473,6 +34489,10 @@ msgstr "ما الذي يمكنكم العمل عليه؟"
 
 #~ msgid "What's in the box."
 #~ msgstr "ما بداخل الصندوق."
+
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Whatever I get"
+msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "WhatsApp Business account ID"

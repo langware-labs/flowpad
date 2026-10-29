@@ -22,6 +22,7 @@ import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
 import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
+import { AgentModelSizeField } from './AgentModelSizeField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
@@ -487,6 +488,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     </Trans>
                   </p>
                 </div>
+                <AgentModelSizeField value={profile.model} onCommit={(v) => void save({ model: v })} />
                 <div className="rounded-md border border-border px-3 py-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm">

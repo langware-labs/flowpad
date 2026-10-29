@@ -2612,6 +2612,7 @@ msgstr "Access token"
 msgid "Account key"
 msgstr "Account key"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Accurate"
 msgstr "Accurate"
@@ -5086,6 +5087,7 @@ msgstr "Backup DB"
 msgid "bad"
 msgstr "bad"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Balanced"
 msgstr "Balanced"
@@ -12951,6 +12953,7 @@ msgstr "Fallbacks"
 msgid "Family"
 msgstr "Family"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/i18n/pref-labels.ts
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -16656,6 +16659,10 @@ msgstr "Leave this conversation?"
 msgid "Left / limit"
 msgstr "Left / limit"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Left alone, the agent works with whatever model your budget gives it. Pick a size to require it: if your budget does not offer that size, the agent will not start and tells you why."
+msgstr "Left alone, the agent works with whatever model your budget gives it. Pick a size to require it: if your budget does not offer that size, the agent will not start and tells you why."
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
 msgstr "Left conversation"
@@ -18332,6 +18339,11 @@ msgstr "model provider · {0}"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "model size"
 msgstr "model size"
+
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Model size"
+msgstr "Model size"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -30949,6 +30961,10 @@ msgstr "The agent is still working, or waiting for your answer in the terminal. 
 msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
 msgstr "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
 
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "The agent requires this model size"
+msgstr "The agent requires this model size"
+
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
 msgstr "The agent this link names isn't in the project's files."
@@ -34743,6 +34759,10 @@ msgstr "What would you like to work on?"
 
 #~ msgid "What's in the box."
 #~ msgstr "What's in the box."
+
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Whatever I get"
+msgstr "Whatever I get"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "WhatsApp Business account ID"

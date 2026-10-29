@@ -444,6 +444,14 @@ def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: 
     slug = overrides.get(size) or sizes.get(size)
     if not slug:
         where = source.endpoint_typeid or source.name or "this endpoint"
+        if tier:
+            # A size was ASKED for (the agent's model size, or the composer's picker): the budget the person
+            # works with and what was asked for disagree, and the person is the one who can settle it.
+            raise WorkerSpawnError(
+                worker_type,
+                f"Model mismatch: this session needs the {size!r} model size, but the budget it runs on "
+                f"({where}) does not offer it -- use a budget that does, or change the size the agent asks for",
+            )
         raise WorkerSpawnError(
             worker_type,
             f"{where} declares no {size!r} model -- set its model sizes (sm/md/lg) on the endpoint, or name a model",
