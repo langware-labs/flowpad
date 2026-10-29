@@ -57,6 +57,14 @@ def test_a_converged_install_adopts_the_path_a_new_terminal_gets(tmp_path, monke
     )
 
     assert answer.exit_code is ExitCode.OK
-    assert str(tool_bin) in os.environ["PATH"].split(os.pathsep), (
-        "the install converged, but what this process spawns next still has the PATH it booted with"
-    )
+    if str(tool_bin) not in os.environ["PATH"].split(os.pathsep):
+        # The assertion message must say WHY the adoption skipped — a runner image whose dotfile
+        # chain breaks the login-shell read (slow /etc profile, a non-bash passwd shell) fails here
+        # with no clue otherwise (first seen on Blacksmith runners).
+        from flow_sdk.core.capabilities.env_probe import read_terminal_path
+
+        terminal, why = read_terminal_path()
+        pytest.fail(
+            "the install converged, but what this process spawns next still has the PATH it booted with\n"
+            f"read_terminal_path() -> {terminal!r}\nwhy: {why!r}\nSHELL: {os.environ.get('SHELL')!r}"
+        )
