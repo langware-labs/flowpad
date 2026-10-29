@@ -396,7 +396,7 @@ OTHER_INVOKE = "https://hub.test/api/v1/graph/llm_endpoint/22222222-2222-4333-84
 
 
 #: A model the caller names: passes through whatever endpoint is chosen, so the routing tests below
-#: do not depend on which sizes a pinned-but-unlisted endpoint declares (see the xfail further down).
+#: do not depend on which sizes a pinned-but-unlisted endpoint declares (see the fallback test further down).
 NAMED_MODEL = "anthropic/claude-haiku-5.5"
 
 
@@ -471,12 +471,6 @@ async def test_an_unusable_process_endpoint_falls_back_to_the_binding(env, monke
     assert auth is not None and auth.env["ANTHROPIC_BASE_URL"] == HUB_INVOKE
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SOURCE BUG: api_auth.binding_for_candidate falls back to the box binding's invoke URL for an "
-    "unusable pin, but _slug_for reads the pinned stub's empty models (llm_source._pin_to ~L504 builds "
-    "_hub_stub with no models) -> 'declares no sm model'",
-)
 @pytest.mark.parametrize("bad", ["not-a-typeid", "llm_endpoint-ep2"])
 async def test_an_unusable_process_endpoint_falls_back_to_the_bindings_sizes(env, monkeypatch, bad) -> None:
     """A size asked on an unusable pin runs the BOUND endpoint's slug, as its invoke URL does."""

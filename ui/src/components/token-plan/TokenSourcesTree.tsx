@@ -28,19 +28,21 @@ const ALLOCATION_TONE = 'border-foreground/25 bg-foreground/5 text-foreground/80
 const ACTION_CHIP = 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20';
 
 /** The model each size (sm/md/lg) runs on this row, inherited down its chain. Hidden when none is declared. */
-function SizesChip({ endpoint }: { endpoint: LLMEndpoint }) {
+function SizesChip({ endpoint, indent }: { endpoint: LLMEndpoint; indent: number }) {
   const tiers = endpoint.effectiveTiers;
   const sizes = (['sm', 'md', 'lg'] as const).filter((size) => tiers[size]);
   if (!sizes.length) return null;
   const short = (model: string) => model.split('/').pop() ?? model;
+  // Its own line under the name, truncated: inline it pushed the row's other columns aside.
   return (
-    <span
-      className={cn(CHIP, 'ms-2 shrink-0 whitespace-nowrap border-border font-mono text-muted-foreground')}
+    <div
+      className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground"
+      style={{ paddingInlineStart: indent }}
       title={sizes.map((size) => `${size}: ${tiers[size]}`).join('\n')}
       data-testid={`sizes-${endpoint.id}`}
     >
       {sizes.map((size) => `${size} ${short(tiers[size] as string)}`).join(' · ')}
-    </span>
+    </div>
   );
 }
 
@@ -155,8 +157,8 @@ export function TokenSourcesTree({
                   <Plural value={kids.length} one="# allocation" other="# allocations" />
                 </button>
               )}
-              <SizesChip endpoint={e} />
             </div>
+            <SizesChip endpoint={e} indent={depth * 20} />
           </td>
           <td className="whitespace-nowrap px-2 py-2">
             {o.source?.funded ? (

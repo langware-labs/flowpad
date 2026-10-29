@@ -74,6 +74,6 @@ async def test_a_process_or_project_pin_still_wins_over_the_order(monkeypatch) -
     chosen = await _resolve_source(_proc(endpoint=EP2))
     assert chosen.endpoint_typeid == EP2 and str(chosen.origin) == "process"
 
-    project = await Project(name="pinned", llm_endpoint_typeid=EP2).save()
+    project = await Project(name=f"source-order-pin-{EP2[-6:]}-{id(chosen)}", llm_endpoint_typeid=EP2).save()
     chosen = await _resolve_source(_proc(project_id=project.id))
     assert chosen.endpoint_typeid == EP2 and str(chosen.origin) == "project"

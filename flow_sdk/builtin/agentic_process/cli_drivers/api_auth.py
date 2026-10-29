@@ -421,21 +421,27 @@ async def _size_overrides(worker_type: str, provider: LMApiProvider) -> dict[str
     return dict((getattr(cap, "model_map", None) or {}).get(provider.value) or {})
 
 
-def _slug_for(worker_type: str, spec: "ApiAuthSpec", endpoint, source, tier: str | None, overrides: dict) -> str:
+def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: str | None, overrides: dict) -> str:
     """The model a funded spawn runs: the slug the ENDPOINT declares for the size, never a code default.
 
     A size (``sm``/``md``/``lg``, the harness's own word for one such as claude's ``haiku``, or nothing
-    at all -> the preferred default size) reads ``endpoint.models[size]``, which for a hub endpoint is
-    the size inherited down its chain. A size the endpoint does not declare is refused in words -- a
+    at all -> the preferred default size) reads ``sizes[size]`` -- the endpoint's own map, which for a hub
+    endpoint is the size inherited down its chain. A name the user mapped in ``Capability.model_map``
+    (a size or a custom name such as ``coding``) runs that mapping first. A size the endpoint does not declare is refused in words -- a
     guessed model is how a worker ended up silently answered by another vendor. Anything else is a
     model the caller named, and runs as named.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError  # noqa: PLC0415
 
+    def spelled(slug: str) -> str:
+        return slug if slug.startswith(spec.slug_prefix) else f"{spec.slug_prefix}{slug}"
+
+    if tier and not is_model_tier(tier) and overrides.get(tier):
+        return spelled(overrides[tier])  # a custom name the user mapped
     size = spec.native_tiers.get(tier, tier) if tier else default_size()
     if not is_model_tier(size):
         return tier  # a named model
-    slug = overrides.get(size) or (endpoint.models or {}).get(size)
+    slug = overrides.get(size) or sizes.get(size)
     if not slug:
         where = source.endpoint_typeid or source.name or "this endpoint"
         raise WorkerSpawnError(
@@ -443,7 +449,7 @@ def _slug_for(worker_type: str, spec: "ApiAuthSpec", endpoint, source, tier: str
             f"{where} declares no {size!r} model -- set its model sizes (sm/md/lg) on the endpoint, "
             "or name a model",
         )
-    return slug if slug.startswith(spec.slug_prefix) else f"{spec.slug_prefix}{slug}"
+    return spelled(slug)
 
 
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
@@ -526,7 +532,8 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     if is_hub:
         from flow_sdk.instance_settings.llm_endpoint import hub_llm_endpoint_invoke_url  # noqa: PLC0415
 
-        hub_invoke_url = endpoint_invoke_url(source.endpoint_typeid) or hub_llm_endpoint_invoke_url()
+        own_url = endpoint_invoke_url(source.endpoint_typeid)
+        hub_invoke_url = own_url or hub_llm_endpoint_invoke_url()
         key = endpoint.resolve_api_key() if hub_invoke_url else None
     else:
         # Stored only, matching what the resolver judged eligible — a spawn must not be
@@ -539,7 +546,17 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     except ValueError as exc:
         raise WorkerSpawnError(worker_type, str(exc)) from exc
 
-    slug = _slug_for(worker_type, spec, endpoint, source, tier, await _size_overrides(worker_type, provider))
+    sizes = dict(endpoint.models or {})
+    if is_hub and not sizes:
+        # Known only by id so far (no listing yet): the sizes the hub pushed with the box binding
+        # apply when the spawn is routed down that binding -- the same endpoint, or a pin that
+        # could not name an invoke URL of its own and so falls back to it.
+        from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint  # noqa: PLC0415
+
+        bound = get_hub_llm_endpoint()
+        if bound is not None and (not own_url or bound.endpoint_typeid == source.endpoint_typeid):
+            sizes = dict(bound.tiers)
+    slug = _slug_for(worker_type, spec, sizes, source, tier, await _size_overrides(worker_type, provider))
     env = {**binding.base_env, binding.token_env_var: key}
     if spec.max_output_env_var:
         env[spec.max_output_env_var] = str(FUNDED_MAX_OUTPUT_TOKENS)
