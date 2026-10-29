@@ -102,3 +102,16 @@ def write_instance_pref(key: str, value: Any) -> bool:
         return True
     except OSError:
         return False
+
+
+def llm_source_order() -> tuple[str, ...]:
+    """The source kinds in the user's order (``preferences.llm.source_order``), every known kind once.
+
+    Accepts the UI's comma-separated string or a list; unknown kinds are dropped and missing ones
+    go last, so the answer always ranks every kind.
+    """
+    raw = read_instance_pref(PREF_LLM_SOURCE_ORDER, list(DEFAULT_LLM_SOURCE_ORDER))
+    if isinstance(raw, str):
+        raw = [part.strip() for part in raw.split(",")]
+    kinds = [k for k in raw if k in DEFAULT_LLM_SOURCE_ORDER] if isinstance(raw, list) else []
+    return tuple(dict.fromkeys([*kinds, *DEFAULT_LLM_SOURCE_ORDER]))

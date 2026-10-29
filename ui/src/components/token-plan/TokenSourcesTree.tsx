@@ -4,7 +4,7 @@
  * where the caller may carve from it, and ⚙ to configure it. What was allocated FROM a source is
  * not a source; the centre lists it under the selected one.
  */
-import type { LLMEndpoint } from '@sdk';
+import { LLM_MODEL_SIZES, type LLMEndpoint } from '@sdk';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, ChevronDown, ChevronRight, Plus, Settings } from 'lucide-react';
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
@@ -30,7 +30,7 @@ const ACTION_CHIP = 'border-primary/50 bg-primary/10 text-primary hover:bg-prima
 /** The model each size (sm/md/lg) runs on this row, inherited down its chain. Hidden when none is declared. */
 function SizesChip({ endpoint, indent }: { endpoint: LLMEndpoint; indent: number }) {
   const tiers = endpoint.effectiveTiers;
-  const sizes = (['sm', 'md', 'lg'] as const).filter((size) => tiers[size]);
+  const sizes = LLM_MODEL_SIZES.filter((size) => tiers[size]);
   if (!sizes.length) return null;
   const short = (model: string) => model.split('/').pop() ?? model;
   // Its own line under the name, truncated: inline it pushed the row's other columns aside.

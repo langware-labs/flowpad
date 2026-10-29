@@ -9,7 +9,12 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import type { HttpMethod } from '../models/ApiUrl';
-import { LLMEndpoint, type LLMEndpointFilters, type LLMEndpointLimits } from '../entities/llm-endpoint';
+import {
+  LLMEndpoint,
+  type LLMEndpointFilters,
+  type LLMEndpointLimits,
+  type LLMModelSize,
+} from '../entities/llm-endpoint';
 
 const TYPE = 'llm_endpoint';
 
@@ -83,7 +88,7 @@ export interface LLMChain {
   sticky_root_for_me: string | null;
   /** Per size: the model a caller of the entry gets, the hop that set it (`inherited` when that
    *  hop is not readable to the caller), and why there is none. */
-  effective_tiers?: Record<'sm' | 'md' | 'lg', LLMChainTier>;
+  effective_tiers?: Record<LLMModelSize, LLMChainTier>;
 }
 
 export interface LLMChainTier {

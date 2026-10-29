@@ -96,9 +96,7 @@ def _validated(
         public=bool(public),
         hub_origin=hub_origin if public else "",
         models_allow=tuple(str(m) for m in (models_allow or ()) if str(m).strip()),
-        tiers={str(k): str(v) for k, v in (tiers or {}).items() if isinstance(v, str) and v}
-        if isinstance(tiers, dict)
-        else {},
+        tiers=_clean_tiers(tiers),
     )
 
 
@@ -299,6 +297,13 @@ def _is_mine(row: dict) -> bool | None:
     return mine if isinstance(mine, bool) else None
 
 
+def _clean_tiers(raw) -> dict[str, str]:
+    """``{size: model}`` with every empty or non-string model dropped; ``{}`` for anything not a dict."""
+    if not isinstance(raw, dict):
+        return {}
+    return {str(size): model for size, model in raw.items() if isinstance(model, str) and model}
+
+
 def _tier_models(row: dict) -> dict[str, str]:
     """``{sm, md, lg}`` -> model, from the hub's ``expand.tiers`` (sizes inherited down the row's chain).
 
@@ -308,11 +313,7 @@ def _tier_models(row: dict) -> dict[str, str]:
     """
     expand = row.get("expand") if isinstance(row, dict) else None
     tiers = expand.get("tiers") if isinstance(expand, dict) else None
-    if not isinstance(tiers, dict):
-        tiers = row.get("tiers") if isinstance(row, dict) else None
-    if not isinstance(tiers, dict):
-        return {}
-    return {size: model for size, model in tiers.items() if isinstance(model, str) and model}
+    return _clean_tiers(tiers if isinstance(tiers, dict) else (row.get("tiers") if isinstance(row, dict) else None))
 
 
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:

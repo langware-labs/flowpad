@@ -1288,6 +1288,22 @@ async def test_a_process_pinned_to_a_public_endpoint_spends_it_without_a_login(e
         await resolve_llm_endpoint(_process(endpoint=EP2))
 
 
+@pytest.fixture
+async def _openrouter_key_models_restored():
+    """The page tunes the shared OpenRouter key row's ``sm`` (``LLMEndpointConfig``) and a funded spawn
+    RUNS ``endpoint.models[size]`` -- left tuned, every later test on that key runs the page's model."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+
+    before = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+    saved = dict(before.models) if before is not None else None
+    yield
+    after = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+    if after is not None and saved is not None and after.models != saved:
+        after.models = saved
+        await after.save()
+
+
+@pytest.mark.usefixtures("_openrouter_key_models_restored")
 async def test_the_llm_endpoints_page_runs_in_order(monkeypatch, tmp_path):
     """``docs/snippets/llm-endpoints.md``, every fence but the long tier's script, verbatim and in order.
 

@@ -106,6 +106,10 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
   }, [open, editing, resolvedKind]);
 
   const problems = useMemo(() => validateDraft(draft), [draft]);
+  const rootCatalog = useMemo(
+    () => (draft.kind === 'root' ? catalogFromText(draft.models) : []),
+    [draft.kind, draft.models],
+  );
   const isEdit = !!editing;
   const readOnly = !!editing && !canConfigure(editing);
 
@@ -315,11 +319,7 @@ export function LlmEndpointDialog({ open, onOpenChange, editing, editingKind, al
             <TiersEditor
               value={draft.tiers}
               onChange={(tiers) => setDraft((d) => ({ ...d, tiers }))}
-              models={
-                draft.kind === 'root' && catalogFromText(draft.models).length
-                  ? catalogFromText(draft.models)
-                  : (allowedModels.data ?? []).map((m) => m.id)
-              }
+              models={rootCatalog.length ? rootCatalog : (allowedModels.data ?? []).map((m) => m.id)}
               effective={tierChain.data?.effective_tiers}
               disabled={readOnly}
             />

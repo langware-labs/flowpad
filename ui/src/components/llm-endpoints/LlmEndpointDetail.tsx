@@ -3,7 +3,7 @@
  * tabs — Overview (chain tree + limits remaining + effective filters), Usage,
  * Models. The active tab is the URL's, so switching is a navigation.
  */
-import type { LLMChain, LLMEndpoint, LLMEndpointKind } from '@sdk';
+import { LLM_MODEL_SIZES, type LLMChain, type LLMEndpoint, type LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -73,7 +73,7 @@ function ModelSizes({ tiers, names }: { tiers?: LLMChain['effective_tiers']; nam
   return (
     <table className="w-full text-sm" data-testid="model-sizes">
       <tbody>
-        {(['sm', 'md', 'lg'] as const).map((size) => {
+        {LLM_MODEL_SIZES.map((size) => {
           const tier = tiers[size];
           return (
             <tr key={size} className="border-b last:border-0" data-testid={`model-size-${size}`}>

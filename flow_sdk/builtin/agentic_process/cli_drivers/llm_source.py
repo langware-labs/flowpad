@@ -79,26 +79,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 def _rank(kind: str) -> int:
-    """The rank band of a source kind (``device`` / ``api_key`` / ``endpoint``) in the user's order.
+    """The rank band of a source kind (``device`` / ``api_key`` / ``endpoint``) in the user's order
+    (``preferences.llm_source_order``). Only rung 4 (nobody asked) reads it -- a process, project or
+    explicit harness choice still wins."""
+    from flow_sdk.preferences import llm_source_order  # noqa: PLC0415
 
-    ``preferences.llm.source_order`` lists the kinds most preferred first; the default is a signed-in
-    device login, then a stored key, then a hub endpoint. A kind the list leaves out goes last. Only
-    rung 4 (nobody asked) reads it -- a process, project or explicit harness choice still wins.
-    """
-    from flow_sdk.preferences import (  # noqa: PLC0415
-        DEFAULT_LLM_SOURCE_ORDER,
-        PREF_LLM_SOURCE_ORDER,
-        read_instance_pref,
-    )
-
-    order = read_instance_pref(PREF_LLM_SOURCE_ORDER, list(DEFAULT_LLM_SOURCE_ORDER))
-    if isinstance(order, str):
-        order = [part.strip() for part in order.split(",")]
-    if not isinstance(order, list):
-        order = list(DEFAULT_LLM_SOURCE_ORDER)
-    kinds = [k for k in order if k in DEFAULT_LLM_SOURCE_ORDER]
-    kinds += [k for k in DEFAULT_LLM_SOURCE_ORDER if k not in kinds]
-    return kinds.index(kind) * 10
+    return llm_source_order().index(kind) * 10
 
 
 def _hub_stub(
