@@ -1,6 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import { Check, Circle, Loader2, X } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@src/components/ui/button';
 import type { PageCheck } from './usePageCheck';
 
@@ -43,6 +43,21 @@ function Errors({ page }: { page: PageCheck }) {
   );
 }
 
+/** One line on what the check is doing now, with the seconds it has taken. */
+function CheckDetail({ page }: { page: PageCheck }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.round((now - page.checkStartedAt) / 1000));
+  return page.phase === 'deciding' ? (
+    <Trans>The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)</Trans>
+  ) : (
+    <Trans>Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)</Trans>
+  );
+}
+
 /**
  * The screen over the (hidden) app while its page is checked or recovered: each step says what happened
  * and what comes next. Gone once the page is usable.
@@ -77,7 +92,11 @@ export function PageCheckPanel({ page, toolCount }: { page: PageCheck; toolCount
         <ul className="flex flex-col divide-y rounded-md border">
           {state === 'checking' ? (
             <>
-              <Step mark="running" title={<Trans>Check — loading the page and watching for errors</Trans>} />
+              <Step
+                mark="running"
+                title={<Trans>Check — loading the page and watching for errors</Trans>}
+                detail={<CheckDetail page={page} />}
+              />
               <Step
                 mark="next"
                 title={<Trans>Next: show the app</Trans>}

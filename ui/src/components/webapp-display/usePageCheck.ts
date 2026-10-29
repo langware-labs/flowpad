@@ -6,8 +6,8 @@ export const PAGE_REPORT = 'flowpad:page-report';
 /** Asks the frame's reporter to send its report again (a frame cached from an earlier mount). */
 export const PAGE_REPORT_REQUEST = 'flowpad:page-report-request';
 
-/** No report this long after the frame is shown: the page has no reporter (reporting off, a served
- *  folder) — show it as it is. */
+/** No usable answer this long after the frame is shown — no reporter (reporting off), or the backend
+ *  never judged the report — show the page as it is. */
 const UNREPORTED_MS = 8000;
 
 /**
@@ -18,8 +18,15 @@ const UNREPORTED_MS = 8000;
  */
 export type PageState = 'checking' | 'ok' | 'restarting' | 'recovering' | 'failed';
 
+/** What the check is doing right now, for the one-line detail under its step. */
+export type CheckPhase = 'loading' | 'deciding';
+
 export interface PageCheck {
   state: PageState;
+  /** While `checking`: waiting for the page's report, or the backend judging it. */
+  phase: CheckPhase;
+  /** When this check started (ms epoch), for the elapsed seconds on screen. */
+  checkStartedAt: number;
   /** The last decision, for the screens: what the page threw and what each error means. */
   verdict: PageReportVerdict | null;
   /** Bumped to reload the frame after a restart. */
@@ -54,6 +61,11 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
   const [verdict, setVerdict] = useState<PageReportVerdict | null>(null);
   const [reloads, setReloads] = useState(0);
   const [tried, setTried] = useState<string[]>([]);
+  const [phase, setPhase] = useState<CheckPhase>('loading');
+  const [checkStartedAt, setCheckStartedAt] = useState(() => Date.now());
+  // Only a dev server sits behind the error reporter (`server/reporter_relay`); a served folder never
+  // reports, so there is nothing to wait for — show it at once.
+  const reports = endpoint?.backend?.type === 'proxy';
   const budget = useRef({ restart: false, agent: false });
   const decided = useRef(false);
   const agentWasRunning = useRef(false);
@@ -64,6 +76,8 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
   const recheck = useCallback(() => {
     reloadedHere.current = true;
     decided.current = false;
+    setPhase('loading');
+    setCheckStartedAt(Date.now());
     setState('checking');
     setReloads((n) => n + 1);
   }, []);
@@ -75,8 +89,17 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
     reloadedHere.current = false;
     setTried([]);
     setVerdict(null);
+    setPhase('loading');
+    setCheckStartedAt(Date.now());
     setState('checking');
   }, [src]);
+
+  useEffect(() => {
+    if (state === 'checking' && endpoint && !reports) {
+      decided.current = true;
+      setState('ok');
+    }
+  }, [state, endpoint, reports]);
 
   const recover = useCallback(
     async (found: PageReportVerdict) => {
@@ -110,6 +133,7 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
       if (!data || data.type !== PAGE_REPORT || !data.settled || !isGuest(event.source)) return;
       if (decided.current || !endpoint) return;
       decided.current = true;
+      setPhase('deciding');
       const found = await endpoint.pageReport(data.errors ?? [], true).catch(() => null);
       if (!found) {
         setState('ok'); // the backend could not decide: never hide a page over it
@@ -135,12 +159,11 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
     return () => clearInterval(timer);
   }, [state, reloads, src, postToGuest]);
 
-  // A page that never reports is shown as it is.
+  // A page that never reports — or whose report the backend never answers — is shown as it is. The
+  // report marks the check decided before the backend answers, so this must not wait on `decided`.
   useEffect(() => {
     if (state !== 'checking') return;
-    const timer = setTimeout(() => {
-      if (!decided.current) setState('ok');
-    }, UNREPORTED_MS);
+    const timer = setTimeout(() => setState((now) => (now === 'checking' ? 'ok' : now)), UNREPORTED_MS);
     return () => clearTimeout(timer);
   }, [state, reloads, src]);
 
@@ -159,5 +182,5 @@ export function usePageCheck({ endpoint, isGuest, postToGuest, startAgent, agent
     recheck();
   }, [recheck]);
 
-  return { state, verdict, reloads, tried, retry };
+  return { state, phase, checkStartedAt, verdict, reloads, tried, retry };
 }
