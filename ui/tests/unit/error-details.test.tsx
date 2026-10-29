@@ -22,7 +22,7 @@ const latest = () => useAlertStore.getState().alerts[0];
 const axios409 = () => ({
   isAxiosError: true,
   message: 'Request failed with status code 409',
-  config: { method: 'post', url: '/api/v1/graph/data_source', headers: { 'X-Flow-Caller': '/dock/inbox' } },
+  config: { method: 'post', url: '/api/v1/graph/data_source', headers: { 'X-Flow-Caller': '/dock/stream_inbox' } },
   response: {
     status: 409,
     data: {
@@ -53,7 +53,7 @@ describe('error details', () => {
   it('turns a thrown backend error into its request and answer', () => {
     notify.error({ title: 'Could not save', error: axios409() });
     const d = latest().detail!;
-    expect(d.request).toEqual({ method: 'POST', url: '/api/v1/graph/data_source', caller: '/dock/inbox' });
+    expect(d.request).toEqual({ method: 'POST', url: '/api/v1/graph/data_source', caller: '/dock/stream_inbox' });
     expect(d.response?.status).toBe(409);
     expect(d.response?.errorCode).toBe('conflict');
     expect('error' in latest()).toBe(false);
