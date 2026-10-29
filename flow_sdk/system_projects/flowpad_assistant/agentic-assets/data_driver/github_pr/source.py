@@ -354,16 +354,25 @@ class GithubPrSource(MessageSource):
             if (cursor := page.next_cursor) is None:
                 return
 
-    async def _searches(self, since: Optional[datetime], extra: str = "") -> list[str]:
-        """One search query per qualifier of the filter, plus Dependabot's; their open PRs together are
-        the list. Repeated ``org:``/``user:`` qualifiers OR, so the bot's is one search, never unscoped —
-        that is every public repository."""
+    def _tail(self, since: Optional[datetime], extra: str) -> list[str]:
         tail = [f"repo:{r}" for r in self.repos]
         if since is not None:
             tail.append(f"updated:>={_gh_stamp(since)}")
         if extra:
             tail.append(extra)
-        queries = [" ".join(["is:pr", "is:open", f"{qualifier}:@me", *tail]) for qualifier in FILTERS[self.filter]]
+        return tail
+
+    def _my_searches(self, since: Optional[datetime], extra: str = "") -> list[str]:
+        """One search query per qualifier of the filter — your own PRs, no extra request needed."""
+        tail = self._tail(since, extra)
+        return [" ".join(["is:pr", "is:open", f"{qualifier}:@me", *tail]) for qualifier in FILTERS[self.filter]]
+
+    async def _searches(self, since: Optional[datetime], extra: str = "") -> list[str]:
+        """Your searches plus Dependabot's; their open PRs together are the list. Repeated
+        ``org:``/``user:`` qualifiers OR, so the bot's is one search, never unscoped — that is every
+        public repository."""
+        tail = self._tail(since, extra)
+        queries = self._my_searches(since, extra)
         if self.dependabot:
             scopes = [] if self.repos else await self._bot_scopes()
             if self.repos or scopes:
@@ -523,7 +532,7 @@ class GithubPrSource(MessageSource):
                 return Verdict(ready=False, detail=f"The GitHub sign-in lacks the `{'`, `'.join(missing)}` scope — reconnect GitHub and grant it.")
         login = _login(response.json())
         try:
-            await self._get("/search/issues", q=(await self._searches(None))[0], per_page=1)
+            await self._get("/search/issues", q=self._my_searches(None)[0], per_page=1)
         except SourceError as exc:
             return Verdict(ready=False, detail=f"GitHub refused the pull-request search: {exc}")
         who = "you" if not login else f"@{login}"

@@ -361,8 +361,7 @@ async def test_repos_and_the_review_filter_shape_the_search(github):
     await _all(_source(github.base, repos=["octo/app", "octo/lib"], filter="review_requested"))
     searches = [p for m, p in gh.calls if p.startswith("/search/issues")]
     assert all("author:@me" not in q for q in searches)
-    search = searches[0]
-    assert "review-requested:@me" in search and "repo:octo/app" in search and "repo:octo/lib" in search
+    assert any("review-requested:@me" in q and "repo:octo/app" in q and "repo:octo/lib" in q for q in searches)
 
 
 async def test_by_default_my_prs_and_my_review_requests_are_listed_once_each(github):
