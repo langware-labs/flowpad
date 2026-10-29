@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
+  switchAsync: vi.fn(),
   setCredential: vi.fn(),
   invalidate: vi.fn(() => Promise.resolve()),
   del: vi.fn(() => Promise.resolve()),
@@ -21,6 +22,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useSetPayingProvider: () => ({ mutateAsync: h.mutateAsync, isPending: false }),
+  useSwitchPayingProvider: () => ({ mutateAsync: h.switchAsync, isPending: false }),
   useInvalidateBudgets: () => h.invalidate,
 }));
 // The note under the key field reads the row's own redirects; this suite has no query client.
@@ -283,45 +285,77 @@ describe('PayingProviderSetup — already a root', () => {
  * like it changes nothing about the locked dropdown. This is the control that actually does it.
  */
 describe('PayingProviderSetup — moving to a different provider', () => {
-  it('asks first, then deletes the root so the provider picker comes back', async () => {
-    render(
-      <PayingProviderSetup
-        orgId={ORG_ID}
-        org={{
-          endpoint_id: ENDPOINT_TYPEID,
-          is_root: true,
-          provider: 'openrouter',
-          credential_hint: '',
-          can_set_credential: true,
-          can_set_up_budget: true,
-        }}
-      />,
-    );
+  const root = {
+    endpoint_id: ENDPOINT_TYPEID,
+    is_root: true,
+    provider: 'openrouter',
+    credential_hint: '****wxyz',
+    can_set_credential: true,
+    can_set_up_budget: true,
+  };
+
+  it('switches the SAME root in place, then stores the new key on it — nothing is deleted', async () => {
+    h.switchAsync.mockResolvedValue({
+      endpoint_id: ENDPOINT_TYPEID,
+      switched: true,
+      provider: 'anthropic',
+      needs_model_change: [],
+    });
+    h.setCredential.mockResolvedValue({});
+    render(<PayingProviderSetup orgId={ORG_ID} org={root} />);
 
     fireEvent.click(screen.getByTestId('org-root-replace'));
-    expect(h.del).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId('org-root-provider'));
+    await userEvent.click(await screen.findByTestId('org-root-provider-anthropic'));
+    await userEvent.type(screen.getByTestId('credential-input'), ANTHROPIC_KEY);
+    fireEvent.click(screen.getByTestId('org-root-switch'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove budget' }));
-    await waitFor(() => expect(h.del).toHaveBeenCalled());
-    // The ENDPOINT, by its bare uuid — not the organization.
-    expect(h.del.mock.calls[0][0]).toEqual(expect.objectContaining({ type: 'llm_endpoint', id: ENDPOINT_BARE }));
-    await waitFor(() => expect(h.invalidate).toHaveBeenCalled());
+    await waitFor(() => expect(h.switchAsync).toHaveBeenCalled());
+    expect(h.switchAsync.mock.calls[0][0]).toEqual(expect.objectContaining({ orgId: ORG_ID, provider: 'anthropic' }));
+    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_BARE, ANTHROPIC_KEY));
+    expect(h.mutateAsync).not.toHaveBeenCalled(); // not the create call
+    expect(h.del).not.toHaveBeenCalled(); // the tree below is not removed
+    expect(screen.queryByTestId('org-root-needs-model')).toBeNull();
+  });
+
+  it('tells the admin which teams need a new model when the new provider does not offer theirs', async () => {
+    h.switchAsync.mockResolvedValue({
+      endpoint_id: ENDPOINT_TYPEID,
+      switched: true,
+      provider: 'vertex',
+      needs_model_change: [
+        {
+          endpoint_id: 'llm_endpoint-1',
+          name: 'Engineering budget',
+          scope_name: 'Engineering',
+          models: ['anthropic/claude-haiku-5.5'],
+        },
+      ],
+    });
+    h.setCredential.mockResolvedValue({});
+    render(<PayingProviderSetup orgId={ORG_ID} org={root} />);
+
+    fireEvent.click(screen.getByTestId('org-root-replace'));
+    await userEvent.click(screen.getByTestId('org-root-provider'));
+    await userEvent.click(await screen.findByTestId('org-root-provider-anthropic'));
+    await userEvent.type(screen.getByTestId('credential-input'), ANTHROPIC_KEY);
+    fireEvent.click(screen.getByTestId('org-root-switch'));
+
+    const popup = await screen.findByText(/Choose a model for these teams/);
+    expect(popup).toBeTruthy();
+    expect(document.body.textContent).toContain('Engineering (anthropic/claude-haiku-5.5)');
+  });
+
+  it('can be cancelled without touching anything', () => {
+    render(<PayingProviderSetup orgId={ORG_ID} org={root} />);
+    fireEvent.click(screen.getByTestId('org-root-replace'));
+    fireEvent.click(screen.getByTestId('org-root-switch-cancel'));
+    expect(h.switchAsync).not.toHaveBeenCalled();
+    expect(screen.getByTestId('org-root-key')).toBeTruthy();
   });
 
   it('offers the way out even while a key is still stored', () => {
-    render(
-      <PayingProviderSetup
-        orgId={ORG_ID}
-        org={{
-          endpoint_id: ENDPOINT_TYPEID,
-          is_root: true,
-          provider: 'openrouter',
-          credential_hint: '****wxyz',
-          can_set_credential: true,
-          can_set_up_budget: true,
-        }}
-      />,
-    );
+    render(<PayingProviderSetup orgId={ORG_ID} org={root} />);
     expect(screen.getByTestId('org-root-replace')).toBeTruthy();
   });
 });

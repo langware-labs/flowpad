@@ -22,6 +22,23 @@ import { dataManager } from '../APIEntity';
 import { hubAction } from './llm-endpoints-service';
 import type { TokenPlanSetupResult } from './token-plan-service';
 
+/** A budget below a switched root whose own model list names models the new provider does not offer. */
+export interface NeedsModelChange {
+  endpoint_id: string;
+  name: string;
+  /** The team (or org) that owns the budget, when it has one. */
+  scope_name: string | null;
+  models: string[];
+}
+
+export interface SwitchPayingProviderResult {
+  endpoint_id: string;
+  /** False when the org was already on this provider and base URL (nothing changed). */
+  switched: boolean;
+  provider: string;
+  needs_model_change: NeedsModelChange[];
+}
+
 /** One principal's pool, as the budgets screen reads it. */
 export interface ScopeBudget {
   /** The principal's id (organization or team) — not the endpoint's. */
@@ -177,6 +194,21 @@ export class BudgetsService {
     const info = hubAction('set-paying-provider', 'organization', orgId, 'POST');
     info.bodyParameters = { provider: body.provider, base_url: body.base_url ?? '' };
     return dataManager.callAction<undefined, TokenPlanSetupResult>(info);
+  }
+
+  /**
+   * Move the organization's own root to ANOTHER provider, in place: the root keeps its id, so every team
+   * and person below it stays. The stored key is cleared (it belonged to the old provider); set the new
+   * one on `endpoint_id` afterwards. The answer names every budget below whose own model list the new
+   * provider does not serve -- those need a model chosen.
+   */
+  switchPayingProvider(
+    orgId: string,
+    body: { provider: string; base_url?: string },
+  ): Promise<SwitchPayingProviderResult> {
+    const info = hubAction('switch-paying-provider', 'organization', orgId, 'POST');
+    info.bodyParameters = { provider: body.provider, base_url: body.base_url ?? '' };
+    return dataManager.callAction<undefined, SwitchPayingProviderResult>(info);
   }
 }
 
