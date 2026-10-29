@@ -544,6 +544,11 @@ msgstr "{0} added"
 msgid "{0} added, {1} updated in {teamName}."
 msgstr "{0} added, {1} updated in {teamName}."
 
+#. placeholder {0}: o.name
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "{0} allocation"
+msgstr "{0} allocation"
+
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} already has a cloud machine"
@@ -1867,6 +1872,10 @@ msgstr "{used} of {limit} {windowText}"
 msgid "{value}"
 msgstr "{value}"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "{who} allowance"
+msgstr "{who} allowance"
+
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "{who} asks for access to <0>{where}</0>"
 msgstr "{who} asks for access to <0>{where}</0>"
@@ -1920,6 +1929,10 @@ msgstr "← Back"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "→ {0} (drifted)"
 msgstr "→ {0} (drifted)"
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "↑ draws from"
+msgstr "↑ draws from"
 
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "↻ re-run"
@@ -5180,6 +5193,10 @@ msgstr "Bot token"
 msgid "Bot token (xoxb-…)"
 msgstr "Bot token (xoxb-…)"
 
+#: src/components/assets/editor/chart/MermaidChartView.tsx
+msgid "Both"
+msgstr "Both"
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Boundary"
 msgstr "Boundary"
@@ -5249,6 +5266,7 @@ msgstr "Browse…"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
+#: src/components/token-plan/FundingChain.tsx
 msgid "Budget"
 msgstr "Budget"
 
@@ -5907,6 +5925,7 @@ msgid "Channels"
 msgstr "Channels"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
+#: src/components/assets/editor/chart/MermaidChartView.tsx
 #: src/components/quick-create/registry.ts
 msgid "Chart"
 msgstr "Chart"
@@ -6863,6 +6882,7 @@ msgid "code"
 msgstr "code"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/chart/MermaidChartView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Code"
@@ -13423,6 +13443,7 @@ msgid "flow name…"
 msgstr "flow name…"
 
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/token-plan/FundingChain.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
@@ -13432,6 +13453,8 @@ msgstr "Flowpad"
 #~ msgstr "FlowPad"
 
 #: src/components/token-plan/TokenPlanView.tsx
+#: src/components/token-plan/TokenPlanView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Flowpad account"
@@ -13898,6 +13921,11 @@ msgstr "Funded by an existing source; it can only narrow what that source allows
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by your vendor subscription"
 msgstr "Funded by your vendor subscription"
+
+#: src/components/token-plan/FundingChain.tsx
+#: src/components/token-plan/FundingChain.tsx
+msgid "Funded through"
+msgstr "Funded through"
 
 #~ msgid "Funding for"
 #~ msgstr "Funding for"
@@ -15921,6 +15949,10 @@ msgstr "Italic"
 msgid "Its agent"
 msgstr "Its agent"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "Its budget is not shared with you."
+msgstr "Its budget is not shared with you."
+
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "Its contents look like binary data (for example an image), so it can't be shown in the editor."
@@ -16541,6 +16573,10 @@ msgstr "Letters, digits and _ only"
 #: src/components/hooks/EventListPanel.tsx
 msgid "Level"
 msgstr "Level"
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "lifetime · never resets"
+msgstr "lifetime · never resets"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Light up the {messageCount} messages this is attached to"
@@ -17887,6 +17923,7 @@ msgid "Message Attachment"
 msgstr "Message Attachment"
 
 #: src/components/browseable-tree/adapters/dataSourcesRoot.tsx
+#: src/components/project-home/ProjectDataSources.tsx
 msgid "Message channels"
 msgstr "Message channels"
 
@@ -18358,7 +18395,7 @@ msgstr "name"
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/token-plan/AllocateDialog.tsx
+#: src/components/token-plan/RenameButton.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
@@ -18392,6 +18429,11 @@ msgstr "name · kind · build folder · file"
 msgid "name (e.g. coding)"
 msgstr "name (e.g. coding)"
 
+#: src/components/token-plan/AllocateDialog.tsx
+#: src/components/token-plan/RenameButton.tsx
+msgid "Name (optional)"
+msgstr "Name (optional)"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Name *"
@@ -18402,8 +18444,8 @@ msgid "Name is required"
 msgstr "Name is required"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "Name is required."
-msgstr "Name is required."
+#~ msgid "Name is required."
+#~ msgstr "Name is required."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Name it, or leave it and one is made up"
@@ -19466,6 +19508,7 @@ msgstr "No known fix yet — use \"Fix It\" to start a session."
 msgid "No languages found."
 msgstr "No languages found."
 
+#: src/components/token-plan/FundingChain.tsx
 #: src/components/token-plan/SourceSummary.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "no limit"
@@ -22314,10 +22357,9 @@ msgstr "Or start from one of these"
 msgid "Ordered list"
 msgstr "Ordered list"
 
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#~ msgid "Org"
-#~ msgstr "Org"
+#: src/components/token-plan/FundingChain.tsx
+msgid "Org"
+msgstr "Org"
 
 #: src/components/collapsed-sidebar/OrgTeamsButton.tsx
 msgid "Org & teams"
@@ -22828,6 +22870,10 @@ msgstr "Pay for their LLM"
 msgid "payload"
 msgstr "payload"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "pays with a {provider} key"
+msgstr "pays with a {provider} key"
+
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "peak"
 msgstr "peak"
@@ -22883,6 +22929,18 @@ msgstr "People you add here can see this organization. An admin can run its team
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 msgid "People you share with can view this agent and its files. They can't edit, deploy or share it on."
 msgstr "People you share with can view this agent and its files. They can't edit, deploy or share it on."
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "per day · resets {at} UTC"
+msgstr "per day · resets {at} UTC"
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "per month · resets {at} UTC"
+msgstr "per month · resets {at} UTC"
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "per week · resets {at} UTC"
+msgstr "per week · resets {at} UTC"
 
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "Per-project"
@@ -25109,6 +25167,7 @@ msgstr "Removes: {removes}"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/tabs/TabStrip.tsx
+#: src/components/token-plan/RenameButton.tsx
 msgid "Rename"
 msgstr "Rename"
 
@@ -25473,9 +25532,18 @@ msgstr "Reset to the team default"
 msgid "reset zoom"
 msgstr "reset zoom"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "resets {at} UTC"
+msgstr "resets {at} UTC"
+
 #: src/components/llm-endpoints/LimitsRemaining.tsx
 msgid "resets {resets}"
 msgstr "resets {resets}"
+
+#. placeholder {0}: headlineReset.inHours
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "resets in {0}h"
+msgstr "resets in {0}h"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "resets in {days} d"
@@ -25919,9 +25987,9 @@ msgstr "Room unavailable"
 msgid "root"
 msgstr "root"
 
-#: src/components/llm-endpoints/LlmEndpointDialog.tsx
-#~ msgid "Root"
-#~ msgstr "Root"
+#: src/components/token-plan/FundingChain.tsx
+msgid "Root"
+msgstr "Root"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -29344,6 +29412,10 @@ msgstr "Spent"
 msgid "spent {0}"
 msgstr "spent {0}"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "spent {spent}"
+msgstr "spent {spent}"
+
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
 msgid "Spent / limit"
@@ -30332,6 +30404,7 @@ msgstr "Tasks {openTaskCount}"
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
 #: src/components/token-plan/AllocateDialog.tsx
+#: src/components/token-plan/FundingChain.tsx
 #: src/i18n/type-labels.ts
 msgid "Team"
 msgstr "Team"
@@ -33006,8 +33079,8 @@ msgstr "Unlimited here — {parent} caps you at {limit} {windowText}"
 msgid "Unmount Flowpad Assistant"
 msgstr "Unmount Flowpad Assistant"
 
+#: src/components/token-plan/FundingChain.tsx
 #: src/components/token-plan/TokenPlanView.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Unnamed"
 msgstr "Unnamed"
@@ -34867,6 +34940,7 @@ msgstr "you"
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 #: src/components/lens-viewer/shared/transcript-features/ChatEntryItem.tsx
+#: src/components/token-plan/FundingChain.tsx
 msgid "You"
 msgstr "You"
 
@@ -34951,6 +35025,14 @@ msgstr "You can close this window."
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You can see {name}, but its project isn't shared with you, so it can't be launched."
 msgstr "You can see {name}, but its project isn't shared with you, so it can't be launched."
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "You can spend up to <0>{amount}</0> — the tightest limit on this path."
+msgstr "You can spend up to <0>{amount}</0> — the tightest limit on this path."
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "You can spend up to <0>{amount}</0> of your own limit; the levels above may stop you sooner."
+msgstr "You can spend up to <0>{amount}</0> of your own limit; the levels above may stop you sooner."
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "You can't invite people here — ask {ownerName}."

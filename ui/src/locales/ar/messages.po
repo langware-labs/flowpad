@@ -542,6 +542,11 @@ msgstr "تمت إضافة {0}"
 msgid "{0} added, {1} updated in {teamName}."
 msgstr "تمت إضافة {0} وتحديث {1} في {teamName}."
 
+#. placeholder {0}: o.name
+#: src/components/token-plan/TokenSourcesTree.tsx
+msgid "{0} allocation"
+msgstr ""
+
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} already has a cloud machine"
@@ -1855,6 +1860,10 @@ msgstr "{used} من {limit} {windowText}"
 msgid "{value}"
 msgstr "{value}"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "{who} allowance"
+msgstr ""
+
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "{who} asks for access to <0>{where}</0>"
 msgstr "يطلب {who} الوصول إلى <0>{where}</0>"
@@ -1907,6 +1916,10 @@ msgstr "← رجوع"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "→ {0} (drifted)"
 msgstr "→ {0} (انزاح)"
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "↑ draws from"
+msgstr ""
 
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "↻ re-run"
@@ -5142,6 +5155,10 @@ msgstr ""
 msgid "Bot token (xoxb-…)"
 msgstr ""
 
+#: src/components/assets/editor/chart/MermaidChartView.tsx
+msgid "Both"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Boundary"
 msgstr "حد فاصل"
@@ -5211,6 +5228,7 @@ msgstr "استعراض…"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
+#: src/components/token-plan/FundingChain.tsx
 msgid "Budget"
 msgstr "الميزانية"
 
@@ -5869,6 +5887,7 @@ msgid "Channels"
 msgstr "القنوات"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
+#: src/components/assets/editor/chart/MermaidChartView.tsx
 #: src/components/quick-create/registry.ts
 msgid "Chart"
 msgstr "مخطط"
@@ -6819,6 +6838,7 @@ msgid "code"
 msgstr "كود"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/chart/MermaidChartView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Code"
@@ -13331,6 +13351,7 @@ msgid "flow name…"
 msgstr "اسم الـ Flow…"
 
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/token-plan/FundingChain.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
@@ -13340,6 +13361,8 @@ msgstr "Flowpad"
 #~ msgstr ""
 
 #: src/components/token-plan/TokenPlanView.tsx
+#: src/components/token-plan/TokenPlanView.tsx
+#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Flowpad account"
@@ -13794,6 +13817,11 @@ msgstr ""
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by your vendor subscription"
 msgstr "مموَّل عبر اشتراككم لدى المزوّد"
+
+#: src/components/token-plan/FundingChain.tsx
+#: src/components/token-plan/FundingChain.tsx
+msgid "Funded through"
+msgstr ""
 
 #~ msgid "Funding for"
 #~ msgstr "التمويل لـ"
@@ -15806,6 +15834,10 @@ msgstr "مائل"
 msgid "Its agent"
 msgstr "وكيلها"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "Its budget is not shared with you."
+msgstr ""
+
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "يبدو أن محتوى الملف عبارة عن بيانات ثنائية (مثل صورة)، لذا لا يمكن عرضه في المحرر."
@@ -16413,6 +16445,10 @@ msgstr "أحرف وأرقام و_ فقط"
 #: src/components/hooks/EventListPanel.tsx
 msgid "Level"
 msgstr "المستوى"
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "lifetime · never resets"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Light up the {messageCount} messages this is attached to"
@@ -17745,6 +17781,7 @@ msgid "Message Attachment"
 msgstr "مرفق الرسالة"
 
 #: src/components/browseable-tree/adapters/dataSourcesRoot.tsx
+#: src/components/project-home/ProjectDataSources.tsx
 msgid "Message channels"
 msgstr "قنوات الرسائل"
 
@@ -18213,7 +18250,7 @@ msgstr "الاسم"
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/token-plan/AllocateDialog.tsx
+#: src/components/token-plan/RenameButton.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
@@ -18247,6 +18284,11 @@ msgstr ""
 msgid "name (e.g. coding)"
 msgstr "الاسم (مثل: coding)"
 
+#: src/components/token-plan/AllocateDialog.tsx
+#: src/components/token-plan/RenameButton.tsx
+msgid "Name (optional)"
+msgstr ""
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Name *"
@@ -18257,8 +18299,8 @@ msgid "Name is required"
 msgstr "الاسم مطلوب"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
-msgid "Name is required."
-msgstr "الاسم مطلوب."
+#~ msgid "Name is required."
+#~ msgstr "الاسم مطلوب."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Name it, or leave it and one is made up"
@@ -19311,6 +19353,7 @@ msgstr "لا يوجد إصلاح معروف بعد — يمكن استخدام \
 msgid "No languages found."
 msgstr "لم يتم العثور على لغات."
 
+#: src/components/token-plan/FundingChain.tsx
 #: src/components/token-plan/SourceSummary.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "no limit"
@@ -22136,10 +22179,9 @@ msgstr "أو ابدؤوا بأحد هذه الخيارات"
 msgid "Ordered list"
 msgstr "قائمة مرقمة"
 
-#: src/components/token-plan/TokenSourcesTree.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
-#~ msgid "Org"
-#~ msgstr ""
+#: src/components/token-plan/FundingChain.tsx
+msgid "Org"
+msgstr ""
 
 #: src/components/collapsed-sidebar/OrgTeamsButton.tsx
 msgid "Org & teams"
@@ -22645,6 +22687,10 @@ msgstr "ادفعوا تكلفة LLM الخاص بهم"
 msgid "payload"
 msgstr "payload"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "pays with a {provider} key"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "peak"
 msgstr "الذروة"
@@ -22700,6 +22746,18 @@ msgstr "يمكن للأشخاص المضافين هنا رؤية هذه المؤ
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 msgid "People you share with can view this agent and its files. They can't edit, deploy or share it on."
 msgstr "يمكن للأشخاص الذين تشاركهم معهم عرض هذا الوكيل وملفاته. لا يمكنهم تحريره أو نشره أو إعادة مشاركته."
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "per day · resets {at} UTC"
+msgstr ""
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "per month · resets {at} UTC"
+msgstr ""
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "per week · resets {at} UTC"
+msgstr ""
 
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "Per-project"
@@ -24914,6 +24972,7 @@ msgstr ""
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/tabs/TabStrip.tsx
+#: src/components/token-plan/RenameButton.tsx
 msgid "Rename"
 msgstr "إعادة تسمية"
 
@@ -25275,9 +25334,18 @@ msgstr ""
 msgid "reset zoom"
 msgstr "إعادة ضبط التكبير"
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "resets {at} UTC"
+msgstr ""
+
 #: src/components/llm-endpoints/LimitsRemaining.tsx
 msgid "resets {resets}"
 msgstr "يُعاد الضبط {resets}"
+
+#. placeholder {0}: headlineReset.inHours
+#: src/components/token-plan/TokenPlanView.tsx
+msgid "resets in {0}h"
+msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "resets in {days} d"
@@ -25715,9 +25783,9 @@ msgstr "الغرفة غير متاحة"
 msgid "root"
 msgstr "الجذر"
 
-#: src/components/llm-endpoints/LlmEndpointDialog.tsx
-#~ msgid "Root"
-#~ msgstr "جذر"
+#: src/components/token-plan/FundingChain.tsx
+msgid "Root"
+msgstr "جذر"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -29117,6 +29185,10 @@ msgstr "المصروف"
 msgid "spent {0}"
 msgstr ""
 
+#: src/components/token-plan/FundingChain.tsx
+msgid "spent {spent}"
+msgstr ""
+
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
 msgid "Spent / limit"
@@ -30094,6 +30166,7 @@ msgstr "المهام {openTaskCount}"
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
 #: src/components/token-plan/AllocateDialog.tsx
+#: src/components/token-plan/FundingChain.tsx
 #: src/i18n/type-labels.ts
 msgid "Team"
 msgstr "الفريق"
@@ -32750,8 +32823,8 @@ msgstr "لا حد هنا — يضع {parent} سقفًا قدره {limit} {window
 msgid "Unmount Flowpad Assistant"
 msgstr "فصل مساعد Flowpad"
 
+#: src/components/token-plan/FundingChain.tsx
 #: src/components/token-plan/TokenPlanView.tsx
-#: src/components/token-plan/TokenSourcesTree.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Unnamed"
 msgstr ""
@@ -34596,6 +34669,7 @@ msgstr "أنت"
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 #: src/components/lens-viewer/shared/transcript-features/ChatEntryItem.tsx
+#: src/components/token-plan/FundingChain.tsx
 msgid "You"
 msgstr "أنتم"
 
@@ -34679,6 +34753,14 @@ msgstr "يمكن الآن إغلاق هذه النافذة."
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You can see {name}, but its project isn't shared with you, so it can't be launched."
 msgstr "يمكنكم رؤية {name}، لكن مشروعه غير مشارك معكم، لذا لا يمكن تشغيله."
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "You can spend up to <0>{amount}</0> — the tightest limit on this path."
+msgstr ""
+
+#: src/components/token-plan/FundingChain.tsx
+msgid "You can spend up to <0>{amount}</0> of your own limit; the levels above may stop you sooner."
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "You can't invite people here — ask {ownerName}."
