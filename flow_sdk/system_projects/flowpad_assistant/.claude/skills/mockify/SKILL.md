@@ -83,7 +83,7 @@ DM ds-put <mock project>/agentic-assets/dataset/mocks <slug> '{"input": {"title"
 - One step per screen — a screen that looks different (a dialog open, a menu dropped, a toast shown) is its
   own step, never a patch on another step's screen.
 - A branch (failure, cancel, "finish later") has `branch_of: <step id>` and `when`, right after the step it
-  branches from; a screen that goes on somewhere other than the next main-path screen says `next`.
+  branches from; a screen that goes on somewhere other than the next screen depth-first says `next`.
 - `session` is YOUR agentic process id (`flow context`) — where Execute delivers the feedback.
 - `DM check` the value against `mockify.mock` before the put; a refused put writes nothing.
 
