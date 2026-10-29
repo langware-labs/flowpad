@@ -156,7 +156,7 @@ class GithubPrConfig(SourceConfig):
     #: ``owner/repo`` each; empty reads every repository the token reaches.
     repos: list[str] = []
     #: Also list Dependabot's open PRs — in ``repos``, else in your organisations and your own account.
-    bots: bool = True
+    dependabot: bool = True
     #: Empty is GitHub itself; a test points a row at a local double. Never a secret.
     base_url: str = GITHUB_API_BASE
 
@@ -202,8 +202,8 @@ class GithubPrSource(MessageSource):
         return value if value in FILTERS else DEFAULT_FILTER
 
     @property
-    def bots(self) -> bool:
-        return self.config.get("bots") is not False
+    def dependabot(self) -> bool:
+        return self.config.get("dependabot") is not False
 
     @property
     def repos(self) -> list[str]:
@@ -329,7 +329,8 @@ class GithubPrSource(MessageSource):
             return []
         title = str(head.get("title") or "") or None
         found: list[MessageItem] = []
-        add = self._adder(found, key, title, _login(head.get("user")))
+        marks = _conversation_marks(key, _login(head.get("user")))
+        add = self._adder(found, key, title, marks)
         self._events(timeline, add, head, head)
         ending = [item for item in found if item.data.ends_conversation]
         if ending:
@@ -339,7 +340,7 @@ class GithubPrSource(MessageSource):
         when = head.get("merged_at") or head.get("closed_at") or head.get("updated_at")
         return [self._item(
             f"ended-{key}-{state}", key, line, "", when, head.get("html_url"), raw=head, subject=title, ends=True, mark=_MARKS.get(state),
-            author=_login(head.get("user")),
+            conversation_marks=marks,
         )]
 
     async def iterate(
@@ -354,17 +355,19 @@ class GithubPrSource(MessageSource):
                 return
 
     async def _searches(self, since: Optional[datetime], extra: str = "") -> list[str]:
-        """One search query per qualifier of the filter, plus Dependabot's per scope; their open PRs
-        together are the list. A bot search is never unscoped — that is every public repository."""
+        """One search query per qualifier of the filter, plus Dependabot's; their open PRs together are
+        the list. Repeated ``org:``/``user:`` qualifiers OR, so the bot's is one search, never unscoped —
+        that is every public repository."""
         tail = [f"repo:{r}" for r in self.repos]
         if since is not None:
             tail.append(f"updated:>={_gh_stamp(since)}")
         if extra:
             tail.append(extra)
         queries = [" ".join(["is:pr", "is:open", f"{qualifier}:@me", *tail]) for qualifier in FILTERS[self.filter]]
-        if self.bots:
-            scopes = [""] if self.repos else await self._bot_scopes()
-            queries += [" ".join(p for p in ("is:pr", "is:open", f"author:{BOT_AUTHOR}", scope, *tail) if p) for scope in scopes]
+        if self.dependabot:
+            scopes = [] if self.repos else await self._bot_scopes()
+            if self.repos or scopes:
+                queries.append(" ".join(["is:pr", "is:open", f"author:{BOT_AUTHOR}", *scopes, *tail]))
         return queries
 
     async def _bot_scopes(self) -> list[str]:
@@ -398,7 +401,7 @@ class GithubPrSource(MessageSource):
         base = f"/repos/{repo}"
         out: list[MessageItem] = []
 
-        add = self._adder(out, key, title, _login(pr.get("user")))
+        add = self._adder(out, key, title, _conversation_marks(key, _login(pr.get("user"))))
 
         comments, review_comments, reviews, timeline, head = await asyncio.gather(
             self._list(f"{base}/issues/{n}/comments", since=since),
@@ -433,16 +436,16 @@ class GithubPrSource(MessageSource):
         out.sort(key=lambda item: (item.data.sent_at or datetime.min.replace(tzinfo=timezone.utc), item.origin.key))
         return out
 
-    def _adder(self, out: list[MessageItem], key: str, title: Optional[str], author: str = ""):
+    def _adder(self, out: list[MessageItem], key: str, title: Optional[str], marks: Optional[tuple[MessageMarkSpec, ...]] = None):
         """``add(kind_id, sender, text, when, url, raw, in_reply_to=None, *, ends=False, mark=None)``
-        appending one message of PR ``key`` (opened by ``author``) to ``out``."""
+        appending one message of PR ``key`` (its conversation wearing ``marks``) to ``out``."""
 
         def add(
             kind_id: str, sender: str, text: str, when: Any, url: Any, raw: dict, in_reply_to: Optional[str] = None, *,
             ends: bool = False, mark: Optional[MessageMarkSpec] = None,
         ) -> None:
             out.append(self._item(
-                kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends, mark=mark, author=author,
+                kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends, mark=mark, conversation_marks=marks,
             ))
 
         return add
@@ -602,10 +605,10 @@ class GithubPrSource(MessageSource):
     def _item(
         self, key: str, pr: str, text: Optional[str], sender: str, when: Any, url: Any, *,
         raw: Optional[dict] = None, subject: Optional[str] = None, in_reply_to: Optional[str] = None, ends: bool = False,
-        mark: Optional[MessageMarkSpec] = None, author: Optional[str] = None,
+        mark: Optional[MessageMarkSpec] = None, conversation_marks: Optional[tuple[MessageMarkSpec, ...]] = None,
     ) -> MessageItem:
         """One message of PR ``pr``, keyed ``key`` — the one shape ``fetch`` and a send's echo share.
-        ``author`` (who opened the PR) names the conversation's chips; ``None`` (an echo) names none."""
+        ``conversation_marks`` are the PR's chips; ``None`` (an echo, an action) leaves them as they are."""
         data = GithubPrMessageData(
             text=text,
             conversation=self.conversation_origin(pr),
@@ -616,7 +619,7 @@ class GithubPrSource(MessageSource):
             raw=raw,
             ends_conversation=ends,
             mark=mark,
-            conversation_marks=_conversation_marks(pr, author) if author is not None else (),
+            conversation_marks=conversation_marks,
         )
         origin = self.origin(key, pr)
         return MessageItem(origin=origin.model_copy(update={"url": str(url)}) if url else origin, data=data)

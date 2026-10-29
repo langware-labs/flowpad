@@ -202,8 +202,8 @@ class MessageData(Payload):
     #: What the message did (approved, merged); None for a message that only says something.
     mark: Optional[MessageMarkSpec] = None
     #: Chips for the whole conversation (its repository, the bot that opened it), as of this
-    #: message; the projection puts them on ``Conversation.marks``. Empty says nothing (keeps them).
-    conversation_marks: tuple[MessageMarkSpec, ...] = ()
+    #: message; the projection puts them on ``Conversation.marks``. ``None`` keeps them, ``()`` clears them.
+    conversation_marks: Optional[tuple[MessageMarkSpec, ...]] = None
 
     @property
     def item_text(self) -> str:

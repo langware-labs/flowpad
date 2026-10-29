@@ -408,7 +408,7 @@ async def test_dependabot_prs_can_be_turned_off(github):
     gh = github.gh
     gh.pr("octo/deps#60", reviewers=())["author"] = "dependabot[bot]"
     gh.comment("octo/deps#60", "bump", user="dependabot[bot]")
-    items, _, _ = await _all(_source(github.base, bots=False))
+    items, _, _ = await _all(_source(github.base, dependabot=False))
     assert items == []
     assert not any("dependabot" in q for _, q in gh.calls)
 

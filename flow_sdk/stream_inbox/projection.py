@@ -194,9 +194,9 @@ def _follow_ending(conversation, item) -> bool:
 
 def _follow_marks(conversation, item, source) -> bool:
     """The conversation wears the chips its newest message names (``MessageData.conversation_marks``);
-    a message that names none leaves them. Answers whether anything changed (the caller saves)."""
-    marks = list(getattr(_payload_of(item, source), "conversation_marks", ()) or ())
-    if not marks or marks == list(conversation.marks or ()):
+    a message that names none (``None``) leaves them. Answers whether anything changed (the caller saves)."""
+    named = getattr(_payload_of(item, source), "conversation_marks", None)
+    if named is None or (marks := list(named)) == list(conversation.marks or ()):
         return False
     conversation.marks = marks
     return True

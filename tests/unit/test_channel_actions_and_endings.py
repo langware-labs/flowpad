@@ -67,7 +67,7 @@ async def _source() -> DataSource:
 
 async def _land(
     src: DataSource, key: str, *, at: datetime | None = None, ends: bool = False, mark: MessageMarkSpec | None = None, outcomes: list | None = None,
-    text: str | None = None, item_changed: bool = False, chips: tuple[MessageMarkSpec, ...] = (),
+    text: str | None = None, item_changed: bool = False, chips: tuple[MessageMarkSpec, ...] | None = None,
 ) -> SourceItem:
     """One message from Dana in thread ``pr-7``, ingested and projected — no sync round."""
     origin = lambda k: CloudOrigin(kind=PROVIDER, namespace=src.account_key, key=k)  # noqa: E731

@@ -8,11 +8,13 @@ not runnable (waiting on a setup step, or paused by a person) is not read: ``ran
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
+from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.sources.families import RecordSource
 from flow_sdk.sources.protocols import Verdict
 from tests.utils.fake_source import scripted_provider
@@ -83,15 +85,11 @@ async def test_a_source_that_is_not_runnable_is_not_read_and_says_why(status):
 
 
 @pytest.mark.parametrize("windowed, kept", [(True, 0), (False, 1)])
-async def test_a_source_with_no_window_keeps_a_message_older_than_the_window(windowed, kept):
+async def test_a_source_with_no_window_keeps_a_message_older_than_the_window(windowed, kept, monkeypatch):
     """``windowed = False`` (open pull requests, however quiet) floors neither the read nor what it hands back."""
-    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
-
-    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
-
     old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     with scripted_provider(MESSAGES, pages=[[{"key": "m1", "text": "a month ago", "occurred_at": old}]]):
-        DRIVERS.get(MESSAGES)._cls.windowed = windowed
+        monkeypatch.setattr(DRIVERS.get(MESSAGES)._cls, "windowed", windowed)
         src = await _source(MESSAGES)
         answer = await _pull(src)
     assert answer["created"] == kept
