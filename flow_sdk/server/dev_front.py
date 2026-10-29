@@ -34,7 +34,9 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
 from flow_sdk.core.dev_server import LOOPBACK_HOST
-from flow_sdk.server.service_proxy import (
+from flow_sdk.server.service_proxy import (  # noqa: I001
+    _HOP,
+    _WEBSOCKET_DROP,
     SERVICE_ROUTE,
     SERVICE_ROUTE_PREFIX,
     inbound_headers,
@@ -48,16 +50,9 @@ FORWARDED = ("sdk", "api")
 
 #: Dropped on the way to the backend: the hop-by-hop set and the address. The cookie STAYS — it is the
 #: browser's own session with that same backend.
-_TO_BACKEND_DROP = frozenset(
-    {"host", "connection", "keep-alive", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade"}
-)
-_WS_DROP = _TO_BACKEND_DROP | {
-    "sec-websocket-key",
-    "sec-websocket-version",
-    "sec-websocket-extensions",
-    "sec-websocket-accept",
-    "sec-websocket-protocol",
-}
+_TO_BACKEND_DROP = _HOP | {"host", "proxy-connection"}
+#: The page's Origin is kept: the backend checks it on its own socket.
+_WS_DROP = _TO_BACKEND_DROP | (_WEBSOCKET_DROP - {"origin"})
 
 
 def backend_origin() -> Optional[str]:
@@ -65,9 +60,9 @@ def backend_origin() -> Optional[str]:
     explicit = (os.environ.get("FLOWPAD_BACKEND") or "").strip().rstrip("/")
     if explicit:
         return explicit
-    from flow_sdk.discovery.flowpad_discovery import _parse_server_json, _server_json_path  # noqa: PLC0415
+    from flow_sdk.discovery.flowpad_discovery import read_server_info  # noqa: PLC0415
 
-    info = _parse_server_json(_server_json_path())
+    info = read_server_info()
     return f"http://{LOOPBACK_HOST}:{info.port}" if info else None
 
 

@@ -230,7 +230,7 @@ def launched_by(listener: Listener, start_cmd: str) -> bool:
     # As stored, and as it is RUN: a stored bare file server is started as the static dev server
     # (``dev_command``), while one started before that upgrade still runs under the stored command.
     patterns = {_launch_pattern(start_cmd), _launch_pattern(dev_command(start_cmd))}
-    return any(p.search(_unquoted(line)) for p in patterns for line in listener.commands)
+    return any(p.search(text) for text in map(_unquoted, listener.commands) for p in patterns)
 
 
 def of_app(

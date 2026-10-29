@@ -7025,6 +7025,10 @@ msgstr "أمر"
 msgid "Command"
 msgstr "أمر"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Command line options"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Command Status"
@@ -11296,10 +11300,11 @@ msgstr "الحواف حسب النوع"
 msgid "Edit"
 msgstr "تعديل"
 
+#. placeholder {0}: agent.displayName
 #. placeholder {0}: d.title
 #. placeholder {0}: entry.app.displayName
-#. placeholder {0}: only.app.displayName
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 msgid "Edit {0}"
@@ -11307,6 +11312,10 @@ msgstr "تحرير {0}"
 
 #~ msgid "Edit a system trigger?"
 #~ msgstr "تحرير مشغّل النظام؟"
+
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Edit agent"
+msgstr ""
 
 #~ msgid "Edit anyway"
 #~ msgstr "تحرير على أي حال"
@@ -13425,6 +13434,7 @@ msgstr "اسم الـ Flow…"
 
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/token-plan/FundingChain.tsx
+#: src/components/version-popover/hub-release-label.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
@@ -13571,8 +13581,7 @@ msgstr ""
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "يتوقف FlowPad ثم يُحدَّث إلى أحدث إصدار ويُعاد تشغيله على {upgradeTargetName}. يتعطل العمل لدى من يعملون فيه لدقيقة أو دقيقتين، وتُنشَّط البيئة المعزولة المتوقفة مؤقتًا لإنجاز ذلك."
 
-#: src/components/version-popover/version-popover.tsx
-#: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-chip.tsx
 msgid "Flowpad version"
 msgstr "إصدار Flowpad"
 
@@ -14962,6 +14971,7 @@ msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/version-popover/hub-release-label.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
@@ -15004,8 +15014,8 @@ msgstr "تم قمع أخطاء Hub"
 #~ msgstr ""
 
 #: src/components/version-popover/hub-release-label.tsx
-msgid "Hub release, and the UI build serving it"
-msgstr "إصدار Hub ونسخة بناء الواجهة التي تخدمه"
+#~ msgid "Hub release, and the UI build serving it"
+#~ msgstr "إصدار Hub ونسخة بناء الواجهة التي تخدمه"
 
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "hub repository"
@@ -31111,6 +31121,10 @@ msgstr ""
 msgid "The page loads and reports its errors; each is decided by the rules below."
 msgstr ""
 
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
+msgstr ""
+
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
 msgstr "تعذّر تثبيت المشروع."
@@ -32962,6 +32976,10 @@ msgstr "رسالتكم الأولى…"
 msgid "Ui"
 msgstr "الواجهة"
 
+#: src/components/version-popover/hub-release-label.tsx
+msgid "UI"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "UI & Display"
 msgstr "الواجهة والعرض"
@@ -33245,7 +33263,7 @@ msgid "Update ({0} newer)"
 msgstr "حدّثوا ({0} أحدث)"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
-#: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-chip.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Update available"
@@ -34056,6 +34074,10 @@ msgstr "بانتظار أول تسليم موقَّع…"
 #: src/components/agent-resources/AgentWebhooksSection.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Waiting for the link"
+msgstr ""
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+msgid "Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)"
 msgstr ""
 
 #: src/components/ask/AskChoiceBlock.tsx
