@@ -7,7 +7,7 @@ import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
-import { OpenSessionButton } from '@src/components/workers/ContextWorkerToolbar';
+import { MESSAGE_ROW_ICON_BUTTON_CLASS, OpenSessionButton, QuickWorkerButton } from '@src/components/workers/ContextWorkerToolbar';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { CHIP_LAYOUT } from './EntityChip';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
@@ -406,13 +406,20 @@ export function MessageBubble({
               <FavoriteStar {...favoriteRef} size={12} hoverSurface="none" revealOnHover className="p-0.5" />
             </span>
           )}
+          {!editing && flowMessageId && onLaunchWorker && (
+            <QuickWorkerButton
+              onLaunch={onLaunchWorker}
+              testId={`message-quick-worker-${flowMessageId}`}
+              className="self-center"
+            />
+          )}
           {!editing && onAutomate && (
             <button
               type="button"
               onClick={onAutomate}
               title={t`Automate messages like this`}
               aria-label={t`Automate messages like this`}
-              className="self-center rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              className={`self-center ${MESSAGE_ROW_ICON_BUTTON_CLASS}`}
               data-testid={`message-automate-quick-${flowMessageId}`}
             >
               <Zap className="size-3" />

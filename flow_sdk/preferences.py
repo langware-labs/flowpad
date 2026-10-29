@@ -18,6 +18,13 @@ DEFAULT_SHARE_MESSAGE_STATUS = True
 #: SmartNavigationLog: append every smart-navigation decision to a dataset in Flowpad's temp folder.
 PREF_SMART_NAVIGATION_LOG = "preferences.advanced.smart_navigation_log"
 DEFAULT_SMART_NAVIGATION_LOG = False
+#: The model size (sm/md/lg) a worker runs when nobody named one; the endpoint says which model that is.
+PREF_LLM_DEFAULT_SIZE = "preferences.llm.default_size"
+DEFAULT_LLM_SIZE = "md"
+#: The order token sources are tried in when nothing pins one (``llm_source`` rung 4). Stored by the UI
+#: as a comma-separated string (``"endpoint,device,api_key"``); a list is accepted too.
+PREF_LLM_SOURCE_ORDER = "preferences.llm.source_order"
+DEFAULT_LLM_SOURCE_ORDER = ("device", "api_key", "endpoint")
 
 
 def read_instance_pref(key: str, default: Any) -> Any:
@@ -95,3 +102,16 @@ def write_instance_pref(key: str, value: Any) -> bool:
         return True
     except OSError:
         return False
+
+
+def llm_source_order() -> tuple[str, ...]:
+    """The source kinds in the user's order (``preferences.llm.source_order``), every known kind once.
+
+    Accepts the UI's comma-separated string or a list; unknown kinds are dropped and missing ones
+    go last, so the answer always ranks every kind.
+    """
+    raw = read_instance_pref(PREF_LLM_SOURCE_ORDER, list(DEFAULT_LLM_SOURCE_ORDER))
+    if isinstance(raw, str):
+        raw = [part.strip() for part in raw.split(",")]
+    kinds = [k for k in raw if k in DEFAULT_LLM_SOURCE_ORDER] if isinstance(raw, list) else []
+    return tuple(dict.fromkeys([*kinds, *DEFAULT_LLM_SOURCE_ORDER]))

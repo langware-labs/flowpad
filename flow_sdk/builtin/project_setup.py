@@ -579,17 +579,30 @@ def to_do(req: SetupRequirementSpec) -> bool:
     return req.required and req.skipped is None and unsatisfied(req)
 
 
-async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectReadinessSpec:
-    """What the footer warning reads: ready, or what is left and what nobody can set up here."""
+async def readiness_of(project: "Project", deployment_id: str = "", *,
+                       include_ready: bool = False) -> ProjectReadinessSpec:
+    """What the footer warning reads: ready, or what is left and what nobody can set up here.
+
+    ``include_ready`` (the Project setup page) also lists what is set up (``set_up``) and names each step's
+    tree node (``node``, the ``root`` that runs it alone) — work the footer's poll does not pay for."""
     requirements, needs = await _collect(project, deployment_id)
-    if not deployment_id:  # what runs HERE: a source in setup, a web app that does not answer
-        requirements += _beyond_credentials(await _running_here(project, needs.sources), requirements)
+    if not deployment_id:  # what runs HERE: a source in setup, a web app that does not answer (and, asked, what does)
+        requirements += _beyond_credentials(
+            await _running_here(project, needs.sources, include_ready=include_ready), requirements)
+    if include_ready:
+        from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415 — derive imports this module
+
+        requirements = [r if r.kind == REQUIREMENT_GAP else r.model_copy(update={"node": requirement_node_id(r)})
+                        for r in requirements]
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
         project_id=str(project.id), ready=not left, to_do=left,
         optional=[r for r in requirements if not r.required and r.skipped is None and unsatisfied(r)],
         skipped=[r for r in requirements if r.skipped is not None and r.kind != REQUIREMENT_GAP],
         gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],
+        set_up=[r for r in requirements
+                if r.skipped is None and r.kind != REQUIREMENT_GAP and r.satisfied and not unsatisfied(r)]
+        if include_ready else [],
     )
 
 
@@ -602,8 +615,10 @@ def _beyond_credentials(running: list[SetupRequirementSpec],
     return [r for r in running if not (r.kind == REQUIREMENT_SOURCE and r.typeid in owed_by)]
 
 
-async def _running_here(project: "Project", sources: Optional[list] = None) -> list[SetupRequirementSpec]:
+async def _running_here(project: "Project", sources: Optional[list] = None, *,
+                        include_ready: bool = False) -> list[SetupRequirementSpec]:
     """What values cannot show: each source still in setup, each web app whose server does not answer.
+    ``include_ready`` adds the ones that are fine too (``satisfied=True``) — the setup page lists them as Ready.
 
     Both are read, never probed hard — the row's status, one loopback request per app — so the
     "Setup required" button stays as cheap as the credential check it sits beside."""
@@ -612,20 +627,23 @@ async def _running_here(project: "Project", sources: Optional[list] = None) -> l
     from flow_sdk.builtin.webapp_setup import step  # noqa: PLC0415
 
     out = [
-        SetupRequirementSpec(kind=REQUIREMENT_SOURCE, name=str(source.name or source.provider), satisfied=False,
+        SetupRequirementSpec(kind=REQUIREMENT_SOURCE, name=str(source.name or source.provider),
+                             satisfied=source.status != SourceStatus.SETUP.value,
                              typeid=str(source.typeid), used_by=[PROJECT],
-                             note=str(source.setup_detail or "not set up yet"), skipped=source.setup_skipped,
+                             note=str(source.setup_detail or "not set up yet")
+                             if source.status == SourceStatus.SETUP.value else "",
+                             skipped=source.setup_skipped,
                              **skip_always_of(project, [_root(source, ROOT_SOURCE)]))
         for source in (sources if sources is not None else await project_sources(project))
-        if source.status == SourceStatus.SETUP.value
+        if include_ready or source.status == SourceStatus.SETUP.value
     ]
     apps = [app for app in await WebApp.get_all({"match": {"project_id": str(project.id)}}) if app.asset_ref]
     answers = await asyncio.gather(*(step(str(app.id), "start", check=True) for app in apps))
     out += [
-        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=False, used_by=[PROJECT],
+        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=bool(answer.ok), used_by=[PROJECT],
                              note=answer.detail, typeid=str(app.typeid), skipped=app.setup_skipped,
                              **skip_always_of(project, [_root(app, ROOT_WEBAPP)]))
-        for app, answer in zip(apps, answers) if not answer.ok
+        for app, answer in zip(apps, answers) if include_ready or not answer.ok
     ]
     return out
 
@@ -800,6 +818,11 @@ def _own_check(command: str) -> Optional[tuple[str, str, str]]:
     return argv[5], given.get("--project", ""), given.get("--deployment", "")
 
 
+def setup_shell_answers(command: str) -> bool:
+    """``command`` is a check the setup's shell answers in this process — its detail is a reason."""
+    return _own_check(command) is not None
+
+
 async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, extra_env: Optional[dict] = None,
                        platform: str = "", stop: Optional[asyncio.Event] = None, on_output=None,
                        on_spawn=None, fresh: bool = False, inner=None):
@@ -822,7 +845,7 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
         return await (inner or run_shell)(command, timeout_seconds=timeout_seconds, workdir=workdir,
                                           extra_env=extra_env, platform=platform, stop=stop,
                                           on_output=on_output, on_spawn=on_spawn, fresh=fresh)
-    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import credentials_status, why_not_ready  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode  # noqa: PLC0415
 
@@ -834,8 +857,9 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
     row = next((r for r in rows if r.get("scope") == "project"), rows[0] if rows else None)
     ready = row is not None and row.get("state") == "connected"
     said = json.dumps({"name": name, "declared": row is not None, "ready": ready})
+    # Why it is not ready rides as the answer's detail: a step's check says it in its own words.
     return CliResult.of_process(command, 0 if ready else int(ExitCode.NOT_YET), said,
-                                duration_s=time.monotonic() - started)
+                                duration_s=time.monotonic() - started, detail=why_not_ready(row))
 
 
 def _release_control(key: tuple[str, str], control: Any, _task: "asyncio.Task") -> None:

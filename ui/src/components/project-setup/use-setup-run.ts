@@ -14,8 +14,11 @@ export interface SetupRun {
   /** The open question this screen has claimed, drawn in place. */
   questionId: string | null;
   settleQuestion: () => void;
-  /** Start the setup (or join the one going) — the backend's run, so closing loses nothing. */
-  start: () => Promise<void>;
+  /** Start the setup (or join the one going) — the backend's run, so closing loses nothing. `root` runs one
+   *  node of the tree instead of the hook's own root; reading and Stop follow it from then on. */
+  start: (root?: string) => Promise<void>;
+  /** The root the run on screen is rooted at: the hook's own, or the last one `start` was given. */
+  root: string;
   /** Stop the run going (absent where a run cannot be stopped). The record then says `stopped`. */
   stop?: () => Promise<boolean>;
 }
@@ -39,14 +42,14 @@ export function useSetupRun(
     () =>
       projectId
         ? {
-            start: () => Project.startSetup(projectId, root),
-            read: () => Project.setupRun(projectId, root),
-            stop: () => Project.stopSetup(projectId, root),
+            start: (at) => Project.startSetup(projectId, at),
+            read: (at) => Project.setupRun(projectId, at),
+            stop: (at) => Project.stopSetup(projectId, at),
           }
         : null,
-    [projectId, root],
+    [projectId],
   );
-  return useRun(calls, onSettled, options);
+  return useRun(calls, root, onSettled, options);
 }
 
 /** One SOURCE's setup run: its own node of its project's tree (`POST data_source/<id>/setup`) — what its
@@ -56,18 +59,19 @@ export function useSourceSetupRun(source: DataSource): SetupRun {
     () => ({ start: () => source.startSetup(), read: () => source.setupRun() }),
     [source],
   );
-  return useRun(calls);
+  return useRun(calls, '');
 }
 
-/** The two calls a run is followed through: start (or join) it, and read where it got to. */
+/** The calls a run is followed through, each at a root: start (or join) it, read where it got to, stop it. */
 interface SetupCalls {
-  start: () => Promise<string>;
-  read: () => Promise<ProjectSetupRun | null>;
-  stop?: () => Promise<boolean>;
+  start: (root: string) => Promise<string>;
+  read: (root: string) => Promise<ProjectSetupRun | null>;
+  stop?: (root: string) => Promise<boolean>;
 }
 
 function useRun(
   calls: SetupCalls | null,
+  ownRoot: string,
   onSettled?: () => void | Promise<void>,
   { autoStart = false }: { autoStart?: boolean } = {},
 ): SetupRun {
@@ -75,6 +79,9 @@ function useRun(
   const [running, setRunning] = useState(false);
   const [starting, setStarting] = useState(false);
   const [questionId, setQuestionId] = useState<string | null>(null);
+  // The root `start` was given, when it is not the hook's own (one step); null = the own root.
+  const [override, setOverride] = useState<string | null>(null);
+  const root = override ?? ownRoot;
   const release = useRef<() => void>(() => {});
   const autoStarted = useRef(false);
   const settled = useRef(onSettled);
@@ -92,7 +99,7 @@ function useRun(
     if (!calls) return;
     let live = true;
     void calls
-      .read()
+      .read(ownRoot)
       .then((state) => {
         if (!live || !state) return;
         setTree(state.tree);
@@ -105,7 +112,7 @@ function useRun(
     return () => {
       live = false;
     };
-  }, [calls, claim]);
+  }, [calls, claim, ownRoot]);
 
   // While it runs: re-read the tree — the next read only after the last one answered, so a slow backend
   // never stacks requests (or settles twice).
@@ -114,13 +121,22 @@ function useRun(
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      const next = await calls.read().catch(() => null);
+      const next = await calls.read(root).catch(() => null);
       if (!live) return;
       if (next) setTree(next.tree);
       if (next && !next.running) {
         setRunning(false);
         release.current();
         setQuestionId(null);
+        if (override !== null) {
+          // A run rooted elsewhere (one step) is over: the screen goes back to its own root's record,
+          // read beside whatever the screen does once a run settles.
+          setOverride(null);
+          void calls
+            .read(ownRoot)
+            .then((own) => setTree(own?.tree ?? null))
+            .catch(() => {});
+        }
         await settled.current?.();
         return;
       }
@@ -131,22 +147,28 @@ function useRun(
       live = false;
       clearTimeout(timer);
     };
-  }, [running, calls]);
+  }, [running, calls, root, override, ownRoot]);
 
   useEffect(() => () => release.current(), []);
 
-  const start = useCallback(async () => {
-    if (!calls) return;
-    setStarting(true);
-    try {
-      const address = await calls.start();
-      // Claimed at once, so the first question is drawn here rather than sending the tab away.
-      claim(address);
-      setRunning(true);
-    } finally {
-      setStarting(false);
-    }
-  }, [calls, claim]);
+  const start = useCallback(
+    async (at: string = ownRoot) => {
+      if (!calls) return;
+      setStarting(true);
+      setOverride(at === ownRoot ? null : at);
+      // A new run starts from nothing: the last record's node states are not this run's.
+      setTree(null);
+      try {
+        const address = await calls.start(at);
+        // Claimed at once, so the first question is drawn here rather than sending the tab away.
+        claim(address);
+        setRunning(true);
+      } finally {
+        setStarting(false);
+      }
+    },
+    [calls, claim, ownRoot],
+  );
 
   useEffect(() => {
     if (!autoStart || autoStarted.current || running || !calls) return;
@@ -154,15 +176,19 @@ function useRun(
     void start().catch(() => {});
   }, [autoStart, running, calls, start]);
 
+  const stopAt = calls?.stop;
+  const stop = useMemo(() => (stopAt ? () => stopAt(root) : undefined), [stopAt, root]);
+  const settleQuestion = useCallback(() => setQuestionId(null), []);
   return {
     tree,
     running,
     // Asked to start but not yet asked: still the setup's screen, never the error it is about to fix.
     starting: starting || (autoStart && !autoStarted.current && !!calls),
     questionId,
-    settleQuestion: () => setQuestionId(null),
+    settleQuestion,
     start,
+    root,
     // The poll reads the stopped record next and settles the screen.
-    stop: calls?.stop,
+    stop,
   };
 }

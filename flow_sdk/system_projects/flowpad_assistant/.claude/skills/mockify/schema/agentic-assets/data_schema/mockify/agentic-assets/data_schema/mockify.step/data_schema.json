@@ -27,7 +27,7 @@
     },
     "next": {
       "shape": "?string",
-      "description": "Where this screen goes on, when not the next main-path screen (a branch's Try again)."
+      "description": "Where this screen goes on, when not the next screen depth-first (a branch's Try again)."
     },
     "decisions": {
       "shape": [

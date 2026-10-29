@@ -15,7 +15,7 @@ import {
 } from '@sdk';
 import { redirect } from 'react-router';
 import { DockPointer } from '@src/navigation';
-import { AssetMode } from '@src/navigation/asset-doc-types';
+import { isProjectLandingPointer } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
@@ -306,7 +306,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         // project landing (`project-home`) IS a browse landing — it has no
         // owner of its own — so an unscoped one restores the project too,
         // instead of rendering an empty home for no project.
-        if (!dock.pointer || dock.pointer === (AssetMode.PROJECT_HOME as string) || dock.scopeProjectId) {
+        if (!dock.pointer || isProjectLandingPointer(dock.pointer) || dock.scopeProjectId) {
           await adoptScopeProject(dock);
         }
         await loadAssetRoute(dock.pointer, {

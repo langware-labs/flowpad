@@ -5,7 +5,9 @@ import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { isLaunched, useSandboxes } from '@src/hooks/use-sandboxes';
 import { ALL_DEPLOYMENTS, DeploymentBadges, deploymentsByAgent, toAgentRows, type AgentRow } from './agent-counters';
+import { StatusDot } from './AssetItems';
 import type { AssetCounterGroup } from './types';
+import { FundedBy } from '@src/components/assets/editor/agent-profile/deployment/DeploymentFunding';
 
 /**
  * The hub home's counters. Org-wide graph queries with no project scope: the
@@ -32,17 +34,6 @@ export interface MachineRow {
 
 export function isActiveMachine(row: MachineRow): boolean {
   return row.status === ExecutionEnvironmentStatus.READY;
-}
-
-function StatusDot({ active, children }: { active: boolean; children: ReactNode }) {
-  return (
-    <span className="flex items-center gap-1.5 text-muted-foreground">
-      <span
-        className={`inline-block h-1.5 w-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}
-      />
-      {children}
-    </span>
-  );
 }
 
 const MACHINE_STATUS_LABEL: Record<ExecutionEnvironmentStatus, ReactNode> = {
@@ -89,6 +80,16 @@ export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
   itemKey: (row) => row.agent.id,
   searchText: ({ agent }) => [agent.displayName, agent.description].filter(Boolean).join(' '),
   itemPointer: (row) => row.agent.dockPointer,
+  card: (row) => {
+    const active = isActiveAgent(row);
+    return {
+      title: row.agent.displayName,
+      description: row.agent.description,
+      status: { label: active ? <Trans>Active</Trans> : <Trans>Idle</Trans>, active },
+      // No deployment yet: the Idle badge already says so, a bare dash adds nothing.
+      footer: row.deployments.length > 0 ? <DeploymentBadges deployments={row.deployments} /> : undefined,
+    };
+  },
   columns: [
     {
       key: 'agent',
@@ -145,6 +146,10 @@ export const hubMachineCounterGroup: AssetCounterGroup<MachineRow> = {
   itemKey: (row) => row.node.id,
   searchText: ({ node }) => node.name ?? '',
   itemPointer: (row) => row.node.dockPointer,
+  card: (row) => ({
+    title: row.node.name,
+    status: { label: machineStatusLabel(row), active: isActiveMachine(row) },
+  }),
   columns: [
     {
       key: 'machine',
@@ -180,13 +185,23 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
   },
   itemKey: (d) => d.id,
   searchText: (d) => [d.name, d.target.provider].filter(Boolean).join(' '),
-  itemPointer: (d) => d.dockPointer,
+  // Its own page (funding, threads, health) when it places an agent; else where it sits in the world view.
+  itemPointer: (d) => d.agentPagePointer ?? d.dockPointer,
+  card: (d) => {
+    const live = isLiveDeployment(d);
+    return {
+      title: d.name,
+      status: { label: live ? <Trans>Live</Trans> : <Trans>Paused</Trans>, active: live },
+      description: <FundedBy deployment={d} />,
+      footer: d.target.provider || d.status.provider_state || undefined,
+    };
+  },
   columns: [
     {
       key: 'deployment',
       header: <Trans>Deployment</Trans>,
       cell: (d) => <span className="truncate font-medium text-foreground">{d.name}</span>,
-      className: 'w-[60%] max-w-0',
+      className: 'w-[45%] max-w-0',
     },
     {
       key: 'status',
@@ -194,6 +209,12 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
       cell: (d) => (
         <StatusDot active={isLiveDeployment(d)}>{d.target.provider || d.status.provider_state || '—'}</StatusDot>
       ),
+    },
+    {
+      key: 'funding',
+      header: <Trans>Funded by</Trans>,
+      cell: (d) => <FundedBy deployment={d} />,
+      className: 'w-[30%] max-w-0',
     },
   ],
 };

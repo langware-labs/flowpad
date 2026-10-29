@@ -209,8 +209,9 @@ async def create_support_conversation(
         attachment=(
             [Attachment(attachment_type=AttachmentType.TYPE_ID, data=attachment_type_id)] if attachment_type_id else []
         ),
-        # Written here to be sent when "Report issue" shares the conversation: the outbox's "mine".
-        outbound=True,
+        # Not outbound: nothing ever sends this conversation (it has no members; Report emails the
+        # team, and "Send to …" writes its own conversation -- flow_sdk.diagnose.share). Marked
+        # outbound, the outbox counted it as owed on every flush, forever.
     )
     msg = await msg.save(owner)
 

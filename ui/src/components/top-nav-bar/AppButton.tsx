@@ -1,6 +1,7 @@
 import { useLingui } from '@lingui/react/macro';
-import { Check, LayoutGrid } from 'lucide-react';
-import type { Project } from '@sdk';
+import { Check, LayoutGrid, Pencil } from 'lucide-react';
+import { useState } from 'react';
+import { WebApp, type Project } from '@sdk';
 import { useProjectAgents } from '@src/hooks/use-project-agents';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -15,6 +16,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { appDockAddress } from '@src/navigation/app-dock';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { NavIconButton } from './NavIconButton';
@@ -35,6 +37,7 @@ export function AppButton({ project }: { project?: Project | null }) {
   const apps = useProjectApps(project);
   const { agents } = useProjectAgents(project);
   const { launch } = useAgentLauncher();
+  const [menuOpen, setMenuOpen] = useState(false);
   if (isHubOnly() || !project || (!apps.length && !agents.length)) return null;
 
   const projectId = String(project.id);
@@ -43,11 +46,15 @@ export function AppButton({ project }: { project?: Project | null }) {
     navigation.openDock(projectAppDock(entry, projectId), undefined, { topLevel: true });
 
   const label = t`Apps and agents`;
+  // The app's editor (`webapp.json` as a form) — the same URL the asset list opens.
+  const edit = (entry: ProjectApp) =>
+    navigation.openDock(DockPointer.forAssetEditorByTypeId(WebApp.type, entry.app.typeId));
 
   if (apps.length === 1 && !agents.length) {
     const [only] = apps;
     const showing = only.app.id === shownId;
     return (
+      <>
       <NavIconButton
         icon={iconForType(only.app.type)}
         label={label}
@@ -56,11 +63,19 @@ export function AppButton({ project }: { project?: Project | null }) {
         tooltipDelay={1500}
         testId="top-nav-app"
       />
+      <NavIconButton
+        icon={Pencil}
+        label={t`Edit ${only.app.displayName}`}
+        onClick={() => edit(only)}
+        tooltipDelay={1500}
+        testId={`top-nav-app-edit-${only.app.name}`}
+      />
+      </>
     );
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <Tooltip delayDuration={1500}>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
@@ -88,7 +103,7 @@ export function AppButton({ project }: { project?: Project | null }) {
               key={entry.app.id}
               data-testid={`top-nav-app-${entry.app.name}`}
               onSelect={() => open(entry)}
-              className="gap-2"
+              className="group gap-2"
             >
               <Icon className="size-4 shrink-0" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{entry.app.displayName}</span>
@@ -98,6 +113,23 @@ export function AppButton({ project }: { project?: Project | null }) {
                 className={entry.app.id === shownId ? 'size-3.5' : 'invisible size-3.5'}
                 aria-hidden={entry.app.id !== shownId}
               />
+              <button
+                type="button"
+                aria-label={t`Edit ${entry.app.displayName}`}
+                title={t`Edit app`}
+                data-testid={`top-nav-app-edit-${entry.app.name}`}
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-data-[highlighted]:opacity-100"
+                // The row opens the running app; the pencil opens its editor instead.
+                onPointerDown={(e) => e.stopPropagation()}
+                onPointerUp={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  edit(entry);
+                }}
+              >
+                <Pencil className="size-3.5" aria-hidden />
+              </button>
             </DropdownMenuItem>
           );
         })}

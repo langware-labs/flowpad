@@ -24,6 +24,7 @@ class FSEntry(BaseModel):
     size: Optional[int] = Field(None, description="Size in bytes (None for directories)")
     display_name: Optional[str] = Field(None, description="Display name for the item")
     last_modified: Optional[int] = Field(None, description="Last modified timestamp (unix timestamp)")
+    created: Optional[int] = Field(None, description="Creation timestamp (unix timestamp); None where the OS has no birth time")
     symlink_target: Optional[str] = Field(None, description="Target path if item is a symlink")
     local_path: Optional[str] = Field(
         None,

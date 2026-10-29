@@ -73,7 +73,7 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_execute, "run_dir", lambda key: tmp_path / "runs" / key)
     tree = SimpleNamespace(root=root, gaps=[], resolve_node=resolve_node, resolve_op=resolve_op)
     return SimpleNamespace(project=project, tree=tree, installed=installed, ran=ran, gate=gate, nodes=nodes,
-                           broken=broken)
+                           broken=broken, ops=ops)
 
 
 async def settle(machine):
@@ -354,6 +354,37 @@ async def test_an_app_loaded_ready_that_still_answers_opens_without_walking_anyt
     assert await validate(machine.project.id, app.typeid, "agentic_process-x") is None
     answering["up"] = False
     assert await validate(machine.project.id, app.typeid) is None
+
+
+@pytest.mark.asyncio
+async def test_a_running_app_opens_at_once_and_says_what_its_setup_still_owes(machine, answering):
+    """Spora Admin answered on its port while its Google sign-in had expired under it: the open said READY
+    and nothing told the person. It still opens at once; the check behind it names what is owed."""
+    from flow_sdk.core.setup import load as load_module
+
+    app = one_app(machine)
+    login = "login"
+    machine.ops[login] = machine.ops["install"].model_copy(update={
+        "name": login, "exe_data": machine.ops["install"].exe_data.model_copy(update={
+            "commands": {p: f"make {login}" for p in ("linux", "darwin", "win32")}}),
+        "completion_check": machine.ops["install"].completion_check.model_copy(update={
+            "commands": {p: f"have {login}" for p in ("linux", "darwin", "win32")}})})
+    machine.nodes["credential:cloud"] = SetupNode(id="credential:cloud", label="Cloud", run=wizard(login))
+    machine.nodes[app.typeid] = SetupNode(id=app.typeid, label="Up", run=wizard("install"), on_load=wizard("app"),
+                                          children=("credential:cloud",))
+    machine.installed.update(("install", "app"))
+
+    opened = await load_project(machine.project, tree=machine.tree, asset=app)
+    assert opened.state is LoadState.READY and opened.setup_owed is None  # shown now, checked behind
+    await load_module._AUDITS[(machine.project.id, app.typeid)]
+    owed = load_state(machine.project.id, asset=app.typeid)
+    assert owed.state is LoadState.READY and owed.setup_owed and owed.setup_owed.startswith("Cloud")
+    assert login not in machine.ran  # a check: nothing was set up behind the person's back
+
+    machine.installed.add(login)  # signed in again
+    await validate(machine.project.id, app.typeid, project=machine.project, tree=machine.tree)
+    await load_module._AUDITS[(machine.project.id, app.typeid)]
+    assert load_state(machine.project.id, asset=app.typeid).setup_owed == ""
 
 
 @pytest.mark.asyncio

@@ -189,7 +189,7 @@
 
 .milkdown-editor-wrapper .interface-card-param-type {
   font-family: monospace;
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
   overflow-wrap: anywhere;
 }
 
@@ -340,7 +340,7 @@
   border-radius: 0.375rem;
   border: 1px solid hsl(var(--destructive) / 0.4);
   background-color: hsl(var(--destructive) / 0.1);
-  color: hsl(var(--destructive));
+  color: hsl(var(--destructive-text));
   font-family: monospace;
   font-size: 11px;
   white-space: pre-wrap;
@@ -409,7 +409,7 @@
 }
 
 .milkdown-editor-wrapper .breadcrumb-card-provenance[data-provenance='stale'] {
-  color: hsl(var(--destructive) / 0.8);
+  color: hsl(var(--destructive-text) / 0.8);
 }
 
 /* Nothing to say yet — a dot that breathes while the index is asked. */

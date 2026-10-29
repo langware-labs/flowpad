@@ -161,7 +161,7 @@ def test_all_declared_spec_bindings_are_aligned():
     ("dataset", "dataset.json", None),
     ("data_driver", "data_driver.json", None),
     ("mcp", "mcp.json", None),
-    ("micro_app", "webapp.json", None),
+    ("micro_app", "webapp.json", "flat"),
     ("credential", "credential.json", None),
     ("project_manifest", "project_manifest.json", None),
 ])

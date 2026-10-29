@@ -59,7 +59,6 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   copilot_session: msg`Copilot Session`,
   deepagents_session: msg`DeepAgents Session`,
   opencode_session: msg`OpenCode Session`,
-  cron_event: msg`Cron Event`,
   credential: msg`Credential`,
   data_schema: msg`Data Schema`,
   data_source: msg`Data sources`,

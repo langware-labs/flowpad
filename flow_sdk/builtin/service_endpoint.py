@@ -28,6 +28,7 @@ field set on both sides.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Literal, Optional
 
@@ -198,7 +199,15 @@ class ServiceEndpoint(Entity):
             deployment = await Deployment.get_by_typeid(self.parent_type_id) if self.parent_type_id else None
             if deployment is None:
                 return "failing", "no deployment answers this channel"
-            return deployment_process.loop_state(deployment)
+            state = deployment_process.loop_state(deployment)
+            if state[0] != "alive":
+                return state
+            # A running loop is not an answering one: its newest turns say whether messages get answers.
+            from flow_sdk.builtin.agent_serve import turns_health, turns_of  # noqa: PLC0415
+            from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+            processes = await AgenticProcess.local_rows({"match": {"deployment_id": deployment.id}})
+            return turns_health([record for ap in processes for record in turns_of(ap).values()])
         return "unknown", f"no builtin check for a {self.backend.type} backend"
 
     async def _health_from_hub(self) -> EndpointHealth:
@@ -294,7 +303,7 @@ class ServiceEndpoint(Entity):
             if is_compute_node and url is None:
                 # No row there, or the call failed: try_call answers None for both. Not silent.
                 logger.warning("direct-url: the hub gave no address for %s; answering on this box", self.id)
-            url = url or local_direct_url(self, route)
+            url = url or await self._reported_url(route) or local_direct_url(self, route)
             if url is None:
                 return ApiFailResponse(
                     message="a static route has no address of its own on this machine", status_code=409
@@ -302,6 +311,59 @@ class ServiceEndpoint(Entity):
         if str(redirect).lower() in ("1", "true", "yes"):
             return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
         return ApiSuccessResponse(data={"url": url})
+
+    async def _webapp_of(self, mount: Optional[str]):
+        """The web app definition a route (or this endpoint) serves, or None."""
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+
+        route = self.route(mount or "")
+        webapp_id = (route.webapp_id if route is not None else None) or self.webapp_id
+        return await WebApp.get_by_id(webapp_id.removeprefix("micro_app-")) if webapp_id else None
+
+    async def _reported_url(self, mount: Optional[str]) -> Optional[str]:
+        """On a desktop, a dev server's address through the page-error reporter (``server/reporter_relay``),
+        unless its app turned reporting off. None: load it directly."""
+        from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415
+        from flow_sdk.server.reporter_relay import relay_port  # noqa: PLC0415
+
+        backend = self.proxy_of(mount)
+        if backend is None or own_sandbox_id():
+            return None
+        app = await self._webapp_of(mount)
+        if app is None or not app.report_errors:
+            return None
+        port = await relay_port(int(backend.port))
+        return f"http://localhost:{port}" if port else None
+
+    @action.post(action_name="page-report")
+    async def page_report_action(self, errors: list | None = None, settled: bool = True, route: str | None = None):
+        """``POST service_endpoint/<id>/page-report`` — what the app's page threw while it loaded, decided.
+
+        The viewer forwards the reporter's message (``server/reporter_relay``). Each error is matched against
+        the app's ``setup/webapp_errors.json`` (``builtin/webapp_check``): ``usable`` when every error is
+        ignored; otherwise ``recover`` lists what needs recovery, with each matched rule's ``fix``.
+        """
+        from flow_sdk.builtin import webapp_check  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        app = await self._webapp_of(route)
+        if app is None or not app.asset_ref:
+            return ApiFailResponse(message="this endpoint serves no web app with a folder", status_code=409)
+        found = [webapp_check.PageError(text=str(e.get("text", "")), source=str(e.get("source") or "page"))
+                 for e in (errors or []) if isinstance(e, dict) and e.get("text")]
+        rules = await asyncio.to_thread(webapp_check.load_rules, app.asset_ref)
+        verdict = webapp_check.triage(found, rules)
+        await asyncio.to_thread(webapp_check.record, app.asset_ref, verdict,
+                                "opened" if verdict.usable else "recover", rules)
+        return ApiSuccessResponse(data={
+            "usable": verdict.usable,
+            "settled": bool(settled),
+            "webapp_id": str(app.typeid),
+            "app_folder": str(app.asset_ref),
+            "decisions": [{"source": d.error.source, "text": d.error.text, "action": d.action,
+                           "rule": d.rule.id if d.rule else None, "fix": d.rule.fix if d.rule else ""}
+                          for d in verdict.decisions],
+        })
 
     @action.post(action_name="probe")
     async def probe_action(self, route: str | None = None):

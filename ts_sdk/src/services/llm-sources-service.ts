@@ -42,7 +42,7 @@ export interface LLMEndpointOffer {
   /** Sod entry naming the stored key. A NAME, never a value; `api_key` kind only. */
   secret_name: string;
   /** `{sm, md, lg, embedding}` model slugs for this credential. */
-  models: Record<string, string>;
+  tiers: Record<string, string>;
   /** False for a device login: the backend can never call it. */
   invocable: boolean;
   /** Where the provider is reached. Empty for a hub budget — the hub owns the URL. */
@@ -63,6 +63,9 @@ export interface LLMEndpointOffer {
    *  all (the catalog's shared root), or the hub answered no expansion. Whose a budget is has
    *  its own answer, `is_mine`. */
   can_administer: boolean | null;
+  /** May this person carve a sub-budget from this one (the hub's `allocate`)? Wider than
+   *  `can_administer`: the holder of an allowance may allocate from it without changing it. */
+  can_allocate?: boolean | null;
 }
 
 /** The hub endpoint this box is bound to — mirrors `FundingBindingSpec`. */
@@ -103,7 +106,7 @@ export interface LLMFundingStatus {
    *  and nothing connects the two. */
   notes: Record<string, string>;
   /** The endpoints those verdicts name, by typeid, deduplicated across harnesses. A verdict
-   *  mirrors none of the row's fields, so anything renderable (kind, provider, models) is
+   *  mirrors none of the row's fields, so anything renderable (kind, provider, tiers) is
    *  looked up here. */
   endpoints: Record<string, LLMEndpointOffer>;
   /** Capability kinds whose resolved source IS the bound endpoint. */

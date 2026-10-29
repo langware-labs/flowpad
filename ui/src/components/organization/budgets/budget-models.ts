@@ -135,6 +135,15 @@ function isAllowed(slug: string, models_allow: string[]): boolean {
 }
 
 /**
+ * Whether a redirect to `slug` can still land: the list allows it, or allows another model of the SAME family
+ * (a team that narrowed the family to one model). The hub follows a redirect to the model the list does allow
+ * from that family, so a target that is merely not the one pinned is not a dead end.
+ */
+function reachable(slug: string, models_allow: string[]): boolean {
+  return isAllowed(slug, models_allow) || models_allow.some((entry) => familyName(entry) === familyName(slug));
+}
+
+/**
  * The alias map a row should carry: what the allowed list derives (`aliasesForPinnedModel`), PLUS the
  * redirects an admin wrote by hand that the derivation can never make -- those that cross families
  * (`anthropic/claude-*` -> `google/gemini-3.5-flash`: Claude Code asking for Claude, answered with
@@ -150,7 +159,7 @@ export function reconcileAliases(current: Record<string, string>, models_allow: 
   for (const [from, to] of Object.entries(current)) {
     if (from in derived) continue;
     if (familyName(from) === familyName(to)) continue; // derived territory: rebuilt from the list
-    if (!isAllowed(to, models_allow)) continue; // would redirect into a refusal
+    if (!reachable(to, models_allow)) continue; // no model of that family is allowed: a redirect into a refusal
     kept[from] = to;
   }
   return { ...kept, ...derived };

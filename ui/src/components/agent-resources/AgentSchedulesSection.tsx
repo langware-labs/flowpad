@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { CalendarClock, Plus } from 'lucide-react';
-import { Agent, Trigger, type TypeId } from '@sdk';
+import { Agent, Trigger, placeOf, type AgentPlace, type TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { describeSchedule } from '@src/components/cron-view/describe-schedule';
 import {
   AgentScheduleSection,
+  scheduleOf,
   useAgentSchedules,
   useScheduleLabels,
 } from '@src/components/assets/editor/agent-profile/AgentScheduleSection';
 import { useAgentPlaces } from '@src/components/assets/editor/agent-profile/use-agent-places';
-import { usePlaceDisplay } from '@src/components/assets/editor/agent-profile/use-place-display';
+import { usePlaceBadge, usePlaceDisplay } from '@src/components/assets/editor/agent-profile/use-place-display';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Empty, IconButton, ResourceRow } from './parts';
@@ -27,15 +29,15 @@ export function AgentSchedulesSection({ agentTypeId }: { agentTypeId: TypeId }) 
   const { navigation, currentDock } = useDockNavigation();
   const { data: agent } = useEntity<Agent>(agentTypeId);
   const { places: loaded } = useAgentPlaces(agent);
-  const places = loaded ?? [];
+  const places: AgentPlace[] = loaded ?? [];
+  const badge = usePlaceBadge(places);
   const [adding, setAdding] = useState(false);
   const { schedules, isLoading } = useAgentSchedules(agentTypeId);
   const labels = useScheduleLabels();
 
   const local = places.find((place) => place.is_local);
-  // A schedule with no place is a legacy one of this computer.
-  const placeOf = (row: Trigger) => places.find((place) => place.deployment.id === row.runs_on) ?? (!row.runs_on ? local : undefined);
   // A new schedule goes on this computer when deployed here, else the first deployment; none → nowhere to run.
+  // Its form's "Runs on" picker offers the other places and Flowpad cloud.
   const selected = local ?? places[0];
 
   return (
@@ -62,20 +64,25 @@ export function AgentSchedulesSection({ agentTypeId }: { agentTypeId: TypeId }) 
         }
       >
         {schedules.map((row) => {
-          const place = placeOf(row);
           const typeId = `${Trigger.type}-${row.id}`;
+          const when = scheduleOf(row);
           return (
             <ResourceRow
               key={row.id}
               icon={CalendarClock}
               label={row.name}
-              detail={[describeSchedule(row.expr, row.sched_trigger_type, row.timezone, labels), place && display(place).label]
+              detail={[describeSchedule(when.expr, when.sched_trigger_type, when.timezone, labels), badge(placeOf(row)).label]
                 .filter(Boolean)
                 .join(' · ')}
               muted={!row.enabled}
               selected={currentDock?.child?.typeId === typeId}
-              // Opens nested in the agent editor (see DockPointer.child); a click only navigates.
-              onOpen={() => currentDock && navigation.openDock(currentDock.withChild('schedule', typeId))}
+              // Opens nested in the agent editor (see DockPointer.child); a hub row is not in this machine's store,
+              // so it opens on the Automations screen. A click only navigates.
+              onOpen={() =>
+                row.source === 'hub'
+                  ? navigation.openDock(DockPointer.forAutomations({ trigger: row.id }))
+                  : currentDock && navigation.openDock(currentDock.withChild('schedule', typeId))
+              }
               testId={`agent-resource-schedule-${row.id}`}
             />
           );

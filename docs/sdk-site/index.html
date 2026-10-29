@@ -1451,7 +1451,7 @@ await sdk.dataManager.watchQuery(request);
 
 <span class="n">answer</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">launch</span><span class="p">(</span><span class="s2">&quot;Find the open Linear issues assigned to me.&quot;</span><span class="p">,</span> <span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="c2-agents-2" aria-label="Copy code">Copy</button></figcaption></figure></div><div class="ps-row"><div class="ps-point"><b>Who pays for tokens</b><span>A provider key, a budget, or a harness login.</span></div><figure class="snip" id="c2-agents-3"><pre class="code lang-python" tabindex="0"><code><button type="button" class="imp-note" aria-expanded="false">⋯ 1 import</button><span class="imp"><span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.builtin.llm_endpoint</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLMEndpoint</span>
 
-</span><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMEndpoint</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openrouter&quot;</span><span class="p">)</span>          <span class="c1"># kind=api_key, base_url and models filled in</span>
+</span><span class="n">llm</span> <span class="o">=</span> <span class="n">LLMEndpoint</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="s2">&quot;openrouter&quot;</span><span class="p">)</span>          <span class="c1"># kind=api_key, base_url and tiers filled in</span>
 <span class="n">vectors</span> <span class="o">=</span> <span class="k">await</span> <span class="n">llm</span><span class="o">.</span><span class="n">create_embeddings</span><span class="p">([</span><span class="s2">&quot;a hot day in July&quot;</span><span class="p">,</span> <span class="s2">&quot;a cold night in January&quot;</span><span class="p">])</span>
 <span class="n">answer</span> <span class="o">=</span> <span class="k">await</span> <span class="n">llm</span><span class="o">.</span><span class="n">create_completion</span><span class="p">(</span><span class="s2">&quot;You answer in one word.&quot;</span><span class="p">,</span> <span class="s2">&quot;Capital of France?&quot;</span><span class="p">)</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="c2-agents-3" aria-label="Copy code">Copy</button></figcaption></figure></div>
   <div class="c2-foot"><button type="button" class="btn-ghost" data-copy-md="md-agents">Copy chapter as Markdown</button></div>
@@ -1521,7 +1521,7 @@ A provider key, a budget, or a harness login.
 ```python
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
-llm = LLMEndpoint(provider=&quot;openrouter&quot;)          # kind=api_key, base_url and models filled in
+llm = LLMEndpoint(provider=&quot;openrouter&quot;)          # kind=api_key, base_url and tiers filled in
 vectors = await llm.create_embeddings([&quot;a hot day in July&quot;, &quot;a cold night in January&quot;])
 answer = await llm.create_completion(&quot;You answer in one word.&quot;, &quot;Capital of France?&quot;)
 ```</script>
@@ -2892,7 +2892,7 @@ A provider key, a budget, or a harness login.
 ```python
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
-llm = LLMEndpoint(provider=&quot;openrouter&quot;)          # kind=api_key, base_url and models filled in
+llm = LLMEndpoint(provider=&quot;openrouter&quot;)          # kind=api_key, base_url and tiers filled in
 vectors = await llm.create_embeddings([&quot;a hot day in July&quot;, &quot;a cold night in January&quot;])
 answer = await llm.create_completion(&quot;You answer in one word.&quot;, &quot;Capital of France?&quot;)
 ```

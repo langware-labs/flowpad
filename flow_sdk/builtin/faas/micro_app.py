@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from typing import ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
-from flow_sdk.core import Entity
+from flow_sdk.core import Entity, action
 from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
@@ -44,6 +44,8 @@ class WebApp(SetupSkippable, Entity):
     mounts: List[WebappMountSpec] = APIField(default_factory=list, description="How the app is served when placed")
     #: The machine-called services the app brings along, each a ``service`` endpoint of its own.
     services: List[WebappServiceSpec] = APIField(default_factory=list, description="APIs the app brings along")
+    #: Report the page's JS errors while it loads (``server/reporter_relay.py``); off loads the dev server directly.
+    report_errors: bool = APIField(default=True, description="Report page errors to Flowpad while the app loads")
 
     name: str = EntityField(sharing=Sharing.SHARED)
     # NOT unique: identity is ``id``, name is a label — the second app anyone
@@ -63,3 +65,25 @@ class WebApp(SetupSkippable, Entity):
     def on_disk(self) -> bool:
         """A file-backed app whose folder is gone is a stale row -- never offered, never set up."""
         return not self.is_file_backed() or Path(self.asset_ref).is_dir()
+
+    # ── setup: the Setup tab of the app editor ──────────────────────────────
+
+    @action.get(action_name="setup-state")
+    async def setup_state_action(self):
+        """``GET micro_app/<id>/setup-state`` — the app's ``setup/`` folder: error rules, recovery.md, error log."""
+        from flow_sdk.builtin import webapp_check  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.asset_ref:
+            return ApiFailResponse(message="this app has no folder", status_code=409)
+        return ApiSuccessResponse(data=webapp_check.setup_state(self.asset_ref))
+
+    @action.post(action_name="setup-rule")
+    async def setup_rule_action(self, rule: str = "", rule_action: str = ""):
+        """``POST micro_app/<id>/setup-rule`` — set one error rule to ``ignore`` or ``recover``."""
+        from flow_sdk.builtin import webapp_check  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.asset_ref or not webapp_check.set_rule_action(self.asset_ref, rule, rule_action):
+            return ApiFailResponse(message="no such rule, or not ignore/recover", status_code=400)
+        return ApiSuccessResponse(data=webapp_check.setup_state(self.asset_ref))

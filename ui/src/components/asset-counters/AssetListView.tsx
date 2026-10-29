@@ -1,12 +1,9 @@
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
-import { Input } from '@src/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Search, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { matchesQuickSearch, quickSearchTerms } from './quick-search';
+import { useState } from 'react';
+import { CounterTable, NoRows, QuickSearchInput, useQuickSearch } from './AssetItems';
 import { findCounterGroup } from './registry';
 import type { AssetCounterGroup } from './types';
 
@@ -30,22 +27,13 @@ export function AssetListView() {
 }
 
 function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; counterKey?: string }) {
-  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const counters = group.useCounters();
   const active = counters.find((counter) => counter.key === counterKey) ?? counters[0];
   // A transient filter over the rows on screen, not a new list — so it stays
   // local and survives switching tabs rather than living in the URL.
   const [query, setQuery] = useState('');
-  // Lower-cased once per list, not once per row per keystroke.
-  const indexed = useMemo(
-    () => (active?.items ?? []).map((item) => ({ item, haystack: group.searchText(item).toLowerCase() })),
-    [active?.items, group],
-  );
-  const rows = useMemo(() => {
-    const terms = quickSearchTerms(query);
-    return indexed.filter(({ haystack }) => matchesQuickSearch(haystack, terms)).map(({ item }) => item);
-  }, [indexed, query]);
+  const rows = useQuickSearch(group, active?.items ?? [], query);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-6" data-testid="asset-list-view" data-group={group.id}>
@@ -74,71 +62,19 @@ function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; 
         </Tabs>
       </header>
 
-      <div className="relative mb-3 max-w-sm">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
-          placeholder={t`Quick search`}
-          aria-label={t`Quick search`}
-          className="pl-9 pr-9"
-          data-testid="asset-list-search"
-        />
-        {query && (
-          <button
-            type="button"
-            onClick={() => setQuery('')}
-            className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-            aria-label={t`Clear search`}
-          >
-            <X className="size-4" />
-          </button>
-        )}
-      </div>
+      <QuickSearchInput value={query} onChange={setQuery} className="mb-3 max-w-sm" testId="asset-list-search" />
 
       <div className="rounded-lg border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {group.columns.map((column) => (
-                <TableHead key={column.key} className={column.className}>
-                  {column.header}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((item) => (
-              <TableRow
-                key={group.itemKey(item)}
-                onClick={() => {
-                  const pointer = group.itemPointer(item);
-                  if (pointer) navigation.openDockOnThisPage(pointer);
-                }}
-                className="cursor-pointer"
-                data-testid="asset-list-row"
-              >
-                {group.columns.map((column) => (
-                  <TableCell key={column.key} className={column.className}>
-                    {column.cell(item)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-            {active && !active.isLoading && rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={group.columns.length} className="py-10 text-center text-muted-foreground">
-                  {active.items.length === 0 ? (
-                    <Trans>Nothing here yet.</Trans>
-                  ) : (
-                    <Trans>No matches for “{query}”.</Trans>
-                  )}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+        <CounterTable
+          group={group}
+          rows={rows}
+          onOpen={(item) => {
+            const pointer = group.itemPointer(item);
+            if (pointer) navigation.openDockOnThisPage(pointer);
+          }}
+          empty={active && !active.isLoading && <NoRows hasItems={active.items.length > 0} query={query} />}
+          rowTestId="asset-list-row"
+        />
       </div>
     </div>
   );

@@ -73,6 +73,13 @@ async def test_create_support_conversation_creates_entities():
     assert conv.dismissed_at is not None, "diagnostics conversation must be hidden from the strip"
     assert conv.message_count == 1
 
+    # Nothing ever sends this conversation, so its message is not owed: marked outbound, the outbox
+    # counted it on every flush, forever ("delivered 0 of 25 owing conversation(s)").
+    from flow_sdk.builtin.flow_message import FlowMessage
+
+    msg = await FlowMessage.get_one({"id": result["flow_message_id"]})
+    assert not msg.owes_delivery
+
 
 @pytest.mark.asyncio
 async def test_create_support_conversation_attaches_type_id():

@@ -73,7 +73,7 @@ def _validate_watch_path(path: Optional[str]) -> None:
     )
 
 
-# ── APScheduler helpers (shared pattern with cron_event.py) ──────────────────
+# ── APScheduler helpers (Trigger is the only scheduled record) ──────────────────
 
 def _get_scheduler():
     """Get running scheduler, or None if unavailable."""
@@ -1189,15 +1189,18 @@ class Trigger(Entity):
 
     @core_action.get(action_name="overview")
     async def overview_action(cls, request: Request) -> ApiResponse:
-        """GET /api/v1/graph/trigger/overview — every automation as a sentence with its health.
+        """GET /api/v1/graph/trigger/overview — every automation, this machine's and the Flowpad cloud's, as
+        a sentence with its health and where it runs. When the cloud's cannot be listed, a ``warnings``
+        entry (CLOUD_SIGNED_OUT / CLOUD_UNAVAILABLE) says why.
 
         ``?include_inactive=true`` also lists copies under other installs (never armed)."""
-        from flow_sdk.automations.overview import overview  # noqa: PLC0415
+        from flow_sdk.automations.overview import overview_with_cloud  # noqa: PLC0415
 
         params = get_current_request_info().request_parameters or {}
         include_inactive = str(params.get("include_inactive", "false")).lower() == "true"
-        rows = await overview(include_inactive=include_inactive)
-        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in rows])
+        rows, warning = await overview_with_cloud(include_inactive=include_inactive)
+        warnings = [{"error_code": warning.code, "message": warning.message}] if warning else []
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in rows], warnings=warnings)
 
     @core_action.get(action_name="next_runs")
     async def next_runs_action(cls, request: Request) -> ApiResponse:

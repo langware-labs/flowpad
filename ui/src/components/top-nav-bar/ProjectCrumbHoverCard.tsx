@@ -1,3 +1,4 @@
+import { dataContext } from '@sdk';
 import type { ReactNode } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ExternalLink } from 'lucide-react';
@@ -34,7 +35,7 @@ export function ProjectCrumbHoverCard({ children }: { children: ReactNode }) {
         {projectPath && (
           <div className="mt-1.5 flex items-center gap-1">
             <CopyPathButton path={projectPath} testId="top-nav-project-copy-path" className="min-w-0 flex-1" />
-            {computeNode && (
+            {computeNode && dataContext.caps.osDialogs && (
               <button
                 type="button"
                 onClick={() => void openProjectFolder()}

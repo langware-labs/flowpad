@@ -95,6 +95,8 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
   // `invalidate`s, and their fetches can resolve out of order — an older
   // response must never overwrite a newer one's children.
   const refreshSeq = useRef(new Map<string, number>());
+  // Nodes invalidated while collapsed: their next load passes `{ refresh: true }`.
+  const stale = useRef(new Set<string>());
 
   const getLoadState = useCallback(
     (id: string): LoadState => state.loadStates.get(id) ?? { status: 'idle' },
@@ -135,9 +137,11 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
       if (current?.status === 'ready') return current.children;
 
       setLoadState(node.id, { status: 'loading' });
+      // Invalidated while collapsed: this expand must read past adapter caches too.
+      const refresh = stale.current.delete(node.id);
       const p = (async () => {
         try {
-          const children = await node.listChildren!();
+          const children = await node.listChildren!(refresh ? { refresh: true } : undefined);
           setLoadState(node.id, { status: 'ready', children });
           return children;
         } catch (err) {
@@ -219,38 +223,56 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
         node = findNode(root);
         if (node) break;
       }
-      inflight.current.delete(nodeId);
-      if (node && node.listChildren && state.expandedIds.has(nodeId)) {
-        const seq = (refreshSeq.current.get(nodeId) ?? 0) + 1;
-        refreshSeq.current.set(nodeId, seq);
+      const refresh = async (target: Browseable): Promise<void> => {
+        const id = target.id;
+        inflight.current.delete(id);
+        if (!target.listChildren || !state.expandedIds.has(id)) {
+          // Not expanded — drop it and every cached row under it, so the next
+          // expand fetches fresh (past adapter caches) instead of showing old rows.
+          const drop = (n: Browseable) => {
+            const cached = loadStatesRef.current.get(n.id);
+            if (cached?.status === 'ready') cached.children.forEach(drop);
+            stale.current.add(n.id);
+            setLoadState(n.id, { status: 'idle' });
+          };
+          drop(target);
+          return;
+        }
+        const seq = (refreshSeq.current.get(id) ?? 0) + 1;
+        refreshSeq.current.set(id, seq);
         // Keep the rows we already have on screen while the re-fetch runs;
         // only a node with nothing cached shows the "Loading…" placeholder.
-        const cached = loadStatesRef.current.get(nodeId);
+        const cached = loadStatesRef.current.get(id);
         setLoadState(
-          nodeId,
+          id,
           cached?.status === 'ready'
             ? { status: 'ready', children: cached.children, refreshing: true }
             : { status: 'loading' },
         );
+        let children: Browseable[];
         try {
           // `{ refresh: true }` so adapters that own a cache (e.g. the skill /
           // markdown folder adapters' fsStore browseCache) bypass it — an
           // invalidate's whole purpose is to reflect fresh on-disk state (e.g.
           // after a delete). Adapters that always fetch (asset /search) ignore it.
-          const children = await node.listChildren({ refresh: true });
+          children = await target.listChildren({ refresh: true });
           // A newer invalidate started while this fetch was in flight — its
           // result is the fresh one; drop ours rather than clobber it.
-          if (refreshSeq.current.get(nodeId) !== seq) return;
-          setLoadState(nodeId, { status: 'ready', children });
+          if (refreshSeq.current.get(id) !== seq) return;
+          setLoadState(id, { status: 'ready', children });
         } catch (err) {
-          if (refreshSeq.current.get(nodeId) !== seq) return;
+          if (refreshSeq.current.get(id) !== seq) return;
           const message = err instanceof Error ? err.message : String(err);
-          setLoadState(nodeId, { status: 'error', message });
+          setLoadState(id, { status: 'error', message });
+          return;
         }
-      } else {
-        // Not expanded (or unknown id) — clear cache so next expand fetches.
-        setLoadState(nodeId, { status: 'idle' });
-      }
+        // An open child still lists what it listed before: re-list it from the
+        // FRESH child (a markdown folder derives its rows from its parent's walk),
+        // or a deleted file stays on screen under an expanded folder.
+        await Promise.all(children.filter((c) => state.expandedIds.has(c.id)).map(refresh));
+      };
+      if (node) await refresh(node);
+      else setLoadState(nodeId, { status: 'idle' });
     },
     [roots, state.expandedIds, state.loadStates, setLoadState],
   );

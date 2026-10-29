@@ -83,21 +83,27 @@ DM ds-put <mock project>/agentic-assets/dataset/mocks <slug> '{"input": {"title"
 - One step per screen — a screen that looks different (a dialog open, a menu dropped, a toast shown) is its
   own step, never a patch on another step's screen.
 - A branch (failure, cancel, "finish later") has `branch_of: <step id>` and `when`, right after the step it
-  branches from; a screen that goes on somewhere other than the next main-path screen says `next`.
+  branches from; a screen that goes on somewhere other than the next screen depth-first says `next`.
 - `session` is YOUR agentic process id (`flow context`) — where Execute delivers the feedback.
 - `DM check` the value against `mockify.mock` before the put; a refused put writes nothing.
 
 Send the user the step table (id · title · scenario · controls that move on), one line per step.
 
+**Then go straight on to Phase 2 — do not stop to ask.** The step table is a status line, not a
+checkpoint: open decisions go ON the screens (`data-decision`), where the reviewer answers them while
+walking the mock. Stop before building ONLY for a real blocker: the app cannot run here, a screen's state
+cannot be reached (and fast mode was not asked for), or the request is too unclear to plan a single
+screen. "The user may want to change the plan" is not a blocker — they change it through feedback.
+
 ### The mode is real — fast only when the person says so
 
 | mode | when | fidelity |
 |---|---|---|
-| **real** (always, for an app that runs here) | any screen of Flowpad or the user's app — new, redesigned or existing | identical |
+| **real** (always, for an app that runs here) | any screen of an app whose code is here — new, redesigned or existing | identical |
 | **fast** | ONLY (a) the person asked for a rough sketch in their own words, or (b) the product does not run here at all (a third-party site) | recognisable |
 
-**You do not get to pick fast.** Effort is never a reason ("the state is hard to reach", "it needs a test
-instance"). Reach the state (`reference/real-capture.md` §2 has recipes for the hard ones). If you truly
+**You do not get to pick fast.** Effort is never a reason ("the state is hard to reach", "it needs
+seed data"). Reach the state (`reference/real-capture.md` §2 has recipes for the hard ones). If you truly
 cannot, STOP and ask. A fast mock's row MUST carry `fast_reason` (the person's quoted words, or the product
 that does not run here); the bar refuses a fast mock without it.
 
@@ -106,7 +112,8 @@ that does not run here); the bar refuses a fast mock without it.
 **Keep everything that is not under discussion.** Every screen is a full-window capture — top bar, rail,
 tab rows, status bar. A control missing from a mock reads as "remove it".
 
-- **real**: follow `reference/real-capture.md`. For EVERY step, drive the live app (a test instance) to that
+- **real**: follow `reference/real-capture.md`. For EVERY step, run the app yourself in its own dev / UI-only mode (never the person's
+real running app or a copy of its data), drive it to that
   screen's state and capture it — `capture/<step id>.html`. A step whose `source` is `built` starts from the
   nearest capture and is edited per its scenario, cloning real elements and using the app's own classes
   (`scripts/check_classes.py`). Then assemble with `scripts/build_mock.py` (command: `reference/real-capture.md` §5).

@@ -8,6 +8,7 @@ import { mermaidRenderer } from '@src/components/milkdown-editor/plugins/fence-r
 import type { FenceRenderContext } from '@src/components/milkdown-editor/plugins/fence-render/registry';
 import { extractMermaidBlock, readChartDocument, replaceMermaidSource, writeChartMermaid } from './chartDoc';
 import { ChartHeading } from './ChartHeading';
+import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 
 /**
  * A `mermaid` chart: its source IS the mermaid block in CHART.md. A text pane edits it
@@ -35,6 +36,7 @@ export function MermaidChartView({ fsRef, chart, actions, onSource }: MermaidCha
   const hostRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastWritten = useRef<string | null>(null);
+  const [view, setView] = useState<'chart' | 'code' | 'both'>('chart');
 
   const { folderName, dirPath } = useMemo(() => {
     const parts = (fsRef.path || '').split('/').filter(Boolean);
@@ -133,9 +135,17 @@ export function MermaidChartView({ fsRef, chart, actions, onSource }: MermaidCha
       <header className="border-b px-4 py-3">
         <ChartHeading title={chart?.name || folderName} description={chart?.description} />
       </header>
+      <Tabs value={view} onValueChange={(v) => setView(v as typeof view)}>
+        <TabsList className="mx-4 my-1 h-8" data-testid="chart-mermaid-tabs">
+          <TabsTrigger value="chart" data-testid="chart-mermaid-tab-chart">{t`Chart`}</TabsTrigger>
+          <TabsTrigger value="code" data-testid="chart-mermaid-tab-code">{t`Code`}</TabsTrigger>
+          <TabsTrigger value="both" data-testid="chart-mermaid-tab-both">{t`Both`}</TabsTrigger>
+        </TabsList>
+      </Tabs>
       <div className="flex min-h-0 flex-1">
         <textarea
-          className="w-2/5 min-w-[240px] resize-none border-e bg-muted/40 p-3 font-mono text-sm"
+          hidden={view === 'chart'}
+          className={`${view === 'code' ? 'flex-1' : 'w-2/5 min-w-[240px] border-e'} resize-none bg-muted/40 p-3 font-mono text-sm`}
           spellCheck={false}
           aria-label={t`Mermaid source`}
           placeholder={'sequenceDiagram\n  A->>B: hello'}
@@ -143,7 +153,7 @@ export function MermaidChartView({ fsRef, chart, actions, onSource }: MermaidCha
           onChange={(e) => onEdit(e.target.value)}
           data-testid="chart-mermaid-source"
         />
-        <div className="relative min-w-0 flex-1 overflow-auto p-4">
+        <div hidden={view === 'code'} className="relative min-w-0 flex-1 overflow-auto p-4">
           {error && (
             <div
               className="mb-2 rounded-md border border-destructive bg-destructive/10 px-2 py-1 text-xs"

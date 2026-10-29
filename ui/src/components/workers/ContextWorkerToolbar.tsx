@@ -6,8 +6,7 @@ import { useIsDev } from '@src/components/view-mode';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { LAUNCHABLE_WORKERS, type WorkerType } from '@src/components/workers/worker-types';
-import { useLastWorkerType } from '@src/components/terminal/openers/useLastWorkerType';
-import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
+import { useLastWorkerType, usePrimaryWorkerType } from '@src/components/terminal/openers/useLastWorkerType';
 import { providerMetaFor } from '@src/tabs/provider-meta';
 
 export type ContextWorkerToolbarMode = 'lastOpened' | 'all';
@@ -20,6 +19,10 @@ export type ContextWorkerToolbarVariant = 'icon-row' | 'menu-list';
  */
 export const WORKER_ICON_BUTTON_CLASS =
   'inline-flex h-7 w-7 items-center justify-center rounded border border-border text-foreground transition-colors hover:bg-muted disabled:opacity-50 aria-disabled:opacity-50';
+
+/** A message header's hover-revealed icon button (needs a `group` ancestor). */
+export const MESSAGE_ROW_ICON_BUTTON_CLASS =
+  'rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100';
 
 /** Row style for the `menu-list` variant — shared by the vendor rows, the
  *  "More…" reveal, the extra openers, and the footer funding chip's menus, so
@@ -88,8 +91,8 @@ export function ContextWorkerToolbar({
 }: ContextWorkerToolbarProps) {
   const { t } = useLingui();
   const isDev = useIsDev();
-  const { lastWorker, rememberWorker } = useLastWorkerType();
-  const defaultWorker = useDefaultWorkerType();
+  const { rememberWorker } = useLastWorkerType();
+  const primary = usePrimaryWorkerType();
   const [expanded, setExpanded] = useState(false);
 
   const effectiveMode: ContextWorkerToolbarMode = mode ?? (isDev ? 'all' : 'lastOpened');
@@ -117,7 +120,6 @@ export function ContextWorkerToolbar({
   // In lastOpened mode, lead with the last worker (falling back to the
   // capability-selected default) and keep the rest behind the chevron. In all
   // mode, show everything.
-  const primary: WorkerType = lastWorker ?? defaultWorker;
   const rest = LAUNCHABLE_WORKERS.filter((w) => w !== primary);
   const visibleWorkers: WorkerType[] = effectiveMode === 'all' || expanded ? [primary, ...rest] : [primary];
   const showChevron = effectiveMode === 'lastOpened' && !expanded && rest.length > 0;
@@ -247,6 +249,46 @@ export function OpenSessionButton({
           {name}
         </span>
       )}
+    </button>
+  );
+}
+
+/**
+ * One-click "chat with the latest worker" — the same last-used vendor the
+ * toolbar leads with (falling back to the default). Small and hover-revealed,
+ * for a message row's header beside the favorite star.
+ */
+export function QuickWorkerButton({
+  onLaunch,
+  testId,
+  className,
+}: {
+  onLaunch: (worker: WorkerType) => void;
+  testId?: string;
+  className?: string;
+}) {
+  const { t } = useLingui();
+  const { rememberWorker } = useLastWorkerType();
+  const worker = usePrimaryWorkerType();
+  const { Icon, iconClassName } = providerMetaFor(worker);
+  const label = t`Chat about this message with ${workerLabel(worker)}`;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        rememberWorker(worker);
+        onLaunch(worker);
+      }}
+      title={label}
+      aria-label={label}
+      data-testid={testId}
+      className={cn(
+        MESSAGE_ROW_ICON_BUTTON_CLASS,
+        className,
+      )}
+    >
+      <Icon className={cn('size-3', iconClassName)} />
     </button>
   );
 }

@@ -3,7 +3,7 @@ import { cloudManager, connectionManager, ContextEventType, dataContext, type IE
 import { subscribeToEntityOps } from '@sdk/FlowSync/entity-ops';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import type { NotificationAction } from './types';
+import type { ErrorDetail, NotificationAction } from './types';
 import { dismiss, notify } from './notify';
 
 /**
@@ -28,6 +28,8 @@ interface HubClientErrorMsg {
   status_code?: number;
   message?: string;
   suppressed_count?: number;
+  /** The error's details, built by the backend in the `ErrorDetail` shape. */
+  detail?: ErrorDetail;
 }
 
 // What holds each cloud toast up: the failed requests it reports ("GET /path") and, for
@@ -67,23 +69,20 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       id: 'cloud-errors-suppressed',
       title: t`Hub errors suppressed`,
       message: t`${suppressed} hub errors were suppressed in the current window.`,
+      detail: msg.detail,
     });
     return;
   }
 
-  // Stash the raw transport detail behind a power-user action, not the headline.
-  const detail: NotificationAction = {
-    label: t`Detail`,
-    command: 'debug.logHubError',
-    args: { method, path, statusCode, message: rawMessage },
-  };
+  // Everything known about the failure, behind the alert's Details button — not the headline.
+  const detail = msg.detail;
 
   if (statusCode === 0) {
     notify.error({
       id: 'cloud-unreachable',
       title: t`Cloud is not available`,
       message: t`We couldn't reach the cloud service. Check your connection or try again in a moment.`,
-      actions: [detail],
+      detail,
     });
     hold('cloud-unreachable', request);
   } else if (statusCode === 401) {
@@ -99,7 +98,8 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       id: 'cloud-auth-expired',
       title: t`Cloud sign-in expired`,
       message: t`Please sign in again to keep using cloud features.`,
-      actions: [{ label: t`Sign in`, command: 'cloud.signin' }, detail],
+      actions: [{ label: t`Sign in`, command: 'cloud.signin' }],
+      detail,
     });
     hold('cloud-auth-expired', request);
   } else if (statusCode === 403) {
@@ -107,7 +107,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       id: 'cloud-access-denied',
       title: t`Cloud access denied`,
       message: t`You don't have permission for this action. Contact your admin if this seems wrong.`,
-      actions: [detail],
+      detail,
     });
     hold('cloud-access-denied', request);
   } else if (statusCode === 404) {
@@ -115,7 +115,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       id: 'cloud-not-found',
       title: t`Cloud resource not found`,
       message: t`We couldn't find what you were looking for on the cloud.`,
-      actions: [detail],
+      detail,
     });
     hold('cloud-not-found', request);
   } else if (statusCode >= 500) {
@@ -123,7 +123,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       id: 'cloud-server-error',
       title: t`Cloud service is having trouble`,
       message: t`The cloud service returned an error. Please try again in a moment.`,
-      actions: [detail],
+      detail,
     });
     hold('cloud-server-error', request);
   } else if (statusCode >= 400) {
@@ -138,7 +138,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       id: 'cloud-request-rejected',
       title: t`Cloud request rejected`,
       message: rawMessage || `The cloud rejected the request (${statusCode}).`,
-      actions: [detail],
+      detail,
     });
     hold('cloud-request-rejected', request);
   }

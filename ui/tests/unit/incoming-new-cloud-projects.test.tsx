@@ -12,9 +12,14 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ cloudUser: null as { id: string } | null, closeLaunch: null as (() => void) | null }));
+const h = vi.hoisted(() => ({
+  cloudUser: null as { id: string } | null,
+  closeLaunch: null as (() => void) | null,
+}));
 
-vi.mock('@sdk/react/hooks', () => ({ useAuth: () => ({ cloudUser: h.cloudUser }) }));
+vi.mock('@sdk/react/hooks', () => ({
+  useAuth: () => ({ cloudUser: h.cloudUser }),
+}));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),
 }));
@@ -26,7 +31,7 @@ vi.mock('@src/components/task-receive/LaunchDialog', () => ({
   },
 }));
 
-import { Project } from '@sdk';
+import { dataContext, Project, RuntimeKind } from '@sdk';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
 import { closeLaunch } from '@src/components/task-receive/launch-store';
 import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
@@ -53,6 +58,21 @@ describe('IncomingDeepLink — hub projects this desktop never saw', () => {
     cleanup();
     closeLaunch();
     vi.restoreAllMocks();
+    dataContext.bootstrapInfo = null as never;
+  });
+
+  it.each([
+    ['the hub — no disk to set it up on', RuntimeKind.HUB],
+    ['an agent box — nobody there to answer', RuntimeKind.AGENT],
+  ])('offers nothing on %s', async (_where, kind) => {
+    dataContext.bootstrapInfo = { runtime: { kind } } as never;
+    const newFromHub = vi.spyOn(Project, 'newFromHub').mockResolvedValue([link(A, 'Course A')]);
+
+    render(<IncomingDeepLink />);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(newFromHub).not.toHaveBeenCalled();
+    expect(pending()).toBeNull();
   });
 
   it('offers each new project set-up, one dialog at a time', async () => {

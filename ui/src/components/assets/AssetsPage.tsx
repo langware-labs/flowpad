@@ -689,7 +689,10 @@ export function AssetsPage() {
               </div>
             </div>
           ) : isProjectHomeMode ? (
-            <ProjectHome spawnProjectId={scopeProjectId} />
+            <ProjectHome
+              spawnProjectId={scopeProjectId}
+              setupPage={effectivePointer === (AssetMode.PROJECT_SETUP as string)}
+            />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               <Trans>Select a type to browse</Trans>

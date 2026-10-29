@@ -14,6 +14,7 @@ project's Set up, a source's, a received artifact's — so the four things they 
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -62,6 +63,13 @@ async def execute_setup(
     from flow_sdk.core.wizard.execute import _resolve_op, _resolve_wizard  # noqa: PLC0415 — entity layer
 
     resolvers = dict(resolve_op=resolve_op or _resolve_op, resolve_wizard=resolve_wizard or _resolve_wizard)
+    if shell is None:
+        # A setup's own credential checks are answered in this process, with their reason; anything else runs.
+        import functools  # noqa: PLC0415
+
+        from flow_sdk.builtin.project_setup import _setup_shell  # noqa: PLC0415
+
+        shell = functools.partial(_setup_shell, inner=None)
     if check_only:
         return await setup_tree(
             root_id, resolve_node=resolve_node, subject_entity=subject_entity, workdir=cwd, shell=shell,
@@ -98,6 +106,7 @@ async def execute_setup(
             workdir=cwd or workdir, shell=shell, inputs=inputs, approved=approved,
             on_change=changed, **resolvers, **seams,
         )
+        result = result.model_copy(update={"finished_at": datetime.now(timezone.utc)})
         if record:
             record_tree(key, result, already_locked=True)
     finally:

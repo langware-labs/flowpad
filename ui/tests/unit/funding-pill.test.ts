@@ -41,7 +41,7 @@ function endpoint(typeid: string, kind: string, over: Partial<LLMEndpointOffer> 
     invoke_path: '',
     kind,
     secret_name: '',
-    models: {},
+    tiers: {},
     invocable: kind !== 'device',
     base_url: '',
     filters: {} as LLMEndpointOffer['filters'],

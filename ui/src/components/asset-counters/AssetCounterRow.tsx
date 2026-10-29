@@ -6,7 +6,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { ReactNode } from 'react';
 import type { AssetCounterGroup } from './types';
 
-const CHIP_CLASS =
+export const CHIP_CLASS =
   'group flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-2.5 py-0.5 text-xs transition-colors hover:border-primary/50 hover:bg-card focus:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 /**
