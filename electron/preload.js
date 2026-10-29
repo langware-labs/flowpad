@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Startup status updates (loading screen)
   onStartupStatus: (callback) => subscribe('startup-status', callback),
+  // The loading screen's update notice ({title, detail} or null): see sendStartupNotice in main.js.
+  onStartupNotice: (callback) => subscribe('startup-notice', callback),
 
   // Startup logs
   getStartupLogs: () => ipcRenderer.invoke('get-startup-logs'),

@@ -1125,6 +1125,14 @@ async function updateDesktopBeforeEngineInstall(reason) {
   updateTest.event('desktop-first-install', { reason, from: app.getVersion(), to: version });
   log.info(`[update] ${reason}: desktop ${app.getVersion()} → ${version} first, the engine is installed after the restart`);
   sendStatus('Updating Flowpad');
+  // Said IN the window, from the first second: FlowPad is about to close and reopen. Before this the
+  // window just disappeared and only an OS toast explained it — a missed toast read as a crash. The
+  // download time is the reading time (no pause is added).
+  sendStartupNotice({
+    title: `Updating FlowPad to ${version}`,
+    detail: 'A newer FlowPad is available, so it is installed before the first setup. When the download ' +
+      'finishes, FlowPad closes for a moment to install it and then reopens by itself — nothing is wrong.',
+  });
   // We restart ourselves: a download that finishes meanwhile must not open the "Restart now?" prompt.
   // The loading screen shows the download's progress — an unbounded silent "Updating Flowpad" read
   // as frozen. (No watchdog here: a wait budget is a CLAUDE.md decision for the owner.)
@@ -1140,17 +1148,59 @@ async function updateDesktopBeforeEngineInstall(reason) {
   if (isQuitting) return true;
   if (!desktopDownloadedVersion) {
     suppressDesktopRestartPrompt = false;
+    sendStartupNotice(null);
     log.warn(`[update] ${reason}: the desktop update did not download — installing the engine with this desktop`);
     return false;
   }
+  sendStatus(`Installing FlowPad ${version}`);
+  sendStartupNotice({
+    title: `Installing FlowPad ${version}`,
+    detail: 'FlowPad closes now to install the update and reopens by itself in about a minute. ' +
+      'If it does not reopen, start FlowPad again.',
+  });
+  // The relaunched app says whether the update landed (startupUpdateNotice) — the other half of
+  // "the window closed: was that a crash?".
+  desktopFirstMarker.write({ from: app.getVersion(), to: version });
+  // keepWindow: the loading screen, with the notice above, stays up until the quit takes it.
   // apply() resolves with the REAL outcome: 'quitting' once the quit began, 'failed' even when the
   // failure arrives after quitAndInstall returned (Squirrel, an async NSIS spawn error).
-  if ((await restartApplier.apply()) === 'quitting') return true;
+  if ((await restartApplier.apply({ keepWindow: true })) === 'quitting') return true;
   // Not applied: same fallback as a failed download — install the engine with THIS desktop instead of
   // a dead splash nobody manages.
+  desktopFirstMarker.clear();
+  sendStartupNotice(null);
   suppressDesktopRestartPrompt = false;
   log.warn(`[update] ${reason}: the desktop update could not be applied — installing the engine with this desktop`);
   return false;
+}
+
+/** The desktop update a pre-start flow restarted into (desktop-first): read once by the next launch. */
+const desktopFirstMarker = {
+  path() { return path.join(app.getPath('userData'), 'desktop-first-update.json'); },
+  write(state) { try { atomicWrite(this.path(), JSON.stringify(state)); } catch (err) { log.warn(`[update] could not save the update marker: ${err.message}`); } },
+  take() {
+    let state = null;
+    try { state = JSON.parse(fs.readFileSync(this.path(), 'utf8')); } catch { return null; }
+    this.clear();
+    return state;
+  },
+  clear() { try { fs.rmSync(this.path(), { force: true }); } catch { /* best effort */ } },
+};
+
+/**
+ * After a desktop-first restart: the loading screen of the NEW launch says the update landed (or that
+ * it did not, and FlowPad carries on with this version). Shown once.
+ */
+function startupUpdateNotice() {
+  const marker = desktopFirstMarker.take();
+  if (!marker || !marker.to) return null;
+  if (!isNewer(app.getVersion(), marker.to)) {
+    return { title: `FlowPad was updated to ${app.getVersion()}`, detail: 'Finishing the setup — this takes a moment.' };
+  }
+  return {
+    title: `The update to FlowPad ${marker.to} did not finish`,
+    detail: `FlowPad continues with version ${app.getVersion()} and offers the update again later.`,
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -2046,6 +2096,13 @@ function sendStatus(message) {
   }
 }
 
+/** The loading screen's update notice ({title, detail}, or null to hide it) — see loading.html. */
+function sendStartupNotice(notice) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('startup-notice', notice);
+  }
+}
+
 // Progress ticker for a `uv tool install` shown on the loading screen: uv's own
 // per-step lines ("Downloading flowpad (34.6MiB)", "Resolved 132 packages…")
 // under a fixed label, so a long install on a slow link is visibly alive
@@ -2315,9 +2372,14 @@ async function runRecoveryUpdate({ version, fingerprint }) {
     if (desktopDownloadedVersion !== version) throw new Error('the download did not complete (see the updater lines in the log)');
     log.info(`[update-recovery] ${version} downloaded and verified by the updater; installing and relaunching`);
     sendStatus(`Installing FlowPad ${version}`);
+    sendStartupNotice({
+      title: `Installing FlowPad ${version}`,
+      detail: 'FlowPad closes now to install the update and reopens by itself in about a minute. If it does not reopen, start FlowPad again.',
+    });
     // A failure inside the updater's own 'error' event (a cancelled pkexec, no $APPIMAGE, no dpkg) is
     // 'failed', not success: the attempt is marked failed below instead of leaving a dead recovery screen.
-    const outcome = await restartApplier.apply();
+    const outcome = await restartApplier.apply({ keepWindow: true });
+    if (outcome !== 'quitting') sendStartupNotice(null);
     if (outcome === 'busy') throw new Error('another install is already in progress');
     if (outcome !== 'quitting') throw new Error('the update could not be installed (see the updater lines in the log)');
     return { ok: true };
@@ -2750,6 +2812,10 @@ async function startApp() {
     await new Promise((resolve) => mainWindow.webContents.once('did-finish-load', resolve));
   }
   markPhase('renderer-loaded');
+  {
+    const notice = startupUpdateNotice();
+    if (notice) sendStartupNotice(notice);
+  }
 
   // macOS App Translocation: an app launched from Downloads / the .dmg runs from a read-only temporary copy
   // and cannot update itself. Ask once per version to move to /Applications — BEFORE any install work, so an

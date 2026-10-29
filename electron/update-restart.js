@@ -40,12 +40,13 @@ function createRestartApplier({ uvManager, autoUpdater, setQuitting, hideWindow,
   let phase = null;
   let settle = null;
 
-  async function apply() {
+  /** opts.keepWindow: the loading screen stays up (it explains the restart) until the quit takes it. */
+  async function apply({ keepWindow = false } = {}) {
     if (phase) return 'busy'; // a second click / prompt must not run the sequence twice
     phase = 'stopping';
     const outcome = new Promise((r) => { settle = r; });
     setQuitting(true);
-    hideWindow();
+    if (!keepWindow) hideWindow();
     try { if (notifyInstalling) notifyInstalling(); } catch (err) { log.warn(`[update-restart] notification failed: ${err && err.message}`); }
     try {
       // Same stop before-quit's shutdown runs — bounded by the budgets UvManager.stop() carries.

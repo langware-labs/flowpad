@@ -163,6 +163,15 @@ failure offers the download again, never a re-apply. A newer feed build the upda
 this machine (`isUpdateAvailable: false` — staged rollout, `minimumSystemVersion`) counts as no
 desktop update, so the engine is not held behind it.
 
+**First setup restarts into a newer desktop** (`updateDesktopBeforeEngineInstall`): when no engine is
+installed yet and the feed has a newer desktop, the desktop is updated first and the new desktop
+installs the engine. The loading screen says so in the window for the whole download ("Updating
+FlowPad to X … closes for a moment and reopens by itself"), stays on screen until the quit takes it
+(`restartApplier.apply({ keepWindow: true })`), and the relaunched app confirms the outcome once
+(`desktop-first-update.json` → "FlowPad was updated to X", or "the update to X did not finish").
+A build older than the published release therefore replaces itself on first run — test a dry-run
+build with a version above the feed's.
+
 **Manual verification on each OS** (the CI runs the update flow against stubs only — nothing in the
 repo performs a real `quitAndInstall`). Before a release that changes the update flow, run once per
 row against a real GitHub feed with a packaged build one version behind:

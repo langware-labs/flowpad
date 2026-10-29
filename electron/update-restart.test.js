@@ -130,6 +130,13 @@ function harness({ stop, quitAndInstall } = {}) {
     eq(h.calls.filter((c) => c === 'stop').length, 1, 'the backend is stopped once');
   }
 
+  // keepWindow (the loading screen explains the restart): the window is NOT hidden before the quit.
+  {
+    const h = harness({ quitAndInstall: () => { h.calls.push('qai'); h.applier.quitStarted(); } });
+    eq(await h.applier.apply({ keepWindow: true }), 'quitting', 'keepWindow: installs as usual');
+    eq(h.calls.includes('hide'), false, 'keepWindow: the window stays on screen until the quit takes it');
+  }
+
   // No uvManager (dev run): still installs.
   {
     const calls = [];

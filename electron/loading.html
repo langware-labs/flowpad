@@ -78,6 +78,31 @@
       color: hsl(0 0% 63.9%);
     }
 
+    /* A desktop update the app runs by itself (first setup, recovery): FlowPad is about to close and
+       reopen — said in the window, so a closing window never reads as a crash. */
+    .update-notice {
+      margin: 24px auto 0;
+      max-width: 420px;
+      padding: 14px 18px;
+      border: 1px solid hsl(217 91% 60% / 0.5);
+      border-radius: 10px;
+      background: hsl(217 91% 60% / 0.1);
+      text-align: center;
+    }
+    .update-notice[hidden] { display: none; }
+    .update-notice-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: hsl(0 0% 95%);
+      margin: 0 0 6px;
+    }
+    .update-notice-detail {
+      font-size: 0.875rem;
+      line-height: 1.45;
+      color: hsl(0 0% 75%);
+      margin: 0;
+    }
+
     .show-logs-btn {
       position: fixed;
       bottom: 16px;
@@ -485,6 +510,10 @@
     <p class="subtitle">Local Flow Server</p>
     <div class="spinner"></div>
     <p class="status" id="status-text">Starting server<span class="dots"></span></p>
+    <div class="update-notice" id="update-notice" hidden>
+      <p class="update-notice-title" id="update-notice-title"></p>
+      <p class="update-notice-detail" id="update-notice-detail"></p>
+    </div>
   </div>
   <button class="show-logs-btn" id="show-logs-btn">Show Logs</button>
 

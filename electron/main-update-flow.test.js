@@ -29,7 +29,7 @@ module.exports.__t = {
   disarmAccountWatch: () => { accountWatcher = { close() {} }; },
   getDesktopStatus: () => desktopStatus,
   getStartupFailed: () => startupFailed,
-  createWindow, getMainWindow: () => mainWindow,
+  createWindow, getMainWindow: () => mainWindow, startupUpdateNotice,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
@@ -206,13 +206,13 @@ function load(opts = {}) {
     t = m.exports.__t;
   } finally { Module._load = origLoad; process.on = realProcessOn; } // global.setInterval stays captured: setupElectronAutoUpdater() arms its tick later
 
-  const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], loadedFiles: [], loadFile: async (p) => { win.loadedFiles.push(p); }, loadURL() {}, show() {}, hide() {}, focus() {} };
+  const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], loadedFiles: [], loadFile: async (p) => { win.loadedFiles.push(p); }, loadURL() {}, show() {}, hide() { win.hides = (win.hides || 0) + 1; }, focus() {} };
   const trustedEvent = () => ({ sender: win.webContents, senderFrame: { url: `${t.BACKEND_URL}/dock/home`, parent: null } });
   t.setMainWindow(win);
   t.setSquirrelStages(!!opts.squirrel); // the macOS staging step is a scenario choice, not the host's platform
   t.setUvManager(new FakeUv());
   t.setBackendReady(opts.backendReady !== false); // the app is up unless a test says it is still starting
-  return { t, ipc, once, processHandlers, nativeUpdater, emitApp, trustedEvent, sent: win.sent, loadedFiles: win.loadedFiles, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
+  return { t, ipc, once, processHandlers, nativeUpdater, emitApp, trustedEvent, win, sent: win.sent, loadedFiles: win.loadedFiles, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
 }
 
 const REMINDER_MS = 90 * 60 * 1000;
@@ -1737,6 +1737,57 @@ const HOUR = 60 * 60 * 1000;
     env.t.createWindow();
     ok(env.t.getMainWindow() === before, 'the live window is reused');
     ok(env.loadedFiles.some((f) => /loading\.html$/.test(f)), 'and put back on the loading screen');
+  }
+
+  {
+    // First setup restarts into a newer desktop: the WINDOW says so (a missed OS toast used to make the
+    // closing window read as a crash), stays on screen until the quit, and the next launch confirms.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const notices = () => env.sent.filter(([ch]) => ch === 'startup-notice').map(([, d]) => d);
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    ok(notices().some((n) => n && /Updating FlowPad to 0\.2\.48/.test(n.title) && /reopens by itself/.test(n.detail)),
+      'desktop-first: the window explains, from the download on, that FlowPad will close and reopen');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload();
+    const r = await p;
+    eq(r.ok, false, 'desktop-first: this launch ends in the update');
+    ok(notices().some((n) => n && /Installing FlowPad 0\.2\.48/.test(n.title)), 'desktop-first: "installing — closes and reopens" before the quit');
+    eq(env.win.hides || 0, 0, 'desktop-first: the window is not hidden — the quit takes it with the notice on screen');
+
+    // The NEW launch (same userData) confirms the update landed, once.
+    const next = load({ installed: false, appVersion: '0.2.48', desktopFeed: '0.2.48', userDataDir: env.userData });
+    eq(next.t.startupUpdateNotice(), { title: 'FlowPad was updated to 0.2.48', detail: 'Finishing the setup — this takes a moment.' },
+      'the relaunched app says the update landed');
+    eq(next.t.startupUpdateNotice(), null, '…once');
+  }
+  {
+    // The relaunch is still the OLD version (a cancelled UAC / password prompt): say so, don't pretend.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload();
+    await p;
+    const again = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48', userDataDir: env.userData });
+    ok(/did not finish/.test(again.t.startupUpdateNotice().title), 'an update that did not land is reported as such');
+  }
+  {
+    // The desktop download fails: the notice is withdrawn and the engine is installed with this desktop.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    env.autoUpdater.finishDownload(); // no update-downloaded: failed
+    await p;
+    const last = env.sent.filter(([ch]) => ch === 'startup-notice').map(([, d]) => d).pop();
+    eq(last, null, 'a failed download withdraws the notice');
+    eq(env.t.startupUpdateNotice(), null, 'and leaves no marker for the next launch');
   }
 
   // ── review round 10: apply outcomes, macOS staging, IPC senders (FLOWPAD-2310) ──
