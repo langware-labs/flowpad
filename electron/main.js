@@ -165,6 +165,8 @@ const restartApplier = createRestartApplier({
     // The desktop could not be applied (for example an app running from a temporary macOS location). It stays
     // pending: the engine changes only after the NEW desktop is installed and running, and the update is downloaded,
     // so it still installs on the next quit (the dialog below says so).
+    // The panel's row flips to error with a "Retry the update" (apply, not download — the artifact landed).
+    sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err), apply: true });
     showFailureDialog({
       dialog,
       parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
@@ -175,6 +177,15 @@ const restartApplier = createRestartApplier({
       share: (text) => shareDiagnostics(text, 'could not restart to apply an update'),
       log,
     });
+    // apply() stopped the backend BEFORE quitAndInstall: the app is staying, so bring the backend
+    // back — the dialog alone left an open, dead window. Pre-start flows (backendReady false) own
+    // their own continuation (updateDesktopBeforeEngineInstall falls through to the engine install).
+    if (uvManager && backendReady) {
+      void uvManager
+        .recoverAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl: BACKEND_URL, sendStatus })
+        .then((ok) => { if (!ok) return offerRecoveryRetry(err); })
+        .catch((e) => log.warn(`[update-restart] backend recovery failed: ${e && e.message}`));
+    }
   },
   log,
 });
@@ -227,13 +238,9 @@ function setupElectronAutoUpdater() {
     });
     autoUpdater.on('error', (err) => {
       log.error('[electron-updater] error:', err);
-      // Download errors reach the panel from downloadDesktopUpdateInBackground's OWN catch — the one
-      // place that knows the error belongs to its download. This shared emitter also carries feed-check
-      // failures, so pushing from here misattributed them in both directions. Only an apply
-      // ("Restart now") failure is pushed from here.
-      if (restartApplier.busy) {
-        sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err) });
-      }
+      // Download errors reach the panel from downloadDesktopUpdateInBackground's OWN catch, and an
+      // apply failure from restartApplier's onFailure — each from the one place that knows whose
+      // error it is. This shared emitter also carries feed-check noise, so it pushes nothing itself.
       // If this happened while a "Restart now" was in flight, the app is not quitting after all.
       restartApplier.failed(err);
     });
@@ -816,6 +823,10 @@ async function showDesktopReadyPrompt(version) {
   } else {
     deferredDesktopVersion = version;
     readyReminder.start();
+    // The deferred download is a READY update the panel can install any time — without this push the
+    // panel's last word stayed 'downloading… 100%' with no buttons (the ready push is gated to
+    // panel-owned/deferred downloads, and "Later" is exactly the deferred case).
+    sendDesktopUpdateState({ state: 'ready', version });
     log.info('[electron-updater] user deferred the restart; will ask again in 90 minutes and install on the next quit');
   }
 }
@@ -851,7 +862,15 @@ async function offerDesktopUpdate(desktopLatest) {
     downloadDesktopUpdateInBackground({ version: desktopLatest, onDownloaded: recordOfferedWhenDownloaded(desktopLatest) });
     return 'desktop';
   }
-  savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
+  const prevPending = pendingEngineStore.read();
+  if (prevPending && prevPending.consented && prevPending.desktopVersion === desktopLatest) {
+    // The user ALREADY agreed to this desktop + engine (e.g. the old desktop relaunched because
+    // install-on-quit did not run): re-offering must not overwrite the agreement with a fresh
+    // unconsented record — "Later" here would silently lose the earlier consent and its panel source.
+    log.info('[update] keeping the already-consented pending-engine record for this desktop');
+  } else {
+    savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
+  }
   uvManager.deferPackageVersion(engineStatus.latestVersion); // no separate engine dialog for this version
   packageUpdateInFlight = true; // one update dialog at a time
   // Abortable: a newer release found while this screen waits closes it and shows its own instead
@@ -1040,8 +1059,13 @@ async function updateDesktopBeforeEngineInstall(reason) {
     log.warn(`[update] ${reason}: the desktop update did not download — installing the engine with this desktop`);
     return false;
   }
-  await restartApplier.apply(); // false only when a restart is already under way — either way we are leaving
-  return true;
+  await restartApplier.apply();
+  if (isQuitting) return true; // handed to the installer (or a restart already under way)
+  // quitAndInstall failed SYNCHRONOUSLY (failed() undid isQuitting and restored the window): same
+  // fallback as a failed download — install the engine with THIS desktop instead of a dead splash.
+  suppressDesktopRestartPrompt = false;
+  log.warn(`[update] ${reason}: the desktop update could not be applied — installing the engine with this desktop`);
+  return false;
 }
 
 // ----------------------------------------------------------------------------
@@ -2339,24 +2363,33 @@ async function installAndStartBackend({ quiet = false } = {}) {
         log.info(`[update] installing the engine version agreed before the restart: ${enginePlan.version}`);
         updateTest.event('agreed-engine-install', { version: enginePlan.version, desktop: app.getVersion() });
         sendStatus(`Updating the FlowPad engine to ${enginePlan.version}`);
-        try {
-          await uvManager.upgrade({ version: enginePlan.version, onProgress: installProgress('Updating the FlowPad engine') });
-          // Spent only now: a process killed mid-install keeps the intent on disk ("the process must
-          // survive application restarts without losing the pending update state").
-          pendingEngineStore.clear();
-          activeBin = uvManager.getInstalledFlowBin() || flowBin;
-          backendJustUpgraded = true;
-          if (enginePlan.source === 'panel') {
-            resumedPanelUpdate = { success: true, engineVersion: enginePlan.version, desktopVersion: app.getVersion() };
-          }
-        } catch (upgradeErr) {
-          log.warn(`[uv] installing the agreed engine ${enginePlan.version} failed, starting the current engine: ${upgradeErr.message}`);
-          // Not a retry: the intent survives to the NEXT launch as a QUESTION — consented:false makes
-          // planAfterDesktopUpdate answer 'dialog', so "FlowPad will offer it again" is true.
-          const saved = pendingEngineStore.read();
-          if (saved) pendingEngineStore.write({ ...saved, consented: false });
-          if (enginePlan.source === 'panel') {
-            resumedPanelUpdate = { success: false, engineVersion: enginePlan.version, desktopVersion: app.getVersion(), error: upgradeErr.message };
+        // DEMOTE FIRST, then install: a crash mid-install leaves a QUESTION for the next launch
+        // (consented:false → 'dialog'), and a disk that cannot persist the demotion must not get a
+        // silent install it could re-run on every launch. previousEngine is what the health gate
+        // restores if the new engine installs fine but never answers.
+        const saved = pendingEngineStore.read() || {};
+        const previousEngine = uvManager.getInstalledVersionSync(flowBin) || null;
+        pendingEngineStore.write({ ...saved, consented: false, phase: 'installing', previousEngine });
+        const demoted = pendingEngineStore.read();
+        if (!demoted || demoted.consented !== false) {
+          log.warn('[update] could not persist the install attempt — the engine dialog will ask instead of a silent install');
+        } else {
+          try {
+            await uvManager.upgrade({ version: enginePlan.version, onProgress: installProgress('Updating the FlowPad engine') });
+            // NOT spent yet: the record (phase 'installed') holds previousEngine until the backend is
+            // HEALTHY — an engine that installs fine but never answers is rolled back at that gate.
+            pendingEngineStore.write({ ...demoted, phase: 'installed' });
+            activeBin = uvManager.getInstalledFlowBin() || flowBin;
+            backendJustUpgraded = true;
+            if (enginePlan.source === 'panel') {
+              resumedPanelUpdate = { success: true, engineVersion: enginePlan.version, desktopVersion: app.getVersion() };
+            }
+          } catch (upgradeErr) {
+            log.warn(`[uv] installing the agreed engine ${enginePlan.version} failed, starting the current engine: ${upgradeErr.message}`);
+            // Already demoted on disk — the next launch ASKS ("FlowPad will offer it again" is true).
+            if (enginePlan.source === 'panel') {
+              resumedPanelUpdate = { success: false, engineVersion: enginePlan.version, desktopVersion: app.getVersion(), error: upgradeErr.message };
+            }
           }
         }
       }
@@ -2773,6 +2806,38 @@ async function startApp() {
       ? `\n\nflow start exited with code ${launch.exit.code}:\n${summarizeOutput(launch.tail())}`
       : '';
     markPhase('startup-failed', { reason: backendWait.reason, elapsedSec: backendWait.elapsedSec });
+    // The AGREED engine installed but never became healthy: restarting it next launch would fail the
+    // same way (the exact abandonment screen). Put the previous release back (uv's cache first — no
+    // network needed), mark the attempt failed (the next launch ASKS, never a silent retry of the
+    // same unhealthy build), tell the panel, and offer a Retry that starts the restored engine.
+    const unhealthyInstall = pendingEngineStore.read();
+    if (unhealthyInstall && unhealthyInstall.phase === 'installed' && unhealthyInstall.previousEngine && uvManager && !isQuitting) {
+      log.warn(`[update] engine ${unhealthyInstall.engineVersion} installed but never became healthy — restoring ${unhealthyInstall.previousEngine}`);
+      pendingEngineStore.write({ ...unhealthyInstall, phase: 'failed-unhealthy', failedVersion: unhealthyInstall.engineVersion });
+      if (unhealthyInstall.source === 'panel') {
+        resumedPanelUpdate = { success: false, engineVersion: unhealthyInstall.engineVersion, desktopVersion: app.getVersion(), error: 'the installed engine never became healthy' };
+      }
+      try {
+        await pendingBackendStop;
+        sendStatus(`Restoring FlowPad engine ${unhealthyInstall.previousEngine}`);
+        await uvManager.restoreEngine(unhealthyInstall.previousEngine);
+        if (await showStartupErrorPanel(
+          `Flowpad’s backend didn’t respond within ${timeoutSec} seconds after the engine update to ` +
+            `${unhealthyInstall.engineVersion}. ${why}The previous engine (${unhealthyInstall.previousEngine}) ` +
+            'has been restored — Retry starts it.' + launcherOutput,
+          { retryable: true },
+        )) {
+          await waitForRetryRequest();
+          if (!isQuitting) {
+            startupFailed = false;
+            return startApp();
+          }
+        }
+        return;
+      } catch (restoreErr) {
+        log.warn(`[update] could not restore ${unhealthyInstall.previousEngine}: ${restoreErr.message} — showing the normal panel`);
+      }
+    }
     await showStartupErrorPanel(
       `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ${why}` +
         'This usually means the installed Flowpad package is out of date or broken.' +
@@ -2789,6 +2854,12 @@ async function startApp() {
   // A confirmed healthy startup: the journal's terminal phase, the recovery-update history spent, and any
   // fatal record (the monitor clears its own; this covers a record the monitor did not get to) gone.
   markPhase('backend-healthy');
+  {
+    // The agreed-engine record is spent only HERE: installed AND answering. (A crash anywhere in
+    // between leaves the demoted record — the next launch asks.)
+    const rec = pendingEngineStore.read();
+    if (rec && rec.phase === 'installed') pendingEngineStore.clear();
+  }
   writeRecoveryState(updateRecovery.markStartupHealthy());
   clearFailureRecord('the backend is healthy');
 
@@ -3340,12 +3411,13 @@ ipcMain.handle('upgrade-flowpad', async (_event, opts) => {
  * rollback. (The install-time gates stay authoritative either way.)
  */
 async function engineFloorAllows(engineVersion, desktopVersion) {
-  if (!uvManager || typeof uvManager._readCandidateMinDesktop !== 'function') return { allowed: false, floor: null };
+  if (!uvManager || typeof uvManager._readCandidateMinDesktop !== 'function') return { allowed: false, known: false, floor: null };
   const candidate = await uvManager._readCandidateMinDesktop(engineVersion);
-  if (!candidate || candidate === 'invalid') return { allowed: false, floor: null };
+  if (!candidate) return { allowed: false, known: false, floor: null };          // unreadable (offline): not a verdict
+  if (candidate === 'invalid') return { allowed: false, known: true, floor: null }; // declared and broken: a verdict
   const floor = candidate.minDesktopVersion;
   const allowed = floor == null || engineCompat.meetsFloor(desktopVersion, floor) === true;
-  return { allowed, floor: floor == null ? null : floor };
+  return { allowed, known: allowed || engineCompat.meetsFloor(desktopVersion, floor) === false, floor: floor == null ? null : floor };
 }
 
 /** Why a panel update action must be refused right now, or null when it may proceed. */
@@ -3493,7 +3565,12 @@ ipcMain.handle('update:both', async (_event, requestedEngineVersion) => {
   // desktop accepts; none newer than installed → the desktop goes alone (the installed engine was
   // selected for a desktop this one supersedes, and the startup pair repair has the last word).
   const verdict = await engineFloorAllows(engineVersion, desktopVersion);
-  if (!verdict.allowed) {
+  if (!verdict.allowed && !verdict.known) {
+    // Unreadable metadata is NOT a verdict: dropping the engine on "unknown" contradicted the rule
+    // ("a desktop update never leaves the engine behind"). Keep the pin — the install gates check
+    // both directions before and after, with rollback.
+    log.info(`[update] panel: ${engineVersion}'s floor is unreadable — keeping the pin; the install gates decide`);
+  } else if (!verdict.allowed) {
     let substitute = null;
     try { substitute = await uvManager.resolveCompatibleEngineVersion({ desktopVersion }); } catch { substitute = null; }
     const installedEngine = uvManager.getInstalledVersionSync() || null;
@@ -3512,18 +3589,22 @@ ipcMain.handle('update:both', async (_event, requestedEngineVersion) => {
     savePendingEngine(pendingEngineStore, { engineVersion, desktopVersion, source: 'panel' });
     markPendingEngineConsented(pendingEngineStore);
     uvManager.deferPackageVersion(engineVersion); // no separate engine dialog for this version
+  } else {
+    // The desktop goes alone: an OLD record must not install a stale engine behind this update's back.
+    pendingEngineStore.clear();
   }
   pendingDesktopVersion = desktopVersion;
   offeredDesktopVersion = desktopVersion;
   panelDesktopVersion = desktopVersion;
   readyReminder.stop(); // the panel owns the flow now — no 90-minute native reminder over it
-  if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopVersion };
+  // `engineVersion` tells the panel whether an engine rides along (null → the desktop goes alone).
+  if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopVersion, engineVersion };
   if (desktopDownloadInFlight) {
     suppressDesktopRestartPrompt = true; // adopt the background download: its native prompt is off
-    return { started: true, version: desktopVersion };
+    return { started: true, version: desktopVersion, engineVersion };
   }
   downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopVersion });
-  return { started: true, version: desktopVersion };
+  return { started: true, version: desktopVersion, engineVersion };
 });
 
 async function upgradeFlowpadAndRestart({ version = null } = {}) {
@@ -3566,6 +3647,9 @@ async function upgradeFlowpadAndRestart({ version = null } = {}) {
     // splash with nothing serving it (the quieter half of the "stuck update" incident).
     if (!ready) throw new Error('the upgraded backend did not become healthy');
 
+    // The IPC's answer goes to a page loadFile() destroyed: the reloaded panel PULLS the outcome
+    // (update:take-resumed, the same channel a post-restart resume uses).
+    resumedPanelUpdate = { success: true, engineVersion: uvManager.getInstalledVersionSync() || (picked && picked.version) || 'latest', desktopVersion: app.getVersion() };
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);
     }
@@ -3582,7 +3666,10 @@ async function upgradeFlowpadAndRestart({ version = null } = {}) {
       sendStatus,
       restoreVersion: versionBeforeUpgrade,
     });
-    if (!restored) {
+    if (restored) {
+      // The page the IPC answered was destroyed by loadFile(): the reloaded panel pulls the failure.
+      resumedPanelUpdate = { success: false, engineVersion: (picked && picked.version) || version || 'latest', desktopVersion: app.getVersion(), error: err.message };
+    } else {
       // Detached: the IPC answers now; the panel's Retry keeps re-running the recovery (it works
       // from uv's local cache, so it has a real chance even offline). Quit-only was a dead end.
       void offerRecoveryRetry(err, { restoreVersion: versionBeforeUpgrade });

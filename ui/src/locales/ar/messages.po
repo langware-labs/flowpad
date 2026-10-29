@@ -19239,6 +19239,10 @@ msgstr "لا توجد نماذج."
 msgid "No narrowing — everything the roots allow."
 msgstr "بلا تضييق — كل ما تسمح به الجذور."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays."
+msgstr "لا يوجد flow SDK أحدث يلائم إصدار سطح المكتب هذا — يتم تحديث سطح المكتب وحده ويبقى flow SDK المثبّت."
+
 #: src/components/version-popover/desktop-update-modal.tsx
 msgid "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
 msgstr "لا يتوفر بعد إصدار أحدث من FlowPad Desktop، لذا لا يمكن تثبيت إصدار الخادم الخلفي هذا. لم يتغيّر التثبيت الحالي — تحقق مجددًا بعد إصدار سطح المكتب القادم."
@@ -25104,6 +25108,10 @@ msgstr "إعادة محاولة التحميل"
 #: src/components/version-popover/version-popover.tsx
 msgid "Retry the download"
 msgstr "إعادة محاولة التنزيل"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Retry the update"
+msgstr ""
 
 #: src/components/data-sources/health-style.ts
 msgid "Retrying"

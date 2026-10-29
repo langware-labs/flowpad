@@ -19397,6 +19397,10 @@ msgstr "No models."
 msgid "No narrowing — everything the roots allow."
 msgstr "No narrowing — everything the roots allow."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays."
+msgstr "No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays."
+
 #: src/components/version-popover/desktop-update-modal.tsx
 msgid "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
 msgstr "No newer FlowPad Desktop build is available yet, so this backend version cannot be installed. Your current installation is unchanged — check again after the next desktop release."
@@ -25310,6 +25314,10 @@ msgstr "Retry download"
 #: src/components/version-popover/version-popover.tsx
 msgid "Retry the download"
 msgstr "Retry the download"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Retry the update"
+msgstr "Retry the update"
 
 #: src/components/data-sources/health-style.ts
 msgid "Retrying"

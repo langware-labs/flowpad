@@ -45,8 +45,9 @@ rejected, with one deliberate exception: invalid metadata found in an already-in
 only logs a warning (it must not brick startup); upgrades to such a release are refused.
 
 Logic lives in `electron/engine-compat.js` and `flow_sdk/utils/compat.py` (twins, with matching
-failure wording). Both floors currently sit at `0.2.0`, so nothing changes until release
-engineering raises one.
+failure wording). The floors are raised by release engineering and are read from the files, not from
+here — at the time of writing `min_backend_version: 0.2.231` (electron/engine-compat.json) and
+`min_desktop_version: 0.2.58` (flow_sdk/compat.json).
 
 `compat.json` is deliberately **not** a `DataSpec` schema, and that exception to the "every shape that
 travels is a `DataSpec`" rule was **approved by the repository owner on 2026-10-19**. The reason is the

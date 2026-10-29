@@ -127,7 +127,11 @@ function load(opts = {}) {
     getInstalledVersionSync() { return opts.engine || '0.2.168'; }
     installedPairIssue() { return opts.pairIssue || null; }
     async resolveCompatibleEngineVersion() { if (opts.resolveThrows) throw new Error(opts.resolveThrows); return opts.compatibleRelease || null; }
-    async _readCandidateMinDesktop() { return { minDesktopVersion: opts.candidateFloor || null }; }
+    async _readCandidateMinDesktop() {
+      if (opts.candidateFloor === 'unreadable') return null;
+      if (opts.candidateFloor === 'invalid') return 'invalid';
+      return { minDesktopVersion: opts.candidateFloor || null };
+    }
     async _flowStop() { uv.flowStops = (uv.flowStops || 0) + 1; }
     async _killPort() {}
     async recoverAfterFailedUpgrade() {
@@ -1178,7 +1182,8 @@ const HOUR = 60 * 60 * 1000;
     const r = await env.t.installAndStartBackend();
     eq(r.ok, true, 'startup succeeds');
     eq(env.uv.upgrades, [Object.assign({ version: '0.2.180' }, { onProgress: env.uv.upgrades[0] && env.uv.upgrades[0].onProgress })], 'installs flowpad==0.2.180 — the version that was agreed, not "latest"');
-    eq(env.readState(), null, 'the saved version is spent');
+    eq([env.readState().phase, env.readState().consented, env.readState().previousEngine], ['installed', false, '0.2.168'],
+      'the record waits for the HEALTHY gate, demoted meanwhile — a crash in between ASKS next launch');
     eq(env.dialogCalls.length, 0, 'no dialog: the user already agreed');
     eq(r.backendJustUpgraded, true, 'the start waits the longer post-upgrade window');
   }
@@ -1310,6 +1315,14 @@ const HOUR = 60 * 60 * 1000;
     eq(env.autoUpdater.quits, [[true, true]], 'quitAndInstall(silent, relaunch)');
     eq(env.uv.stopped, 1, 'the backend was stopped first');
     ok(pushes(env).some((d) => d.state === 'installing'), 'and the panel hears it is installing');
+
+    // The installer could NOT start (temp-dir macOS run, cancelled pkexec): apply() had already
+    // stopped the backend, so the failure must bring it back — and reach the panel as an APPLY
+    // error (Retry re-applies the landed artifact, not the download).
+    env.autoUpdater.emit('error', new Error('cannot find the installer')); await tick(); await tick();
+    ok(pushes(env).some((d) => d.state === 'error' && d.apply === true && /installer/.test(d.error)),
+      'the panel hears the apply failure, marked as apply');
+    eq(env.uv.recovered, 1, 'the stopped backend is brought back (recovery ran)');
   }
   {
     // update:apply-desktop refusals — nothing downloaded, or another update running.
@@ -1332,7 +1345,7 @@ const HOUR = 60 * 60 * 1000;
     env.t.setupElectronAutoUpdater();
     eq(await env.ipc['update:both'](null, 'not a version'), { started: false, reason: 'invalid-version' }, 'update:both: a malformed version never becomes an install argument');
     const r = await env.ipc['update:both'](null, '0.2.180');
-    eq(r, { started: true, version: '0.2.48' }, 'update:both: starts the desktop download');
+    eq(r, { started: true, version: '0.2.48', engineVersion: '0.2.180' }, 'update:both: starts the desktop download, engine riding along');
     eq(env.readState(), Object.assign({}, env.readState(), { engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }), 'the engine version is saved, marked panel-initiated, and ALREADY consented (the popup click was the consent)');
     eq(env.uv.deferred, ['0.2.180'], 'no separate engine dialog for that version');
     eq(env.dialogCalls.length, 0, 'no native dialog anywhere in the panel flow');
@@ -1366,7 +1379,8 @@ const HOUR = 60 * 60 * 1000;
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }));
     const r = await env.t.installAndStartBackend();
     eq([r.ok, env.uv.upgrades.map((u) => u.version)], [true, ['0.2.180']], 'the agreed engine version is installed by the new desktop');
-    eq(env.readState(), null, 'the record is spent only once the install LANDED');
+    eq([env.readState().phase, env.readState().consented], ['installed', false],
+      'the record is spent only at the HEALTHY gate — a kill between install and health asks next launch');
     eq(await env.ipc['update:take-resumed'](), { success: true, engineVersion: '0.2.180', desktopVersion: '0.2.48' }, 'take-resumed reports the resumed outcome');
     eq(await env.ipc['update:take-resumed'](), null, '…exactly once');
   }
@@ -1420,7 +1434,7 @@ const HOUR = 60 * 60 * 1000;
     await env.t.offerDesktopUpdate('0.2.48'); // desktop-only: downloads in the background, prompt on ready
     eq(env.autoUpdater.downloads.length, 1, 'the background download is running');
     const r = await env.ipc['update:both'](null, '0.2.180');
-    eq([r.started, env.autoUpdater.downloads.length], [true, 1], 'adopted: started, and no second download');
+    eq([r.started, r.engineVersion, env.autoUpdater.downloads.length], [true, '0.2.180', 1], 'adopted: started, engine named, and no second download');
     env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
     eq(env.dialogCalls.length, 0, 'no native "Restart now" over the adopted panel flow');
     eq(env.readState().consented, true, 'the engine rides along, consented');
@@ -1437,13 +1451,34 @@ const HOUR = 60 * 60 * 1000;
   {
     // ...and when no compatible engine is newer than the installed one, the desktop goes ALONE
     // (the installed engine was selected for a desktop this one supersedes; the startup pair
-    // repair has the last word) — never a refusal, never a doomed pin.
+    // repair has the last word) — never a refusal, never a doomed pin. The answer SAYS the engine
+    // stayed behind (engineVersion: null), and a stale record cannot ride along.
     const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.3.0', compatibleRelease: { version: '0.2.100', minDesktopVersion: null } });
     env.t.setupElectronAutoUpdater();
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.150', desktopVersion: '0.2.40', consented: true })); // a stale agreement
     const r = await env.ipc['update:both'](null, '0.2.240');
-    eq(r.started, true, 'started as a desktop-only update');
-    eq(env.readState(), null, 'no pending engine was saved');
+    eq([r.started, r.engineVersion], [true, null], 'started as a desktop-only update, and the answer says so');
+    eq(env.readState(), null, 'no pending engine was saved — and the stale record is cleared');
     eq(env.autoUpdater.downloads.length, 1, 'the desktop download runs');
+  }
+  {
+    // An UNREADABLE floor (offline wheel read) is not a verdict: the pin stays, the install gates
+    // decide — dropping the engine on "unknown" contradicted the product rule.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: 'unreadable' });
+    env.t.setupElectronAutoUpdater();
+    const r = await env.ipc['update:both'](null, '0.2.240');
+    eq([r.started, r.engineVersion], [true, '0.2.240'], 'unreadable floor: the pin is kept');
+    eq(env.readState().engineVersion, '0.2.240', 'and saved for the new desktop to install');
+  }
+  {
+    // A relaunch of the OLD desktop (install-on-quit did not run) re-offers the update: the
+    // already-consented agreement for the SAME desktop must survive, not be overwritten unconsented.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1 /* Later */] });
+    env.t.setupElectronAutoUpdater();
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }));
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48');
+    eq([env.readState().consented, env.readState().source], [true, 'panel'], "the user's earlier agreement is kept");
   }
   {
     // Fix א (mid-session): the installed engine is below the RUNNING desktop's own floor and the
@@ -1473,6 +1508,8 @@ const HOUR = 60 * 60 * 1000;
     await env.t.offerDesktopUpdate('0.2.48');
     env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
     eq([env.dialogCalls.length, env.t.readyReminder.running], [1, true], 'Later at the prompt: the reminder is armed');
+    ok(pushes(env).some((d) => d.state === 'ready' && d.version === '0.2.48'),
+      'and the panel hears READY — its last word must not stay "downloading… 100%"');
     const r = await env.ipc['update:download-desktop']();
     eq([r.started, r.ready], [true, true], 'the panel adopts the already-downloaded update');
     eq(env.t.readyReminder.running, false, 'adoption stops the 90-minute reminder');
@@ -1500,10 +1537,13 @@ const HOUR = 60 * 60 * 1000;
     env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
     env.autoUpdater.finishDownload(); await tick();
     eq(env.dialogCalls.length, 0, 'panel-owned 0.2.48: no native prompt');
+    env.sent.length = 0;
     env.autoUpdater.emit('update-downloaded', { version: '0.2.49' }); await tick(); await tick();
     eq(env.dialogCalls.length, 1, 'a different, natively-downloaded release still prompts');
-    eq(pushes(env).filter((d) => d.state === 'ready' && d.version === '0.2.49').length, 0,
-      'the native prompt IS the ready surface — no duplicate "ready" row in the panel');
+    // While the prompt is OPEN it is the ready surface (no push beside it); once the user says
+    // "Later" the PANEL becomes the surface, so exactly one ready push follows the answer.
+    eq(pushes(env).filter((d) => d.state === 'ready' && d.version === '0.2.49').length, 1,
+      'after "Later" the panel hears READY (and not before)');
   }
   {
     // 'update:get-info' asks the feed at most once a minute: the popover open and the Upgrade click

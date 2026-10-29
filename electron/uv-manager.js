@@ -2885,7 +2885,9 @@ class UvManager {
     if (info.latestCompatible === false) {
       try {
         const picked = await this.resolveCompatibleEngineVersion();
-        if (picked) info.newestCompatible = picked.version;
+        // Only an UPGRADE is a fallback offer: an installed-by-hand engine newer than the newest
+        // compatible release must not get a one-click downgrade dressed as an update.
+        if (picked && (!installed || isNewer(installed, picked.version))) info.newestCompatible = picked.version;
       } catch (err) {
         // PyPI answered and NO release is compatible: newestCompatible stays null and the panel says so.
         this.log.warn(`[compat] panel pre-flight: ${String(err.message).split('\n')[0]}`);
@@ -3085,6 +3087,12 @@ class UvManager {
    * Returns true if the app was restored, false if recovery itself failed (the
    * caller then surfaces a real error instead of a frozen splash).
    */
+  /** Put `version` back (uv's cache first — works offline). The health gate's rollback for an
+   *  agreed engine that installed fine but never became healthy. */
+  restoreEngine(version) {
+    return this._restoreEngine(version, {});
+  }
+
   /** Public seam for main.js: the panel's upgrade path (`upgrade-flowpad` IPC) restores the old
    *  engine after a failed upgrade exactly the way the dialog path does — without it the user was
    *  left on the loading splash over a dead backend (the "stuck update" incident). */

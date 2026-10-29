@@ -114,6 +114,8 @@ interface DesktopUpdatePush {
   percent?: number;
   version?: string;
   error?: string;
+  /** The APPLY failed (quitAndInstall), not the download: Retry re-applies the landed artifact. */
+  apply?: boolean;
 }
 
 interface UpdateActionResult {
@@ -121,6 +123,8 @@ interface UpdateActionResult {
   ready?: boolean;
   version?: string;
   reason?: string;
+  /** update:both only — null when no newer flow SDK fits the target desktop (the desktop goes alone). */
+  engineVersion?: string | null;
 }
 
 interface ElectronAPI {
@@ -356,6 +360,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   // "Desktop Update Required" popup, and errors from panel-initiated update actions.
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [desktopPush, setDesktopPush] = useState<DesktopUpdatePush | null>(null);
+  const [desktopActionNote, setDesktopActionNote] = useState<string | null>(null);
   const [justReady, setJustReady] = useState(false); // a download finished while the user watched: ask to install now
   const [compatInfo, setCompatInfo] = useState<DesktopUpdateRequiredInfo | null>(null);
   const [modalBusy, setModalBusy] = useState(false);
@@ -477,8 +482,13 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       const info = await electronApi.getUpdateInfo(opts);
       setUpdateInfo(info);
       // The shell's snapshot is authoritative when nothing moves: a stale push (a failed or
-      // cancelled download's last 'downloading'/'error') must not outlive it.
+      // cancelled download's last 'downloading'/'error') must not outlive it. And a 'downloading'
+      // push specifically dies the moment the snapshot says the download is OVER — "Later" at the
+      // native prompt used to leave the row on "Downloading… 100%" with no buttons.
       if (info.desktop.downloadState === 'idle') setDesktopPush(null);
+      else if (info.desktop.downloadState !== 'downloading') {
+        setDesktopPush((p) => (p && p.state === 'downloading' ? null : p));
+      }
       return info;
     } catch {
       return null;
@@ -589,6 +599,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const handleDesktopDownload = useCallback(async () => {
     if (!electronApi?.downloadDesktopUpdate) return;
     setDesktopActionError(null);
+    setDesktopActionNote(null);
     const engine = updateInfo?.engine ?? null;
     // Product rule: a desktop update never leaves the engine behind. The shell SUBSTITUTES an
     // engine the target desktop accepts when the latest does not fit (or lets the desktop go alone
@@ -602,8 +613,13 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       setDesktopActionError(updateRefusalText(r.reason));
       return;
     }
+    if (engineTarget && r.engineVersion === null) {
+      // The shell let the desktop go alone (no newer flow SDK fits the target build): not an error,
+      // but silently dropping the engine is exactly what an earlier round was called out for.
+      setDesktopActionNote(t`No newer flow SDK fits this desktop build — the desktop updates alone and the installed flow SDK stays.`);
+    }
     notePanelStart(r);
-  }, [electronApi, updateInfo, updateRefusalText, notePanelStart]);
+  }, [electronApi, updateInfo, updateRefusalText, notePanelStart, t]);
 
   /** Install the downloaded desktop build now (the app restarts to apply it). */
   const handleDesktopApply = useCallback(async () => {
@@ -722,6 +738,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       percent: desktopPush?.percent ?? null,
       version: desktopPush?.version ?? snap?.available ?? null,
       error: desktopPush?.error ?? null,
+      applyFailed: desktopPush?.state === 'error' && desktopPush.apply === true,
     };
   }, [electronApi, updateInfo, desktopPush]);
 
@@ -1112,11 +1129,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                     </p>
                     <button
                       type="button"
-                      onClick={() => void handleDesktopDownload()}
+                      onClick={() => void (desktopView.applyFailed ? handleDesktopApply() : handleDesktopDownload())}
                       data-testid="desktop-update-retry-button"
                       className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
                     >
-                      <Trans>Retry the download</Trans>
+                      {desktopView.applyFailed ? <Trans>Retry the update</Trans> : <Trans>Retry the download</Trans>}
                     </button>
                   </div>
                 )}
@@ -1143,6 +1160,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                   </div>
                 )}
                 {desktopActionError && <p className="text-[10px] text-destructive">{desktopActionError}</p>}
+                {desktopActionNote && (
+                  <p className="text-[10px] text-muted-foreground" data-testid="desktop-action-note">
+                    {desktopActionNote}
+                  </p>
+                )}
               </div>
             )}
             {mode === 'Desktop' && !desktopView && !githubUpdateAvailable && !data?.github_error && (
