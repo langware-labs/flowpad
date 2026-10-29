@@ -35,7 +35,7 @@ describe('one call shape, whichever server answers', () => {
     await conversation.inviteMember('Bob@Example.test');
     await conversation.inviteMember('user-1beb3507-0000-4000-8000-000000000001');
 
-    const target = [{ typeid: `conversation-${CONVERSATION_ID}`, role: 'member' }];
+    const target = [{ typeid: `conversation-${CONVERSATION_ID}`, roles: ['reader', 'runner'] }];
     expect(sent(call)).toEqual([
       { name: 'members', method: 'POST', body: { recipient_email: 'bob@example.test', invitation_targets: target } },
       {
