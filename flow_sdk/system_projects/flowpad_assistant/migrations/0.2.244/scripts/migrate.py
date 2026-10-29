@@ -1,4 +1,4 @@
-"""0.2.243: consolidate local authorization roles and cached role sets."""
+"""0.2.244: consolidate local authorization roles and cached role sets."""
 
 import json
 
