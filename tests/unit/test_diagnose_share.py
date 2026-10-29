@@ -10,6 +10,7 @@ import uuid
 
 import pytest
 
+from flow_sdk.app.actions.flow_message_action import _ticket_title
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.db.drivers.query import QueryFilter
@@ -22,6 +23,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 
 ONE_LINER = "gtm-studio update fails: an agent.json lists requirements as plain names"
 ASKED = "analyze the error: Couldn't update / Something went wrong"
+TITLE = _ticket_title(ONE_LINER)
 
 
 @pytest.fixture(autouse=True)
@@ -59,7 +61,7 @@ async def test_a_person_gets_a_conversation_titled_with_the_one_liner():
 
     assert [(s.conversation_id, s.to) for s in sent] == [(conv_id, "Eran Shlomo")]
     conv = await Conversation.get_one({"id": conv_id})
-    assert conv.title == ONE_LINER
+    assert conv.title == TITLE
     assert [m.get("email") for m in conv.members] == ["eran@x.test"]
     messages = await _messages(conv_id)
     assert [m.text for m in messages][0] == ASKED
@@ -77,8 +79,11 @@ async def test_the_help_desk_gets_its_own_ticket_beside_the_people():
 
     assert {s.conversation_id for s in sent} == {conv_id, desk_conversation_id(conv_id)}
     ticket = await Conversation.get_one({"id": desk_conversation_id(conv_id)})
-    assert ticket.kind == "helpdesk" and ticket.title == ONE_LINER and ticket.awaits_hub
-    assert len(await _messages(ticket.id)) == 2
+    assert ticket.kind == "helpdesk" and ticket.title == TITLE and ticket.awaits_hub
+    opening, diagnosis = await _messages(ticket.id)
+    assert opening.text == f"{ONE_LINER}\n\n{ASKED}", "the hub titles a ticket by its opening line"
+    assert _ticket_title(opening.text) == ticket.title, "the hub's title is the one written here"
+    assert diagnosis.text.startswith("Diagnostic: " + ONE_LINER)
 
 
 async def test_sending_again_writes_nothing_new():

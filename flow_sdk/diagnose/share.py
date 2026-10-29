@@ -60,15 +60,23 @@ def recipients_label(recipients: list[HelpRecipient]) -> str:
     return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
+def _one_liner(diagnosis: Any) -> str:
+    return (getattr(diagnosis, "title", "") or "").strip()
+
+
 def title_of(diagnosis: Any, user_report: str) -> str:
-    """The conversation title: the diagnosis one-liner, else the first line of what the person said
-    (cut the way the hub cuts a ticket's title)."""
+    """The conversation title: the diagnosis one-liner, else the first line of what the person said,
+    cut by the hub's ticket rule so a desk ticket and a people conversation read the same."""
     from flow_sdk.app.actions.flow_message_action import _ticket_title  # noqa: PLC0415
 
-    title = (getattr(diagnosis, "title", "") or "").strip()
-    if title:
-        return title[:120]
-    return _ticket_title(user_report or "") if (user_report or "").strip() else "Flowpad diagnosis"
+    line = _one_liner(diagnosis) or (user_report or "").strip()
+    return _ticket_title(line) if line else "Flowpad diagnosis"
+
+
+def opening_text(diagnosis: Any, user_report: str, *, desk: bool) -> str:
+    """The first message's text. The hub titles a ticket by its opening line (``_ticket_title``), so on
+    a desk the one-liner goes first, then the person's words -- the shape Ask for help sends."""
+    return "\n\n".join(p for p in (_one_liner(diagnosis) if desk else "", (user_report or "").strip()) if p)
 
 
 async def _capture(conv_id: str, title: str, people: list[HelpRecipient], desk: Optional[HelpRecipient],
@@ -105,8 +113,9 @@ async def _write_messages(conv, diagnosis: Any, user_report: str, someone: str) 
     from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
 
     desk = conv.kind in (ConversationKind.HELPDESK, ConversationKind.HELPDESK.value)
-    if (user_report or "").strip():
-        said = await handle_add_message({"conversation_id": conv.id, "text": user_report.strip()}, someone)
+    opening = opening_text(diagnosis, user_report, desk=desk)
+    if opening:
+        said = await handle_add_message({"conversation_id": conv.id, "text": opening}, someone)
         if not isinstance(said, ApiSuccessResponse):
             logger.warning("[diagnose-share] request text not written to %s: %s", conv.id, said.message)
             return False
