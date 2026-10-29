@@ -9,12 +9,12 @@ from __future__ import annotations
 class AppHub:
     """The ``HubTransport`` a help desk source is built over."""
 
-    async def get(self, entity_type, entity_id, action):
+    async def get(self, entity_type, entity_id, action, *, params=None):
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
         try:
-            return await HubProxy.call("GET", entity_type, entity_id, action)
+            return await HubProxy.call("GET", entity_type, entity_id, action, params=params)
         except HubError as exc:
             raise hub_refusal(exc, signed_in=bool(self.me())) from exc
 

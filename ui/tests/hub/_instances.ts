@@ -180,6 +180,15 @@ export const jsonApi = (apiUrl: string, p: string, method = 'GET', body?: unknow
     body: body === undefined ? undefined : JSON.stringify(body),
   }).then((r) => r.json());
 
+/** The id of the help desk source an instance already holds for `deskId` (ensure_sources makes
+ *  one at sign-in), or null. A test that attaches a desk deletes only a source IT created --
+ *  deleting the held one strips the staff of their real desk until the next sign-in. */
+export async function heldDeskSourceId(apiUrl: string, deskId: string): Promise<string | null> {
+  const body: any = await jsonApi(apiUrl, '/graph/data_source');
+  const rows: any[] = Array.isArray(body?.data) ? body.data : [];
+  return rows.find((d) => d.provider === 'helpdesk' && d.config?.desk_project_id === deskId)?.id ?? null;
+}
+
 /** Raw POST to an instance's /api/v1 — actions the SDK doesn't wrap
  *  (add_message with asset_references, body upload/download, attachment
  *  install/uninstall). */

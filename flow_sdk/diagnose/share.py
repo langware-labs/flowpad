@@ -23,6 +23,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.schema.data_spec.help_request_spec import HelpRecipient, HelpRecipientKind
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ class Shared(BaseModel):
 
 
 def desk_conversation_id(conversation_id: str) -> str:
-    return str(uuid.uuid5(_DESK_NAMESPACE, conversation_id))
+    return mint_uuid(conversation_id, namespace=_DESK_NAMESPACE)
 
 
 def recipients_label(recipients: list[HelpRecipient]) -> str:
