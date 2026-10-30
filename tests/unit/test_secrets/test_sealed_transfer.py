@@ -99,7 +99,7 @@ class Install:
         self.hub.caller = self.user
         with monkeypatch.context() as m:
             m.setattr(st, "_user_id", lambda: self.user)
-            m.setattr(st, "device_id", lambda: self.device)
+            m.setattr(st, "_new_device_id", lambda: self.device)
             m.setattr(st, "_state_dir", lambda: self.state)
             previous = st.set_key_store(self.keys)
             try:
@@ -295,6 +295,40 @@ async def test_an_unsigned_key_swap_is_not_followed(world, monkeypatch):
     assert sent["cannot_receive"] == ["bob"]
 
 
+async def test_an_install_that_lost_its_keys_starts_as_a_new_device(world, monkeypatch):
+    """A reset keychain must not lock the install out (the hub refuses an unsigned swap of a device's key): the keys
+    start over under a NEW device id, the old advert is withdrawn, and members trust the new device on first use."""
+    hub, inst = world
+    for who in ("alice", "bob"):
+        await publish(inst[who], monkeypatch)
+    with inst["alice"].acting(monkeypatch):
+        await st.member_keys(CONV)  # alice pins bob-mac
+    inst["bob"].keys.clear()
+    inst["bob"].device = "bob-mac-2"  # what the real minter does: instance id + a fresh suffix
+    await publish(inst["bob"], monkeypatch)
+    assert sorted(hub.keys["bob"]) == ["bob-mac-2"]  # the old device's advert is gone
+    sent = await share(world, monkeypatch)
+    assert sent["sealed_for"] == ["bob"]
+    with inst["bob"].acting(monkeypatch):
+        card = (await st.incoming(CONV))[0]
+        await st.fill(CONV, card["message_id"], project_id=inst["bob"].project.id)
+    assert env_of(inst["bob"])["ACME_GMAIL_APP_PASSWORD"] == SECRET
+
+
+async def test_a_keyring_from_before_device_ids_is_published_under_its_new_device(world, monkeypatch):
+    """An install upgraded from a keyring without a device id gets one — and publishes under it even though its key
+    did not change (the hub held that key under the old id)."""
+    hub, inst = world
+    await publish(inst["bob"], monkeypatch)
+    legacy = inst["bob"].keys.load()
+    legacy.pop("device_id")
+    inst["bob"].keys.save(legacy)
+    inst["bob"].device = "bob-mac-upgraded"
+    await publish(inst["bob"], monkeypatch)
+    assert sorted(hub.keys["bob"]) == ["bob-mac-upgraded"]
+    assert inst["bob"].keys.load()["device_id"] == "bob-mac-upgraded", "the minted id is saved, not re-minted per load"
+
+
 async def test_values_fill_only_what_the_receivers_credential_declares(world, monkeypatch):
     hub, inst = world
     for who in ("alice", "bob"):
@@ -350,7 +384,7 @@ def _fixed_values(values):
 async def test_seal_and_fill_refuse_a_worker_or_a_served_app(world):
     from starlette.requests import Request
 
-    from flow_sdk.app.actions.credentials_action import _from_a_person
+    from flow_sdk.server.middleware.cookie_gate_middleware import from_flowpad_ui as _from_a_person
 
     def req(headers):
         return Request({"type": "http", "headers": [(k.encode(), v.encode()) for k, v in headers.items()]})

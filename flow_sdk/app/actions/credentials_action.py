@@ -102,7 +102,7 @@ async def credentials_action() -> ApiResponse:
                 spec = await set_credential_by_name(
                     payload.get("name") or "", payload.get("values") or {},
                     project_id=payload.get("project_id"), deployment_id=payload.get("deployment_id"),
-                    choice=payload.get("choice") or "",
+                    choice=payload.get("choice") or "", read_files=bool(payload.get("read_files")),
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "declare":
@@ -186,67 +186,52 @@ async def credentials_action() -> ApiResponse:
 
 # ── secured transfer (``flow_sdk/secrets/sealed_transfer.py``) ──────────────
 #
-#   GET  /credentials/sealed/receivers?conversation_id=   → {user_id: ok | no_key}
-#   POST /credentials/sealed/seal     {typeid, conversation_id, recipients}  (a person's click only)
-#   GET  /credentials/sealed/sent?conversation_id=        → the sender's transfers and who answered
-#   GET  /credentials/sealed/incoming?conversation_id=    → this device's cards, names only
-#   POST /credentials/sealed/fill     {conversation_id, message_id, project_id?}  (a person's click only)
-#   POST /credentials/sealed/decline  {conversation_id, message_id}
+#   GET  /credentials/sealed/state?conversation_id=       → {incoming, sent} — the conversation's card, one hub read
+#   GET  /credentials/sealed/{receivers|incoming|sent}?conversation_id=
 #   GET  /credentials/sealed/device                       → this device's key id (expert view)
+#   POST /credentials/sealed/seal     {typeid, conversation_id, recipients?}  (Flowpad's own UI only)
+#   POST /credentials/sealed/fill     {conversation_id, message_id, project_id?}  (Flowpad's own UI only)
+#   POST /credentials/sealed/decline  {conversation_id, message_id}
 #   POST /credentials/sealed/publish  {rotate?}           → publish / rotate / withdraw this device's key
 
-
-def _from_a_person(request) -> bool:
-    """A click in Flowpad's own UI — not a worker or the CLI (they present the gate secret as a header) and not a
-    web app Flowpad serves (its page is under a service endpoint; a page cannot forge the browser's Referer)."""
-    from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME  # noqa: PLC0415
-
-    if request.headers.get(HEADER_NAME):
-        return False
-    referer = str(request.headers.get("referer") or "")
-    return "/service_endpoint/" not in referer and "/service/" not in referer
+_SEALED_GET = {"state": "state", "receivers": "receivers", "incoming": "incoming", "sent": "sent_status"}
+#: Sharing or filling in values is a person's click — never a worker, the CLI or a served app.
+_FROM_THE_UI_ONLY = {"seal", "fill"}
 
 
 async def _sealed(method: str, verb: str, request) -> ApiResponse:
     from flow_sdk.secrets import sealed_transfer as st  # noqa: PLC0415
     from flow_sdk.secrets.sealed import SealedError  # noqa: PLC0415
+    from flow_sdk.server.middleware.cookie_gate_middleware import from_flowpad_ui  # noqa: PLC0415
 
     try:
         if method == "GET":
-            params = request.query_params
-            conv = params.get("conversation_id") or ""
-            if verb == "receivers":
-                return ApiSuccessResponse(data=await st.receivers(conv))
-            if verb == "sent":
-                return ApiSuccessResponse(data=await st.sent_status(conv))
-            if verb == "incoming":
-                return ApiSuccessResponse(data=await st.incoming(conv))
             if verb == "device":
                 return ApiSuccessResponse(data=st.key_info())
-        else:
-            try:
-                payload = await request.json()
-            except Exception:  # noqa: BLE001
-                payload = {}
-            payload = payload if isinstance(payload, dict) else {}
-            conv = payload.get("conversation_id") or ""
-            if verb in ("seal", "fill") and not _from_a_person(request):
-                return ApiFailResponse(
-                    message="sharing or filling in values takes a click in Flowpad", data={"error_code": "human_only"},
-                    status_code=403,
-                )  # fmt: skip
-            if verb == "seal":
-                recipients = [str(r) for r in payload.get("recipients") or []]
-                return ApiSuccessResponse(data=await st.seal_credential(payload.get("typeid") or "", conv, recipients))
-            if verb == "fill":
-                return ApiSuccessResponse(data=await st.fill(conv, payload.get("message_id") or "",
-                                                             project_id=payload.get("project_id")))  # fmt: skip
-            if verb == "decline":
-                return ApiSuccessResponse(data=await st.decline(conv, payload.get("message_id") or ""))
-            if verb == "publish":
-                advert = await st.publish_device_key(rotate=bool(payload.get("rotate")))
-                return ApiSuccessResponse(data={"key_id": advert.key_id if advert else None, **st.key_info()})
-        return ApiFailResponse(message=f"Unknown {method} credentials/sealed/{verb}")
+            if verb in _SEALED_GET:
+                fn = getattr(st, _SEALED_GET[verb])
+                return ApiSuccessResponse(data=await fn(request.query_params.get("conversation_id") or ""))
+            return ApiFailResponse(message=f"Unknown GET credentials/sealed/{verb}")
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        if verb in _FROM_THE_UI_ONLY and not from_flowpad_ui(request):
+            return ApiFailResponse(message="sharing or filling in values takes a click in Flowpad",
+                                   data={"error_code": "human_only"}, status_code=403)  # fmt: skip
+        conv, msg = body.get("conversation_id") or "", body.get("message_id") or ""
+        post = {
+            "seal": lambda: st.seal_credential(body.get("typeid") or "", conv, [str(r) for r in body.get("recipients") or []]),
+            "fill": lambda: st.fill(conv, msg, project_id=body.get("project_id")),
+            "decline": lambda: st.decline(conv, msg),
+        }
+        if verb in post:
+            return ApiSuccessResponse(data=await post[verb]())
+        if verb == "publish":
+            advert = await st.publish_device_key(rotate=bool(body.get("rotate")))
+            return ApiSuccessResponse(data={**st.key_info(), **({"key_id": advert.key_id} if advert else {})})
+        return ApiFailResponse(message=f"Unknown POST credentials/sealed/{verb}")
     except SealedError as e:
         return ApiFailResponse(message=str(e), data={"error_code": e.code}, status_code=400)
     except Exception as e:  # noqa: BLE001

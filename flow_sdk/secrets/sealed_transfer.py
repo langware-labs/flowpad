@@ -5,11 +5,10 @@ published to the hub (``<user>/device_key``); other members' keys are read ONLY 
 conversation (``conversation/<id>/list_members/device_keys``) and pinned on first use, following a rotation only
 through its signed chain (``sealed.accept_advert``).
 
-On the hub a transfer is two kinds of FlowMessage that never materialize locally (:func:`is_hub_only`):
-``sealed_value`` — the envelope in ``metadata`` — and ``sealed_ack`` — "filled" / "declined", no value. The
-sender deletes the envelope once every recipient answered. Values are read from this computer's store, sealed in
-memory, and written on the receiver through the credential writer with ``literal=True``; nothing here logs,
-returns or stores a value.
+On the hub a transfer is two hub-only FlowMessage kinds (``FlowMessageKind.hub_only``): ``sealed_value`` — the
+envelope in ``metadata`` — and ``sealed_ack`` — "filled" / "declined", no value. The sender deletes the envelope once
+every recipient answered. Values are read from this computer's store, sealed in memory, and written on the receiver
+through the credential writer as given; nothing here logs, returns or stores a value.
 """
 
 from __future__ import annotations
@@ -17,10 +16,12 @@ from __future__ import annotations
 import json
 import logging
 import socket
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, Protocol
 
+from flow_sdk.builtin.flow_message import FlowMessageKind
 from flow_sdk.schema.data_spec.sealed_value_spec import DeviceKeyAdvertSpec, SealedValueSpec
 from flow_sdk.secrets.sealed import (
     DeviceKeyPair,
@@ -34,18 +35,23 @@ from flow_sdk.secrets.sealed import (
 
 logger = logging.getLogger(__name__)
 
-SEALED_KIND = "sealed_value"
-ACK_KIND = "sealed_ack"
-HUB_ONLY_KINDS = frozenset({SEALED_KIND, ACK_KIND})
+SEALED_KIND = FlowMessageKind.SEALED_VALUE.value
+ACK_KIND = FlowMessageKind.SEALED_ACK.value
 #: A device rotates its keys this often; the retired keys stay until what was sealed to them expired.
 ROTATE_AFTER = timedelta(days=30)
 DEVICE_KEYS = "device_keys"
 FILLED, DECLINED = "filled", "declined"
 
 
-def is_hub_only(payload: Any) -> bool:
-    """A sealed value or its ack: relayed by the hub, never a local chat row."""
-    return isinstance(payload, dict) and str(payload.get("kind") or "") in HUB_ONLY_KINDS
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _hub():
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+
+    return HubProxy, BuiltinEntityType
 
 
 async def on_sealed_arrival(conversation_id: str) -> None:
@@ -66,37 +72,44 @@ async def on_sealed_arrival(conversation_id: str) -> None:
 class KeyStore(Protocol):
     def load(self) -> Optional[dict]: ...
     def save(self, data: dict) -> None: ...
-    def clear(self) -> None: ...
 
 
 class KeychainKeyStore:
-    """The OS keychain entry ``Flowpad.ai.device_key`` / ``<instance>`` — the same mechanism as the vault's key."""
+    """The OS keychain entry ``Flowpad.ai.device_key`` / ``<instance>`` — stored the way the vault's own key is: the
+    signed, ACL-restricted slot when the vendored flow-rs binary is enabled, else ``keyring`` directly."""
 
     SERVICE = "Flowpad.ai.device_key"
 
-    def _user(self) -> str:
+    def _account(self) -> tuple[bool, str]:
+        from flow_sdk.flow_rs_binary import FLOW_RS_ACCOUNT_SUFFIX, vendored_flow_rs_enabled  # noqa: PLC0415
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-        return get_instance_settings().instance_name or "prod"
+        name = get_instance_settings().instance_name or "prod"
+        restricted = vendored_flow_rs_enabled()
+        return restricted, f"{name}{FLOW_RS_ACCOUNT_SUFFIX}" if restricted else name
 
     def load(self) -> Optional[dict]:
-        import keyring  # noqa: PLC0415
+        restricted, account = self._account()
+        if restricted:
+            from flow_sdk.flow_rs_binary import flow_rs_get_restricted  # noqa: PLC0415
 
-        raw = keyring.get_password(self.SERVICE, self._user())
+            raw = flow_rs_get_restricted(self.SERVICE, account)
+        else:
+            import keyring  # noqa: PLC0415
+
+            raw = keyring.get_password(self.SERVICE, account)
         return json.loads(raw) if raw else None
 
     def save(self, data: dict) -> None:
-        import keyring  # noqa: PLC0415
+        restricted, account = self._account()
+        if restricted:
+            from flow_sdk.flow_rs_binary import flow_rs_set_restricted  # noqa: PLC0415
 
-        keyring.set_password(self.SERVICE, self._user(), json.dumps(data))
+            flow_rs_set_restricted(self.SERVICE, account, json.dumps(data))
+        else:
+            import keyring  # noqa: PLC0415
 
-    def clear(self) -> None:
-        import keyring  # noqa: PLC0415
-
-        try:
-            keyring.delete_password(self.SERVICE, self._user())
-        except Exception:  # noqa: BLE001 — nothing stored is the cleared state
-            pass
+            keyring.set_password(self.SERVICE, account, json.dumps(data))
 
 
 _key_store: KeyStore = KeychainKeyStore()
@@ -109,10 +122,19 @@ def set_key_store(store: KeyStore) -> KeyStore:
     return previous
 
 
-def device_id() -> str:
+def _new_device_id() -> str:
+    """This install's id plus a fresh suffix — a new device each time the keys start over."""
+    import secrets  # noqa: PLC0415
+
     from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
-    return instance_uid()
+    return f"{instance_uid()}.{secrets.token_hex(4)}"
+
+
+def device_id() -> str:
+    """The device these keys belong to (``DeviceKeyring.device_id``); before any keys exist, the one they will get."""
+    stored = _key_store.load()
+    return str((stored or {}).get("device_id") or "") or load_keyring()[0].device_id
 
 
 def _user_id() -> str:
@@ -139,90 +161,83 @@ def _state_dir() -> Path:
 
 
 def _read_json(name: str) -> dict:
-    path = _state_dir() / name
-    try:
-        return json.loads(path.read_text()) if path.is_file() else {}
-    except (OSError, ValueError):
-        return {}
+    from flow_sdk.instances.atomic import read_json  # noqa: PLC0415
+
+    return read_json(_state_dir() / name)
 
 
 def _write_json(name: str, data: dict) -> None:
-    path = _state_dir() / name
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, sort_keys=True))
-    tmp.replace(path)
+    from flow_sdk.instances.atomic import write_json_atomic  # noqa: PLC0415
+
+    write_json_atomic(_state_dir() / name, data)
 
 
-def load_keyring(*, now: Optional[datetime] = None) -> tuple[DeviceKeyring, Optional[DeviceKeyPair]]:
-    """This install's keyring, created on first use and rotated when due. Answers ``(keyring, previous)`` —
-    ``previous`` is the generation just rotated away from (it countersigns the new advert), else None."""
-    now = now or datetime.now(timezone.utc)
+def load_keyring(*, now: Optional[datetime] = None, rotate: bool = False) -> tuple[DeviceKeyring, Optional[DeviceKeyPair]]:
+    """This install's keyring — created on first use, rotated when due (or when ``rotate``), saved only when it
+    changed. Answers ``(keyring, previous)``: ``previous`` is the generation just rotated away from (it countersigns
+    the new advert), else None."""
+    now = now or _now()
     stored = _key_store.load()
+    ring = DeviceKeyring.load(stored) if stored else DeviceKeyring(DeviceKeyPair.generate(now), device_id=_new_device_id())
+    before = ring.dump() if stored else None  # before ANY change below, so each one is saved
+    if not ring.device_id:  # a keyring written before device ids lived beside the keys
+        ring.device_id = _new_device_id()
+    ring.prune(now)
     previous = None
-    if stored is None:
-        ring = DeviceKeyring(DeviceKeyPair.generate(now))
-    else:
-        ring = DeviceKeyring.load(stored)
-        ring.prune(now)
-        if datetime.fromisoformat(ring.current.created_at) + ROTATE_AFTER <= now:
-            previous = ring.rotate(now)
-    _key_store.save(ring.dump())
-    return ring, previous
-
-
-def rotate_now() -> tuple[DeviceKeyring, DeviceKeyPair]:
-    """Rotate on demand (settings' expert view): a new generation, countersigned by the current one."""
-    ring, _ = load_keyring()
-    previous = ring.rotate()
-    _key_store.save(ring.dump())
+    if rotate or datetime.fromisoformat(ring.current.created_at) + ROTATE_AFTER <= now:
+        previous = ring.rotate(now)
+    if ring.dump() != before:
+        _key_store.save(ring.dump())
     return ring, previous
 
 
 def current_advert(ring: DeviceKeyring, previous: Optional[DeviceKeyPair] = None) -> DeviceKeyAdvertSpec:
     return make_advert(
-        ring.current, user_id=_user_id(), device_id=device_id(), device_name=socket.gethostname(), previous=previous
+        ring.current, user_id=_user_id(), device_id=ring.device_id, device_name=socket.gethostname(), previous=previous
     )
 
 
 async def publish_device_key(*, rotate: bool = False) -> Optional[DeviceKeyAdvertSpec]:
-    """Publish (or rotate) this install's advert on the hub; withdraw it when secure receiving is off.
-    Idempotent — the hub replaces the advert in place."""
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
+    """Publish (or rotate) this install's advert on the hub; withdraw it when secure receiving is off. Asks the hub
+    only when something changed: the key it last published is recorded in ``published.json``."""
+    HubProxy, Types = _hub()
     if not receiving_enabled():
         await withdraw_device_key()
         return None
-    ring, previous = rotate_now() if rotate else load_keyring()
+    ring, previous = load_keyring(rotate=rotate)
+    published = _read_json("published.json")
+    if previous is None and published == {**published, "key_id": ring.current.key_id, "user_id": _user_id(),
+                                           "device_id": ring.device_id}:
+        return None  # the hub already holds this key, for this device and user
+    if published.get("device_id") and published["device_id"] != ring.device_id:
+        await withdraw_device_key()  # the keys started over: the old device's advert names a key nobody holds
     advert = current_advert(ring, previous)
-    await HubProxy.call(
-        "PUT", BuiltinEntityType.USER, _user_id(), "device_key", payload={"advert": advert.model_dump(mode="json")}
-    )
-    _write_json("published.json", {"key_id": advert.key_id, "at": datetime.now(timezone.utc).isoformat()})
+    await HubProxy.call("PUT", Types.USER, _user_id(), "device_key", payload={"advert": advert.model_dump(mode="json")})
+    _write_json("published.json", {"key_id": advert.key_id, "user_id": advert.user_id, "device_id": advert.device_id,
+                                   "at": _now().isoformat()})  # fmt: skip
     return advert
 
 
 async def withdraw_device_key() -> None:
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
-    await HubProxy.try_call(
-        "DELETE", BuiltinEntityType.USER, _user_id(), "device_key", params={"device_id": device_id()}
-    )
+    """Remove this install's advert from the hub — once: nothing published, nothing to ask."""
+    published = _read_json("published.json")
+    if not published:
+        return
+    HubProxy, Types = _hub()
+    await HubProxy.try_call("DELETE", Types.USER, _user_id(), "device_key",
+                            params={"device_id": published.get("device_id") or device_id()})  # fmt: skip
+    _write_json("published.json", {})
 
 
 def key_info() -> dict:
     """The expert view: this device's key id and when it was last published — never a key."""
     stored = _key_store.load()
-    ring = DeviceKeyring.load(stored) if stored else None
-    return {
-        "receiving": receiving_enabled(),
-        "device_id": device_id(),
-        "key_id": ring.current.key_id if ring else None,
-        "created_at": ring.current.created_at if ring else None,
-        "retired": len(ring.retired) if ring else 0,
-        "published": _read_json("published.json") or None,
-    }
+    info: dict[str, Any] = {"receiving": receiving_enabled(), "device_id": (stored or {}).get("device_id"), "key_id": None,
+                            "created_at": None, "retired": 0, "published": _read_json("published.json") or None}
+    if stored:
+        ring = DeviceKeyring.load(stored)
+        info.update(key_id=ring.current.key_id, created_at=ring.current.created_at, retired=len(ring.retired))
+    return info
 
 
 # ── members' keys (only through the conversation's members action) ──────────
@@ -232,10 +247,8 @@ async def member_keys(conversation_id: str) -> dict[str, list[DeviceKeyAdvertSpe
     """``{user_id: [trusted advert]}`` for the conversation's members. Each advert is checked against what this
     install pinned for that device: first use pins it, a rotation is followed only through its signature chain,
     anything else is dropped (the member then shows as unable to receive)."""
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
-    rows = await HubProxy.call("GET", BuiltinEntityType.CONVERSATION, conversation_id, "list_members", DEVICE_KEYS)
+    HubProxy, Types = _hub()
+    rows = await HubProxy.call("GET", Types.CONVERSATION, conversation_id, "list_members", DEVICE_KEYS)
     pins = _read_json("pins.json")
     out: dict[str, list[DeviceKeyAdvertSpec]] = {}
     changed = False
@@ -274,38 +287,38 @@ async def receivers(conversation_id: str) -> dict[str, str]:
 
 
 async def _hub_messages(conversation_id: str) -> list[dict]:
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
-    rows = await HubProxy.call("GET", BuiltinEntityType.FLOW_MESSAGE, scope=[("conversation", conversation_id)])
+    HubProxy, Types = _hub()
+    rows = await HubProxy.call("GET", Types.FLOW_MESSAGE, scope=[("conversation", conversation_id)])
     return [m for m in rows or [] if isinstance(m, dict)]
 
 
 async def _post(conversation_id: str, kind: str, metadata: dict) -> dict:
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
-    return await HubProxy.call(
-        "POST", BuiltinEntityType.CONVERSATION, conversation_id, "add_message",
-        payload={"text": "", "kind": kind, "metadata": metadata},
-    )  # fmt: skip
+    HubProxy, Types = _hub()
+    return await HubProxy.call("POST", Types.CONVERSATION, conversation_id, "add_message",
+                               payload={"text": "", "kind": kind, "metadata": metadata})  # fmt: skip
 
 
 async def _remove(conversation_id: str, message_id: str) -> None:
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
-    await HubProxy.try_call(
-        "POST", BuiltinEntityType.CONVERSATION, conversation_id, "remove_message", payload={"flow_message_id": message_id}
-    )
+    HubProxy, Types = _hub()
+    await HubProxy.try_call("POST", Types.CONVERSATION, conversation_id, "remove_message",
+                            payload={"flow_message_id": message_id})  # fmt: skip
 
 
 def _envelope(msg: dict) -> Optional[SealedValueSpec]:
-    raw = ((msg.get("metadata") or {}) if isinstance(msg.get("metadata"), dict) else {}).get(SEALED_KIND)
+    if msg.get("kind") != SEALED_KIND:
+        return None
+    raw = (msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}).get(SEALED_KIND)
     try:
         return SealedValueSpec.model_validate(raw) if raw else None
     except ValueError:
         return None
+
+
+def _envelopes(messages: list[dict]):
+    """``(message, envelope)`` for every sealed value among ``messages``."""
+    for m in messages:
+        if (env := _envelope(m)) is not None:
+            yield m, env
 
 
 def _acks(messages: list[dict]) -> dict[str, dict[str, str]]:
@@ -319,6 +332,37 @@ def _acks(messages: list[dict]) -> dict[str, dict[str, str]]:
         if tid and outcome in (FILLED, DECLINED) and m.get("sender_id"):
             out.setdefault(tid, {})[str(m["sender_id"])] = outcome
     return out
+
+
+@dataclass
+class _Snapshot:
+    """One read of a conversation's secured transfers: its hub messages, their acks and the members' trusted keys —
+    fetched once per request, never per message. A conversation with no sealed value asks for no keys."""
+
+    conversation_id: str
+    messages: list[dict]
+    acks: dict[str, dict[str, str]]
+    keys: dict[str, list[DeviceKeyAdvertSpec]]
+
+    @classmethod
+    async def read(cls, conversation_id: str) -> "_Snapshot":
+        messages = await _hub_messages(conversation_id)
+        has_sealed = any(m.get("kind") == SEALED_KIND for m in messages)
+        keys = await member_keys(conversation_id) if has_sealed else {}
+        return cls(conversation_id, messages, _acks(messages), keys)
+
+    def find(self, message_id: str) -> tuple[dict, SealedValueSpec]:
+        for m, env in _envelopes(self.messages):
+            if str(m.get("id")) == message_id:
+                return m, env
+        raise SealedError("gone", "the shared values are no longer there — ask the sender to share again")
+
+    def sender_advert(self, message: dict, env: SealedValueSpec) -> DeviceKeyAdvertSpec:
+        sender = str(message.get("sender_id") or "")
+        advert = next((a for a in self.keys.get(sender, []) if a.device_id == env.sender_device_id), None)
+        if advert is None:
+            raise SealedError("unknown_sender", "the sender's key is not known here")
+        return advert
 
 
 # ── send ────────────────────────────────────────────────────────────────────
@@ -338,9 +382,8 @@ async def seal_credential(credential_typeid: str, conversation_id: str, recipien
     spec = await get_credential(credential_typeid)
     if spec is None:
         raise SealedError("no_credential", "credential not found")
-    names = list(spec.stored_var_names())
     _, project = await scope_of(spec)
-    values = await resolve_project_secrets(project, only=names, placement=await Placement.of(None))
+    values = await resolve_project_secrets(project, only=list(spec.stored_var_names()), placement=await Placement.of(None))
     if not values:
         raise SealedError("no_values", f"{spec.title or spec.name} has no values on this computer to share")
 
@@ -357,7 +400,7 @@ async def seal_credential(credential_typeid: str, conversation_id: str, recipien
     if previous is not None:  # a due rotation: publish it before sealing with the new key
         await publish_device_key()
     env = seal(
-        ring.current, sender_user_id=me, sender_device_id=device_id(), conversation_id=conversation_id,
+        ring.current, sender_user_id=me, sender_device_id=ring.device_id, conversation_id=conversation_id,
         recipients=[a for u in sealed_for for a in keys[u]], credential_name=spec.name,
         credential_title=spec.title or spec.name, values=values,
     )  # fmt: skip
@@ -365,83 +408,80 @@ async def seal_credential(credential_typeid: str, conversation_id: str, recipien
     return {"transfer_id": env.transfer_id, "sealed_for": sealed_for, "cannot_receive": cannot, "variables": sorted(values)}
 
 
-async def sent_status(conversation_id: str) -> list[dict]:
+async def _sent(snap: _Snapshot) -> list[dict]:
     """The sender's view: per transfer it sent here, who filled / declined / is still pending. A transfer every
-    recipient answered has its envelope deleted from the hub."""
+    recipient answered (or that expired) has its envelope deleted from the hub."""
     me = _user_id()
-    messages = await _hub_messages(conversation_id)
-    acks = _acks(messages)
-    keys: Optional[dict] = None
-    out = []
-    for m in messages:
-        env = _envelope(m) if m.get("kind") == SEALED_KIND and str(m.get("sender_id")) == me else None
-        if env is None:
+    owner = {a.device_id: uid for uid, ads in snap.keys.items() for a in ads}
+    out, done = [], []
+    for m, env in _envelopes(snap.messages):
+        if str(m.get("sender_id")) != me:
             continue
-        if keys is None:
-            keys = {a.device_id: uid for uid, ads in (await member_keys(conversation_id)).items() for a in ads}
-        recipients = sorted({keys.get(r.device_id, "") for r in env.recipients} - {""})
-        answered = acks.get(env.transfer_id, {})
+        recipients = sorted({owner.get(r.device_id, "") for r in env.recipients} - {""})
+        answered = snap.acks.get(env.transfer_id, {})
         state = {uid: answered.get(uid, "pending") for uid in recipients}
-        expired = datetime.fromisoformat(env.expires_at) <= datetime.now(timezone.utc)
-        if recipients and all(s != "pending" for s in state.values()) or expired:
-            await _remove(conversation_id, str(m["id"]))
+        expired = datetime.fromisoformat(env.expires_at) <= _now()
+        if expired or (recipients and "pending" not in state.values()):
+            done.append(str(m["id"]))
         out.append({"message_id": m["id"], "transfer_id": env.transfer_id, "expires_at": env.expires_at,
                     "recipients": state, "expired": expired})  # fmt: skip
+    for message_id in done:
+        await _remove(snap.conversation_id, message_id)
     return out
-
-
-# ── receive ─────────────────────────────────────────────────────────────────
 
 
 def _seen() -> set[str]:
     return set(_read_json("seen.json").get("transfers") or [])
 
 
-def _mark_seen(transfer_id: str) -> None:
-    seen = _seen() | {transfer_id}
-    _write_json("seen.json", {"transfers": sorted(seen)})
-
-
-async def _open(conversation_id: str, message: dict, env: SealedValueSpec):
-    keys = await member_keys(conversation_id)
-    sender = str(message.get("sender_id") or "")
-    advert = next((a for a in keys.get(sender, []) if a.device_id == env.sender_device_id), None)
-    if advert is None:
-        raise SealedError("unknown_sender", "the sender's key is not known here")
-    stored = _key_store.load()
-    if stored is None:
-        raise SealedError("key_gone", "this device has no keys")
-    return open_sealed(
-        env, DeviceKeyring.load(stored), device_id=device_id(), sender_advert=advert, sender_user_id=sender,
-        conversation_id=conversation_id, seen=_seen(),
-    )  # fmt: skip
-
-
-async def incoming(conversation_id: str) -> list[dict]:
+async def _incoming(snap: _Snapshot) -> list[dict]:
     """The receiver's cards: every sealed value here addressed to this device — names only, never a value.
     ``state``: ``pending`` | ``filled`` | ``declined`` | an error code (``expired``, ``bad_signature``, …)."""
     me, mine = _user_id(), device_id()
-    messages = await _hub_messages(conversation_id)
-    acks = _acks(messages)
+    stored = _key_store.load()
+    ring = DeviceKeyring.load(stored) if stored else None
+    seen = _seen()
     out = []
-    for m in messages:
-        env = _envelope(m) if m.get("kind") == SEALED_KIND else None
-        if env is None or not any(r.device_id == mine for r in env.recipients):
+    for m, env in _envelopes(snap.messages):
+        if not any(r.device_id == mine for r in env.recipients):
             continue
         card = {"message_id": m["id"], "transfer_id": env.transfer_id, "sender_id": m.get("sender_id"),
                 "sender_name": m.get("sender_name"), "expires_at": env.expires_at}  # fmt: skip
-        answered = acks.get(env.transfer_id, {}).get(me)
+        answered = snap.acks.get(env.transfer_id, {}).get(me)
         if answered:
             out.append({**card, "state": answered})
             continue
         try:
-            payload = await _open(conversation_id, m, env)
+            if ring is None:
+                raise SealedError("key_gone", "this device has no keys")
+            payload = open_sealed(env, ring, device_id=mine, sender_advert=snap.sender_advert(m, env),
+                                  sender_user_id=str(m.get("sender_id") or ""), conversation_id=snap.conversation_id,
+                                  seen=seen)  # fmt: skip
             card.update(state="pending", credential_name=payload.credential_name,
                         credential_title=payload.credential_title, variables=sorted(payload.values))  # fmt: skip
         except SealedError as e:
             card.update(state=e.code, error=str(e))
         out.append(card)
     return out
+
+
+async def state(conversation_id: str) -> dict:
+    """Both views from ONE read of the hub: ``{incoming, sent}`` — what the conversation's card shows."""
+    snap = await _Snapshot.read(conversation_id)
+    if not snap.keys:
+        return {"incoming": [], "sent": []}
+    return {"incoming": await _incoming(snap), "sent": await _sent(snap)}
+
+
+async def incoming(conversation_id: str) -> list[dict]:
+    return (await state(conversation_id))["incoming"]
+
+
+async def sent_status(conversation_id: str) -> list[dict]:
+    return (await state(conversation_id))["sent"]
+
+
+# ── receive ─────────────────────────────────────────────────────────────────
 
 
 async def _target_credential(name: str, project_id: Optional[str]):
@@ -468,21 +508,20 @@ async def fill(conversation_id: str, message_id: str, *, project_id: Optional[st
     """Open the sealed value and write it into this computer's own credential, then tell the sender (no value)."""
     from flow_sdk.builtin.credential_service import _reverify_waiting_sources, set_credential_values  # noqa: PLC0415
 
-    message = next((m for m in await _hub_messages(conversation_id) if str(m.get("id")) == message_id), None)
-    env = _envelope(message) if message else None
-    if env is None:
-        raise SealedError("gone", "the shared values are no longer there — ask the sender to share again")
-    payload = await _open(conversation_id, message, env)
+    snap = await _Snapshot.read(conversation_id)
+    message, env = snap.find(message_id)
+    stored = _key_store.load()
+    if stored is None:
+        raise SealedError("key_gone", "this device has no keys")
+    payload = open_sealed(env, DeviceKeyring.load(stored), device_id=device_id(),
+                          sender_advert=snap.sender_advert(message, env), sender_user_id=str(message.get("sender_id") or ""),
+                          conversation_id=conversation_id, seen=_seen())  # fmt: skip
     spec = await _target_credential(payload.credential_name, project_id)
-    declared = set(spec.vars or {})
-    extra = sorted(set(payload.values) - declared)
+    extra = sorted(set(payload.values) - set(spec.vars or {}))
     if extra:
         raise SealedError("undeclared", f"{', '.join(extra)} is not a variable of {spec.name}; nothing was written")
-    await set_credential_values(
-        str(spec.typeid), {k: v.get_secret_value() for k, v in payload.values.items()}, literal=True
-    )
-    _mark_seen(env.transfer_id)
-    await _post(conversation_id, ACK_KIND, {"transfer_id": env.transfer_id, "outcome": FILLED})
+    await set_credential_values(str(spec.typeid), {k: v.get_secret_value() for k, v in payload.values.items()})
+    await _answer(conversation_id, env.transfer_id, FILLED)
     try:
         await _reverify_waiting_sources(spec.name, getattr(spec, "project", None))
     except Exception:  # noqa: BLE001 — the values are in; a source re-check is best effort
@@ -491,24 +530,22 @@ async def fill(conversation_id: str, message_id: str, *, project_id: Optional[st
 
 
 async def decline(conversation_id: str, message_id: str) -> dict:
-    message = next((m for m in await _hub_messages(conversation_id) if str(m.get("id")) == message_id), None)
-    env = _envelope(message) if message else None
-    if env is None:
-        raise SealedError("gone", "the shared values are no longer there")
-    _mark_seen(env.transfer_id)
-    await _post(conversation_id, ACK_KIND, {"transfer_id": env.transfer_id, "outcome": DECLINED})
+    _, env = (await _Snapshot.read(conversation_id)).find(message_id)
+    await _answer(conversation_id, env.transfer_id, DECLINED)
     return {"declined": env.transfer_id}
 
 
+async def _answer(conversation_id: str, transfer_id: str, outcome: str) -> None:
+    """Remember the transfer as opened (no replay), then tell the sender — the outcome, never a value."""
+    _write_json("seen.json", {"transfers": sorted(_seen() | {transfer_id})})
+    await _post(conversation_id, ACK_KIND, {"transfer_id": transfer_id, "outcome": outcome})
+
+
 __all__ = [
-    "ACK_KIND",
-    "HUB_ONLY_KINDS",
-    "SEALED_KIND",
     "KeychainKeyStore",
     "decline",
     "fill",
     "incoming",
-    "is_hub_only",
     "key_info",
     "member_keys",
     "on_sealed_arrival",
@@ -517,5 +554,6 @@ __all__ = [
     "seal_credential",
     "sent_status",
     "set_key_store",
+    "state",
     "withdraw_device_key",
 ]

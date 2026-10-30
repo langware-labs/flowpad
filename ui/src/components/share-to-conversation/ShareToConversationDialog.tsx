@@ -182,7 +182,7 @@ export function ShareToConversationDialog({
   // A credential's values: off = only its description travels; on = by secured transfer or a secret manager.
   const [shareValues, setShareValues] = useState(false);
   const [valuesRoute, setValuesRoute] = useState<'secured' | 'manager'>('secured');
-  const [secureValues, setSecureValues] = useState(false);
+  const secureValues = shareValues && valuesRoute === 'secured';
   const [sealOutcome, setSealOutcome] = useState<SealedSealResult | null>(null);
   const [dontAsk, setDontAsk] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
@@ -422,11 +422,7 @@ export function ShareToConversationDialog({
   );
   const continuePreShare = useCallback(() => {
     const answer = preShare.answer;
-    if (!shareValues) return preShareFinished();
-    if (valuesRoute === 'secured') {
-      setSecureValues(true);
-      return preShareFinished();
-    }
+    if (!shareValues || valuesRoute === 'secured') return preShareFinished();
     if (answer?.vaults?.length) return void publishToVault(answer.vaults[0]);
     setStep('secret-vault');
   }, [preShare.answer, shareValues, valuesRoute, preShareFinished, publishToVault]);

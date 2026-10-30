@@ -121,7 +121,7 @@ def _set(
     port = discover_port(required=False)
     if port is not None:
         payload = {"name": name, "values": values, "project_id": _project_id(port, project_id),
-                   "deployment_id": deployment_id, "choice": choice}
+                   "deployment_id": deployment_id, "choice": choice, "read_files": True}
         return post_graph_json(f"{_url(port)}/set", payload, on_error=_refused)
 
     async def here() -> dict:
@@ -130,7 +130,8 @@ def _set(
         project = await _project(project_id)
         try:
             spec = await set_credential_by_name(
-                name, values, project_id=str(project.id) if project else None, deployment_id=deployment_id, choice=choice
+                name, values, project_id=str(project.id) if project else None, deployment_id=deployment_id, choice=choice,
+                read_files=True,
             )
         except CredentialError as e:
             fail(EXIT_NOT_YET, e.code or "REFUSED", str(e))
@@ -231,9 +232,9 @@ def check_credential(
 
     why = why_not_ready(row)
     if ready and row.get("has_test") and not deployment:
-        tested = _test(name, row.get("project_id"))
         # Only a REJECTED key holds setup back; a test that could not run (no network, a missing tool) is
         # this computer's problem, not the key's.
+        tested = _test(name, row.get("project_id"))
         if tested.get("state") == "invalid":
             ready, why = False, f"the provider rejected the key: {tested.get('detail') or 'rejected'}"
     ok({"name": name, "declared": row is not None, "ready": ready, "missing": missing, **({"detail": why} if why else {})})

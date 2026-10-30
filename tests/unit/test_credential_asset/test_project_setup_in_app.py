@@ -87,7 +87,7 @@ async def test_a_file_value_can_name_a_file_to_read(project, tmp_path):
     key = tmp_path / "key.json"
     key.write_text(SA_KEY)
 
-    await credential_service.set_credential_values(str(spec.typeid), {"GOOGLE_APPLICATION_CREDENTIALS": f"@{key}"})
+    await credential_service.set_credential_values(str(spec.typeid), {"GOOGLE_APPLICATION_CREDENTIALS": f"@{key}"}, read_files=True)
 
     assert Path(_stored(project, "GOOGLE_APPLICATION_CREDENTIALS")).read_text() == SA_KEY
 

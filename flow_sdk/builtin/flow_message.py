@@ -100,6 +100,15 @@ class FlowMessageKind(str, Enum):
     USER = "user"
     INVITATION = "invitation"
     SESSION_EVENT = "session_event"
+    #: Secured transfer (``flow_sdk/secrets/sealed_transfer.py``): a sealed credential value and its answer. They
+    #: live on the hub only — opaque ``metadata`` the hub relays — and never become a local row (:meth:`hub_only`).
+    SEALED_VALUE = "sealed_value"
+    SEALED_ACK = "sealed_ack"
+
+    @classmethod
+    def hub_only(cls, value: "str | None") -> bool:
+        """A kind that stays on the hub: ``materialize_flow_message`` refuses it, so no path makes it a chat row."""
+        return value in (cls.SEALED_VALUE.value, cls.SEALED_ACK.value)
 
     @classmethod
     def sendable(cls, value: "str | None") -> "FlowMessageKind | None":

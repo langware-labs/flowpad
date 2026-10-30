@@ -126,10 +126,14 @@ class DeviceKeyPair:
 
 @dataclass
 class DeviceKeyring:
-    """A device's current keys plus the ones it rotated away from, kept until what was sealed to them expires."""
+    """A device's current keys plus the ones it rotated away from, kept until what was sealed to them expires.
+
+    ``device_id`` is minted WITH the first keys and lives beside them: an install that loses its keyring (a reset
+    keychain) starts as a new device, trusted afresh — never as an unsigned key swap of its old self."""
 
     current: DeviceKeyPair
     retired: list[tuple[DeviceKeyPair, str]] = field(default_factory=list)  # (keys, keep_until iso)
+    device_id: str = ""
 
     def rotate(self, now: Optional[datetime] = None) -> DeviceKeyPair:
         """A new generation; the old one is kept for :data:`SEALED_TTL` so envelopes in flight still open."""
@@ -150,13 +154,15 @@ class DeviceKeyring:
         return None
 
     def dump(self) -> dict:
-        return {"current": self.current.dump(), "retired": [{"keys": k.dump(), "keep_until": u} for k, u in self.retired]}
+        return {"current": self.current.dump(), "device_id": self.device_id,
+                "retired": [{"keys": k.dump(), "keep_until": u} for k, u in self.retired]}
 
     @classmethod
     def load(cls, data: Mapping) -> "DeviceKeyring":
         return cls(
             DeviceKeyPair.load(data["current"]),
             [(DeviceKeyPair.load(r["keys"]), str(r["keep_until"])) for r in data.get("retired") or []],
+            str(data.get("device_id") or ""),
         )
 
 

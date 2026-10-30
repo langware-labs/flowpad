@@ -169,6 +169,35 @@ any process reads: a process still reads its deployment's binding (above).
 The `onepassword` secret manager (`agentic-assets/secret_manager/onepassword/store.py`) runs the `op` CLI as whoever is signed in
 on the machine; a value never rides its command line (writes go as a JSON template on stdin).
 
+## Between people — by secured transfer
+
+Sharing a credential shares its description (which keys, how to set them up). Its VALUES go only when the
+sharer checks **Share values** in the share dialog's first step (`Credential.pre_share` → kind `credential_values`)
+and picks **Secured transfer** or **Secret manager** (above). Secured transfer needs no infrastructure:
+
+- **Device keys** — each install holds an Ed25519 (sign) + X25519 (seal) key pair in the OS keychain
+  (`Flowpad.ai.device_key/<instance>`), never in the vault or on the hub. Its signed public advert
+  (`DeviceKeyAdvertSpec`, kind `secrets.device_key`) is published to the hub on every verified sign-in
+  (`<user>/device_key`); preference `preferences.sharing.secure_receiving` (default on) — off withdraws it.
+  Keys rotate every 30 days (or on demand, `credentials/sealed/publish {rotate}`); the new advert is countersigned by
+  the old key, retired keys are kept until what was sealed to them expired (7 days).
+- **Reading a member's key** — ONLY through a members action of an entity both share:
+  `conversation/<id>/list_members/device_keys` (gated like `list_members`). Pinned on first use; a rotation is followed
+  only through its signed chain, any other key change is refused (the member shows as unable to receive).
+- **Send** — `credentials/sealed/seal` (a person's click only: refused with the CLI gate header or from a served app
+  page): values read from this computer's store, sealed in memory for every recipient device
+  (`flow_sdk/secrets/sealed.py`, `SealedValueSpec`), posted as a hub-only `sealed_value` message — names are inside the
+  ciphertext, the hub relays opaque metadata.
+- **Receive** — `credentials/sealed/incoming` lists this device's cards (names only); **Fill in**
+  (`credentials/sealed/fill`) verifies the sender against the hub-stamped sender's pinned key, checks conversation,
+  expiry and replay, decrypts in memory and writes through the credential writer with `literal=True` (a file value
+  is never read as an `@path`) — only variables the receiver's own credential declares. Then a `sealed_ack`
+  (no value); the sender deletes the envelope once every recipient answered.
+
+Code: `flow_sdk/secrets/sealed.py` (crypto, pure), `flow_sdk/secrets/sealed_transfer.py` (keys, hub, writer),
+hub `flowpad/hub/builtin/device_key.py`. Tests: `tests/unit/test_secrets/test_sealed*.py`, hub
+`tests/api/test_device_key.py`, end to end `ui/tests/hub/credential_secure_share_two_client{,.ui}.test.ts`.
+
 ## Resolution — what a process receives
 
 `flow_sdk/builtin/credential_resolver.py`:

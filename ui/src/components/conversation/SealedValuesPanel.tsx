@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { credentialsService, type SealedCard, type SealedSent } from '@sdk';
-import { isHubOnly } from '@src/navigation/hub-runtime';
+import { credentialsService, dataContext, type SealedCard, type SealedSent } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 
@@ -20,11 +19,10 @@ export function SealedValuesPanel({ conversationId, version }: { conversationId:
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!conversationId || isHubOnly()) return;
-    const [incoming, mine] = await Promise.all([
-      credentialsService.sealedIncoming(conversationId).catch(() => []),
-      credentialsService.sealedSent(conversationId).catch(() => []),
-    ]);
+    if (!conversationId || !dataContext.caps.localFiles) return; // sealed values live in this machine's store
+    const { incoming, sent: mine } = await credentialsService
+      .sealedState(conversationId)
+      .catch(() => ({ incoming: [] as SealedCard[], sent: [] as SealedSent[] }));
     setCards(incoming);
     setSent(mine);
   }, [conversationId]);

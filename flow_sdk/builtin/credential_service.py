@@ -119,10 +119,11 @@ async def _deployment(deployment_id: Optional[str]) -> "Deployment":
 
 
 async def _write_values(
-    spec: "Credential", scope: CredentialScope, values: dict[str, Any], placement: Placement, *, literal: bool = False
+    spec: "Credential", scope: CredentialScope, values: dict[str, Any], placement: Placement, *, read_files: bool = False
 ) -> None:
-    """``literal``: values that came from someone else (a secured transfer) are written as given — a file
-    variable's ``@path`` shortcut, which reads a file on THIS machine, never applies to them."""
+    """Values are written as given. ``read_files``: the CLI's ``VAR=@path`` shortcut for a file variable (read a key
+    file on THIS machine) — only the CLI's own input asks for it; no other caller (HTTP, a secured transfer) can make
+    the writer read a local file."""
     from flow_sdk.builtin.env_local_store import EnvLocalNotWritable  # noqa: PLC0415
 
     unknown = sorted(set(values) - set(spec.vars or {}))
@@ -135,7 +136,7 @@ async def _write_values(
         raise CredentialError("an LLM provider key has no per-environment value; deployments are hub-funded")
     # A file var's content, read now: the pattern is checked against it, not against an ``@path``.
     values = {
-        name: _file_content(str(v)) if spec.vars[name].kind is CredentialVarKind.FILE and v not in (None, "") and not literal else v
+        name: _file_content(str(v)) if spec.vars[name].kind is CredentialVarKind.FILE and v not in (None, "") and read_files else v
         for name, v in values.items()
     }
     for env_var, value in values.items():
@@ -330,13 +331,13 @@ async def _auto_declaration(manifest: dict, scope: CredentialScope, project: Opt
 
 
 async def set_credential_values(
-    typeid: str, values: dict[str, Any], deployment_id: Optional[str] = None, *, literal: bool = False
+    typeid: str, values: dict[str, Any], deployment_id: Optional[str] = None, *, read_files: bool = False
 ) -> "Credential":
     """Set or rotate the values ``deployment_id`` (default: this computer) reads. Empty values are
-    skipped, never cleared. ``literal``: see :func:`_write_values`."""
+    skipped, never cleared. ``read_files``: see :func:`_write_values`."""
     placement = await Placement.of(await _deployment(deployment_id))
     spec, target_scope, _ = await _owned_credential(typeid)
-    await _write_values(spec, target_scope, dict(values or {}), placement, literal=literal)
+    await _write_values(spec, target_scope, dict(values or {}), placement, read_files=read_files)
     return spec
 
 
@@ -401,9 +402,10 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
 
 async def set_credential_by_name(
     name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None,
-    choice: str = "",
+    choice: str = "", read_files: bool = False,
 ) -> "Credential":
-    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed. ``choice`` names
+    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed. ``read_files``: the
+    CLI's ``VAR=@path`` shortcut (:func:`_write_values`). ``choice`` names
     the ONE_OF way set up here when it holds no value (a sign-in through Flowpad); a value given for exactly one
     way chooses that way by itself."""
     project = await get_project(project_id)
@@ -413,7 +415,7 @@ async def set_credential_by_name(
     if not has_values and not choice:
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
-    stored = await set_credential_values(str(spec.typeid), values, deployment_id) if has_values else spec
+    stored = await set_credential_values(str(spec.typeid), values, deployment_id, read_files=read_files) if has_values else spec
     # The way the values were given for: every ONE_OF value given names its way — one way, and it is the choice.
     ways = sorted({way for var, value in (values or {}).items() if str(value or "") and (way := spec.way_of(var))})
     if way := choice or (ways[0] if len(ways) == 1 else ""):

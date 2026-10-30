@@ -467,6 +467,14 @@ export class CredentialsService {
     return ((await dataManager.callAction<unknown, Record<string, 'ok' | 'no_key'>>(action)) ?? {}) as Record<string, 'ok' | 'no_key'>;
   }
 
+  /** The conversation's secured transfers in ONE read: this device's cards and the sender's transfers. */
+  async sealedState(conversationId: string): Promise<{ incoming: SealedCard[]; sent: SealedSent[] }> {
+    const action = this.action('sealed/state', 'GET');
+    action.queryParameters = { conversation_id: conversationId };
+    const res = await dataManager.callAction<unknown, { incoming?: SealedCard[]; sent?: SealedSent[] }>(action);
+    return { incoming: res?.incoming ?? [], sent: res?.sent ?? [] };
+  }
+
   /** This device's cards in the conversation — what was sealed for it, names only. */
   async sealedIncoming(conversationId: string): Promise<SealedCard[]> {
     const action = this.action('sealed/incoming', 'GET');

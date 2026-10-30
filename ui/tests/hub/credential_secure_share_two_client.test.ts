@@ -228,10 +228,13 @@ describe('secured transfer through the real hub', () => {
 
     const fresh = await ok(sealed(alice, 'seal', { typeid: credTypeid, conversation_id: convId, recipients: [bobHub.user.id] }), 'seal 5');
     expect(fresh.sealed_for).toEqual([bobHub.user.id]);  // Alice followed the countersigned rotation, no prompt
-    const keysUsed = (await hubMessages(bobHub.token))
-      .filter((m) => [inFlight.transfer_id, fresh.transfer_id].includes(m.metadata?.sealed_value?.transfer_id))
-      .map((m) => m.metadata.sealed_value.recipients[0].key_id);
-    expect(new Set(keysUsed)).toEqual(new Set([oldKey, rotated.key_id]));
+    // Every copy each envelope carries (Bob may have more than one device on record); the old key sealed the
+    // in-flight one, the rotated key the fresh one.
+    const keysOf = async (tid: string) => (await hubMessages(bobHub.token))
+      .find((m) => m.metadata?.sealed_value?.transfer_id === tid)
+      ?.metadata.sealed_value.recipients.map((r: any) => r.key_id) ?? [];
+    expect(await keysOf(inFlight.transfer_id)).toContain(oldKey);
+    expect(await keysOf(fresh.transfer_id)).toContain(rotated.key_id);
 
     const rows: any[] = await pollUntil(async () => {
       const r: any[] = (await incoming(bob)).data ?? [];

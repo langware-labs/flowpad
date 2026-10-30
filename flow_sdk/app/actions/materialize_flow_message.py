@@ -20,7 +20,7 @@ from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.conversation import Conversation, conversation_row_lock
-from flow_sdk.builtin.flow_message import FlowMessage, derive_session_fields, session_snapshot_from_header
+from flow_sdk.builtin.flow_message import FlowMessage, FlowMessageKind, derive_session_fields, session_snapshot_from_header
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
@@ -193,7 +193,7 @@ async def materialize_flow_message(
     notify: bool = True,
     emit_live_create: bool = False,
     remote: bool = False,
-) -> FlowMessage:
+) -> Optional[FlowMessage]:
     """Create or upsert a FlowMessage, append its pointer to the conversation,
     project ``message_ids`` / ``message_count``, and (optionally) notify.
 
@@ -219,6 +219,8 @@ async def materialize_flow_message(
     Local-origin producers (e.g. draft send) leave it ``False``; those paths
     flip ``remote`` themselves after a successful hub push.
     """
+    if FlowMessageKind.hub_only(str(payload.get("kind") or "")):
+        return None  # a hub-only kind (a sealed value) is read from the hub, never kept as a local row
     payload = dict(payload)  # don't mutate caller's dict
     payload.setdefault("conversation_id", conversation_id)
 

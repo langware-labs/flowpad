@@ -88,13 +88,17 @@ describe('secured transfer — the journey in the UI', () => {
     expect(await alice.page.getByTestId('share-values-route-note').textContent()).toMatch(/only they can open them/);
     await shot(alice, '02-share-values-secured');
     await alice.page.getByTestId('share-preshare-continue').click();
+    // The share's own next step may ask to link the project to the cloud first — Skip, as a person would.
+    const skip = alice.page.getByTestId('share-skip-link');
+    if (await skip.waitFor({ timeout: 5_000 }).then(() => true, () => false)) await skip.click();
 
     // The standard recipient step, with the secured line; pick Bob, new conversation, Share.
-    await alice.page.getByTestId('share-secured-line').waitFor({ timeout: 20_000 }).catch(() => undefined);
+    await alice.page.getByTestId('share-secured-line').waitFor({ timeout: 20_000 });
+    await shot(alice, '03a-recipients-secured');
     await driveShareDialog(alice.page, { recipientEmail: process.env.BOB_EMAIL!.trim() });
     const outcome = alice.page.getByTestId('share-sealed-outcome');
     await outcome.waitFor({ timeout: 30_000 });
-    await shot(alice, '03-shared-values-sealed');
+    await shot(alice, '03b-shared-values-sealed');
     expect(await outcome.textContent()).toMatch(/sealed for 1/);
 
     // The conversation the share created (Alice's newest).
