@@ -99,7 +99,8 @@ export function useConversationSession(opts: {
         const convTypeIdString = conversation.id
           ? new TypeId(Conversation.type, conversation.id).toString()
           : undefined;
-        // A message launch stamps the message on the process and keys it to the conversation —
+        // Every launch keys the process to the conversation (the chip query matches on it); a
+        // message launch also stamps the message —
         // `useMessageSessions` reads that back as the chip on the message.
         const messageTypeIdString = messageId ? new TypeId(FlowMessage.type, messageId).toString() : undefined;
         const shared = [convTypeIdString, messageTypeIdString].filter((x): x is string => !!x);
@@ -117,7 +118,7 @@ export function useConversationSession(opts: {
           enableAssistant: true,
           processType: ProcessKind.Conversation,
           sharedContextEntities: shared.length ? shared : undefined,
-          ...(messageTypeIdString && convTypeIdString ? { target: convTypeIdString } : {}),
+          ...(convTypeIdString ? { target: convTypeIdString } : {}),
         });
         // Save the worker into the conversation's context so it surfaces as the
         // conversationProcess and is the target for per-message append.

@@ -106,3 +106,13 @@ describe('a reused session shows on every message it was started from', () => {
     expect(sessionMessageIds(proc)).toEqual([String(a.id), String(b.id)]);
   });
 });
+
+describe('every launch keys the session to the conversation', () => {
+  it('a header launch sets target, so a later message reuse still shows its chip', async () => {
+    vi.clearAllMocks();
+    const spy = vi.spyOn(AgenticProcess, 'launch').mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440009' } as never);
+    const { result } = render(conversation(false));
+    await act(async () => result.current.launch('claude_code'));
+    expect(spy.mock.calls[0][0]).toMatchObject({ target: 'conversation-550e8400-e29b-41d4-a716-446655440003' });
+  });
+});
