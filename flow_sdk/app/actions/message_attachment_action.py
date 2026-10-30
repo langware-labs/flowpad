@@ -138,7 +138,8 @@ async def _setup_after_install(
     file case). Only a type that actually spawns a setup session loads the entity
     and calls ``Entity.setup_on_receive``. ``auto_run=False`` forces that plain
     open even for a setup-capable type — Git Download defers setup to the explicit
-    ``setup`` action. Best-effort — a setup failure never fails the install."""
+    ``setup`` action. A ``receive_handler`` type (its own ``setup_on_receive``, no skill) is dispatched
+    like a setup-capable one — and held back by ``auto_run=False`` the same way. Best-effort — a setup failure never fails the install."""
     from flow_sdk.core.display_target import entity_target  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -146,7 +147,8 @@ async def _setup_after_install(
     if shared_file is not None:
         return shared_file
     info = SchemaRegistry.get(ma.asset_type)
-    if not auto_run or info is None or not getattr(info, "setup_skill", None):
+    handler = info is not None and getattr(info, "receive_handler", False)
+    if not auto_run or info is None or not (handler or getattr(info, "setup_skill", None)):
         return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
 
     cls = SchemaRegistry.get_entity_cls(ma.asset_type)
@@ -1312,6 +1314,73 @@ async def report_share_mismatch_action() -> ApiResponse:
     if not request_info or not request_info.target_entity_typeid:
         return ApiFailResponse(message="No request info found", status_code=400)
     return await handle_share_reply(str(request_info.target_entity_typeid.id), SHARE_MISMATCH_KEY)
+
+
+SECRET_ACCESS_REQUEST_KEY = "secret_access_request"
+
+
+async def handle_secret_access_request(credential_id: str, vault: str, someone_typeid=None) -> ApiResponse:
+    """Ask the sharer of credential ``credential_id`` for access to ``vault`` — a share reply in the
+    conversation the credential arrived through, carrying only names (vault, manager, who asks), so
+    the sharer's ``ShareReplyCard`` offers **Approve** (``credentials/grant``). Never a value.
+    """
+    import json  # noqa: PLC0415
+
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
+    from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    received = [
+        ma
+        for ma in await MessageAttachment.get_all({"match": {"asset_type": "credential", "asset_id": credential_id}})
+        if ma.conversation_id
+    ]
+    if not received:
+        return ApiFailResponse(message="this credential did not arrive in a conversation", status_code=400)
+    ma = max(received, key=lambda m: str(getattr(m, "created_at", "") or ""))
+    cred = await Credential.get_one({"id": credential_id})
+    project = await Project.get_one({"id": cred.project_id}) if cred is not None and cred.project_id else None
+    root = getattr(project, "fs_storage_mount_path", None)
+    spec = read_secret_vaults(Path(root)).get(vault) if root else None
+    if spec is None:
+        return ApiFailResponse(message=f"unknown vault: {vault!r}", status_code=400)
+    sender = await User.current_sender_participant(None)
+    who = sender.get("name") or sender.get("email") or "The receiver"
+    detail = {
+        "requester_name": sender.get("name"),
+        "requester_email": sender.get("email"),
+        "vault": vault,
+        "manager": spec.manager,
+        "asset_name": ma.name or getattr(cred, "name", None),
+    }
+    return await handle_add_message(
+        {
+            "conversation_id": ma.conversation_id,
+            "message": f"Secret access request: {who} asks for access to vault {vault}",
+            "attachment": [
+                {
+                    "attachment_type": AttachmentType.URL.value,
+                    "data": f"secret-vault:{vault}",
+                    "prompt_preview": json.dumps({SECRET_ACCESS_REQUEST_KEY: detail}),
+                }
+            ],
+        },
+        someone_typeid or await _local_owner_typeid(),
+    )
+
+
+@action.post(action_name="request-secret-access", types=["credential"])
+async def request_secret_access_action() -> ApiResponse:
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    body = await request_info.get_post_data() or {}
+    vault = str(body.get("vault") or "")
+    if not vault:
+        return ApiFailResponse(message="vault is required", status_code=400)
+    return await handle_secret_access_request(str(request_info.target_entity_typeid.id), vault)
 
 
 @action.post(action_name="setup", types=["message_attachment"])

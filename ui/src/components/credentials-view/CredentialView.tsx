@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertTriangle, Check, CircleDashed, ExternalLink, Pencil, Trash2 } from 'lucide-react';
-import { credentialsService, CredentialRequirement, dataContext, groupSatisfied, holdsValue, isRequired } from '@sdk';
+import { credentialsService, CredentialRequirement, dataContext, groupSatisfied, holdsValue, isRequired, TypeId } from '@sdk';
 import { credentialIcon, useCredentialState } from '@src/components/agent-resources/AgentCredentialsSection';
 import { buildCredentialRows } from './credential-rows';
 import { RequirementChip } from './RequirementChip';
+import { SecretVaultPanel } from './SecretVaultPanel';
 import { CredentialDialog } from '@src/components/credentials/CredentialDialog';
 import { editDraft, valuesDraft, type CredentialDraft } from '@src/components/credentials/credential-draft';
 import { useCredentials } from '@src/components/credentials/use-credentials';
@@ -145,6 +146,20 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
             </>
           )}
         </dl>
+
+        {row.scope === 'project' && source.vars.some(holdsValue) && (
+          <SecretVaultPanel
+            credentialId={new TypeId(row.typeid).id}
+            name={row.name}
+            title={row.title}
+            projectId={projectId}
+            projectName={dataContext.project?.name || t`This project`}
+            vaults={status?.secret_vaults ?? []}
+            refs={source.vars.filter(holdsValue).map((v) => ({ env_var: v.env_var, vault: v.secret_ref?.vault ?? null }))}
+            missing={source.vars.some((v) => holdsValue(v) && !v.present)}
+            onChanged={refresh}
+          />
+        )}
 
         <section aria-labelledby="credential-vars">
           <h2 id="credential-vars" className="mb-2 text-[13px] font-semibold">

@@ -528,6 +528,11 @@ msgstr "{0} — opened \"{fallbackName}\" instead."
 msgid "{0} · {1} · {2}ms"
 msgstr "{0} · {1} · {2}ms"
 
+#. placeholder {0}: f.label
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "{0} (optional)"
+msgstr "{0} (optional)"
+
 #. placeholder {0}: hot.info.from
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "{0} (self-call)"
@@ -1647,6 +1652,14 @@ msgstr "{pendingChanges} not published"
 #~ msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 #~ msgstr "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{projectName} has no secret manager"
+msgstr "{projectName} has no secret manager"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{projectName} has none, so its values have nowhere to come from."
+msgstr "{projectName} has none, so its values have nowhere to come from."
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "{projectName} is already shared"
 msgstr "{projectName} is already shared"
@@ -1807,6 +1820,14 @@ msgstr "{title} › Your own number"
 #: src/components/data-sources/source-attention.ts
 msgid "{title} sign-in needs renewing"
 msgstr "{title} sign-in needs renewing"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{title}: fetched from the vault"
+msgstr "{title}: fetched from the vault"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{title}: shared through vault {vault}"
+msgstr "{title}: shared through vault {vault}"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "{tokenCount} tokens"
@@ -2494,6 +2515,14 @@ msgstr "A team without a budget gets its own pool, drawn from this one."
 msgid "A thread quiet this long ends; the next message starts a new one. Empty — never."
 msgstr "A thread quiet this long ends; the next message starts a new one. Empty — never."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "A variable points at a vault the project does not declare."
+msgstr "A variable points at a vault the project does not declare."
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "A vault where this project's shared values live. Teammates fetch from it; values never go into Git or a message."
+msgstr "A vault where this project's shared values live. Teammates fetch from it; values never go into Git or a message."
+
 #: src/components/search-index/IndexRecommendedBanner.tsx
 msgid "a while ago"
 msgstr "a while ago"
@@ -2602,6 +2631,14 @@ msgstr "Access is managed on the hub."
 #: src/components/connections-manager.tsx
 msgid "Access requested"
 msgstr "Access requested"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Access to {projectName} vault {vault}"
+msgstr "Access to {projectName} vault {vault}"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Access to vault {vault} requested"
+msgstr "Access to vault {vault} requested"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -5629,6 +5666,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/ReplayDialog.tsx
@@ -5680,6 +5718,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/share-to-conversation/GitignoredNotice.tsx
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -8258,6 +8297,10 @@ msgstr "Could not end room"
 msgid "could not fetch — showing local copy"
 msgstr "could not fetch — showing local copy"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not fetch {title}"
+msgstr "Could not fetch {title}"
+
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #~ msgid "Could not fetch the dependencies"
 #~ msgstr "Could not fetch the dependencies"
@@ -8265,6 +8308,10 @@ msgstr "could not fetch — showing local copy"
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Could not fetch the packages"
 msgstr "Could not fetch the packages"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not fetch the values"
+msgstr "Could not fetch the values"
 
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
@@ -8334,6 +8381,10 @@ msgstr "Could not link this project."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Could not list budgets: {loadError}"
 msgstr "Could not list budgets: {loadError}"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Could not list the secret managers."
+msgstr "Could not list the secret managers."
 
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not load automations"
@@ -8464,6 +8515,10 @@ msgstr "Could not pause the cloud machine"
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not publish"
 msgstr "Could not publish"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not publish {title}"
+msgstr "Could not publish {title}"
 
 #: src/components/data-sources/source-parts.tsx
 #~ msgid "Could not pull {0}"
@@ -8742,6 +8797,10 @@ msgstr "Could not save the rule code"
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not save the snippet"
 msgstr "Could not save the snippet"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Could not save the vault."
+msgstr "Could not save the vault."
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not send"
@@ -13037,6 +13096,7 @@ msgstr "Feedback is off: this project has no chart-feedback dataset (chartit.fee
 #~ msgid "Feeds"
 #~ msgstr "Feeds"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
 msgstr "Fetch"
@@ -15179,6 +15239,10 @@ msgstr "Hunk {hunkNumber}: Lines {oldStart}–{oldEnd} → {newStart}–{newEnd}
 msgid "I invited you to project \"{0}\"."
 msgstr "I invited you to project \"{0}\"."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "I received the {title} credential, but {projectName} has no secret manager vault to fetch its values from. Please set one up on the project."
+msgstr "I received the {title} credential, but {projectName} has no secret manager vault to fetch its values from. Please set one up on the project."
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "I want…  (e.g. email, slack, calendar)"
 msgstr "I want…  (e.g. email, slack, calendar)"
@@ -16096,6 +16160,10 @@ msgstr "It shows up in Runs as a test."
 msgid "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "It was not written."
+msgstr "It was not written."
+
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "It was shared with you, but its files are not here yet."
 msgstr "It was shared with you, but its files are not here yet."
@@ -16651,6 +16719,7 @@ msgstr "Learn about duplicates"
 msgid "Learn about your data"
 msgstr "Learn about your data"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
@@ -20718,6 +20787,10 @@ msgstr "Not found"
 #~ msgid "Not in a git repository — can't be published"
 #~ msgstr "Not in a git repository — can't be published"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "not in a vault yet"
+msgstr "not in a vault yet"
+
 #~ msgid "Not indexed here yet — install it from its origin"
 #~ msgstr "Not indexed here yet — install it from its origin"
 
@@ -23509,6 +23582,10 @@ msgstr "Please fill in both fields"
 msgid "Please fix the issue in your repository and try again."
 msgstr "Please fix the issue in your repository and try again."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Please give me read access to vault {vault} of {projectName}, so I can fetch {title}."
+msgstr "Please give me read access to vault {vault} of {projectName}, so I can fetch {title}."
+
 #: src/components/credentials-view/LoginRequiredPanel.tsx
 msgid "Please log in to manage credentials."
 msgstr "Please log in to manage credentials."
@@ -24309,6 +24386,7 @@ msgstr "Public repos are already open to everyone."
 
 #: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
+#: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Publish"
 msgstr "Publish"
 
@@ -24795,6 +24873,10 @@ msgstr "Received project"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Received project — review before installing."
 msgstr "Received project — review before installing."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Receiving secrets requires a secret manager vault on the project."
+msgstr "Receiving secrets requires a secret manager vault on the project."
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Recency Boost"
@@ -25624,6 +25706,7 @@ msgstr "Repo:"
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Report"
 msgstr "Report"
@@ -25690,6 +25773,7 @@ msgid "Request"
 msgstr "Request"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Request access"
 msgstr "Request access"
 
@@ -25705,6 +25789,7 @@ msgstr "Request status"
 msgid "requested"
 msgstr "requested"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Requested"
 msgstr "Requested"
@@ -26852,6 +26937,7 @@ msgstr "Sandbox upgraded"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -27473,6 +27559,10 @@ msgstr "Secret created"
 #: src/components/account/secrets-section.tsx
 msgid "Secret deleted"
 msgstr "Secret deleted"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Secret manager"
+msgstr "Secret manager"
 
 #~ msgid "Secret Origin"
 #~ msgstr "Secret Origin"
@@ -28290,6 +28380,10 @@ msgstr "Set up LLM"
 msgid "Set up project"
 msgstr "Set up project"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Set up secret manager"
+msgstr "Set up secret manager"
+
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "Set up team budget"
 #~ msgstr "Set up team budget"
@@ -28596,6 +28690,11 @@ msgstr "Shared Task"
 #: src/pages/entry/MessageLanding.tsx
 msgid "Shared Task: {taskTitle}"
 msgstr "Shared Task: {taskTitle}"
+
+#. placeholder {0}: vaults.join(', ')
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Shared through the project's vaults: <0>{0}</0>"
+msgstr "Shared through the project's vaults: <0>{0}</0>"
 
 #: src/components/conversation/task-it.tsx
 msgid "Shared via cloud"
@@ -29018,6 +29117,11 @@ msgstr "Sign in first, then this source can fund a run."
 msgid "Sign in to {0}"
 msgstr "Sign in to {0}"
 
+#. placeholder {0}: chosen.title
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Sign in to {0} first, then save again."
+msgstr "Sign in to {0} first, then save again."
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Sign in to {name}"
 msgstr "Sign in to {name}"
@@ -29077,6 +29181,10 @@ msgstr "Sign in to see who's a member"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Sign in to the hub to deploy to a cloud machine."
 msgstr "Sign in to the hub to deploy to a cloud machine."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Sign in to the secret manager first (the project setup), then fetch again."
+msgstr "Sign in to the secret manager first (the project setup), then fetch again."
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
@@ -31096,6 +31204,10 @@ msgstr "The credential is removed from your account. No project is using it righ
 msgid "The credential was removed from your account."
 msgstr "The credential was removed from your account."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
+msgstr "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The credentials could not be saved."
 msgstr "The credentials could not be saved."
@@ -31619,6 +31731,10 @@ msgstr "The value is stored in your operating system keychain and never readable
 #: src/components/credentials-view/CredentialView.tsx
 msgid "the vault"
 msgstr "the vault"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "The vault holds no value for it yet — ask the owner to publish it."
+msgstr "The vault holds no value for it yet — ask the owner to publish it."
 
 #: src/components/assets/editor/GitShareBar.tsx
 msgid "The version that was shared with you"
@@ -32237,6 +32353,7 @@ msgstr "this project"
 #: src/components/automations/AutomationsList.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "This project"
 msgstr "This project"
@@ -34055,6 +34172,11 @@ msgstr "Variables"
 #~ msgid "Vault"
 #~ msgstr "Vault"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Vault name"
+msgstr "Vault name"
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Vault root"
 msgstr "Vault root"
@@ -35434,6 +35556,11 @@ msgstr "You have a message"
 msgid "You have access to this {label}."
 msgstr "You have access to this {label}."
 
+#. placeholder {0}: denied.join(', ')
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "You have no access to vault {0} yet."
+msgstr "You have no access to vault {0} yet."
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "You have no budget you can hand out."
 msgstr "You have no budget you can hand out."
@@ -35631,6 +35758,10 @@ msgstr "Your group status report is ready"
 #: src/components/help/AskForHelpButton.tsx
 msgid "Your help requests"
 msgstr "Your help requests"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Your local value of {credential} is copied into the vault, and the credential records where it is."
+msgstr "Your local value of {credential} is copied into the vault, and the credential records where it is."
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup and caption on this image will be lost."

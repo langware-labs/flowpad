@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from filelock import FileLock
 from pydantic import ValidationError
@@ -60,6 +60,7 @@ from flow_sdk.schema.data_spec.project_manifest_spec import (
     PublishedAssetSpec,
     normalize_env_file_path,
 )
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 from flow_sdk.tags.grammar import namespace_from_name
 
 MANIFEST_TYPE = "project_manifest"
@@ -348,6 +349,37 @@ def set_env_files(root: Path, paths: list[str]) -> ProjectManifestSpec:
             "and not the root .env.local (always read)"
         )
     return _set_field(root, "env_files", list(paths), clears=not paths)
+
+
+def read_secret_vaults(root: Path) -> dict[str, SecretVaultSpec]:
+    """The project's named secret vaults (empty: none). Never raises — read on every share and
+    receive of a credential."""
+    spec = _read_lenient(root)
+    return dict(spec.secret_vaults) if spec is not None else {}
+
+
+def set_secret_vault(root: Path, name: str, spec: Optional[Mapping[str, Any]]) -> ProjectManifestSpec:
+    """Add or replace (or, with None, remove) the vault ``name``; returns the manifest. The vault
+    must name a known secret manager — a typo is refused here, not discovered by the teammate
+    whose fetch then fails."""
+    name = (name or "").strip()
+    if not name:
+        raise ManifestError("secret vault: a name is required")
+    vaults = {k: v.model_dump() for k, v in read_secret_vaults(root).items()}
+    if spec is None:
+        if name not in vaults:
+            return _read(manifest_path(root), ProjectManifestSpec) or ProjectManifestSpec.empty()
+        vaults.pop(name)
+    else:
+        from flow_sdk.secrets.managers import get_manager  # noqa: PLC0415  (lazy: managers load assets)
+
+        try:
+            vault = SecretVaultSpec.model_validate(dict(spec))
+            get_manager(vault.manager)
+        except (KeyError, ValueError) as exc:
+            raise ManifestError(f"secret vault {name!r}: {exc}") from exc
+        vaults[name] = vault.model_dump()
+    return _set_field(root, "secret_vaults", vaults, clears=not vaults)
 
 
 def state_in_tree(root: Path, entry: PublishedAssetSpec) -> str:

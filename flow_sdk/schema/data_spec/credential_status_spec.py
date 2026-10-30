@@ -254,6 +254,9 @@ class CredentialsStatusSpec(DataSpec):
     vault_enabled: bool = False
     credentials: list[CredentialStatusRowSpec] = []
     files: list[ScopeFileStatusSpec] = []
+    #: The project's vault names (``secret_vaults`` in ``project_manifest.json``) — where a teammate's
+    #: values are fetched from. Empty: the project has none (or no project).
+    secret_vaults: list[str] = []
 
 
 class StoreForgottenSpec(DataSpec):

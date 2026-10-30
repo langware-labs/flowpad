@@ -65,6 +65,12 @@ async def credentials_action() -> ApiResponse:
             except ValueError as e:
                 return ApiFailResponse(message=str(e))
             return ApiSuccessResponse(data=status.model_dump(mode="json"))
+        if method == "GET" and sub_path in ("managers", "vaults"):
+            from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
+
+            if sub_path == "managers":
+                return ApiSuccessResponse(data={"managers": svc.list_managers()})
+            return ApiSuccessResponse(data=await svc.list_vaults(request_info.request.query_params.get("project_id") or ""))
         if method == "POST":
             payload = await request_info.get_post_data() or {}
             if sub_path == "save":
@@ -133,6 +139,21 @@ async def credentials_action() -> ApiResponse:
 
                 names = payload.get("names")
                 return ApiSuccessResponse(data=await use_mine(payload.get("deployment_id") or "", list(names) if names else None))
+            # The project's vaults (``credential_service``): values between people, names only.
+            if sub_path in ("publish", "fetch", "vault-check", "grant", "vault-set", "vault-remove"):
+                from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
+
+                pid, vault = payload.get("project_id") or "", payload.get("vault") or ""
+                if sub_path == "publish":
+                    return ApiSuccessResponse(data=await svc.publish(payload.get("name") or "", pid, vault))
+                if sub_path == "fetch":
+                    return ApiSuccessResponse(data=await svc.fetch(payload.get("name") or "", pid))
+                if sub_path == "vault-check":
+                    return ApiSuccessResponse(data=await svc.vault_check(pid, vault))
+                if sub_path == "grant":
+                    return ApiSuccessResponse(data=await svc.grant(pid, vault, payload.get("email") or ""))
+                spec = payload.get("spec") if sub_path == "vault-set" else None
+                return ApiSuccessResponse(data=await svc.set_vault(pid, payload.get("name") or "", spec))
             if sub_path == "audit":
                 from flow_sdk.builtin.credential_sweep import sweep_local  # noqa: PLC0415
 

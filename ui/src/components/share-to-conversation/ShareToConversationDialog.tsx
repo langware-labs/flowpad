@@ -25,6 +25,8 @@ import { useShareOwnerProject } from '@src/hooks/use-share-owner-project';
 import { useLinkProjectToCloud } from '@src/hooks/use-link-project-to-cloud';
 import { NO_PROJECT_ROLE, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
+import { SecretVaultPicker } from '@src/components/credentials/SecretVaultPicker';
+import { usePreShare } from '@src/hooks/use-pre-share';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { errorMessage } from '@src/lib/error-message';
@@ -168,7 +170,10 @@ export function ShareToConversationDialog({
   const owner = useShareOwnerProject(source.ownerRef, open);
   const [linkedProject, setLinkedProject] = useState<Project | null>(null);
   const owningProject = linkedProject ?? owner.project;
-  const [step, setStep] = useState<'loading' | 'changes' | 'link' | 'compose'>('loading');
+  const [step, setStep] = useState<'loading' | 'preshare' | 'secret-vault' | 'changes' | 'link' | 'compose'>('loading');
+  // The type's own pre-share step (a credential needs its project's secret manager) — shown first.
+  const preShare = usePreShare(source.preShareRef, open);
+  const [preShareDone, setPreShareDone] = useState(false);
   const [dontAsk, setDontAsk] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
   const [excludedRefs, setExcludedRefs] = useState<Set<string>>(new Set());
@@ -293,6 +298,7 @@ export function ShareToConversationDialog({
     setSkipMembership(false);
     setLinkedProject(null);
     setDontAsk(false);
+    setPreShareDone(false);
     setStep('loading');
     setAttachTranscript(true);
     setCreateBookmark(false);
@@ -373,10 +379,15 @@ export function ShareToConversationDialog({
   const carriesGit = gitCapable && preflight.available;
   useEffect(() => {
     if (!open || step !== 'loading' || owner.loading || !preferences.isLoaded) return;
+    if (!preShare.answered) return;
+    if (preShare.answer?.needed && !preShareDone) {
+      setStep('preshare');
+      return;
+    }
     if (gitCapable && !preflight.answered) return;
     if (gitCapable && preflight.fix) setStep('changes');
     else linkOrCompose();
-  }, [open, step, owner.loading, preferences.isLoaded, gitCapable, preflight.answered, preflight.fix, linkOrCompose]);
+  }, [open, step, owner.loading, preferences.isLoaded, preShare.answered, preShare.answer, preShareDone, gitCapable, preflight.answered, preflight.fix, linkOrCompose]);
   const [fixBusy, setFixBusy] = useState(false);
   const commitChanges = useCallback(async () => {
     const ref = source.gitPreflightRef;
@@ -657,6 +668,44 @@ export function ShareToConversationDialog({
           <div className="flex justify-center p-6">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
+        ) : !shared && step === 'preshare' ? (
+          <div className="flex flex-col gap-5 text-sm" data-testid="share-preshare-step">
+            <div>
+              <h2 className="text-lg font-semibold">{preShare.answer?.title || source.label}</h2>
+              <p className="text-muted-foreground">{preShare.answer?.detail}</p>
+            </div>
+            {preShare.answer?.kind === 'secret_vault' && (
+              <div>
+                <p>
+                  <Trans>
+                    The credential's spec travels with the project; its values travel only through the secret manager:
+                    your local value goes into it, and the spec carries the secret's location.
+                  </Trans>
+                </p>
+                <WikiButton wikiword="Secret managers" linkText={t`Learn more`} className="mt-2" />
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="outline" onClick={onClose} data-testid="share-preshare-cancel">
+                <Trans>Cancel</Trans>
+              </Button>
+              <Button onClick={() => setStep('secret-vault')} data-testid="share-preshare-setup">
+                <Trans>Set up secret manager</Trans>
+              </Button>
+            </div>
+          </div>
+        ) : !shared && step === 'secret-vault' && preShare.answer?.project_id ? (
+          <SecretVaultPicker
+            projectId={preShare.answer.project_id}
+            credential={preShare.answer.name}
+            onCancel={() => setStep('preshare')}
+            onDone={() => {
+              setPreShareDone(true);
+              // The manifest changed: the project's Git state did too — ask again before composing.
+              preflight.refetch();
+              setStep('loading');
+            }}
+          />
         ) : !shared && step === 'changes' ? (
           <div className="flex flex-col gap-5 text-sm" data-testid="share-changes-step">
             <p>

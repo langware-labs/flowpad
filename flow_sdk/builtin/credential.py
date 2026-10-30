@@ -16,6 +16,7 @@ value-free, structurally: every parse runs through ``assert_value_free``.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, FrozenSet, Optional
 
 from pydantic import field_validator
@@ -180,6 +181,78 @@ class Credential(SetupSkippable, Entity):
         if len(refs) != 1:
             raise LookupError(f"credential {self.name!r} keeps its variables in {len(refs)} stores here; ask per variable")
         return SecretStore.from_ref(next(iter(refs.values())))
+
+    # ── sharing: values travel only through the project's vaults ────────────────
+
+    def vault_names(self) -> list[str]:
+        """The vaults this credential's variables point into (``secret_ref.vault``), in manifest order, once each."""
+        return list(dict.fromkeys(v.secret_ref.vault for v in (self.vars or {}).values() if v.secret_ref is not None))
+
+    async def secret_vault_state(self, project: Optional["Project"] = None) -> dict[str, Any]:
+        """What sharing this credential's values needs: ``{holds_values, project_id, vaults, unpublished}`` —
+        ``vaults`` the project's declared vault names, ``unpublished`` the stored variables with no ref into one."""
+        from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
+        from flow_sdk.builtin.credential_store import scope_of  # noqa: PLC0415
+
+        if project is None:
+            _scope, project = await scope_of(self)
+        root = getattr(project, "fs_storage_mount_path", None) if project is not None else None
+        try:
+            vaults = sorted(read_secret_vaults(Path(root))) if root else []
+        except Exception:  # noqa: BLE001 — an unreadable manifest is "no vaults" to the person, never a crash
+            vaults = []
+        unpublished = [name for name in self.stored_var_names()
+                       if (ref := self.vars[name].secret_ref) is None or ref.vault not in vaults]
+        return {
+            "holds_values": bool(self.stored_var_names()),
+            "project_id": str(project.id) if project is not None else None,
+            "vaults": vaults,
+            "unpublished": unpublished,
+        }
+
+    async def pre_share(self) -> dict[str, Any]:
+        """The pre-share handler: a credential's values reach a receiver only through one of the project's
+        vaults, so sharing one whose stored variables are not all published to a declared vault asks first."""
+        state = await self.secret_vault_state()
+        if not state["holds_values"] or not state["unpublished"] or not state["project_id"]:
+            return {"needed": False}
+        detail = ("Sharing credentials requires a secret manager vault on the project." if not state["vaults"]
+                  else "Publish this credential's values to one of the project's vaults before sharing it.")
+        return {
+            "needed": True, "kind": "secret_vault", "project_id": state["project_id"], "name": self.name,
+            "title": f"Share {self.title or self.name}", "detail": detail, "vaults": state["vaults"],
+        }
+
+    async def setup_on_receive(self, *, project_id: str | None = None, workdir: str | None = None) -> dict:
+        """The receive handler: refresh the project (pull, then re-read its assets) so its manifest — and the
+        vaults it names — is current, then open this credential, whose page fetches the values. A project
+        with no vault this credential points into opens it with ``receive_error`` (code ``no_vault``), which
+        the page shows with Report. A failed refresh is logged and the credential still opens."""
+        import logging  # noqa: PLC0415
+
+        from flow_sdk.builtin.credential_service import get_project  # noqa: PLC0415
+        from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+
+        project = await get_project(project_id)
+        if project is not None:
+            try:
+                repo = await project.git_workdir()
+                if repo is not None and await repo.is_init():
+                    pulled = await repo.pull()
+                    if pulled.ok and pulled.kind == "pulled":
+                        await project.refresh_pulled_assets()
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger(__name__).warning("[credential] refresh on receive failed: %s", type(e).__name__)
+        target = _entity_payload(self)
+        if self.stored_var_names():
+            state = await self.secret_vault_state(project)
+            if not set(self.vault_names()) & set(state["vaults"]):
+                target["receive_error"] = {
+                    "code": "no_vault",
+                    "message": f"{self.title or self.name} was shared without a vault its values can be fetched "
+                               "from — ask the sender to set up a secret manager, or report it.",
+                }
+        return target
 
     @classmethod
     async def get(cls, name: str, project: Optional["Project"] = None) -> "Credential":

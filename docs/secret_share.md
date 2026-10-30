@@ -136,6 +136,38 @@ deleting the deployment revokes every authorization. `Deployment.secrets_invento
 (`GET deployment/<id>/secrets`) lists each stored name with its last write and placement and
 the authorizations — names only; the cloud place's **Secrets** tab shows it.
 
+## Between people — the project's secret manager
+
+A credential's values travel from one person to another ONLY through the project's **secret
+manager**: `secret_store` in `project_manifest.json`, a store ref (`{type, config, connection}`) —
+`gcp_secret_manager` or `onepassword` (the hub vault is not offered yet). It names a place, never a
+value, and travels with every clone. Each variable may carry a **secret ref** (`vars.<VAR>.secret_ref`,
+default: the variable's own name) — its key in that store. It is not where any process reads: a
+process still reads its deployment's binding (above).
+
+- **Publish** (`credential_service.publish_to_store`, `flow credentials publish <name>`,
+  `POST …/credentials/publish`): this computer's values into the secret manager, under each secret ref.
+- **Fetch** (`credential_service.fetch_values`, `flow credentials fetch <name>`, `POST …/credentials/fetch`):
+  the secret manager's values into this computer's store, through the same writer as `set` (so the
+  `.env.local` rules apply). Answers `{fetched, missing}`; refuses with `no_secret_store`,
+  `needs_connection` or `denied`.
+- **Project setup** fetches first: with a secret manager, every credential pack starts with a
+  `fetch-<name>` step on the pack's own check, so a full fetch skips its questions.
+- **Sharing** — the generic pre-share handler (`GET <type>/<id>/pre_share`, `Entity.pre_share`;
+  `{needed: false}` unless a type says otherwise). A credential that holds values answers `needed`
+  while its project has no secret manager; the share dialog then shows that step first (set one up,
+  publish), before the standard dialog.
+- **Receiving** — the generic receive handler (`TypeInfo.receive_handler` + the entity's
+  `setup_on_receive`; it runs in Git mode too). A credential refreshes its project (pull, re-read its
+  assets) so the manifest — and its secret manager — is current, then opens; its page offers Fetch,
+  or, with no secret manager, says so with **Report** (the ask-for-help path, `origin: credential`).
+- **Access** is the secret manager's own and is project-wide: a denied fetch offers **Request access**
+  through the same ask-for-help path, and the owner grants it in the store itself (GCP IAM
+  `roles/secretmanager.secretAccessor`; a 1Password vault share). Flowpad grants nothing itself yet.
+
+The `onepassword` store (`flow_sdk/secrets/onepassword.py`) runs the `op` CLI as whoever is signed in
+on the machine; a value never rides its command line (writes go as a JSON template on stdin).
+
 ## Resolution — what a process receives
 
 `flow_sdk/builtin/credential_resolver.py`:
@@ -239,7 +271,7 @@ Readiness **gates a cloud deploy**: `Agent.deploy_to_cloud` publishes, plans the
 placement, and raises `NotReady` (HTTP 409, `code: not_ready`, with the readiness and the
 planned deployment) before any machine is paid for; the hub checks the same names again
 (`require`). The deploy dialog renders that refusal with Use mine / Authorize per item.
-`flow agent deploy <agent> [--environment E]` exits 1 on it; `flow credentials check|set|status
+`flow agent deploy <agent> [--environment E]` exits 1 on it; `flow credentials check|set
 --deployment D` and `flow credentials diff <A|here> <B|here>` (which names each holds) work on
 one deployment's values.
 

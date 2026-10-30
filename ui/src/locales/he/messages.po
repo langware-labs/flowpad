@@ -526,6 +526,11 @@ msgstr "{0} — נפתח \"{fallbackName}\" במקומו."
 msgid "{0} · {1} · {2}ms"
 msgstr "{0} · {1} · {2}ms"
 
+#. placeholder {0}: f.label
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "{0} (optional)"
+msgstr ""
+
 #. placeholder {0}: hot.info.from
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "{0} (self-call)"
@@ -1637,6 +1642,14 @@ msgstr "{pendingChanges} טרם פורסמו"
 #~ msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 #~ msgstr ""
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{projectName} has no secret manager"
+msgstr ""
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{projectName} has none, so its values have nowhere to come from."
+msgstr ""
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "{projectName} is already shared"
 msgstr "{projectName} כבר משותף"
@@ -1794,6 +1807,14 @@ msgstr "{title} › המספר שלך"
 #: src/components/data-sources/source-attention.ts
 msgid "{title} sign-in needs renewing"
 msgstr "ההתחברות ל-{title} צריכה חידוש"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{title}: fetched from the vault"
+msgstr ""
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{title}: shared through vault {vault}"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "{tokenCount} tokens"
@@ -2478,6 +2499,14 @@ msgstr ""
 msgid "A thread quiet this long ends; the next message starts a new one. Empty — never."
 msgstr "שרשור שנשאר שקט למשך זמן זה נסגר; ההודעה הבאה פותחת שרשור חדש. ריק — לעולם לא."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "A variable points at a vault the project does not declare."
+msgstr ""
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "A vault where this project's shared values live. Teammates fetch from it; values never go into Git or a message."
+msgstr ""
+
 #: src/components/search-index/IndexRecommendedBanner.tsx
 msgid "a while ago"
 msgstr "לפני זמן מה"
@@ -2584,6 +2613,14 @@ msgstr "ההרשאות מנוהלות ב-Hub."
 #: src/components/connections-manager.tsx
 msgid "Access requested"
 msgstr "בקשת הרשאה נשלחה"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Access to {projectName} vault {vault}"
+msgstr ""
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Access to vault {vault} requested"
+msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -5591,6 +5628,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/ReplayDialog.tsx
@@ -5642,6 +5680,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/share-to-conversation/GitignoredNotice.tsx
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -8202,6 +8241,10 @@ msgstr "לא הצלחנו להסתיים את החדר"
 msgid "could not fetch — showing local copy"
 msgstr "לא ניתן להוריד — מוצג עותק מקומי"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not fetch {title}"
+msgstr ""
+
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #~ msgid "Could not fetch the dependencies"
 #~ msgstr ""
@@ -8209,6 +8252,10 @@ msgstr "לא ניתן להוריד — מוצג עותק מקומי"
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Could not fetch the packages"
 msgstr "לא ניתן לאחזר את החבילות"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not fetch the values"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
@@ -8278,6 +8325,10 @@ msgstr "לא ניתן היה לקשר את הפרויקט הזה."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Could not list budgets: {loadError}"
 msgstr "לא ניתן להציג את התקציבים: {loadError}"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Could not list the secret managers."
+msgstr ""
 
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not load automations"
@@ -8407,6 +8458,10 @@ msgstr "לא ניתן להשהות את מכונת הענן"
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not publish"
 msgstr "הפרסום נכשל"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not publish {title}"
+msgstr ""
 
 #: src/components/data-sources/source-parts.tsx
 #~ msgid "Could not pull {0}"
@@ -8683,6 +8738,10 @@ msgstr "לא ניתן לשמור את קוד הכלל"
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not save the snippet"
 msgstr "לא ניתן לשמור את קטע הקוד"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Could not save the vault."
+msgstr ""
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not send"
@@ -12953,6 +13012,7 @@ msgstr "המשוב כבוי: לפרויקט הזה אין מאגר נתונים 
 #~ msgid "Feeds"
 #~ msgstr "מזינה"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
 msgstr "אחזור"
@@ -15070,6 +15130,10 @@ msgstr "מקטע {hunkNumber}: שורות {oldStart}–{oldEnd} → {newStart}�
 msgid "I invited you to project \"{0}\"."
 msgstr "הזמנתי אתכם לפרויקט \"{0}\"."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "I received the {title} credential, but {projectName} has no secret manager vault to fetch its values from. Please set one up on the project."
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "I want…  (e.g. email, slack, calendar)"
 msgstr "אני רוצה…  (למשל אימייל, slack, יומן)"
@@ -15981,6 +16045,10 @@ msgstr "הוא מופיע בהרצות כבדיקה."
 msgid "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr "הוא נוסף כחבילה רגילה במקום זאת, כך שסוכנים עדיין יכולים לקרוא אותו. אם זו לא הייתה הכוונה, ניתן להסיר אותו."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "It was not written."
+msgstr ""
+
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "It was shared with you, but its files are not here yet."
 msgstr "הפרויקט שותף איתכם, אך הקבצים שלו עדיין לא הגיעו לכאן."
@@ -16524,6 +16592,7 @@ msgstr "מידע על כפילויות"
 msgid "Learn about your data"
 msgstr "למדו עוד על הנתונים שלכם"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
@@ -20554,6 +20623,10 @@ msgstr "לא נמצא"
 #~ msgid "Not in a git repository — can't be published"
 #~ msgstr ""
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "not in a vault yet"
+msgstr ""
+
 #~ msgid "Not indexed here yet — install it from its origin"
 #~ msgstr ""
 
@@ -23321,6 +23394,10 @@ msgstr "אנא מלאו את שני השדות"
 msgid "Please fix the issue in your repository and try again."
 msgstr "אנא תקנו את הבעיה במאגר שלכם ונסו שוב."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Please give me read access to vault {vault} of {projectName}, so I can fetch {title}."
+msgstr ""
+
 #: src/components/credentials-view/LoginRequiredPanel.tsx
 msgid "Please log in to manage credentials."
 msgstr "יש להתחבר כדי לנהל אישורים."
@@ -24117,6 +24194,7 @@ msgstr "מאגרים ציבוריים כבר פתוחים לכולם."
 
 #: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
+#: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Publish"
 msgstr "פרסמו"
 
@@ -24600,6 +24678,10 @@ msgstr "פרויקט שהתקבל"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Received project — review before installing."
 msgstr "פרויקט שהתקבל — בדקו לפני ההתקנה."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Receiving secrets requires a secret manager vault on the project."
+msgstr ""
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Recency Boost"
@@ -25423,6 +25505,7 @@ msgstr "מאגר:"
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Report"
 msgstr "דוח"
@@ -25489,6 +25572,7 @@ msgid "Request"
 msgstr "בקשה"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Request access"
 msgstr "בקשו גישה"
 
@@ -25504,6 +25588,7 @@ msgstr "בקשו עדכון"
 msgid "requested"
 msgstr "התבקש"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Requested"
 msgstr "נשלחה בקשה"
@@ -26639,6 +26724,7 @@ msgstr "ארגז החול שודרג"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -27256,6 +27342,10 @@ msgstr "הסוד נוצר"
 #: src/components/account/secrets-section.tsx
 msgid "Secret deleted"
 msgstr "סוד נמחק"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Secret manager"
+msgstr ""
 
 #~ msgid "Secret Origin"
 #~ msgstr "מקור הסוד"
@@ -28066,6 +28156,10 @@ msgstr "הגדרת LLM"
 msgid "Set up project"
 msgstr "הגדירו את הפרויקט"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Set up secret manager"
+msgstr ""
+
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "Set up team budget"
 #~ msgstr "הגדירו תקציב צוות"
@@ -28369,6 +28463,11 @@ msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Shared Task: {taskTitle}"
+msgstr ""
+
+#. placeholder {0}: vaults.join(', ')
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Shared through the project's vaults: <0>{0}</0>"
 msgstr ""
 
 #: src/components/conversation/task-it.tsx
@@ -28792,6 +28891,11 @@ msgstr "התחברו תחילה, ואז המקור הזה יוכל לממן הר
 msgid "Sign in to {0}"
 msgstr "התחברות ל-{0}"
 
+#. placeholder {0}: chosen.title
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Sign in to {0} first, then save again."
+msgstr ""
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Sign in to {name}"
 msgstr "התחברות ל-{name}"
@@ -28851,6 +28955,10 @@ msgstr "התחברו כדי לראות מי החברים"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Sign in to the hub to deploy to a cloud machine."
 msgstr "יש להתחבר ל-Hub כדי לפרוס למכונת ענן."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Sign in to the secret manager first (the project setup), then fetch again."
+msgstr ""
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
@@ -30853,6 +30961,10 @@ msgstr "האישור הוסר מחשבונכם. אין כרגע פרויקט ש�
 msgid "The credential was removed from your account."
 msgstr "האישור הוסר מחשבונכם."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
+msgstr ""
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The credentials could not be saved."
 msgstr "שמירת האישורים נכשלה."
@@ -31369,6 +31481,10 @@ msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפ
 #: src/components/credentials-view/CredentialView.tsx
 msgid "the vault"
 msgstr "הכספת"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "The vault holds no value for it yet — ask the owner to publish it."
+msgstr ""
 
 #: src/components/assets/editor/GitShareBar.tsx
 msgid "The version that was shared with you"
@@ -31982,6 +32098,7 @@ msgstr "הפרויקט הזה"
 #: src/components/automations/AutomationsList.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "This project"
 msgstr "הפרויקט הזה"
@@ -33792,6 +33909,11 @@ msgstr "משתנים"
 #~ msgid "Vault"
 #~ msgstr ""
 
+#: src/components/credentials/SecretVaultPicker.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Vault name"
+msgstr ""
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Vault root"
 msgstr "שורש הכספת"
@@ -35158,6 +35280,11 @@ msgstr "יש לכם הודעה"
 msgid "You have access to this {label}."
 msgstr "יש לכם גישה לפריט הזה."
 
+#. placeholder {0}: denied.join(', ')
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "You have no access to vault {0} yet."
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "You have no budget you can hand out."
 msgstr "אין לכם תקציב שאפשר לחלק."
@@ -35354,6 +35481,10 @@ msgstr "דוח הסטטוס הקבוצתי שלכם מוכן"
 #: src/components/help/AskForHelpButton.tsx
 msgid "Your help requests"
 msgstr "בקשות העזרה שלך"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Your local value of {credential} is copied into the vault, and the credential records where it is."
+msgstr ""
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup and caption on this image will be lost."

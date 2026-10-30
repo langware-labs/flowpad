@@ -5,7 +5,8 @@ prefix from a scope or an environment. Every store is keyed by the environment v
 (``ENV_VAR_NAME``); how it spells that key inside (a file line, a vault entry) is its own business,
 so moving values between stores, or into a process, is a dict.
 
-Three types ship: ``env_file``, ``vault`` and ``gcp_secret_manager``. Another registers with
+Three types ship here: ``env_file``, ``vault`` and ``gcp_secret_manager``; each secret manager asset
+(``flow_sdk.secrets.managers``) registers its own under its name. Another registers with
 :func:`register_store`.
 """
 from __future__ import annotations
@@ -105,6 +106,11 @@ class SecretStore:
         if not isinstance(ref, SecretStoreRef):
             ref = SecretStoreRef.model_validate(dict(ref))
         store_cls = _TYPES.get(ref.type)
+        if store_cls is None:
+            from flow_sdk.secrets.managers import load_managers  # noqa: PLC0415 — a manager's store registers on load
+
+            load_managers()
+            store_cls = _TYPES.get(ref.type)
         if store_cls is None:
             raise UnknownSecretStore(ref.type, sorted(_TYPES))
         return store_cls(store_cls.config_spec.model_validate(ref.config), connection=ref.connection)

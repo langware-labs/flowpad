@@ -50,14 +50,17 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 30_000 }); // do not increase timeout without approval
   await expect(page).not.toHaveURL(/\/editor\/wizard\/typeid\//);
   await expect(page.getByTestId('wizard-viewer')).toContainText('Finish setting up Flowpad');
+  // The check that decided to open the popup already ran: the tool set aside is owed, and
+  // nothing is running until Start.
+  await expect(page.getByTestId('wizard-step-claude-code')).toHaveAttribute('data-status', 'not_started');
   for (const id of STEPS) {
-    await expect(page.getByTestId(`wizard-step-${id}`)).toHaveAttribute('data-status', 'not_reached');
+    await expect(page.getByTestId(`wizard-step-${id}`)).not.toHaveAttribute('data-status', 'running');
   }
 
   // 2. Start is what actually begins first-run setup. Skipping the chooser
   //    (when it appears) is an answer, and setup steers back to the popup
   //    before the wizard runs — the wizard starts only once the source is
-  //    settled, so a step that has left `not_reached` means that phase is over.
+  //    settled, so the owed step leaving `not_started` means that phase is over.
   await page.getByTestId('wizard-start').click();
   const skip = page.getByTestId('llm-setup-skip');
   await expect(async () => {
@@ -65,7 +68,7 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     // keys" dialog opens only from the first, so skipping needs nothing closed first.
     if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
     await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 1_000 });
-    const started = Object.values(await stepStatuses(page)).some((s) => s !== 'not_reached');
+    const started = (await stepStatuses(page))['claude-code'] !== 'not_started';
     expect(started, 'the wizard has started running').toBe(true);
   }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
 

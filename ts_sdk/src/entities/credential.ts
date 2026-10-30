@@ -193,6 +193,13 @@ export class Credential extends APIEntity<Credential> implements ICredential {
       .map(([k]) => k);
   }
 
+  /** Ask whoever shared this credential for access to `vault` — a `secret_access_request` share
+   *  reply in the conversation it arrived through (names only, never a value). */
+  async requestSecretAccess(vault: string): Promise<void> {
+    if (!this.id) throw new Error('requestSecretAccess requires this.id');
+    await this.post<unknown>('request-secret-access', { vault });
+  }
+
   /** A shipped catalogue entry — added to a scope, never used directly. */
   get isTemplate(): boolean {
     return this.scope === 'system';

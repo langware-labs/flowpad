@@ -150,6 +150,8 @@ export interface CredentialsStatus {
   vault_enabled: boolean;
   credentials: CredentialStatusRow[];
   files: CredentialScopeFile[];
+  /** The project's secret manager, in words — where a teammate's values are fetched from. Null: none. */
+  secret_store?: string | null;
 }
 
 /** What a write answers: which credential, and where it lives. */
@@ -169,6 +171,48 @@ export interface StoreForgotten {
   kept: string[];
   /** Why the store could not be checked; every name counts as kept. */
   error: string;
+}
+
+/** One vault of the project: which secret manager holds it, and that manager's config. Never a value. */
+export interface SecretVault {
+  manager: string;
+  config: Record<string, unknown>;
+}
+
+/** A secret manager installed here (its `secret_manager.json`). */
+export interface SecretManagerInfo {
+  name: string;
+  title: string;
+  icon: string;
+  description: string;
+  config_fields: { name: string; label: string; required: boolean }[];
+  install: Record<string, string>;
+  login: Record<string, string>;
+  check: string;
+  grant: string;
+}
+
+/** What `publish` copied into a vault — names only. `not_here`: no value on this computer. */
+export interface SecretPublishResult {
+  published: string[];
+  not_here: string[];
+  vault: string;
+}
+
+/** What `fetch` brought from the vaults — names only. `missing`: no ref or no value in the vault;
+ *  `denied`: vaults this person may not read. */
+export interface SecretFetchResult {
+  fetched: string[];
+  missing: string[];
+  denied: string[];
+  vaults: string[];
+}
+
+/** Whether a vault is reachable from this computer. */
+export interface SecretVaultCheck {
+  vault: string;
+  ready: boolean;
+  reason: string;
 }
 
 /** What "use mine" copied into a deployment's store, and what this computer does not hold. Names only. */
@@ -304,6 +348,73 @@ export class CredentialsService {
     action.bodyParameters = { deployment_id: deploymentId, names: names?.length ? names : null };
     const res = await dataManager.callAction<unknown, Partial<UseMineResult>>(action);
     return { copied: res?.copied ?? [], not_here: res?.not_here ?? [], hub_funded: res?.hub_funded ?? [] };
+  }
+
+  // ── the project's vaults: values between people. A refusal carries `error_code`:
+  //    `no_vault`, `unknown_vault`, `needs_connection` or `denied`. ──
+
+  /** The secret managers this Flowpad can use. */
+  async managers(): Promise<SecretManagerInfo[]> {
+    const res = await dataManager.callAction<unknown, { managers?: SecretManagerInfo[] }>(this.action('managers', 'GET'));
+    return res?.managers ?? [];
+  }
+
+  /** The project's vaults by name. */
+  async vaults(projectId: string): Promise<Record<string, SecretVault>> {
+    const action = this.action('vaults', 'GET');
+    action.queryParameters = { project_id: projectId };
+    const res = await dataManager.callAction<unknown, { vaults?: Record<string, SecretVault> }>(action);
+    return res?.vaults ?? {};
+  }
+
+  /** Add or replace the project's vault `name`; answers every vault. */
+  async setVault(projectId: string, name: string, vault: SecretVault): Promise<Record<string, SecretVault>> {
+    return this.vaultWrite('vault-set', { project_id: projectId, name, spec: vault });
+  }
+
+  /** Forget the project's vault `name` (the manager keeps its secrets); answers every vault left. */
+  async removeVault(projectId: string, name: string): Promise<Record<string, SecretVault>> {
+    return this.vaultWrite('vault-remove', { project_id: projectId, name });
+  }
+
+  private async vaultWrite(verb: string, body: Record<string, unknown>): Promise<Record<string, SecretVault>> {
+    const action = this.action(verb, 'POST');
+    action.bodyParameters = body;
+    const res = await dataManager.callAction<unknown, { vaults?: Record<string, SecretVault> }>(action);
+    return res?.vaults ?? {};
+  }
+
+  /** Is `vault` reachable from this computer (manager installed, signed in)? */
+  async checkVault(projectId: string, vault: string): Promise<SecretVaultCheck> {
+    const action = this.action('vault-check', 'POST');
+    action.bodyParameters = { project_id: projectId, vault };
+    const res = await dataManager.callAction<unknown, Partial<SecretVaultCheck>>(action);
+    return { vault, ready: res?.ready ?? false, reason: res?.reason ?? '' };
+  }
+
+  /** Copy this computer's values of credential `name` into `vault`, recording each variable's
+   *  `secret_ref` in its credential.json. Names come back, never a value. */
+  async publish(name: string, projectId: string, vault: string): Promise<SecretPublishResult> {
+    const action = this.action('publish', 'POST');
+    action.bodyParameters = { name, project_id: projectId, vault };
+    const res = await dataManager.callAction<unknown, Partial<SecretPublishResult>>(action);
+    return { published: res?.published ?? [], not_here: res?.not_here ?? [], vault: res?.vault ?? vault };
+  }
+
+  /** Fetch credential `name`'s values from the vaults its refs name into this computer's store. */
+  async fetch(name: string, projectId: string): Promise<SecretFetchResult> {
+    const action = this.action('fetch', 'POST');
+    action.bodyParameters = { name, project_id: projectId };
+    const res = await dataManager.callAction<unknown, Partial<SecretFetchResult>>(action);
+    return { fetched: res?.fetched ?? [], missing: res?.missing ?? [], denied: res?.denied ?? [], vaults: res?.vaults ?? [] };
+  }
+
+  /** Give `email` read access to `vault` through its manager's own sharing. */
+  async grant(projectId: string, vault: string, email: string): Promise<{ vault: string; email: string }> {
+    const action = this.action('grant', 'POST');
+    action.bodyParameters = { project_id: projectId, vault, email };
+    const res = await dataManager.callAction<unknown, Partial<{ vault: string; email: string }>>(action);
+    return { vault: res?.vault ?? vault, email: res?.email ?? email };
   }
 
   /** Remove a credential and its values from every store. `removed` is false, and the

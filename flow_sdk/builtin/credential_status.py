@@ -347,5 +347,12 @@ async def credentials_status(
         vault_enabled=vault_enabled,
         credentials=rows,
         files=[head for head, _ in files],
+        secret_vaults=_secret_vault_names(project),
     )
 
+
+def _secret_vault_names(project) -> list[str]:
+    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
+
+    root = getattr(project, "fs_storage_mount_path", None) if project is not None else None
+    return sorted(read_secret_vaults(Path(root))) if root else []

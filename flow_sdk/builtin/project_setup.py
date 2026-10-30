@@ -456,13 +456,16 @@ def _way_choice(way: str, members: list[SetupVarSpec], offer: Optional[Credentia
 
 def compile_setup(
     project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = "",
-    connect_here: bool = True,
+    connect_here: bool = True, vaults: tuple[str, ...] = (),
 ) -> tuple[WizardSpec, dict[str, ComputeOpSpec]]:
     """The wizard for ``requirements``, and the ops it calls by name. Every step continues on failure:
     one credential nobody can provide must not stop the next one. ``deployment_id``: store and check
     each value where that deployment keeps it (default: this computer). ``connect_here=False``: a
     connection step only CHECKS — the screen that started the run signs the person in itself (its own
-    Connect button, in their browser), so the run never opens a second one on the backend's machine."""
+    Connect button, in their browser), so the run never opens a second one on the backend's machine.
+    ``vaults``: the project vaults the credential's variables point into — its values are FETCHED from them
+    first (``flow secrets fetch``), and a question is asked only for what they could not give (this computer
+    only). A fetch a vault refuses ends with code ``denied``: the screen offers Request access."""
     target = ("--deployment", deployment_id) if deployment_id else ()
     where = f"deployment {deployment_id}" if deployment_id else "development"
     ops: dict[str, ComputeOpSpec] = {}
@@ -500,6 +503,14 @@ def compile_setup(
             assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
             # The ONE_OF ways, asked FIRST as one choice; a way of several values is one choice with a field each.
+            if vaults and not deployment_id and any(v.kind is not CredentialVarKind.CLI for v in req.missing):
+                # The team's copy first: a full fetch satisfies the check, so every question below skips.
+                add({
+                    "name": f"fetch-{req.name}", "label": f"{req.title or req.name}: fetch from {', '.join(vaults)}",
+                    "description": f"{req.name}'s values are fetched from vault {', '.join(vaults)} into {where}.",
+                    "subkind": "cli", "exe_data": _cli("secrets", "fetch", req.name, "--project", project_id),
+                    "completion_check": check,
+                })
             one_of = {v.env_var: v for v in req.missing if v.is_one_of}
             # A sign-in with no command for this OS is not a way here.
             offered = {way: [one_of[m] for m in members] for way, members in ways(one_of).items()

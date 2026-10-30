@@ -36,6 +36,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
 from flow_sdk.schema.data_spec.credential_status_spec import StoreForgottenSpec
 from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec
 from flow_sdk.secrets import SecretStore, SecretStoreRef, load_all
+from flow_sdk.secrets.errors import SecretStoreError
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential import Credential
@@ -176,6 +177,42 @@ def secret_store_ref(spec: "Credential", scope: CredentialScope, env_var: str, p
     if ref.type == "env_file":
         return scope.env_file_ref(environment)
     return ref
+
+
+class UnknownVault(SecretStoreError, LookupError):
+    """A vault name the project's ``secret_vaults`` does not declare."""
+
+    code = "unknown_vault"
+
+    def __init__(self, name: str, known: Iterable[str] = ()) -> None:
+        known = sorted(known)
+        super().__init__(f"no secret vault named {name!r} in this project" + (f" (has: {', '.join(known)})" if known else ""))
+        self.name = name
+
+
+def project_vaults(project: Optional["Project"]) -> dict[str, SecretStore]:
+    """The project's named vaults (``secret_vaults`` in ``project_manifest.json``), each as the store
+    it names: where its shared values live and where a teammate fetches them from — not where any
+    process reads (that is each deployment's binding, above). Empty: no project, or it names none.
+    No I/O beyond the manifest read; each store's ``.where`` is its place in words."""
+    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
+    from flow_sdk.secrets.managers import store_for  # noqa: PLC0415  (lazy: managers load assets)
+
+    root = getattr(project, "fs_storage_mount_path", None) if project is not None else None
+    vaults = read_secret_vaults(Path(root)) if root else {}
+    return {name: store_for(vault) for name, vault in vaults.items()}
+
+
+def project_vault(project: Optional["Project"], name: str) -> SecretStore:
+    """The project's vault ``name`` as a store. Raises :class:`UnknownVault` when it declares none by that name."""
+    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
+    from flow_sdk.secrets.managers import store_for  # noqa: PLC0415
+
+    root = getattr(project, "fs_storage_mount_path", None) if project is not None else None
+    vaults = read_secret_vaults(Path(root)) if root else {}
+    if name not in vaults:
+        raise UnknownVault(name, vaults)
+    return store_for(vaults[name])
 
 
 async def write_value(
