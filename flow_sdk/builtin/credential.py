@@ -145,6 +145,18 @@ class Credential(SetupSkippable, Entity):
         ref = Path(self.asset_ref)
         return ref if ref.is_dir() else ref.parent
 
+    @property
+    def has_test(self) -> bool:
+        """A ``test.json`` sits beside ``credential.json`` — a stat, not a parse: every status read asks it."""
+        from flow_sdk.schema.data_spec.credential_spec import CredentialSpec  # noqa: PLC0415
+
+        folder = self.folder
+        return folder is not None and (folder / CredentialSpec.TEST_FILE).is_file()
+
+    async def record_test(self, result: "CredentialTestResultSpec") -> None:
+        """Keep ``result`` as this machine's last test — the row only, never a file (``test_result``)."""
+        await write_projection(self, TEST_FIELD, result)
+
     def declared_test(self) -> Optional[CliOp]:
         """The read-only check that the values work: ``test.json`` beside ``credential.json`` (a ``CliOp``).
         Its own file, read fresh: an older Flowpad never sees it, and a test an agent just wrote runs at once.

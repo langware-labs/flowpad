@@ -113,6 +113,9 @@ export interface CredentialTestResult {
   at: string;
 }
 
+/** What `credentials/test` answers: the result, and whether the credential declares a test at all. */
+export type CredentialTestAnswer = CredentialTestResult & { has_test: boolean };
+
 export type CredentialKind = 'env' | 'oauth';
 
 export interface DetectedEnvKey {
@@ -424,10 +427,10 @@ export class CredentialsService {
   }
 
   /** Run credential `name`'s `test` with this computer's values; `untested` when it declares none. */
-  async test(name: string, projectId: string): Promise<CredentialTestResult & { has_test: boolean }> {
+  async test(name: string, projectId: string): Promise<CredentialTestAnswer> {
     const action = this.action('test', 'POST');
     action.bodyParameters = { name, project_id: projectId };
-    const res = await dataManager.callAction<unknown, Partial<CredentialTestResult & { has_test: boolean }>>(action);
+    const res = await dataManager.callAction<unknown, Partial<CredentialTestAnswer>>(action);
     return { has_test: !!res?.has_test, state: res?.state ?? 'error', detail: res?.detail ?? '', at: res?.at ?? '' };
   }
 

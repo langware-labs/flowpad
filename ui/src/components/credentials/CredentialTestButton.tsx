@@ -146,14 +146,17 @@ export function CredentialTestButton({
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
 
-  // The row the worker's `flow credentials test` writes its answer onto: a new answer refreshes the page.
+  // While this credential's worker is open, watch its row: the worker's `flow credentials test` writes the
+  // answer there, and a new answer refreshes the page. Closed, nothing is watched (one row, not the table).
+  const drawer = useSyncExternalStore(subscribe, () => openDrawer);
   const typeId = useMemo(() => {
+    if (drawer?.typeid !== typeid) return null;
     try {
       return new TypeId(typeid);
     } catch {
       return null; // a row without a real id has nothing to watch
     }
-  }, [typeid]);
+  }, [drawer?.typeid, typeid]);
   const { data: watched } = useEntity<Credential>(typeId, { watch: true });
   const seenAt = useRef(result?.at ?? '');
   const landedAt = watched?.test_result?.at ?? '';
@@ -164,7 +167,6 @@ export function CredentialTestButton({
   }, [landedAt, onChanged]);
 
   const runFast = async () => {
-    if (!projectId && !name) return;
     setBusy(true);
     try {
       const answer = await credentialsService.test(name, projectId ?? '');
@@ -185,42 +187,36 @@ export function CredentialTestButton({
       void runFast();
       return;
     }
-    if (openDrawer?.typeid === typeid) return; // its worker is already open
+    if (drawer?.typeid === typeid) return; // its worker is already open
     setDrawer({ typeid, title, projectId, workdir: workdir ?? null, autoPrompt: { text: testWorkerPrompt(name, title, projectId), nonce: Date.now() } });
   };
 
   const state = result?.state;
-  const Verdict = busy ? Loader2 : state === 'ok' ? CheckCircle2 : state === 'invalid' || state === 'error' ? XCircle : FlaskConical;
+  const failed = state === 'invalid' || state === 'error';
+  const Verdict = busy ? Loader2 : state === 'ok' ? CheckCircle2 : failed ? XCircle : FlaskConical;
+  const hint =
+    state === 'ok'
+      ? t`The provider took the key (${result?.at})`
+      : state
+        ? result?.detail || state
+        : hasTest
+          ? t`Run this credential's test`
+          : t`No test yet — an agent writes one`;
   return (
-    <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className={cn(size === 'xs' ? 'h-7' : 'h-8', 'gap-1')}
-        disabled={busy}
-        onClick={press}
-        title={
-          state === 'ok'
-            ? t`The provider took the key (${result?.at})`
-            : state
-              ? result?.detail || state
-              : hasTest
-                ? t`Run this credential's test`
-                : t`No test yet — an agent writes one`
-        }
-        data-testid={testId ?? `credential-test-${name}`}
-        data-test-state={state ?? (hasTest ? 'untested' : 'none')}
-      >
-        <Verdict
-          className={cn(
-            'h-3.5 w-3.5',
-            busy && 'animate-spin',
-            state === 'ok' && 'text-emerald-600',
-            (state === 'invalid' || state === 'error') && 'text-destructive',
-          )}
-        />
-        <Trans>Test</Trans>
-      </Button>
-    </>
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(size === 'xs' ? 'h-7' : 'h-8', 'gap-1')}
+      disabled={busy}
+      onClick={press}
+      title={hint}
+      data-testid={testId ?? `credential-test-${name}`}
+      data-test-state={state ?? (hasTest ? 'untested' : 'none')}
+    >
+      <Verdict
+        className={cn('h-3.5 w-3.5', busy && 'animate-spin', state === 'ok' && 'text-emerald-600', failed && 'text-destructive')}
+      />
+      <Trans>Test</Trans>
+    </Button>
   );
 }

@@ -232,8 +232,10 @@ def check_credential(
     why = why_not_ready(row)
     if ready and row.get("has_test") and not deployment:
         tested = _test(name, row.get("project_id"))
-        if tested.get("state") != "ok":
-            ready, why = False, f"the test failed: {tested.get('detail') or tested.get('state')}"
+        # Only a REJECTED key holds setup back; a test that could not run (no network, a missing tool) is
+        # this computer's problem, not the key's.
+        if tested.get("state") == "invalid":
+            ready, why = False, f"the provider rejected the key: {tested.get('detail') or 'rejected'}"
     ok({"name": name, "declared": row is not None, "ready": ready, "missing": missing, **({"detail": why} if why else {})})
     if not ready:
         raise typer.Exit(EXIT_NOT_YET)

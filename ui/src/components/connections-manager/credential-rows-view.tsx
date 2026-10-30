@@ -60,6 +60,8 @@ export function CredentialConnectionRows({
         const shown = row.vars.slice(0, VARS_SHOWN);
         const extra = row.vars.length - shown.length;
         const connected = row.state === 'connected';
+        // Present but refused by the provider (its last test): amber like a missing value, never green.
+        const rejected = connected && row.source.test_result?.state === 'invalid';
         // An either-or group with no member set reads "A or B": one of them is enough.
         const missing = missingNeeds(row.vars)
           .map((need) => need.map((v) => v.envVar).join(t` or `))
@@ -129,16 +131,16 @@ export function CredentialConnectionRows({
             <TableCell>
               <div className="flex items-center gap-2 text-sm">
                 <span
-                  className={cn('h-2 w-2 shrink-0 rounded-full', connected ? 'bg-emerald-500' : 'bg-amber-500')}
+                  className={cn('h-2 w-2 shrink-0 rounded-full', connected && !rejected ? 'bg-emerald-500' : 'bg-amber-500')}
                 />
                 <span
-                  className={cn('whitespace-nowrap', !connected && 'text-amber-600')}
+                  className={cn('whitespace-nowrap', (!connected || rejected) && 'text-amber-600')}
                   title={missing ? t`Missing: ${missing}` : undefined}
                   data-testid={`connection-status-${testKey}`}
                 >
                   {!connected ? (
                     <Trans>Needs values</Trans>
-                  ) : row.source.test_result?.state === 'invalid' ? (
+                  ) : rejected ? (
                     <Trans>Key rejected</Trans>
                   ) : (
                     <Trans>Connected</Trans>

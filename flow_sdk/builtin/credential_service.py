@@ -1027,39 +1027,30 @@ async def test_credential(name: str, project_id: str = "") -> dict[str, Any]:
     ``untested`` when the credential declares no test. Values never leave: the detail is scrubbed."""
     from datetime import datetime, timezone  # noqa: PLC0415
 
-    from flow_sdk.builtin.credential import TEST_FIELD  # noqa: PLC0415
     from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
-    from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
-    from flow_sdk.core.setup.skip_mark import write_projection  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.compute_op_spec import CHECK_TIMEOUT  # noqa: PLC0415
+    from flow_sdk.builtin.credential_status import run_check  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_status_spec import CredentialTestResultSpec  # noqa: PLC0415
 
     project = await get_project(project_id) if project_id else None
     spec = await credential_named(name, project)
     if spec is None:
         raise CredentialError(f"no credential named {name!r} in this project or the user scope")
-    folder = spec.folder or Path.home()
     test = spec.declared_test()
     if test is None:
         return {"name": spec.name, "has_test": False, "state": "untested", "detail": "", "at": ""}
-    command = test.command_for()
-    values = await resolve_project_secrets(project, only=spec.stored_var_names(), placement=await Placement.of(None))
+    stored = set(spec.stored_var_names())
+    values = await resolve_project_secrets(project, only=stored, placement=await Placement.of(None))
     plain = {k: v.get_secret_value() for k, v in values.items()}
-    if not command:
-        state, detail = "error", "the test has no command for this computer"
-    elif missing := [v for v in spec.required_var_names() if v in spec.stored_var_names() and v not in plain]:
+    if missing := [v for v in spec.required_var_names() if v in stored - plain.keys()]:
         state, detail = "error", f"no value here for {', '.join(missing)}"
     else:
-        said = await run_shell(command, timeout_seconds=test.timeout(CHECK_TIMEOUT), workdir=folder, extra_env=plain)
-        first = next((ln.strip() for ln in (said.stderr or said.stdout or "").splitlines() if ln.strip()), "")
-        if said.timed_out:
-            state, detail = "error", "the provider did not answer in time"
-        elif said.returncode == 0:
-            state, detail = "ok", ""
-        elif said.returncode == 127:
-            state, detail = "error", f"{command.split()[0]} is not installed"
-        else:
-            state, detail = "invalid", _scrubbed(first, list(plain.values()))[:200] or f"rejected (exit {said.returncode})"
+        outcome, reason = await run_check(test, workdir=spec.folder or Path.home(), extra_env=plain)
+        state, detail = {
+            "ok": ("ok", ""),
+            "no_command": ("error", "the test has no command for this computer"),
+            "timeout": ("error", "the provider did not answer in time"),
+            "not_installed": ("error", reason),
+        }.get(outcome) or ("invalid", _scrubbed(reason, list(plain.values()))[:200] or "rejected")
     result = CredentialTestResultSpec(state=state, detail=detail, at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    await write_projection(spec, TEST_FIELD, result)
+    await spec.record_test(result)
     return {"name": spec.name, "has_test": True, **result.model_dump(mode="json")}
