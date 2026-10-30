@@ -136,31 +136,32 @@ deleting the deployment revokes every authorization. `Deployment.secrets_invento
 (`GET deployment/<id>/secrets`) lists each stored name with its last write and placement and
 the authorizations — names only; the cloud place's **Secrets** tab shows it.
 
-## Between people — the project's secret manager
+## Between people — the project's vaults
 
-A credential's values travel from one person to another ONLY through the project's **secret
-manager**: `secret_store` in `project_manifest.json`, a store ref (`{type, config, connection}`) —
-`gcp` or `onepassword` (the hub vault is not offered yet). It names a place, never a
-value, and travels with every clone. Each variable may carry a **secret ref** (`vars.<VAR>.secret_ref`,
-default: the variable's own name) — its key in that store. It is not where any process reads: a
-process still reads its deployment's binding (above).
+A credential's values travel from one person to another ONLY through one of the project's **vaults**:
+`secret_vaults` in `project_manifest.json`, each a named group of secrets in one **secret manager**
+(`{manager, config}` — an installed `agentic-assets/secret_manager/<name>/`, e.g. `gcp` or
+`onepassword`; the hub vault is not offered yet). A vault names a place, never a value, and travels
+with every clone; `credential_store.vaults_of(project)` is the one reader. Each variable may carry a
+**secret ref** (`vars.<VAR>.secret_ref` = `{vault, key}`) — where its value lives. It is not where
+any process reads: a process still reads its deployment's binding (above).
 
-- **Publish** (`credential_service.publish_to_store`, `flow credentials publish <name>`,
-  `POST …/credentials/publish`): this computer's values into the secret manager, under each secret ref.
-- **Fetch** (`credential_service.fetch_values`, `flow credentials fetch <name>`, `POST …/credentials/fetch`):
-  the secret manager's values into this computer's store, through the same writer as `set` (so the
-  `.env.local` rules apply). Answers `{fetched, missing}`; refuses with `no_secret_store`,
-  `needs_connection` or `denied`.
-- **Project setup** fetches first: with a secret manager, every credential pack starts with a
+- **Publish** (`credential_service.publish`, `flow secrets publish`,
+  `POST …/credentials/publish`): this computer's values into a vault; a variable with no ref gets `{vault, key: VAR}`.
+- **Fetch** (`credential_service.fetch`, `flow secrets fetch`, `POST …/credentials/fetch`): each variable's value from the vault
+  its ref names into this computer's store, through the same writer as `set` (so the `.env.local`
+  rules apply). Answers `{fetched, missing, denied, vaults}`; refuses with `no_vault`,
+  `unknown_vault` or `needs_connection` (a `denied` vault is reported, the rest still fetched).
+- **Project setup** fetches first: with a vault, every credential pack starts with a
   `fetch-<name>` step on the pack's own check, so a full fetch skips its questions.
 - **Sharing** — the generic pre-share handler (`GET <type>/<id>/pre_share`, `Entity.pre_share`;
   `{needed: false}` unless a type says otherwise). A credential that holds values answers `needed`
-  while its project has no secret manager; the share dialog then shows that step first (set one up,
-  publish), before the standard dialog.
+  while a stored variable is not published to one of its project's vaults; the share dialog then
+  shows that step first (add a vault, publish), before the standard dialog.
 - **Receiving** — the generic receive handler (`TypeInfo.receive_handler` + the entity's
   `setup_on_receive`; it runs in Git mode too). A credential refreshes its project (pull, re-read its
-  assets) so the manifest — and its secret manager — is current, then opens; its page offers Fetch,
-  or, with no secret manager, says so with **Report** (the ask-for-help path, `origin: credential`).
+  assets) so the manifest — and its vaults — is current, then opens; its page offers Fetch,
+  or, with no vault its values point into, says so (`no_vault`) with **Report** (the ask-for-help path, `origin: credential`).
 - **Access** is the secret manager's own and is project-wide: a denied fetch offers **Request access**
   through the same ask-for-help path, and the owner grants it in the store itself (GCP IAM
   `roles/secretmanager.secretAccessor`; a 1Password vault share). Flowpad grants nothing itself yet.

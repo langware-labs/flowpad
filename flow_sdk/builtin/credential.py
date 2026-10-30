@@ -222,20 +222,16 @@ class Credential(SetupSkippable, Entity):
     async def secret_vault_state(self, project: Optional["Project"] = None) -> dict[str, Any]:
         """What sharing this credential's values needs: ``{holds_values, project_id, vaults, unpublished}`` —
         ``vaults`` the project's declared vault names, ``unpublished`` the stored variables with no ref into one."""
-        from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
-        from flow_sdk.builtin.credential_store import scope_of  # noqa: PLC0415
+        from flow_sdk.builtin.credential_store import scope_of, vaults_of  # noqa: PLC0415
 
         if project is None:
             _scope, project = await scope_of(self)
-        root = getattr(project, "fs_storage_mount_path", None) if project is not None else None
-        try:
-            vaults = sorted(read_secret_vaults(Path(root))) if root else []
-        except Exception:  # noqa: BLE001 — an unreadable manifest is "no vaults" to the person, never a crash
-            vaults = []
-        unpublished = [name for name in self.stored_var_names()
+        vaults = sorted(vaults_of(project))
+        stored = self.stored_var_names()
+        unpublished = [name for name in stored
                        if (ref := self.vars[name].secret_ref) is None or ref.vault not in vaults]
         return {
-            "holds_values": bool(self.stored_var_names()),
+            "holds_values": bool(stored),
             "project_id": str(project.id) if project is not None else None,
             "vaults": vaults,
             "unpublished": unpublished,

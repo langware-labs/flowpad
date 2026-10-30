@@ -20,7 +20,7 @@ from typing import Any, Optional
 import typer
 from typing_extensions import Annotated
 
-from flow_sdk.cli.commands._common import EXIT_INVALID_ARG, discover_port, fail, get_graph_json, ok, post_graph_json
+from flow_sdk.cli.commands._common import discover_port, fail, get_graph_json, ok, parse_config_pairs, post_graph_json
 from flow_sdk.cli.commands.credentials_cmd import EXIT_NOT_YET, _here, _project_id, _refused, _status, _url
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
@@ -76,16 +76,6 @@ def _call(verb: str, payload: dict, *, needs_project: bool = True, get: bool = F
     return _here(here())
 
 
-def _config(pairs: list[str]) -> dict[str, str]:
-    config: dict[str, str] = {}
-    for pair in pairs:
-        key, sep, value = pair.partition("=")
-        if not sep or not key.strip():
-            fail(EXIT_INVALID_ARG, "BAD_CONFIG", f"--config takes key=value, got {pair!r}")
-        config[key.strip()] = value
-    return config
-
-
 @secrets_app.command("managers")
 def managers_cmd() -> None:
     """The secret managers this Flowpad can use, with their config fields."""
@@ -106,7 +96,7 @@ def vault_add_cmd(
     project: _ProjectOpt = None,
 ) -> None:
     """Add (or replace) the project's vault NAME, held in MANAGER."""
-    ok(_call("vault-set", {"project_id": project, "name": name, "spec": {"manager": manager, "config": _config(config or [])}}))
+    ok(_call("vault-set", {"project_id": project, "name": name, "spec": {"manager": manager, "config": parse_config_pairs(config, "BAD_CONFIG", "--config takes key=value")}}))
 
 
 @vault_app.command("remove")
@@ -151,12 +141,14 @@ def fetch_cmd(
     if name:
         results = [_call("fetch", {"project_id": project, "name": name})]
     else:
-        rows = (_status(project) or {}).get("credentials") or []
+        # The project resolves once, not once per credential.
+        pid = _project_id(discover_port(required=False), project)
+        rows = (_status(pid) or {}).get("credentials") or []
         names = sorted({row["name"] for row in rows if row.get("scope") == "project" and row.get("name")})
         results = []
         for cred in names:
             try:
-                results.append({"name": cred, **_call("fetch", {"project_id": project, "name": cred})})
+                results.append({"name": cred, **_call("fetch", {"project_id": pid, "name": cred})})
             except typer.Exit:
                 # One credential that names no vault (or holds no values) does not stop the rest.
                 continue

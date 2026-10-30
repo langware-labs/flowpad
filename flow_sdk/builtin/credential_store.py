@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.deployment import Deployment
     from flow_sdk.builtin.project import Project
+    from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 
 logger = logging.getLogger(__name__)
 
@@ -190,26 +191,31 @@ class UnknownVault(SecretStoreError, LookupError):
         self.name = name
 
 
-def project_vaults(project: Optional["Project"]) -> dict[str, SecretStore]:
-    """The project's named vaults (``secret_vaults`` in ``project_manifest.json``), each as the store
-    it names: where its shared values live and where a teammate fetches them from — not where any
-    process reads (that is each deployment's binding, above). Empty: no project, or it names none.
-    No I/O beyond the manifest read; each store's ``.where`` is its place in words."""
+def vaults_of(project: Optional["Project"]) -> dict[str, "SecretVaultSpec"]:
+    """The project's declared vaults (``secret_vaults`` in ``project_manifest.json``), by name — the ONE
+    reader of them. Never raises: no project, no local root, or an unreadable manifest is ``{}`` (the
+    manifest reader is lenient; a vault list is read on every share, receive and setup derive)."""
     from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
-    from flow_sdk.secrets.managers import store_for  # noqa: PLC0415  (lazy: managers load assets)
 
     root = getattr(project, "fs_storage_mount_path", None) if project is not None else None
-    vaults = read_secret_vaults(Path(root)) if root else {}
-    return {name: store_for(vault) for name, vault in vaults.items()}
+    return read_secret_vaults(Path(root)) if root else {}
+
+
+def project_vaults(project: Optional["Project"]) -> dict[str, SecretStore]:
+    """The project's named vaults (:func:`vaults_of`), each as the store it names: where its shared
+    values live and where a teammate fetches them from — not where any process reads (that is each
+    deployment's binding, above). Empty: no project, or it names none. No I/O beyond the manifest
+    read; each store's ``.where`` is its place in words."""
+    from flow_sdk.secrets.managers import store_for  # noqa: PLC0415  (lazy: managers load assets)
+
+    return {name: store_for(vault) for name, vault in vaults_of(project).items()}
 
 
 def project_vault(project: Optional["Project"], name: str) -> SecretStore:
     """The project's vault ``name`` as a store. Raises :class:`UnknownVault` when it declares none by that name."""
-    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
     from flow_sdk.secrets.managers import store_for  # noqa: PLC0415
 
-    root = getattr(project, "fs_storage_mount_path", None) if project is not None else None
-    vaults = read_secret_vaults(Path(root)) if root else {}
+    vaults = vaults_of(project)
     if name not in vaults:
         raise UnknownVault(name, vaults)
     return store_for(vaults[name])

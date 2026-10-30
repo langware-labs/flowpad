@@ -195,23 +195,28 @@ def command_argv(template: str, values: Mapping[str, Any]) -> list[str]:
     return [arg.format_map(filled) for arg in shlex.split(template)]
 
 
-async def run_check(vault: Any) -> bool:
-    """True when the manager's ``check`` exits 0 for this vault on this machine."""
+def _prepared(vault: Any) -> tuple["SecretManagerSpec", dict[str, Any]]:
+    """The vault's manager and the values its commands are filled from: the config with the store's
+    defaults filled in, plus ``vault`` (its name in the manager)."""
     manager, config = _vault_parts(vault)
     spec = get_manager(manager)
     config = _with_defaults(manager, config)
-    code, _ = await _run(spec.check, {**config, "vault": _vault_name(vault, config)}, spec.env)
+    return spec, {**config, "vault": _vault_name(vault, config)}
+
+
+async def run_check(vault: Any) -> bool:
+    """True when the manager's ``check`` exits 0 for this vault on this machine."""
+    spec, values = _prepared(vault)
+    code, _ = await _run(spec.check, values, spec.env)
     return code == 0
 
 
 async def run_grant(vault: Any, email: str) -> None:
     """Give ``email`` read access to the vault; raises ``SecretStoreError`` with the tool's last line."""
-    manager, config = _vault_parts(vault)
-    spec = get_manager(manager)
-    config = _with_defaults(manager, config)
-    code, err = await _run(spec.grant, {**config, "vault": _vault_name(vault, config), "email": email}, spec.env)
+    spec, values = _prepared(vault)
+    code, err = await _run(spec.grant, {**values, "email": email}, spec.env)
     if code != 0:
-        raise SecretStoreError(f"{manager} grant failed: {err or 'no detail'}")
+        raise SecretStoreError(f"{spec.name} grant failed: {err or 'no detail'}")
 
 
 def command_env(env: Mapping[str, str], values: Mapping[str, Any]) -> dict[str, str]:
@@ -261,7 +266,6 @@ def _vault_name(vault: Any, config: Mapping[str, Any]) -> str:
 
 
 __all__ = [
-    "ConfigFieldSpec", "OsCommandsSpec", "SecretManagerSpec", "SecretManagerLoadError", "UnknownSecretManager",
-    "cli_command", "command_argv", "current_os", "get_manager", "list_managers", "load_managers", "run_check", "run_grant",
-    "store_class", "store_for",
+    "OSES", "SecretManagerSpec", "UnknownSecretManager", "cli_command", "get_manager", "list_managers", "load_managers",
+    "run_check", "run_grant", "store_class", "store_for",
 ]

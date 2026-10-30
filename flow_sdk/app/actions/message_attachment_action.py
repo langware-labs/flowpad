@@ -1327,8 +1327,8 @@ async def handle_secret_access_request(credential_id: str, vault: str, someone_t
     import json  # noqa: PLC0415
 
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
     from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
@@ -1342,8 +1342,7 @@ async def handle_secret_access_request(credential_id: str, vault: str, someone_t
     ma = max(received, key=lambda m: str(getattr(m, "created_at", "") or ""))
     cred = await Credential.get_one({"id": credential_id})
     project = await Project.get_one({"id": cred.project_id}) if cred is not None and cred.project_id else None
-    root = getattr(project, "fs_storage_mount_path", None)
-    spec = read_secret_vaults(Path(root)).get(vault) if root else None
+    spec = vaults_of(project).get(vault)
     if spec is None:
         return ApiFailResponse(message=f"unknown vault: {vault!r}", status_code=400)
     sender = await User.current_sender_participant(None)

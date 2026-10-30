@@ -85,6 +85,18 @@ def fail(exit_code: int, error_code: str, message: str, extra: "dict[str, Any] |
     raise typer.Exit(exit_code)
 
 
+def parse_config_pairs(pairs: Optional[list[str]], error_code: str, usage: str) -> dict[str, str]:
+    """``--config key=value`` options as a dict (key stripped, value as typed). A pair with no ``=``
+    or an empty key fails with ``error_code`` and ``"<usage>, got '<pair>'"``."""
+    out: dict[str, str] = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or not key.strip():
+            fail(EXIT_INVALID_ARG, error_code, f"{usage}, got {pair!r}")
+        out[key.strip()] = value
+    return out
+
+
 def ok(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps({"ok": True, **payload}))
 

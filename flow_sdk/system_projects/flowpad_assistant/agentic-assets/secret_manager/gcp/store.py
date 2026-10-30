@@ -204,12 +204,16 @@ class GcpVaultStore(SecretStore):
     #: The bound connection's row, looked up once per binding. Its token is not: that is resolved
     #: on every client, so a revoked or refreshed grant is seen by the next verb.
     _held: Optional["Connection"] = None
+    #: The ``gcloud`` token, fetched once per store object: one verb sequence starts ``gcloud`` once.
+    _gcloud_token: Optional[str] = None
 
     async def _client(self) -> httpx.AsyncClient:
         if not self.connection:
             # A vault with no bound connection reads as whoever is signed in to ``gcloud`` here —
             # the sign-in this manager's setup steps make (as ``op`` is for 1Password).
-            token = await gcloud_token()
+            if self._gcloud_token is None:
+                self._gcloud_token = await gcloud_token()
+            token = self._gcloud_token
             if token is None:
                 raise gcloud_not_signed_in(self.type_name, list(self.connection_scopes))
             return httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"})

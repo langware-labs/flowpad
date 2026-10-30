@@ -20,11 +20,12 @@ async def pre_share_of(entity_type: str, entity_id: str) -> dict:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     cls = SchemaRegistry.get_entity_cls(entity_type)
-    entity = await cls.get_one({"id": entity_id}) if cls is not None else None
-    hook = getattr(entity, "pre_share", None)
-    if entity is None or hook is None:
+    if getattr(cls, "pre_share", None) is None:  # most types: no hook, no DB read
         return {"needed": False}
-    return await hook()
+    entity = await cls.get_one({"id": entity_id})
+    if entity is None:
+        return {"needed": False}
+    return await entity.pre_share()
 
 
 @action.get(action_name="pre_share", types="all")

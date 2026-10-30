@@ -733,27 +733,6 @@ class Project(SetupSkippable, Entity):
         await self._reindex_manifest()
         return ApiSuccessResponse(data={"env_files": spec.env_files})
 
-    @action.post(action_name="set-secret-vault")
-    async def set_secret_vault_action(self, name: str = "", vault: dict | None = None) -> "ApiResponse":
-        """`POST /project/<id>/set-secret-vault {name, vault}` — add or replace (or, with null,
-        remove) the project's named secret vault ``{manager, config}``.
-
-        Written into ``project_manifest.json`` so every clone knows where the project's shared
-        values live. Names a place, never a value.
-        """
-        from flow_sdk.assets.project_manifest import ManifestError, set_secret_vault  # noqa: PLC0415
-
-        if not self.fs_storage_mount_path:
-            return ApiFailResponse(message="Project has no local working directory")
-        if vault is not None and not isinstance(vault, dict):
-            return ApiFailResponse(message="vault must be {manager, config}", status_code=400)
-        try:
-            spec = set_secret_vault(Path(self.fs_storage_mount_path), name, vault)
-        except ManifestError as exc:
-            return ApiFailResponse(message=str(exc), status_code=400)
-        await self._reindex_manifest()
-        return ApiSuccessResponse(data={"secret_vaults": {k: v.model_dump() for k, v in spec.secret_vaults.items()}})
-
     async def _reindex_manifest(self) -> None:
         """Re-index ``project_manifest.json`` after a field write. The row is the
         projection every reader queries (the home-page picker, Credentials), and

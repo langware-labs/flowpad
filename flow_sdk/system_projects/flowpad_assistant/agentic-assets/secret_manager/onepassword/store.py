@@ -13,7 +13,7 @@ import logging
 import os
 import re
 import shutil
-from typing import Any, ClassVar, Iterable, Mapping, Optional
+from typing import Any, Awaitable, Callable, ClassVar, Iterable, Mapping, Optional, TypeVar
 
 from pydantic import ConfigDict, Field, SecretStr
 
@@ -22,6 +22,11 @@ from flow_sdk.secrets.errors import SecretStoreError, StoreAccessDenied, StoreNe
 from flow_sdk.secrets.store import SecretStore, plain_values, register_store
 
 logger = logging.getLogger(__name__)
+
+#: How many per-name ``op`` calls one verb runs at once.
+_CONCURRENCY = 8
+_T = TypeVar("_T")
+_R = TypeVar("_R")
 
 #: The item field a value lives in.
 FIELD = "credential"
@@ -121,12 +126,9 @@ class OnePasswordStore(SecretStore):
         return None
 
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
-        out: dict[str, SecretStr] = {}
-        for name in names:
-            value = await self._get(name)
-            if value is not None:
-                out[name] = SecretStr(value)
-        return out
+        wanted = list(names)
+        values = await _each(wanted, self._get)
+        return {name: SecretStr(value) for name, value in zip(wanted, values) if value is not None}
 
     async def save(self, values: Mapping[str, Any], *, description: str = "") -> None:
         held = set(await self.names())
@@ -161,16 +163,38 @@ class OnePasswordStore(SecretStore):
         return False
 
     async def forget(self, names: Iterable[str]) -> tuple[list[str], list[str]]:
-        deleted: list[str] = []
-        kept: list[str] = []
-        for name in names:
+        async def delete(name: str) -> Optional[bool]:
+            """True deleted, False absent, None kept (the store refused)."""
             try:
-                if await self._delete(name):
-                    deleted.append(name)
+                return await self._delete(name)
             except SecretStoreError as e:
                 logger.warning("[secrets] 1Password kept %s: %s", name, type(e).__name__)
-                kept.append(name)
+                return None
+
+        wanted = list(names)
+        outcomes = await _each(wanted, delete)
+        deleted = [name for name, done in zip(wanted, outcomes) if done]
+        kept = [name for name, done in zip(wanted, outcomes) if done is None]
         return deleted, kept
+
+
+async def _each(items: list[_T], work: Callable[[_T], Awaitable[_R]]) -> list[_R]:
+    """``work`` over ``items``, at most :data:`_CONCURRENCY` ``op`` calls at once, results in order.
+    The first failure propagates; every other task is cancelled and awaited first."""
+    gate = asyncio.Semaphore(_CONCURRENCY)
+
+    async def gated(item: _T) -> _R:
+        async with gate:
+            return await work(item)
+
+    tasks = [asyncio.ensure_future(gated(item)) for item in items]
+    try:
+        return list(await asyncio.gather(*tasks))
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 __all__ = ["OnePasswordConfig", "OnePasswordStore", "OnePasswordNotSignedIn", "OnePasswordCliMissing"]

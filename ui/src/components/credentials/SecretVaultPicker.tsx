@@ -11,7 +11,7 @@ import { cn } from '@src/lib/utils';
  * Add a vault to the project — a named group of secrets in one secret manager
  * (`secret_vaults` in project_manifest.json, docs/secret_share.md) — then publish this computer's
  * values of `credential` into it. Steps: manager (from the installed managers) → vault name →
- * that manager's own config fields → `set-secret-vault` → publish. Only a place is saved, never a value.
+ * that manager's own config fields → `credentialsService.addVault` → publish. Only a place is saved, never a value.
  */
 export function SecretVaultPicker({
   projectId,

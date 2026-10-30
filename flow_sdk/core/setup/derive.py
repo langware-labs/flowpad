@@ -42,12 +42,6 @@ PROJECT = "project"
 FIXER_AGENT = "setup-fixer"
 
 
-def _flow(*args: str, platform: str) -> str:
-    from flow_sdk.core.flow_command import flow_command  # noqa: PLC0415
-
-    return flow_command(*args, platform=platform)
-
-
 def _op(name: str, label: str, step: str, *, kind: str = "webapp_step", fixer: str = "",
         fix_on_load: bool = False) -> ComputeOpSpec:
     """An in-process step of the run's web app (``webapp_step``) or source (``source_step``): the call is the
@@ -84,17 +78,9 @@ def _holder(asset_ref: str) -> str:
 
 def _declared_vaults(project: Any) -> dict[str, Any]:
     """The project's declared vaults (``secret_vaults`` in its manifest), by name; {} when it has none."""
-    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
 
-    root = getattr(project, "fs_storage_mount_path", None)
-    try:
-        return read_secret_vaults(Path(root)) if root else {}
-    except Exception:  # noqa: BLE001 — a bad manifest is a setup without vaults, never a broken tree
-        logger.warning("[setup] secret vaults unreadable for %s", getattr(project, "id", "?"), exc_info=True)
-        return {}
-
-
-_PLATFORMS = ("darwin", "linux", "win32")
+    return vaults_of(project)
 
 
 def _on_path(binary: str, platform: str) -> str:
@@ -104,7 +90,7 @@ def _on_path(binary: str, platform: str) -> str:
 def _vault_commands(name: str, vault: Any) -> Optional[dict[str, dict[str, str]]]:
     """Per OS, the manager's ``install`` / ``login`` / ``check`` for this vault, its ``{vault}`` and config keys
     filled in (``{vault}`` = the config's ``vault``, else the project's name for it). None: unknown manager."""
-    from flow_sdk.secrets.managers import cli_command, get_manager  # noqa: PLC0415  (lazy: managers load assets)
+    from flow_sdk.secrets.managers import OSES, cli_command, get_manager  # noqa: PLC0415  (lazy: managers load assets)
 
     try:
         manager = get_manager(vault.manager)
@@ -115,7 +101,7 @@ def _vault_commands(name: str, vault: Any) -> Optional[dict[str, dict[str, str]]
     def render(op: str, platform: str) -> str:
         return cli_command(manager, op, platform, **fill) or ""
 
-    return {op: {p: render(op, p) for p in _PLATFORMS} for op in ("install", "login", "check")}
+    return {op: {p: render(op, p) for p in OSES} for op in ("install", "login", "check")}
 
 
 class ProjectTree:
@@ -255,7 +241,7 @@ class ProjectTree:
 
     def _vault_node(self, name: str) -> str:
         """``vault:<name>``: the vault's manager CLI is installed (skipped while it is on PATH), signed in
-        (skipped while its check passes), then checked through ``flow secrets check`` — so a credential below
+        (skipped while its check passes), then checked (the manager's own check; ``flow secrets check`` is the action) — so a credential below
         it fetches from a vault this machine can read. Built from the manager's commands for each OS."""
         node_id = f"vault:{name}"
         if node_id in self.nodes:
@@ -267,7 +253,10 @@ class ProjectTree:
             self.nodes[node_id] = SetupNode(id=node_id, label=label,
                                             problem=f"vault {name!r} names an unknown secret manager {vault.manager!r}")
             return node_id
-        binary = {p: (commands["check"][p].split() or [""])[0] for p in _PLATFORMS}
+        from flow_sdk.builtin.project_setup import _cli  # noqa: PLC0415
+        from flow_sdk.secrets.managers import OSES  # noqa: PLC0415
+
+        binary = {p: (commands["check"][p].split() or [""])[0] for p in OSES}
         manager_check = {"commands": commands["check"]}
         specs = []
         if any(commands["install"].values()):
@@ -275,7 +264,7 @@ class ProjectTree:
                 "name": f"{node_id}:install", "label": f"Install {vault.manager}",
                 "description": f"{vault.manager}'s command line is on this machine.", "subkind": "cli",
                 "exe_data": {"commands": commands["install"]},
-                "completion_check": {"commands": {p: _on_path(binary[p], p) for p in _PLATFORMS if binary[p]}},
+                "completion_check": {"commands": {p: _on_path(binary[p], p) for p in OSES if binary[p]}},
             })
         if any(commands["login"].values()):
             specs.append({
@@ -283,11 +272,10 @@ class ProjectTree:
                 "description": f"This machine is signed in to {vault.manager} and can read vault {name}.",
                 "subkind": "cli", "exe_data": {"commands": commands["login"]}, "completion_check": manager_check,
             })
-        check = {"commands": {p: _flow("secrets", "check", name, "--project", self.pid, platform=p) for p in _PLATFORMS}}
         specs.append({
             "name": f"{node_id}:check", "label": f"Check vault {name}",
             "description": f"Vault {name} is readable from this machine.", "subkind": "cli",
-            "exe_data": check, "completion_check": check,
+            "exe_data": _cli("secrets", "check", name, "--project", self.pid), "completion_check": manager_check,
         })
         steps = []
         for spec in specs:

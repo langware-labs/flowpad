@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional
@@ -829,6 +830,18 @@ def _store_refusal(e: Exception) -> Optional[CredentialError]:
     return None
 
 
+@contextmanager
+def store_errors():
+    """Inside it, a store's own refusal surfaces as a fixable :class:`CredentialError`; anything else as it is."""
+    try:
+        yield
+    except Exception as e:
+        refusal = _store_refusal(e)
+        if refusal is None:
+            raise
+        raise refusal from e
+
+
 async def _project_of(project_id: str) -> "Project":
     project = await get_project(project_id)
     if project is None:
@@ -837,13 +850,13 @@ async def _project_of(project_id: str) -> "Project":
 
 
 def _vault_specs(project: "Project") -> dict[str, Any]:
-    from flow_sdk.assets.project_manifest import read_secret_vaults  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
 
-    return read_secret_vaults(Path(project.fs_storage_mount_path))
+    return vaults_of(project)
 
 
-def _vault_spec(project: "Project", vault: str) -> Any:
-    vaults = _vault_specs(project)
+def _vault_spec(vaults: Mapping[str, Any], vault: str) -> Any:
+    """``vault`` out of the project's ``vaults`` (:func:`_vault_specs`); a CredentialError when it has none by that name."""
     if not vaults:
         raise CredentialError("this project has no vault — set up a secret manager to share values", code="no_vault")
     if vault not in vaults:
@@ -851,14 +864,13 @@ def _vault_spec(project: "Project", vault: str) -> Any:
     return vaults[vault]
 
 
-def _vault_store(project: "Project", vault: str):
-    from flow_sdk.builtin.credential_store import project_vault  # noqa: PLC0415
+def _vault_store(vaults: Mapping[str, Any], vault: str):
+    """The store ``vault`` names, from the manifest already read into ``vaults``."""
+    from flow_sdk.secrets import managers  # noqa: PLC0415  (lazy: managers load assets)
 
-    _vault_spec(project, vault)
-    try:
-        return project_vault(project, vault)
-    except Exception as e:
-        raise (_store_refusal(e) or e) from e
+    spec = _vault_spec(vaults, vault)
+    with store_errors():
+        return managers.store_for(spec)
 
 
 async def _shared_credential(name: str, project_id: str) -> tuple["Project", "Credential", list[str]]:
@@ -892,18 +904,17 @@ async def publish(name: str, project_id: str, vault: str) -> dict[str, Any]:
     from flow_sdk.schema.data_spec.secret_vault_spec import SecretRefSpec  # noqa: PLC0415
 
     project, spec, stored = await _shared_credential(name, project_id)
-    _vault_spec(project, vault)
+    vaults = _vault_specs(project)
+    _vault_spec(vaults, vault)
     new_refs = {var: SecretRefSpec(vault=vault, key=var) for var in stored if spec.vars[var].secret_ref is None}
     refs = {var: spec.vars[var].secret_ref or new_refs[var] for var in stored}
     mine = await resolve_project_secrets(project, only=stored, placement=await Placement.of(None))
     by_vault: dict[str, dict[str, Any]] = {}
     for var, value in mine.items():
         by_vault.setdefault(refs[var].vault, {})[refs[var].key] = value
-    try:
+    with store_errors():
         for vault_name, values in by_vault.items():
-            await _vault_store(project, vault_name).save(values, description=f"{spec.name} · {var_list(values)}")
-    except Exception as e:
-        raise (_store_refusal(e) or e) from e
+            await _vault_store(vaults, vault_name).save(values, description=f"{spec.name} · {', '.join(sorted(values))}")
     if new_refs:
         await _write_refs(spec, new_refs)
     return {"published": sorted(mine), "not_here": sorted(set(stored) - set(mine)), "vault": vault}
@@ -922,11 +933,12 @@ async def fetch(name: str, project_id: str) -> dict[str, Any]:
             groups.setdefault(ref.vault, {})[var] = ref.key
     if not groups:
         raise CredentialError(f"{name} names no vault for its values — publish them first", code="no_vault")
+    vaults = _vault_specs(project)
     values: dict[str, str] = {}
     denied: list[str] = []
     for vault_name, keys in groups.items():
         try:
-            held = await _vault_store(project, vault_name).load(list(keys.values()))
+            held = await _vault_store(vaults, vault_name).load(list(keys.values()))
         except Exception as e:
             refusal = e if isinstance(e, CredentialError) else _store_refusal(e)
             if refusal is None:
@@ -946,7 +958,7 @@ async def vault_check(project_id: str, vault: str) -> dict[str, Any]:
     """Can this computer reach ``vault`` now (manager installed, signed in)? ``{vault, ready, reason}``."""
     from flow_sdk.secrets import managers  # noqa: PLC0415
 
-    spec = _vault_spec(await _project_of(project_id), vault)
+    spec = _vault_spec(_vault_specs(await _project_of(project_id)), vault)
     try:
         ready = bool(await managers.run_check(spec))
         reason = "" if ready else f"the {spec.manager} secret manager is not installed or not signed in"
@@ -961,11 +973,9 @@ async def grant(project_id: str, vault: str, email: str) -> dict[str, Any]:
 
     if not email.strip():
         raise CredentialError("grant needs the email of the person to give access")
-    spec = _vault_spec(await _project_of(project_id), vault)
-    try:
+    spec = _vault_spec(_vault_specs(await _project_of(project_id)), vault)
+    with store_errors():
         await managers.run_grant(spec, email.strip())
-    except Exception as e:
-        raise (_store_refusal(e) or e) from e
     return {"vault": vault, "email": email.strip()}
 
 
@@ -992,11 +1002,8 @@ async def set_vault(project_id: str, name: str, vault: Optional[Mapping[str, Any
         set_secret_vault(Path(project.fs_storage_mount_path), name.strip(), vault)
     except (ManifestError, KeyError, ValueError, LookupError) as e:
         raise CredentialError(str(e)) from e
+    await project._reindex_manifest()
     return await list_vaults(project_id)
-
-
-def var_list(names: Iterable[str]) -> str:
-    return ", ".join(sorted(names))
 
 
 # ── test: are the values GOOD, not only present ─────────────────────────────
