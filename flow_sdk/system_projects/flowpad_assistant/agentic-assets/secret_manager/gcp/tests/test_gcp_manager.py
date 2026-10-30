@@ -8,8 +8,7 @@ import stat
 import pytest
 
 from flow_sdk.secrets import StoreNeedsConnection
-from flow_sdk.secrets.gcp_secret_manager import GcpSecretManagerStore
-from flow_sdk.secrets.managers import cli_command, get_manager, run_check, run_grant, store_for
+from flow_sdk.secrets.managers import cli_command, store_class, get_manager, run_check, run_grant, store_for
 from tests.utils.fake_gcp_secret_manager import serving_gcp_store
 
 pytestmark = [pytest.mark.timeout(10)]  # do not increase timeout without approval
@@ -29,7 +28,7 @@ def test_commands_per_os():
 async def test_the_vault_store_round_trips_through_secret_manager(monkeypatch):
     with serving_gcp_store(monkeypatch, tokens={"tok"}) as gcp:
         store = store_for(VAULT)
-        assert isinstance(store, GcpSecretManagerStore) and store.type_name == "gcp"
+        assert isinstance(store, store_class("gcp")) and store.type_name == "gcp"
         assert store.where == "GCP project acme-prod · app-*"
         with pytest.raises(StoreNeedsConnection):
             await store.load(["API_KEY"])

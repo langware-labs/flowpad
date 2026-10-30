@@ -188,7 +188,7 @@ from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
 agentmail = await DataSource.get("agent mailbox")
-remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
+remote = await SecretStore.get("gcp", {"project": "acme-prod", "prefix": "agentmail-production-"})
 
 google = await Connection.get("google")  # remote.connections.names() → ["google"]
 await google.validate_scopes(remote.connections.scopes("google"))

@@ -3,11 +3,14 @@ id: 3f8618bb-02a2-48c1-905e-47f10f0a7329
 name: chartit
 description: 'Builds and edits Flowpad Charts — one entity for every kind of chart,
   opened in Flowpad''s own chart editor: a sequence (network / message flow between
-  participants, with sub-flow blocks that open other charts), an Excalidraw whiteboard
-  (boxes, arrows, freehand), or a Mermaid diagram. Picks the format, writes the chart''s
+  participants, with sub-flow blocks that open other charts), a C4 architecture diagram
+  (context, container, component, code, landscape, dynamic or deployment, with boxes that
+  open the chart zooming into them), an Excalidraw whiteboard (boxes, arrows, freehand), or a
+  Mermaid diagram. Picks the format, writes the chart''s
   files, indexes it, and shows it; the reviewer clicks any element, comments (text
   + image) and Submits, and the comments come back to this session to revise the chart.
-  Use for "chart this flow", "draw the network flow", "sequence diagram of X", "make
+  Use for "chart this flow", "draw the network flow", "sequence diagram of X", "C4 diagram",
+  "software architecture of X", "draw our containers / deployment", "make
   a whiteboard / board / diagram", "mermaid diagram", "a chart I can comment on",
   converting a chart between formats, or when feedback on a chart arrives. NOT for
   a clickable UX journey (mockify), a data dashboard or report with numbers (html-builder
@@ -22,17 +25,19 @@ shareable, and opens in Flowpad's chart editor, which draws it by its **`format`
 | format | when | the chart's content | you edit |
 |---|---|---|---|
 | `sequence` | who calls whom, in order: protocols, auth flows, request paths, integrations | `chart.json` (kind `chartit.sequence`) | the JSON |
+| `c4` | software architecture: people, systems, containers, stores, components, and how they talk — at one C4 level per chart | `c4.json` (kind `chartit.c4`) | the JSON |
 | `excalidraw` | a free sketch: architecture boxes, a layout, a rough idea | `board.json` (Excalidraw scene) | the JSON |
 | `mermaid` | a flowchart, state machine, ER or class diagram, gantt — anything Mermaid draws well | the ```` ```mermaid ```` block in `CHART.md` | the block |
 
 Every chart folder has `CHART.md`: frontmatter `name`, `description`, `format`, `session` (your agentic
-process id — `flow context` — where feedback goes) and a short prose note. For `sequence` and
+process id — `flow context` — where feedback goes) and a short prose note. For `sequence`, `c4` and
 `excalidraw` the editor keeps a Mermaid copy in `CHART.md` in sync — that is how any chart reads as text.
 Never write `thumbnail.svg`; the editor makes it.
 
 ## 1. Pick the format, then cut the flows
 
-- Several actors exchanging messages over time → `sequence`. Free layout → `excalidraw`. A graph of
+- Several actors exchanging messages over time → `sequence`. What a system is made of and what it
+  talks to → `c4` (a request walking through it, numbered → `c4` with `level: dynamic`). Free layout → `excalidraw`. A graph of
   states / steps / entities → `mermaid`.
 - **Sequence sets: never draw a repeated flow twice.** List every flow first; a run of steps that
   recurs (token refresh, a proxy hop, "select sources") is its own chart, and each place it happens is
@@ -90,6 +95,46 @@ EOF
   `style: "dashed"` for a reply. Labels short (a route or a verb); detail goes in `note` (hover).
 - Copy names exactly as the source has them (typos included — ask before fixing).
 - Where the facts come from code, cite `file:line` in `note`.
+
+**c4** — `c4.json`, checked against `chartit.c4`. Start from `templates/c4/example.c4.json`; the look is
+fixed by the editor (`templates/c4/style.md`) — the file holds facts only, never a colour or position.
+
+```json
+{"title": "Food delivery — containers", "level": "container",
+ "elements": [
+   {"id": "customer", "kind": "person", "label": "Customer", "description": "Orders food."},
+   {"id": "api", "kind": "container", "label": "Order API", "tech": "FastAPI", "boundary": "platform", "ref": "food-delivery-order-api"},
+   {"id": "db", "kind": "database", "label": "Orders", "tech": "Postgres", "boundary": "platform"},
+   {"id": "stripe", "kind": "system", "label": "Stripe", "external": true}],
+ "boundaries": [{"id": "platform", "label": "Delivery platform", "kind": "system"}],
+ "relations": [
+   {"id": "r1", "from": "customer", "to": "api", "label": "Places orders", "tech": "HTTPS"},
+   {"id": "r2", "from": "api", "to": "db", "label": "Reads and writes", "tech": "SQL"},
+   {"id": "r3", "from": "api", "to": "stripe", "label": "Charges the card", "style": "async"}]}
+```
+
+- **One level per chart.** `level` is `context` (one system as one box, with its people and neighbours),
+  `container` (its apps, services and stores inside a `system` boundary), `component` (inside one
+  container), `code` (classes of one component — rarely worth it), `landscape` (many systems, often
+  grouped by `team` boundaries), `dynamic` (one scenario; relations numbered by `order`, laid out left
+  to right) or `deployment` (containers inside nested `deployment` boundaries: region › cluster › node).
+- **Zoom by linking, not by stuffing.** A box that has more detail gets `ref: "<the chart one level down>"`
+  (drawn **Open ↗**) and the same `flow dep add` link as a sub-flow (§2b). A mixed-level view is still
+  allowed when it IS the point (one container opened up among its siblings): put the opened container's
+  components in a `container` boundary inside the system boundary.
+- `kind` sets shape and colour: `person`, `system`, `container`, `component`, `code` (cards), `database`
+  (cylinder), `queue` (pill). `external: true` for anything outside the scope (grey, dashed).
+- Every box: a `label`, a `tech` where there is one, and a one-sentence `description`. Every relation:
+  a short verb `label` and its `tech`; `style: "async"` for events and queues.
+- Boundaries nest by `parent`: `system`, `container`, `zone` (trust zone / DMZ), `deployment`, `tenant`,
+  `team`, `group`. A boundary holding nothing is not drawn.
+- A migration chart marks boxes `status: "migrating"` or `"target"`.
+- At most ~20 elements — past that, split by zooming.
+- Check before you finish — both must pass:
+  ```bash
+  python3 -I <this skill>/templates/c4/check_c4.py "$D"
+  flow icons check <every icon tag> --path "$D"
+  ```
 
 **excalidraw** — `board.json` `{"kind": "excalidraw", "version": 1, "data": {"elements": [...], "appState": {}}}`;
 elements `rectangle` / `ellipse` / `diamond` / `arrow` / `text` with `id`, `type`, `x`, `y`, `width`,
@@ -173,4 +218,5 @@ new `sequence` / `mermaid` chart from it.
 ## 6. Verify before you report
 
 Open the chart (`flow show entity`) and look at it — every participant and arrow present, in order,
-self-calls on the right lane, each Open ↗ reaching its chart. Never report a chart you have not seen.
+self-calls on the right lane, each Open ↗ reaching its chart. For a C4 chart: every box inside its
+boundary, no label sitting on a line, each Open ↗ reaching the chart one level down. Never report a chart you have not seen.

@@ -1,0 +1,35 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "title": {
+      "shape": "?string",
+      "description": "What the chart shows, in a few words; defaults to the chart's name."
+    },
+    "level": {
+      "shape": "enum:landscape|context|container|component|code|dynamic|deployment",
+      "description": "The C4 view: landscape (many systems), context (one system and its world), container, component, code, dynamic (numbered steps of one scenario) or deployment (containers on infrastructure)."
+    },
+    "direction": {
+      "shape": "?enum:TB|LR",
+      "description": "Layout direction: TB top to bottom (default), LR left to right (default for dynamic)."
+    },
+    "elements": {
+      "shape": [
+        "chartit.c4_element"
+      ],
+      "description": "The boxes: people, systems, containers, stores, components."
+    },
+    "boundaries": {
+      "shape": [
+        "chartit.c4_boundary"
+      ],
+      "description": "The dashed groups boxes sit in: a system, a container, a zone, a deployment node, a tenant, a team. They nest through `parent`."
+    },
+    "relations": {
+      "shape": [
+        "chartit.c4_relation"
+      ],
+      "description": "The arrows between elements."
+    }
+  }
+}

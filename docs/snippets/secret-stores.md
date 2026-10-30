@@ -67,13 +67,13 @@ config, or the default.
 
 ## Store types
 
-Three ship out of the box:
+These ship (the last from the `gcp` secret manager asset):
 
 | type                 | config                                   | where a value lives                                                                                                                                           |
 | -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `env_file`           | `env_file_path` — the file to read/write; `fallback_paths` — read-only files tried, in order, for a name it lacks | that file, one `NAME=value` line per variable                                                                                                                 |
 | `vault`              | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries`                                                                                               |
-| `gcp_secret_manager` | `gcp_project`, `prefix`                  | the secret `<prefix><NAME>` in that GCP project, latest version — read with a bound `google` connection ([§6](#6-connections--the-same-pattern-for-accounts)) |
+| `gcp` (a secret manager asset) | `project`, `prefix` | the secret `<prefix><NAME>` in that GCP project, latest version — read with a bound `google` connection ([§6](#6-connections--the-same-pattern-for-accounts)) |
 
 `SecretStore.get()` with no arguments is `env_file` on
 `project.env_file_path()` for `await context.current_project()` — the
@@ -360,7 +360,7 @@ needs now (`core/oauth/wanted_scopes.py`), so a connect made after a writing sou
 `Connection.get` and stays.
 
 An external store is a consumer of both kinds — it acts as an account and holds
-named values. `gcp_secret_manager` ships as one; another registers with `register_store`:
+named values. The `gcp` secret manager asset ships one; another registers with `register_store`:
 
 ```python
 from flow_sdk.builtin.data_source import DataSource
@@ -368,7 +368,7 @@ from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
 agentmail = await DataSource.get("agent mailbox")
-remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
+remote = await SecretStore.get("gcp", {"project": "acme-prod", "prefix": "agentmail-production-"})
 
 google = await Connection.get("google")  # remote.connections.names() → ["google"]
 await google.validate_scopes(remote.connections.scopes("google"))

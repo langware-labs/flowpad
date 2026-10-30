@@ -1,4 +1,4 @@
-"""``gcp_secret_manager``: a store that acts as an account, against a loopback Secret Manager v1.
+"""The ``gcp`` manager's store: a store that acts as an account, against a loopback Secret Manager v1.
 
 Independently (load, save, names, validate_keys, forget, prefix, pagination, 404/401/403, an
 unbound or undeclared connection) and bound to a DataSource that is reloaded from its row and
@@ -15,7 +15,6 @@ from flow_sdk.connections import Connection
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
 from flow_sdk.secrets import (
-    GcpSecretManagerStore,
     MissingSecrets,
     SecretStore,
     SecretStoreError,
@@ -23,6 +22,7 @@ from flow_sdk.secrets import (
     StoreNeedsConnection,
 )
 from flow_sdk.sources.families import RecordSource
+from flow_sdk.secrets.managers import store_class
 from tests.utils.fake_gcp_secret_manager import serving_gcp_store
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -73,7 +73,7 @@ def gcp(monkeypatch, tokens):
 
 
 async def _store(prefix: str = "app-", *, bind: bool = True) -> SecretStore:
-    store = await SecretStore.get("gcp_secret_manager", {"gcp_project": PROJECT, "prefix": prefix})
+    store = await SecretStore.get("gcp", {"project": PROJECT, "prefix": prefix})
     if bind:
         await store.set_connection(Connection(provider="google", display_name="Google", connected=True))
     return store
@@ -100,7 +100,7 @@ async def test_saves_loads_lists_and_validates_under_its_prefix(gcp):
     await store.validate_keys(["API_KEY"])
     with pytest.raises(MissingSecrets) as missing:
         await store.validate_keys(["API_KEY", "NEVER_SAVED"])
-    assert missing.value.missing == ["NEVER_SAVED"] and "gcp_secret_manager" in str(missing.value)
+    assert missing.value.missing == ["NEVER_SAVED"] and "gcp" in str(missing.value)
 
 
 async def test_names_follow_every_page_and_keep_only_the_prefix(gcp):
@@ -180,7 +180,7 @@ async def test_only_a_declared_provider_binds_and_local_stores_declare_none(tmp_
     with pytest.raises(ValueError, match="google"):
         await store.set_connection("slack")
     with pytest.raises(ValueError, match="slack"):
-        SecretStore.from_ref({"type": "gcp_secret_manager", "config": {"gcp_project": PROJECT}, "connection": "slack"})
+        SecretStore.from_ref({"type": "gcp", "config": {"project": PROJECT}, "connection": "slack"})
 
     env_file = await SecretStore.get("env_file", {"env_file_path": str(tmp_path / ".env.local")})
     assert env_file.connections.names() == [] and env_file.ref.connection == ""
@@ -193,20 +193,22 @@ async def test_the_ref_carries_the_binding_and_the_config_is_strict():
 
     again = SecretStore.from_ref(store.ref.model_dump(mode="json"))
 
-    assert isinstance(again, GcpSecretManagerStore) and again.connection == "google" and again.ref == store.ref
-    assert store.ref.config == {"gcp_project": PROJECT, "prefix": "agentmail-production-"}
+    assert isinstance(again, store_class("gcp")) and again.connection == "google" and again.ref == store.ref
+    assert store.ref.config == {"project": PROJECT, "prefix": "agentmail-production-"}
     await again.set_connection(None)
     assert again.ref.connection == ""
-    for bad in ({"gcp_project": PROJECT, "token": "x"}, {"prefix": "p-"}, {"gcp_project": PROJECT, "prefix": "a/b"},
-                {"gcp_project": "../other"}):
+    for bad in ({"project": PROJECT, "token": "x"}, {"prefix": "p-"}, {"project": PROJECT, "prefix": "a/b"},
+                {"project": "../other"}):
         with pytest.raises(ValidationError):
-            await SecretStore.get("gcp_secret_manager", bad)
+            await SecretStore.get("gcp", bad)
     with pytest.raises(ValueError, match="secret id"):
         await store.load(["not.a.secret.id"])
 
 
 async def test_another_http_failure_is_reported_as_is(gcp, monkeypatch):
-    from flow_sdk.secrets import gcp_secret_manager
+    import sys
+
+    gcp_secret_manager = sys.modules[store_class("gcp").__module__]
 
     monkeypatch.setattr(gcp_secret_manager, "API_ROOT", gcp.api_root.replace("/v1", "/v2"))
 
@@ -271,8 +273,14 @@ async def test_a_per_store_forget_reports_a_gcp_store_and_an_unbound_one_as_unre
     reports = await forget_in([bound.ref, unbound.ref, bound.ref], ["API_KEY"])
 
     assert [(r.type, r.deleted, r.kept, bool(r.error)) for r in reports] == [
-        ("gcp_secret_manager", ["API_KEY"], [], False),
-        ("gcp_secret_manager", [], ["API_KEY"], True),
+        ("gcp", ["API_KEY"], [], False),
+        ("gcp", [], ["API_KEY"], True),
     ]
     assert "StoreNeedsConnection" in reports[1].error
     assert (PROJECT, "app-API_KEY") not in gcp.secrets
+
+
+@pytest.mark.asyncio
+async def test_a_ref_saved_under_the_old_type_name_still_resolves():
+    store = SecretStore.from_ref({"type": "gcp_secret_manager", "config": {"gcp_project": PROJECT}})
+    assert isinstance(store, store_class("gcp")) and store.config.project == PROJECT

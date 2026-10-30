@@ -1,0 +1,1 @@
+The data of a `format: c4` Chart — the chart's `c4.json`: elements, the boundaries they sit in, and the relations between them, at one C4 level. Zooming in is another chart, opened from a box's `ref`.

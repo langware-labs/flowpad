@@ -28,7 +28,7 @@ DATASETS = {
                        "One row per comment a reviewer left on a chart (chartit); key = <chart>-<id>.",
                        "chartit.feedback"),
 }
-KINDS = ("sequence", "participant", "message", "feedback")
+KINDS = ("sequence", "participant", "message", "c4", "c4_element", "c4_boundary", "c4_relation", "feedback")
 
 
 def fail(message: str) -> None:

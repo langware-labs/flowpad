@@ -1,0 +1,49 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id; relations name it in from / to, and feedback targets it."
+    },
+    "kind": {
+      "shape": "enum:person|system|container|database|queue|component|code",
+      "description": "What it is; sets its shape and colour (person: violet with a head; database / queue: aqua cylinder / pill; the rest: blue card)."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The name on the box."
+    },
+    "tech": {
+      "shape": "?string",
+      "description": "The technology (FastAPI, Postgres, Kafka) — shown in the tag line [Container · FastAPI]."
+    },
+    "description": {
+      "shape": "?string",
+      "description": "What it does, one sentence; up to three lines show on the box."
+    },
+    "external": {
+      "shape": "?bool",
+      "description": "Outside the scope being described: drawn grey and dashed."
+    },
+    "boundary": {
+      "shape": "?string",
+      "description": "The id of the boundary it sits in."
+    },
+    "icon": {
+      "shape": "?string",
+      "description": "An icon tag (<pack>.<icon>, e.g. brands.github, lucide.database); must resolve — `flow icons check`."
+    },
+    "ref": {
+      "shape": "?string",
+      "description": "The name of the chart that zooms into this element; drawn as Open ↗."
+    },
+    "status": {
+      "shape": "?enum:current|migrating|target",
+      "description": "For a migration chart: migrating (orange badge) or target (dashed badge); current shows nothing."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Shown on hover; cite file:line where facts come from code."
+    }
+  }
+}

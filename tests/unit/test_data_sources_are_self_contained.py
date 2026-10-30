@@ -177,8 +177,8 @@ def secret_manager_names() -> tuple[str, ...]:
 def secret_manager_offenders() -> dict[str, str]:
     """A manager without its own ``store.py``; an import of a manager's package or a reference to
     one of its classes outside its folder. No module-NAME trace: a manager is named for a vendor
-    (``gcp``), and the SDK has its own vendor clients (``secrets/gcp_secret_manager.py``, which the
-    ``gcp`` manager wraps) — what may not escape is the manager's code."""
+    (``gcp``), and the SDK has its own vendor clients (``sod/gcp_sod.py``) —
+    what may not escape is the manager's code."""
     names = secret_manager_names()
     found: dict[str, str] = {
         f"{SECRET_MANAGERS_REL}/{n}": f"{SECRET_MANAGERS_REL}/{n} has no store.py of its own"

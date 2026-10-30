@@ -5,7 +5,7 @@ prefix from a scope or an environment. Every store is keyed by the environment v
 (``ENV_VAR_NAME``); how it spells that key inside (a file line, a vault entry) is its own business,
 so moving values between stores, or into a process, is a dict.
 
-Three types ship here: ``env_file``, ``vault`` and ``gcp_secret_manager``; each secret manager asset
+Types ship here (``env_file``, ``vault``, ``hub``) and in secret manager assets; each secret manager asset
 (``flow_sdk.secrets.managers``) registers its own under its name. Another registers with
 :func:`register_store`.
 """

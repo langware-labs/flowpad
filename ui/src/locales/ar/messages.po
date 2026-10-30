@@ -680,6 +680,12 @@ msgstr "فشل قطع الاتصال عن {0}"
 msgid "{0} documents, {1} chunks"
 msgstr "المستندات: {0} · المقاطع: {1}"
 
+#. placeholder {0}: value.elements.length
+#. placeholder {1}: value.relations.length
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "{0} elements · {1} relations"
+msgstr ""
+
 #. placeholder {0}: totals.estimated_requests
 #. placeholder {1}: totals.unpriced_requests
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -1120,6 +1126,13 @@ msgstr "لن يتمكن {0} من الإنفاق من {1} بعد الآن. الم
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: {1}"
 msgstr "{0}: {1}"
+
+#. placeholder {0}: value.title || t`C4 chart`
+#. placeholder {1}: value.elements.length
+#. placeholder {2}: value.relations.length
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "{0}: {1} elements, {2} relations"
+msgstr ""
 
 #. placeholder {0}: value.title || t`Sequence chart`
 #. placeholder {1}: value.participants.length
@@ -1931,6 +1944,7 @@ msgstr "/المسار/إلى/db"
 msgid "/run reclaimable "
 msgstr "‏/run قابل للاسترجاع "
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
@@ -4665,6 +4679,10 @@ msgstr "المساعد يستجيب الآن"
 msgid "Assistants & keys"
 msgstr "المساعدات والمفاتيح"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "async"
+msgstr ""
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "At"
 msgstr "في"
@@ -5239,6 +5257,7 @@ msgstr ""
 msgid "Both"
 msgstr ""
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Boundary"
 msgstr "حد فاصل"
@@ -5500,6 +5519,14 @@ msgstr "حسب الاسم"
 msgid "By scope"
 msgstr "حسب النطاق"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "C4 architecture"
+msgstr ""
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "C4 chart"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "cache hit rate"
 msgstr "معدل نجاح الذاكرة المؤقتة"
@@ -5538,6 +5565,7 @@ msgstr "كتابة الذاكرة المؤقتة"
 msgid "Cache write: {0}"
 msgstr "كتابة الذاكرة المؤقتة: {0}"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "call"
 msgstr "استدعاء"
@@ -8452,7 +8480,7 @@ msgstr "تعذّر فتح المجلد"
 msgid "Could not open the shared version"
 msgstr "تعذّر فتح النسخة التي شوركت"
 
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/useOpenChart.ts
 msgid "Could not open the sub-flow"
 msgstr "تعذّر فتح التدفق الفرعي"
 
@@ -10486,6 +10514,7 @@ msgstr "صِفوا هوية هذا الوكيل وما يقوم به وما يج
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/CredentialDialog.tsx
@@ -10702,6 +10731,7 @@ msgstr "لم يتم تسجيل التشخيص — يُرجى المحاولة م
 msgid "Diagnostic complete — no issue found."
 msgstr "اكتمل التشخيص — لم يُعثر على أي مشكلة."
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Diagram"
 msgstr "رسم تخطيطي"
@@ -11521,6 +11551,10 @@ msgstr "المرشحات الفعّالة عند نقطة النهاية هذه"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Effort"
 msgstr "مستوى الجهد"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Element"
+msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/token-plan/AllocateDialog.tsx
@@ -13886,6 +13920,7 @@ msgstr "JSON حر لمفاتيح الميزات التجريبية. لا يتم 
 msgid "from"
 msgstr "من"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -16299,6 +16334,7 @@ msgstr "النوع"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
@@ -17125,6 +17161,7 @@ msgstr "جارٍ تحميل الميزانيات…"
 msgid "Loading capabilities…"
 msgstr "جارٍ تحميل القدرات…"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
@@ -19280,7 +19317,7 @@ msgstr ""
 msgid "No channel reaches this Agent yet. Give it an email address to start."
 msgstr "لا توجد قناة تصل إلى هذا الوكيل بعد. يُرجى إضافة عنوان بريد إلكتروني له للبدء."
 
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/useOpenChart.ts
 msgid "No chart named “{ref}” in this project"
 msgstr "لا يوجد مخطط باسم “{ref}” في هذا المشروع"
 
@@ -21549,8 +21586,9 @@ msgid "Open"
 msgstr "فتح"
 
 #. placeholder {0}: app.name
+#. placeholder {0}: el.label
 #. placeholder {0}: file.path
-#. placeholder {0}: item.label
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -21610,6 +21648,7 @@ msgstr "فتح {vendorLabel} في طرفية النظام هنا"
 msgid "Open {workerName} terminal"
 msgstr "فتح طرفية {workerName}"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Open ↗"
 msgstr "فتح ↗"
@@ -25001,6 +25040,10 @@ msgstr "رفض"
 #: src/components/harness-login/funding-pill.ts
 msgid "Rejected"
 msgstr "مرفوض"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Relation"
+msgstr ""
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
@@ -30493,6 +30536,10 @@ msgstr "نص النظام"
 #~ msgid "System-installed triggers are seeded at boot via <0>set_service_triggers()</0>. User-driven creation is API-only for now (UI builder coming soon)."
 #~ msgstr "تُهيَّأ محفزات النظام المثبتة عند بدء التشغيل عبر <0>set_service_triggers()</0>. الإنشاء بواسطة المستخدم متاح حاليًا عبر API فقط (سيتوفر منشئ واجهة رسومية قريبًا)."
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "systems, containers and components, zoomable level by level"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Tab"
 msgstr "علامة تبويب"
@@ -30501,6 +30548,7 @@ msgstr "علامة تبويب"
 msgid "Tab failed to open"
 msgstr "فشل فتح التبويب"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Table"
 msgstr "جدول"
@@ -31752,6 +31800,11 @@ msgstr "هذه الميزانية غير متاحة لهذا الحساب"
 msgid "This can take up to a minute if it was asleep."
 msgstr "قد يستغرق هذا حتى دقيقة واحدة إذا كانت في وضع السكون."
 
+#. placeholder {0}: chart?.format
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "This chart is a “{0}” chart, which needs a newer Flowpad to open."
+msgstr ""
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."
 msgstr "لا توجد جلسة قابلة للاستئناف في هذه المحادثة."
@@ -32636,6 +32689,7 @@ msgstr "العنوان"
 msgid "to"
 msgstr "إلى"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -33462,6 +33516,7 @@ msgstr "تحديث متاح"
 msgid "Update channel for auto-updates"
 msgstr "قناة التحديث للتحديثات التلقائية"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
 msgstr "تحديث CHART.md"
@@ -34049,6 +34104,7 @@ msgid "Vibe only"
 msgstr "Vibe فقط"
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -34876,6 +34932,7 @@ msgstr "من حصل على كم، ومن منحه"
 msgid "Who's spending"
 msgstr "من يستهلك الميزانية؟"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Whole chart"
 msgstr "المخطط كاملًا"

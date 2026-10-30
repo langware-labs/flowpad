@@ -6,8 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { readFileAsDataUrl } from './chartDoc';
 
 /**
- * Click-to-comment feedback on a chart — the React port of the chartit skill's
- * `assets/feedback-toolbar.js`. A comment is a typed row of `chartit.feedback`
+ * Click-to-comment feedback on a chart, any format. A comment is a typed row of `chartit.feedback`
  * in the chart's project; Submit hands every open comment to the session that
  * builds the chart (CHART.md `session`) in one prompt, then marks them submitted.
  */

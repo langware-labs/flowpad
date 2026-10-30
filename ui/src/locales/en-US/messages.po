@@ -683,6 +683,12 @@ msgstr "{0} disconnect failed"
 msgid "{0} documents, {1} chunks"
 msgstr "{0} documents, {1} chunks"
 
+#. placeholder {0}: value.elements.length
+#. placeholder {1}: value.relations.length
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "{0} elements · {1} relations"
+msgstr "{0} elements · {1} relations"
+
 #. placeholder {0}: totals.estimated_requests
 #. placeholder {1}: totals.unpriced_requests
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -1123,6 +1129,13 @@ msgstr "{0} will no longer be able to spend from {1}. Money already spent is not
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: {1}"
 msgstr "{0}: {1}"
+
+#. placeholder {0}: value.title || t`C4 chart`
+#. placeholder {1}: value.elements.length
+#. placeholder {2}: value.relations.length
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "{0}: {1} elements, {2} relations"
+msgstr "{0}: {1} elements, {2} relations"
 
 #. placeholder {0}: value.title || t`Sequence chart`
 #. placeholder {1}: value.participants.length
@@ -1944,6 +1957,7 @@ msgstr "/path/to/db"
 msgid "/run reclaimable "
 msgstr "/run reclaimable "
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
@@ -4699,6 +4713,10 @@ msgstr "Assistant is responding"
 msgid "Assistants & keys"
 msgstr "Assistants & keys"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "async"
+msgstr "async"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "At"
 msgstr "At"
@@ -5277,6 +5295,7 @@ msgstr "Bot token (xoxb-…)"
 msgid "Both"
 msgstr "Both"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Boundary"
 msgstr "Boundary"
@@ -5538,6 +5557,14 @@ msgstr "By name"
 msgid "By scope"
 msgstr "By scope"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "C4 architecture"
+msgstr "C4 architecture"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "C4 chart"
+msgstr "C4 chart"
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "cache hit rate"
 msgstr "cache hit rate"
@@ -5576,6 +5603,7 @@ msgstr "Cache Write"
 msgid "Cache write: {0}"
 msgstr "Cache write: {0}"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "call"
 msgstr "call"
@@ -8509,7 +8537,7 @@ msgstr "Could not open the folder"
 msgid "Could not open the shared version"
 msgstr "Could not open the shared version"
 
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/useOpenChart.ts
 msgid "Could not open the sub-flow"
 msgstr "Could not open the sub-flow"
 
@@ -10550,6 +10578,7 @@ msgstr "Describe who this agent is, what it does, and what it must never do…"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/CredentialDialog.tsx
@@ -10766,6 +10795,7 @@ msgstr "Diagnosis was not recorded — try again."
 msgid "Diagnostic complete — no issue found."
 msgstr "Diagnostic complete — no issue found."
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Diagram"
 msgstr "Diagram"
@@ -11596,6 +11626,10 @@ msgstr "Effective filters at this endpoint"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Effort"
 msgstr "Effort"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Element"
+msgstr "Element"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/token-plan/AllocateDialog.tsx
@@ -13988,6 +14022,7 @@ msgstr "Free-form JSON for experimental feature toggles. Invalid JSON is not sav
 msgid "from"
 msgstr "from"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -16421,6 +16456,7 @@ msgstr "kind"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
@@ -17261,6 +17297,7 @@ msgstr "Loading budgets…"
 msgid "Loading capabilities…"
 msgstr "Loading capabilities…"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
@@ -19432,7 +19469,7 @@ msgstr "No channel links to this agent yet"
 msgid "No channel reaches this Agent yet. Give it an email address to start."
 msgstr "No channel reaches this Agent yet. Give it an email address to start."
 
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/useOpenChart.ts
 msgid "No chart named “{ref}” in this project"
 msgstr "No chart named “{ref}” in this project"
 
@@ -21722,8 +21759,9 @@ msgid "Open"
 msgstr "Open"
 
 #. placeholder {0}: app.name
+#. placeholder {0}: el.label
 #. placeholder {0}: file.path
-#. placeholder {0}: item.label
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -21783,6 +21821,7 @@ msgstr "Open {vendorLabel} in an OS terminal here"
 msgid "Open {workerName} terminal"
 msgstr "Open {workerName} terminal"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Open ↗"
 msgstr "Open ↗"
@@ -25193,6 +25232,10 @@ msgstr "Reject"
 #: src/components/harness-login/funding-pill.ts
 msgid "Rejected"
 msgstr "Rejected"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Relation"
+msgstr "Relation"
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
@@ -30729,6 +30772,10 @@ msgstr "System prompt"
 #~ msgid "System-installed triggers are seeded at boot via <0>set_service_triggers()</0>. User-driven creation is API-only for now (UI builder coming soon)."
 #~ msgstr "System-installed triggers are seeded at boot via <0>set_service_triggers()</0>. User-driven creation is API-only for now (UI builder coming soon)."
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "systems, containers and components, zoomable level by level"
+msgstr "systems, containers and components, zoomable level by level"
+
 #: src/i18n/type-labels.ts
 msgid "Tab"
 msgstr "Tab"
@@ -30737,6 +30784,7 @@ msgstr "Tab"
 msgid "Tab failed to open"
 msgstr "Tab failed to open"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Table"
 msgstr "Table"
@@ -32001,6 +32049,11 @@ msgstr "This budget is not available to you"
 msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
 
+#. placeholder {0}: chart?.format
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "This chart is a “{0}” chart, which needs a newer Flowpad to open."
+msgstr "This chart is a “{0}” chart, which needs a newer Flowpad to open."
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."
 msgstr "This chat has no resumable session."
@@ -32890,6 +32943,7 @@ msgstr "Title"
 msgid "to"
 msgstr "to"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -33718,6 +33772,7 @@ msgstr "Update available"
 msgid "Update channel for auto-updates"
 msgstr "Update channel for auto-updates"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
 msgstr "Update CHART.md"
@@ -34310,6 +34365,7 @@ msgid "Vibe only"
 msgstr "Vibe only"
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -35147,6 +35203,7 @@ msgstr "Who was given how much, and by whom"
 msgid "Who's spending"
 msgstr "Who's spending"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Whole chart"
 msgstr "Whole chart"

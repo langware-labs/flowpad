@@ -2,16 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Chart, Project, QueryRequest, TypeId, type FSRef } from '@sdk';
+import type { Chart, FSRef } from '@sdk';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { Button } from '@src/components/ui/button';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { notify } from '@src/notifications';
 import { writeChartMermaid, autoNote } from './chartDoc';
 import { ChartFeedbackToolbar } from './ChartFeedbackToolbar';
 import { ChartHeading } from './ChartHeading';
+import { CHART_SLOTS as SLOTS, chartTokens } from './chartTheme';
+import { useOpenChart } from './useOpenChart';
 import {
   parseSequence,
   sequenceToMermaid,
@@ -22,47 +21,12 @@ import {
 
 /**
  * A `sequence` chart: chart.json ({participants, messages}) drawn as a network-flow
- * sequence diagram — the React port of the chartit skill's `templates/sequence/index.html`.
+ * sequence diagram.
  * Identity rides the categorical dot and the arrow colour (the sender's), never the text;
  * a message with `ref` is a sub-flow block whose "Open ↗" navigates to that chart.
  */
 
 const AUTO_NOTE = autoNote('chart.json');
-
-// Validated categorical slots (light / dark), fixed order, never cycled: the 5th+ participant is neutral.
-const LIGHT = {
-  '--surface-0': '#f4f3f0',
-  '--surface-1': '#fcfcfb',
-  '--surface-2': '#f0efec',
-  '--text-primary': '#0b0b0b',
-  '--text-secondary': '#52514e',
-  '--text-muted': '#8a8984',
-  '--hairline': '#e3e2de',
-  '--hairline-strong': '#c9c8c2',
-  '--s1': '#2a78d6',
-  '--s2': '#eb6834',
-  '--s3': '#1baf7a',
-  '--s4': '#6250d6',
-  '--s-other': '#8a8984',
-  '--focus': '#2a78d6',
-};
-const DARK = {
-  '--surface-0': '#121211',
-  '--surface-1': '#1a1a19',
-  '--surface-2': '#252523',
-  '--text-primary': '#f0efec',
-  '--text-secondary': '#c3c2b7',
-  '--text-muted': '#8f8e88',
-  '--hairline': '#2e2e2b',
-  '--hairline-strong': '#44443f',
-  '--s1': '#3987e5',
-  '--s2': '#d95926',
-  '--s3': '#199e70',
-  '--s4': '#9085e9',
-  '--s-other': '#8f8e88',
-  '--focus': '#3987e5',
-};
-const SLOTS = ['--s1', '--s2', '--s3', '--s4'];
 
 const STYLES = `
 .cseq svg text { font-family: inherit; }
@@ -347,7 +311,6 @@ interface SequenceChartViewProps {
 
 export function SequenceChartView({ fsRef, chart, session, projectId, actions }: SequenceChartViewProps) {
   const { t } = useLingui();
-  const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   const chartRef = useMemo(() => fsRef.child('chart.json'), [fsRef]);
   const docRef = useMemo(() => fsRef.child('CHART.md'), [fsRef]);
@@ -415,38 +378,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
     [layout, t],
   );
 
-  const openRef = useCallback(
-    async (ref: string) => {
-      try {
-        const scope = projectId ? [new TypeId(Project.type, projectId)] : [];
-        const found = await Chart.query(
-          new QueryRequest({ type: Chart.type, query: { match: { name: ref } }, scope, name: `chart-subflow-${ref}` }),
-        );
-        // A name can repeat across folders: the chart beside this one wins.
-        const parentOf = (p?: string) => (p ?? '').replace(/\/+$/, '').replace(/\/[^/]*$/, '');
-        const here = parentOf(fsRef.path);
-        const next = found.find((c) => here && parentOf(c.asset_ref) === here) ?? found[0];
-        if (!next) {
-          notify.error({ title: t`No chart named “${ref}” in this project` });
-          return;
-        }
-        // The same editor pointer a Charts tree row opens, kept on the project route so the
-        // project tree (the chart viewer) stays and its selection follows.
-        if (!next.asset_ref) {
-          navigation.openDock(next.dockPointer);
-          return;
-        }
-        const editor = DockPointer.forAssetEditor(Chart.type, next.asset_ref);
-        navigation.openDock(projectId ? DockPointer.rebaseAssetsOntoProject(editor, projectId) : editor);
-      } catch (err) {
-        notify.error({
-          title: t`Could not open the sub-flow`,
-          message: err instanceof Error ? err.message : String(err),
-        });
-      }
-    },
-    [fsRef, navigation, projectId, t],
-  );
+  const openRef = useOpenChart(fsRef, projectId);
 
   const pick = useCallback((id: string) => {
     setTarget((cur) => (cur === id ? '' : id));
@@ -471,7 +403,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
   }
 
   const { lanes, items, width, height, bottom, TOP, HEAD_W, HEAD_H, DOT_X, ICON_X, ICON_SIZE } = layout;
-  const tokens = resolvedTheme === 'dark' ? DARK : LIGHT;
+  const tokens = chartTokens(resolvedTheme);
   const moveTip = (target: string, info: Info, x: number, y: number) => {
     tipPos.current = { x, y };
     const el = tipRef.current;

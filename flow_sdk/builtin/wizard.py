@@ -206,7 +206,7 @@ class Wizard(Entity):
         from flow_sdk.core.wizard.state import read_state, strip_heavy  # noqa: PLC0415
 
         if not self.id:
-            return {"result": None, "approved": False}
+            return {"result": None, "approved": False, "checked": False}
         try:
             # The STORED dump, stripped — never re-validated here: this rides
             # every row of `GET /graph/wizard` and every WS push, and `read_state`
@@ -217,9 +217,10 @@ class Wizard(Entity):
             return {
                 "result": strip_heavy(raw) if isinstance(raw, dict) and "exit_code" in raw else None,
                 "approved": bool(state.get("approved")),
+                "checked": bool(state.get("checked")),
             }
         except Exception:  # noqa: BLE001 — a run summary must never fail a fetch
-            return {"result": None, "approved": False}
+            return {"result": None, "approved": False, "checked": False}
 
     async def run(
         self,

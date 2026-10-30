@@ -267,7 +267,7 @@ class StoreForgottenSpec(DataSpec):
 
     model_config = ConfigDict(frozen=True)
 
-    #: The store type: ``env_file`` / ``vault`` / ``gcp_secret_manager`` / ...
+    #: The store type: ``env_file`` / ``vault`` / ``gcp`` / ...
     type: str
     #: Where it is: a file path, a vault prefix, a secret project.
     where: str

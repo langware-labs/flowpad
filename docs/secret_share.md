@@ -140,7 +140,7 @@ the authorizations — names only; the cloud place's **Secrets** tab shows it.
 
 A credential's values travel from one person to another ONLY through the project's **secret
 manager**: `secret_store` in `project_manifest.json`, a store ref (`{type, config, connection}`) —
-`gcp_secret_manager` or `onepassword` (the hub vault is not offered yet). It names a place, never a
+`gcp` or `onepassword` (the hub vault is not offered yet). It names a place, never a
 value, and travels with every clone. Each variable may carry a **secret ref** (`vars.<VAR>.secret_ref`,
 default: the variable's own name) — its key in that store. It is not where any process reads: a
 process still reads its deployment's binding (above).

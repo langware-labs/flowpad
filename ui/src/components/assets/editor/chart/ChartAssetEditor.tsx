@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { chartFormatOf, dataContext, type Chart, type FSRef } from '@sdk';
+import { chartFormatOf, dataContext, isUnknownChartFormat, type Chart, type FSRef } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
 import { convertChartToExcalidraw } from './convertToExcalidraw';
@@ -10,11 +10,13 @@ import { parseSequence, sequenceToMermaid } from './sequenceToMermaid';
 const ExcalidrawChartView = lazy(() => import('./ExcalidrawChartView'));
 const SequenceChartView = lazy(() => import('./SequenceChartView'));
 const MermaidChartView = lazy(() => import('./MermaidChartView'));
+const C4ChartView = lazy(() => import('./C4ChartView'));
 
 /**
- * The chart editor: one asset type, three drawings. CHART.md's `format` picks the
- * view — `excalidraw` (board.json), `sequence` (chart.json) or `mermaid` (the block
- * in CHART.md). Sequence and mermaid charts can be converted to an Excalidraw board.
+ * The chart editor: one asset type, one view per format. CHART.md's `format` picks the
+ * view — `excalidraw` (board.json), `sequence` (chart.json), `c4` (c4.json) or `mermaid`
+ * (the block in CHART.md). The others can be converted to an Excalidraw board, from their
+ * Mermaid copy. A format this build does not know says so instead of opening as a board.
  */
 export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart }) {
   const { t } = useLingui();
@@ -72,13 +74,29 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
   return (
     <div className="h-full min-h-0" data-testid="chart-editor" data-format={format}>
       <Suspense fallback={fallback}>
-        {format === 'sequence' ? (
+        {!converted && isUnknownChartFormat(chart?.format) ? (
+          <div
+            data-testid="chart-unknown-format"
+            className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground"
+          >
+            <Trans>This chart is a “{chart?.format}” chart, which needs a newer Flowpad to open.</Trans>
+          </div>
+        ) : format === 'sequence' ? (
           <SequenceChartView
             fsRef={fsRef}
             chart={chart}
             session={session}
             projectId={projectId}
             actions={convertButton}
+          />
+        ) : format === 'c4' ? (
+          <C4ChartView
+            fsRef={fsRef}
+            chart={chart}
+            session={session}
+            projectId={projectId}
+            actions={convertButton}
+            onSource={onMermaidSource}
           />
         ) : format === 'mermaid' ? (
           <MermaidChartView fsRef={fsRef} chart={chart} actions={convertButton} onSource={onMermaidSource} />
