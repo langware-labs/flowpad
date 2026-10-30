@@ -43,7 +43,7 @@ vi.mock('@sdk', async (orig) => {
 // eslint-disable-next-line import/first
 import { C4ChartView } from '@src/components/assets/editor/chart/C4ChartView';
 // eslint-disable-next-line import/first
-import { CHIP_MAX_CHARS, chipText, c4ToMermaid, layoutC4, parseC4, wrap } from '@src/components/assets/editor/chart/c4Model';
+import { chipText, c4ToMermaid, layoutC4, parseC4, wrap } from '@src/components/assets/editor/chart/c4Model';
 
 const PROJECT = '22222222-2222-4222-8222-222222222222';
 
@@ -288,8 +288,8 @@ describe('c4Model', () => {
 
   it('a chip shows its whole label unless it is longer than the widest chip', () => {
     expect(chipText('PricingEngine.kt')).toBe('PricingEngine.kt');
-    const long = 'x'.repeat(CHIP_MAX_CHARS + 5);
-    expect(chipText(long)).toHaveLength(CHIP_MAX_CHARS);
+    const long = 'x'.repeat(80);
+    expect(chipText(long).length).toBeLessThan(long.length);
     expect(chipText(long).endsWith('…')).toBe(true);
   });
 

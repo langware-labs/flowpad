@@ -80,6 +80,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.diagnose_spec  # noqa: F401  — registers ``diagnose`` / ``diagnosis`` / ``flow.context``
     import flow_sdk.schema.data_spec.diagnosis_request_spec  # noqa: F401  — registers ``diagnosis.funding`` / ``diagnosis.attachment`` / ``diagnosis.request.open`` / ``diagnosis.request.edit`` / ``diagnosis.run``
     import flow_sdk.schema.data_spec.secret_vault_spec  # noqa: F401  — registers ``secrets.project_vault``
+    import flow_sdk.schema.data_spec.sealed_value_spec  # noqa: F401  — registers ``secrets.device_key`` / ``secrets.sealed_value``
     import flow_sdk.schema.data_spec.diskio_spec  # noqa: F401  — registers ``diskio.*``, the disk-I/O kernel's values
     import flow_sdk.schema.data_spec.dock_pointer_spec  # noqa: F401  — registers ``dock.pointer``
     import flow_sdk.schema.data_spec.eval_spec  # noqa: F401  — registers ``eval.spec`` / ``eval.row`` / ``eval.run``

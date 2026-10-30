@@ -18,10 +18,8 @@ export type LinkActionId =
   | 'browser-profile'
   | 'copy'
   | CommandMode
-  /** The "Browser ▸" submenu: which profile pages the command opens land in. */
-  | 'command-browser'
-  /** No action: the click opens the menu instead (a command someone else wrote). */
-  | 'menu';
+  /** The "Browser ▸" submenu: which profile pages the command opens land in. A setting, not a run. */
+  | 'command-browser';
 
 /** `vibe`: the surface sits in a vibe workspace whose Display the host owns; `tab`: anywhere else. */
 export type LinkSurface = 'vibe' | 'tab';
@@ -44,7 +42,8 @@ export interface LinkContext {
 }
 
 export interface LinkActionPlan {
-  primary: LinkActionId;
+  /** What a click runs; null when a click opens the menu instead. */
+  primary: LinkActionId | null;
   menu: LinkActionId[];
 }
 
@@ -53,7 +52,7 @@ function commandActions({ here = false, localNode = true, trusted = true, lastMo
   const menu: LinkActionId[] = [...modes];
   if (localNode) menu.push('command-browser');
   menu.push('copy');
-  const primary = !trusted ? 'menu' : modes.includes(lastMode) ? lastMode : modes[0];
+  const primary = !trusted ? null : modes.includes(lastMode) ? lastMode : modes[0];
   return { primary, menu };
 }
 

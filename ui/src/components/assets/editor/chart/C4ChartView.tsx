@@ -7,7 +7,17 @@ import { FlowIcon } from '@sdk/react/FlowIcon';
 import { Button } from '@src/components/ui/button';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { autoNote, writeChartMermaid } from './chartDoc';
-import { ChangeWholeChart, ChartChangeBox, Marks, ZoomControls, elementQuote, type ChartChanges } from './chartControls';
+import {
+  ChangeWholeChart,
+  ChartChangeBox,
+  ChartTooltip,
+  Marks,
+  ViewToggle,
+  ZoomControls,
+  elementQuote,
+  tipStyle,
+  type ChartChanges,
+} from './chartControls';
 import { ChartHeading } from './ChartHeading';
 import { chartTokens } from './chartTheme';
 import {
@@ -39,7 +49,6 @@ const AUTO_NOTE = autoNote('c4.json');
 const STYLES = `
 .cc4 svg text { font-family: inherit; }
 .cc4 svg { touch-action: none; }
-.cc4 svg.panning { cursor: grabbing; }
 .cc4 .card .body { fill: var(--surface-1); stroke: var(--hairline-strong); stroke-width: 1; }
 .cc4 .card.ext .body { fill: var(--surface-2); stroke-dasharray: 5 4; }
 .cc4 .card.sub .body { fill: var(--surface-2); stroke-dasharray: 4 3; }
@@ -135,6 +144,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
   const [hot, setHot] = useState<{ target: string; title: string; sub: string; note?: string } | null>(null);
   const [picked, setPicked] = useState<{ id: string; label: string; at: { x: number; y: number } } | null>(null);
   const tipRef = useRef<HTMLDivElement>(null);
+  const tipPos = useRef({ x: 0, y: 0 });
   const openRef = useOpenChart(fsRef, projectId);
   const { openLink, openSchema } = useOpenChartTarget(fsRef, projectId);
 
@@ -177,6 +187,19 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
   const pz = usePanZoom(layout?.width ?? 1, layout?.height ?? 1);
 
   const nameOf = useCallback((id: string) => layout?.cardOf.get(id)?.el.label ?? id, [layout]);
+  // Per layout, not per render (hover and pan re-render many times a second).
+  const linksOf = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const e of layout?.edges ?? []) {
+      for (const end of [e.r.from, e.r.to]) map.set(end, [...(map.get(end) ?? []), e.r.id]);
+    }
+    return map;
+  }, [layout]);
+  const kindsShown = useMemo(
+    () => [...new Map((layout?.cards ?? []).map((c) => [`${c.el.kind}${c.el.external ? '-ext' : ''}`, c])).values()],
+    [layout],
+  );
+  const boundaryLabel = useMemo(() => new Map((value?.boundaries ?? []).map((b) => [b.id, b.label])), [value]);
 
   const regenerateDoc = useCallback(async () => {
     if (mermaid) await writeChartMermaid(docRef, chart, mermaid, AUTO_NOTE);
@@ -195,16 +218,12 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
   const { cards, boxes, edges } = layout;
   const hotEdge = hot ? layout.edgeOf.get(hot.target) : undefined;
   const near = new Set(hotEdge ? [hotEdge.r.from, hotEdge.r.to] : []);
-  const hotCardLinks = new Set(
-    hot && layout.cardOf.has(hot.target)
-      ? edges.filter((e) => e.r.from === hot.target || e.r.to === hot.target).map((e) => e.r.id)
-      : [],
-  );
+  const hotCardLinks = new Set(hot ? (linksOf.get(hot.target) ?? []) : []);
   const markClass = (id: string) =>
     `${hot?.target === id || hotCardLinks.has(id) ? ' hot' : ''}${near.has(id) ? ' near' : ''}${picked?.id === id ? ' picked' : ''}`;
   const place = (x: number, y: number) => {
-    const el = tipRef.current;
-    if (el) Object.assign(el.style, { left: `${Math.min(window.innerWidth - 328, x + 14)}px`, top: `${Math.max(8, y - 72)}px` });
+    tipPos.current = { x, y };
+    if (tipRef.current) Object.assign(tipRef.current.style, tipStyle(x, y));
   };
   const marksOf = (id: string, label: string) => changes?.marks.get(elementQuote(id, label));
   const pick = (id: string, label: string, e: { clientX: number; clientY: number }) => {
@@ -278,12 +297,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
       </g>
     </g>
   );
-  const kindsShown = [...new Map(cards.map((c) => [`${c.el.kind}${c.el.external ? '-ext' : ''}`, c])).values()];
   const hasAsync = edges.some((e) => e.r.style === 'async');
-  const requestChange = (quote: string, instruction: string, runNow: boolean) => {
-    changes?.request({ quote, instruction, runNow });
-    setPicked(null);
-  };
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="chart-c4">
@@ -329,25 +343,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
                   </Trans>
                 </p>
               </div>
-              <div className="inline-flex rounded-lg p-[3px]" style={{ background: 'var(--surface-2)' }} role="group" aria-label={t`View`}>
-                {(['chart', 'table'] as const).map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    aria-pressed={view === v}
-                    onClick={() => setView(v)}
-                    data-testid={`chart-view-${v}`}
-                    className="rounded-md px-3 py-1 text-[13px] font-medium"
-                    style={
-                      view === v
-                        ? { background: 'var(--surface-1)', color: 'var(--text-primary)', boxShadow: '0 1px 2px rgba(0,0,0,.08)' }
-                        : { color: 'var(--text-secondary)' }
-                    }
-                  >
-                    {v === 'chart' ? <Trans>Diagram</Trans> : <Trans>Table</Trans>}
-                  </button>
-                ))}
-              </div>
+              <ViewToggle view={view} onChange={setView} />
             </header>
 
             {view === 'chart' ? (
@@ -358,7 +354,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
                     ref={pz.svgRef}
                     xmlns="http://www.w3.org/2000/svg"
                     role="img"
-                    className={`block${hot ? ' focusing' : ''}${pz.panning ? ' panning' : ''}`}
+                    className={`block${hot ? ' focusing' : ''}`}
                     style={{ width: '100%', height: 'calc(100vh - 290px)', minHeight: 360 }}
                     viewBox={pz.viewBox}
                     data-zoomed={pz.zoomed ? 'true' : 'false'}
@@ -545,7 +541,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
                     head: [t`Element`, t`Kind`, t`Boundary`, t`Description`],
                     rows: value.elements.map((e) => ({
                       key: e.id,
-                      cells: [e.label, c4Tag(e), value.boundaries.find((b) => b.id === e.boundary)?.label ?? '', e.description ?? ''],
+                      cells: [e.label, c4Tag(e), (e.boundary && boundaryLabel.get(e.boundary)) || '', e.description ?? ''],
                     })),
                   },
                   {
@@ -596,13 +592,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
         </div>
 
         {hot && !picked && (
-          <div
-            ref={tipRef}
-            role="tooltip"
-            data-testid="chart-tooltip"
-            className="pointer-events-none fixed z-10 max-w-[320px] rounded-lg border px-2.5 py-2 text-xs shadow-lg"
-            style={{ background: 'var(--surface-1)', borderColor: 'var(--hairline-strong)' }}
-          >
+          <ChartTooltip ref={tipRef} at={tipPos.current}>
             <span className="block text-[13px] font-semibold">{hot.title}</span>
             {hot.sub && (
               <span className="mt-0.5 block" style={{ color: 'var(--text-secondary)' }}>
@@ -614,7 +604,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
                 {hot.note}
               </span>
             )}
-          </div>
+          </ChartTooltip>
         )}
 
         {picked && changes && (
@@ -622,9 +612,10 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
             label={picked.label}
             at={picked.at}
             onClose={() => setPicked(null)}
-            onSubmit={(instruction, runNow) =>
-              requestChange(elementQuote(picked.id, picked.label), instruction, runNow)
-            }
+            onSubmit={(instruction, runNow) => {
+              changes.request({ quote: elementQuote(picked.id, picked.label), instruction, runNow });
+              setPicked(null);
+            }}
           />
         )}
       </div>

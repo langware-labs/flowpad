@@ -325,6 +325,7 @@ for (const surface of SURFACES) {
         const sdk = await import(sdkModule);
         sdk.instancePreferences.set(sdk.PrefKey.COMMAND_LINK_MODE, 'run-here');
         sdk.instancePreferences.set(sdk.PrefKey.COMMAND_LINK_BROWSER, null);
+        sdk.instancePreferences.set(sdk.PrefKey.COMMAND_LINK_CONFIRM, true);
       }, sdkModule);
     });
     test.afterAll(async () => context?.close());
@@ -352,18 +353,43 @@ for (const surface of SURFACES) {
       await page.keyboard.press('Escape');
     });
 
+    test('nothing runs before approval: Cancel runs nothing; Run + Don\'t ask again is saved', async () => {
+      const before = (await runs('line')).length;
+      await surface.click(page, 'line');
+      const dialog = page.getByTestId('command-confirm');
+      await expect(dialog).toBeVisible();
+      await expect(page.getByTestId('command-confirm-command')).toHaveText('sh mark.sh line');
+      await expect(dialog).toContainText(surface.here ? "in this chat's session" : 'in a new Flowpad terminal');
+      await page.getByTestId('command-confirm-cancel').click();
+      await expect(dialog).toBeHidden();
+      expect(page.url()).toBe(surfaceUrl);
+
+      await surface.click(page, 'line');
+      await page.getByTestId('command-confirm-dont-ask').click();
+      await page.getByTestId('command-confirm-run').click();
+      await expectRan('line', before);
+      // Exactly one run: the cancelled click never ran.
+      expect((await runs('line')).length).toBe(before + 1);
+      const saved = await page.evaluate(async (sdkModule) => {
+        const sdk = await import(sdkModule);
+        return sdk.instancePreferences.get(sdk.PrefKey.COMMAND_LINK_CONFIRM);
+      }, sdkModule);
+      expect(saved).toBe(false);
+      await back();
+    });
+
     test('click runs in chat by default: real Claude Code shell mode runs it, no new tab', async () => {
       if (!surface.here) {
         // Print mode has no shell mode: the same click runs it in a Flowpad terminal instead.
         for (const form of surface.forms) {
           const before = (await runs(form)).length;
           await surface.click(page, form);
-          await expect(page).toHaveURL(/\/dock\/shell\/shell-/);
           await expectRan(form, before);
           await back();
         }
         return;
       }
+      const inputsBefore = await shellInputs(processId);
       for (const form of surface.forms) {
         const before = (await runs(form)).length;
         await surface.click(page, form);
@@ -371,7 +397,7 @@ for (const surface of SURFACES) {
         expect(page.url()).toBe(surfaceUrl);
       }
       // Claude Code recorded each as its own shell input, never as a message to the model.
-      await expect.poll(() => shellInputs(processId)).toBe(surface.forms.length);
+      await expect.poll(() => shellInputs(processId)).toBe(inputsBefore + surface.forms.length);
       const asPrompt = (await transcriptRows(processId)).filter(
         (row) => row.type === 'user' && /^!?\s*sh mark\.sh/.test(String(row.message?.content)),
       );

@@ -29,6 +29,9 @@ ALLOWED: dict[str, str] = {
         "walks only the schema / dataset folders it just copied into a $TMPDIR probe (no .flow), "
         "to read their namespaces and re-namespace their JSON"
     ),
+    "flow_sdk/system_projects/flowpad_assistant/.claude/skills/chartit/templates/c4/check_c4.py": (
+        "walks only the project's agentic-assets/data_schema folder, whose kinds nest, to list them"
+    ),
     "flow_sdk/system_projects/flowpad_assistant/.claude/skills/cred-scan/scripts/cred_scan.py": (
         "prunes dependency/build/cache dirs and nested repos on every level; must read the "
         "gitignored .env files (keys only), so gitignore_walk cannot serve it"

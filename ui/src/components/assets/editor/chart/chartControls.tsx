@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Maximize, Minus, Plus, WandSparkles, X } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -173,5 +173,54 @@ export function ChangeWholeChart({ changes }: { changes: ChartChanges }) {
         />
       )}
     </>
+  );
+}
+
+/** Where a hover tooltip sits for a pointer at (x, y). */
+export const tipStyle = (x: number, y: number) => ({
+  left: `${Math.min(window.innerWidth - 328, x + 14)}px`,
+  top: `${Math.max(8, y - 72)}px`,
+});
+
+/** The hover tooltip's frame; the view fills it and moves it with `tipStyle` (no render per pixel). */
+export const ChartTooltip = forwardRef<HTMLDivElement, { at: { x: number; y: number }; children: ReactNode }>(
+  function ChartTooltip({ at, children }, ref) {
+    return (
+      <div
+        ref={ref}
+        role="tooltip"
+        data-testid="chart-tooltip"
+        className="pointer-events-none fixed z-10 max-w-[320px] rounded-lg border px-2.5 py-2 text-xs shadow-lg"
+        style={{ ...tipStyle(at.x, at.y), background: 'var(--surface-1)', borderColor: 'var(--hairline-strong)' }}
+      >
+        {children}
+      </div>
+    );
+  },
+);
+
+/** Diagram ↔ Table. */
+export function ViewToggle({ view, onChange }: { view: 'chart' | 'table'; onChange: (v: 'chart' | 'table') => void }) {
+  const { t } = useLingui();
+  return (
+    <div className="inline-flex rounded-lg p-[3px]" style={{ background: 'var(--surface-2)' }} role="group" aria-label={t`View`}>
+      {(['chart', 'table'] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={view === v}
+          onClick={() => onChange(v)}
+          data-testid={`chart-view-${v}`}
+          className="rounded-md px-3 py-1 text-[13px] font-medium"
+          style={
+            view === v
+              ? { background: 'var(--surface-1)', color: 'var(--text-primary)', boxShadow: '0 1px 2px rgba(0,0,0,.08)' }
+              : { color: 'var(--text-secondary)' }
+          }
+        >
+          {v === 'chart' ? <Trans>Diagram</Trans> : <Trans>Table</Trans>}
+        </button>
+      ))}
+    </div>
   );
 }

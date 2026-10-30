@@ -87,6 +87,7 @@ export enum PrefKey {
   PINNED_OPENERS = 'preferences.terminal.pinned_openers',
   COMMAND_LINK_MODE = 'preferences.terminal.command_link_mode',
   COMMAND_LINK_BROWSER = 'preferences.terminal.command_link_browser',
+  COMMAND_LINK_CONFIRM = 'preferences.terminal.command_link_confirm',
   // files
   FILES_SHOW_HIDDEN = 'preferences.files.show_hidden',
   // assets / skills
@@ -686,6 +687,15 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     // `{browser, profile}`; null is the system default browser.
     dataType: PrefDataType.JSON,
     defaultValue: null,
+  },
+  [PrefKey.COMMAND_LINK_CONFIRM]: {
+    key: PrefKey.COMMAND_LINK_CONFIRM,
+    surfaced: true,
+    category: 'terminal',
+    label: 'Ask before running a command link',
+    description: 'Show the command and where it will run, and wait for approval, before a command link runs it.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: true,
   },
   [PrefKey.PINNED_OPENERS]: {
     key: PrefKey.PINNED_OPENERS,

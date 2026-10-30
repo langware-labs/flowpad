@@ -107,6 +107,5 @@ export function usePanZoom(width: number, height: number) {
     zoomIn: () => zoomAt(1 / 1.25),
     zoomOut: () => zoomAt(1.25),
     zoomed,
-    panning: !!drag.current?.moved,
   };
 }

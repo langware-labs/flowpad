@@ -7,7 +7,7 @@ import apiClient from '@sdk/client';
 import { dataContext, fsStore, openTerminalFromComputeNode, Shell, type AgenticProcess } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { errorMessage } from '@src/lib/error-message';
-import { commandOf, isWebUrl, lightboxMediaName, linkKind as kindOf } from '@src/lib/link-kind';
+import { commandOf, isWebUrl, lightboxMediaName } from '@src/lib/link-kind';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { notify } from '@src/notifications/notify';
@@ -24,8 +24,7 @@ export type CommandBrowser = { browser: string; profile: string } | null;
 
 export type LinkAction =
   | { id: Exclude<LinkActionId, 'browser-profile' | 'command-browser'> }
-  | { id: 'browser-profile'; browser: string; profile: string }
-  | { id: 'command-browser'; choice: CommandBrowser };
+  | { id: 'browser-profile'; browser: string; profile: string };
 
 export interface LinkHandlerDeps {
   navigation: NavigationActions;
@@ -34,11 +33,6 @@ export interface LinkHandlerDeps {
   preview: (media: LinkMedia) => void;
   /** The browser profile command links open pages in. */
   commandBrowser?: CommandBrowser;
-}
-
-/** Whether `process` can run a command in its own session (its vendor's shell mode, e.g. Claude Code's `!`). */
-export function runsShellMode(process: AgenticProcess | null): boolean {
-  return !!process?.supports_shell_command;
 }
 
 /** A plain terminal (no agent behind it) that a command can be typed into. */
@@ -69,7 +63,7 @@ async function runCommand(mode: CommandMode, link: string, deps: LinkHandlerDeps
       await shell.sendInput(`${await withBrowser(command, browser, 'terminal')}\r`);
       return;
     }
-    if (host && runsShellMode(host)) {
+    if (host?.supports_shell_command) {
       await host.runShellCommand(await withBrowser(command, browser, 'session'));
       return;
     }
@@ -121,10 +115,6 @@ export async function runLinkAction(action: LinkAction, link: string, deps: Link
       return runCommand(action.id, link, deps).catch((error: unknown) => {
         notify.error({ title: t`Could not run the command`, message: errorMessage(error, String(error)), forceToast: true });
       });
-    case 'command-browser':
-    case 'menu':
-      // Choosing the profile is the menu's state (it persists the pick); `menu` is opened by the surface.
-      return;
     case 'preview': {
       // Media previews in place; anything the preview can't resolve opens as a tab, which
       // also reports the failure the way every other link does.
@@ -146,6 +136,6 @@ export async function runLinkAction(action: LinkAction, link: string, deps: Link
     case 'browser-profile':
       return navigation.openLinkInBrowserProfile(link, source, action.browser, action.profile);
     case 'copy':
-      return copyLink(kindOf(link, window.location.origin) === 'command' ? commandOf(link) : link);
+      return copyLink(commandOf(link));
   }
 }

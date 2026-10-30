@@ -93,7 +93,7 @@ export function lightboxMediaName(link: string): string | null {
   return isLightboxMedia(name) ? name.split(/[/\\]/).pop() || name : null;
 }
 
-/** The command a command link runs: its text without the `!` and the space after it. */
+/** The command a command link runs: its text without the `!` and the spaces after it. Any other link as is. */
 export function commandOf(link: string): string {
-  return link.replace(/^!\s*/, '').trim();
+  return COMMAND_LINK.test(link) ? link.replace(/^!\s*/, '').trim() : link;
 }

@@ -102,7 +102,7 @@ export function useOpenChartTarget(fsRef: FSRef, projectId?: string) {
           'filter[match][operands][0]': 'name',
           'filter[match][operands][1]': kind,
         });
-        const rows = ((await apiClient.get(`/graph/data_schema?${qs.toString()}`)) ?? []) as { id: string; asset_ref?: string }[];
+        const rows: { id: string; asset_ref?: string }[] = (await apiClient.get(`/graph/data_schema?${qs.toString()}`)) ?? [];
         const root = chartProjectRoot(fsRef.path || '');
         const row = rows.find((r) => (r.asset_ref ?? '').startsWith(`${root}/`)) ?? rows[0];
         const hit = row ? { typeId: new TypeId('data_schema', row.id) } : null;

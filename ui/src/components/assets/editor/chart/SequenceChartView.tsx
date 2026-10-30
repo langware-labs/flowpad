@@ -11,7 +11,17 @@ import { ChartHeading } from './ChartHeading';
 import { CHART_SLOTS as SLOTS, chartTokens } from './chartTheme';
 import { useOpenChart } from './useOpenChart';
 import { usePanZoom } from './usePanZoom';
-import { ChangeWholeChart, ChartChangeBox, Marks, ZoomControls, elementQuote, type ChartChanges } from './chartControls';
+import {
+  ChangeWholeChart,
+  ChartChangeBox,
+  ChartTooltip,
+  Marks,
+  ViewToggle,
+  ZoomControls,
+  elementQuote,
+  tipStyle,
+  type ChartChanges,
+} from './chartControls';
 import {
   parseSequence,
   sequenceToMermaid,
@@ -295,12 +305,6 @@ export function layoutSequence(value: SequenceValue) {
   };
 }
 
-/** Where the tooltip sits for a pointer at (x, y). */
-const tipStyle = (x: number, y: number) => ({
-  left: `${Math.min(window.innerWidth - 328, x + 14)}px`,
-  top: `${Math.max(8, y - 72)}px`,
-});
-
 /** Width of a label plate before layout can be measured (jsdom, first paint). */
 const estimate = (text: string) => text.length * 6.8;
 
@@ -489,34 +493,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                   </Trans>
                 </p>
               </div>
-              <div
-                className="inline-flex rounded-lg p-[3px]"
-                style={{ background: 'var(--surface-2)' }}
-                role="group"
-                aria-label={t`View`}
-              >
-                {(['chart', 'table'] as const).map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    aria-pressed={view === v}
-                    onClick={() => setView(v)}
-                    data-testid={`chart-view-${v}`}
-                    className="rounded-md px-3 py-1 text-[13px] font-medium"
-                    style={
-                      view === v
-                        ? {
-                            background: 'var(--surface-1)',
-                            color: 'var(--text-primary)',
-                            boxShadow: '0 1px 2px rgba(0,0,0,.08)',
-                          }
-                        : { color: 'var(--text-secondary)' }
-                    }
-                  >
-                    {v === 'chart' ? <Trans>Diagram</Trans> : <Trans>Table</Trans>}
-                  </button>
-                ))}
-              </div>
+              <ViewToggle view={view} onChange={setView} />
             </header>
 
             {view === 'chart' ? (
@@ -795,17 +772,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
         )}
 
         {hot && !picked && (
-          <div
-            ref={tipRef}
-            role="tooltip"
-            data-testid="chart-tooltip"
-            className="pointer-events-none fixed z-10 max-w-[320px] rounded-lg border px-2.5 py-2 text-xs shadow-lg"
-            style={{
-              ...tipStyle(tipPos.current.x, tipPos.current.y),
-              background: 'var(--surface-1)',
-              borderColor: 'var(--hairline-strong)',
-            }}
-          >
+          <ChartTooltip ref={tipRef} at={tipPos.current}>
             {hot.info.participant ? (
               <>
                 <span className="block text-[13px] font-semibold">{hot.info.label}</span>
@@ -829,7 +796,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                 {hot.info.note}
               </span>
             )}
-          </div>
+          </ChartTooltip>
         )}
 
       </div>

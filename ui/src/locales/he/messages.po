@@ -5716,6 +5716,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -10779,8 +10780,7 @@ msgstr "אבחון לא נשמר — נסו שוב."
 msgid "Diagnostic complete — no issue found."
 msgstr "אבחון הושלם — לא נמצאה בעיה."
 
-#: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
 msgstr "תרשים"
 
@@ -11101,6 +11101,7 @@ msgstr "דומיינים נגישים מהסביבה המבודדת"
 msgid "Don't ask"
 msgstr "לא לשאול"
 
+#: src/components/links/LinkMenu.tsx
 #: src/navigation/smart-ask.ts
 msgid "Don't ask again"
 msgstr "אל תשאלו שוב"
@@ -15403,6 +15404,14 @@ msgstr "משפר…"
 #~ msgid "In .env.local at line {0}, not declared yet"
 #~ msgstr ""
 
+#: src/components/links/LinkMenu.tsx
+msgid "in a new Flowpad terminal"
+msgstr "בטרמינל חדש של Flowpad"
+
+#: src/components/links/LinkMenu.tsx
+msgid "in an external terminal window"
+msgstr "בחלון טרמינל חיצוני"
+
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git ({gitLabel}), click to open."
 msgstr "ב-git ({gitLabel}), יש ללחוץ כדי לפתוח."
@@ -15438,6 +15447,10 @@ msgstr ""
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "In Telegram, message @BotFather and send /newbot."
 msgstr ""
+
+#: src/components/links/LinkMenu.tsx
+msgid "in this chat's session"
+msgstr "בסשן של הצ'אט הזה"
 
 #: src/components/conversation/task-it.tsx
 msgid "In this conversation"
@@ -16169,6 +16182,11 @@ msgstr ""
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "It was shared with you, but its files are not here yet."
 msgstr "הפרויקט שותף איתכם, אך הקבצים שלו עדיין לא הגיעו לכאן."
+
+#. placeholder {0}: WHERE[state.mode]()
+#: src/components/links/LinkMenu.tsx
+msgid "It will run {0}."
+msgstr "היא תרוץ {0}."
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Italic"
@@ -26407,6 +26425,7 @@ msgstr "כללים — הספציפי ביותר גובר: שולח › קבוצ
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Run"
 msgstr "הריצו"
@@ -26644,6 +26663,10 @@ msgstr "ניתן להריץ את הסוכן באופן עצמאי, בזמן לב
 
 #~ msgid "Run this as a prompt on {hostName}'s machine"
 #~ msgstr ""
+
+#: src/components/links/LinkMenu.tsx
+msgid "Run this command?"
+msgstr "להריץ את הפקודה?"
 
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "Run this credential's test"
@@ -30659,8 +30682,7 @@ msgstr "כרטיסייה"
 msgid "Tab failed to open"
 msgstr "לא הצליח לפתוח את הכרטיסייה"
 
-#: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 msgid "Table"
 msgstr "טבלה"
 
@@ -34243,8 +34265,7 @@ msgid "Vibe only"
 msgstr "Vibe בלבד"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx

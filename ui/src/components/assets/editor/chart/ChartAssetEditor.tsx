@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { chartFormatOf, dataContext, isUnknownChartFormat, type Chart, type FSRef } from '@sdk';
+import { CHART_SOURCE_FILE, chartFormatOf, dataContext, isUnknownChartFormat, type Chart, type FSRef } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { EditorWithSidePanel } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { useDocChanges } from '@src/components/assets/editor/changes/useDocChanges';
@@ -26,7 +26,6 @@ const C4ChartView = lazy(() => import('./C4ChartView'));
  * chart's source file; the view re-reads it when the run ends.
  */
 
-const SOURCE_FILE = { sequence: 'chart.json', c4: 'c4.json', excalidraw: 'board.json', mermaid: 'CHART.md' } as const;
 export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart }) {
   const { t } = useLingui();
   // Our own convert is shown at once; the row catches up when the indexer re-reads CHART.md.
@@ -42,7 +41,7 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
   const { changesTab, onRequestChange } = useDocChanges(
     doc,
     chart?.name ?? '',
-    `${fsRef.path}/${SOURCE_FILE[format]}`,
+    `${fsRef.path}/${CHART_SOURCE_FILE[format]}`,
     reread,
     'chart',
   );

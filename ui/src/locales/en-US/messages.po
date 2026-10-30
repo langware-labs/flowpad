@@ -5754,6 +5754,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -10843,8 +10844,7 @@ msgstr "Diagnosis was not recorded — try again."
 msgid "Diagnostic complete — no issue found."
 msgstr "Diagnostic complete — no issue found."
 
-#: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
 msgstr "Diagram"
 
@@ -11168,6 +11168,7 @@ msgstr "Domains accessible from sandbox"
 msgid "Don't ask"
 msgstr "Don't ask"
 
+#: src/components/links/LinkMenu.tsx
 #: src/navigation/smart-ask.ts
 msgid "Don't ask again"
 msgstr "Don't ask again"
@@ -15513,6 +15514,14 @@ msgstr "Improving…"
 #~ msgid "In .env.local at line {0}, not declared yet"
 #~ msgstr "In .env.local at line {0}, not declared yet"
 
+#: src/components/links/LinkMenu.tsx
+msgid "in a new Flowpad terminal"
+msgstr "in a new Flowpad terminal"
+
+#: src/components/links/LinkMenu.tsx
+msgid "in an external terminal window"
+msgstr "in an external terminal window"
+
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git ({gitLabel}), click to open."
 msgstr "In git ({gitLabel}), click to open."
@@ -15548,6 +15557,10 @@ msgstr "In Slack, create a private channel named"
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "In Telegram, message @BotFather and send /newbot."
 msgstr "In Telegram, message @BotFather and send /newbot."
+
+#: src/components/links/LinkMenu.tsx
+msgid "in this chat's session"
+msgstr "in this chat's session"
 
 #: src/components/conversation/task-it.tsx
 msgid "In this conversation"
@@ -16284,6 +16297,11 @@ msgstr "It was not written."
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "It was shared with you, but its files are not here yet."
 msgstr "It was shared with you, but its files are not here yet."
+
+#. placeholder {0}: WHERE[state.mode]()
+#: src/components/links/LinkMenu.tsx
+msgid "It will run {0}."
+msgstr "It will run {0}."
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Italic"
@@ -26616,6 +26634,7 @@ msgstr "Rules — the most specific wins: sender › group › everything else"
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Run"
 msgstr "Run"
@@ -26857,6 +26876,10 @@ msgstr "Run this agent on its own, at a time you pick. Runs are headless and sho
 #: src/components/conversation/MessageComposer.tsx
 #~ msgid "Run this as a prompt on {hostName}'s machine"
 #~ msgstr "Run this as a prompt on {hostName}'s machine"
+
+#: src/components/links/LinkMenu.tsx
+msgid "Run this command?"
+msgstr "Run this command?"
 
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "Run this credential's test"
@@ -30899,8 +30922,7 @@ msgstr "Tab"
 msgid "Tab failed to open"
 msgstr "Tab failed to open"
 
-#: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 msgid "Table"
 msgstr "Table"
 
@@ -34508,8 +34530,7 @@ msgid "Vibe only"
 msgstr "Vibe only"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx

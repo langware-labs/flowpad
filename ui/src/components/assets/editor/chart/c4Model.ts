@@ -11,7 +11,7 @@ export const C4_KINDS = [
 ] as const;
 export type C4Level = (typeof C4_LEVELS)[number];
 export type C4Kind = (typeof C4_KINDS)[number];
-export type C4Status = 'current' | 'migrating' | 'target';
+type C4Status = 'current' | 'migrating' | 'target';
 
 /** A link from a box or arrow to what it is made of: code (`path:line`), a doc, an asset id, a URL. */
 export interface C4Link {
@@ -117,7 +117,7 @@ export function parseC4(raw: string | null | undefined): C4Value {
 }
 
 /** The colour slot a kind is drawn in. Identity by kind, never cycled; external is neutral. */
-export function c4Slot(el: Pick<C4Element, 'kind' | 'external'>): string {
+function c4Slot(el: Pick<C4Element, 'kind' | 'external'>): string {
   if (el.external) return '--s-other';
   if (el.kind === 'person' || el.kind === 'role') return '--s4';
   if (el.kind === 'database' || el.kind === 'queue' || el.kind === 'storage') return '--s3';
@@ -216,7 +216,7 @@ export interface C4Chip {
 const CHIP_CHAR = 6.2;
 const CHIP_MAX_W = CARD_W - 28;
 /** The most characters a chip shows before it ends in "…". */
-export const CHIP_MAX_CHARS = Math.floor((CHIP_MAX_W - 30) / CHIP_CHAR);
+const CHIP_MAX_CHARS = Math.floor((CHIP_MAX_W - 30) / CHIP_CHAR);
 const chipW = (label: string) => Math.min(CHIP_MAX_W, 30 + label.length * CHIP_CHAR);
 /** A chip's text: the label, or — only when it is longer than the widest chip — cut with "…". */
 export const chipText = (label: string) =>
@@ -239,7 +239,7 @@ function flowChips(items: Omit<C4Chip, 'x' | 'y' | 'w'>[]): { chips: C4Chip[]; h
   return { chips, h: chips.length ? y + SMALL_H : 0 };
 }
 
-export function elementChips(el: C4Element) {
+function elementChips(el: C4Element) {
   const items: Omit<C4Chip, 'x' | 'y' | 'w'>[] = [
     ...(el.inputs ?? []).map((p) => ({ label: `${p.name}: ${p.kind}`, icon: 'lucide.braces', open: { schema: p.kind } })),
     ...(el.returns ? [{ label: `→ ${el.returns}`, icon: 'lucide.braces', open: { schema: el.returns } }] : []),
@@ -311,7 +311,7 @@ function cardSize(el: C4Element) {
 }
 
 /** A relation's label plate: label, [tech], the data chip, and Open ↗ when it calls another chart. */
-export function plateSize(r: C4Relation) {
+function plateSize(r: C4Relation) {
   const lines = [r.label, r.tech ? `[${r.tech}]` : ''].filter(Boolean);
   const extras = [r.data ? `⟨${r.data}⟩` : '', r.ref ? 'Open ↗' : ''].filter(Boolean);
   const w = Math.min(240, Math.max(...lines.map((t) => t.length * 6.4), ...extras.map((t) => t.length * 6.2 + 28)) + 16);
@@ -334,14 +334,14 @@ function pathOf(points: { x: number; y: number }[]): string {
 }
 
 /** The boundaries that hold an element, directly or through an inner boundary: the only ones drawn. */
-export function drawnBoundaries(value: C4Value): Set<string> {
-  const ids = new Set(value.boundaries.map((b) => b.id));
+function drawnBoundaries(value: C4Value): Set<string> {
+  const parentOf = new Map(value.boundaries.map((b) => [b.id, b.parent]));
   const drawn = new Set<string>();
   for (const el of value.elements) {
     let at = el.boundary;
-    while (at && ids.has(at) && !drawn.has(at)) {
+    while (at && parentOf.has(at) && !drawn.has(at)) {
       drawn.add(at);
-      at = value.boundaries.find((b) => b.id === at)?.parent;
+      at = parentOf.get(at);
     }
   }
   return drawn;

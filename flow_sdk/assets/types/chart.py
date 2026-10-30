@@ -31,18 +31,18 @@ CHART_SOURCES: dict[str, tuple[str, str]] = {
 CHART_ICON_LISTS: dict[str, str] = {"sequence": "participants", "c4": "elements"}
 
 
-def chart_format(fm: dict) -> str:
-    """The chart's format from its frontmatter; missing/unknown → excalidraw."""
-    fmt = fm.get("format")
-    return fmt if fmt in CHART_FORMATS else DEFAULT_CHART_FORMAT
-
-
 def declared_chart_format(fm: dict) -> str:
     """The format as the chart declares it — kept on the row even when THIS build does not know it, so
     an editor can say "needs a newer Flowpad" instead of opening it as an empty whiteboard. Missing →
     the default."""
     fmt = fm.get("format")
     return fmt.strip() if isinstance(fmt, str) and fmt.strip() else DEFAULT_CHART_FORMAT
+
+
+def chart_format(fm: dict) -> str:
+    """The format THIS build draws the chart as: its declared one when known, else excalidraw."""
+    fmt = declared_chart_format(fm)
+    return fmt if fmt in CHART_FORMATS else DEFAULT_CHART_FORMAT
 
 
 def _resolve_chart_name(yaml_fields: dict, folder_name: str) -> str:

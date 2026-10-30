@@ -8,6 +8,14 @@ export const CHART_FORMATS = ['sequence', 'excalidraw', 'mermaid', 'c4'] as cons
 
 export type ChartFormat = (typeof CHART_FORMATS)[number];
 
+/** The file in a chart's folder that holds its drawing — Python's `CHART_SOURCES` (a mermaid chart's is CHART.md). */
+export const CHART_SOURCE_FILE: Record<ChartFormat, string> = {
+  sequence: 'chart.json',
+  excalidraw: 'board.json',
+  mermaid: 'CHART.md',
+  c4: 'c4.json',
+};
+
 /** A row without a known `format` is a board. */
 export function chartFormatOf(value: unknown): ChartFormat {
   return CHART_FORMATS.includes(value as ChartFormat) ? (value as ChartFormat) : 'excalidraw';

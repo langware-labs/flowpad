@@ -54,6 +54,8 @@ const pick = async (id: string) => fireEvent.click(await screen.findByTestId(`li
 
 beforeEach(() => {
   mocks.prefs.clear();
+  // The approval dialog has its own tests below; the rest run as after "Don't ask again".
+  mocks.prefs.set(PrefKey.COMMAND_LINK_CONFIRM, false);
   for (const fn of [mocks.get, mocks.post, mocks.openTerminal, mocks.openNewShell, host.runShellCommand]) fn.mockReset();
   mocks.get.mockResolvedValue({ browsers: [{ id: 'chrome', name: 'Google Chrome', profiles: [{ id: 'Profile 1', name: 'Work', email: 'me@work.test' }] }] });
   mocks.post.mockImplementation(async (_path: string, body: { command: string }) => ({ command: `BROWSER=x ${body.command}` }));
@@ -164,5 +166,41 @@ describe('Browser ▸ choice', () => {
     click();
     await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledWith('gcloud auth login'));
     expect(mocks.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('approval before running', () => {
+  beforeEach(() => mocks.prefs.set(PrefKey.COMMAND_LINK_CONFIRM, true));
+
+  it('asks first, showing the command and where; Cancel runs nothing', async () => {
+    render(<Harness />);
+    click();
+    expect((await screen.findByTestId('command-confirm-command')).textContent).toBe('gcloud auth login');
+    expect(screen.getByTestId('command-confirm').textContent).toContain("in this chat's session");
+    fireEvent.click(screen.getByTestId('command-confirm-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('command-confirm')).toBeNull());
+    expect(host.runShellCommand).not.toHaveBeenCalled();
+  });
+
+  it('Run runs it and asks again next time', async () => {
+    render(<Harness />);
+    click();
+    fireEvent.click(await screen.findByTestId('command-confirm-run'));
+    await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledTimes(1));
+    expect(mocks.prefs.get(PrefKey.COMMAND_LINK_CONFIRM)).toBe(true);
+    click();
+    expect(await screen.findByTestId('command-confirm')).toBeTruthy();
+  });
+
+  it("Don't ask again is saved, and the next click runs straight away", async () => {
+    render(<Harness />);
+    click();
+    fireEvent.click(await screen.findByTestId('command-confirm-dont-ask'));
+    fireEvent.click(screen.getByTestId('command-confirm-run'));
+    await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledTimes(1));
+    expect(mocks.prefs.get(PrefKey.COMMAND_LINK_CONFIRM)).toBe(false);
+    click();
+    await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('command-confirm')).toBeNull();
   });
 });
