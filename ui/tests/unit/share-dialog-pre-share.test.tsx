@@ -139,11 +139,53 @@ describe('the generic pre-share step', () => {
     expect(screen.getByTestId('test-recipients')).toBeTruthy();
   });
 
-  it("shows the type's step first, then the vault picker, then the standard dialog", async () => {
-    pre.answer = {
-      needed: true, kind: 'secret_vault', project_id: PID, name: 'bright_data', vaults: [],
-      title: 'Share Bright Data', detail: 'Sharing credentials requires a secret manager on the project.',
-    };
+  const VALUES = { needed: true, kind: 'credential_values', typeid: REF.toString(), project_id: PID, name: 'bright_data',
+    title: 'Share Bright Data', detail: 'Sharing a credential shares only the description of the required keys and how to set them up.' };
+
+  function pickManager() {
+    const tab = screen.getByTestId('share-values-manager');
+    fireEvent.mouseDown(tab);
+    fireEvent.click(tab);
+  }
+
+  it('shares only the description unless "Share values" is checked', async () => {
+    pre.answer = { ...VALUES, vaults: [] };
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [], gitignored: [] } as never);
+    const seal = vi.spyOn(credentialsService, 'sealedSeal');
+    show();
+
+    await screen.findByTestId('share-preshare-step');
+    expect(screen.getByText(VALUES.detail)).toBeTruthy();
+    expect(screen.getByTestId('share-preshare-continue').textContent).toBe('Continue');
+    fireEvent.click(screen.getByTestId('share-preshare-continue'));
+    await screen.findByTestId('test-recipients');
+    expect(screen.queryByTestId('share-secured-line')).toBeNull();
+    expect(seal).not.toHaveBeenCalled();
+  });
+
+  it('secured transfer: Share secrets → the standard dialog → the values are sealed into the conversation', async () => {
+    pre.answer = { ...VALUES, vaults: [] };
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [], gitignored: [] } as never);
+    const seal = vi.spyOn(credentialsService, 'sealedSeal').mockResolvedValue(
+      { transfer_id: 't-1', sealed_for: ['u-ami'], cannot_receive: [], variables: ['BRIGHT_DATA_API'] } as never,
+    );
+    show();
+
+    await screen.findByTestId('share-preshare-step');
+    fireEvent.click(screen.getByTestId('share-values-checkbox'));
+    expect(screen.getByTestId('share-preshare-continue').textContent).toBe('Share secrets');
+    expect(screen.getByTestId('share-values-route-note').textContent).toMatch(/only they can open them/);
+    fireEvent.click(screen.getByTestId('share-preshare-continue'));
+
+    await screen.findByTestId('test-recipients');
+    expect(screen.getByTestId('share-secured-line')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('share-submit'));
+    await waitFor(() => expect(seal).toHaveBeenCalledWith(REF.toString(), 'conversation-1'));
+    expect((await screen.findByTestId('share-sealed-outcome')).textContent).toMatch(/sealed for 1/);
+  });
+
+  it('secret manager with none on the project: Share secrets opens the vault picker, then publishes', async () => {
+    pre.answer = { ...VALUES, vaults: [] };
     vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [], gitignored: [] } as never);
     vi.spyOn(credentialsService, 'listManagers').mockResolvedValue([
       { name: 'onepassword', title: '1Password', description: '', icon: '', config_fields: [{ name: 'account', label: 'Account', required: false }] },
@@ -153,10 +195,10 @@ describe('the generic pre-share step', () => {
     show();
 
     await screen.findByTestId('share-preshare-step');
-    expect(screen.getByText('Sharing credentials requires a secret manager on the project.')).toBeTruthy();
-    expect(screen.queryByTestId('test-recipients')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('share-preshare-setup'));
+    fireEvent.click(screen.getByTestId('share-values-checkbox'));
+    pickManager();
+    await waitFor(() => expect(screen.getByTestId('share-values-route-note').textContent).toMatch(/no secret manager yet/));
+    fireEvent.click(screen.getByTestId('share-preshare-continue'));
     await screen.findByTestId('secret-manager-option-onepassword');
     fireEvent.change(screen.getByTestId('secret-vault-name'), { target: { value: 'team' } });
     fireEvent.change(screen.getByTestId('secret-vault-field-account'), { target: { value: 'acme' } });
@@ -167,13 +209,17 @@ describe('the generic pre-share step', () => {
     expect(publish).toHaveBeenCalledWith('bright_data', PID, 'team');
   });
 
-  it('with a vault declared, publishes into it straight from the step', async () => {
-    pre.answer = { needed: true, kind: 'secret_vault', project_id: PID, name: 'bright_data', vaults: ['team'] };
+  it('secret manager with a vault declared: Share secrets publishes into it', async () => {
+    pre.answer = { ...VALUES, vaults: ['team'] };
     vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [], gitignored: [] } as never);
     const publish = vi.spyOn(credentialsService, 'publish').mockResolvedValue({ published: [] } as never);
     show();
 
-    fireEvent.click(await screen.findByTestId('share-preshare-vault-team'));
+    await screen.findByTestId('share-preshare-step');
+    fireEvent.click(screen.getByTestId('share-values-checkbox'));
+    pickManager();
+    await waitFor(() => expect(screen.getByTestId('share-values-route-note').textContent).toMatch(/Published to the project/));
+    fireEvent.click(screen.getByTestId('share-preshare-continue'));
     await screen.findByTestId('test-recipients');
     expect(publish).toHaveBeenCalledWith('bright_data', PID, 'team');
   });

@@ -599,6 +599,11 @@ msgstr "{0} available"
 msgid "{0} can now spend {1}."
 msgstr "{0} can now spend {1}."
 
+#. placeholder {0}: sealOutcome.cannot_receive.length
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "{0} can't receive values here and got the description only."
+msgstr "{0} can't receive values here and got the description only."
+
 #. placeholder {0}: deployment.name
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "{0} cannot pay for its next turn"
@@ -1044,6 +1049,12 @@ msgstr "{0} secret{1}"
 #: src/pages/hub-home/HubHome.tsx
 msgid "{0} selected"
 msgstr "{0} selected"
+
+#. placeholder {0}: card.sender_name || t`A member`
+#. placeholder {1}: card.credential_title || card.credential_name || t`a credential`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "{0} sent you values for {1}"
+msgstr "{0} sent you values for {1}"
 
 #~ msgid "{0} stayed in .env.local."
 #~ msgstr "{0} stayed in .env.local."
@@ -2353,6 +2364,10 @@ msgstr "A capped sub-budget of yours, for an agent or app."
 #~ msgid "A chain draws on another endpoint and can only narrow what passes."
 #~ msgstr "A chain draws on another endpoint and can only narrow what passes."
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "a credential"
+msgstr "a credential"
+
 #: src/components/automations/AutomationPage.tsx
 msgid "A cron expression has five parts."
 msgstr "A cron expression has five parts."
@@ -2428,6 +2443,10 @@ msgstr "A known fix for this error (setup/webapp_errors.json)."
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A machine"
 msgstr "A machine"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "A member"
+msgstr "A member"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "a minute"
@@ -2886,8 +2905,8 @@ msgid "Add a source"
 msgstr "Add a source"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Add a vault"
-msgstr "Add a vault"
+#~ msgid "Add a vault"
+#~ msgstr "Add a vault"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -3842,6 +3861,10 @@ msgstr "Also deliver to…"
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Also share the secret values, through a <0/> or by <1/>."
+msgstr "Also share the secret values, through a <0/> or by <1/>."
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also to"
@@ -7730,6 +7753,7 @@ msgstr "context tokens"
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/survey/SurveyView.tsx
 msgid "Continue"
 msgstr "Continue"
@@ -9915,6 +9939,7 @@ msgstr "Declared on the agent's card. Not yet applied to the worker."
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/PromptCallCard.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/git/InvitationsStrip.tsx
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
@@ -9939,9 +9964,9 @@ msgstr "Decline failed"
 msgid "declined"
 msgstr "declined"
 
-#: src/components/conversation/SessionCard.tsx
-#~ msgid "Declined"
-#~ msgstr "Declined"
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Declined"
+msgstr "Declined"
 
 #: src/components/git/InvitationsStrip.tsx
 msgid "Declined {fullName}"
@@ -12603,6 +12628,15 @@ msgstr "Expert Assistance"
 msgid "Expert details"
 msgstr "Expert details"
 
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Expired — ask {0} to share again."
+msgstr "Expired — ask {0} to share again."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Expired before everyone filled them in."
+msgstr "Expired before everyone filled them in."
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Expires after"
 msgstr "Expires after"
@@ -13341,6 +13375,18 @@ msgstr "Files on disk not yet in the DB"
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Files: {files}"
 msgstr "Files: {files}"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Fill in"
+msgstr "Fill in"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Filled in"
+msgstr "Filled in"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Filled in by {filled} · the sealed copy was deleted from the hub"
+msgstr "Filled in by {filled} · the sealed copy was deleted from the hub"
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -16859,7 +16905,6 @@ msgstr "Learn about duplicates"
 msgid "Learn about your data"
 msgstr "Learn about your data"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
@@ -24582,8 +24627,8 @@ msgid "Publish this agent to the cloud and give it a machine that logs in as its
 msgstr "Publish this agent to the cloud and give it a machine that logs in as itself."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Publish to vault {vault}"
-msgstr "Publish to vault {vault}"
+#~ msgid "Publish to vault {vault}"
+#~ msgstr "Publish to vault {vault}"
 
 #~ msgid "published"
 #~ msgstr "published"
@@ -24617,6 +24662,10 @@ msgstr "Published from a folder on the publisher's machine"
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Published to the project."
 msgstr "Published to the project."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Published to the project's secret manager; recipients fetch them from there."
+msgstr "Published to the project's secret manager; recipients fetch them from there."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
@@ -27516,6 +27565,14 @@ msgstr "scroll to navigate"
 msgid "Scroll to zoom · drag to pan{0}"
 msgstr "Scroll to zoom · drag to pan{0}"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Sealed on this computer for each recipient's Flowpad — only they can open them."
+msgstr "Sealed on this computer for each recipient's Flowpad — only they can open them."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Sealed values"
+msgstr "Sealed values"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -27767,7 +27824,12 @@ msgstr "Secret created"
 msgid "Secret deleted"
 msgstr "Secret deleted"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "secret manager"
+msgstr "secret manager"
+
 #: src/components/credentials/SecretVaultPicker.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secret manager"
 msgstr "Secret manager"
 
@@ -27795,6 +27857,18 @@ msgstr "Secrets are stored write-only on the hub — nobody can read them back."
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
 msgstr "Secrets enabled"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "secured transfer"
+msgstr "secured transfer"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Secured transfer"
+msgstr "Secured transfer"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Secured transfer — only the recipients can open the values."
+msgstr "Secured transfer — only the recipients can open the values."
 
 #. placeholder {0}: results.length
 #: src/pages/home-landing/InlineSearchResults.tsx
@@ -28593,8 +28667,8 @@ msgid "Set up project"
 msgstr "Set up project"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Set up secret manager"
-msgstr "Set up secret manager"
+#~ msgid "Set up secret manager"
+#~ msgstr "Set up secret manager"
 
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "Set up team budget"
@@ -28819,6 +28893,10 @@ msgstr "Share project"
 msgid "Share sandbox"
 msgstr "Share sandbox"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share secrets"
+msgstr "Share secrets"
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 #~ msgid "Share the agent with someone first — the link only works for people it's shared with."
 #~ msgstr "Share the agent with someone first — the link only works for people it's shared with."
@@ -28860,6 +28938,10 @@ msgstr "Share to conversation"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Share using Git origin"
 #~ msgstr "Share using Git origin"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share values"
+msgstr "Share values"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Share with team"
@@ -31438,8 +31520,12 @@ msgid "The credential was removed from your account."
 msgstr "The credential was removed from your account."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
-msgstr "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
+msgid "The credential was shared, but its values could not be sent securely."
+msgstr "The credential was shared, but its values could not be sent securely."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
+#~ msgstr "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The credentials could not be saved."
@@ -31851,6 +31937,11 @@ msgstr "The selected entity has no name yet. Choose one — it will be saved to 
 msgid "The selected project has no folder on this machine."
 msgstr "The selected project has no folder on this machine."
 
+#: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "the sender"
+msgstr "the sender"
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "the sender is still staging it"
 msgstr "the sender is still staging it"
@@ -31971,6 +32062,14 @@ msgstr "The value is stored in your operating system keychain and never readable
 #~ msgid "The value is written to this project's .env.local and stays on this machine."
 #~ msgstr "The value is written to this project's .env.local and stays on this machine."
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "The values could not be filled in."
+msgstr "The values could not be filled in."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "The values go straight into your credential — they are not shown here."
+msgstr "The values go straight into your credential — they are not shown here."
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "the vault"
 msgstr "the vault"
@@ -32058,6 +32157,11 @@ msgstr "These conversations exist only on this device."
 #: src/components/automations/AutomationPage.tsx
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
 msgstr "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
+
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "These values can't be opened here — ask {0} to share again."
+msgstr "These values can't be opened here — ask {0} to share again."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "They approve the steps and what you sent along, describe the issue, and decide whether the result is sent to you."
@@ -32661,6 +32765,10 @@ msgstr "This project has no dataset."
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This project has no folder on disk and can't be opened."
 msgstr "This project has no folder on disk and can't be opened."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This project has no secret manager yet — Share secrets continues to set one up."
+msgstr "This project has no secret manager yet — Share secrets continues to set one up."
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "This project has no secrets declared yet."
@@ -34405,6 +34513,11 @@ msgstr "Values for"
 msgid "Values live in"
 msgstr "Values live in"
 
+#. placeholder {0}: sealOutcome.sealed_for.length
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Values sealed for {0} recipient(s)."
+msgstr "Values sealed for {0} recipient(s)."
+
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
 msgstr "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
@@ -34709,6 +34822,10 @@ msgstr "Visitors can try this agent"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "Waiting for {hostName} to approve the live session…"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Waiting for {waiting} recipient(s) · only they can open them"
+msgstr "Waiting for {waiting} recipient(s) · only they can open them"
 
 #: src/components/connections-manager.tsx
 msgid "Waiting for approval…"

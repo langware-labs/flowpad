@@ -109,7 +109,7 @@ Field rules (`flow_sdk/schema/data_spec/credential_spec.py`):
 - `setup_timeout_seconds` — only when following `setup` takes an agent longer
   than the default 10 minutes (a key that takes long to issue). Leave it out
   otherwise.
-- `test` — for every API key whose provider has a cheap authenticated GET
+- a `test.json` beside `credential.json` (never a `test` key inside it) — for every API key whose provider has a cheap authenticated GET
   (`references/tests.md` lists the known ones): a read-only command that exits 0
   when the provider takes the values. Without it a dead key reads as connected.
   When you don't know the endpoint, leave it out; the Test button will write it.

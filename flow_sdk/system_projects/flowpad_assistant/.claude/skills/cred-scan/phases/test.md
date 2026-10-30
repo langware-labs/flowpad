@@ -18,15 +18,15 @@ one — the working folder alone may not resolve the project.
    person in one short question and wait for the answer.
 3. **Has it a value here?** `flow credentials check <name>`. Missing → say so,
    ask the person to set it (Credentials → Set values), stop.
-4. **Write the test** into `credential.json` (`"test": {"commands": {darwin,
-   linux, win32}}`), keeping every other key as it is. Then run
+4. **Write the test** as `test.json` in the credential's folder (`{"commands":
+   {darwin, linux, win32}}`). Never edit `credential.json` for it. Then run
    `flow credentials test <name>` — it runs the test with the values in the
    environment and records the answer.
    - `state: ok` → done.
    - `state: invalid` → is it the KEY or the TEST? A 401/403 on a documented
      endpoint is the key: keep the test, tell the person the key is rejected and
      where to make a new one (`help_url`). A 404 / wrong host is the test: fix it,
-     run again (twice at most), else remove `test` and explain.
+     run again (twice at most), else delete `test.json` and explain.
    - `state: error` → the tool is missing or there is no command for this OS: fix it.
 5. **Report** in two lines: the endpoint used and the result. The person sees the
    Test button turn green; the next click runs the test directly, with no agent.

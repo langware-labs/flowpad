@@ -174,18 +174,21 @@ async def test_publish_to_an_undeclared_vault_is_refused(home, project, mount, t
 # ── the per-type handlers ───────────────────────────────────────────────────
 
 
-async def test_pre_share_asks_for_a_secret_manager_only_when_the_project_has_none(home, project, mount, tmp_path):
+async def test_pre_share_offers_the_values_whenever_the_credential_holds_some(home, project, mount, tmp_path):
+    """Sharing a credential shares its description; its values go only when the sharer asks (secured transfer or a
+    vault) — so a credential holding values always asks first, vault or not, and says which values are unpublished."""
     from flow_sdk.app.actions.pre_share_action import pre_share_of
 
     spec = await _bright_data(project)
     needed = await pre_share_of("credential", str(spec.id))
-    assert needed["needed"] is True and needed["kind"] == "secret_vault"
-    assert needed["project_id"] == str(project.id) and needed["vaults"] == []
+    assert needed["needed"] is True and needed["kind"] == "credential_values"
+    assert needed["project_id"] == str(project.id) and needed["vaults"] == [] and needed["typeid"] == str(spec.typeid)
 
     set_secret_vault(mount, "team", {"manager": "team", "config": {"path": str(tmp_path / "team.env")}})
     await set_credential_values(str(spec.typeid), {"BRIGHT_DATA_API": "bd-secret"}, None)
     await publish("bright_data", str(project.id), "team")
-    assert await pre_share_of("credential", str(spec.id)) == {"needed": False}
+    after = await pre_share_of("credential", str(spec.id))
+    assert after["needed"] is True and after["vaults"] == ["team"] and after["unpublished"] == []
 
 
 async def test_pre_share_is_not_needed_for_a_type_without_a_handler(home, project):
@@ -258,3 +261,54 @@ async def test_a_received_credential_with_no_vault_opens_with_a_no_vault_error(h
     spec = await _bright_data(project)
     shown = await spec.setup_on_receive(project_id=str(project.id))
     assert shown["id"] == str(spec.id) and shown["receive_error"]["code"] == "no_vault"
+
+
+# ── opening a shared credential fetches what this computer lacks ────────────
+
+
+async def test_receiving_an_optional_credential_fetches_its_value(home, project, mount, team_file):
+    """Opening the share IS asking for it: an OPTIONAL credential, which project setup leaves alone, is fetched
+    from the vault the moment it is received."""
+    spec = await _bright_data(project)  # BRIGHT_DATA_API is OPTIONAL
+    await set_credential_values(str(spec.typeid), {"BRIGHT_DATA_API": "bd-secret"}, None)
+    await publish("bright_data", str(project.id), "team")
+    (mount / ".env.local").write_text("")  # the receiver's clone
+
+    from flow_sdk.builtin.credential_service import credential_named
+
+    received = await credential_named("bright_data", project)
+    target = await received.setup_on_receive(project_id=str(project.id))
+    assert target["receive_fetch"]["fetched"] == ["BRIGHT_DATA_API"]
+    assert "bd-secret" not in json.dumps(target), "names only"
+    assert dotenv_values(mount / ".env.local")["BRIGHT_DATA_API"] == "bd-secret"
+
+
+async def test_receiving_never_overwrites_a_value_here(home, project, mount, team_file):
+    spec = await _bright_data(project)
+    await set_credential_values(str(spec.typeid), {"BRIGHT_DATA_API": "team-value"}, None)
+    await publish("bright_data", str(project.id), "team")
+    await set_credential_values(str(spec.typeid), {"BRIGHT_DATA_API": "mine"}, None)
+
+    from flow_sdk.builtin.credential_service import credential_named
+
+    target = await (await credential_named("bright_data", project)).setup_on_receive(project_id=str(project.id))
+    assert target["receive_fetch"] == {"fetched": []}
+    assert dotenv_values(mount / ".env.local")["BRIGHT_DATA_API"] == "mine"
+
+
+async def test_a_fetch_that_cannot_run_still_opens_the_credential(home, project, mount, team_file, monkeypatch):
+    spec = await _bright_data(project)
+    await set_credential_values(str(spec.typeid), {"BRIGHT_DATA_API": "bd-secret"}, None)
+    await publish("bright_data", str(project.id), "team")
+    (mount / ".env.local").write_text("")
+
+    from flow_sdk.builtin import credential_service
+    from flow_sdk.builtin.credential_service import credential_named
+
+    async def refuse(*_a, **_k):
+        raise CredentialError("not signed in", code="needs_connection")
+
+    monkeypatch.setattr(credential_service, "fetch", refuse)
+    target = await (await credential_named("bright_data", project)).setup_on_receive(project_id=str(project.id))
+    assert target["receive_fetch"] == {"error": "needs_connection"}
+    assert target.get("type") == "credential" or target, "the credential still opens"

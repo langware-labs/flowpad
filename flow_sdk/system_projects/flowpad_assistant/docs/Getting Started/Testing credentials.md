@@ -10,6 +10,6 @@ title: Testing credentials
 - **Test** on a credential's row (and on its page) runs the credential's own test: a quick, read-only request to the provider with your values. Green means the key works; red shows the provider's reason, with the key itself hidden.
 - **No test yet?** The first Test starts an agent beside the credential. It finds the provider's cheapest check, tries it once with your values, and writes it into the credential. You see what it does and can answer its questions in the same panel. Every Test after that is instant and runs no agent.
 - **Project setup** runs the test too, so a rejected key is asked for again instead of counting as done.
-- The test travels with the credential (it is part of `credential.json`). The result is your computer's only.
+- The test travels with the credential (its `test.json` file sits beside `credential.json`; an older Flowpad simply ignores it). The result is your computer's only.
 
 From the command line: `flow credentials test <name>` runs it (exit 0 when the key works); `flow credentials check <name>` checks the values are there and, when the credential has a test, that they work.

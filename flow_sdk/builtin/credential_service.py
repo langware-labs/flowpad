@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 _MANIFEST_FIELDS = (
     "title", "description", "needed_for", "justification", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider",
-    "kind", "provider", "scopes", "optional_scopes", "vars", "ways", "derived", "test",
+    "kind", "provider", "scopes", "optional_scopes", "vars", "ways", "derived",
 )
 
 
@@ -118,7 +118,11 @@ async def _deployment(deployment_id: Optional[str]) -> "Deployment":
         raise CredentialError(str(e)) from e
 
 
-async def _write_values(spec: "Credential", scope: CredentialScope, values: dict[str, Any], placement: Placement) -> None:
+async def _write_values(
+    spec: "Credential", scope: CredentialScope, values: dict[str, Any], placement: Placement, *, literal: bool = False
+) -> None:
+    """``literal``: values that came from someone else (a secured transfer) are written as given — a file
+    variable's ``@path`` shortcut, which reads a file on THIS machine, never applies to them."""
     from flow_sdk.builtin.env_local_store import EnvLocalNotWritable  # noqa: PLC0415
 
     unknown = sorted(set(values) - set(spec.vars or {}))
@@ -131,7 +135,7 @@ async def _write_values(spec: "Credential", scope: CredentialScope, values: dict
         raise CredentialError("an LLM provider key has no per-environment value; deployments are hub-funded")
     # A file var's content, read now: the pattern is checked against it, not against an ``@path``.
     values = {
-        name: _file_content(str(v)) if spec.vars[name].kind is CredentialVarKind.FILE and v not in (None, "") else v
+        name: _file_content(str(v)) if spec.vars[name].kind is CredentialVarKind.FILE and v not in (None, "") and not literal else v
         for name, v in values.items()
     }
     for env_var, value in values.items():
@@ -326,13 +330,13 @@ async def _auto_declaration(manifest: dict, scope: CredentialScope, project: Opt
 
 
 async def set_credential_values(
-    typeid: str, values: dict[str, Any], deployment_id: Optional[str] = None
+    typeid: str, values: dict[str, Any], deployment_id: Optional[str] = None, *, literal: bool = False
 ) -> "Credential":
     """Set or rotate the values ``deployment_id`` (default: this computer) reads. Empty values are
-    skipped, never cleared."""
+    skipped, never cleared. ``literal``: see :func:`_write_values`."""
     placement = await Placement.of(await _deployment(deployment_id))
     spec, target_scope, _ = await _owned_credential(typeid)
-    await _write_values(spec, target_scope, dict(values or {}), placement)
+    await _write_values(spec, target_scope, dict(values or {}), placement, literal=literal)
     return spec
 
 

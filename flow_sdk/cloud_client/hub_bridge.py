@@ -700,7 +700,12 @@ class HubWsBridge:
                         )
                         return
                     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+                    from flow_sdk.secrets.sealed_transfer import is_hub_only, on_sealed_arrival  # noqa: PLC0415
 
+                    if is_hub_only(payload):
+                        # A sealed value / its ack stays on the hub (opaque metadata); the card reads it from there.
+                        await on_sealed_arrival(conversation_id)
+                        return
                     materialized = await materialize_flow_message(
                         payload,
                         conversation_id=conversation_id,

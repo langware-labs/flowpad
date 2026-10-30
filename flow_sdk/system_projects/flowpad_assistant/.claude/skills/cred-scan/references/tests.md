@@ -1,14 +1,18 @@
 # A credential's `test` — are the values GOOD, not only present
 
-`credential.json` may carry `test`: a read-only call that proves the provider takes
-the values. Without one, a dead key reads as "Connected" (a value is present).
+A credential may carry a test: `test.json` beside `credential.json`, a read-only
+call that proves the provider takes the values. Its own file on purpose: a Flowpad
+that predates tests never reads it, so adding one never breaks an older app.
+Never put `test` inside `credential.json`. Without one, a dead key reads as "Connected" (a value is present).
 With one, the Test button, `flow credentials test <name>` and `flow credentials
 check <name>` (so every setup step) run it.
 
 ## The contract
 
+`test.json`:
+
 ```json
-"test": {"commands": {
+{"commands": {
   "darwin": "curl -fsS -o /dev/null -H \"Authorization: Bearer $BRIGHT_DATA_API\" https://api.brightdata.com/zone/get_active_zones",
   "linux":  "curl -fsS -o /dev/null -H \"Authorization: Bearer $BRIGHT_DATA_API\" https://api.brightdata.com/zone/get_active_zones",
   "win32":  "curl.exe -fsS -o NUL -H \"Authorization: Bearer %BRIGHT_DATA_API%\" https://api.brightdata.com/zone/get_active_zones"

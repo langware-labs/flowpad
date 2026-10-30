@@ -144,8 +144,13 @@ class CredentialSpec(DataSpec):
     """``credential.json`` — the shape, with every authoring rule as a validator."""
 
     main_file: ClassVar[str | None] = "credential.json"
+    #: The read-only check that the values work lives beside it, in its own file (``Credential.declared_test``):
+    #: a Flowpad that predates tests never reads it, so adding one never breaks an older app.
+    TEST_FILE: ClassVar[str] = "test.json"
 
-    model_config = ConfigDict(populate_by_name=True)  # extra="forbid" is DataSpec's
+    #: ``extra="ignore"``: a key a NEWER Flowpad wrote must not stop this one loading the credential — an asset
+    #: document is read by every version that opens the project (``AssetDocumentSpec``'s rule).
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     #: The folder name.
     name: str
@@ -194,12 +199,6 @@ class CredentialSpec(DataSpec):
     #: The wizards this credential's values are obtained with, in order (``setup_stage_spec.py``).
     #: Empty: the default ask-store-check wizard ``flow project setup`` compiles from ``vars``.
     setup_wizards: list[SetupStageSpec] = Field(default_factory=list)
-    #: Are the values GOOD, not only present: a read-only call to the provider (``flow credentials test``).
-    #: It runs with the credential's values in its environment and its own folder as the working folder;
-    #: exit 0 = the values work, any other = rejected. It changes nothing at the provider and prints no
-    #: value. Longer logic lives in a ``test.py`` beside ``credential.json`` the command runs.
-    #: Unset: a present value counts as connected, and the Test button asks an agent to write one.
-    test: Optional[CliOp] = None
     #: An installed asset (a data source, an agent) declared this credential from a template for a need of its
     #: own. Which ones is derived on every read (``project_setup``): it is needed while a root needs it, and goes
     #: with the last. ``False``: the project authored it itself — it is its own root.

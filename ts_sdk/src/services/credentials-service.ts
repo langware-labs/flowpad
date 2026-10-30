@@ -447,6 +447,79 @@ export class CredentialsService {
     const res = await dataManager.callAction<unknown, Partial<CredentialDeleted>>(action);
     return { removed: !!res?.removed, deleted: res?.deleted ?? [], kept: res?.kept ?? [], stores: res?.stores ?? [] };
   }
+
+  // ── secured transfer (flow_sdk/secrets/sealed_transfer.py) — names only, never a value ──
+
+  /** Seal `typeid`'s values for the conversation's members (all others when `recipients` is empty) and post them. */
+  async sealedSeal(typeid: string, conversationId: string, recipients: string[] = []): Promise<SealedSealResult> {
+    const action = this.action('sealed/seal', 'POST');
+    action.bodyParameters = { typeid, conversation_id: conversationId, recipients };
+    return (await dataManager.callAction<unknown, SealedSealResult>(action)) as SealedSealResult;
+  }
+
+  /** Which members of the conversation can receive values here: `{user_id: 'ok' | 'no_key'}`. */
+  async sealedReceivers(conversationId: string): Promise<Record<string, 'ok' | 'no_key'>> {
+    const action = this.action('sealed/receivers', 'GET');
+    action.queryParameters = { conversation_id: conversationId };
+    return ((await dataManager.callAction<unknown, Record<string, 'ok' | 'no_key'>>(action)) ?? {}) as Record<string, 'ok' | 'no_key'>;
+  }
+
+  /** This device's cards in the conversation — what was sealed for it, names only. */
+  async sealedIncoming(conversationId: string): Promise<SealedCard[]> {
+    const action = this.action('sealed/incoming', 'GET');
+    action.queryParameters = { conversation_id: conversationId };
+    return ((await dataManager.callAction<unknown, SealedCard[]>(action)) ?? []) as SealedCard[];
+  }
+
+  /** The sender's transfers in the conversation, and who filled / declined / is pending. */
+  async sealedSent(conversationId: string): Promise<SealedSent[]> {
+    const action = this.action('sealed/sent', 'GET');
+    action.queryParameters = { conversation_id: conversationId };
+    return ((await dataManager.callAction<unknown, SealedSent[]>(action)) ?? []) as SealedSent[];
+  }
+
+  async sealedFill(conversationId: string, messageId: string, projectId?: string | null): Promise<{ filled: string[]; credential: string }> {
+    const action = this.action('sealed/fill', 'POST');
+    action.bodyParameters = projectId ? { conversation_id: conversationId, message_id: messageId, project_id: projectId }
+      : { conversation_id: conversationId, message_id: messageId };
+    return (await dataManager.callAction<unknown, { filled: string[]; credential: string }>(action)) as { filled: string[]; credential: string };
+  }
+
+  async sealedDecline(conversationId: string, messageId: string): Promise<void> {
+    const action = this.action('sealed/decline', 'POST');
+    action.bodyParameters = { conversation_id: conversationId, message_id: messageId };
+    await dataManager.callAction<unknown, unknown>(action);
+  }
+
+}
+
+export interface SealedSealResult {
+  transfer_id: string | null;
+  sealed_for: string[];
+  cannot_receive: string[];
+  variables: string[];
+}
+
+export interface SealedCard {
+  message_id: string;
+  transfer_id: string;
+  sender_id?: string;
+  sender_name?: string;
+  expires_at: string;
+  /** `pending` | `filled` | `declined` | an error code (`expired`, `bad_signature`, `key_gone`, …). */
+  state: string;
+  credential_name?: string;
+  credential_title?: string;
+  variables?: string[];
+  error?: string;
+}
+
+export interface SealedSent {
+  message_id: string;
+  transfer_id: string;
+  expires_at: string;
+  recipients: Record<string, 'pending' | 'filled' | 'declined'>;
+  expired: boolean;
 }
 
 /** Ready-to-use singleton wired to the local compute node. */

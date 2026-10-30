@@ -3562,8 +3562,10 @@ async def _sync_conversation_messages(
         BuiltinEntityType.FLOW_MESSAGE,
         scope=[("conversation", conv_id)],
     )
+    from flow_sdk.secrets.sealed_transfer import is_hub_only  # noqa: PLC0415
+
     ordered = sorted(
-        (m for m in (hub_msgs or []) if isinstance(m, dict) and m.get("id")),
+        (m for m in (hub_msgs or []) if isinstance(m, dict) and m.get("id") and not is_hub_only(m)),
         key=lambda m: m.get("created_date") or "",
     )
     logger.info("[conv-sync] conv=%s: syncing %d message(s)", conv_id[:8], len(ordered))

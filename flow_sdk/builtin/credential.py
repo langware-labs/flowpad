@@ -85,8 +85,6 @@ class Credential(SetupSkippable, Entity):
     setup: str = APIField(default="")
     #: How long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).
     setup_timeout_seconds: Optional[float] = APIField(default=None)
-    #: The read-only check that the values work (``CredentialSpec.test``).
-    test: Optional[CliOp] = APIField(default=None)
     lm_provider: str = APIField(default="")
     #: ``env`` (variables) or ``oauth`` (a provider's grant) — ``CredentialSpec.kind``.
     kind: CredentialKind = APIField(default=CredentialKind.ENV)
@@ -148,18 +146,20 @@ class Credential(SetupSkippable, Entity):
         return ref if ref.is_dir() else ref.parent
 
     def declared_test(self) -> Optional[CliOp]:
-        """The ``test`` ``credential.json`` declares NOW. The file is the truth: an agent that just wrote a test
-        runs it (and the page offers the fast lane) before any re-index reaches the row."""
+        """The read-only check that the values work: ``test.json`` beside ``credential.json`` (a ``CliOp``).
+        Its own file, read fresh: an older Flowpad never sees it, and a test an agent just wrote runs at once.
+        ``None``: none declared, or the file is unreadable."""
         import json  # noqa: PLC0415
+
+        from flow_sdk.schema.data_spec.credential_spec import CredentialSpec  # noqa: PLC0415
 
         folder = self.folder
         if folder is None:
-            return self.test
+            return None
         try:
-            raw = json.loads((folder / "credential.json").read_text(encoding="utf-8")).get("test")
-            return CliOp.model_validate(raw) if raw else None
+            return CliOp.model_validate(json.loads((folder / CredentialSpec.TEST_FILE).read_text(encoding="utf-8")))
         except (OSError, ValueError):
-            return self.test
+            return None
 
     def var_names(self) -> list[str]:
         """Every variable this credential is made of, in manifest order."""
@@ -238,23 +238,27 @@ class Credential(SetupSkippable, Entity):
         }
 
     async def pre_share(self) -> dict[str, Any]:
-        """The pre-share handler: a credential's values reach a receiver only through one of the project's
-        vaults, so sharing one whose stored variables are not all published to a declared vault asks first."""
+        """The pre-share handler. Sharing a credential shares its description (which keys, how to set them up);
+        its VALUES go only when the sharer asks — by secured transfer, sealed for each recipient's device, or
+        through one of the project's secret-manager vaults. A credential holding values asks first; one with
+        none shares its description as before."""
         state = await self.secret_vault_state()
-        if not state["holds_values"] or not state["unpublished"] or not state["project_id"]:
+        if not state["holds_values"]:
             return {"needed": False}
-        detail = ("Sharing credentials requires a secret manager vault on the project." if not state["vaults"]
-                  else "Publish this credential's values to one of the project's vaults before sharing it.")
         return {
-            "needed": True, "kind": "secret_vault", "project_id": state["project_id"], "name": self.name,
-            "title": f"Share {self.title or self.name}", "detail": detail, "vaults": state["vaults"],
+            "needed": True, "kind": "credential_values", "typeid": str(self.typeid),
+            "project_id": state["project_id"], "name": self.name, "title": f"Share {self.title or self.name}",
+            "detail": "Sharing a credential shares only the description of the required keys and how to set them up.",
+            "vaults": state["vaults"], "unpublished": state["unpublished"],
         }
 
     async def setup_on_receive(self, *, project_id: str | None = None, workdir: str | None = None) -> dict:
         """The receive handler: refresh the project (pull, then re-read its assets) so its manifest — and the
-        vaults it names — is current, then open this credential, whose page fetches the values. A project
-        with no vault this credential points into opens it with ``receive_error`` (code ``no_vault``), which
-        the page shows with Report. A failed refresh is logged and the credential still opens."""
+        vaults it names — is current, fetch the values this computer lacks from those vaults, then open this
+        credential. Optional or not: opening the share is the person asking for it. A project with no vault
+        this credential points into opens it with ``receive_error`` (code ``no_vault``), which the page shows
+        with Report. A fetch that cannot run (no access yet, not signed in to the manager) is reported as
+        ``receive_fetch`` and the page offers Fetch / Request access; nothing here stops the credential opening."""
         import logging  # noqa: PLC0415
 
         from flow_sdk.builtin.credential_service import get_project  # noqa: PLC0415
@@ -279,7 +283,31 @@ class Credential(SetupSkippable, Entity):
                     "message": f"{self.title or self.name} was shared without a vault its values can be fetched "
                                "from — ask the sender to set up a secret manager, or report it.",
                 }
+            elif project is not None:
+                target["receive_fetch"] = await self._fetch_missing(project)
         return target
+
+    async def _fetch_missing(self, project: "Project") -> dict:
+        """Fetch from the project's vaults the values this computer does not hold yet — never overwrite one it
+        has. ``{fetched, missing, denied}`` (names only), ``{"error": code}`` when the fetch could not run, or
+        ``{"fetched": []}`` when nothing was missing. Never raises."""
+        import logging  # noqa: PLC0415
+
+        from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
+        from flow_sdk.builtin.credential_service import CredentialError, fetch  # noqa: PLC0415
+        from flow_sdk.builtin.credential_store import Placement  # noqa: PLC0415
+
+        stored = self.stored_var_names()
+        try:
+            held = await resolve_project_secrets(project, only=stored, placement=await Placement.of(None))
+            if set(stored) <= set(held):
+                return {"fetched": []}
+            return await fetch(str(self.name), str(project.id))
+        except CredentialError as e:
+            return {"error": e.code or "refused"}
+        except Exception as e:  # noqa: BLE001 — the share still opens; its page offers Fetch again
+            logging.getLogger(__name__).warning("[credential] fetch on receive failed: %s", type(e).__name__)
+            return {"error": "failed"}
 
     @classmethod
     async def get(cls, name: str, project: Optional["Project"] = None) -> "Credential":

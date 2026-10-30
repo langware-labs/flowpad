@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Download, Loader2, MessageSquarePlus, Send, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, Loader2, Lock, MessageSquarePlus, Send, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Conversation,
@@ -18,6 +18,7 @@ import {
   type Project,
   type ConversationParticipant,
   type ConversationSendPayload,
+  type SealedSealResult,
   type UnshippableReference,
   withoutReferences,
 } from '@sdk';
@@ -50,6 +51,8 @@ import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conver
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
+import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { Input } from '@src/components/ui/input';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { cn } from '@src/lib/utils';
@@ -176,6 +179,11 @@ export function ShareToConversationDialog({
   const preShare = usePreShare(source.preShareRef, open);
   const [preShareDone, setPreShareDone] = useState(false);
   const [preShareBusy, setPreShareBusy] = useState(false);
+  // A credential's values: off = only its description travels; on = by secured transfer or a secret manager.
+  const [shareValues, setShareValues] = useState(false);
+  const [valuesRoute, setValuesRoute] = useState<'secured' | 'manager'>('secured');
+  const [secureValues, setSecureValues] = useState(false);
+  const [sealOutcome, setSealOutcome] = useState<SealedSealResult | null>(null);
   const [dontAsk, setDontAsk] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
   const [excludedRefs, setExcludedRefs] = useState<Set<string>>(new Set());
@@ -412,6 +420,16 @@ export function ShareToConversationDialog({
     },
     [preShare.answer, preShareFinished, t],
   );
+  const continuePreShare = useCallback(() => {
+    const answer = preShare.answer;
+    if (!shareValues) return preShareFinished();
+    if (valuesRoute === 'secured') {
+      setSecureValues(true);
+      return preShareFinished();
+    }
+    if (answer?.vaults?.length) return void publishToVault(answer.vaults[0]);
+    setStep('secret-vault');
+  }, [preShare.answer, shareValues, valuesRoute, preShareFinished, publishToVault]);
   const [fixBusy, setFixBusy] = useState(false);
   const commitChanges = useCallback(async () => {
     const ref = source.gitPreflightRef;
@@ -610,6 +628,15 @@ export function ShareToConversationDialog({
         } else {
           convId = await send(target, payload);
         }
+        if (convId && secureValues && preShare.answer?.typeid) {
+          // Secured transfer: sealed on this computer for the conversation's other members, posted as an opaque
+          // envelope. A member with no device key gets the description only (their chip says so).
+          try {
+            setSealOutcome(await credentialsService.sealedSeal(preShare.answer.typeid, convId));
+          } catch (sealErr) {
+            setLocalError(errorMessage(sealErr, t`The credential was shared, but its values could not be sent securely.`));
+          }
+        }
         if (convId) {
           setSharedConversationId(convId);
           onShared?.(convId);
@@ -698,15 +725,52 @@ export function ShareToConversationDialog({
               <h2 className="text-lg font-semibold">{preShare.answer?.title || source.label}</h2>
               <p className="text-muted-foreground">{preShare.answer?.detail}</p>
             </div>
-            {preShare.answer?.kind === 'secret_vault' && (
-              <div>
-                <p>
-                  <Trans>
-                    The credential's spec travels with the project; its values travel only through the secret manager:
-                    your local value goes into it, and the spec carries the secret's location.
-                  </Trans>
-                </p>
-                <WikiButton wikiword="Secret managers" linkText={t`Learn more`} className="mt-2" />
+            {preShare.answer?.kind === 'credential_values' && (
+              <div className="flex flex-col gap-3" data-testid="share-preshare-values">
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={shareValues}
+                    onCheckedChange={(v) => setShareValues(v === true)}
+                    data-testid="share-values-checkbox"
+                  />
+                  <span>
+                    <span className="font-medium">
+                      <Trans>Share values</Trans>
+                    </span>
+                    <span className="block text-muted-foreground">
+                      <Trans>
+                        Also share the secret values, through a{' '}
+                        <WikiButton wikiword="Secret managers" linkText={t`secret manager`} /> or by{' '}
+                        <WikiButton wikiword="Secured transfer" linkText={t`secured transfer`} />.
+                      </Trans>
+                    </span>
+                  </span>
+                </label>
+                {shareValues && (
+                  <div className="flex flex-col gap-2 ps-6">
+                    <Tabs value={valuesRoute} onValueChange={(v) => setValuesRoute(v as 'secured' | 'manager')}>
+                      <TabsList>
+                        <TabsTrigger value="secured" className="gap-1.5" data-testid="share-values-secured">
+                          <Lock className="h-3.5 w-3.5" />
+                          <Trans>Secured transfer</Trans>
+                        </TabsTrigger>
+                        <TabsTrigger value="manager" data-testid="share-values-manager">
+                          <Trans>Secret manager</Trans>
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                    <p className="text-xs text-muted-foreground" data-testid="share-values-route-note">
+                      {valuesRoute === 'secured' ? (
+                        <Trans>Sealed on this computer for each recipient's Flowpad — only they can open them.</Trans>
+                      ) : preShare.answer?.vaults?.length ? (
+                        <Trans>Published to the project's secret manager; recipients fetch them from there.</Trans>
+                      ) : (
+                        <Trans>This project has no secret manager yet — Share secrets continues to set one up.</Trans>
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             {shownError && <p className="text-xs text-destructive">{shownError}</p>}
@@ -714,19 +778,8 @@ export function ShareToConversationDialog({
               <Button variant="outline" onClick={onClose} data-testid="share-preshare-cancel">
                 <Trans>Cancel</Trans>
               </Button>
-              {(preShare.answer?.vaults ?? []).map((vault) => (
-                <Button
-                  key={vault}
-                  variant="secondary"
-                  disabled={preShareBusy}
-                  onClick={() => void publishToVault(vault)}
-                  data-testid={`share-preshare-vault-${vault}`}
-                >
-                  <Trans>Publish to vault {vault}</Trans>
-                </Button>
-              ))}
-              <Button onClick={() => setStep('secret-vault')} data-testid="share-preshare-setup">
-                {preShare.answer?.vaults?.length ? <Trans>Add a vault</Trans> : <Trans>Set up secret manager</Trans>}
+              <Button onClick={continuePreShare} disabled={preShareBusy} data-testid="share-preshare-continue">
+                {shareValues ? <Trans>Share secrets</Trans> : <Trans>Continue</Trans>}
               </Button>
             </div>
           </div>
@@ -816,6 +869,16 @@ export function ShareToConversationDialog({
             <p className="font-medium text-foreground">
               <Trans>Shared</Trans>
             </p>
+            {sealOutcome && (
+              <p className="text-xs text-muted-foreground" data-testid="share-sealed-outcome">
+                {sealOutcome.sealed_for.length ? (
+                  <Trans>Values sealed for {sealOutcome.sealed_for.length} recipient(s).</Trans>
+                ) : null}{' '}
+                {sealOutcome.cannot_receive.length ? (
+                  <Trans>{sealOutcome.cannot_receive.length} can't receive values here and got the description only.</Trans>
+                ) : null}
+              </p>
+            )}
             {shareLink && (
               <div className="flex w-full flex-col gap-1.5" data-testid="share-link">
                 <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
@@ -1030,7 +1093,13 @@ export function ShareToConversationDialog({
                 <span className="truncate rounded-md border bg-muted/40 px-2 py-1 text-xs">{source.label}</span>
               )}
             </div>
-            {gitCapable && participants.length > 0 && (
+            {secureValues && (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="share-secured-line">
+                    <Lock className="h-3.5 w-3.5 text-green-600" />
+                    <Trans>Secured transfer — only the recipients can open the values.</Trans>
+                  </p>
+                )}
+                {gitCapable && participants.length > 0 && (
               <p
                 className="text-xs text-muted-foreground"
                 data-testid="share-transfer-mode"

@@ -28,6 +28,7 @@ import {
   dataManager,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { SealedValuesPanel } from './SealedValuesPanel';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
@@ -1179,6 +1180,7 @@ export function ConversationView({
         </p>
       )}
       <ConversationEndedLine endedAt={conversation?.ended_at} />
+      <SealedValuesPanel conversationId={conversationId} version={conversation?.updated_date ? String(conversation.updated_date) : null} />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
         <MessageComposer

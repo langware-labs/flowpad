@@ -1,8 +1,9 @@
-"""A credential's optional ``test``: are the values GOOD, not only present.
+"""A credential's optional test: are the values GOOD, not only present.
 
-``credential.json`` may carry ``test`` (a ``CliOp``): run with the credential's values in its environment
-and its own folder as the working folder, exit 0 = the provider takes them. The answer is recorded on the
-row for this machine only, never in the file, and a value never reaches the detail.
+``test.json`` beside ``credential.json`` (a ``CliOp``): run with the credential's values in its environment
+and its own folder as the working folder, exit 0 = the provider takes them. Its own file, so a Flowpad that
+predates tests never reads it. The answer is recorded on the row for this machine only, never in a file, and
+a value never reaches the detail.
 """
 from __future__ import annotations
 
@@ -27,10 +28,14 @@ def _test_op(script: str) -> dict:
 
 async def _bright_data(project, test: dict | None = None):
     manifest = {"name": "bright_data", "vars": {"BRIGHT_DATA_API": {"required": "MUST"}}, "setup": "From Bright Data."}
-    if test is not None:
-        manifest["test"] = test
     saved = await save_credential(manifest=manifest, scope="project", project_id=str(project.id))
+    if test is not None:
+        _folder(project).joinpath("test.json").write_text(json.dumps(test))
     return saved["typeid"] if isinstance(saved, dict) else str(saved.typeid)
+
+
+def _folder(project) -> Path:
+    return Path(project.fs_storage_mount_path) / "agentic-assets" / "credential" / "bright_data"
 
 
 def _manifest(project) -> dict:
@@ -49,9 +54,18 @@ async def test_no_test_writes_no_key_and_answers_untested(home, project):
     assert answer == {"name": "bright_data", "has_test": False, "state": "untested", "detail": "", "at": ""}
 
 
-async def test_test_travels_in_the_file(home, project):
+async def test_the_test_lives_in_its_own_file_so_older_apps_ignore_it(home, project):
     await _bright_data(project, _test_op('test -n "$BRIGHT_DATA_API"'))
-    assert _manifest(project)["test"]["commands"][sys.platform] == 'test -n "$BRIGHT_DATA_API"'
+    assert "test" not in _manifest(project), "credential.json stays what every released version reads"
+    assert _row(await credentials_status(project)).has_test
+
+
+async def test_an_unknown_key_from_a_newer_version_still_loads(home, project):
+    """A key this version does not know (a newer Flowpad wrote it) is ignored, never a load failure."""
+    from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
+
+    spec = CredentialSpec.model_validate({"name": "bright_data", "schema": 2, "vars": {"BRIGHT_DATA_API": {}}, "added_later": {"x": 1}})
+    assert spec.name == "bright_data"
 
 
 async def test_ok_when_the_command_takes_the_value(home, project):
@@ -95,18 +109,12 @@ async def test_a_test_just_written_to_the_file_runs_before_any_reindex(home, pro
     """An agent writes ``test`` into credential.json and runs it at once: the file is the truth."""
     typeid = await _bright_data(project)
     await set_credential_values(typeid, {"BRIGHT_DATA_API": KEY})
-    path = Path(project.fs_storage_mount_path) / "agentic-assets" / "credential" / "bright_data" / "credential.json"
-    document = json.loads(path.read_text())
-    document["test"] = _test_op(f'test "$BRIGHT_DATA_API" = "{KEY}"')
-    path.write_text(json.dumps(document))
+    _folder(project).joinpath("test.json").write_text(json.dumps(_test_op(f'test "$BRIGHT_DATA_API" = "{KEY}"')))
     answer = await svc.test_credential("bright_data", str(project.id))
     assert answer["has_test"] and answer["state"] == "ok"
 
 
 async def test_status_offers_a_test_written_to_the_file_before_reindex(home, project):
     await _bright_data(project)
-    path = Path(project.fs_storage_mount_path) / "agentic-assets" / "credential" / "bright_data" / "credential.json"
-    document = json.loads(path.read_text())
-    document["test"] = _test_op("exit 0")
-    path.write_text(json.dumps(document))
+    _folder(project).joinpath("test.json").write_text(json.dumps(_test_op("exit 0")))
     assert _row(await credentials_status(project)).has_test

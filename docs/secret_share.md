@@ -285,8 +285,9 @@ deployment requires) has a value in the store the deployment keeps it in,
 scope — a value the process will not receive — or `unreachable` for a remote store
 that could not be asked.
 
-A present value is not a working one. A credential may declare a **`test`**
-(`CredentialSpec.test`, a `CliOp`): a read-only request run with the values in its
+A present value is not a working one. A credential may declare a **test**:
+`test.json` beside `credential.json` (a `CliOp`, read by `Credential.declared_test`) —
+its own file so a Flowpad that predates tests never reads it — a read-only request run with the values in its
 environment and the credential's folder as its working folder — exit 0 means the
 provider takes them. `flow credentials test <name>` runs it and records the answer
 on the row for this machine only (`test_result`: `ok` / `invalid` / `error`,
