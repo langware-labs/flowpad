@@ -644,6 +644,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     scratch?: boolean;
     /** First prompt — placed on the queue, popped as the launch instruction. */
     launchPrompt?: string;
+    /** Tab title — pinned, so the worker's auto-naming never replaces it. */
+    title?: string;
     /** Mount the Flowpad Assistant skills/agents for this worker. */
     enableAssistant?: boolean;
     /** String TypeIds stamped onto the process's `shared_context_entities`. */
@@ -679,6 +681,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         pty_mode: ptyMode,
         watchProcess: false,
         ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}),
+        ...(opts.title ? { title: opts.title } : {}),
       },
     );
     process.openTerminalDock();

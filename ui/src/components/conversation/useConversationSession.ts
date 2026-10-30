@@ -112,6 +112,7 @@ export function useConversationSession(opts: {
           projectId: scratch ? undefined : (conversation.project_id ?? undefined),
           scratch,
           launchPrompt: instruction,
+          title: conversation.title?.trim() || undefined,
           enableAssistant: true,
           processType: ProcessKind.Conversation,
           sharedContextEntities: shared.length ? shared : undefined,
