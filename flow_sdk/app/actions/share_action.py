@@ -346,9 +346,21 @@ async def conversation_add_message() -> ApiResponse:
     blocked, pending_send = add_message_gate(body)
     if blocked:
         return ApiFailResponse(message=blocked)
-    return await handle_add_message(
+    # The session that wrote this (the `flow` CLI inside a worker) — linked after the send, never sent.
+    origin_process = str(body.pop("origin_process", "") or "").strip()
+    response = await handle_add_message(
         body, request_info.someone_typeid, pending_send=pending_send,
     )
+    if origin_process and isinstance(response, ApiSuccessResponse) and isinstance(response.data, dict):
+        from flow_sdk.app.actions.notification_action import link_origin_session  # noqa: PLC0415
+
+        await link_origin_session(
+            body["conversation_id"],
+            response.data.get("flow_message_id") or response.data.get("id"),
+            origin_process,
+            request_info.someone_typeid,
+        )
+    return response
 
 
 def add_message_gate(body: dict) -> "tuple[str | None, bool]":

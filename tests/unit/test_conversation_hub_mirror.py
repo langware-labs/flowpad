@@ -5,7 +5,8 @@
 * ``picked_up_by`` is the hub's list of staffers — a type mismatch here used to abort the whole row;
 * a synced ``null`` never clears a local value (a guest ticket's title is the local one);
 * this user's own state (``archived_at``) and local recency (``updated_date``) never come from the hub;
-* a row the hub deleted is dropped.
+* a row the hub deleted is dropped;
+* the context links this machine made are merged with the hub's, never replaced by its empty list.
 """
 
 from __future__ import annotations
@@ -71,3 +72,18 @@ async def test_the_channel_comes_from_the_hub_and_a_hub_without_one_keeps_ours()
     await Conversation.mirror_from_hub({"id": conv.id, "channel": "slack"})
     assert (await Conversation.get_by_id(conv.id)).channel == "slack"
     assert "channel" not in Conversation.fields_not_sent_to_hub()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_the_hub_rows_empty_context_never_erases_this_machines_links():
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+    conv = await _local(title="t")
+    session = TypeId(type="agentic_process", id=mint_uuid())
+    conv.add_shared_context_entities(session, data={"role": "session"})
+    await conv.save()
+    await Conversation.mirror_from_hub({"id": conv.id, "title": "t", "shared_context_entities": []})
+    row = await Conversation.get_by_id(conv.id)
+    assert session in row.shared_context_entities
+    assert row.shared_context_entity_data[str(session)] == {"role": "session"}

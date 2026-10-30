@@ -2596,6 +2596,10 @@ class Entity(DBEntity):
             if field == "id":
                 continue
             before = getattr(existing, field, None)
+            if field in _CONTEXT_BUCKET_FIELDS:
+                # Context links merge in, never over: the hub's row does not carry the links this
+                # machine made (a conversation's session), and its empty list must not erase them.
+                value = _union_context_bucket(before, value)
             existing.__pydantic_validator__.validate_assignment(existing, field, value)
             if not _same_value(before, getattr(existing, field, None)):
                 changed.add(field)

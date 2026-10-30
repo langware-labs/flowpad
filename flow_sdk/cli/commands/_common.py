@@ -312,6 +312,18 @@ def current_process_typeid() -> "str | None":
     return None
 
 
+def current_process_id() -> Optional[str]:
+    """The AgenticProcess this command runs inside (``FLOWPAD_EXECUTION_SCOPE``), or ``None``."""
+    from flow_sdk.utils.environment import get_execution_scope
+
+    for s in get_execution_scope():
+        if isinstance(s, dict) and s.get("type") == "agentic_process" and s.get("id"):
+            return str(s["id"])
+        if isinstance(s, str) and s.startswith("agentic_process-"):
+            return s.split("-", 1)[1]
+    return None
+
+
 def resolve_process_id(process_opt: Optional[str]) -> str:
     """Target AgenticProcess id from ``--process`` (bare id or
     ``agentic_process-<id>`` TypeId), falling back to the current process
@@ -320,13 +332,8 @@ def resolve_process_id(process_opt: Optional[str]) -> str:
         raw = process_opt.strip()
         return raw.split("agentic_process-", 1)[1] if raw.startswith("agentic_process-") else raw
 
-    from flow_sdk.utils.environment import get_execution_scope
-
-    for s in get_execution_scope():
-        if isinstance(s, dict) and s.get("type") == "agentic_process" and s.get("id"):
-            return str(s["id"])
-        if isinstance(s, str) and s.startswith("agentic_process-"):
-            return s.split("-", 1)[1]
+    if found := current_process_id():
+        return found
 
     fail(
         EXIT_INVALID_ARG,

@@ -5,8 +5,18 @@
  * `flow_message-<id>` chip the launch stamped, the same shape as `useMessageTasks`.
  */
 import { useMemo, useRef } from 'react';
-import { AgenticProcess, FlowMessage, QueryFilter, QueryRequest, isProcessFailed, isProcessLive } from '@sdk';
-import { useEntitiesQuery } from '@sdk/react/hooks';
+import {
+  AgenticProcess,
+  Conversation,
+  FlowMessage,
+  QueryFilter,
+  QueryRequest,
+  TypeId,
+  isProcessFailed,
+  isProcessLive,
+} from '@sdk';
+import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
+import { hasSessionRole } from '@src/components/conversation/conversation-session-role';
 
 const NONE: AgenticProcess[] = [];
 
@@ -118,13 +128,44 @@ function useConversationProcesses(conversationId: string | null | undefined): re
   return processes;
 }
 
-/** The newest session per message, both kinds from ONE live query: started by a rule (`automation`) and
- *  started by hand from the message's ⋮ menu (`manual`). */
+/** The sessions the conversation marks as its own (`SESSION_ROLE`) — live. A session that wrote into the
+ *  conversation from elsewhere (a chat running `flow conversation send`) is keyed to its own target, so the
+ *  target query misses it; the conversation's link is what finds it. */
+function useMarkedSessions(conversationId: string | null | undefined): readonly AgenticProcess[] {
+  const convTypeId = useMemo(() => (conversationId ? new TypeId(Conversation.type, conversationId) : null), [conversationId]);
+  const { data: conversation } = useEntity<Conversation>(convTypeId);
+  const key = (conversation?.contextOfType(AgenticProcess.type, 'shared') ?? [])
+    .filter((tid) => conversation && hasSessionRole(conversation, tid.id))
+    .map((tid) => String(tid.id))
+    .sort()
+    .join(',');
+  const request = useMemo(
+    () =>
+      new QueryRequest({
+        type: AgenticProcess.type,
+        scope: [],
+        name: `conversationSessions:${conversationId ?? 'none'}:${key.slice(0, 64)}`,
+        query: { match: { op: '$IN', operands: ['id', key ? key.split(',') : []] } },
+      }),
+    [conversationId, key],
+  );
+  const { data: processes = NONE } = useEntitiesQuery<AgenticProcess>(request, { enabled: !!key });
+  return key ? processes : NONE;
+}
+
+/** The newest session per message: started by a rule (`automation`) and started by hand — from the message's
+ *  ⋮ menu, or by a session that wrote it (`manual`). */
 export function useMessageSessions(conversationId: string | null | undefined): {
   automation: ReadonlyMap<string, AgenticProcess>;
   manual: ReadonlyMap<string, AgenticProcess>;
 } {
-  const processes = useConversationProcesses(conversationId);
+  const targeted = useConversationProcesses(conversationId);
+  const marked = useMarkedSessions(conversationId);
+  const processes = useMemo(() => {
+    if (marked.length === 0) return targeted;
+    const ids = new Set(targeted.map((p) => p.id));
+    return [...targeted, ...marked.filter((p) => !ids.has(p.id))];
+  }, [targeted, marked]);
   const automation = useNewestBy(processes, sessionMessageIds);
   const manual = useNewestBy(processes, sessionMessageIds, byHand);
   return { automation, manual };

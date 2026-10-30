@@ -6,13 +6,15 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { resolveWorkdir } from './apply-project-choice';
 import type { WorkerType } from './conversation-session-constants';
+import { SESSION_ROLE, hasSessionRole, isConversationSession } from './conversation-session-role';
 
 /**
  * The single launch/open lifecycle for a conversation's owning worker session.
  *
- * A conversation has at most one "conversationProcess" — an AgenticProcess
- * stamped with `process_type === ProcessKind.Conversation`, linked onto the
- * conversation's `sharedContextEntities` at launch time. This hook is the one
+ * A conversation has at most one "conversationProcess" — the newest AgenticProcess
+ * linked onto the conversation's `sharedContextEntities` as its session
+ * (`isConversationSession`): launched from it, or a session that wrote into it
+ * through `flow conversation send/new` (the backend links those). This hook is the one
  * source of truth shared by the conversation header and the Context drawer so
  * the two never disagree: a conversationProcess is present (⇒ Open) or absent
  * (⇒ launch toolbar) — never neither.
@@ -46,8 +48,7 @@ export function useConversationSession(opts: {
   const [starting, setStarting] = useState(false);
 
   // The conversationProcess is whatever AgenticProcess is linked directly on the
-  // conversation (startSession links it there) and carries the Conversation
-  // kind. On a cold load the linked process isn't necessarily in the entity
+  // conversation as its session (startSession links it there, with the role). On a cold load the linked process isn't necessarily in the entity
   // cache yet — so we FETCH each linked agentic_process by id (cache-first,
   // network fallback) into local state rather than reading cache-only, which
   // would render the launch toolbar until something else happened to fetch it.
@@ -56,7 +57,10 @@ export function useConversationSession(opts: {
   // mutates the conversation in place (same object identity), so a ref-only dep
   // would miss the new link after a launch.
   const processTids = conversation?.contextOfType(AgenticProcess.type, 'shared') ?? [];
-  const sharedKey = processTids.map((t) => t.toString()).join(',');
+  // The role marker can land on an entry already linked, so it is part of the key.
+  const sharedKey = processTids
+    .map((t) => `${t.toString()}${conversation && hasSessionRole(conversation, t.id) ? ':s' : ''}`)
+    .join(',');
   const [linkedProcesses, setLinkedProcesses] = useState<AgenticProcess[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -77,8 +81,11 @@ export function useConversationSession(opts: {
   }, [sharedKey]);
 
   const conversationProcess = useMemo<AgenticProcess | null>(
-    () => mostRecentProcess(linkedProcesses.filter((p) => p.process_type === ProcessKind.Conversation)),
-    [linkedProcesses],
+    () =>
+      conversation ? mostRecentProcess(linkedProcesses.filter((p) => isConversationSession(conversation, p))) : null,
+    // sharedKey carries the role markers: the conversation is mutated in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [linkedProcesses, sharedKey, conversation],
   );
 
   const startSession = useCallback(
@@ -124,7 +131,7 @@ export function useConversationSession(opts: {
         // conversationProcess and is the target for per-message append.
         if (proc.id) {
           try {
-            await conversation.shareContextEntities(new TypeId(AgenticProcess.type, proc.id));
+            await conversation.shareContextEntities(new TypeId(AgenticProcess.type, proc.id), { data: SESSION_ROLE });
           } catch (linkErr) {
             console.error('[useConversationSession] failed to link process to conversation', linkErr);
           }

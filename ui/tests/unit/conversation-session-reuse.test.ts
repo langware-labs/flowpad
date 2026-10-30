@@ -35,12 +35,13 @@ function existingProcess(over: Record<string, unknown> = {}) {
   };
 }
 
-function conversation(linked: boolean) {
+function conversation(linked: boolean, role?: 'session') {
   return {
     id: '550e8400-e29b-41d4-a716-446655440003',
     project_id: 'proj-1',
     title: 'Chat',
     contextOfType: () => (linked ? [new TypeId(AgenticProcess.type, PROC_ID)] : []),
+    getContextEntryData: () => (role ? { role } : undefined),
     shareContextEntities: vi.fn(async () => []),
   } as never;
 }
@@ -94,6 +95,38 @@ describe('a conversation launch reuses its session', () => {
     await waitFor(() => expect(result.current.conversationProcess).not.toBeNull());
     await act(async () => result.current.launch('codex'));
     expect(launchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a session that wrote into the conversation is its session', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('a chat session marked by the link is reused — not spawned again', async () => {
+    const spy = vi.spyOn(AgenticProcess, 'launch');
+    const proc = existingProcess({ process_type: ProcessKind.Chat });
+    vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue(proc as never);
+    const { result } = render(conversation(true, 'session'));
+    await waitFor(() => expect(result.current.conversationProcess?.id).toBe(PROC_ID));
+    await act(async () => result.current.launch('claude_code'));
+    expect(spy).not.toHaveBeenCalled();
+    expect(proc.promptOrEnqueue).toHaveBeenCalledWith('status prompt');
+  });
+
+  it('a chat session linked without the mark (a shared transcript) is not the conversation\'s session', async () => {
+    vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue(existingProcess({ process_type: ProcessKind.Chat }) as never);
+    const { result } = render(conversation(true));
+    await waitFor(() => expect(AgenticProcess.getByIdFromCache).toHaveBeenCalled());
+    expect(result.current.conversationProcess).toBeNull();
+  });
+
+  it('a UI launch marks the new session on the conversation', async () => {
+    vi.spyOn(AgenticProcess, 'launch').mockResolvedValue({ id: PROC_ID } as never);
+    const conv = conversation(false) as unknown as { shareContextEntities: ReturnType<typeof vi.fn> };
+    const { result } = render(conv);
+    await act(async () => result.current.launch('claude_code'));
+    expect(conv.shareContextEntities).toHaveBeenCalledWith(new TypeId(AgenticProcess.type, PROC_ID), {
+      data: { role: 'session' },
+    });
   });
 });
 
