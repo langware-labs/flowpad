@@ -283,3 +283,15 @@ deployment requires) has a value in the store the deployment keeps it in,
 `missing`, `wrong-store` when a value exists in the other local store of the same
 scope — a value the process will not receive — or `unreachable` for a remote store
 that could not be asked.
+
+A present value is not a working one. A credential may declare a **`test`**
+(`CredentialSpec.test`, a `CliOp`): a read-only request run with the values in its
+environment and the credential's folder as its working folder — exit 0 means the
+provider takes them. `flow credentials test <name>` runs it and records the answer
+on the row for this machine only (`test_result`: `ok` / `invalid` / `error`,
+never in the file, every value scrubbed from the reason); `flow credentials check`
+runs it too, so a setup step does not count a rejected key as done. The status row
+carries `has_test` and the last `test_result`. A credential with no test gets one
+written by an agent the first time someone presses Test (`cred-scan test <name>`,
+contract and known endpoints in its `references/tests.md`); every later press runs
+the test directly.

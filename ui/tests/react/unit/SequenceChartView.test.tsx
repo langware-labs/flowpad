@@ -182,6 +182,43 @@ describe('SequenceChartView', () => {
   });
 });
 
+describe('SequenceChartView — calls and changes', () => {
+  beforeEach(() => {
+    openDock.mockClear();
+    chartQuery.mockClear();
+  });
+
+  it('a participant with ref opens the chart it names', async () => {
+    chartQuery.mockResolvedValueOnce([{ name: 'shop-containers', asset_ref: '/w/p/agentic-assets/chart/shop-containers' }]);
+    const value = { participants: [{ id: 'api', label: 'API', ref: 'shop-containers' }, { id: 'db', label: 'DB' }], messages: [] };
+    render(
+      <MemoryRouter>
+        <SequenceChartView fsRef={makeFsRef({ 'chart.json': JSON.stringify(value) })} chart={chart} projectId={PROJECT} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByTestId('chart-participant-open'));
+    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+  });
+
+  it('clicking a message asks for a change on it', async () => {
+    const request = vi.fn();
+    render(
+      <MemoryRouter>
+        <SequenceChartView
+          fsRef={makeFsRef({ 'chart.json': JSON.stringify(SEQUENCE) })}
+          chart={chart}
+          projectId={PROJECT}
+          changes={{ request, marks: new Map() }}
+        />
+      </MemoryRouter>,
+    );
+    fireEvent.click((await screen.findAllByTestId('chart-message'))[0]);
+    fireEvent.change(await screen.findByTestId('chart-change-text'), { target: { value: 'Use PUT' } });
+    fireEvent.click(screen.getByTestId('chart-change-add'));
+    expect(request).toHaveBeenCalledWith({ quote: 'm1 · POST /login', instruction: 'Use PUT', runNow: false });
+  });
+});
+
 describe('sequenceToMermaid', () => {
   it('follows the backend rules: ids, ->> / -->>, a sub-flow as a Note with its return', () => {
     expect(sequenceToMermaid(SEQUENCE)).toBe(

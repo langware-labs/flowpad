@@ -1,18 +1,16 @@
-"""Put chartit's kinds and its feedback dataset into a project, under THAT project's namespace.
+"""Put chartit's kinds into a project, under THAT project's namespace — so its charts' data can be
+checked (`DM check --<ns>--.chartit.c4 …`) and other schemas can name them.
 
 Usage: python -I install_data.py <project root> [--force]
 
 - copies ``schema/agentic-assets/data_schema/chartit`` to ``<project>/agentic-assets/data_schema/chartit``
   with its ``"ns"`` set to the project's own (two projects never define one kind twice);
-- writes ``<project>/agentic-assets/dataset/chart-feedback/dataset.json`` (rows: ``chartit.feedback``),
-  the kind written in full (charts themselves are Chart entities, not rows);
-- leaves what is already there alone unless ``--force`` (the schema is refreshed then; datasets'
-  rows are never touched -- rows go through the SDK / dm_ctl only).
+- leaves what is already there alone unless ``--force`` (the schema is refreshed then).
 
-Prints one JSON object with the next commands to run (``flow schema apply``, ``flow record index``).
-The project's ``ns`` comes from ``agentic-assets/project_manifest/project_manifest.json``; with no
-manifest or no ``ns`` it stops and says so (the data-management skill's schema mode writes one).
-Standard library only.
+Charts themselves are Chart entities, not rows. Prints one JSON object with the next command to run
+(``flow schema apply``). The project's ``ns`` comes from
+``agentic-assets/project_manifest/project_manifest.json``; with no manifest or no ``ns`` it stops and
+says so (the data-management skill's schema mode writes one). Standard library only.
 """
 
 import argparse
@@ -23,12 +21,7 @@ from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent
 SCHEMA_SRC = SKILL / "schema" / "agentic-assets" / "data_schema" / "chartit"
-DATASETS = {
-    "chart-feedback": ("Chart feedback",
-                       "One row per comment a reviewer left on a chart (chartit); key = <chart>-<id>.",
-                       "chartit.feedback"),
-}
-KINDS = ("sequence", "participant", "message", "c4", "c4_element", "c4_boundary", "c4_relation", "feedback")
+KINDS = ("sequence", "participant", "message", "c4", "c4_element", "c4_boundary", "c4_relation", "c4_link", "c4_param")
 
 
 def fail(message: str) -> None:
@@ -37,7 +30,7 @@ def fail(message: str) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Install chartit's kinds and datasets into a project.")
+    ap = argparse.ArgumentParser(description="Install chartit's kinds into a project.")
     ap.add_argument("root", help="the project root")
     ap.add_argument("--force", action="store_true", help="refresh the schema copy")
     args = ap.parse_args()
@@ -62,26 +55,10 @@ def main() -> None:
         group.write_text(json.dumps(doc) + "\n", encoding="utf-8")
         wrote.append(str(schema_dst))
 
-    for slug, (title, description, kind) in DATASETS.items():
-        manifest_path = root / "agentic-assets" / "dataset" / slug / "dataset.json"
-        if manifest_path.exists():
-            continue
-        manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps({
-            "metadata": {"title": title, "description": description, "data_layout": "io_folder",
-                         "spec": {"rows": [{"input": f"--{ns}--.{kind}"}]}},
-            "data": {},
-        }, indent=2) + "\n", encoding="utf-8")
-        wrote.append(str(manifest_path.parent))
-
-    datasets = root / "agentic-assets" / "dataset"
     print(json.dumps({
         "ok": True, "ns": ns, "wrote": wrote,
         "kinds": {k: f"--{ns}--.chartit.{k}" for k in KINDS},
-        "next": [
-            f'flow schema apply "{root / "agentic-assets" / "data_schema"}"',
-            f'flow record index "{datasets / "chart-feedback"}" --types dataset',
-        ],
+        "next": [f'flow schema apply "{root / "agentic-assets" / "data_schema"}"'],
     }))
 
 

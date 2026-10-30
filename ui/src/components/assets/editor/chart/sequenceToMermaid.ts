@@ -15,6 +15,8 @@ export interface SequenceParticipant {
   /** An icon tag (IconSpec, e.g. `brands.sonos`, `lucide.database`) drawn on the card. */
   icon?: string;
   note?: string;
+  /** Another chart (by name, any format — e.g. this system's C4 chart): drawn as "Open ↗" on the card. */
+  ref?: string;
 }
 
 export interface SequenceMessage {
@@ -114,6 +116,7 @@ export function parseSequence(raw: string | null): SequenceValue {
       ...participantLines(p),
       icon: optStr(p.icon),
       note: optStr(p.note),
+      ref: optStr(p.ref),
     })),
     messages: (Array.isArray(value.messages) ? value.messages.filter(isRecord) : []) as unknown as SequenceMessage[],
   };

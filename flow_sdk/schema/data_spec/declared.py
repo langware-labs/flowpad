@@ -40,10 +40,13 @@ from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, RowSpec
 from flow_sdk.schema.data_spec.spec import (
     ENUM_PREFIX,
     KIND_UNION,
+    LIST_CLOSE,
+    LIST_OPEN,
     OPTIONAL_MARK,
     DataSpec,
     _compile,
     _field_def,
+    _list_string,
     _normalize_form,
 )
 from flow_sdk.schema.types import EntityType
@@ -176,8 +179,16 @@ def subkind_of(folder: Path) -> Optional[str]:
 # ── building ─────────────────────────────────────────────────────────────────
 
 
+def _wrap(form: str) -> tuple[str, str, str]:
+    """``(prefix, name, suffix)`` of a string form: ``?`` and an optional list's ``[ ]`` around the name."""
+    mark = OPTIONAL_MARK if form.startswith(OPTIONAL_MARK) else ""
+    inner = form[len(mark) :]
+    element = _list_string(inner)
+    return (mark + LIST_OPEN, element, LIST_CLOSE) if element is not None else (mark, inner, "")
+
+
 def _bare(form: str) -> str:
-    return form[len(OPTIONAL_MARK) :] if form.startswith(OPTIONAL_MARK) else form
+    return _wrap(form)[1]
 
 
 def kinds_named(form: Any) -> list[str]:
@@ -207,14 +218,14 @@ def _qualify(form: Any, ns: str, own: str = "") -> Any:
     if not ns:
         return form
     if isinstance(form, str):
-        mark = OPTIONAL_MARK if form.startswith(OPTIONAL_MARK) else ""
-        if _bare(form).startswith(ENUM_PREFIX):
+        head, bare, tail = _wrap(form)
+        if bare.startswith(ENUM_PREFIX):
             return form
         names = []
-        for name in _bare(form).split(KIND_UNION):
+        for name in bare.split(KIND_UNION):
             q = qualified(name, ns)
             names.append(q if q == own or q in _PENDING or q in _OWNER else name)
-        return mark + KIND_UNION.join(names)
+        return head + KIND_UNION.join(names) + tail
     if isinstance(form, list):
         return [_qualify(item, ns, own) for item in form]
     if isinstance(form, dict):

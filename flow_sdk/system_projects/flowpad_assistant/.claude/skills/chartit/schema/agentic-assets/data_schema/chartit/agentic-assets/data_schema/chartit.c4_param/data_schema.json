@@ -1,0 +1,13 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "name": {
+      "shape": "string",
+      "description": "The input's name."
+    },
+    "kind": {
+      "shape": "string",
+      "description": "Its data schema kind (shop.cart)."
+    }
+  }
+}

@@ -58,6 +58,13 @@ async def gcloud_token() -> Optional[str]:
     return token if proc.returncode == 0 and token else None
 
 
+def gcloud_not_signed_in(store: str, providers: list[str]) -> StoreNeedsConnection:
+    """No bound connection and nobody signed in to ``gcloud`` here: what the person does next."""
+    error = StoreNeedsConnection(store, providers)
+    SecretStoreError.__init__(error, "GCP needs a sign-in: run `gcloud auth login` (or bind a google connection)")
+    return error
+
+
 _T = TypeVar("_T")
 _R = TypeVar("_R")
 
@@ -204,7 +211,7 @@ class GcpVaultStore(SecretStore):
             # the sign-in this manager's setup steps make (as ``op`` is for 1Password).
             token = await gcloud_token()
             if token is None:
-                raise StoreNeedsConnection(self.type_name, list(self.connection_scopes))
+                raise gcloud_not_signed_in(self.type_name, list(self.connection_scopes))
             return httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"})
         from flow_sdk.connections import Connection  # noqa: PLC0415
 

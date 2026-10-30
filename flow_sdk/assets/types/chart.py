@@ -37,6 +37,14 @@ def chart_format(fm: dict) -> str:
     return fmt if fmt in CHART_FORMATS else DEFAULT_CHART_FORMAT
 
 
+def declared_chart_format(fm: dict) -> str:
+    """The format as the chart declares it — kept on the row even when THIS build does not know it, so
+    an editor can say "needs a newer Flowpad" instead of opening it as an empty whiteboard. Missing →
+    the default."""
+    fmt = fm.get("format")
+    return fmt.strip() if isinstance(fmt, str) and fmt.strip() else DEFAULT_CHART_FORMAT
+
+
 def _resolve_chart_name(yaml_fields: dict, folder_name: str) -> str:
     """Pick the chart's display name: yaml.name first, else folder name."""
     yaml_name = yaml_fields.get("name")
@@ -162,7 +170,7 @@ def extract_chart(ref: FSRef, resolved_id: str) -> list[FSRecord]:
         "body": body,
         # Row fields, not just metadata: the editor picks its view from the row's format
         # and sends feedback to the row's session.
-        "format": chart_format(fm),
+        "format": declared_chart_format(fm),
     }
     if isinstance(fm.get("session"), str) and fm["session"]:
         rec_kwargs["session"] = fm["session"]
@@ -171,7 +179,7 @@ def extract_chart(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     if description:
         rec_kwargs["description"] = description
     if fm:
-        rec_kwargs["metadata"] = {**fm, "format": chart_format(fm)}
+        rec_kwargs["metadata"] = {**fm, "format": declared_chart_format(fm)}
     rec = FSRecord(**rec_kwargs)
     object.__setattr__(rec, "_asset_ref", FSRef(path.resolve()))
     return [rec]

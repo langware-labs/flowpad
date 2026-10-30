@@ -6,12 +6,11 @@ description: 'Builds and edits Flowpad Charts — one entity for every kind of c
   participants, with sub-flow blocks that open other charts), a C4 architecture diagram
   (context to deployment views; a box opens the chart that zooms into it), an Excalidraw whiteboard (boxes, arrows, freehand), or a
   Mermaid diagram. Picks the format, writes the chart''s
-  files, indexes it, and shows it; the reviewer clicks any element, comments (text
-  + image) and Submits, and the comments come back to this session to revise the chart.
+  files, indexes it, and shows it. To collect review comments on charts, show them in a
+  mockify mock — the charts themselves carry no comment bar.
   Use for "chart this flow", "draw the network flow", "sequence diagram of X", "C4 diagram",
   "software architecture of X",  "make
-  a whiteboard / board / diagram", "mermaid diagram", "a chart I can comment on",
-  converting a chart between formats, or when feedback on a chart arrives. NOT for
+  a whiteboard / board / diagram", "mermaid diagram", or converting a chart between formats. NOT for
   a clickable UX journey (mockify), a data dashboard or report with numbers (html-builder
   + dataviz), or slides (decker).'
 ---
@@ -29,7 +28,7 @@ shareable, and opens in Flowpad's chart editor, which draws it by its **`format`
 | `mermaid` | a flowchart, state machine, ER or class diagram, gantt — anything Mermaid draws well | the ```` ```mermaid ```` block in `CHART.md` | the block |
 
 Every chart folder has `CHART.md`: frontmatter `name`, `description`, `format`, `session` (your agentic
-process id — `flow context` — where feedback goes) and a short prose note. For `sequence`, `c4` and
+process id — `flow context`) and a short prose note. For `sequence`, `c4` and
 `excalidraw` the editor keeps a Mermaid copy in `CHART.md` in sync — that is how any chart reads as text.
 Never write `thumbnail.svg`; the editor makes it.
 
@@ -75,6 +74,8 @@ EOF
    {"id": "m4", "from": "conn", "to": "vauth", "label": "Token refresh", "ref": "token-refresh", "returns": "fresh access token"}]}
 ```
 
+- A participant may take `ref: "<chart name>"` (any format — e.g. that system's C4 chart): drawn as
+  **Open ↗** under its card, with the same `flow dep add` link as any `ref` (§2b).
 - Participants left to right, initiator first. Every card has a `label`, a `sublabel` (what it is: a
   product, a host, a service — `api.sonos.com`, `Cloud Run worker`) and an `icon`.
 - `icon` is an icon tag (`<pack>.<icon>`) that MUST resolve, from an icon pack that exists: the
@@ -90,7 +91,7 @@ EOF
 - Check before you finish: `flow icons check <tag> … --path <chart folder>` must print `ok` for every
   tag and every pack (exit 0). An index of the chart also records unresolved icons on the chart's
   `problems`. Never leave an unresolved tag — the card would show a fallback glyph.
-- Messages top to bottom, ids `m1, m2…` (what comments target); `from == to` is a self-call;
+- Messages top to bottom, ids `m1, m2…`; `from == to` is a self-call;
   `style: "dashed"` for a reply. Labels short (a route or a verb); detail goes in `note` (hover).
 - Copy names exactly as the source has them (typos included — ask before fixing).
 - Where the facts come from code, cite `file:line` in `note`.
@@ -120,20 +121,36 @@ fixed by the editor (`templates/c4/style.md`) — the file holds facts only, nev
   (drawn **Open ↗**) and the same `flow dep add` link as a sub-flow (§2b). A mixed-level view is still
   allowed when it IS the point (one container opened up among its siblings): put the opened container's
   components in a `container` boundary inside the system boundary.
-- `kind` sets shape and colour: `person`, `system`, `container`, `component`, `code` (cards), `database`
-  (cylinder), `queue` (pill). `external: true` for anything outside the scope (grey, dashed).
+- `kind` sets shape, colour and default icon: `person`, `role`, `system`, `container`, `component`, `api`,
+  `code`, `function`, `action`, `database`, `storage`, `queue` (table in `templates/c4/style.md`).
+  `external: true` for anything outside the scope (grey, dashed). `icon` overrides the default.
+- **Links:** `links: [{"label": "OrderService.kt", "href": "src/order/OrderService.kt:42"}]` on a box or
+  arrow — a project path (code or doc), an http(s) URL, or `{"label", "asset": "<TypeId>"}`. Each is a chip
+  that opens it. Cite the code a box stands for this way, not only in `note`.
+- **Data types:** at code level a box takes `inputs: [{"name": "cart", "kind": "shop.cart"}]` and
+  `returns: "shop.price_quote"`; an arrow takes `data: "shop.order_placed"`. Each names a data_schema kind
+  in the project (data-management skill) and opens it; `check_c4.py` warns when one is missing.
+- **Charts call charts, any format:** an arrow with `ref` opens another chart (typically the sequence chart
+  of that call), a box with `ref` opens the chart one level down, and a sequence participant with `ref`
+  opens the C4 chart of that system. Each `ref` also gets its `flow dep add` link (§2b).
 - Every box: a `label`, a `tech` where there is one, and a one-sentence `description`. Every relation:
   a short verb `label` and its `tech`; `style: "async"` for events and queues.
 - Boundaries nest by `parent`: `system`, `container`, `zone` (trust zone / DMZ), `deployment`, `tenant`,
   `team`, `group`. A boundary holding nothing is not drawn.
 - A migration chart marks boxes `status: "migrating"` or `"target"`.
 - At most ~20 elements — past that, split by zooming.
-- A C4 chart has no in-chart comment bar and no Convert to Excalidraw (§4 and §5 do not apply).
-- Check before you finish — both must pass:
+- A C4 chart has no Convert to Excalidraw (§5 does not apply).
+- In the editor anyone can click an element (or **Change chart**), say what to change, and Execute: the
+  chart's context worker gets the list with the source file — every chart format has this Changes tab.
+  When such a request reaches you, edit the source file, run the checks, and leave the rest as it is.
+- Check before you finish — all must pass:
   ```bash
   python3 -I <this skill>/templates/c4/check_c4.py "$D"
   flow icons check <every icon tag> --path "$D"
+  DM check --<ns>--.chartit.c4 "$(cat "$D/c4.json")"     # the schema; data-management skill
   ```
+  The schema check needs chartit's kinds in the project, once:
+  `python3 -I <this skill>/scripts/install_data.py <project root>` and the `flow schema apply` it prints.
 
 **excalidraw** — `board.json` `{"kind": "excalidraw", "version": 1, "data": {"elements": [...], "appState": {}}}`;
 elements `rectangle` / `ellipse` / `diamond` / `arrow` / `text` with `id`, `type`, `x`, `y`, `width`,
@@ -175,9 +192,6 @@ Never invent a second link format.
   each flow chart on the shared sub-flow charts it opens. Shared sub-flows are leaves many charts point
   to — draw each once.
 - `flow dep list` (from the project folder) shows every link and its state; run it before reporting.
-- If `flow dep add --asset chart-…` refuses with "projects do not nest" (a known bug), write the entry
-  into the chart's `flow.json` yourself in the same shape — `{"dependencies": {"<key>": {"ref":
-  "chart-<uuid>", "name": "<label>"}}}`, ids only — then check it with `flow dep list`.
 
 ## 3. Design rules (the editor applies them — don't fight them)
 
@@ -186,27 +200,14 @@ fixed order (blue, orange, aqua, violet; a 5th+ participant is neutral), never c
 identity on dots and arrows while text stays in ink; lifelines and cards are hairline and recessive;
 steps are auto-numbered; replies are dashed; hover lifts one element and recedes the rest; a Table view
 carries every value; dark mode is its own token set. Keep a chart under ~25 messages and ≤ 8
-participants — past that, cut sub-flows. A comment asking for a colour or style is a data change
+participants — past that, cut sub-flows. A review asking for a colour or style is a data change
 (`style`) — never a one-off hex.
 
-## 4. Feedback
+## 4. Review
 
-Once per project: `python3 -I <this skill>/scripts/install_data.py <project root>` and run the commands
-it prints (`flow schema apply`, `flow record index`) — the `chart-feedback` dataset. Without it the
-editor's 💬 says why it is off.
-
-The reviewer clicks any box or arrow, presses 💬, writes (text, pasted image) and Saves; **Submit**
-sends every open comment to the chart's `session` in one prompt. When it arrives:
-
-```bash
-DM ds-rows <project>/agentic-assets/dataset/chart-feedback \
-  --match '{"input.chart": "<chart TypeId>", "input.status": "submitted"}'
-```
-
-Each row: `target` (participant / message id; none = whole chart), `text`, `screenshot` (on disk as
-`<row folder>/input/screenshot.<ext>` — open it). Say per comment what you change and what not, edit the
-chart's file, re-index if you renamed anything, set each handled row to `addressed`
-(`DM ds-put-many` with versions), and re-show.
+Charts carry no comment bar. To get comments on charts, show them in a **mockify** mock (one screen per
+chart, captured from the chart editor): the reviewer comments per screen there and Execute sends the
+comments to this session. A review asking for a colour or layout change is answered by changing the data.
 
 ## 5. Converting
 

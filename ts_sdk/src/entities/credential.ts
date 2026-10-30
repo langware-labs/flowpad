@@ -144,6 +144,10 @@ export interface ICredential extends IEntity {
   /** `ONE_OF`: how each way of several variables is offered, by way name. */
   ways?: Record<string, CredentialWay>;
   manifest_schema?: number;
+  /** The read-only check that the values work (`CredentialSpec.test`); null = none declared. */
+  test?: CredentialVarCommand | null;
+  /** The last test run on this machine (`state` ok / invalid / error, `detail`, `at`). */
+  test_result?: { state: string; detail: string; at: string } | null;
   /** `user` | `project` | `system` (a shipped template). */
   scope?: string | null;
   project_id?: string | null;
@@ -170,6 +174,8 @@ export class Credential extends APIEntity<Credential> implements ICredential {
   vars: Record<string, CredentialVar> = {};
   ways: Record<string, CredentialWay> = {};
   manifest_schema: number = 2;
+  test: CredentialVarCommand | null = null;
+  test_result: { state: string; detail: string; at: string } | null = null;
 
   /**
    * Re-apply the payload after construction: `useDefineForClassFields: false`

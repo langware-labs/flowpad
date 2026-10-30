@@ -20,6 +20,18 @@ from flow_sdk.schema.data_spec.secret_vault_spec import SecretRefSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
+class CredentialTestResultSpec(DataSpec):
+    """The last run of a credential's ``test`` on this machine — value-free."""
+
+    #: ``ok`` (the provider took the values) / ``invalid`` (it refused them) / ``error`` (the test itself
+    #: could not run: no command for this OS, a timeout, a missing tool).
+    state: str
+    #: Why, in a person's words, every value scrubbed out; empty when ``ok``.
+    detail: str = ""
+    #: When it ran (ISO 8601, UTC).
+    at: str = ""
+
+
 class CredentialWaySpec(DataSpec):
     """How a ONE_OF way of several variables is offered: its title and one line under it. A way of one variable
     is offered by that variable's own label and hint."""
@@ -189,6 +201,10 @@ class CredentialStatusRowSpec(DataSpec):
     #: a grant missing scopes), ``needs_reauth`` (oauth: the grant went stale) or ``missing``.
     state: str
     vars: list[CredentialVarStatusSpec] = []
+    #: The credential declares a ``test`` (the Test button runs it; without one it asks an agent to write it).
+    has_test: bool = False
+    #: The last test run here; ``None`` = never tested on this machine.
+    test_result: Optional[CredentialTestResultSpec] = None
 
     @property
     def missing(self) -> list[str]:

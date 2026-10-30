@@ -1823,8 +1823,20 @@ msgstr "ההתחברות ל-{title} צריכה חידוש"
 msgid "{title}: fetched from the vault"
 msgstr ""
 
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "{title}: key rejected"
+msgstr ""
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "{title}: shared through vault {vault}"
+msgstr ""
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "{title}: the provider took the key"
+msgstr ""
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "{title}: the test could not run"
 msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
@@ -2754,6 +2766,7 @@ msgid "Activity"
 msgstr "פעילות"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -2770,6 +2783,10 @@ msgstr "פעילות"
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add"
 msgstr "הוסיפו"
+
+#: src/components/assets/editor/chart/chartControls.tsx
+msgid "Add & run"
+msgstr ""
 
 #: src/components/contact-picker/ContactPicker.tsx
 msgid "Add <0>{typedEmail}</0>"
@@ -4027,6 +4044,10 @@ msgstr ""
 
 #~ msgid "Answer here instead"
 #~ msgstr ""
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Answer or ask the agent…"
+msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Answered by"
@@ -5339,6 +5360,10 @@ msgstr "עיון בתיקיית העבודה"
 msgid "Browse…"
 msgstr "דפדפו…"
 
+#: src/components/links/LinkMenu.tsx
+msgid "Browser"
+msgstr "דפדפן"
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 #: src/components/token-plan/FundingChain.tsx
@@ -5885,6 +5910,7 @@ msgid "Chain"
 msgstr "שרשרת"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -5898,6 +5924,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Change avatar"
 msgstr "החלפת תמונה"
+
+#: src/components/assets/editor/chart/chartControls.tsx
+msgid "Change chart"
+msgstr ""
 
 #: src/components/inbound/AddRuleDialog.tsx
 #: src/components/inbound/RouteCheck.tsx
@@ -6767,6 +6797,7 @@ msgstr "מתבצע שכפול של המאגר ואינדוקס שלו."
 msgid "Cloning…"
 msgstr "משבוט…"
 
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -7833,6 +7864,10 @@ msgstr "העתיקו קוד"
 msgid "Copy code & open GitHub"
 msgstr "העתיקו קוד ופתחו GitHub"
 
+#: src/components/links/LinkMenu.tsx
+msgid "Copy command"
+msgstr "העתקת הפקודה"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Compute Node ID"
 msgstr "העתיקו מזהה צומת חישוב"
@@ -8468,9 +8503,17 @@ msgstr "לא ניתן לפתוח את ההגדרה"
 msgid "Could not open skill"
 msgstr "לא הצליח לפתוח כישור"
 
+#: src/components/assets/editor/chart/useOpenChart.ts
+msgid "Could not open the data schema"
+msgstr ""
+
 #: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
 msgstr "לא ניתן לפתוח את התיקייה"
+
+#: src/components/assets/editor/chart/useOpenChart.ts
+msgid "Could not open the link"
+msgstr ""
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
@@ -8703,6 +8746,10 @@ msgstr "לא ניתן היה להריץ אותה"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not run schedule"
 msgstr "הרצת התזמון נכשלה"
+
+#: src/components/links/link-handlers.ts
+msgid "Could not run the command"
+msgstr "לא ניתן היה להריץ את הפקודה"
 
 #: src/components/connections-manager.tsx
 msgid "Could not run the connection test."
@@ -8948,6 +8995,10 @@ msgstr "לא ניתן היה לעבור לצ'אט"
 #: src/components/terminal/interactive-terminal/use-process-surface.ts
 msgid "Could not switch to terminal"
 msgstr "לא ניתן היה לעבור לטרמינל"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Could not test {title}"
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 msgid "Could not test it"
@@ -9846,6 +9897,7 @@ msgstr "ברירת מחדל"
 
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Default"
@@ -12917,6 +12969,10 @@ msgstr "נכשלה בשליחת בקשת עדכון הסטטוס"
 msgid "Failed to send the changes"
 msgstr ""
 
+#: src/components/conversation/useConversationSession.ts
+msgid "Failed to send to the session"
+msgstr ""
+
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Failed to set project"
 msgstr "ההגדרה של הפרויקט נכשלה"
@@ -13473,7 +13529,7 @@ msgstr "זו הפעם הראשונה במחשב הזה?"
 msgid "First time? Install Flowpad, then hover a row for its install line."
 msgstr "בפעם הראשונה? התקינו את Flowpad, ואז רחפו מעל שורה כדי לראות את שורת ההתקנה שלה."
 
-#: src/components/assets/editor/chart/C4ChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 msgid "Fit"
 msgstr ""
 
@@ -16283,6 +16339,10 @@ msgstr "המפתח מסתיים ב-{0} — רק לבעלים יש אפשרות �
 #~ msgid "Key not set"
 #~ msgstr "המפתח לא הוגדר"
 
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid "Key rejected"
+msgstr ""
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Key removed"
 msgstr "המפתח הוסר"
@@ -19031,6 +19091,10 @@ msgstr "צוות חדש"
 msgid "New Terminal"
 msgstr "טרמינל חדש"
 
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "New test run"
+msgstr ""
+
 #: src/components/credentials/VariableDetails.tsx
 msgid "New variable"
 msgstr "משתנה חדש"
@@ -19426,6 +19490,10 @@ msgstr "ללא תקרת עלות"
 msgid "No data available"
 msgstr "אין נתונים זמינים"
 
+#: src/components/assets/editor/chart/useOpenChart.ts
+msgid "No data schema named “{kind}” in this project"
+msgstr ""
+
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "No data sources in this project yet"
 msgstr "אין עדיין מקורות נתונים בפרויקט הזה"
@@ -19771,6 +19839,10 @@ msgstr "אין נתוני מכונה זמינים"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "No machine is waiting on that code. Check the code, or run flow connect again — codes expire after 15 minutes."
 msgstr "אין מכונה שממתינה לקוד הזה. בדקו את הקוד, או הריצו שוב את flow connect — קודים פגים אחרי 15 דקות."
+
+#: src/components/links/link-handlers.ts
+msgid "No machine to open a terminal on"
+msgstr "אין מחשב שאפשר לפתוח בו טרמינל"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "No machine yet"
@@ -20394,6 +20466,14 @@ msgstr "לתהליך הזה לא מחובר טרמינל או צ׳אט. הפעי
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "No terminal process was found for session {0}."
 msgstr "לא נמצא תהליך סוף עבור הסשן {0}."
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "No test runs yet"
+msgstr ""
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "No test yet — an agent writes one"
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "No timeline data in this trace."
@@ -21584,9 +21664,9 @@ msgid "Open"
 msgstr "פתחו"
 
 #. placeholder {0}: app.name
-#. placeholder {0}: el.label
 #. placeholder {0}: file.path
-#: src/components/assets/editor/chart/C4ChartView.tsx
+#. placeholder {0}: item.label
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -21613,6 +21693,7 @@ msgid "Open {key} in {fileName} at line {line}"
 msgstr "פתיחת {key} בקובץ {fileName} בשורה {line}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 msgid "Open {label}"
 msgstr "פתחו {label}"
 
@@ -21647,6 +21728,7 @@ msgid "Open {workerName} terminal"
 msgstr "פתחו טרמינל של {workerName}"
 
 #: src/components/assets/editor/chart/C4ChartView.tsx
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Open ↗"
 msgstr "פתיחה ↗"
@@ -22922,6 +23004,10 @@ msgstr "שאלות קודמות"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Past runs stay in the history."
 msgstr "הרצות קודמות יישארו בהיסטוריה."
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Past test runs"
+msgstr ""
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Paste"
@@ -26443,6 +26529,18 @@ msgstr "הפעילו מהטרמינל שלכם, ואז הפעילו את Flowpad
 msgid "Run headless"
 msgstr "הרצה ללא ממשק"
 
+#: src/components/links/LinkMenu.tsx
+msgid "Run in chat"
+msgstr "הרצה בצ'אט"
+
+#: src/components/links/LinkMenu.tsx
+msgid "Run in external terminal"
+msgstr "הרצה בטרמינל חיצוני"
+
+#: src/components/links/LinkMenu.tsx
+msgid "Run in Flowpad terminal"
+msgstr "הרצה בטרמינל של Flowpad"
+
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
 msgid "Run in terminal"
@@ -26546,6 +26644,10 @@ msgstr "ניתן להריץ את הסוכן באופן עצמאי, בזמן לב
 
 #~ msgid "Run this as a prompt on {hostName}'s machine"
 #~ msgstr ""
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Run this credential's test"
+msgstr ""
 
 #: src/components/collaboration/useApproveLiveSession.tsx
 msgid "Run this live session in which project?"
@@ -27170,6 +27272,11 @@ msgstr "גללו לתחתית"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "scroll to navigate"
 msgstr "גללו כדי לנווט"
+
+#. placeholder {0}: changes ? ' · click an element to change it' : ''
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Scroll to zoom · drag to pan{0}"
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -28120,6 +28227,11 @@ msgstr "סשנים: {sessions}"
 #: src/components/credentials-view/CredentialView.tsx
 msgid "set"
 msgstr "מוגדר"
+
+#. placeholder {0}: v.env_var
+#: src/components/credentials-view/CredentialView.tsx
+msgid "Set {0}"
+msgstr ""
 
 #: src/components/token-plan/BudgetHero.tsx
 #: src/components/token-plan/BudgetHero.tsx
@@ -30504,6 +30616,10 @@ msgstr "מערכת"
 msgid "System"
 msgstr "מערכת"
 
+#: src/components/links/LinkMenu.tsx
+msgid "System default"
+msgstr "ברירת המחדל של המערכת"
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
 msgid "System Diagnoses"
@@ -30787,6 +30903,7 @@ msgstr "בדיקה"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/TestPanel.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials/CredentialTestButton.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
@@ -30794,6 +30911,11 @@ msgstr "בדיקה"
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Test"
 msgstr "בדיקה"
+
+#. placeholder {0}: drawer.title
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Test {0}"
+msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
@@ -30816,6 +30938,10 @@ msgstr "הרצת בדיקה"
 #: src/components/automations/automation-words.ts
 msgid "Test run: {base}"
 msgstr "הרצת ניסיון: {base}"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Test runs"
+msgstr ""
 
 #~ msgid "Test trigger"
 #~ msgstr "בדוק טריגר"
@@ -30937,6 +31063,10 @@ msgstr "הסוכן השאיר עבודה שרצה ברקע. אפשר להמשי�
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
 msgstr "הסוכן שהקישור מציין לא נמצא בקבצי הפרויקט."
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "The agent writes this credential's test."
+msgstr ""
 
 #: src/components/agent-resources/AgentWebhooksSection.tsx
 msgid "The agent's machine may use it"
@@ -31397,6 +31527,11 @@ msgstr "הספק קבוע לאחר שנוצר תקציב."
 msgid "The provider rejected the stored token."
 msgstr "הספק דחה את הטוקן השמור."
 
+#. placeholder {0}: result?.at
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "The provider took the key ({0})"
+msgstr ""
+
 #: src/components/rag/RagView.tsx
 msgid "The query failed"
 msgstr "השאילתה נכשלה"
@@ -31538,6 +31673,10 @@ msgstr "המשימה היא כעת תיקייה בפרויקט."
 #~ msgid "The terminal is not ready yet"
 #~ msgstr ""
 
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "The test did not run."
+msgstr ""
+
 #. placeholder {0}: made.claim?.key
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "the token acts as {0}"
@@ -31571,6 +31710,11 @@ msgstr ""
 #: src/components/assets/editor/GitShareBar.tsx
 msgid "The version that was shared with you"
 msgstr "הגרסה ששותפה איתכם"
+
+#: src/components/assets/editor/chart/chartControls.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
+msgid "the whole chart"
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -34645,6 +34789,7 @@ msgstr "על מה עבד"
 #~ msgid "What Published does"
 #~ msgstr "מה עושה 'פורסם'"
 
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "What should change here?"
 msgstr ""
@@ -35692,9 +35837,10 @@ msgid "ZIP files will be added as codebase connections"
 msgstr "קבצי ZIP יתווספו כחיבורי קוד בסיס"
 
 #: src/components/assets/editor/chart/C4ChartView.tsx
-msgid "Zoom"
-msgstr ""
+#~ msgid "Zoom"
+#~ msgstr ""
 
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-view/GraphView.tsx
@@ -35702,6 +35848,7 @@ msgstr ""
 msgid "Zoom in"
 msgstr "הגדילו"
 
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-view/GraphView.tsx

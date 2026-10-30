@@ -1365,6 +1365,23 @@ class Project(SetupSkippable, Entity):
             if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)
         ]
 
+    @classmethod
+    async def _enclosing_owners(cls, path: str) -> list["Project"]:
+        """Projects whose mount is a PARENT folder of ``path``, nearest first — one indexed IN query
+        over the parents, not one query per level. Shared by the nesting refusal and the dependency
+        resolver (an asset folder inside a project is that project's, never a project of its own)."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        parents = [str(parent) for parent in PurePosixPath(path).parents]
+        matches = await cls.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["fs_storage_mount_path", parents]))
+        )
+        owners = [
+            p for p in matches
+            if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)
+        ]
+        return sorted(owners, key=lambda p: len(p.fs_storage_mount_path or ""), reverse=True)
+
     async def find_existing_for_create(self) -> "Project | None":
         """A folder is one project: a create for an owned mount resolves to its owner.
         The validator already canonicalized the mount, so only the indexed query runs."""
@@ -2732,13 +2749,12 @@ class Project(SetupSkippable, Entity):
         def _counts(other: "Project") -> bool:
             return str(other.id) != str(self.id) and other._visible()
 
-        for parent in PurePosixPath(mount).parents:
-            for owner in await self._mount_owners(str(parent)):
-                if _counts(owner):
-                    raise NestedProjectError(
-                        f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
-                        "projects do not nest"
-                    )
+        for owner in await self._enclosing_owners(mount):
+            if _counts(owner):
+                raise NestedProjectError(
+                    f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
+                    "projects do not nest"
+                )
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         below = await type(self).get_all(

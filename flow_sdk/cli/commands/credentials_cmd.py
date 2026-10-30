@@ -221,16 +221,49 @@ def check_credential(
     project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
     deployment: Annotated[Optional[str], _DEPLOYMENT] = None,
 ) -> None:
-    """Exit 0 when every value NAME needs at the deployment (default: this computer) is present; 1
-    when not. Prints no value."""
+    """Exit 0 when every value NAME needs at the deployment (default: this computer) is present — and,
+    when NAME declares a ``test`` and this is this computer, the provider takes them; 1 when not.
+    Prints no value."""
     row = status_row(_status(project, deployment), name)
     missing = _missing(row)
     ready = row is not None and row.get("state") == "connected"
     from flow_sdk.builtin.credential_status import why_not_ready  # noqa: PLC0415
 
     why = why_not_ready(row)
+    if ready and row.get("has_test") and not deployment:
+        tested = _test(name, row.get("project_id"))
+        if tested.get("state") != "ok":
+            ready, why = False, f"the test failed: {tested.get('detail') or tested.get('state')}"
     ok({"name": name, "declared": row is not None, "ready": ready, "missing": missing, **({"detail": why} if why else {})})
     if not ready:
+        raise typer.Exit(EXIT_NOT_YET)
+
+
+def _test(name: str, project_id: Optional[str]) -> dict:
+    port = discover_port(required=False)
+    if port is not None:
+        payload = {"name": name, "project_id": _project_id(port, project_id)}
+        return post_graph_json(f"{_url(port)}/test", payload, on_error=_refused)
+
+    async def here() -> dict:
+        from flow_sdk.builtin.credential_service import test_credential  # noqa: PLC0415
+
+        project_row = await _project(project_id)
+        return await test_credential(name, str(project_row.id) if project_row is not None else "")
+
+    return _here(here())
+
+
+@credentials_app.command("test")
+def test_cmd(
+    name: Annotated[str, typer.Argument(help="The credential's name (e.g. bright_data).")],
+    project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
+) -> None:
+    """Run NAME's ``test`` with this computer's values: exit 0 when the provider takes them, 1 when it
+    refuses them or NAME declares no test (``state: untested``). Prints no value."""
+    tested = _test(name, project)
+    ok(tested)
+    if tested.get("state") != "ok":
         raise typer.Exit(EXIT_NOT_YET)
 
 

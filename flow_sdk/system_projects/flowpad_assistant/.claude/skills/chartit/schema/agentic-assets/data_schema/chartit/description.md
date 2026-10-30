@@ -1,4 +1,4 @@
-# chartit — the data behind sequence and C4 charts, and the feedback on any chart
+# chartit — the data behind sequence and C4 charts
 
 | kind | a value is |
 |---|---|
@@ -9,8 +9,8 @@
 | `chartit.c4_element` | one box: a person, system, container, database, queue, component or code unit |
 | `chartit.c4_boundary` | one dashed group boxes sit in; nests through `parent` |
 | `chartit.c4_relation` | one arrow between two elements |
-| `chartit.feedback` | one comment a reviewer left on a Chart (any format), optionally on one element of it |
+| `chartit.c4_link` | a link chip on a box or arrow: code, doc, asset or URL |
+| `chartit.c4_param` | one typed input of a code-level element |
 
-Charts themselves are Flowpad **Chart** entities (`agentic-assets/chart/<name>/`), not rows. Feedback
-lives in the project's `chart-feedback` dataset (row key = `<chart name>-<base36 time>`), written only
-through the SDK / `dm_ctl`.
+Charts themselves are Flowpad **Chart** entities (`agentic-assets/chart/<name>/`), not rows; these kinds
+check a chart's source file (`c4.json`, `chart.json`).

@@ -3,7 +3,7 @@
  * The terminal maps these matches onto buffer cells; a message renders them as spans.
  * Candidate recognition only: the backend decides whether a reference exists.
  */
-import { localWebUrl } from '@src/lib/link-kind';
+import { COMMAND_LINK, localWebUrl } from '@src/lib/link-kind';
 
 export interface LinkMatch {
   text: string;
@@ -106,9 +106,35 @@ export function webLinkMatches(text: string): LinkMatch[] {
     .filter((match) => isUrl(match.text));
 }
 
-/** Every file reference and web URL in `text`, in order, never overlapping. */
-export function linkMatches(text: string): LinkMatch[] {
-  const sorted = [...fileLinkMatches(text), ...webLinkMatches(text)].sort((a, b) => a.index - b.index);
+const COMMAND_LINE = /^([ \t]*(?:[-*•>][ \t]+)?)(![^\r\n]*?)[ \t]*$/gm;
+
+/**
+ * `! cmd` alone on a line, or quoted in prose (`run "! gcloud auth login" then…`). Markdown inline
+ * code and a terminal's colored inline code are found by their own surfaces, which can see the span.
+ */
+export function commandLinkMatches(text: string): LinkMatch[] {
+  const links: LinkMatch[] = [];
+  for (const match of text.matchAll(COMMAND_LINE)) {
+    if (COMMAND_LINK.test(match[2])) links.push({ text: match[2], index: match.index + match[1].length });
+  }
+  for (const match of text.matchAll(new RegExp(QUOTED.join('|'), 'gu'))) {
+    const quoted = match[1] ?? match[2] ?? match[3];
+    if (quoted && COMMAND_LINK.test(quoted)) links.push({ text: quoted, index: match.index + 1 });
+  }
+  return links;
+}
+
+/**
+ * Every command, file reference and web URL in `text`, in order, never overlapping. A command
+ * holds what is inside it (`! cat src/a.ts` is one link); `commands` lets a surface add the ones
+ * only it can see.
+ */
+export function linkMatches(text: string, commands: LinkMatch[] = commandLinkMatches(text)): LinkMatch[] {
+  const held = [...commands].sort((a, b) => a.index - b.index);
+  const inside = (m: LinkMatch) => held.some((c) => m.index < c.index + c.text.length && c.index < m.index + m.text.length);
+  const sorted = [...held, ...[...fileLinkMatches(text), ...webLinkMatches(text)].filter((m) => !inside(m))].sort(
+    (a, b) => a.index - b.index,
+  );
   const links: LinkMatch[] = [];
   let end = 0;
   for (const match of sorted) {

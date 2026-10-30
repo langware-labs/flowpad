@@ -9,17 +9,24 @@
  *   5. layoutC4 puts every card inside its boundary, nested boundaries inside their parent,
  *      and leaves out a boundary with nothing in it.
  *   6. c4ToMermaid writes a flowchart with subgraphs, shapes per kind and async arrows.
+ *   7. Every box is a chip with its kind's icon; link chips open project files, data-type chips open
+ *      their data_schema; an arrow with `ref` opens the chart it names.
+ *   8. Clicking an element opens "Change this", which hands the request to `changes.request`;
+ *      queued changes show as numbered marks.
+ *   9. Fit / zoom in / zoom out move the canvas viewBox.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { openDock, forKind, chartQuery } = vi.hoisted(() => ({
+const { openDock, forKind, chartQuery, dataQuery } = vi.hoisted(() => ({
   openDock: vi.fn(),
   forKind: vi.fn(async (): Promise<unknown[]> => []),
   chartQuery: vi.fn(async (): Promise<unknown[]> => []),
+  dataQuery: vi.fn(async (): Promise<unknown[]> => []),
 }));
+vi.mock('@sdk/client', () => ({ default: { get: dataQuery } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock } }),
 }));
@@ -36,7 +43,7 @@ vi.mock('@sdk', async (orig) => {
 // eslint-disable-next-line import/first
 import { C4ChartView } from '@src/components/assets/editor/chart/C4ChartView';
 // eslint-disable-next-line import/first
-import { c4ToMermaid, layoutC4, parseC4, wrap } from '@src/components/assets/editor/chart/c4Model';
+import { CHIP_MAX_CHARS, chipText, c4ToMermaid, layoutC4, parseC4, wrap } from '@src/components/assets/editor/chart/c4Model';
 
 const PROJECT = '22222222-2222-4222-8222-222222222222';
 
@@ -84,13 +91,27 @@ const chart = {
   typeId: { toString: () => 'chart-11111111-1111-4111-8111-111111111111' },
 } as unknown as import('@sdk').Chart;
 
-function renderView(value: unknown = C4) {
+function renderView(value: unknown = C4, changes?: import('@src/components/assets/editor/chart/chartControls').ChartChanges) {
   return render(
     <MemoryRouter>
-      <C4ChartView fsRef={makeFsRef({ 'c4.json': JSON.stringify(value) })} chart={chart} projectId={PROJECT} />
+      <C4ChartView fsRef={makeFsRef({ 'c4.json': JSON.stringify(value) })} chart={chart} projectId={PROJECT} changes={changes} />
     </MemoryRouter>,
   );
 }
+
+const RICH = {
+  level: 'code',
+  elements: [
+    {
+      id: 'engine', kind: 'code', label: 'PricingEngine', tech: 'class',
+      inputs: [{ name: 'cart', kind: 'shop.cart' }], returns: 'shop.price_quote',
+      links: [{ label: 'PricingEngine.kt', href: 'src/pricing/PricingEngine.kt:12' }],
+    },
+    { id: 'fn', kind: 'function', label: 'apply-coupon' },
+  ],
+  boundaries: [],
+  relations: [{ id: 'r1', from: 'engine', to: 'fn', label: 'Applies', data: 'shop.coupon', ref: 'coupon-flow' }],
+};
 
 describe('C4ChartView', () => {
   beforeEach(() => {
@@ -105,8 +126,9 @@ describe('C4ChartView', () => {
     expect(screen.getAllByTestId('chart-c4-boundary')).toHaveLength(1); // the empty one is left out
     expect(screen.getAllByTestId('chart-c4-relation')).toHaveLength(5);
     expect(screen.getByTestId('chart-c4-level').textContent).toBe('container');
-    expect(screen.getByText('[Container · FastAPI]')).toBeInTheDocument();
-    expect(screen.getByText('[External system]')).toBeInTheDocument();
+    const svgText = screen.getByTestId('chart-c4-svg').textContent ?? '';
+    expect(svgText).toContain('Container · FastAPI');
+    expect(svgText).toContain('External system');
     const legend = screen.getByTestId('chart-c4-legend').textContent ?? '';
     expect(legend).toContain('Person');
     expect(legend).toContain('Database');
@@ -148,6 +170,82 @@ describe('C4ChartView', () => {
   });
 });
 
+describe('C4ChartView — chips, links, calls, changes, zoom', () => {
+  beforeEach(() => {
+    openDock.mockClear();
+    chartQuery.mockClear();
+    dataQuery.mockClear();
+  });
+
+  it('gives every box its kind and an icon', async () => {
+    renderView(RICH);
+    const cards = await screen.findAllByTestId('chart-c4-element');
+    expect(cards.map((c) => c.getAttribute('data-kind'))).toEqual(['code', 'function']);
+    cards.forEach((c) => expect(c.querySelector('foreignObject')).not.toBeNull());
+  });
+
+  it('a link chip opens the project file it names', async () => {
+    renderView(RICH);
+    fireEvent.click(await screen.findByTestId('chart-c4-link'));
+    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+    const pointer = (openDock.mock.calls[0] as unknown[])[0] as { pointer: string };
+    expect(pointer.pointer).toContain('w/p/src/pricing/PricingEngine.kt');
+    expect(pointer.pointer).not.toContain(':12');
+  });
+
+  it('a data-type chip opens the data_schema of that kind', async () => {
+    dataQuery.mockResolvedValueOnce([{ id: '33333333-3333-4333-8333-333333333333', asset_ref: '/w/p/agentic-assets/data_schema/shop.cart' }]);
+    renderView(RICH);
+    const types = await screen.findAllByTestId('chart-c4-type');
+    expect(types).toHaveLength(3); // cart, returns, the arrow's data
+    fireEvent.click(types.find((c) => c.textContent?.includes('cart: shop.cart'))!);
+    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+    const path = decodeURIComponent((dataQuery.mock.calls[0] as unknown[])[0] as string);
+    expect(path).toContain('/graph/data_schema?');
+    expect(path).toContain('shop.cart');
+    const pointer = (openDock.mock.calls[0] as unknown[])[0] as { pointer: string };
+    expect(pointer.pointer).toContain('data_schema-33333333-3333-4333-8333-333333333333');
+  });
+
+  it('an arrow with ref opens the chart it calls', async () => {
+    chartQuery.mockResolvedValueOnce([{ name: 'coupon-flow', asset_ref: '/w/p/agentic-assets/chart/coupon-flow' }]);
+    renderView(RICH);
+    const rel = await screen.findByTestId('chart-c4-relation');
+    fireEvent.click(rel.querySelector('[data-testid="chart-c4-open"]')!);
+    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+  });
+
+  it('clicking an element asks for a change and queued changes show as marks', async () => {
+    const request = vi.fn();
+    renderView(C4, { request, marks: new Map([['db · Orders DB', [1, 2]]]) });
+    expect(await screen.findAllByTestId('chart-change-mark')).toHaveLength(1);
+    const api = screen.getAllByTestId('chart-c4-element').find((c) => c.textContent?.includes('API'))!;
+    fireEvent.click(api);
+    fireEvent.change(await screen.findByTestId('chart-change-text'), { target: { value: 'Split into two services' } });
+    fireEvent.click(screen.getByTestId('chart-change-run'));
+    expect(request).toHaveBeenCalledWith({ quote: 'api · API', instruction: 'Split into two services', runNow: true });
+    expect(screen.queryByTestId('chart-change-box')).toBeNull();
+  });
+
+  it('without a changes handler a click opens nothing', async () => {
+    renderView(C4);
+    fireEvent.click((await screen.findAllByTestId('chart-c4-element'))[0]);
+    expect(screen.queryByTestId('chart-change-box')).toBeNull();
+    expect(screen.queryByTestId('chart-change-whole')).toBeNull();
+  });
+
+  it('zoom in, zoom out and Fit move the canvas', async () => {
+    renderView();
+    const svg = await screen.findByTestId('chart-c4-svg');
+    const fit = svg.getAttribute('viewBox');
+    fireEvent.click(screen.getByTestId('chart-zoom-in'));
+    expect(svg.getAttribute('viewBox')).not.toBe(fit);
+    expect(svg.getAttribute('data-zoomed')).toBe('true');
+    fireEvent.click(screen.getByTestId('chart-zoom-fit'));
+    expect(svg.getAttribute('viewBox')).toBe(fit);
+  });
+});
+
 describe('c4Model', () => {
   it('lays every card inside its boundary and an inner boundary inside its parent, and sibling boundaries apart', async () => {
     const value = parseC4(
@@ -186,6 +284,13 @@ describe('c4Model', () => {
 
   it('reads an unreadable file as an empty context chart', () => {
     expect(parseC4('not json')).toEqual({ title: undefined, level: 'context', direction: undefined, elements: [], boundaries: [], relations: [] });
+  });
+
+  it('a chip shows its whole label unless it is longer than the widest chip', () => {
+    expect(chipText('PricingEngine.kt')).toBe('PricingEngine.kt');
+    const long = 'x'.repeat(CHIP_MAX_CHARS + 5);
+    expect(chipText(long)).toHaveLength(CHIP_MAX_CHARS);
+    expect(chipText(long).endsWith('…')).toBe(true);
   });
 
   it('wraps to a line limit and marks the cut with an ellipsis at a word end', () => {

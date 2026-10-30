@@ -315,6 +315,8 @@ async def credentials_status(
             lm_provider=spec.lm_provider or "",
             setup_choice=spec.chosen,
             ways=dict(spec.ways or {}),
+            has_test=spec.declared_test() is not None,
+            test_result=getattr(spec, "test_result", None),
         )))
 
     # A sign-in lives on this computer: it is asked only for the deployment that IS this computer, and a

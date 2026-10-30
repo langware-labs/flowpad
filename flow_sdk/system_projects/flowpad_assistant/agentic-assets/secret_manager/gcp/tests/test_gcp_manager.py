@@ -59,6 +59,7 @@ async def test_grant_binds_the_secret_accessor_role(tmp_path, monkeypatch):
     assert log.read_text().splitlines() == [
         "projects", "add-iam-policy-binding", "acme-prod", "--member", "user:bob@acme.com",
         "--role", "roles/secretmanager.secretAccessor",
+        '--condition', 'expression=resource.name.extract("/secrets/{s}/").startsWith("app-"),title=flowpad-secrets-app-',
     ]
 
 

@@ -543,6 +543,10 @@ async def dependency_project(state: DependencyState, *, create: bool = False) ->
     owners = await Project._mount_owners(str(root))
     if owners:
         return owners[0]
+    # An asset inside a project (a chart, a skill) may carry its own flow.json: that lists the asset's
+    # links, it does not make the folder a project. Projects do not nest, so no provider is made here.
+    if any(owner._visible() for owner in await Project._enclosing_owners(str(root))):
+        return None
     if create and ((root / flow_json.FLOW_JSON).is_file() or manifest_path(root).is_file()):
         async with keyed_loop_lock(_PROVIDER_LOCKS, str(root)):
             return await Project.recover_by_path(str(root))

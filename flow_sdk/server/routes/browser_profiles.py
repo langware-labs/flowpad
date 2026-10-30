@@ -13,9 +13,13 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from typing import Literal
+
+from flow_sdk.core.browser_command import grammar_of, with_browser
 from flow_sdk.core.browser_profiles import (
     BrowserProfileError,
     OpenInProfileRequest,
+    ProfileChoice,
     list_browser_profiles,
     open_in_profile,
 )
@@ -51,3 +55,29 @@ def browser_profiles_open(req: OpenInProfileRequest):
     except BrowserProfileError as exc:
         return _fail(400, exc.code, str(exc))
     return ApiSuccessResponse(data={"opened": True})
+
+
+class BrowserCommandRequest(ProfileChoice):
+    """``POST /api/v1/browser-profiles/command`` — ``command`` with ``BROWSER`` set to that profile.
+
+    ``target`` is the shell that will read the line: ``session`` is an agent's shell mode
+    (Claude Code runs it in bash, Git Bash on Windows), ``terminal`` a Flowpad terminal
+    (the shell ``default_terminal_shell`` names).
+    """
+
+    command: str
+    target: Literal["session", "terminal"]
+
+
+@router.post("/api/v1/browser-profiles/command")
+def browser_profiles_command(req: BrowserCommandRequest):
+    if refused := _not_local():
+        return refused
+    if req.target == "session":
+        grammar = "posix"
+    else:
+        from flow_sdk.compute.providers.desktop.provider import default_terminal_shell  # noqa: PLC0415
+
+        grammar = grammar_of(default_terminal_shell())
+    choice = ProfileChoice(browser=req.browser, profile=req.profile)
+    return ApiSuccessResponse(data={"command": with_browser(req.command, choice, grammar)})

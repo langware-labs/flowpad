@@ -179,6 +179,8 @@ def serve_app(
         {
             "source": "serve",
             "artifact": data.get("artifact"),
+            # A folder that is a webapp asset is served as the asset (setup + recovery); else None.
+            "webapp": data.get("webapp"),
             "endpoint": endpoint,
             "shown": data.get("shown"),
             "serving": endpoint["backend"]["root"],

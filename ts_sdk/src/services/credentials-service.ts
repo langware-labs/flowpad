@@ -100,6 +100,17 @@ export interface CredentialStatusRow {
   setup_choice?: string;
   /** `ONE_OF`: how each way of several variables is offered, by way name (`CredentialSpec.ways`). */
   ways?: Record<string, CredentialWay>;
+  /** The credential declares a `test` (Test runs it; without one, Test asks an agent to write it). */
+  has_test?: boolean;
+  /** The last test run on this machine; absent = never tested here. */
+  test_result?: CredentialTestResult | null;
+}
+
+/** A credential test's answer — value-free. `untested`: it declares no test. */
+export interface CredentialTestResult {
+  state: 'ok' | 'invalid' | 'error' | 'untested';
+  detail: string;
+  at: string;
 }
 
 export type CredentialKind = 'env' | 'oauth';
@@ -410,6 +421,14 @@ export class CredentialsService {
     action.bodyParameters = { name, project_id: projectId };
     const res = await dataManager.callAction<unknown, Partial<SecretFetchResult>>(action);
     return { fetched: res?.fetched ?? [], missing: res?.missing ?? [], denied: res?.denied ?? [], vaults: res?.vaults ?? [] };
+  }
+
+  /** Run credential `name`'s `test` with this computer's values; `untested` when it declares none. */
+  async test(name: string, projectId: string): Promise<CredentialTestResult & { has_test: boolean }> {
+    const action = this.action('test', 'POST');
+    action.bodyParameters = { name, project_id: projectId };
+    const res = await dataManager.callAction<unknown, Partial<CredentialTestResult & { has_test: boolean }>>(action);
+    return { has_test: !!res?.has_test, state: res?.state ?? 'error', detail: res?.detail ?? '', at: res?.at ?? '' };
   }
 
   /** Give `email` read access to `vault` through its manager's own sharing. */

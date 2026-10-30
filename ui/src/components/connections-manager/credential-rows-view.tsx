@@ -35,6 +35,7 @@ export function CredentialConnectionRows({
   onRevealEnvFile,
   selectedTypeid,
   selectedRef,
+  renderTest,
 }: {
   rows: CredentialRow[];
   /** The credential the URL names: highlighted, and given ``selectedRef`` so the host scrolls to it. */
@@ -47,6 +48,8 @@ export function CredentialConnectionRows({
   onOpenEnvFile: (path: string) => void;
   /** Reveal the row's `.env.local` in the OS file manager. */
   onRevealEnvFile: (path: string) => void;
+  /** The row's Test (are the values GOOD, not only present), beside Set values; omitted = none. */
+  renderTest?: (row: CredentialRow) => React.ReactNode;
 }) {
   const { t } = useLingui();
 
@@ -133,7 +136,13 @@ export function CredentialConnectionRows({
                   title={missing ? t`Missing: ${missing}` : undefined}
                   data-testid={`connection-status-${testKey}`}
                 >
-                  {connected ? <Trans>Connected</Trans> : <Trans>Needs values</Trans>}
+                  {!connected ? (
+                    <Trans>Needs values</Trans>
+                  ) : row.source.test_result?.state === 'invalid' ? (
+                    <Trans>Key rejected</Trans>
+                  ) : (
+                    <Trans>Connected</Trans>
+                  )}
                 </span>
               </div>
             </TableCell>
@@ -151,6 +160,7 @@ export function CredentialConnectionRows({
 
             <TableCell className="text-end">
               <div className="flex items-center justify-end gap-1">
+                {connected && renderTest?.(row)}
                 <Button
                   variant={connected ? 'ghost' : 'outline'}
                   size="sm"

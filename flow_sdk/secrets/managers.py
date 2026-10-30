@@ -199,6 +199,7 @@ async def run_check(vault: Any) -> bool:
     """True when the manager's ``check`` exits 0 for this vault on this machine."""
     manager, config = _vault_parts(vault)
     spec = get_manager(manager)
+    config = _with_defaults(manager, config)
     code, _ = await _run(spec.check, {**config, "vault": _vault_name(vault, config)}, spec.env)
     return code == 0
 
@@ -207,6 +208,7 @@ async def run_grant(vault: Any, email: str) -> None:
     """Give ``email`` read access to the vault; raises ``SecretStoreError`` with the tool's last line."""
     manager, config = _vault_parts(vault)
     spec = get_manager(manager)
+    config = _with_defaults(manager, config)
     code, err = await _run(spec.grant, {**config, "vault": _vault_name(vault, config), "email": email}, spec.env)
     if code != 0:
         raise SecretStoreError(f"{manager} grant failed: {err or 'no detail'}")
@@ -239,6 +241,13 @@ class _Keep(dict):
 
     def __missing__(self, key: str) -> str:
         return "{" + key + "}"
+
+
+def _with_defaults(manager: str, config: Mapping[str, Any]) -> dict[str, Any]:
+    """The vault's config with the store's defaults filled in, so a command never sees an unfilled
+    placeholder for a field the person left empty (a GCP vault with no prefix)."""
+    spec = store_class(manager).config_spec
+    return {**spec.model_validate(dict(config)).model_dump(), **{k: v for k, v in config.items() if k not in spec.model_fields}}
 
 
 def _vault_parts(vault: Any) -> tuple[str, dict[str, Any]]:

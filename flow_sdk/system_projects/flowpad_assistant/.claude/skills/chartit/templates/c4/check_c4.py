@@ -4,8 +4,9 @@ Usage: python3 -I check_c4.py <chart folder> [<chart folder> ...]
 
 Checks each folder's c4.json against chartit.c4: known level and kinds, unique ids, every
 relation and boundary pointing at something that exists, no boundary loop, every `ref` naming
-a chart in the same project, and no style fields (the editor owns the look). Warns past 20
-elements. Prints one JSON line per folder and exits 1 when any folder has an error.
+a chart in the same project (a box's or an arrow's), every link having a label and an `href` or an
+`asset`, and no style fields (the editor owns the look). Warns past 20 elements, and for every data
+type (`inputs`, `returns`, a relation's `data`) that names no data_schema folder in the project. Prints one JSON line per folder and exits 1 when any folder has an error.
 Icons are checked separately: `flow icons check <tag> ... --path <chart folder>`.
 Standard library only.
 """
@@ -16,13 +17,15 @@ import sys
 from pathlib import Path
 
 LEVELS = {"landscape", "context", "container", "component", "code", "dynamic", "deployment"}
-KINDS = {"person", "system", "container", "database", "queue", "component", "code"}
+KINDS = {"person", "role", "system", "container", "component", "database", "queue", "storage", "function", "api",
+         "action", "code"}
 STATUSES = {"current", "migrating", "target"}
 FIELDS = {
     "chart": {"title", "level", "direction", "elements", "boundaries", "relations"},
-    "element": {"id", "kind", "label", "tech", "description", "external", "boundary", "icon", "ref", "status", "note"},
+    "element": {"id", "kind", "label", "tech", "description", "external", "boundary", "icon", "ref", "status", "note",
+                "links", "inputs", "returns"},
     "boundary": {"id", "label", "kind", "tech", "parent", "note"},
-    "relation": {"id", "from", "to", "label", "tech", "order", "style", "note"},
+    "relation": {"id", "from", "to", "label", "tech", "order", "style", "note", "ref", "data", "links"},
 }
 MAX_ELEMENTS = 20
 
@@ -32,6 +35,11 @@ def project_root(folder: Path) -> Path:
         if (p / "agentic-assets").is_dir() and p != folder:
             return p
     return folder.parent
+
+
+def schema_kinds(root: Path) -> set[str]:
+    """Every data_schema kind in the project: the folder names that hold a data_schema.json."""
+    return {doc.parent.name for doc in (root / "agentic-assets" / "data_schema").rglob("data_schema.json")}
 
 
 def chart_names(root: Path) -> set[str]:
@@ -78,6 +86,13 @@ def check(folder: Path) -> dict:
         seen.add(iid)
         return iid
 
+    types: list[str] = []
+
+    def check_links(links, where: str) -> None:
+        for j, link in enumerate(links or []):
+            if not (isinstance(link, dict) and link.get("label") and (link.get("href") or link.get("asset"))):
+                errors.append(f"{where}: links[{j}] needs a label and an href or an asset")
+
     bids = {b.get("id") for b in boundaries if isinstance(b, dict)}
     eids = {e.get("id") for e in elements if isinstance(e, dict)}
     refs: list[str] = []
@@ -98,6 +113,14 @@ def check(folder: Path) -> dict:
             errors.append(f"element {iid}: status must be one of {sorted(STATUSES)}")
         if e.get("ref"):
             refs.append(e["ref"])
+        check_links(e.get("links"), f"element {iid}")
+        for j, param in enumerate(e.get("inputs") or []):
+            if not (isinstance(param, dict) and param.get("name") and param.get("kind")):
+                errors.append(f"element {iid}: inputs[{j}] needs a name and a kind")
+            else:
+                types.append(param["kind"])
+        if e.get("returns"):
+            types.append(e["returns"])
     for i, b in enumerate(boundaries):
         where = f"boundaries[{i}]"
         if not isinstance(b, dict):
@@ -137,8 +160,18 @@ def check(folder: Path) -> dict:
             errors.append(f"relation {iid}: missing label")
         if r.get("style") not in (None, "sync", "async"):
             errors.append(f"relation {iid}: style must be sync or async")
+        if r.get("ref"):
+            refs.append(r["ref"])
+        if r.get("data"):
+            types.append(r["data"])
+        check_links(r.get("links"), f"relation {iid}")
     if len(elements) > MAX_ELEMENTS:
         warnings.append(f"{len(elements)} elements — past {MAX_ELEMENTS}, split it: zoom in with another chart and `ref`")
+    if types:
+        known = schema_kinds(project_root(folder))
+        for kind in sorted(set(types)):
+            if kind not in known:
+                warnings.append(f"data type {kind!r}: no data_schema folder of that kind in the project")
     if refs:
         names = chart_names(project_root(folder))
         for ref in refs:

@@ -6,8 +6,8 @@
       "description": "Unique id; relations name it in from / to, and feedback targets it."
     },
     "kind": {
-      "shape": "enum:person|system|container|database|queue|component|code",
-      "description": "What it is; sets its shape and colour (person: violet with a head; database / queue: aqua cylinder / pill; the rest: blue card)."
+      "shape": "enum:person|role|system|container|component|database|queue|storage|function|api|action|code",
+      "description": "What it is; sets its shape, colour and default icon (person/role: violet; database/queue/storage: aqua cylinder or pill; action: orange; function/action: notched card; the rest: blue card)."
     },
     "label": {
       "shape": "string",
@@ -31,7 +31,7 @@
     },
     "icon": {
       "shape": "?string",
-      "description": "An icon tag (<pack>.<icon>, e.g. brands.github, lucide.database); must resolve — `flow icons check`."
+      "description": "An icon tag (<pack>.<icon>); overrides the kind's default icon. Must resolve — `flow icons check`."
     },
     "ref": {
       "shape": "?string",
@@ -44,6 +44,18 @@
     "note": {
       "shape": "?string",
       "description": "Shown on hover; cite file:line where facts come from code."
+    },
+    "links": {
+      "shape": "?[chartit.c4_link]",
+      "description": "What it is made of or documented by: code (path:line), docs, assets, URLs — chips that open them."
+    },
+    "inputs": {
+      "shape": "?[chartit.c4_param]",
+      "description": "Code level: what it takes, each typed by a data schema kind."
+    },
+    "returns": {
+      "shape": "?string",
+      "description": "Code level: the data schema kind it returns; a chip that opens that schema."
     }
   }
 }

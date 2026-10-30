@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from flow_sdk.assets.types.chart import CHART_FORMATS, CHART_MD, CHART_SOURCES, chart_format
+from flow_sdk.assets.types.chart import CHART_FORMATS, CHART_MD, CHART_SOURCES, chart_format, declared_chart_format
 from flow_sdk.assets.types.chart_spec import ChartSpec
 from flow_sdk.assets.types.scaffolds import scaffold_chart
 
@@ -34,3 +34,9 @@ def test_scaffold_never_overwrites_an_authored_source(tmp_path):
 
 def test_c4_is_a_known_format():
     assert chart_format({"format": "c4"}) == "c4"
+
+
+def test_an_unknown_format_is_kept_as_declared_for_the_editor_to_name():
+    assert declared_chart_format({"format": "hologram"}) == "hologram"
+    assert declared_chart_format({}) == "excalidraw"
+    assert chart_format({"format": "hologram"}) == "excalidraw"  # what THIS build can draw

@@ -140,6 +140,10 @@ async def credentials_action() -> ApiResponse:
                 names = payload.get("names")
                 return ApiSuccessResponse(data=await use_mine(payload.get("deployment_id") or "", list(names) if names else None))
             # The project's vaults (``credential_service``): values between people, names only.
+            if sub_path == "test":
+                from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
+
+                return ApiSuccessResponse(data=await svc.test_credential(payload.get("name") or "", payload.get("project_id") or ""))
             if sub_path in ("publish", "fetch", "vault-check", "grant", "vault-set", "vault-remove"):
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 

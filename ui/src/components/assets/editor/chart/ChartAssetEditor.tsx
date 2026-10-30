@@ -1,8 +1,12 @@
-import { lazy, Suspense, useCallback, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { chartFormatOf, dataContext, isUnknownChartFormat, type Chart, type FSRef } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { EditorWithSidePanel } from '@src/components/milkdown-editor/EditorWithSidePanel';
+import { useDocChanges } from '@src/components/assets/editor/changes/useDocChanges';
+import { useDocChangeList } from '@src/components/assets/editor/changes/use-doc-changes-store';
+import { ChangeWholeChart, type ChartChanges } from './chartControls';
 import { notify } from '@src/notifications';
 import { convertChartToExcalidraw } from './convertToExcalidraw';
 import { parseSequence, sequenceToMermaid } from './sequenceToMermaid';
@@ -16,7 +20,13 @@ const C4ChartView = lazy(() => import('./C4ChartView'));
  * The chart editor: one asset type, one view per format. CHART.md's `format` picks the
  * view — `excalidraw` (board.json), `sequence` (chart.json), `c4` (c4.json) or `mermaid`
  * (the block in CHART.md). Sequence and mermaid charts can be converted to an Excalidraw board. A format this build does not know says so instead of opening as a board.
+ *
+ * Every chart has a Changes side tab, the same one a doc has: pick an element (or the whole chart),
+ * say what to change, and Execute hands the list to the chart's context worker, which edits the
+ * chart's source file; the view re-reads it when the run ends.
  */
+
+const SOURCE_FILE = { sequence: 'chart.json', c4: 'c4.json', excalidraw: 'board.json', mermaid: 'CHART.md' } as const;
 export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart }) {
   const { t } = useLingui();
   // Our own convert is shown at once; the row catches up when the indexer re-reads CHART.md.
@@ -25,6 +35,27 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
   const [converting, setConverting] = useState(false);
   const mermaidSource = useRef('');
   const projectId = dataContext.projectTypeId?.id ?? undefined;
+
+  const doc = chart?.typeId ? chart.typeId.toString() : null;
+  const [reloadKey, setReloadKey] = useState(0);
+  const reread = useCallback(() => setReloadKey((k) => k + 1), []);
+  const { changesTab, onRequestChange } = useDocChanges(
+    doc,
+    chart?.name ?? '',
+    `${fsRef.path}/${SOURCE_FILE[format]}`,
+    reread,
+    'chart',
+  );
+  const list = useDocChangeList(doc);
+  const changes = useMemo<ChartChanges | undefined>(() => {
+    if (!onRequestChange) return undefined;
+    const marks = new Map<string, number[]>();
+    list.changes.forEach((c, i) => marks.set(c.quote, [...(marks.get(c.quote) ?? []), i + 1]));
+    return {
+      marks,
+      request: ({ quote, instruction, runNow }) => onRequestChange({ quote, from: 0, to: 0, instruction }, { runNow }),
+    };
+  }, [onRequestChange, list.changes]);
 
   const onMermaidSource = useCallback((source: string) => {
     mermaidSource.current = source;
@@ -71,7 +102,8 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
 
   return (
     <div className="h-full min-h-0" data-testid="chart-editor" data-format={format}>
-      <Suspense fallback={fallback}>
+      <EditorWithSidePanel target={doc} extraTabs={changesTab ? [changesTab] : []}>
+      <Suspense fallback={fallback} key={reloadKey}>
         {!converted && isUnknownChartFormat(chart?.format) ? (
           <div
             data-testid="chart-unknown-format"
@@ -80,15 +112,26 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
             <Trans>This chart is a “{chart?.format}” chart, which needs a newer Flowpad to open.</Trans>
           </div>
         ) : format === 'sequence' ? (
-          <SequenceChartView fsRef={fsRef} chart={chart} projectId={projectId} actions={convertButton} />
+          <SequenceChartView fsRef={fsRef} chart={chart} projectId={projectId} actions={convertButton} changes={changes} />
         ) : format === 'c4' ? (
-          <C4ChartView fsRef={fsRef} chart={chart} projectId={projectId} />
+          <C4ChartView fsRef={fsRef} chart={chart} projectId={projectId} changes={changes} />
         ) : format === 'mermaid' ? (
-          <MermaidChartView fsRef={fsRef} chart={chart} actions={convertButton} onSource={onMermaidSource} />
+          <MermaidChartView
+            fsRef={fsRef}
+            chart={chart}
+            actions={
+              <>
+                {changes && <ChangeWholeChart changes={changes} />}
+                {convertButton}
+              </>
+            }
+            onSource={onMermaidSource}
+          />
         ) : (
           <ExcalidrawChartView fsRef={fsRef} chart={chart} />
         )}
       </Suspense>
+      </EditorWithSidePanel>
     </div>
   );
 }

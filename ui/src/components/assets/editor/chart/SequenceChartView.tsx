@@ -10,6 +10,8 @@ import { writeChartMermaid, autoNote } from './chartDoc';
 import { ChartHeading } from './ChartHeading';
 import { CHART_SLOTS as SLOTS, chartTokens } from './chartTheme';
 import { useOpenChart } from './useOpenChart';
+import { usePanZoom } from './usePanZoom';
+import { ChangeWholeChart, ChartChangeBox, Marks, ZoomControls, elementQuote, type ChartChanges } from './chartControls';
 import {
   parseSequence,
   sequenceToMermaid,
@@ -52,6 +54,13 @@ const STYLES = `
 .cseq svg.focusing .m:not(.hot), .cseq svg.focusing .p:not(.hot) { opacity: .28; transition: opacity .12s; }
 .cseq .m.hot .line { stroke-width: 2.5; }
 .cseq .m:focus, .cseq .p:focus { outline: none; }
+.cseq svg { touch-action: none; }
+.cseq [data-target] { cursor: pointer; }
+.cseq .p.picked rect.head, .cseq .m.picked .lbl-bg, .cseq .m.sub.picked rect.block { stroke: var(--focus); stroke-width: 2; }
+.cseq .popen { cursor: pointer; }
+.cseq .popen rect { fill: var(--surface-1); stroke: var(--hairline-strong); }
+.cseq .popen text { fill: var(--text-primary); font-size: 11px; font-weight: 600; }
+.cseq .popen:hover rect, .cseq .popen:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
 .cseq .m:focus-visible .lbl-bg, .cseq .p:focus-visible rect.head { stroke: var(--focus); stroke-width: 2; }
 `;
 
@@ -300,9 +309,11 @@ interface SequenceChartViewProps {
   chart?: Chart;
   projectId?: string;
   actions?: React.ReactNode;
+  /** Pick a participant or message → "Change this" → the chart's Changes tab and context worker. */
+  changes?: ChartChanges;
 }
 
-export function SequenceChartView({ fsRef, chart, projectId, actions }: SequenceChartViewProps) {
+export function SequenceChartView({ fsRef, chart, projectId, actions, changes }: SequenceChartViewProps) {
   const { t } = useLingui();
   const { resolvedTheme } = useTheme();
   const chartRef = useMemo(() => fsRef.child('chart.json'), [fsRef]);
@@ -315,7 +326,8 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
   const [hot, setHot] = useState<{ target: string; info: Info } | null>(null);
   const tipPos = useRef({ x: 0, y: 0 });
   const tipRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [picked, setPicked] = useState<{ id: string; label: string; at: { x: number; y: number } } | null>(null);
   const [plates, setPlates] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
 
   const { folderName, dirPath } = useMemo(() => {
@@ -342,6 +354,16 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
   }, [chartRef]);
 
   const layout = useMemo(() => (value ? layoutSequence(value) : null), [value]);
+  const pz = usePanZoom(layout?.width ?? 1, layout?.height ?? 1);
+  const setPzSvg = pz.svgRef;
+  // A stable ref: an inline one re-attaches (and re-sets pan-zoom state) on every render.
+  const attachSvg = useCallback(
+    (el: SVGSVGElement | null) => {
+      svgRef.current = el;
+      setPzSvg(el);
+    },
+    [setPzSvg],
+  );
 
   // label plates: measured after layout, so text never sits on a line
   useLayoutEffect(() => {
@@ -376,7 +398,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
     );
   }
 
-  const { lanes, items, width, height, bottom, TOP, HEAD_W, HEAD_H, DOT_X, ICON_X, ICON_SIZE } = layout;
+  const { lanes, items, bottom, TOP, HEAD_W, HEAD_H, DOT_X, ICON_X, ICON_SIZE } = layout;
   const tokens = chartTokens(resolvedTheme);
   const moveTip = (target: string, info: Info, x: number, y: number) => {
     tipPos.current = { x, y };
@@ -390,7 +412,29 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
     const b = el.getBoundingClientRect();
     moveTip(target, info, b.left + b.width / 2, b.top);
   };
-  const markClass = (id: string) => (hot?.target === id ? ' hot' : '');
+  const markClass = (id: string) => `${hot?.target === id ? ' hot' : ''}${picked?.id === id ? ' picked' : ''}`;
+  const pick = (id: string, label: string, e: { clientX: number; clientY: number }) => {
+    if (!changes) return;
+    setHot(null);
+    setPicked((cur) => (cur?.id === id ? null : { id, label, at: { x: e.clientX + 12, y: e.clientY + 12 } }));
+  };
+  const marksOf = (id: string, label: string) => changes?.marks.get(elementQuote(id, label));
+  const openPill = (fn: () => void) => ({
+    className: 'popen',
+    tabIndex: 0,
+    role: 'link',
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      fn();
+    },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      e.stopPropagation();
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fn();
+      }
+    },
+  });
   const plateFor = (key: string, text: string, x: number, y: number, anchor: 'start' | 'middle') =>
     plates[key] ?? {
       x: (anchor === 'middle' ? x - estimate(text) / 2 : x) - 5,
@@ -416,6 +460,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
         onRevealInFinder={() => void fsRef.open({ select: true })}
         actions={
           <>
+            {changes && <ChangeWholeChart changes={changes} />}
             {actions}
             <Button size="sm" variant="outline" onClick={() => void regenerateDoc()} data-testid="chart-regenerate-doc">
               <Trans>Update CHART.md</Trans>
@@ -476,17 +521,19 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
 
             {view === 'chart' ? (
               <div
-                className="overflow-auto rounded-xl border"
+                className="relative overflow-hidden rounded-xl border"
                 style={{ background: 'var(--surface-1)', borderColor: 'var(--hairline)' }}
               >
+                <ZoomControls onFit={pz.fit} onIn={pz.zoomIn} onOut={pz.zoomOut} />
                 <svg
-                  ref={svgRef}
+                  ref={attachSvg}
+                  {...pz.handlers}
                   xmlns="http://www.w3.org/2000/svg"
                   role="img"
-                  className={`mx-auto block${hot ? 'focusing' : ''}`}
-                  width={width}
-                  height={height}
-                  viewBox={`0 0 ${width} ${height}`}
+                  className={`block${hot ? ' focusing' : ''}`}
+                  style={{ width: '100%', height: 'calc(100vh - 290px)', minHeight: 360 }}
+                  viewBox={pz.viewBox}
+                  data-zoomed={pz.zoomed ? 'true' : 'false'}
                   aria-label={t`${value.title || t`Sequence chart`}: ${value.participants.length} participants, ${value.messages.length} messages`}
                   onPointerLeave={() => setHot(null)}
                   data-testid="chart-sequence-svg"
@@ -524,6 +571,13 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
                           onPointerMove={(e) => showTip(lane.p.id, lane.info, e)}
                           onFocus={(e) => focusTip(lane.p.id, lane.info, e.currentTarget)}
                           onBlur={() => setHot(null)}
+                          onClick={(e) => pick(lane.p.id, lane.lines[0], e)}
+                          onKeyDown={(e) =>
+                            keyActivate(e, () => {
+                              const b = e.currentTarget.getBoundingClientRect();
+                              pick(lane.p.id, lane.lines[0], { clientX: b.left + b.width / 2, clientY: b.bottom });
+                            })
+                          }
                         >
                           <line className="life" x1={lane.x} y1={TOP + HEAD_H} x2={lane.x} y2={bottom} />
                           <rect
@@ -563,6 +617,19 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
                             </text>
                           )}
                           <rect className="act" x={lane.x - 4} y={bottom - 6} width={8} height={6} rx={2} />
+                          {lane.p.ref && (
+                            <g
+                              {...openPill(() => void openRef(lane.p.ref!))}
+                              aria-label={t`Open ${lane.lines[0]}`}
+                              data-testid="chart-participant-open"
+                            >
+                              <rect x={lane.x - 31} y={TOP + HEAD_H + 6} width={62} height={20} rx={10} />
+                              <text x={lane.x} y={TOP + HEAD_H + 20} textAnchor="middle">
+                                {t`Open ↗`}
+                              </text>
+                            </g>
+                          )}
+                          <Marks ns={marksOf(lane.p.id, lane.lines[0])} x={lane.x - HEAD_W / 2 + 2} y={TOP + 2} />
                         </g>
                       );
                     })}
@@ -578,6 +645,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
                         onFocus: (e: React.FocusEvent<SVGGElement>) =>
                           focusTip(item.target, item.info, e.currentTarget),
                         onBlur: () => setHot(null),
+                        onClick: (e: React.MouseEvent) => pick(item.target, item.label, e),
                       };
                       if (item.kind === 'sub') {
                         const { lo, hi, y } = item;
@@ -621,6 +689,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
                                 {t`Open ↗`}
                               </text>
                             </g>
+                            <Marks ns={marksOf(item.target, item.label)} x={hi - 92} y={y - 16} />
                           </g>
                         );
                       }
@@ -653,6 +722,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
                               </text>
                             </>
                           )}
+                          <Marks ns={marksOf(item.target, item.label)} x={plate.x + plate.width + 10} y={plate.y + plate.height / 2} />
                         </g>
                       );
                     })}
@@ -712,7 +782,19 @@ export function SequenceChartView({ fsRef, chart, projectId, actions }: Sequence
           </div>
         </div>
 
-        {hot && (
+        {picked && changes && (
+          <ChartChangeBox
+            label={picked.label}
+            at={picked.at}
+            onClose={() => setPicked(null)}
+            onSubmit={(instruction, runNow) => {
+              changes.request({ quote: elementQuote(picked.id, picked.label), instruction, runNow });
+              setPicked(null);
+            }}
+          />
+        )}
+
+        {hot && !picked && (
           <div
             ref={tipRef}
             role="tooltip"

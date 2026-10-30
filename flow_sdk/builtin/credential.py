@@ -27,7 +27,9 @@ from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
 from flow_sdk.core.setup.skip_mark import SetupSkippable, write_projection
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_SYSTEM, SCOPE_USER, CredentialKind
+from flow_sdk.schema.data_spec.compute_op_spec import CliOp
 from flow_sdk.schema.data_spec.credential_spec import CURRENT_SCHEMA, CredentialVarSpec
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialTestResultSpec
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec
 from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec
 from flow_sdk.schema.types import EntityType
@@ -53,12 +55,14 @@ class CredentialAmbiguous(NameAmbiguous):
 
 #: The way of a ONE_OF group a person set up here (``Credential.setup_choice``).
 CHOICE_FIELD = "setup_choice"
+#: The last test run here (``Credential.test_result``).
+TEST_FIELD = "test_result"
 
 
 class Credential(SetupSkippable, Entity):
     """The ROW; its shape on disk is ``CredentialSpec`` (``TypeInfo.asset_spec``)."""
 
-    projected_fields: ClassVar[FrozenSet[str]] = SetupSkippable.projected_fields | {CHOICE_FIELD}
+    projected_fields: ClassVar[FrozenSet[str]] = SetupSkippable.projected_fields | {CHOICE_FIELD, TEST_FIELD}
     projection_writer: ClassVar[str] = "core.setup.skip_mark.write_setup_skip / builtin.credential.write_setup_choice"
 
     type: str = APIField(default=EntityType.CREDENTIAL.value)
@@ -81,6 +85,8 @@ class Credential(SetupSkippable, Entity):
     setup: str = APIField(default="")
     #: How long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).
     setup_timeout_seconds: Optional[float] = APIField(default=None)
+    #: The read-only check that the values work (``CredentialSpec.test``).
+    test: Optional[CliOp] = APIField(default=None)
     lm_provider: str = APIField(default="")
     #: ``env`` (variables) or ``oauth`` (a provider's grant) — ``CredentialSpec.kind``.
     kind: CredentialKind = APIField(default=CredentialKind.ENV)
@@ -100,6 +106,9 @@ class Credential(SetupSkippable, Entity):
     #: names a declared member, that member alone decides the group, and it is the way a source is handed.
     #: PRIVATE and row-only, like ``setup_skipped`` — the declaration offers the ways, the person picks here.
     setup_choice: str = APIField(default="", sharing=Sharing.PRIVATE)
+    #: The last ``test`` run on THIS machine (``credential_service.test_credential``). PRIVATE and row-only:
+    #: whether a key worked here is this machine's fact, never part of the declaration.
+    test_result: Optional[CredentialTestResultSpec] = APIField(None, sharing=Sharing.PRIVATE)
 
     _api_visible: ClassVar[bool] = True
 
@@ -129,6 +138,28 @@ class Credential(SetupSkippable, Entity):
     def is_template(self) -> bool:
         """A shipped catalogue entry: copied into a scope, never injected itself."""
         return self.scope == SCOPE_SYSTEM
+
+    @property
+    def folder(self) -> Optional[Path]:
+        """The credential's own folder on this machine; ``None`` for a row with no file."""
+        if not self.asset_ref:
+            return None
+        ref = Path(self.asset_ref)
+        return ref if ref.is_dir() else ref.parent
+
+    def declared_test(self) -> Optional[CliOp]:
+        """The ``test`` ``credential.json`` declares NOW. The file is the truth: an agent that just wrote a test
+        runs it (and the page offers the fast lane) before any re-index reaches the row."""
+        import json  # noqa: PLC0415
+
+        folder = self.folder
+        if folder is None:
+            return self.test
+        try:
+            raw = json.loads((folder / "credential.json").read_text(encoding="utf-8")).get("test")
+            return CliOp.model_validate(raw) if raw else None
+        except (OSError, ValueError):
+            return self.test
 
     def var_names(self) -> list[str]:
         """Every variable this credential is made of, in manifest order."""

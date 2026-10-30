@@ -85,6 +85,8 @@ export enum PrefKey {
   LAST_OPENER = 'preferences.terminal.last_opener',
   LAST_OPENER_MODE = 'preferences.terminal.last_opener_mode',
   PINNED_OPENERS = 'preferences.terminal.pinned_openers',
+  COMMAND_LINK_MODE = 'preferences.terminal.command_link_mode',
+  COMMAND_LINK_BROWSER = 'preferences.terminal.command_link_browser',
   // files
   FILES_SHOW_HIDDEN = 'preferences.files.show_hidden',
   // assets / skills
@@ -667,6 +669,21 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     key: PrefKey.LAST_OPENER_MODE,
     category: 'terminal',
     label: 'View mode of the last launched session',
+    dataType: PrefDataType.JSON,
+    defaultValue: null,
+  },
+  [PrefKey.COMMAND_LINK_MODE]: {
+    key: PrefKey.COMMAND_LINK_MODE,
+    category: 'terminal',
+    label: 'Where a clicked command link runs',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'run-here',
+  },
+  [PrefKey.COMMAND_LINK_BROWSER]: {
+    key: PrefKey.COMMAND_LINK_BROWSER,
+    category: 'terminal',
+    label: 'Browser profile a command link opens pages in',
+    // `{browser, profile}`; null is the system default browser.
     dataType: PrefDataType.JSON,
     defaultValue: null,
   },

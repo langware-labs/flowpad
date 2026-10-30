@@ -7,7 +7,8 @@ import { buildCredentialRows } from './credential-rows';
 import { RequirementChip } from './RequirementChip';
 import { SecretVaultPanel } from './SecretVaultPanel';
 import { CredentialDialog } from '@src/components/credentials/CredentialDialog';
-import { editDraft, valuesDraft, type CredentialDraft } from '@src/components/credentials/credential-draft';
+import { editDraft, oneVarDraft, valuesDraft, type CredentialDraft } from '@src/components/credentials/credential-draft';
+import { CredentialTestButton, CredentialTestDrawer } from '@src/components/credentials/CredentialTestButton';
 import { useCredentials } from '@src/components/credentials/use-credentials';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
@@ -64,6 +65,7 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
 
   return (
     <div className="h-full overflow-y-auto" data-testid="credential-child">
+      <CredentialTestDrawer />
       <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
         <header className="flex items-start gap-3">
           <Icon className="mt-1 h-6 w-6 shrink-0 text-muted-foreground" />
@@ -109,6 +111,19 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
             )}
           </div>
           <div className="flex shrink-0 gap-2">
+            {row.state === 'connected' && (
+              <CredentialTestButton
+                typeid={row.typeid}
+                name={row.name}
+                title={row.title}
+                projectId={source.project_id ?? projectId}
+                workdir={dataContext.project?.fs_storage_mount_path ?? null}
+                hasTest={!!source.has_test}
+                result={source.test_result}
+                onChanged={refresh}
+                testId="credential-child-test"
+              />
+            )}
             <Button size="sm" onClick={() => setDraft(valuesDraft(source))} data-testid="credential-child-set-values">
               <Trans>Set values</Trans>
             </Button>
@@ -193,7 +208,14 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
                     </div>
                   )}
                 </div>
-                <span className="text-xs text-muted-foreground" data-testid={`credential-var-state-${v.env_var}`}>
+                <button
+                  type="button"
+                  className={cn('text-xs text-muted-foreground', !signIn && 'hover:text-foreground hover:underline')}
+                  disabled={signIn}
+                  onClick={() => setDraft(oneVarDraft(source, v.env_var))}
+                  title={signIn ? undefined : t`Set ${v.env_var}`}
+                  data-testid={`credential-var-state-${v.env_var}`}
+                >
                   {(oneOf ? oneOfWords : words)[word]}
                   {oneOf && source.setup_choice === (v.way || v.env_var) && (
                     <span data-testid={`credential-var-chosen-${v.env_var}`}>
@@ -201,7 +223,7 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
                     </span>
                   )}
                   {!signIn && !v.secret && <Trans> · not secret</Trans>}
-                </span>
+                </button>
                 {v.warning === 'wrong-store' && (
                   <span className="text-xs text-amber-600" data-testid={`credential-var-warning-${v.env_var}`}>
                     <Trans>found in {v.found_in}, not where it is declared</Trans>

@@ -6,10 +6,27 @@ import ELK from 'elkjs/lib/elk.bundled.js';
  */
 
 export const C4_LEVELS = ['landscape', 'context', 'container', 'component', 'code', 'dynamic', 'deployment'] as const;
-export const C4_KINDS = ['person', 'system', 'container', 'database', 'queue', 'component', 'code'] as const;
+export const C4_KINDS = [
+  'person', 'role', 'system', 'container', 'component', 'database', 'queue', 'storage', 'function', 'api', 'action', 'code',
+] as const;
 export type C4Level = (typeof C4_LEVELS)[number];
 export type C4Kind = (typeof C4_KINDS)[number];
 export type C4Status = 'current' | 'migrating' | 'target';
+
+/** A link from a box or arrow to what it is made of: code (`path:line`), a doc, an asset id, a URL. */
+export interface C4Link {
+  label: string;
+  /** A path in the project (`src/order/service.kt:42`, `docs/orders.md`) or an http(s) URL. */
+  href?: string;
+  /** An asset's TypeId (`data_source-<uuid>`, `skill-<uuid>`). */
+  asset?: string;
+}
+
+/** A named input of a code element, typed by a data schema kind. */
+export interface C4Param {
+  name: string;
+  kind: string;
+}
 
 export interface C4Element {
   id: string;
@@ -25,6 +42,11 @@ export interface C4Element {
   ref?: string;
   status?: C4Status;
   note?: string;
+  links?: C4Link[];
+  /** Code level: what it takes, each typed by a data schema kind. */
+  inputs?: C4Param[];
+  /** Code level: the data schema kind it returns. */
+  returns?: string;
 }
 
 export interface C4Boundary {
@@ -49,6 +71,11 @@ export interface C4Relation {
   /** sync (solid, default) or async (dashed). */
   style?: 'sync' | 'async';
   note?: string;
+  /** Another chart (by name, any format — e.g. the sequence chart of this call): drawn as "Open ↗". */
+  ref?: string;
+  /** The data schema kind this call carries. */
+  data?: string;
+  links?: C4Link[];
 }
 
 export interface C4Value {
@@ -81,37 +108,70 @@ export function parseC4(raw: string | null | undefined): C4Value {
       ...e,
       kind: C4_KINDS.includes(e.kind) ? e.kind : 'system',
       label: String(e.label ?? e.id ?? ''),
+      links: asList<C4Link>(e.links),
+      inputs: asList<C4Param>(e.inputs),
     })),
     boundaries: asList<C4Boundary>(data.boundaries),
-    relations: asList<C4Relation>(data.relations),
+    relations: asList<C4Relation>(data.relations).map((r) => ({ ...r, links: asList<C4Link>(r.links) })),
   };
 }
 
 /** The colour slot a kind is drawn in. Identity by kind, never cycled; external is neutral. */
 export function c4Slot(el: Pick<C4Element, 'kind' | 'external'>): string {
   if (el.external) return '--s-other';
-  if (el.kind === 'person') return '--s4';
-  if (el.kind === 'database' || el.kind === 'queue') return '--s3';
+  if (el.kind === 'person' || el.kind === 'role') return '--s4';
+  if (el.kind === 'database' || el.kind === 'queue' || el.kind === 'storage') return '--s3';
+  if (el.kind === 'action') return '--s2';
   return '--s1';
 }
 
-/** The tag line under a name: "Container · FastAPI", "External system". */
+/** Each kind's name and the icon it gets when the element names none (tags that resolve in the built-in packs). */
+export const C4_KIND_INFO: Record<C4Kind, { name: string; icon: string }> = {
+  person: { name: 'Person', icon: 'lucide.user' },
+  role: { name: 'Role', icon: 'lucide.badge-check' },
+  system: { name: 'System', icon: 'lucide.boxes' },
+  container: { name: 'Container', icon: 'lucide.package' },
+  component: { name: 'Component', icon: 'lucide.layers' },
+  database: { name: 'Database', icon: 'lucide.database' },
+  queue: { name: 'Queue', icon: 'lucide.inbox' },
+  storage: { name: 'Storage', icon: 'lucide.archive' },
+  function: { name: 'Function', icon: 'lucide.zap' },
+  api: { name: 'API', icon: 'lucide.plug' },
+  action: { name: 'Action', icon: 'lucide.play' },
+  code: { name: 'Code', icon: 'lucide.braces' },
+};
+
+/** The second line of a chip: "Container · FastAPI", "External system". */
 export function c4Tag(el: C4Element): string {
-  const kind = { person: 'Person', system: 'System', container: 'Container', database: 'Database',
-    queue: 'Queue', component: 'Component', code: 'Code' }[el.kind];
+  const kind = C4_KIND_INFO[el.kind].name;
   const head = el.external ? `External ${kind.toLowerCase()}` : kind;
   return el.tech ? `${head} · ${el.tech}` : head;
 }
 
+/** What a link points at, for its icon and how it opens. */
+export function linkKind(link: C4Link): 'url' | 'code' | 'doc' | 'asset' {
+  if (link.asset) return 'asset';
+  const href = link.href ?? '';
+  if (/^https?:\/\//.test(href)) return 'url';
+  return /\.(md|mdx|txt|pdf)(:|$)/i.test(href) ? 'doc' : 'code';
+}
+
+const LINK_ICON = { url: 'lucide.globe', code: 'lucide.file-code', doc: 'lucide.book-open', asset: 'lucide.link' } as const;
+
 // ── layout ─────────────────────────────────────────────────────────────────────
 
-export const CARD_W = 216;
+export const CARD_W = 240;
+/** Chip geometry, the same as a sequence participant card: dot, icon, then the text column. */
+export const CHIP = { DOT_X: 16, ICON_X: 28, ICON: 20, TEXT_X: 54 };
 const NAME_LINE = 17;
 const TAG_LINE = 15;
 const DESC_LINE = 15;
 const PAD = 14;
 const PERSON_HEAD = 22;
-const DESC_CHARS = 31;
+const DESC_CHARS = 34;
+const SMALL_H = 20;
+const SMALL_GAP = 4;
+const FOOT = 26;
 const BOUNDARY_PAD = 18;
 const BOUNDARY_LABEL = 30;
 
@@ -142,6 +202,52 @@ export function wrap(text: string, chars: number, lines: number): string[] {
   return out;
 }
 
+/** A small chip on a card or arrow: a link, or a data schema kind. */
+export interface C4Chip {
+  label: string;
+  icon: string;
+  open: { link: C4Link } | { schema: string };
+  /** Position relative to the card's left edge and the chips block's top. */
+  x: number;
+  y: number;
+  w: number;
+}
+
+const CHIP_CHAR = 6.2;
+const CHIP_MAX_W = CARD_W - 28;
+/** The most characters a chip shows before it ends in "…". */
+export const CHIP_MAX_CHARS = Math.floor((CHIP_MAX_W - 30) / CHIP_CHAR);
+const chipW = (label: string) => Math.min(CHIP_MAX_W, 30 + label.length * CHIP_CHAR);
+/** A chip's text: the label, or — only when it is longer than the widest chip — cut with "…". */
+export const chipText = (label: string) =>
+  label.length > CHIP_MAX_CHARS ? `${label.slice(0, CHIP_MAX_CHARS - 1)}…` : label;
+
+/** Lay chips out left to right, wrapping inside the card. */
+function flowChips(items: Omit<C4Chip, 'x' | 'y' | 'w'>[]): { chips: C4Chip[]; h: number } {
+  const chips: C4Chip[] = [];
+  let x = 14;
+  let y = 0;
+  for (const it of items) {
+    const w = chipW(it.label);
+    if (x + w > CARD_W - 14 && x > 14) {
+      x = 14;
+      y += SMALL_H + SMALL_GAP;
+    }
+    chips.push({ ...it, x, y, w });
+    x += w + SMALL_GAP;
+  }
+  return { chips, h: chips.length ? y + SMALL_H : 0 };
+}
+
+export function elementChips(el: C4Element) {
+  const items: Omit<C4Chip, 'x' | 'y' | 'w'>[] = [
+    ...(el.inputs ?? []).map((p) => ({ label: `${p.name}: ${p.kind}`, icon: 'lucide.braces', open: { schema: p.kind } })),
+    ...(el.returns ? [{ label: `→ ${el.returns}`, icon: 'lucide.braces', open: { schema: el.returns } }] : []),
+    ...(el.links ?? []).map((l) => ({ label: l.label, icon: LINK_ICON[linkKind(l)], open: { link: l } })),
+  ];
+  return flowChips(items);
+}
+
 export interface C4Card {
   el: C4Element;
   x: number;
@@ -154,6 +260,10 @@ export interface C4Card {
   tag: string;
   desc: string[];
   slot: string;
+  icon: string;
+  chips: C4Chip[];
+  /** Where the chips block starts. */
+  chipsY: number;
 }
 
 export interface C4Box {
@@ -170,6 +280,9 @@ export interface C4Edge {
   d: string;
   lx: number;
   ly: number;
+  /** The label plate's size (ELK reserved this space). */
+  pw: number;
+  ph: number;
   /** The step number shown on the arrow (dynamic charts, or a relation with `order`). */
   n?: string;
   slot: string;
@@ -187,12 +300,22 @@ export interface C4Layout {
 }
 
 function cardSize(el: C4Element) {
-  const name = wrap(el.label, 24, 2);
+  const name = wrap(el.label, 22, 2);
   const desc = el.description ? wrap(el.description, DESC_CHARS, 3) : [];
   const head = el.kind === 'person' ? PERSON_HEAD : 0;
-  const body = PAD + name.length * NAME_LINE + TAG_LINE + (desc.length ? 6 + desc.length * DESC_LINE : 0) + PAD;
-  const extra = el.ref || el.status ? 22 : 0;
-  return { name, desc, head, h: head + body + extra };
+  const { chips, h: chipsH } = elementChips(el);
+  const top = PAD + name.length * NAME_LINE + TAG_LINE + (desc.length ? 6 + desc.length * DESC_LINE : 0);
+  const chipsY = top + (chipsH ? 8 : 0);
+  const foot = el.ref || (el.status && el.status !== 'current') ? FOOT : 0;
+  return { name, desc, head, chips, chipsY, h: head + chipsY + chipsH + foot + PAD };
+}
+
+/** A relation's label plate: label, [tech], the data chip, and Open ↗ when it calls another chart. */
+export function plateSize(r: C4Relation) {
+  const lines = [r.label, r.tech ? `[${r.tech}]` : ''].filter(Boolean);
+  const extras = [r.data ? `⟨${r.data}⟩` : '', r.ref ? 'Open ↗' : ''].filter(Boolean);
+  const w = Math.min(240, Math.max(...lines.map((t) => t.length * 6.4), ...extras.map((t) => t.length * 6.2 + 28)) + 16);
+  return { w, h: lines.length * 15 + 6 + extras.length * (SMALL_H + SMALL_GAP) + (extras.length ? 2 : 0) };
 }
 
 /** An orthogonal route with softly rounded corners. */
@@ -286,12 +409,12 @@ export async function layoutC4(value: C4Value): Promise<C4Layout> {
     },
     children: [...top, ...topBoxes],
     edges: rels.map((r) => {
-      const text = [r.label, r.tech ? `[${r.tech}]` : ''].filter(Boolean);
+      const plate = plateSize(r);
       return {
         id: `r:${r.id}`,
         sources: [`e:${r.from}`],
         targets: [`e:${r.to}`],
-        labels: [{ text: r.label, width: Math.min(220, Math.max(...text.map((t) => t.length * 6.4)) + 14), height: text.length * 15 + 6 }],
+        labels: [{ text: r.label, width: plate.w, height: plate.h }],
       };
     }),
   };
@@ -315,6 +438,7 @@ export async function layoutC4(value: C4Value): Promise<C4Layout> {
     return {
       el, x: n.x, y: n.y, w: CARD_W, h: s.h, top: n.y + s.head,
       name: s.name, tag: c4Tag(el), desc: s.desc, slot: c4Slot(el),
+      icon: el.icon || C4_KIND_INFO[el.kind].icon, chips: s.chips, chipsY: n.y + s.head + s.chipsY,
     };
   });
   const cardOf = new Map(cards.map((c) => [c.el.id, c]));
@@ -337,8 +461,11 @@ export async function layoutC4(value: C4Value): Promise<C4Layout> {
     const pts = sec ? [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint].map((p) => ({ x: p.x + o.x, y: p.y + o.y })) : [];
     const lab = e?.labels?.[0];
     const mid = pts[Math.floor(pts.length / 2)] ?? { x: 0, y: 0 };
+    const plate = plateSize(r);
     return {
       r,
+      pw: plate.w,
+      ph: plate.h,
       d: pathOf(pts),
       lx: lab?.x !== undefined ? lab.x + o.x + lab.width / 2 : mid.x,
       ly: lab?.y !== undefined ? lab.y + o.y + lab.height / 2 : mid.y,
@@ -375,8 +502,9 @@ export function c4ToMermaid(value: C4Value): string {
   const node = (el: C4Element) => {
     const text = `"${mtext(el.label)}<br/>[${mtext(c4Tag(el))}]"`;
     const id = mid(el.id);
-    if (el.kind === 'person') return `${id}([${text}])`;
-    if (el.kind === 'database') return `${id}[(${text})]`;
+    if (el.kind === 'person' || el.kind === 'role') return `${id}([${text}])`;
+    if (el.kind === 'database' || el.kind === 'storage') return `${id}[(${text})]`;
+    if (el.kind === 'function' || el.kind === 'action') return `${id}>${text}]`;
     if (el.kind === 'queue') return `${id}[[${text}]]`;
     return `${id}[${text}]`;
   };
