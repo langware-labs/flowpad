@@ -16,7 +16,9 @@
  *   4. The run settles: every step reaches an answer, and a tool already on
  *      the machine (Git) reads as done.
  *
- * A tool missing on the machine raises an "Install X?" question in a modal;
+ * The popup opens only when a step is owed (a box with every tool stays quiet —
+ * `test_wizard_trigger_reconcile.py`), so CI sets Claude Code aside for this
+ * backend. A tool missing on the machine raises an "Install X?" question in a modal;
  * the spec declines every one, so nothing is installed on the runner — a
  * declined step is still an answer, which is what "settles" checks.
  */
