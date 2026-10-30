@@ -2,8 +2,8 @@
  * C4ChartView — RTL coverage, plus the pure c4Model helpers.
  *
  *   1. c4.json elements, boundaries and relations render, with the level and a legend.
- *   2. A box with `ref` shows Open ↗, which opens that chart URL-first (navigation.openDock)
- *      without picking the box for a comment.
+ *   2. A box with `ref` shows Open ↗, which opens that chart URL-first (navigation.openDock).
+ *      The view has no comment bar and no Convert to Excalidraw.
  *   3. The Table view lists every element and relation.
  *   4. A dynamic chart numbers its relations.
  *   5. layoutC4 puts every card inside its boundary, nested boundaries inside their parent,
@@ -113,7 +113,7 @@ describe('C4ChartView', () => {
     expect(legend).toContain('async');
   });
 
-  it('Open ↗ on a box opens the chart it names, without picking the box for a comment', async () => {
+  it('Open ↗ on a box opens the chart it names', async () => {
     chartQuery.mockResolvedValueOnce([{ name: 'shop-api-components', asset_ref: '/w/p/agentic-assets/chart/shop-api-components' }]);
     renderView();
     const opens = await screen.findAllByTestId('chart-c4-open');
@@ -122,7 +122,13 @@ describe('C4ChartView', () => {
     await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
     const pointer = (openDock.mock.calls[0] as unknown[])[0] as { pointer: string };
     expect(pointer.pointer).toContain('agentic-assets/chart/shop-api-components');
-    expect(screen.queryByTestId('chart-feedback-panel')).toBeNull();
+  });
+
+  it('has no comment bar and no Convert to Excalidraw', async () => {
+    renderView();
+    await screen.findByTestId('chart-c4-svg');
+    expect(screen.queryByTestId('chart-feedback-open')).toBeNull();
+    expect(screen.queryByTestId('chart-convert-excalidraw')).toBeNull();
   });
 
   it('the Table view lists every element and relation', async () => {
@@ -143,22 +149,28 @@ describe('C4ChartView', () => {
 });
 
 describe('c4Model', () => {
-  it('lays every card inside its boundary and an inner boundary inside its parent', () => {
+  it('lays every card inside its boundary and an inner boundary inside its parent, and sibling boundaries apart', async () => {
     const value = parseC4(
       JSON.stringify({
         level: 'deployment',
         elements: [
           { id: 'a', kind: 'container', label: 'A', boundary: 'pod' },
           { id: 'b', kind: 'database', label: 'B', boundary: 'region' },
+          { id: 'c', kind: 'container', label: 'C', boundary: 'pod2' },
         ],
         boundaries: [
           { id: 'region', label: 'eu-west-1', kind: 'deployment' },
           { id: 'pod', label: 'EKS pod', kind: 'deployment', parent: 'region' },
+          { id: 'region2', label: 'us-east-1', kind: 'deployment' },
+          { id: 'pod2', label: 'EKS pod', kind: 'deployment', parent: 'region2' },
         ],
-        relations: [{ id: 'r', from: 'a', to: 'b', label: 'SQL' }],
+        relations: [
+          { id: 'r', from: 'a', to: 'b', label: 'SQL' },
+          { id: 'r2', from: 'c', to: 'b', label: 'Replicates' },
+        ],
       }),
     );
-    const out = layoutC4(value);
+    const out = await layoutC4(value);
     const inside = (i: { x: number; y: number; w: number; h: number }, o: typeof i) =>
       i.x >= o.x && i.y >= o.y && i.x + i.w <= o.x + o.w && i.y + i.h <= o.y + o.h;
     const region = out.boxOf.get('region')!;
@@ -166,6 +178,9 @@ describe('c4Model', () => {
     expect(inside(out.cardOf.get('a')!, pod)).toBe(true);
     expect(inside(out.cardOf.get('b')!, region)).toBe(true);
     expect(inside(pod, region)).toBe(true);
+    const r2 = out.boxOf.get('region2')!;
+    const overlap = region.x < r2.x + r2.w && r2.x < region.x + region.w && region.y < r2.y + r2.h && r2.y < region.y + region.h;
+    expect(overlap).toBe(false);
     expect(out.edges[0].d).toMatch(/^M/);
   });
 
@@ -179,7 +194,7 @@ describe('c4Model', () => {
 
   it('writes a flowchart with subgraphs, a shape per kind and dashed async arrows', () => {
     const m = c4ToMermaid(parseC4(JSON.stringify(C4)));
-    expect(m.startsWith('flowchart TB\n')).toBe(true);
+    expect(m.startsWith('flowchart LR\n')).toBe(true);
     expect(m).toContain('buyer(["Buyer<br/>[Person]"])');
     expect(m).toContain('subgraph b_shop["Shop [system]"]');
     expect(m).toContain('db[("Orders DB<br/>[Database · Postgres]")]');

@@ -7,7 +7,6 @@ import { FlowIcon } from '@sdk/react/FlowIcon';
 import { Button } from '@src/components/ui/button';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { writeChartMermaid, autoNote } from './chartDoc';
-import { ChartFeedbackToolbar } from './ChartFeedbackToolbar';
 import { ChartHeading } from './ChartHeading';
 import { CHART_SLOTS as SLOTS, chartTokens } from './chartTheme';
 import { useOpenChart } from './useOpenChart';
@@ -54,10 +53,6 @@ const STYLES = `
 .cseq .m.hot .line { stroke-width: 2.5; }
 .cseq .m:focus, .cseq .p:focus { outline: none; }
 .cseq .m:focus-visible .lbl-bg, .cseq .p:focus-visible rect.head { stroke: var(--focus); stroke-width: 2; }
-.cseq [data-target] { cursor: pointer; }
-.cseq [data-target].ck-on .lbl-bg, .cseq [data-target].ck-on rect.head { stroke: var(--focus); stroke-width: 2; }
-.cseq [data-target].ck-on .line { stroke-width: 3; }
-.cseq [data-target].ck-has .label, .cseq [data-target].ck-has .name { text-decoration: underline dotted; text-underline-offset: 3px; }
 `;
 
 interface Info {
@@ -303,13 +298,11 @@ const estimate = (text: string) => text.length * 6.8;
 interface SequenceChartViewProps {
   fsRef: FSRef;
   chart?: Chart;
-  /** The building session (CHART.md `session`) feedback is submitted to. */
-  session?: string;
   projectId?: string;
   actions?: React.ReactNode;
 }
 
-export function SequenceChartView({ fsRef, chart, session, projectId, actions }: SequenceChartViewProps) {
+export function SequenceChartView({ fsRef, chart, projectId, actions }: SequenceChartViewProps) {
   const { t } = useLingui();
   const { resolvedTheme } = useTheme();
   const chartRef = useMemo(() => fsRef.child('chart.json'), [fsRef]);
@@ -322,9 +315,6 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
   const [hot, setHot] = useState<{ target: string; info: Info } | null>(null);
   const tipPos = useRef({ x: 0, y: 0 });
   const tipRef = useRef<HTMLDivElement>(null);
-  const [target, setTarget] = useState('');
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [commented, setCommented] = useState<Set<string>>(new Set());
   const svgRef = useRef<SVGSVGElement>(null);
   const [plates, setPlates] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
 
@@ -367,23 +357,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
     setPlates((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
   }, [layout, view]);
 
-  const labelOf = useCallback(
-    (id: string) => {
-      if (!id) return t`Whole chart`;
-      const lane = layout?.laneOf.get(id);
-      if (lane) return `${id} · ${lane.lines[0]}`;
-      const item = layout?.itemOf.get(id);
-      return item ? `${id} · ${item.label}` : id;
-    },
-    [layout, t],
-  );
-
   const openRef = useOpenChart(fsRef, projectId);
-
-  const pick = useCallback((id: string) => {
-    setTarget((cur) => (cur === id ? '' : id));
-    setPanelOpen(true);
-  }, []);
 
   const regenerateDoc = useCallback(async () => {
     if (!value) return;
@@ -416,8 +390,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
     const b = el.getBoundingClientRect();
     moveTip(target, info, b.left + b.width / 2, b.top);
   };
-  const markClass = (id: string) =>
-    `${hot?.target === id ? ' hot' : ''}${target === id ? ' ck-on' : ''}${commented.has(id) ? ' ck-has' : ''}`;
+  const markClass = (id: string) => (hot?.target === id ? ' hot' : '');
   const plateFor = (key: string, text: string, x: number, y: number, anchor: 'start' | 'middle') =>
     plates[key] ?? {
       x: (anchor === 'middle' ? x - estimate(text) / 2 : x) - 5,
@@ -551,8 +524,6 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                           onPointerMove={(e) => showTip(lane.p.id, lane.info, e)}
                           onFocus={(e) => focusTip(lane.p.id, lane.info, e.currentTarget)}
                           onBlur={() => setHot(null)}
-                          onClick={() => pick(lane.p.id)}
-                          onKeyDown={(e) => keyActivate(e, () => pick(lane.p.id))}
                         >
                           <line className="life" x1={lane.x} y1={TOP + HEAD_H} x2={lane.x} y2={bottom} />
                           <rect
@@ -607,8 +578,6 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                         onFocus: (e: React.FocusEvent<SVGGElement>) =>
                           focusTip(item.target, item.info, e.currentTarget),
                         onBlur: () => setHot(null),
-                        onClick: () => pick(item.target),
-                        onKeyDown: (e: React.KeyboardEvent) => keyActivate(e, () => pick(item.target)),
                       };
                       if (item.kind === 'sub') {
                         const { lo, hi, y } = item;
@@ -639,7 +608,6 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                               aria-label={t`Open ${item.label}`}
                               data-testid="chart-subflow-open"
                               onClick={(e) => {
-                                // before the block's own click picks it for a comment
                                 e.stopPropagation();
                                 void openRef(item.ref);
                               }}
@@ -760,7 +728,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
               <>
                 <span className="block text-[13px] font-semibold">{hot.info.label}</span>
                 <span className="mt-0.5 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  <Trans>Participant · click to comment</Trans>
+                  <Trans>Participant</Trans>
                 </span>
               </>
             ) : (
@@ -782,19 +750,6 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
           </div>
         )}
 
-        {chart && (
-          <ChartFeedbackToolbar
-            chart={chart}
-            projectId={projectId}
-            session={session}
-            target={target}
-            onTargetChange={setTarget}
-            labelOf={labelOf}
-            onCommented={setCommented}
-            open={panelOpen}
-            onOpenChange={setPanelOpen}
-          />
-        )}
       </div>
     </div>
   );

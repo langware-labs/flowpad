@@ -60,3 +60,19 @@ async def test_grant_binds_the_secret_accessor_role(tmp_path, monkeypatch):
         "projects", "add-iam-policy-binding", "acme-prod", "--member", "user:bob@acme.com",
         "--role", "roles/secretmanager.secretAccessor",
     ]
+
+
+@pytest.mark.asyncio
+async def test_an_unbound_vault_reads_as_the_gcloud_sign_in(monkeypatch):
+    import sys
+
+    with serving_gcp_store(monkeypatch, tokens={"tok"}) as gcp:
+        module = sys.modules[store_class("gcp").__module__]
+
+        async def signed_in():
+            return "tok"
+
+        monkeypatch.setattr(module, "gcloud_token", signed_in)
+        gcp.put("acme-prod", "app-API_KEY", "v")
+        loaded = await store_for(VAULT).load(["API_KEY"])
+        assert loaded["API_KEY"].get_secret_value() == "v"

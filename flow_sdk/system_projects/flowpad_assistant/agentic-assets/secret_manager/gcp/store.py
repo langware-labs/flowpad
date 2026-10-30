@@ -20,6 +20,7 @@ import asyncio
 import base64
 import logging
 import re
+import shutil
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Iterable, Mapping, Optional, TypeVar
 
 import httpx
@@ -42,6 +43,20 @@ _SECRET_ID = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
 _PAGE_SIZE = 250
 #: How many per-name requests one verb runs at once on its client.
 _CONCURRENCY = 8
+
+async def gcloud_token() -> Optional[str]:
+    """An access token for the account signed in to ``gcloud`` on this machine, or None (no CLI, or
+    nobody signed in). The token is never logged."""
+    if shutil.which("gcloud") is None:
+        return None
+    proc = await asyncio.create_subprocess_exec(
+        "gcloud", "auth", "print-access-token",
+        stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await proc.communicate()
+    token = out.decode().strip()
+    return token if proc.returncode == 0 and token else None
+
 
 _T = TypeVar("_T")
 _R = TypeVar("_R")
@@ -185,7 +200,12 @@ class GcpVaultStore(SecretStore):
 
     async def _client(self) -> httpx.AsyncClient:
         if not self.connection:
-            raise StoreNeedsConnection(self.type_name, list(self.connection_scopes))
+            # A vault with no bound connection reads as whoever is signed in to ``gcloud`` here —
+            # the sign-in this manager's setup steps make (as ``op`` is for 1Password).
+            token = await gcloud_token()
+            if token is None:
+                raise StoreNeedsConnection(self.type_name, list(self.connection_scopes))
+            return httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"})
         from flow_sdk.connections import Connection  # noqa: PLC0415
 
         # NotConnected / TokenUnavailable come from the SDK's own token path, as they are.

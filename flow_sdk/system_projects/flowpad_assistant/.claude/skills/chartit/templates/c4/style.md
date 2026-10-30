@@ -27,7 +27,7 @@ fit an in-app chart and are not used.
 - **Relations:** neutral grey lines with the label on a plate and `[tech]` under it. `async` is dashed. Hovering a box or line lights its links in the focus colour and dims the rest.
 - **Dynamic charts** (and any relation with `order`): an orange numbered badge on each arrow.
 - **Badges** at the foot of a box: `migrating` (orange) or `target` (dashed); `Open ↗` when the box has `ref`.
-- **Layout:** automatic (dagre). Top to bottom, or left to right for dynamic charts; `direction` overrides it.
+- **Layout:** automatic (dagre), left to right so a chart fills a wide screen; `direction: TB` turns it top to bottom. **Fit** (the default) scales the whole diagram into the window, **100%** shows it at real size.
 - **Under the diagram:** a legend of the kinds shown and the line styles. The Table view lists every element and relation.
 - **Light and dark** come from the shared token sets.
 - **Size:** at most about 20 elements per chart (`check_c4.py` warns past 20). Past that, zoom in with another chart and `ref`.

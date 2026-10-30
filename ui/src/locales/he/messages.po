@@ -167,8 +167,8 @@ msgid "· assigned to {assignee}"
 msgstr "· הוקצה ל-{assignee}"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "· click an element to pick it"
-msgstr "· לחצו על רכיב כדי לבחור אותו"
+#~ msgid "· click an element to pick it"
+#~ msgstr "· לחצו על רכיב כדי לבחור אותו"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· local"
@@ -179,8 +179,8 @@ msgid "· pick a branch"
 msgstr "· בחרו ענף"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "· picked"
-msgstr "· נבחר"
+#~ msgid "· picked"
+#~ msgstr "· נבחר"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· remote"
@@ -612,15 +612,13 @@ msgstr "{0} נלכדו · {1} נפסחו"
 msgid "{0} changed"
 msgstr "{0} שונו"
 
-#. placeholder {0}: openRows.length
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
-msgstr "{0} הערות נשמרו כנשלחו — לתרשים אין סשן, ולכן דבר לא נשלח."
+#~ msgid "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
+#~ msgstr "{0} הערות נשמרו כנשלחו — לתרשים אין סשן, ולכן דבר לא נשלח."
 
-#. placeholder {0}: openRows.length
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "{0} comment(s) sent to the session that builds this chart."
-msgstr "{0} הערות נשלחו לסשן שבונה את התרשים הזה."
+#~ msgid "{0} comment(s) sent to the session that builds this chart."
+#~ msgstr "{0} הערות נשלחו לסשן שבונה את התרשים הזה."
 
 #. placeholder {0}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -4741,8 +4739,8 @@ msgid "Attach files or a screenshot (or paste one into the details)"
 msgstr "צרפו קבצים או צילום מסך (או הדביקו אחד בשדה הפרטים)"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Attach image"
-msgstr "צירוף תמונה"
+#~ msgid "Attach image"
+#~ msgstr "צירוף תמונה"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Attach more files or assets"
@@ -4768,8 +4766,8 @@ msgid "Attached channels"
 msgstr "ערוצים מחוברים"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "attached image"
-msgstr "תמונה מצורפת"
+#~ msgid "attached image"
+#~ msgstr "תמונה מצורפת"
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Attachment unavailable — no body was uploaded"
@@ -6025,8 +6023,8 @@ msgid "Chart"
 msgstr "תרשים"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "CHART"
-msgstr "תרשים"
+#~ msgid "CHART"
+#~ msgstr "תרשים"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
@@ -6035,8 +6033,8 @@ msgid "Chart created"
 msgstr "התרשים נוצר"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Chart feedback"
-msgstr "משוב על התרשים"
+#~ msgid "Chart feedback"
+#~ msgstr "משוב על התרשים"
 
 #: src/i18n/type-labels.ts
 msgid "Charts"
@@ -6657,8 +6655,8 @@ msgid "Click a node to view its properties,<0/>edges, and neighbors."
 msgstr "לחצו על צומת לצפייה במאפייניו,<0/>הקשרים והשכנים שלו."
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Click any box or arrow in the chart to change what this comment is about."
-msgstr "לחצו על תיבה או חץ בתרשים כדי לשנות את נושא ההערה."
+#~ msgid "Click any box or arrow in the chart to change what this comment is about."
+#~ msgstr "לחצו על תיבה או חץ בתרשים כדי לשנות את נושא ההערה."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Click Restart to spawn a fresh PTY."
@@ -6769,7 +6767,6 @@ msgstr "מתבצע שכפול של המאגר ואינדוקס שלו."
 msgid "Cloning…"
 msgstr "משבוט…"
 
-#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -6811,8 +6808,8 @@ msgid "Close ({closeIn})"
 msgstr "סגרו ({closeIn})"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Close (Esc)"
-msgstr "סגירה (Esc)"
+#~ msgid "Close (Esc)"
+#~ msgstr "סגירה (Esc)"
 
 #: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
@@ -9968,7 +9965,6 @@ msgstr "מחיקה"
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
-#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -13049,20 +13045,20 @@ msgstr "רשומה בפיד"
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Feedback"
-msgstr "משוב"
+#~ msgid "Feedback"
+#~ msgstr "משוב"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #~ msgid "Feedback is off: {0}"
 #~ msgstr "המשוב כבוי: {0}"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Feedback is off: {offReason}"
-msgstr "המשוב כבוי: {offReason}"
+#~ msgid "Feedback is off: {offReason}"
+#~ msgstr "המשוב כבוי: {offReason}"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
-msgstr "המשוב כבוי: לפרויקט הזה אין מאגר נתונים למשוב על תרשימים (chartit.feedback)."
+#~ msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
+#~ msgstr "המשוב כבוי: לפרויקט הזה אין מאגר נתונים למשוב על תרשימים (chartit.feedback)."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 #~ msgid "Feeds"
@@ -13476,6 +13472,10 @@ msgstr "זו הפעם הראשונה במחשב הזה?"
 #: src/pages/discover-page/CommandBlock.tsx
 msgid "First time? Install Flowpad, then hover a row for its install line."
 msgstr "בפעם הראשונה? התקינו את Flowpad, ואז רחפו מעל שורה כדי לראות את שורת ההתקנה שלה."
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Fit"
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
@@ -20808,10 +20808,9 @@ msgstr ""
 msgid "Not saved"
 msgstr "לא נשמר"
 
-#. placeholder {0}: err instanceof Error ? err.message : String(err)
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Not saved: {0}"
-msgstr "לא נשמר: {0}"
+#~ msgid "Not saved: {0}"
+#~ msgstr "לא נשמר: {0}"
 
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -20871,10 +20870,9 @@ msgstr "טרם התחיל"
 msgid "Not started yet — its terminal appears when the deployment first runs."
 msgstr "טרם הופעל — הטרמינל שלו יופיע בהפעלה הראשונה של הפריסה."
 
-#. placeholder {0}: err instanceof Error ? err.message : String(err)
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Not submitted: {0}"
-msgstr "לא נשלח: {0}"
+#~ msgid "Not submitted: {0}"
+#~ msgstr "לא נשלח: {0}"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Not sure, so no"
@@ -22880,8 +22878,12 @@ msgid "Part of your app didn't load."
 msgstr "חלק מהאפליקציה שלכם לא נטען."
 
 #: src/components/assets/editor/chart/SequenceChartView.tsx
-msgid "Participant · click to comment"
-msgstr "משתתף · לחצו כדי להגיב"
+msgid "Participant"
+msgstr ""
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+#~ msgid "Participant · click to comment"
+#~ msgstr "משתתף · לחצו כדי להגיב"
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Participants"
@@ -25287,8 +25289,8 @@ msgid "Remove session from this message"
 msgstr "הסרת הסשן מההודעה הזו"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Remove the image"
-msgstr "הסרת התמונה"
+#~ msgid "Remove the image"
+#~ msgstr "הסרת התמונה"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
@@ -25475,8 +25477,8 @@ msgid "Replace existing"
 msgstr "החלפת הקיים"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Replace image"
-msgstr "החלפת תמונה"
+#~ msgid "Replace image"
+#~ msgstr "החלפת תמונה"
 
 #: src/components/conversation/asset-review/ReplacePrompt.tsx
 msgid "Replace it"
@@ -26791,7 +26793,6 @@ msgstr "ארגז החול שודרג"
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
-#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 #: src/components/automations/AutomationPage.tsx
@@ -26897,10 +26898,9 @@ msgstr "נשמר — הבקשה תישלח לאחר ההתחברות"
 msgid "Saved — Restart runs it"
 msgstr "נשמר — הפעלה מחדש תריץ אותו"
 
-#. placeholder {0}: rows.length
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Saved ({0})"
-msgstr "שמורים ({0})"
+#~ msgid "Saved ({0})"
+#~ msgstr "שמורים ({0})"
 
 #. placeholder {0}: payload.assetLabel
 #. placeholder {1}: result.version ?? ''
@@ -27973,8 +27973,8 @@ msgid "Session {0} is not in Claude, Codex, or Copilot history."
 msgstr "סשן {0} אינו בהיסטוריית Claude, Codex, או Copilot."
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "session {session} not found"
-msgstr "הסשן {session} לא נמצא"
+#~ msgid "session {session} not found"
+#~ msgstr "הסשן {session} לא נמצא"
 
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
@@ -30294,10 +30294,9 @@ msgstr "נושא"
 msgid "Submit"
 msgstr "שלחו"
 
-#. placeholder {0}: openRows.length
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Submit ({0})"
-msgstr "שליחה ({0})"
+#~ msgid "Submit ({0})"
+#~ msgstr "שליחה ({0})"
 
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "Submit answer"
@@ -34651,8 +34650,8 @@ msgid "What should change here?"
 msgstr ""
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "What should change? (paste an image here too)"
-msgstr "מה צריך להשתנות? (אפשר גם להדביק כאן תמונה)"
+#~ msgid "What should change? (paste an image here too)"
+#~ msgstr "מה צריך להשתנות? (אפשר גם להדביק כאן תמונה)"
 
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "What should issue your LLM calls?"
@@ -34930,8 +34929,8 @@ msgstr "מי מוציא?"
 
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
-msgid "Whole chart"
-msgstr "כל התרשים"
+#~ msgid "Whole chart"
+#~ msgstr "כל התרשים"
 
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
@@ -35691,6 +35690,10 @@ msgstr "zendesk, gmail"
 #: src/components/drag-drop-overlay.tsx
 msgid "ZIP files will be added as codebase connections"
 msgstr "קבצי ZIP יתווספו כחיבורי קוד בסיס"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Zoom"
+msgstr ""
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx

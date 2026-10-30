@@ -1,6 +1,6 @@
 """The ``onepassword`` manager's commands, against a fake ``op`` on PATH.
 
-Pinned: ``check`` is ``op whoami`` and its exit code is the answer; ``grant`` hands ``op`` the
+Pinned: ``check`` reads the vault (``op vault get``) and its exit code is the answer; ``grant`` hands ``op`` the
 vault and the email as separate arguments (a value is never shell syntax); a missing ``op`` is
 "not ready", not a crash.
 """
@@ -41,7 +41,7 @@ def test_the_manager_is_listed_with_its_commands_per_os():
     assert cli_command("onepassword", "install", "win32") == "winget install AgileBits.1Password.CLI"
     assert "apt-get install -y 1password-cli" in cli_command("onepassword", "install", "linux")
     assert cli_command("onepassword", "login", "linux") == "op signin"
-    assert cli_command("onepassword", "check") == "op whoami"
+    assert cli_command("onepassword", "check", vault="team") == "op vault get team --format json"
     assert cli_command("onepassword", "grant", vault="V", email="b@x.io") == (
         "op vault user grant --vault V --user b@x.io --permissions allow_viewing")
 
@@ -49,7 +49,7 @@ def test_the_manager_is_listed_with_its_commands_per_os():
 @pytest.mark.asyncio
 async def test_check_is_the_exit_code(fake_op, monkeypatch):
     assert await run_check(VAULT) is True
-    assert fake_op.read_text().split("\n")[:1] == ["whoami"]
+    assert fake_op.read_text().split("\n")[:5] == ["vault", "get", "GTM Studio", "--format", "json"]
     monkeypatch.setenv("FAKE_OP_EXIT", "1")
     assert await run_check(VAULT) is False
 

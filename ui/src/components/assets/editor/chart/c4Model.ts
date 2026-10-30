@@ -1,4 +1,4 @@
-import dagre from '@dagrejs/dagre';
+import ELK from 'elkjs/lib/elk.bundled.js';
 
 /**
  * A `c4` chart's value (chartit.c4, the chart's c4.json) and its pure helpers: parse, lay out,
@@ -54,7 +54,7 @@ export interface C4Relation {
 export interface C4Value {
   title?: string;
   level: C4Level;
-  /** Layout direction: TB (default) or LR (default for dynamic). */
+  /** Layout direction: LR (default — charts read across a wide screen) or TB. */
   direction?: 'TB' | 'LR';
   elements: C4Element[];
   boundaries: C4Boundary[];
@@ -195,14 +195,16 @@ function cardSize(el: C4Element) {
   return { name, desc, head, h: head + body + extra };
 }
 
-/** A smooth path through dagre's bend points. */
+/** An orthogonal route with softly rounded corners. */
 function pathOf(points: { x: number; y: number }[]): string {
   if (points.length < 2) return '';
+  const R = 8;
   let d = `M${points[0].x},${points[0].y}`;
   for (let i = 1; i < points.length - 1; i++) {
-    const p = points[i];
-    const q = points[i + 1];
-    d += ` Q${p.x},${p.y} ${(p.x + q.x) / 2},${(p.y + q.y) / 2}`;
+    const [p, c, n] = [points[i - 1], points[i], points[i + 1]];
+    const r = Math.min(R, Math.hypot(c.x - p.x, c.y - p.y) / 2, Math.hypot(n.x - c.x, n.y - c.y) / 2);
+    const ux = Math.sign(c.x - p.x), uy = Math.sign(c.y - p.y), vx = Math.sign(n.x - c.x), vy = Math.sign(n.y - c.y);
+    d += ` L${c.x - ux * r},${c.y - uy * r} Q${c.x},${c.y} ${c.x + vx * r},${c.y + vy * r}`;
   }
   const last = points[points.length - 1];
   return `${d} L${last.x},${last.y}`;
@@ -222,97 +224,135 @@ export function drawnBoundaries(value: C4Value): Set<string> {
   return drawn;
 }
 
-export function layoutC4(value: C4Value): C4Layout {
-  const g = new dagre.graphlib.Graph({ compound: true, multigraph: true });
-  const dir = value.direction ?? (value.level === 'dynamic' ? 'LR' : 'TB');
-  g.setGraph({ rankdir: dir, nodesep: 64, ranksep: 96, edgesep: 24, marginx: 32, marginy: 32 + BOUNDARY_LABEL });
-  g.setDefaultEdgeLabel(() => ({}));
+const elk = new ELK();
 
+interface ElkShape {
+  id: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  children?: ElkShape[];
+  edges?: ElkOut[];
+}
+interface ElkOut {
+  id: string;
+  container?: string;
+  sections?: { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; bendPoints?: { x: number; y: number }[] }[];
+  labels?: { x?: number; y?: number; width: number; height: number }[];
+}
+
+/**
+ * Lay the chart out with ELK's layered algorithm. Boundaries are real nested nodes with their own
+ * padding (a label band on top), so groups never overlap; edge labels get their own space.
+ */
+export async function layoutC4(value: C4Value): Promise<C4Layout> {
   const known = drawnBoundaries(value);
-  for (const b of value.boundaries) if (known.has(b.id)) g.setNode(`b:${b.id}`, { label: b.label });
-  for (const b of value.boundaries) if (known.has(b.id) && b.parent && known.has(b.parent)) g.setParent(`b:${b.id}`, `b:${b.parent}`);
-
-  const sizes = new Map<string, ReturnType<typeof cardSize>>();
-  for (const el of value.elements) {
-    const s = cardSize(el);
-    sizes.set(el.id, s);
-    g.setNode(`e:${el.id}`, { width: CARD_W, height: s.h });
-    if (el.boundary && known.has(el.boundary)) g.setParent(`e:${el.id}`, `b:${el.boundary}`);
-  }
+  const sizes = new Map(value.elements.map((el) => [el.id, cardSize(el)]));
   const ids = new Set(value.elements.map((e) => e.id));
   const rels = value.relations.filter((r) => ids.has(r.from) && ids.has(r.to) && r.from !== r.to);
-  for (const r of rels) {
-    const text = [r.label, r.tech ? `[${r.tech}]` : ''].filter(Boolean);
-    const w = Math.min(200, Math.max(...text.map((t) => t.length * 6.6)) + 16);
-    g.setEdge(`e:${r.from}`, `e:${r.to}`, { width: w, height: text.length * 15 + 8, labelpos: 'c' }, r.id);
-  }
-  dagre.layout(g);
+
+  const nodeOf = (el: C4Element) => ({ id: `e:${el.id}`, width: CARD_W, height: sizes.get(el.id)!.h });
+  const boundaryOf = (b: C4Boundary): Record<string, unknown> => ({
+    id: `b:${b.id}`,
+    layoutOptions: {
+      'elk.padding': `[top=${BOUNDARY_PAD + BOUNDARY_LABEL},left=${BOUNDARY_PAD},bottom=${BOUNDARY_PAD},right=${BOUNDARY_PAD}]`,
+    },
+    children: [
+      ...value.elements.filter((e) => e.boundary === b.id).map(nodeOf),
+      ...value.boundaries.filter((x) => x.parent === b.id && known.has(x.id)).map(boundaryOf),
+    ],
+  });
+  const top = value.elements.filter((e) => !e.boundary || !known.has(e.boundary)).map(nodeOf);
+  const topBoxes = value.boundaries
+    .filter((b) => known.has(b.id) && !(b.parent && known.has(b.parent)))
+    .map(boundaryOf);
+
+  const graph = {
+    id: 'root',
+    layoutOptions: {
+      'elk.algorithm': 'layered',
+      'elk.direction': (value.direction ?? 'LR') === 'LR' ? 'RIGHT' : 'DOWN',
+      'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+      'elk.edgeRouting': 'ORTHOGONAL',
+      'elk.spacing.nodeNode': '40',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '56',
+      'elk.spacing.edgeNode': '20',
+      'elk.spacing.edgeEdge': '14',
+      'elk.spacing.edgeLabel': '4',
+      'elk.edgeLabels.placement': 'CENTER',
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+      'elk.padding': '[top=24,left=24,bottom=24,right=24]',
+    },
+    children: [...top, ...topBoxes],
+    edges: rels.map((r) => {
+      const text = [r.label, r.tech ? `[${r.tech}]` : ''].filter(Boolean);
+      return {
+        id: `r:${r.id}`,
+        sources: [`e:${r.from}`],
+        targets: [`e:${r.to}`],
+        labels: [{ text: r.label, width: Math.min(220, Math.max(...text.map((t) => t.length * 6.4)) + 14), height: text.length * 15 + 6 }],
+      };
+    }),
+  };
+  const out = (await elk.layout(graph as never)) as unknown as ElkShape;
+
+  // ELK gives each node relative to its parent: walk down adding offsets.
+  const abs = new Map<string, { x: number; y: number; w: number; h: number; depth: number }>();
+  const edgesOut: ElkOut[] = [];
+  const walk = (n: ElkShape, ox: number, oy: number, depth: number) => {
+    const x = ox + (n.x ?? 0);
+    const y = oy + (n.y ?? 0);
+    abs.set(n.id, { x, y, w: n.width ?? 0, h: n.height ?? 0, depth });
+    for (const c of n.children ?? []) walk(c, x, y, depth + 1);
+    for (const e of n.edges ?? []) edgesOut.push(e);
+  };
+  walk(out, 0, 0, -1);
 
   const cards: C4Card[] = value.elements.map((el) => {
-    const n = g.node(`e:${el.id}`);
+    const n = abs.get(`e:${el.id}`)!;
     const s = sizes.get(el.id)!;
     return {
-      el,
-      x: n.x - CARD_W / 2,
-      y: n.y - s.h / 2,
-      w: CARD_W,
-      h: s.h,
-      top: n.y - s.h / 2 + s.head,
-      name: s.name,
-      tag: c4Tag(el),
-      desc: s.desc,
-      slot: c4Slot(el),
+      el, x: n.x, y: n.y, w: CARD_W, h: s.h, top: n.y + s.head,
+      name: s.name, tag: c4Tag(el), desc: s.desc, slot: c4Slot(el),
     };
   });
   const cardOf = new Map(cards.map((c) => [c.el.id, c]));
-
-  // Boundaries: the box around their cards and inner boxes, padded, with a label band on top.
-  const depthOf = (b: C4Boundary, seen = new Set<string>()): number => {
-    if (!b.parent || seen.has(b.id)) return 0;
-    seen.add(b.id);
-    const p = value.boundaries.find((x) => x.id === b.parent);
-    return p ? 1 + depthOf(p, seen) : 0;
-  };
-  const boxOf = new Map<string, C4Box>();
-  const byDepth = [...value.boundaries].sort((a, b) => depthOf(b) - depthOf(a));
-  for (const b of byDepth) {
-    const inner = [
-      ...cards.filter((c) => c.el.boundary === b.id),
-      ...value.boundaries.filter((x) => x.parent === b.id).map((x) => boxOf.get(x.id)).filter((x): x is C4Box => !!x),
-    ];
-    if (!inner.length) continue;
-    const x0 = Math.min(...inner.map((i) => i.x)) - BOUNDARY_PAD;
-    const y0 = Math.min(...inner.map((i) => i.y)) - BOUNDARY_PAD - BOUNDARY_LABEL;
-    const x1 = Math.max(...inner.map((i) => i.x + i.w)) + BOUNDARY_PAD;
-    const y1 = Math.max(...inner.map((i) => i.y + i.h)) + BOUNDARY_PAD;
-    boxOf.set(b.id, { b, x: x0, y: y0, w: x1 - x0, h: y1 - y0, depth: depthOf(b) });
-  }
-  const boxes = [...boxOf.values()].sort((a, b) => a.depth - b.depth);
+  const boxes: C4Box[] = value.boundaries
+    .filter((b) => known.has(b.id))
+    .map((b) => {
+      const n = abs.get(`b:${b.id}`)!;
+      return { b, x: n.x, y: n.y, w: n.w, h: n.h, depth: n.depth };
+    })
+    .sort((a, b) => a.depth - b.depth);
+  const boxOf = new Map(boxes.map((x) => [x.b.id, x]));
 
   const numbered = value.level === 'dynamic' || rels.some((r) => typeof r.order === 'number');
+  const outOf = new Map(edgesOut.map((e) => [e.id, e]));
   const edges: C4Edge[] = rels.map((r, i) => {
-    const e = g.edge(`e:${r.from}`, `e:${r.to}`, r.id);
-    const from = cardOf.get(r.from)!;
+    const e = outOf.get(`r:${r.id}`);
+    // An edge's points are relative to its container (the lowest node holding both ends).
+    const o = abs.get(e?.container ?? 'root') ?? { x: 0, y: 0 };
+    const sec = e?.sections?.[0];
+    const pts = sec ? [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint].map((p) => ({ x: p.x + o.x, y: p.y + o.y })) : [];
+    const lab = e?.labels?.[0];
+    const mid = pts[Math.floor(pts.length / 2)] ?? { x: 0, y: 0 };
     return {
       r,
-      d: pathOf(e.points ?? []),
-      lx: e.x ?? 0,
-      ly: e.y ?? 0,
+      d: pathOf(pts),
+      lx: lab?.x !== undefined ? lab.x + o.x + lab.width / 2 : mid.x,
+      ly: lab?.y !== undefined ? lab.y + o.y + lab.height / 2 : mid.y,
       n: numbered ? String(r.order ?? i + 1) : undefined,
-      slot: from.slot,
+      slot: cardOf.get(r.from)!.slot,
     };
   });
 
-  const all = [...cards, ...boxes];
-  const graph = g.graph();
-  const width = Math.max(graph.width ?? 0, ...all.map((a) => a.x + a.w + 32));
-  const height = Math.max(graph.height ?? 0, ...all.map((a) => a.y + a.h + 32));
   return {
     cards,
     boxes,
     edges,
-    width,
-    height,
+    width: Math.ceil(out.width ?? 0),
+    height: Math.ceil(out.height ?? 0),
     cardOf,
     boxOf,
     edgeOf: new Map(edges.map((e) => [e.r.id, e])),
@@ -330,7 +370,7 @@ const mtext = (v: string) => v.replace(/"/g, "'").replace(/[;#\n]/g, ' ').trim()
  * converts and renders everywhere.
  */
 export function c4ToMermaid(value: C4Value): string {
-  const dir = value.direction ?? (value.level === 'dynamic' ? 'LR' : 'TB');
+  const dir = value.direction ?? 'LR';
   const lines: string[] = [`flowchart ${dir}`];
   const node = (el: C4Element) => {
     const text = `"${mtext(el.label)}<br/>[${mtext(c4Tag(el))}]"`;

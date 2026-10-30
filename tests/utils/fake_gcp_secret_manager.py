@@ -169,6 +169,11 @@ def serving_gcp_store(monkeypatch, **kwargs) -> Iterator[FakeSecretManager]:
     state.api_root = f"http://127.0.0.1:{server.server_address[1]}/v1"
     try:
         monkeypatch.setattr(gcp_secret_manager, "API_ROOT", state.api_root)
+
+        async def no_gcloud():  # never this machine's real gcloud sign-in
+            return None
+
+        monkeypatch.setattr(gcp_secret_manager, "gcloud_token", no_gcloud)
         yield state
     finally:
         server.shutdown()

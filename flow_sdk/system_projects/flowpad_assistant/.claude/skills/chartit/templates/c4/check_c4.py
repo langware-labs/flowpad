@@ -37,9 +37,7 @@ def project_root(folder: Path) -> Path:
 def chart_names(root: Path) -> set[str]:
     """Names of every chart in the project: CHART.md frontmatter `name`, else the folder name."""
     names = set()
-    for doc in root.rglob("CHART.md"):
-        if "node_modules" in doc.parts:
-            continue
+    for doc in (root / "agentic-assets" / "chart").glob("*/CHART.md"):
         m = re.search(r"^name:\s*(.+)$", doc.read_text(encoding="utf-8", errors="replace"), re.M)
         names.add(m.group(1).strip().strip("'\"") if m else doc.parent.name)
     return names

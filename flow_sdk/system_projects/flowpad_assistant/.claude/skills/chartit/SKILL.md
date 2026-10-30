@@ -4,13 +4,12 @@ name: chartit
 description: 'Builds and edits Flowpad Charts — one entity for every kind of chart,
   opened in Flowpad''s own chart editor: a sequence (network / message flow between
   participants, with sub-flow blocks that open other charts), a C4 architecture diagram
-  (context, container, component, code, landscape, dynamic or deployment, with boxes that
-  open the chart zooming into them), an Excalidraw whiteboard (boxes, arrows, freehand), or a
+  (context to deployment views; a box opens the chart that zooms into it), an Excalidraw whiteboard (boxes, arrows, freehand), or a
   Mermaid diagram. Picks the format, writes the chart''s
   files, indexes it, and shows it; the reviewer clicks any element, comments (text
   + image) and Submits, and the comments come back to this session to revise the chart.
   Use for "chart this flow", "draw the network flow", "sequence diagram of X", "C4 diagram",
-  "software architecture of X", "draw our containers / deployment", "make
+  "software architecture of X",  "make
   a whiteboard / board / diagram", "mermaid diagram", "a chart I can comment on",
   converting a chart between formats, or when feedback on a chart arrives. NOT for
   a clickable UX journey (mockify), a data dashboard or report with numbers (html-builder
@@ -57,7 +56,7 @@ mkdir -p "$D"
 cat > "$D/CHART.md" <<'EOF'
 ---
 name: <name>
-description: <2–3 sentences: what this flow is, when it runs, what it ends with — shown under the title>
+description: "<2–3 sentences: what this flow is, when it runs, what it ends with — shown under the title; keep the quotes, a colon inside breaks indexing otherwise>"
 format: sequence
 session: <your agentic process id>
 ---
@@ -116,8 +115,7 @@ fixed by the editor (`templates/c4/style.md`) — the file holds facts only, nev
 - **One level per chart.** `level` is `context` (one system as one box, with its people and neighbours),
   `container` (its apps, services and stores inside a `system` boundary), `component` (inside one
   container), `code` (classes of one component — rarely worth it), `landscape` (many systems, often
-  grouped by `team` boundaries), `dynamic` (one scenario; relations numbered by `order`, laid out left
-  to right) or `deployment` (containers inside nested `deployment` boundaries: region › cluster › node).
+  grouped by `team` boundaries), `dynamic` (one scenario; relations numbered by `order`) or `deployment` (containers inside nested `deployment` boundaries: region › cluster › node).
 - **Zoom by linking, not by stuffing.** A box that has more detail gets `ref: "<the chart one level down>"`
   (drawn **Open ↗**) and the same `flow dep add` link as a sub-flow (§2b). A mixed-level view is still
   allowed when it IS the point (one container opened up among its siblings): put the opened container's
@@ -130,6 +128,7 @@ fixed by the editor (`templates/c4/style.md`) — the file holds facts only, nev
   `team`, `group`. A boundary holding nothing is not drawn.
 - A migration chart marks boxes `status: "migrating"` or `"target"`.
 - At most ~20 elements — past that, split by zooming.
+- A C4 chart has no in-chart comment bar and no Convert to Excalidraw (§4 and §5 do not apply).
 - Check before you finish — both must pass:
   ```bash
   python3 -I <this skill>/templates/c4/check_c4.py "$D"

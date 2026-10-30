@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import shutil
 from typing import Any, ClassVar, Iterable, Mapping, Optional
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 #: The item field a value lives in.
 FIELD = "credential"
 _NOT_FOUND = re.compile(r"isn't an item|not found|no item", re.I)
-_SIGNED_OUT = re.compile(r"not (currently )?signed in|sign ?in|session expired|authorization prompt dismissed", re.I)
+_SIGNED_OUT = re.compile(r"not (currently )?signed in|sign ?in|session expired|authorization prompt dismissed|authorization timeout", re.I)
 _DENIED = re.compile(r"permission|not authorized|access denied|forbidden", re.I)
 
 
@@ -33,7 +34,7 @@ class OnePasswordNotSignedIn(StoreNeedsConnection):
     """``op`` is installed but nobody is signed in on this machine."""
 
     def __init__(self) -> None:
-        SecretStoreError.__init__(self, "the onepassword store needs the 1Password CLI signed in: run `op signin`")
+        SecretStoreError.__init__(self, "1Password needs you: unlock the app and approve the CLI request (or run `op signin`)")
         self.store = "onepassword"
         self.providers = []
 
@@ -49,18 +50,32 @@ class OnePasswordConfig(DataSpec):
     vault: str = Field(min_length=1)
     #: Items are named ``<item_prefix><NAME>``.
     item_prefix: str = ""
+    #: The 1Password account (sign-in address or id) when this machine is signed in to several;
+    #: empty: ``op``'s default account.
+    account: str = ""
 
 
 async def _run_op(args: list[str], stdin: Optional[str] = None) -> tuple[int, str, str]:
     """Run ``op`` with ``args``; ``(exit code, stdout, stderr)``. Never logs stdout (it may be a value)."""
     if shutil.which("op") is None:
         raise OnePasswordCliMissing("the 1Password CLI (`op`) is not installed on this machine")
-    proc = await asyncio.create_subprocess_exec(
-        "op", *args,
-        stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-    )
-    out, err = await proc.communicate(stdin.encode() if stdin is not None else None)
+    # ``op`` reads a template only from a real pipe: asyncio's PIPE is a socket on macOS, which ``op``
+    # takes for "no input". An item template is a few hundred bytes, far under the pipe buffer.
+    read_end = None
+    if stdin is not None:
+        read_end, write_end = os.pipe()
+        with os.fdopen(write_end, "wb") as w:
+            w.write(stdin.encode())
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "op", *args,
+            stdin=read_end if read_end is not None else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+    finally:
+        if read_end is not None:
+            os.close(read_end)
+    out, err = await proc.communicate()
     return proc.returncode or 0, out.decode(), err.decode()
 
 
@@ -77,6 +92,10 @@ class OnePasswordStore(SecretStore):
     def where(self) -> str:
         return f"1Password vault {self.config.vault}" + (f" · {self.config.item_prefix}*" if self.config.item_prefix else "")
 
+    async def _op(self, args: list[str], stdin: Optional[str] = None) -> tuple[int, str, str]:
+        account = ["--account", self.config.account] if self.config.account else []
+        return await self.run([*account, *args], stdin=stdin)
+
     def item(self, name: str) -> str:
         return f"{self.config.item_prefix}{name}"
 
@@ -88,7 +107,7 @@ class OnePasswordStore(SecretStore):
         raise SecretStoreError(f"op failed: {err.strip().splitlines()[-1] if err.strip() else 'no detail'}")
 
     async def _get(self, name: str) -> Optional[str]:
-        code, out, err = await self.run(
+        code, out, err = await self._op(
             ["item", "get", self.item(name), "--vault", self.config.vault, "--fields", f"label={FIELD}", "--reveal", "--format", "json"]
         )
         if code == 0:
@@ -120,12 +139,12 @@ class OnePasswordStore(SecretStore):
                 "fields": [{"id": FIELD, "label": FIELD, "type": "CONCEALED", "value": value}],
                 **({"notesPlain": description} if description else {}),
             }
-            code, _, err = await self.run(["item", "create", "--vault", self.config.vault, "--format", "json", "-"], stdin=json.dumps(template))
+            code, _, err = await self._op(["item", "create", "--vault", self.config.vault, "--format", "json", "-"], stdin=json.dumps(template))
             if code != 0:
                 self._raise_for(err)
 
     async def names(self) -> list[str]:
-        code, out, err = await self.run(["item", "list", "--vault", self.config.vault, "--format", "json"])
+        code, out, err = await self._op(["item", "list", "--vault", self.config.vault, "--format", "json"])
         if code != 0:
             self._raise_for(err)
         prefix = self.config.item_prefix
@@ -133,7 +152,7 @@ class OnePasswordStore(SecretStore):
         return [t[len(prefix):] for t in titles if t.startswith(prefix) and t[len(prefix):]]
 
     async def _delete(self, name: str) -> bool:
-        code, _, err = await self.run(["item", "delete", self.item(name), "--vault", self.config.vault])
+        code, _, err = await self._op(["item", "delete", self.item(name), "--vault", self.config.vault])
         if code == 0:
             return True
         if _NOT_FOUND.search(err):

@@ -7,10 +7,9 @@ import { FlowIcon } from '@sdk/react/FlowIcon';
 import { Button } from '@src/components/ui/button';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { autoNote, writeChartMermaid } from './chartDoc';
-import { ChartFeedbackToolbar } from './ChartFeedbackToolbar';
 import { ChartHeading } from './ChartHeading';
 import { chartTokens } from './chartTheme';
-import { c4Tag, c4ToMermaid, layoutC4, parseC4, type C4Card, type C4Value } from './c4Model';
+import { c4Tag, c4ToMermaid, layoutC4, parseC4, type C4Card, type C4Layout, type C4Value } from './c4Model';
 import { useOpenChart } from './useOpenChart';
 
 /**
@@ -43,12 +42,10 @@ const STYLES = `
 .cc4 .rel .label { fill: var(--text-primary); font-size: 11.5px; font-weight: 500; text-anchor: middle; }
 .cc4 .rel .tech { fill: var(--text-muted); font-size: 10.5px; text-anchor: middle; }
 .cc4 .rel .num { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
-.cc4 .rel.hot .line, .cc4 .rel.ck-on .line { stroke: var(--focus); stroke-opacity: 1; stroke-width: 2.25; }
+.cc4 .rel.hot .line { stroke: var(--focus); stroke-opacity: 1; stroke-width: 2.25; }
 .cc4 svg.focusing .card:not(.hot):not(.near), .cc4 svg.focusing .rel:not(.hot) { opacity: .3; transition: opacity .12s; }
-.cc4 [data-target] { cursor: pointer; }
 .cc4 [data-target]:focus { outline: none; }
-.cc4 .card:focus-visible .body, .cc4 .card.ck-on .body, .cc4 .bnd.ck-on rect { stroke: var(--focus); stroke-width: 2; }
-.cc4 [data-target].ck-has .name, .cc4 [data-target].ck-has .label, .cc4 [data-target].ck-has .blabel { text-decoration: underline dotted; text-underline-offset: 3px; }
+.cc4 .card:focus-visible .body { stroke: var(--focus); stroke-width: 2; }
 @media (prefers-reduced-motion: reduce) { .cc4 svg.focusing .card, .cc4 svg.focusing .rel { transition: none; } }
 `;
 
@@ -90,14 +87,10 @@ function CardShape({ c }: { c: C4Card }) {
 interface C4ChartViewProps {
   fsRef: FSRef;
   chart?: Chart;
-  session?: string;
   projectId?: string;
-  actions?: React.ReactNode;
-  /** The chart's Mermaid copy, for the editor's Convert to Excalidraw. */
-  onSource?: (mermaid: string) => void;
 }
 
-export function C4ChartView({ fsRef, chart, session, projectId, actions, onSource }: C4ChartViewProps) {
+export function C4ChartView({ fsRef, chart, projectId }: C4ChartViewProps) {
   const { t } = useLingui();
   const { resolvedTheme } = useTheme();
   const sourceRef = useMemo(() => fsRef.child('c4.json'), [fsRef]);
@@ -105,11 +98,10 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
   const [value, setValue] = useState<C4Value | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<'chart' | 'table'>('chart');
+  // Fit: the whole diagram scaled into the window, so a reviewer sees it at once. 100%: its real size.
+  const [fit, setFit] = useState(true);
   const [hot, setHot] = useState<{ target: string; title: string; sub: string; note?: string } | null>(null);
   const tipRef = useRef<HTMLDivElement>(null);
-  const [target, setTarget] = useState('');
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [commented, setCommented] = useState<Set<string>>(new Set());
   const openRef = useOpenChart(fsRef, projectId);
 
   const { folderName, dirPath } = useMemo(() => {
@@ -135,30 +127,21 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
     };
   }, [sourceRef]);
 
-  const layout = useMemo(() => (value ? layoutC4(value) : null), [value]);
-  const mermaid = useMemo(() => (value ? c4ToMermaid(value) : ''), [value]);
+  const [layout, setLayout] = useState<C4Layout | null>(null);
   useEffect(() => {
-    if (mermaid) onSource?.(mermaid);
-  }, [mermaid, onSource]);
+    if (!value) return;
+    let cancelled = false;
+    layoutC4(value).then(
+      (next) => !cancelled && setLayout(next),
+      (err: unknown) => !cancelled && setLoadError(err instanceof Error ? err.message : String(err)),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
+  const mermaid = useMemo(() => (value ? c4ToMermaid(value) : ''), [value]);
 
   const nameOf = useCallback((id: string) => layout?.cardOf.get(id)?.el.label ?? id, [layout]);
-  const labelOf = useCallback(
-    (id: string) => {
-      if (!id) return t`Whole chart`;
-      const card = layout?.cardOf.get(id);
-      if (card) return `${id} · ${card.el.label}`;
-      const box = layout?.boxOf.get(id);
-      if (box) return `${id} · ${box.b.label}`;
-      const edge = layout?.edgeOf.get(id);
-      return edge ? `${id} · ${edge.r.label}` : id;
-    },
-    [layout, t],
-  );
-
-  const pick = useCallback((id: string) => {
-    setTarget((cur) => (cur === id ? '' : id));
-    setPanelOpen(true);
-  }, []);
 
   const regenerateDoc = useCallback(async () => {
     if (mermaid) await writeChartMermaid(docRef, chart, mermaid, AUTO_NOTE);
@@ -183,7 +166,7 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
       : [],
   );
   const markClass = (id: string) =>
-    `${hot?.target === id || hotCardLinks.has(id) ? ' hot' : ''}${near.has(id) ? ' near' : ''}${target === id ? ' ck-on' : ''}${commented.has(id) ? ' ck-has' : ''}`;
+    `${hot?.target === id || hotCardLinks.has(id) ? ' hot' : ''}${near.has(id) ? ' near' : ''}`;
   const place = (x: number, y: number) => {
     const el = tipRef.current;
     if (el) Object.assign(el.style, { left: `${Math.min(window.innerWidth - 328, x + 14)}px`, top: `${Math.max(8, y - 72)}px` });
@@ -202,13 +185,6 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
       place(b.left + b.width / 2, b.top);
     },
     onBlur: () => setHot(null),
-    onClick: () => pick(id),
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        pick(id);
-      }
-    },
   });
   const kindsShown = [...new Map(cards.map((c) => [`${c.el.kind}${c.el.external ? '-ext' : ''}`, c])).values()];
   const hasAsync = edges.some((e) => e.r.style === 'async');
@@ -222,7 +198,6 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
         onRevealInFinder={() => void fsRef.open({ select: true })}
         actions={
           <>
-            {actions}
             <Button size="sm" variant="outline" onClick={() => void regenerateDoc()} data-testid="chart-regenerate-doc">
               <Trans>Update CHART.md</Trans>
             </Button>
@@ -276,6 +251,27 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
                   </button>
                 ))}
               </div>
+              {view === 'chart' && (
+                <div className="inline-flex rounded-lg p-[3px]" style={{ background: 'var(--surface-2)' }} role="group" aria-label={t`Zoom`}>
+                  {([true, false] as const).map((v) => (
+                    <button
+                      key={String(v)}
+                      type="button"
+                      aria-pressed={fit === v}
+                      onClick={() => setFit(v)}
+                      data-testid={`chart-zoom-${v ? 'fit' : 'actual'}`}
+                      className="rounded-md px-3 py-1 text-[13px] font-medium"
+                      style={
+                        fit === v
+                          ? { background: 'var(--surface-1)', color: 'var(--text-primary)', boxShadow: '0 1px 2px rgba(0,0,0,.08)' }
+                          : { color: 'var(--text-secondary)' }
+                      }
+                    >
+                      {v ? <Trans>Fit</Trans> : '100%'}
+                    </button>
+                  ))}
+                </div>
+              )}
             </header>
 
             {view === 'chart' ? (
@@ -285,9 +281,11 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
                     xmlns="http://www.w3.org/2000/svg"
                     role="img"
                     className={`mx-auto block${hot ? ' focusing' : ''}`}
-                    width={width}
-                    height={height}
+                    width={fit ? undefined : width}
+                    height={fit ? undefined : height}
+                    style={fit ? { width: '100%', height: 'calc(100vh - 330px)', minHeight: 320, maxWidth: width } : undefined}
                     viewBox={`0 0 ${width} ${height}`}
+                    data-zoom={fit ? 'fit' : 'actual'}
                     aria-label={t`${value.title || t`C4 chart`}: ${value.elements.length} elements, ${value.relations.length} relations`}
                     onPointerLeave={() => setHot(null)}
                     data-testid="chart-c4-svg"
@@ -326,7 +324,7 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
                     </g>
                     <g>
                       {edges.map((e) => {
-                        const isHot = hot?.target === e.r.id || hotCardLinks.has(e.r.id) || target === e.r.id;
+                        const isHot = hot?.target === e.r.id || hotCardLinks.has(e.r.id);
                         const lines = [e.r.label, e.r.tech ? `[${e.r.tech}]` : ''].filter(Boolean);
                         const pw = Math.max(...lines.map((l, i) => textW(l, i ? 6 : 6.4))) + 14;
                         const ph = lines.length * 15 + 6;
@@ -424,7 +422,6 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
                                 aria-label={t`Open ${el.label}`}
                                 data-testid="chart-c4-open"
                                 onClick={(ev) => {
-                                  // before the card's own click picks it for a comment
                                   ev.stopPropagation();
                                   void openRef(el.ref!);
                                 }}
@@ -547,19 +544,6 @@ export function C4ChartView({ fsRef, chart, session, projectId, actions, onSourc
           </div>
         )}
 
-        {chart && (
-          <ChartFeedbackToolbar
-            chart={chart}
-            projectId={projectId}
-            session={session}
-            target={target}
-            onTargetChange={setTarget}
-            labelOf={labelOf}
-            onCommented={setCommented}
-            open={panelOpen}
-            onOpenChange={setPanelOpen}
-          />
-        )}
       </div>
     </div>
   );

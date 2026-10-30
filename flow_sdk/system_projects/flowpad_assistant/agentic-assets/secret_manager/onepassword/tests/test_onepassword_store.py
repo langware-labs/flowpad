@@ -96,3 +96,20 @@ async def test_the_vault_store_comes_from_the_manager_and_says_where():
 
     store = store_for({"manager": "onepassword", "config": {"vault": "GTM Studio"}})
     assert isinstance(store, OnePasswordStore) and store.where == "1Password vault GTM Studio"
+
+
+async def test_every_call_names_the_account_when_set(monkeypatch):
+    seen: list[list[str]] = []
+    inner = FakeOp()
+
+    async def fake(args, stdin=None):
+        seen.append(list(args))
+        assert args[:2] == ["--account", "team.1password.com"]
+        return await inner(args[2:], stdin)
+
+    monkeypatch.setattr(OnePasswordStore, "run", staticmethod(fake))
+    store = SecretStore.from_ref({"type": "onepassword", "config": {"vault": "V", "account": "team.1password.com"}})
+    await store.save({"A": "1"})
+    await store.load(["A"])
+    await store.forget(["A"])
+    assert {a[2] + " " + a[3] for a in seen} == {"item list", "item create", "item get", "item delete"}

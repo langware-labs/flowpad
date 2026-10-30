@@ -11,7 +11,7 @@
     },
     "direction": {
       "shape": "?enum:TB|LR",
-      "description": "Layout direction: TB top to bottom (default), LR left to right (default for dynamic)."
+      "description": "Layout direction: LR left to right (default), TB top to bottom."
     },
     "elements": {
       "shape": [

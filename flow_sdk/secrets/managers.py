@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shlex
 import shutil
 import sys
@@ -75,6 +76,9 @@ class SecretManagerSpec(AssetDocumentSpec):
     check: str = ""
     #: Gives ``{email}`` read access to the vault.
     grant: str = ""
+    #: Environment for every command, filled like a command (``{"OP_ACCOUNT": "{account}"}``); a
+    #: variable whose placeholder the vault's config does not fill is left out.
+    env: dict[str, str] = Field(default_factory=dict)
 
 
 class UnknownSecretManager(SecretStoreError, KeyError):
@@ -194,19 +198,27 @@ def command_argv(template: str, values: Mapping[str, Any]) -> list[str]:
 async def run_check(vault: Any) -> bool:
     """True when the manager's ``check`` exits 0 for this vault on this machine."""
     manager, config = _vault_parts(vault)
-    code, _ = await _run(get_manager(manager).check, {**config, "vault": _vault_name(vault, config)})
+    spec = get_manager(manager)
+    code, _ = await _run(spec.check, {**config, "vault": _vault_name(vault, config)}, spec.env)
     return code == 0
 
 
 async def run_grant(vault: Any, email: str) -> None:
     """Give ``email`` read access to the vault; raises ``SecretStoreError`` with the tool's last line."""
     manager, config = _vault_parts(vault)
-    code, err = await _run(get_manager(manager).grant, {**config, "vault": _vault_name(vault, config), "email": email})
+    spec = get_manager(manager)
+    code, err = await _run(spec.grant, {**config, "vault": _vault_name(vault, config), "email": email}, spec.env)
     if code != 0:
         raise SecretStoreError(f"{manager} grant failed: {err or 'no detail'}")
 
 
-async def _run(template: str, values: Mapping[str, Any]) -> tuple[int, str]:
+def command_env(env: Mapping[str, str], values: Mapping[str, Any]) -> dict[str, str]:
+    """The manager's ``env`` filled from ``values``; a variable left empty or unfilled is dropped."""
+    filled = {k: v.format_map(_Keep({n: str(x) for n, x in values.items()})) for k, v in env.items()}
+    return {k: v for k, v in filled.items() if v and "{" not in v}
+
+
+async def _run(template: str, values: Mapping[str, Any], env: Optional[Mapping[str, str]] = None) -> tuple[int, str]:
     """``(exit code, last stderr line)``; 127 when the tool is not installed. Stdout is never read."""
     if not template:
         return 1, "no command"
@@ -215,6 +227,7 @@ async def _run(template: str, values: Mapping[str, Any]) -> tuple[int, str]:
         return 127, f"{argv[0]} is not installed"
     proc = await asyncio.create_subprocess_exec(
         *argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+        env={**os.environ, **command_env(env or {}, values)},
     )
     _, err = await proc.communicate()
     lines = err.decode(errors="replace").strip().splitlines()

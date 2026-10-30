@@ -5,7 +5,7 @@
  *   2. A sub-flow's "Open ↗" resolves the chart named by `ref` and navigates to it — URL-first,
  *      through navigation.openDock only — without picking the block for a comment.
  *   3. The Table view lists every message with its sender and receiver names.
- *   4. Without a chartit.feedback dataset the toolbar shows the one-line reason and is disabled.
+ *   4. There is no comment bar on the chart.
  *   5. sequenceToMermaid matches the backend rules.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -142,8 +142,6 @@ describe('SequenceChartView', () => {
     const request = (chartQuery.mock.calls[0] as unknown[])[0] as { query: unknown; scope?: { id: string }[] };
     expect(JSON.stringify(request.query)).toContain('auth-check');
     expect(request.scope?.map((s) => s.id)).toEqual([PROJECT]);
-    // The open button never picks the block for a comment.
-    expect(screen.queryByTestId('chart-feedback-panel')).toBeNull();
   });
 
   it('Open ↗ prefers the chart in the same folder when a name repeats', async () => {
@@ -176,12 +174,11 @@ describe('SequenceChartView', () => {
     expect(screen.queryByTestId('chart-sequence-svg')).toBeNull();
   });
 
-  it('turns feedback off with a one-line reason when the project has no chartit.feedback dataset', async () => {
+  it('has no comment bar', async () => {
     renderView();
-    const reason = await screen.findByTestId('chart-feedback-reason');
-    expect(reason.textContent).toMatch(/no chart-feedback dataset/);
-    expect(forKind).toHaveBeenCalledWith('chartit.feedback', PROJECT);
-    expect(screen.getByTestId('chart-feedback-open')).toBeDisabled();
+    await screen.findByTestId('chart-sequence-svg');
+    expect(screen.queryByTestId('chart-feedback-open')).toBeNull();
+    expect(screen.queryByTestId('chart-feedback-reason')).toBeNull();
   });
 });
 

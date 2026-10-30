@@ -15,15 +15,13 @@ const C4ChartView = lazy(() => import('./C4ChartView'));
 /**
  * The chart editor: one asset type, one view per format. CHART.md's `format` picks the
  * view — `excalidraw` (board.json), `sequence` (chart.json), `c4` (c4.json) or `mermaid`
- * (the block in CHART.md). The others can be converted to an Excalidraw board, from their
- * Mermaid copy. A format this build does not know says so instead of opening as a board.
+ * (the block in CHART.md). Sequence and mermaid charts can be converted to an Excalidraw board. A format this build does not know says so instead of opening as a board.
  */
 export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart }) {
   const { t } = useLingui();
   // Our own convert is shown at once; the row catches up when the indexer re-reads CHART.md.
   const [converted, setConverted] = useState(false);
   const format = converted ? 'excalidraw' : chartFormatOf(chart?.format);
-  const session = chart?.session;
   const [converting, setConverting] = useState(false);
   const mermaidSource = useRef('');
   const projectId = dataContext.projectTypeId?.id ?? undefined;
@@ -82,22 +80,9 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
             <Trans>This chart is a “{chart?.format}” chart, which needs a newer Flowpad to open.</Trans>
           </div>
         ) : format === 'sequence' ? (
-          <SequenceChartView
-            fsRef={fsRef}
-            chart={chart}
-            session={session}
-            projectId={projectId}
-            actions={convertButton}
-          />
+          <SequenceChartView fsRef={fsRef} chart={chart} projectId={projectId} actions={convertButton} />
         ) : format === 'c4' ? (
-          <C4ChartView
-            fsRef={fsRef}
-            chart={chart}
-            session={session}
-            projectId={projectId}
-            actions={convertButton}
-            onSource={onMermaidSource}
-          />
+          <C4ChartView fsRef={fsRef} chart={chart} projectId={projectId} />
         ) : format === 'mermaid' ? (
           <MermaidChartView fsRef={fsRef} chart={chart} actions={convertButton} onSource={onMermaidSource} />
         ) : (
