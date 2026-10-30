@@ -57,3 +57,9 @@ export function notifyGitOutcome(op: GitSyncOp, result: SyncResult, workdir: str
 export function notifyGitFailure(op: GitSyncOp, e: unknown, workdir: string) {
   notifyGitOutcome(op, { kind: 'generic', branch: null, message: e instanceof Error ? e.message : String(e) }, workdir);
 }
+
+/** A git share whose pull / cherry-pick conflicted: the same toast and Resolve as any sync. */
+export function notifyShareConflict(c: { operation?: string; branch?: string | null; workdir: string; message?: string }) {
+  const op: GitSyncOp = c.operation === 'pull' ? 'pull' : 'cherry-pick';
+  notifyGitOutcome(op, { kind: 'conflict', branch: c.branch ?? null, message: c.message ?? '' }, c.workdir);
+}

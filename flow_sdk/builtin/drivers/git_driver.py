@@ -13,12 +13,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Iterator, Optional
 
 from flow_sdk.fs_store.origin.fs_origin import FSOrigin, safe_join
 from flow_sdk.fs_store.origin.git_origin import has_content
 from flow_sdk.utils.git_ignore import protect_env_local
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.git_share_specs import ReceivePlan
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +89,7 @@ class GitOriginDriver:
         await asyncio.to_thread(protect_env_local, clone_target)
         return await resolved(clone_target)
 
-    async def materialize_pinned(
+    async def receive(
         self,
         origin: FSOrigin,
         *,
@@ -92,59 +97,37 @@ class GitOriginDriver:
         preferred_project_id: Optional[str] = None,
         token: Optional[str] = None,
     ) -> tuple[Path, Optional[str]]:
-        """A checkout of EXACTLY ``origin.head_commit`` that never touches the
-        receiver's own working copy — the policy for a received git share.
+        """Bring a received git share into the receiver's OWN checkout — the
+        policy for a received git share. There is no second copy: the asset
+        lives where a ``git pull`` would put it.
 
-        The receiver's clone of the remote (the repo at ``preferred_root`` — the
-        project the share is opened from — on ANY branch) is used directly only when
-        it already sits at the commit with the shared path clean. Otherwise the
-        commit is fetched into that clone and opened as a detached worktree
-        under ``<workspace>/.shared/<leaf>@<commit>`` (reused per commit). With
-        no clone at all, the remote is cloned once and the same rule applies.
-        No pull, no checkout, no stash on anything the receiver owns.
+        The checkout is the repo at ``preferred_root`` (the project the share is
+        opened in) when it is a clone of the shared remote, on any branch. The
+        shared commit is fetched into it, then :func:`plan_receive` decides:
+        ``have`` opens in place; ``pull`` / ``cherry_pick`` write the receiver's
+        branch, so they run only with the receiver's consent
+        (:func:`share_consent`) — without it :class:`NeedsApply` carries the plan
+        back to ask. A conflict is left in place for the resolve flow
+        (``GitShareError("conflict")``).
 
         An origin without a commit (an older bundle) falls back to
-        :meth:`materialize`. Failures raise :class:`GitShareError` with a code.
+        :meth:`materialize`. No checkout of the remote: ``no-checkout``.
         """
         commit = getattr(origin, "head_commit", None)
         if not commit:
             return await self.materialize(
                 origin, preferred_root=preferred_root, preferred_project_id=preferred_project_id, token=token
             )
-        from flow_sdk.utils.git import find_project_root, git_clone  # noqa: PLC0415
-
-        rel = origin.rel_path or "."
-        repo: Path | None = None
-        if preferred_root is not None and has_content(preferred_root):
-            found = await asyncio.to_thread(find_project_root, str(preferred_root))
-            if found and origin.matches_checkout(Path(found)):
-                repo = Path(found)
-
-        owned_by_receiver = repo is not None
+        repo = await asyncio.to_thread(_receiver_checkout, origin, preferred_root)
         if repo is None:
-            # No project clone to open from: Flowpad keeps ONE clone per remote for
-            # shares (never a machine-wide search for one — that walks every
-            # project on disk, ~1.2s per miss), kept
-            # out of the receiver's projects (a hidden ``.shared/repos`` slot), and
-            # the asset opens in a worktree of it like any other share.
-            target = await asyncio.to_thread(_shared_clone_slot, origin)
-            if not (has_content(target) and origin.matches_checkout(target)):
-                cloned = await git_clone(origin.clone_url(), str(target), branch=origin.branch or None, token=token)
-                if not cloned.ok:
-                    code = _clone_failure_code(cloned.detail)
-                    raise GitShareError(code, _HUMAN.get(code) or cloned.detail)
-                await asyncio.to_thread(protect_env_local, target)
-            repo = target
-
-        if owned_by_receiver and await asyncio.to_thread(_at_commit_and_clean, repo, commit, rel):
-            return repo, await _project_id_for_checkout(repo, preferred_root, preferred_project_id)
-
+            raise GitShareError("no-checkout", _HUMAN["no-checkout"])
         await asyncio.to_thread(_ensure_commit, repo, commit, origin.branch)
-        slot = await asyncio.to_thread(_worktree_at, repo, commit)
-        # A share slot is Flowpad's, never a project of its own: it belongs to the
-        # receiver's project when it was opened from that project's clone, else
-        # to none (recovering one would MINT a project for a hidden slot).
-        return slot, (preferred_project_id if owned_by_receiver else None)
+        plan = await asyncio.to_thread(plan_receive, repo, origin)
+        if plan.action != "have":
+            if not _CONSENT.get():
+                raise NeedsApply(plan)
+            await _apply(repo, plan, origin)
+        return repo, await _project_id_for_checkout(repo, preferred_root, preferred_project_id)
 
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:
         matched, _reason = origin.matches_repo(local_path, require_branch=True)  # type: ignore[attr-defined]
@@ -158,11 +141,49 @@ class GitOriginDriver:
 
 class GitShareError(RuntimeError):
     """A received git share could not be opened. ``code`` is one of
-    ``no-git`` / ``no-access`` / ``commit-gone`` / ``git-failed``."""
+    ``no-git`` / ``no-access`` / ``commit-gone`` / ``no-checkout`` /
+    ``conflict`` / ``git-failed``. ``data`` carries what the UI acts on (a
+    conflict's ``conflicted`` paths, ``operation``, ``branch``, ``workdir``)."""
 
-    def __init__(self, code: str, detail: str = "") -> None:
+    def __init__(self, code: str, detail: str = "", data: Optional[dict] = None) -> None:
         super().__init__(detail or code)
         self.code = code
+        self.data = data or {}
+
+
+    @property
+    def keeps_copy_out(self) -> bool:
+        """The receiver's checkout is mid-merge: a ``both`` share must not lay
+        its copy over it — the conflict is reported, never fallen back from."""
+        return self.code == "conflict"
+
+
+class NeedsApply(Exception):
+    """Bringing the share in would write the receiver's branch (a pull or a
+    cherry-pick): the plan goes back to ask first."""
+
+    def __init__(self, plan: "ReceivePlan") -> None:
+        super().__init__(plan.action)
+        self.plan = plan
+
+    def answer(self) -> dict:
+        """The question every receive verb answers with: ``needs: "apply"`` and the plan."""
+        return {"needs": "apply", "plan": self.plan.model_dump(mode="json")}
+
+
+#: The receiver said yes to bringing the share into their checkout — set for
+#: one request by :func:`share_consent`, read by :meth:`GitOriginDriver.receive`
+#: wherever in the install the receive happens.
+_CONSENT: ContextVar[bool] = ContextVar("git_share_consent", default=False)
+
+
+@contextmanager
+def share_consent(apply: bool) -> Iterator[None]:
+    token = _CONSENT.set(bool(apply))
+    try:
+        yield
+    finally:
+        _CONSENT.reset(token)
 
 
 def run_git(repo: Path, *args: str):
@@ -182,6 +203,7 @@ def run_git(repo: Path, *args: str):
 #: What the receiver is told, per code (the raw git text stays in the log).
 _HUMAN = {
     "no-access": "The repository this was shared from can't be reached from here — it may be private, moved, or offline.",
+    "no-checkout": "You don't have this repository in a project here — clone it as a project to open what was shared.",
 }
 
 
@@ -198,12 +220,6 @@ def path_is_clean(repo: Path, rel: str) -> bool:
     """No uncommitted or untracked change under ``rel`` in ``repo``."""
     status = run_git(repo, "status", "--porcelain", "-uall", "--", rel)
     return status.returncode == 0 and not status.stdout.strip()
-
-
-def _at_commit_and_clean(repo: Path, commit: str, rel: str) -> bool:
-    from flow_sdk.fs_store.origin.git_origin import _head_commit  # noqa: PLC0415
-
-    return _head_commit(str(repo)) == commit and path_is_clean(repo, rel)
 
 
 def _ensure_commit(repo: Path, commit: str, branch: str | None) -> None:
@@ -225,46 +241,85 @@ def _ensure_commit(repo: Path, commit: str, branch: str | None) -> None:
         )
 
 
-def _shared_clone_slot(origin) -> Path:
-    """Where Flowpad keeps its own clone of a shared remote: one per remote,
-    under the hidden ``<workspace>/.shared/repos`` (never a project)."""
-    from flow_sdk.fs_store.origin.git_origin import _slot, _workspace  # noqa: PLC0415
-    from flow_sdk.utils.git import derive_repo_leaf_from_url  # noqa: PLC0415
+def _receiver_checkout(origin, preferred_root: Path | None) -> Path | None:
+    """The receiver's own clone of the shared remote: the repo holding
+    ``preferred_root``, on any branch. Never a machine-wide search, never a
+    clone of Flowpad's own."""
+    from flow_sdk.utils.git import find_project_root  # noqa: PLC0415
 
-    leaf = derive_repo_leaf_from_url(origin.clone_url()) or origin.name or "repo"
-    return _slot(leaf, "repo", accept=lambda p: not has_content(p) or origin.matches_checkout(p),
-                 base=_workspace() / ".shared" / "repos")
+    if preferred_root is None or not has_content(preferred_root):
+        return None
+    found = find_project_root(str(preferred_root))
+    return Path(found) if found and origin.matches_checkout(Path(found)) else None
 
 
-def remove_share_slot(slot: Path) -> None:
-    """Drop a Flowpad-managed share worktree (a ``.shared/<repo>@<commit>``
-    slot) — never anything else."""
-    if slot.parent.name != ".shared" or not slot.exists():
+def _out(repo: Path, *args: str) -> str | None:
+    r = run_git(repo, *args)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def missing_commits(repo: Path, rev: str, rel: str) -> list[str]:
+    """Commits up to ``rev`` that touch ``rel`` and are not on HEAD yet, oldest
+    first — one already cherry-picked here (the same patch) counts as there.
+    The cheap ancestry walk answers first; patch ids are computed only when it
+    finds something."""
+    if not _out(repo, "rev-list", "-1", f"HEAD..{rev}", "--", rel):
+        return []
+    listed = _out(repo, "rev-list", "--reverse", "--right-only", "--cherry-pick", f"HEAD...{rev}", "--", rel)
+    return (listed or "").split()
+
+
+def plan_receive(repo: Path, origin) -> "ReceivePlan":
+    """How the shared commit comes into ``repo`` (see ``ReceivePlan``). Read-only."""
+    from flow_sdk.builtin.git_share_specs import ReceivePlan  # noqa: PLC0415
+
+    from flow_sdk.utils.git import git_current_branch  # noqa: PLC0415
+
+    commit, rel = origin.head_commit, origin.rel_path or "."
+    branch = git_current_branch(str(repo)) or "HEAD"
+
+    def plan(action: str, **kw) -> ReceivePlan:
+        return ReceivePlan(action=action, commit=commit, branch=branch, workdir=str(repo), **kw)
+
+    def obj(rev: str) -> str | None:
+        return _out(repo, "rev-parse", "-q", "--verify", f"{rev}:{rel}" if rel != "." else f"{rev}^{{tree}}")
+
+    held = obj("HEAD")
+    if held is not None and held == obj(commit):
+        return plan("have")
+    if origin.branch and branch == origin.branch and _out(repo, "rev-parse", "--abbrev-ref", "@{u}"):
+        on_upstream = lambda: run_git(repo, "merge-base", "--is-ancestor", commit, "@{u}").returncode == 0  # noqa: E731
+        # The local upstream usually has it already; fetch only when it does not.
+        if on_upstream() or (run_git(repo, "fetch", "-q", "origin", origin.branch).returncode == 0 and on_upstream()):
+            return plan("pull")
+    commits = missing_commits(repo, commit, rel)
+    if not commits:
+        # Every change the shared line made to the asset is already on this
+        # branch (the receiver edited it since): what they have is theirs.
+        return plan("have")
+    prefix = "" if rel == "." else rel.rstrip("/") + "/"
+    touched = _out(repo, "log", "--no-walk=unsorted", "--name-only", "--format=", *commits) or ""
+    other = {f for f in touched.splitlines() if f and prefix and f != rel and not f.startswith(prefix)}
+    return plan("cherry_pick", commits=commits, other_files=sorted(other))
+
+
+async def _apply(repo: Path, plan: "ReceivePlan", origin) -> None:
+    """Run the plan's git verb on the receiver's checkout; a refusal or a
+    conflict is a ``GitShareError`` carrying what the resolve flow needs."""
+    from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+    git = await GitRepo.local(str(repo))
+    if plan.action == "pull":
+        done = await git.pull(branch=origin.branch)
+        op = "pull"
+    else:
+        done = await git.cherry_pick(plan.commits)
+        op = "cherry-pick"
+    if done.ok:
         return
-    run_git(slot, "worktree", "remove", "--force", str(slot))
-
-
-def _worktree_at(repo: Path, commit: str) -> Path:
-    """The detached worktree of ``repo`` at ``commit``, created once and reused."""
-    from flow_sdk.fs_store.origin.git_origin import _workspace  # noqa: PLC0415
-
-    common = run_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
-    main_repo = Path(common).parent if common else repo  # a worktree's slot is named after its main repo
-    slot = _workspace() / ".shared" / f"{main_repo.name}@{commit[:12]}"
-    if slot.exists():
-        head = run_git(slot, "rev-parse", "HEAD")
-        if head.returncode == 0 and head.stdout.strip() == commit:
-            return slot
-        run_git(repo, "worktree", "remove", "--force", str(slot))
-    slot.parent.mkdir(parents=True, exist_ok=True)
-    added = run_git(repo, "worktree", "add", "-q", "--detach", str(slot), commit)
-    if added.returncode != 0:
-        # A slot deleted by hand stays registered until pruned: prune, try once more.
-        run_git(repo, "worktree", "prune")
-        added = run_git(repo, "worktree", "add", "-q", "--detach", str(slot), commit)
-    if added.returncode != 0:
-        raise GitShareError("git-failed", added.stderr.strip())
-    return slot
+    data = {"operation": op, "branch": done.branch, "workdir": str(repo), "conflicted": done.conflicted}
+    code = "conflict" if done.kind == "conflict" else ("no-access" if done.kind == "permission" else "git-failed")
+    raise GitShareError(code, done.message, data)
 
 
 async def _project_id_for_checkout(root: Path, preferred_root: Path | None, preferred_project_id: str | None) -> str | None:

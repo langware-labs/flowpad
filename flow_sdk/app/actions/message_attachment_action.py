@@ -528,6 +528,29 @@ async def handle_attachment_install(
     someone_typeid=None,
     name: str | None = None,
 ) -> ApiResponse:
+    """Install a staged attachment (``_install``). A git share that would write the
+    receiver's branch (a pull or a cherry-pick) without their consent answers
+    ``needs: "apply"`` with the plan — the same call inside ``share_consent(True)``
+    runs it."""
+    from flow_sdk.builtin.drivers.git_driver import NeedsApply  # noqa: PLC0415
+
+    try:
+        return await _install(
+            attachment_id, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid, name=name
+        )
+    except NeedsApply as e:
+        return ApiSuccessResponse(data=e.answer())
+
+
+async def _install(
+    attachment_id: str,
+    scope: str,
+    project_id: str | None,
+    *,
+    overwrite: bool = False,
+    someone_typeid=None,
+    name: str | None = None,
+) -> ApiResponse:
     """Copy a staged attachment into the chosen scope root and index it there.
 
     ``name`` is the receiver's name for a received project whose own is taken here.
@@ -592,7 +615,11 @@ async def handle_attachment_install(
                 project_root=project_root,
             )
         except GitShareError as e:
-            if ma.transfer_mode != TransferMode.BOTH.value or ma.asset_type != EntityType.ARTIFACT.value:
+            if (
+                ma.transfer_mode != TransferMode.BOTH.value
+                or ma.asset_type != EntityType.ARTIFACT.value
+                or e.keeps_copy_out
+            ):
                 return _git_share_failed(e)
             # Git could not open it here: the bytes that rode beside the pointer can.
             res = await _install_webapp_artifact_copy(
@@ -689,6 +716,8 @@ async def handle_attachment_install(
             ):
                 return await _finalize_install(ma, scope, project_id, None, someone_typeid)
         except GitShareError as e:
+            if e.keeps_copy_out:
+                return _git_share_failed(e)
             git_error = e
     try:
         if ma.transfer_mode == TransferMode.GIT.value:
@@ -797,7 +826,7 @@ def _git_share_failed(e) -> ApiFailResponse:
     """The shared version could not be opened here (no access, offline, rewritten
     history, no git): say which, with its code, and leave the attachment staged so
     a retry can still install it."""
-    return ApiFailResponse(message=str(e), status_code=424, data={"git_share_error": e.code})
+    return ApiFailResponse(message=str(e), status_code=424, data={"git_share_error": e.code, **e.data})
 
 
 def _with_git_share_error(res: ApiResponse, e) -> ApiResponse:
@@ -1066,6 +1095,13 @@ async def handle_conversation_install_all(
 # ---------------------------------------------------------------------------
 
 
+def _consent(body: dict):
+    """The receiver's yes (``apply``) to a pull / cherry-pick, for this request."""
+    from flow_sdk.builtin.drivers.git_driver import share_consent  # noqa: PLC0415
+
+    return share_consent(bool(body.get("apply", False)))
+
+
 @action.post(action_name="install", types=["message_attachment"])
 async def install_attachment_action() -> ApiResponse:
     try:
@@ -1076,14 +1112,15 @@ async def install_attachment_action() -> ApiResponse:
         scope = str(body.get("scope") or "")
         project_id = body.get("project_id") or None
         overwrite = bool(body.get("overwrite", False))
-        return await handle_attachment_install(
-            str(request_info.target_entity_typeid.id),
-            scope,
-            project_id,
-            overwrite=overwrite,
-            someone_typeid=await _local_owner_typeid(),
-            name=(body.get("name") or "").strip() or None,
-        )
+        with _consent(body):
+            return await handle_attachment_install(
+                str(request_info.target_entity_typeid.id),
+                scope,
+                project_id,
+                overwrite=overwrite,
+                someone_typeid=await _local_owner_typeid(),
+                name=(body.get("name") or "").strip() or None,
+            )
     except Exception as e:
         logger.error("[message_attachment] install error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"install failed: {e}")
@@ -1150,7 +1187,11 @@ async def handle_open_shared(
             attachment_id, AttachmentScope.PROJECT.value, project_id, overwrite=overwrite, someone_typeid=someone_typeid
         )
     )
-    if not isinstance(res, ApiSuccessResponse) or (res.data or {}).get("needs"):
+    if not isinstance(res, ApiSuccessResponse):
+        return res
+    if (res.data or {}).get("needs"):
+        if res.data.get("needs") == "apply":  # the confirm re-sends this project with ``apply``
+            res.data = {**res.data, "project_id": project_id, "mismatch": mismatch}
         return res
     if conv is not None and not conv.project_id:
         conv.project_id = project_id  # the answer, kept: later shares here open in it too
@@ -1178,13 +1219,14 @@ async def open_shared_attachment_action() -> ApiResponse:
         if not request_info or not request_info.target_entity_typeid:
             return ApiFailResponse(message="No request info found", status_code=400)
         body = await request_info.get_post_data() or {}
-        return await handle_open_shared(
-            str(request_info.target_entity_typeid.id),
-            project_id=body.get("project_id") or None,
-            choice=body.get("choice") or None,
-            overwrite=bool(body.get("overwrite", False)),
-            someone_typeid=await _local_owner_typeid(),
-        )
+        with _consent(body):
+            return await handle_open_shared(
+                str(request_info.target_entity_typeid.id),
+                project_id=body.get("project_id") or None,
+                choice=body.get("choice") or None,
+                overwrite=bool(body.get("overwrite", False)),
+                someone_typeid=await _local_owner_typeid(),
+            )
     except Exception as e:
         logger.error("[message_attachment] open-shared error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"open failed: {e}")

@@ -3752,6 +3752,10 @@ msgstr "Already up to date"
 msgid "Also"
 msgstr "Also"
 
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Also changes {0} other file(s)."
+#~ msgstr "Also changes {0} other file(s)."
+
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also deliver to…"
 msgstr "Also deliver to…"
@@ -5247,13 +5251,29 @@ msgstr "breadcrumb"
 msgid "breaker open"
 msgstr "breaker open"
 
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Bring {0} change(s) into {1}?"
+#~ msgstr "Bring {0} change(s) into {1}?"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Bring back"
 msgstr "Bring back"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Bring it in"
+msgstr "Bring it in"
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Bring the shared changes ({count}) into {branch}."
+msgstr "Bring the shared changes ({count}) into {branch}."
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Bring your own key"
 msgstr "Bring your own key"
+
+#: src/lib/publish-state.ts
+msgid "Brought in"
+msgstr "Brought in"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Browse"
@@ -8416,6 +8436,7 @@ msgid "Could not open the folder"
 msgstr "Could not open the folder"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not open the shared version"
 msgstr "Could not open the shared version"
 
@@ -11062,7 +11083,6 @@ msgstr "Dot-separated; * matches one part, a trailing * matches the rest (task.*
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/code-editor/EditorPane.tsx
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -11123,8 +11143,8 @@ msgid "Download bundle"
 msgstr "Download bundle"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
-msgid "Download failed"
-msgstr "Download failed"
+#~ msgid "Download failed"
+#~ msgstr "Download failed"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -15984,6 +16004,10 @@ msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full 
 msgid "Issues"
 msgstr "Issues"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "It also changes:"
+msgstr "It also changes:"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
 msgstr "It can read your Slack channels."
@@ -20736,6 +20760,7 @@ msgstr "Not logged in · Please run /login"
 #~ msgstr "Not needed here: mark its values optional"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
@@ -20819,7 +20844,6 @@ msgstr "Not saved"
 msgid "Not saved: {0}"
 msgstr "Not saved: {0}"
 
-#: src/components/assets/editor/GitShareBar.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -24354,6 +24378,7 @@ msgstr "Published version up to date"
 msgid "Published when you deploy"
 msgstr "Published when you deploy"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
 #: src/components/status-bar/GitPullButton.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
@@ -24366,6 +24391,10 @@ msgstr "Pull"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Pull {0}"
 msgstr "Pull {0}"
+
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Pull {0}?"
+#~ msgstr "Pull {0}?"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
@@ -26057,8 +26086,8 @@ msgid "Retry"
 msgstr "Retry"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
-msgid "Retry download"
-msgstr "Retry download"
+#~ msgid "Retry download"
+#~ msgstr "Retry download"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #~ msgid "Retry pull"
@@ -27780,8 +27809,8 @@ msgid "Send message"
 msgstr "Send message"
 
 #: src/components/assets/editor/GitShareBar.tsx
-msgid "Send my edits back"
-msgstr "Send my edits back"
+#~ msgid "Send my edits back"
+#~ msgstr "Send my edits back"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
@@ -31507,6 +31536,10 @@ msgstr "The setup wizard is not installed."
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "The share was sent, but a link could not be created."
 msgstr "The share was sent, but a link could not be created."
+
+#: src/lib/publish-state.ts
+msgid "The shared changes are now in your project."
+msgstr "The shared changes are now in your project."
 
 #: src/components/ask/AskChoiceBlock.tsx
 msgid "The sign-in did not finish."
@@ -35584,8 +35617,8 @@ msgid "Your display name"
 msgstr "Your display name"
 
 #: src/components/assets/editor/GitShareBar.tsx
-msgid "Your edits were sent back"
-msgstr "Your edits were sent back"
+#~ msgid "Your edits were sent back"
+#~ msgstr "Your edits were sent back"
 
 #~ msgid "Your FlowPad account"
 #~ msgstr "Your FlowPad account"
@@ -35639,6 +35672,10 @@ msgstr "Your own provider key"
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Your own provider key. Usage is billed to your provider account."
 msgstr "Your own provider key. Usage is billed to your provider account."
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Your project is behind on {branch}. Pull to bring the shared version in."
+msgstr "Your project is behind on {branch}. Pull to bring the shared version in."
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"

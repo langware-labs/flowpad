@@ -225,13 +225,12 @@ class Artifact(Entity):
                 return True  # the same version again: nothing to do
             # The same shared asset at a newer commit is a new VERSION of it: re-open below.
         if _is_single_file(origin):
-            # A single shared file (an .html page) opens straight away, at the
-            # exact commit it was shared at — no setup wizard has anything to do.
+            # A single shared file (an .html page) opens straight away in the
+            # receiver's checkout, once it holds the shared version.
             from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
             from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
 
-            # Opened in the receiver's project when it is a checkout of the same repo.
-            root, project_id = await get_origin_driver(origin.kind).materialize_pinned(
+            root, project_id = await get_origin_driver(origin.kind).receive(
                 origin, preferred_root=project_root, preferred_project_id=project_id
             )
             file = safe_join(root, origin.rel_path)

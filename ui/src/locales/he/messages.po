@@ -3722,6 +3722,10 @@ msgstr "כבר מעודכן"
 msgid "Also"
 msgstr "בנוסף"
 
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Also changes {0} other file(s)."
+#~ msgstr "כולל שינויים ב-{0} קבצים נוספים."
+
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also deliver to…"
 msgstr "לשלוח גם אל…"
@@ -5209,13 +5213,29 @@ msgstr "ירור נתיבים"
 msgid "breaker open"
 msgstr "המפסק פתוח"
 
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Bring {0} change(s) into {1}?"
+#~ msgstr "להביא את {0} השינויים אל {1}?"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Bring back"
 msgstr "החזרה"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Bring it in"
+msgstr "הביאו לפרויקט"
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Bring the shared changes ({count}) into {branch}."
+msgstr "הביאו את השינויים המשותפים ({count}) אל {branch}."
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Bring your own key"
 msgstr "שימוש במפתח משלכם"
+
+#: src/lib/publish-state.ts
+msgid "Brought in"
+msgstr "הובאו לפרויקט"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Browse"
@@ -8359,6 +8379,7 @@ msgid "Could not open the folder"
 msgstr "לא ניתן לפתוח את התיקייה"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not open the shared version"
 msgstr "לא ניתן היה לפתוח את הגרסה ששותפה"
 
@@ -10995,7 +11016,6 @@ msgstr "מופרד בנקודות; * תואם חלק אחד, * בסוף תואם
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/code-editor/EditorPane.tsx
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -11056,8 +11076,8 @@ msgid "Download bundle"
 msgstr "הורידו חבילה"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
-msgid "Download failed"
-msgstr "ההורדה נכשלה"
+#~ msgid "Download failed"
+#~ msgstr "ההורדה נכשלה"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -15870,6 +15890,10 @@ msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחצו ע
 msgid "Issues"
 msgstr ""
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "It also changes:"
+msgstr "משנה גם:"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
 msgstr ""
@@ -20571,6 +20595,7 @@ msgstr "לא מחוברים · הריצו /login"
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
@@ -20652,7 +20677,6 @@ msgstr "לא נשמר"
 msgid "Not saved: {0}"
 msgstr "לא נשמר: {0}"
 
-#: src/components/assets/editor/GitShareBar.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -24161,6 +24185,7 @@ msgstr "הגרסה שפורסמה מעודכנת"
 msgid "Published when you deploy"
 msgstr "יפורסם בעת הפריסה"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
 #: src/components/status-bar/GitPullButton.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
@@ -24173,6 +24198,10 @@ msgstr "משכו"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Pull {0}"
 msgstr "משכו את {0}"
+
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Pull {0}?"
+#~ msgstr "למשוך את {0}?"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
@@ -25851,8 +25880,8 @@ msgid "Retry"
 msgstr "נסו שוב"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
-msgid "Retry download"
-msgstr "הורדה מחדש"
+#~ msgid "Retry download"
+#~ msgstr "הורדה מחדש"
 
 #~ msgid "Retry pull"
 #~ msgstr "נסה משיכה שוב"
@@ -27560,8 +27589,8 @@ msgid "Send message"
 msgstr "שלחו הודעה"
 
 #: src/components/assets/editor/GitShareBar.tsx
-msgid "Send my edits back"
-msgstr "שלחו את השינויים שלי בחזרה"
+#~ msgid "Send my edits back"
+#~ msgstr "שלחו את השינויים שלי בחזרה"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
@@ -31260,6 +31289,10 @@ msgstr "אשף ההגדרה אינו מותקן."
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "The share was sent, but a link could not be created."
 msgstr "השיתוף נשלח, אבל לא ניתן היה ליצור קישור."
+
+#: src/lib/publish-state.ts
+msgid "The shared changes are now in your project."
+msgstr "השינויים המשותפים נמצאים כעת בפרויקט שלך."
 
 #: src/components/ask/AskChoiceBlock.tsx
 msgid "The sign-in did not finish."
@@ -35307,8 +35340,8 @@ msgid "Your display name"
 msgstr "שם התצוגה שלכם"
 
 #: src/components/assets/editor/GitShareBar.tsx
-msgid "Your edits were sent back"
-msgstr "השינויים שלכם נשלחו בחזרה"
+#~ msgid "Your edits were sent back"
+#~ msgstr "השינויים שלכם נשלחו בחזרה"
 
 #~ msgid "Your FlowPad account"
 #~ msgstr ""
@@ -35361,6 +35394,10 @@ msgstr ""
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Your own provider key. Usage is billed to your provider account."
 msgstr ""
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Your project is behind on {branch}. Pull to bring the shared version in."
+msgstr "הפרויקט שלך לא מעודכן ביחס ל-{branch}. יש למשוך (pull) כדי להביא את הגרסה המשותפת."
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
