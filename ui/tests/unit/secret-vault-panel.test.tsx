@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { credentialsService } from '@sdk';
-import { SecretStorePanel } from '@src/components/credentials-view/SecretStorePanel';
+import { Credential, credentialsService } from '@sdk';
+import { SecretVaultPanel } from '@src/components/credentials-view/SecretVaultPanel';
 
 // The ask-for-help dialog is its own tested surface; here only that it opens, and with what.
 vi.mock('@src/components/help/AskForHelpDialog', () => ({
@@ -11,51 +11,61 @@ vi.mock('@src/components/help/AskForHelpDialog', () => ({
 }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 
-const PROPS = { name: 'bright_data', title: 'Bright Data', projectId: 'p-1', projectName: 'GTM Studio', onChanged: vi.fn() };
+const PROPS = {
+  credentialId: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000002',
+  name: 'bright_data',
+  title: 'Bright Data',
+  projectId: 'p-1',
+  projectName: 'GTM Studio',
+  refs: [{ env_var: 'BRIGHT_DATA_API', vault: 'team' }],
+  onChanged: vi.fn(),
+};
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
-describe('SecretStorePanel — values travel only through the project secret manager', () => {
-  it('fetches into this computer when the project has a secret manager', async () => {
+describe('SecretVaultPanel — values travel only through the project vaults', () => {
+  it('lists the vaults and each variable’s vault, and fetches into this computer', async () => {
     const fetch = vi.spyOn(credentialsService, 'fetch').mockResolvedValue({
-      fetched: ['BRIGHT_DATA_API'], missing: [], published: [], not_here: [], store: 'GCP gtm-studio/',
-    });
-    render(<SecretStorePanel {...PROPS} secretStore="GCP gtm-studio/" missing />);
+      fetched: ['BRIGHT_DATA_API'], missing: [], denied: [], vaults: ['team'],
+    } as never);
+    render(<SecretVaultPanel {...PROPS} vaults={['team']} missing />);
 
-    fireEvent.click(screen.getByTestId('credential-secret-store-fetch'));
+    expect(screen.getByTestId('credential-vault-refs').textContent).toContain('BRIGHT_DATA_API');
+    fireEvent.click(screen.getByTestId('credential-vault-fetch'));
     await vi.waitFor(() => expect(PROPS.onChanged).toHaveBeenCalled());
     expect(fetch).toHaveBeenCalledWith('bright_data', 'p-1');
   });
 
-  it('a denied fetch offers Request access through ask-for-help', async () => {
-    vi.spyOn(credentialsService, 'fetch').mockRejectedValue({
-      response: { status: 400, data: { message: 'no access', data: { error_code: 'denied' } } },
-    });
-    render(<SecretStorePanel {...PROPS} secretStore="GCP gtm-studio/" missing />);
+  it('a denied vault offers Request access, sent as a share reply', async () => {
+    vi.spyOn(credentialsService, 'fetch').mockResolvedValue({ fetched: [], missing: [], denied: ['team'], vaults: ['team'] } as never);
+    const request = vi.spyOn(Credential.prototype, 'requestSecretAccess').mockResolvedValue();
+    render(<SecretVaultPanel {...PROPS} vaults={['team']} missing />);
 
-    fireEvent.click(screen.getByTestId('credential-secret-store-fetch'));
-    await screen.findByTestId('credential-secret-store-denied');
-    fireEvent.click(screen.getByTestId('credential-secret-store-request'));
-    expect(screen.getByTestId('ask-for-help').dataset.title).toBe('Access to GTM Studio secrets');
+    fireEvent.click(screen.getByTestId('credential-vault-fetch'));
+    await screen.findByTestId('credential-vault-denied');
+    fireEvent.click(screen.getByTestId('credential-vault-request'));
+    await screen.findByTestId('credential-vault-requested');
+    expect(request).toHaveBeenCalledWith('team');
   });
 
-  it('with no secret manager, says so and offers Report', () => {
-    render(<SecretStorePanel {...PROPS} secretStore={null} missing />);
+  it('with no vault, says so and offers Report', () => {
+    render(<SecretVaultPanel {...PROPS} vaults={[]} missing />);
 
-    expect(screen.getByText('Receiving secrets requires a secret manager on the project.')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('credential-secret-store-report'));
+    fireEvent.click(screen.getByTestId('credential-vault-report'));
     expect(screen.getByTestId('ask-for-help').dataset.title).toBe('GTM Studio has no secret manager');
   });
 
-  it('with the values here, offers Publish; with nothing missing and no store, shows nothing', () => {
-    const view = render(<SecretStorePanel {...PROPS} secretStore="GCP gtm-studio/" missing={false} />);
-    expect(screen.getByTestId('credential-secret-store-publish')).toBeTruthy();
+  it('with the values here, Publish goes to the variable’s vault; nothing missing and no vault shows nothing', async () => {
+    const publish = vi.spyOn(credentialsService, 'publish').mockResolvedValue({ published: ['BRIGHT_DATA_API'] } as never);
+    const view = render(<SecretVaultPanel {...PROPS} vaults={['team']} missing={false} />);
+    fireEvent.click(screen.getByTestId('credential-vault-publish'));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledWith('bright_data', 'p-1', 'team'));
     view.unmount();
 
-    const empty = render(<SecretStorePanel {...PROPS} secretStore={null} missing={false} />);
+    const empty = render(<SecretVaultPanel {...PROPS} vaults={[]} missing={false} />);
     expect(empty.container.innerHTML).toBe('');
   });
 });

@@ -1906,6 +1906,11 @@ msgstr "{who} allowance"
 msgid "{who} asks for access to <0>{where}</0>"
 msgstr "{who} asks for access to <0>{where}</0>"
 
+#. placeholder {0}: detail.manager ? ` (${detail.manager})` : ''
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "{who} asks for access to vault <0>{vault}</0>{0}"
+msgstr "{who} asks for access to vault <0>{vault}</0>{0}"
+
 #. placeholder {0}: detail.project_name ?? '—'
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
@@ -2636,6 +2641,10 @@ msgstr "Access requested"
 msgid "Access to {projectName} vault {vault}"
 msgstr "Access to {projectName} vault {vault}"
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Access to vault {vault} is granted. Fetch again."
+msgstr "Access to vault {vault} is granted. Fetch again."
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Access to vault {vault} requested"
 msgstr "Access to vault {vault} requested"
@@ -2846,6 +2855,10 @@ msgstr "Add a project data source to include its packages"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Add a source"
 msgstr "Add a source"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Add a vault"
+msgstr "Add a vault"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -4293,6 +4306,7 @@ msgstr "Approval failed"
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approve"
 msgstr "Approve"
@@ -8338,6 +8352,10 @@ msgstr "Could not give access"
 msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Could not grant access."
+msgstr "Could not grant access."
+
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #~ msgid "Could not install the dependency"
 #~ msgstr "Could not install the dependency"
@@ -8519,6 +8537,10 @@ msgstr "Could not publish"
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Could not publish {title}"
 msgstr "Could not publish {title}"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Could not publish to vault {vault}."
+msgstr "Could not publish to vault {vault}."
 
 #: src/components/data-sources/source-parts.tsx
 #~ msgid "Could not pull {0}"
@@ -14491,6 +14513,10 @@ msgstr "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 #: src/components/ask/use-ask-question.ts
 msgid "Got it — your answer was sent."
 msgstr "Got it — your answer was sent."
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Granted"
+msgstr "Granted"
 
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
@@ -24410,6 +24436,10 @@ msgstr "Publish this agent to share it"
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
 msgstr "Publish this agent to the cloud and give it a machine that logs in as itself."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Publish to vault {vault}"
+msgstr "Publish to vault {vault}"
+
 #~ msgid "published"
 #~ msgstr "published"
 
@@ -27551,6 +27581,10 @@ msgstr "Searching…"
 #: src/components/credentials/VariableDetails.tsx
 msgid "Secret (mask value)"
 msgstr "Secret (mask value)"
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Secret access request"
+msgstr "Secret access request"
 
 #: src/components/quick-create/registry.ts
 msgid "Secret created"
@@ -31567,6 +31601,7 @@ msgid "The query failed"
 msgstr "The query failed"
 
 #: src/components/conversation/ShareReplyCard.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 msgid "The receiver"
 msgstr "The receiver"
 
@@ -32008,6 +32043,10 @@ msgstr "This conversation came from a project called \"{remoteProjectName}\" on 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This conversation came from a project on another machine. Pick the local project folder it should map to."
 msgstr "This conversation came from a project on another machine. Pick the local project folder it should map to."
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "This conversation has no project to grant from."
+msgstr "This conversation has no project to grant from."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "This conversation is local-only. It will be removed from this device."

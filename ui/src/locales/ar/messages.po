@@ -1894,6 +1894,11 @@ msgstr ""
 msgid "{who} asks for access to <0>{where}</0>"
 msgstr "يطلب {who} الوصول إلى <0>{where}</0>"
 
+#. placeholder {0}: detail.manager ? ` (${detail.manager})` : ''
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "{who} asks for access to vault <0>{vault}</0>{0}"
+msgstr ""
+
 #. placeholder {0}: detail.project_name ?? '—'
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
@@ -2619,6 +2624,10 @@ msgstr "تم طلب الوصول"
 msgid "Access to {projectName} vault {vault}"
 msgstr ""
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Access to vault {vault} is granted. Fetch again."
+msgstr ""
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Access to vault {vault} requested"
 msgstr ""
@@ -2824,6 +2833,10 @@ msgstr "لتضمين حزم مصدر بيانات، أضيفوه إلى المش
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Add a source"
 msgstr "إضافة مصدر"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Add a vault"
+msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -4261,6 +4274,7 @@ msgstr "فشلت الموافقة"
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approve"
 msgstr "الموافقة"
@@ -8282,6 +8296,10 @@ msgstr "تعذر منح الوصول"
 msgid "Could not give this project access to {0}."
 msgstr "تعذر منح هذا المشروع صلاحية الوصول إلى {0}."
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Could not grant access."
+msgstr ""
+
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #~ msgid "Could not install the dependency"
 #~ msgstr ""
@@ -8461,6 +8479,10 @@ msgstr "تعذّر النشر"
 
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Could not publish {title}"
+msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Could not publish to vault {vault}."
 msgstr ""
 
 #: src/components/data-sources/source-parts.tsx
@@ -14385,6 +14407,10 @@ msgstr "تم استقبال مرجع يبدو نسبياً مع عدة مقاط�
 #: src/components/ask/use-ask-question.ts
 msgid "Got it — your answer was sent."
 msgstr "وصلنا — تم إرسال إجابتكم."
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Granted"
+msgstr ""
 
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
@@ -24221,6 +24247,10 @@ msgstr "يلزم نشر هذا الوكيل قبل مشاركته"
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
 msgstr "نشر هذا الوكيل إلى السحابة وإعطاؤه جهازاً يسجّل دخوله بنفسه."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Publish to vault {vault}"
+msgstr ""
+
 #~ msgid "published"
 #~ msgstr ""
 
@@ -27338,6 +27368,10 @@ msgstr "جاري البحث…"
 #: src/components/credentials/VariableDetails.tsx
 msgid "Secret (mask value)"
 msgstr "سري (إخفاء القيمة)"
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Secret access request"
+msgstr ""
 
 #: src/components/quick-create/registry.ts
 msgid "Secret created"
@@ -31325,6 +31359,7 @@ msgid "The query failed"
 msgstr "فشل الاستعلام"
 
 #: src/components/conversation/ShareReplyCard.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 msgid "The receiver"
 msgstr "المستلِم"
 
@@ -31759,6 +31794,10 @@ msgstr "جاءت هذه المحادثة من مشروع باسم \"{remoteProje
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This conversation came from a project on another machine. Pick the local project folder it should map to."
 msgstr "جاءت هذه المحادثة من مشروع على جهاز آخر. يُرجى اختيار المجلد المحلي الذي يجب ربطه به."
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "This conversation has no project to grant from."
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "This conversation is local-only. It will be removed from this device."

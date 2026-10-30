@@ -47,6 +47,8 @@ export interface CredentialVarStatus {
   store: CredentialValueStore;
   /** A value exists in that store; for a `cli` variable, its check passed. */
   present: boolean;
+  /** Where this variable's shared value lives (`{vault, key}`); absent: not published yet. */
+  secret_ref?: { vault: string; key: string } | null;
   /** `ONE_OF`: the way this variable belongs to; empty = its own name. */
   way?: string;
   /** `cli`: the command that signs in on THIS machine; empty for every other kind. */
@@ -150,8 +152,9 @@ export interface CredentialsStatus {
   vault_enabled: boolean;
   credentials: CredentialStatusRow[];
   files: CredentialScopeFile[];
-  /** The project's secret manager, in words — where a teammate's values are fetched from. Null: none. */
-  secret_store?: string | null;
+  /** The project's vault names (`secret_vaults` in project_manifest.json) — where a teammate's
+   *  values are published and fetched. Empty: none. */
+  secret_vaults?: string[];
 }
 
 /** What a write answers: which credential, and where it lives. */
@@ -354,7 +357,7 @@ export class CredentialsService {
   //    `no_vault`, `unknown_vault`, `needs_connection` or `denied`. ──
 
   /** The secret managers this Flowpad can use. */
-  async managers(): Promise<SecretManagerInfo[]> {
+  async listManagers(): Promise<SecretManagerInfo[]> {
     const res = await dataManager.callAction<unknown, { managers?: SecretManagerInfo[] }>(this.action('managers', 'GET'));
     return res?.managers ?? [];
   }
@@ -368,7 +371,7 @@ export class CredentialsService {
   }
 
   /** Add or replace the project's vault `name`; answers every vault. */
-  async setVault(projectId: string, name: string, vault: SecretVault): Promise<Record<string, SecretVault>> {
+  async addVault(projectId: string, name: string, vault: SecretVault): Promise<Record<string, SecretVault>> {
     return this.vaultWrite('vault-set', { project_id: projectId, name, spec: vault });
   }
 

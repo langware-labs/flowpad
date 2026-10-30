@@ -165,7 +165,7 @@ process still reads its deployment's binding (above).
   through the same ask-for-help path, and the owner grants it in the store itself (GCP IAM
   `roles/secretmanager.secretAccessor`; a 1Password vault share). Flowpad grants nothing itself yet.
 
-The `onepassword` store (`flow_sdk/secrets/onepassword.py`) runs the `op` CLI as whoever is signed in
+The `onepassword` secret manager (`agentic-assets/secret_manager/onepassword/store.py`) runs the `op` CLI as whoever is signed in
 on the machine; a value never rides its command line (writes go as a JSON template on stdin).
 
 ## Resolution — what a process receives

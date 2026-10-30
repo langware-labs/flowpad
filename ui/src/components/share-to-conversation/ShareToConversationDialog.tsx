@@ -9,6 +9,7 @@ import {
   hasRemoteParticipant,
   hasSomethingToSend,
   mintInviteLink,
+  credentialsService,
   normalizeEmail,
   oauthService,
   OAUTH_PROVIDERS,
@@ -174,6 +175,7 @@ export function ShareToConversationDialog({
   // The type's own pre-share step (a credential needs its project's secret manager) — shown first.
   const preShare = usePreShare(source.preShareRef, open);
   const [preShareDone, setPreShareDone] = useState(false);
+  const [preShareBusy, setPreShareBusy] = useState(false);
   const [dontAsk, setDontAsk] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
   const [excludedRefs, setExcludedRefs] = useState<Set<string>>(new Set());
@@ -388,6 +390,28 @@ export function ShareToConversationDialog({
     if (gitCapable && preflight.fix) setStep('changes');
     else linkOrCompose();
   }, [open, step, owner.loading, preferences.isLoaded, preShare.answered, preShare.answer, preShareDone, gitCapable, preflight.answered, preflight.fix, linkOrCompose]);
+  const preShareFinished = useCallback(() => {
+    setPreShareDone(true);
+    // The credential/manifest changed: the project's Git state did too — ask again before composing.
+    preflight.refetch();
+    setStep('loading');
+  }, [preflight]);
+  const publishToVault = useCallback(
+    async (vault: string) => {
+      const answer = preShare.answer;
+      if (!answer?.project_id || !answer.name) return;
+      setPreShareBusy(true);
+      try {
+        await credentialsService.publish(answer.name, answer.project_id, vault);
+        preShareFinished();
+      } catch (err) {
+        setLocalError(errorMessage(err, t`Could not publish to vault ${vault}.`));
+      } finally {
+        setPreShareBusy(false);
+      }
+    },
+    [preShare.answer, preShareFinished, t],
+  );
   const [fixBusy, setFixBusy] = useState(false);
   const commitChanges = useCallback(async () => {
     const ref = source.gitPreflightRef;
@@ -685,12 +709,24 @@ export function ShareToConversationDialog({
                 <WikiButton wikiword="Secret managers" linkText={t`Learn more`} className="mt-2" />
               </div>
             )}
-            <div className="flex items-center justify-end gap-3">
+            {shownError && <p className="text-xs text-destructive">{shownError}</p>}
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <Button variant="outline" onClick={onClose} data-testid="share-preshare-cancel">
                 <Trans>Cancel</Trans>
               </Button>
+              {(preShare.answer?.vaults ?? []).map((vault) => (
+                <Button
+                  key={vault}
+                  variant="secondary"
+                  disabled={preShareBusy}
+                  onClick={() => void publishToVault(vault)}
+                  data-testid={`share-preshare-vault-${vault}`}
+                >
+                  <Trans>Publish to vault {vault}</Trans>
+                </Button>
+              ))}
               <Button onClick={() => setStep('secret-vault')} data-testid="share-preshare-setup">
-                <Trans>Set up secret manager</Trans>
+                {preShare.answer?.vaults?.length ? <Trans>Add a vault</Trans> : <Trans>Set up secret manager</Trans>}
               </Button>
             </div>
           </div>
@@ -699,12 +735,7 @@ export function ShareToConversationDialog({
             projectId={preShare.answer.project_id}
             credential={preShare.answer.name}
             onCancel={() => setStep('preshare')}
-            onDone={() => {
-              setPreShareDone(true);
-              // The manifest changed: the project's Git state did too — ask again before composing.
-              preflight.refetch();
-              setStep('loading');
-            }}
+            onDone={preShareFinished}
           />
         ) : !shared && step === 'changes' ? (
           <div className="flex flex-col gap-5 text-sm" data-testid="share-changes-step">

@@ -14,4 +14,4 @@ The project names its secret manager once, in its project manifest: **GCP Secret
 - **No access yet?** **Request access** asks the owner. Access is given to the project's secrets as a whole, in the secret manager itself.
 - **No secret manager on the project?** **Report** sends it to the project's people through the usual help channel.
 
-From the command line: `flow credentials publish <name>` puts your values in, `flow credentials fetch <name>` takes them out. Both print names only.
+From the command line: `flow secrets publish <name> --vault <vault>` puts your values in, `flow secrets fetch <name>` takes them out. Both print names only.

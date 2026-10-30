@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { dataManager, TypeId, Project } from '@sdk';
+import { credentialsService, dataManager, TypeId, Project } from '@sdk';
 import type { ShareSource } from '@src/hooks/share-sources';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 
@@ -139,16 +139,17 @@ describe('the generic pre-share step', () => {
     expect(screen.getByTestId('test-recipients')).toBeTruthy();
   });
 
-  it("shows the type's step first, then the secret manager picker, then the standard dialog", async () => {
+  it("shows the type's step first, then the vault picker, then the standard dialog", async () => {
     pre.answer = {
-      needed: true, kind: 'secret_store', project_id: PID, name: 'bright_data',
+      needed: true, kind: 'secret_vault', project_id: PID, name: 'bright_data', vaults: [],
       title: 'Share Bright Data', detail: 'Sharing credentials requires a secret manager on the project.',
     };
-    const calls: { name: string; body: unknown }[] = [];
-    vi.spyOn(dataManager, 'callAction').mockImplementation((action: { name?: string; subpath?: string | null; bodyParameters?: unknown }) => {
-      calls.push({ name: [action.name, action.subpath].filter(Boolean).join('/'), body: action.bodyParameters });
-      return Promise.resolve({ unshippable: [], gitignored: [], published: ['BRIGHT_DATA_API'] } as never);
-    });
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [], gitignored: [] } as never);
+    vi.spyOn(credentialsService, 'listManagers').mockResolvedValue([
+      { name: 'onepassword', title: '1Password', description: '', icon: '', config_fields: [{ name: 'account', label: 'Account', required: false }] },
+    ] as never);
+    const addVault = vi.spyOn(credentialsService, 'addVault').mockResolvedValue(undefined as never);
+    const publish = vi.spyOn(credentialsService, 'publish').mockResolvedValue({ published: ['BRIGHT_DATA_API'] } as never);
     show();
 
     await screen.findByTestId('share-preshare-step');
@@ -156,16 +157,24 @@ describe('the generic pre-share step', () => {
     expect(screen.queryByTestId('test-recipients')).toBeNull();
 
     fireEvent.click(screen.getByTestId('share-preshare-setup'));
-    await screen.findByTestId('secret-store-picker');
-    fireEvent.change(screen.getByTestId('secret-store-first'), { target: { value: 'gtm-studio' } });
-    fireEvent.click(screen.getByTestId('secret-store-save'));
+    await screen.findByTestId('secret-manager-option-onepassword');
+    fireEvent.change(screen.getByTestId('secret-vault-name'), { target: { value: 'team' } });
+    fireEvent.change(screen.getByTestId('secret-vault-field-account'), { target: { value: 'acme' } });
+    fireEvent.click(screen.getByTestId('secret-vault-save'));
 
     await screen.findByTestId('test-recipients');
-    const store = calls.find((c) => c.name === 'set-secret-store');
-    expect(store?.body).toEqual({
-      store: { type: 'gcp_secret_manager', config: { gcp_project: 'gtm-studio' }, connection: 'google' },
-    });
-    const publish = calls.find((c) => c.name.endsWith('publish'));
-    expect(publish?.body).toEqual({ name: 'bright_data', project_id: PID });
+    expect(addVault).toHaveBeenCalledWith(PID, 'team', { manager: 'onepassword', config: { account: 'acme' } });
+    expect(publish).toHaveBeenCalledWith('bright_data', PID, 'team');
+  });
+
+  it('with a vault declared, publishes into it straight from the step', async () => {
+    pre.answer = { needed: true, kind: 'secret_vault', project_id: PID, name: 'bright_data', vaults: ['team'] };
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [], gitignored: [] } as never);
+    const publish = vi.spyOn(credentialsService, 'publish').mockResolvedValue({ published: [] } as never);
+    show();
+
+    fireEvent.click(await screen.findByTestId('share-preshare-vault-team'));
+    await screen.findByTestId('test-recipients');
+    expect(publish).toHaveBeenCalledWith('bright_data', PID, 'team');
   });
 });

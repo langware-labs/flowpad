@@ -304,7 +304,7 @@ async def credentials_status(
             shadowed_by = str(winner.spec.typeid) if winner is not None and winner.spec.id != spec.id else None
             var_rows.append(CredentialVarStatusSpec(
                 **shown, placeholder=var.placeholder, pattern=var.pattern, secret=var.secret, store=store,
-                present=present, found_in=found_in, warning=warning, shadowed_by=shadowed_by,
+                present=present, found_in=found_in, warning=warning, shadowed_by=shadowed_by, secret_ref=var.secret_ref,
             ))
         rows.append(_Draft(spec, var_rows, required, dict(
             **common,

@@ -816,8 +816,12 @@ def _store_refusal(e: Exception) -> Optional[CredentialError]:
     from flow_sdk.builtin.credential_store import UnknownVault  # noqa: PLC0415
     from flow_sdk.secrets import StoreAccessDenied, StoreNeedsConnection  # noqa: PLC0415
 
+    from flow_sdk.secrets.managers import UnknownSecretManager  # noqa: PLC0415
+
     if isinstance(e, UnknownVault):
         return CredentialError(str(e), code="unknown_vault")
+    if isinstance(e, UnknownSecretManager):
+        return CredentialError(str(e), code="unknown_secret_manager")
     if isinstance(e, StoreNeedsConnection):
         return CredentialError(f"the secret manager needs a sign-in: {e}", code="needs_connection")
     if isinstance(e, StoreAccessDenied):

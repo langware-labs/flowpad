@@ -16,6 +16,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     CredentialVarKind,
     Requirement,
 )
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretRefSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
@@ -46,6 +47,8 @@ class CredentialVarStatusSpec(DataSpec):
     #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type —
     #: ``cli`` for a sign-in a command-line tool holds, ``connection`` for an oauth grant.
     store: str = "env"
+    #: Where a teammate's copy lives: ``{vault, key}`` in one of the project's vaults, or None.
+    secret_ref: Optional[SecretRefSpec] = None
     #: A value exists in that store (cli: its check passed on this computer; oauth: the grant is held and
     #: covers ``scopes``).
     present: bool = False

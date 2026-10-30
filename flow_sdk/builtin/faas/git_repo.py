@@ -1523,6 +1523,14 @@ class GitRepo:
             return GitPullResult(ok=True, kind="nothing", branch=current, message="Already up to date")
         return GitPullResult(ok=True, kind="pulled", branch=current, message="Pulled")
 
+    async def _fallback_identity(self) -> Mapping[str, str] | None:
+        """Flowpad's own identity (``GIT_INIT_CONFIG``) for a commit git makes on its own, when the
+        machine has none configured — git refuses to commit without one. ``None`` when it has one."""
+        if (await self._git("config", "user.email")).stdout.strip():
+            return None
+        name, email = dict(GIT_INIT_CONFIG)["user.name"], dict(GIT_INIT_CONFIG)["user.email"]
+        return {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}
+
     async def cherry_pick(self, commits: list[str]) -> GitPullResult:
         """Apply ``commits`` (oldest first) onto the checked-out branch with
         ``cherry-pick -x``, so each new commit names the one it came from.
@@ -1542,9 +1550,10 @@ class GitRepo:
         if not commits:
             return GitPullResult(ok=True, kind="nothing", branch=current, message="Nothing to bring in")
         dirty = bool((await self._git("status", "--porcelain", "--untracked-files=no")).stdout.strip())
-        if dirty and not (await self._git("stash", "push", "-q", "-m", "flowpad: cherry-pick")).ok:
+        who = await self._fallback_identity()
+        if dirty and not (await self._git("stash", "push", "-q", "-m", "flowpad: cherry-pick", env=who)).ok:
             return GitPullResult(ok=False, kind="generic", branch=current, message="Could not set your edits aside")
-        picked = await self._git("cherry-pick", "-x", "--allow-empty", "--keep-redundant-commits", *commits)
+        picked = await self._git("cherry-pick", "-x", "--allow-empty", "--keep-redundant-commits", *commits, env=who)
         if not picked.ok:
             kind, msg, conflicted = await self._sync_failure(picked, "Cherry-pick failed")
             if kind == "conflict" and dirty:
