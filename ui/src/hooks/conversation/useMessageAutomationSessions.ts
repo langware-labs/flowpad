@@ -43,21 +43,24 @@ export function returnedValue(process: AgenticProcess): { label: string; path: s
   return { label: (path.split('/').pop() ?? path).replace(/\.value\.json$/, ''), path };
 }
 
+const LATEST = ['latest'];
+const latestKey = () => LATEST;
+
 /** The newest session of a set (by `created_date`, as `newestBy` orders), or none. */
 export function latestSession(sessions: ReadonlyMap<string, AgenticProcess>): AgenticProcess | null {
-  return newestBy([...sessions.values()], () => 'latest').get('latest') ?? null;
+  return newestBy([...sessions.values()], latestKey).get('latest') ?? null;
 }
 
-/** The message a session was started on — its `flow_message-` context chip. */
-export function sessionMessageId(process: AgenticProcess): string | null {
-  const chip = (process.sharedContextEntities ?? []).find((tid) => tid.type === FlowMessage.type);
-  return chip ? String(chip.id) : null;
+/** The messages a session was started on — its `flow_message-` context chips (a conversation's
+ *  session that was reused from several messages carries one per message). */
+export function sessionMessageIds(process: AgenticProcess): string[] {
+  return (process.sharedContextEntities ?? []).filter((tid) => tid.type === FlowMessage.type).map((tid) => String(tid.id));
 }
 
-/** The conversation a session is keyed to (`target_typeid_str`). */
-function sessionConversationId(process: AgenticProcess): string | null {
+/** The conversation a session is keyed to (`target_typeid_str`) — zero or one key. */
+function sessionConversationIds(process: AgenticProcess): string[] {
   const target = String(process.target_typeid_str ?? '');
-  return target.startsWith('conversation-') ? target.slice('conversation-'.length) : null;
+  return target.startsWith('conversation-') ? [target.slice('conversation-'.length)] : [];
 }
 
 const byRule = (p: AgenticProcess) => !!automationLineage(p);
@@ -66,16 +69,13 @@ const byHand = (p: AgenticProcess) => !automationLineage(p);
 /** The newest session per key among those `keep` admits (newest wins: a rule run twice on one message shows its latest). */
 function newestBy(
   processes: readonly AgenticProcess[],
-  keyOf: (p: AgenticProcess) => string | null,
+  keysOf: (p: AgenticProcess) => string[],
   keep: (p: AgenticProcess) => boolean = byRule,
 ): Map<string, AgenticProcess> {
   const out = new Map<string, AgenticProcess>();
   const started = processes.filter(keep);
   started.sort((a, b) => String(a.created_date ?? '').localeCompare(String(b.created_date ?? '')));
-  for (const process of started) {
-    const key = keyOf(process);
-    if (key) out.set(key, process);
-  }
+  for (const process of started) for (const key of keysOf(process)) out.set(key, process);
   return out;
 }
 
@@ -89,16 +89,16 @@ const signature = (sessions: ReadonlyMap<string, AgenticProcess>): string =>
  *  hands a new list on every change to any session of the conversation, and a new map would re-walk the feed. */
 function useNewestBy(
   processes: readonly AgenticProcess[],
-  keyOf: (p: AgenticProcess) => string | null,
+  keysOf: (p: AgenticProcess) => string[],
   keep: (p: AgenticProcess) => boolean = byRule,
 ): ReadonlyMap<string, AgenticProcess> {
   const held = useRef<{ map: ReadonlyMap<string, AgenticProcess>; signature: string } | null>(null);
   return useMemo(() => {
-    const map = newestBy(processes, keyOf, keep);
+    const map = newestBy(processes, keysOf, keep);
     const sig = signature(map);
     if (held.current?.signature !== sig) held.current = { map, signature: sig };
     return held.current.map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `keyOf` and `keep` are module constants at every call site
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `keysOf` and `keep` are module constants at every call site
   }, [processes]);
 }
 
@@ -125,15 +125,15 @@ export function useMessageSessions(conversationId: string | null | undefined): {
   manual: ReadonlyMap<string, AgenticProcess>;
 } {
   const processes = useConversationProcesses(conversationId);
-  const automation = useNewestBy(processes, sessionMessageId);
-  const manual = useNewestBy(processes, sessionMessageId, byHand);
+  const automation = useNewestBy(processes, sessionMessageIds);
+  const manual = useNewestBy(processes, sessionMessageIds, byHand);
   return { automation, manual };
 }
 
 export function useMessageAutomationSessions(
   conversationId: string | null | undefined,
 ): ReadonlyMap<string, AgenticProcess> {
-  return useNewestBy(useConversationProcesses(conversationId), sessionMessageId);
+  return useNewestBy(useConversationProcesses(conversationId), sessionMessageIds);
 }
 
 const NO_IDS: readonly string[] = [];
@@ -153,5 +153,5 @@ export function useConversationAutomationMarks(conversationIds: readonly string[
     });
   }, [key]);
   const { data: processes = NONE } = useEntitiesQuery<AgenticProcess>(request, { enabled: !!key });
-  return useNewestBy(processes, sessionConversationId);
+  return useNewestBy(processes, sessionConversationIds);
 }

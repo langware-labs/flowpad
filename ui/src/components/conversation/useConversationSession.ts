@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AgenticProcess, Conversation, FlowMessage, ProcessKind, TypeId } from '@sdk';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AgenticProcess, Conversation, FlowMessage, ProcessKind, TypeId, isProcessFailed } from '@sdk';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { mostRecentProcess } from '@src/utils/process-recency';
@@ -17,10 +17,11 @@ import type { WorkerType } from './conversation-session-constants';
  * the two never disagree: a conversationProcess is present (⇒ Open) or absent
  * (⇒ launch toolbar) — never neither.
  *
- *  - `launch(worker)` starts a session in the conversation's project. It is
- *    wrapped in `ensureMapped`, so an unmapped conversation opens the project
- *    picker first and the launch continues automatically once a project is
- *    chosen.
+ *  - `launch(worker)` sends the prompt to the conversationProcess when one of
+ *    that worker type exists and has not failed (queued if it is busy), and
+ *    opens it. Only otherwise does it start a new session in the conversation's
+ *    project — wrapped in `ensureMapped`, so an unmapped conversation opens the
+ *    project picker first and the launch continues once a project is chosen.
  *  - `open()` navigates to the live shell of the existing conversationProcess.
  */
 export function useConversationSession(opts: {
@@ -137,13 +138,39 @@ export function useConversationSession(opts: {
     [conversation, starting, buildPrompt],
   );
 
+  // `launch` reads the process through a ref so status churn doesn't change its identity.
+  const processRef = useRef(conversationProcess);
+  processRef.current = conversationProcess;
+
+  const sendToSession = useCallback(
+    (target: AgenticProcess, prompt: () => string = buildPrompt, messageId?: string) => {
+      // A message launch stamps the message on the session: its chip shows on the message.
+      const stamped = messageId ? target.shareContextEntities(new TypeId(FlowMessage.type, messageId)) : Promise.resolve();
+      void navigation.openShellProcess(target.id);
+      // Idle: runs now (resolves when the turn ends). Busy: queued.
+      stamped
+        .then(() => target.promptOrEnqueue(prompt()))
+        .catch((err) => {
+          console.error('[useConversationSession] send to session failed', err);
+          notify.error({ title: t`Failed to send to the session` });
+        });
+    },
+    [buildPrompt, navigation],
+  );
+
   const launch = useCallback(
     (worker: WorkerType, prompt?: () => string, messageId?: string) => {
+      // Reuse the conversation's own session: same worker type, not failed.
+      const existing = processRef.current;
+      if (existing && existing.worker_type === worker && !isProcessFailed(existing.status)) {
+        sendToSession(existing, prompt, messageId);
+        return;
+      }
       const run = () => startSession(worker, prompt, messageId);
       if (ensureMapped) ensureMapped(run, { onSkip: () => startSession(worker, prompt, messageId, true) });
       else void run();
     },
-    [startSession, ensureMapped],
+    [startSession, sendToSession, ensureMapped],
   );
 
   const open = useCallback(() => {
