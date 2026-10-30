@@ -107,6 +107,7 @@ export function webLinkMatches(text: string): LinkMatch[] {
 }
 
 const COMMAND_LINE = /^([ \t]*(?:[-*•>][ \t]+)?)(![^\r\n]*?)[ \t]*$/gm;
+const QUOTED_SPAN = new RegExp(QUOTED.join('|'), 'gu');
 
 /**
  * `! cmd` alone on a line, or quoted in prose (`run "! gcloud auth login" then…`). Markdown inline
@@ -114,10 +115,11 @@ const COMMAND_LINE = /^([ \t]*(?:[-*•>][ \t]+)?)(![^\r\n]*?)[ \t]*$/gm;
  */
 export function commandLinkMatches(text: string): LinkMatch[] {
   const links: LinkMatch[] = [];
+  if (!text.includes('!')) return links;
   for (const match of text.matchAll(COMMAND_LINE)) {
     if (COMMAND_LINK.test(match[2])) links.push({ text: match[2], index: match.index + match[1].length });
   }
-  for (const match of text.matchAll(new RegExp(QUOTED.join('|'), 'gu'))) {
+  for (const match of text.matchAll(QUOTED_SPAN)) {
     const quoted = match[1] ?? match[2] ?? match[3];
     if (quoted && COMMAND_LINK.test(quoted)) links.push({ text: quoted, index: match.index + 1 });
   }
@@ -129,10 +131,15 @@ export function commandLinkMatches(text: string): LinkMatch[] {
  * holds what is inside it (`! cat src/a.ts` is one link); `commands` lets a surface add the ones
  * only it can see.
  */
-export function linkMatches(text: string, commands: LinkMatch[] = commandLinkMatches(text)): LinkMatch[] {
-  const held = [...commands].sort((a, b) => a.index - b.index);
-  const inside = (m: LinkMatch) => held.some((c) => m.index < c.index + c.text.length && c.index < m.index + m.text.length);
-  const sorted = [...held, ...[...fileLinkMatches(text), ...webLinkMatches(text)].filter((m) => !inside(m))].sort(
+export function linkMatches(
+  text: string,
+  commands: LinkMatch[] = commandLinkMatches(text),
+  { web = true }: { web?: boolean } = {},
+): LinkMatch[] {
+  const others = web ? [...fileLinkMatches(text), ...webLinkMatches(text)] : fileLinkMatches(text);
+  const inside = (m: LinkMatch) =>
+    commands.some((c) => m.index < c.index + c.text.length && c.index < m.index + m.text.length);
+  const sorted = [...commands, ...(commands.length ? others.filter((m) => !inside(m)) : others)].sort(
     (a, b) => a.index - b.index,
   );
   const links: LinkMatch[] = [];

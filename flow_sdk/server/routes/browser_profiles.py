@@ -79,5 +79,4 @@ def browser_profiles_command(req: BrowserCommandRequest):
         from flow_sdk.compute.providers.desktop.provider import default_terminal_shell  # noqa: PLC0415
 
         grammar = grammar_of(default_terminal_shell())
-    choice = ProfileChoice(browser=req.browser, profile=req.profile)
-    return ApiSuccessResponse(data={"command": with_browser(req.command, choice, grammar)})
+    return ApiSuccessResponse(data={"command": with_browser(req.command, req, grammar)})

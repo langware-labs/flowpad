@@ -16,7 +16,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } fro
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apiBase, apiContext } from '../_shared/api';
-import { sdkModule } from '../_shared/xterm';
+import { printedLinkPoint, sdkModule } from '../_shared/xterm';
 import { openVibe } from '../vibe/_helpers';
 
 const API = apiBase();
@@ -47,7 +47,7 @@ const turn = () =>
     'Not a command: ! Important note.',
   ].join('\n');
 
-/** What `mark.sh <tag>` wrote since `since`: one entry per run, its BROWSER as content. */
+/** What `mark.sh <tag>` wrote: one entry per run, its BROWSER as content. */
 async function runs(tag: string): Promise<string[]> {
   const files = await readdir(join(root, 'out')).catch(() => [] as string[]);
   return Promise.all(files.filter((f) => f.startsWith(`${tag}-`)).sort().map((f) => readFile(join(root, 'out', f), 'utf8')));
@@ -159,40 +159,9 @@ function domSurface(name: string, open: Surface['open']): Surface {
   };
 }
 
-/**
- * The screen point of a form's command in the xterm — on its newest row, which may be Claude Code's
- * echo of an earlier run (`!  sh mark.sh quoted`, two spaces: also a command link).
- */
-async function xtermPoint(page: Page, form: Form): Promise<{ x: number; y: number }> {
-  const pattern = `!\\s+sh mark\\.sh ${form}`;
-  const rows = page.locator('.xterm-rows:visible > div').filter({ hasText: new RegExp(pattern) });
-  // Only the rows on screen are drawn: scroll back, as a person would, until the command shows.
-  const screen = page.locator('.xterm-screen:visible').last();
-  for (let up = 0; (await rows.count()) === 0 && up < 20; up++) {
-    await screen.hover();
-    await page.mouse.wheel(0, -200);
-  }
-  const row = rows.last();
-  await expect(row).toBeVisible();
-  return row.evaluate((element, pattern) => {
-    const text = (element.textContent ?? '').replace(/\u00a0/g, ' ');
-    let index = text.search(new RegExp(pattern));
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const length = node.textContent?.length ?? 0;
-      if (index >= length) {
-        index -= length;
-        continue;
-      }
-      const range = document.createRange();
-      range.setStart(node, index);
-      range.setEnd(node, index + 1);
-      const rect = range.getBoundingClientRect();
-      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-    }
-    throw new Error(`no glyph for ${pattern}`);
-  }, pattern);
-}
+/** A form's command in the xterm — on its newest row, which may be Claude Code's echo of a run (`!  sh …`). */
+const xtermPoint = (page: Page, form: Form) =>
+  printedLinkPoint(page, new RegExp(`!\\s+sh mark\\.sh ${form}`), '', { scrollBack: true });
 
 const SURFACES: Surface[] = [
   {
@@ -249,7 +218,7 @@ test.afterAll(async () => {
   await rq.delete(`${API}/api/v1/graph/project/${projectId}`).catch(() => undefined);
   await rq.dispose();
   await rm(root, { recursive: true, force: true });
-  if (!process.env.KEEP_SEEDED) for (const dir of seededDirs) await rm(dir, { recursive: true, force: true });
+  for (const dir of seededDirs) await rm(dir, { recursive: true, force: true });
 });
 
 async function newPage(browser: Browser, baseURL: string | undefined): Promise<{ context: BrowserContext; page: Page }> {
@@ -366,7 +335,7 @@ for (const surface of SURFACES) {
 
       await surface.click(page, 'line');
       await page.getByTestId('command-confirm-dont-ask').click();
-      await page.getByTestId('command-confirm-run').click();
+      await page.getByTestId('command-confirm-confirm').click();
       await expectRan('line', before);
       // Exactly one run: the cancelled click never ran.
       expect((await runs('line')).length).toBe(before + 1);

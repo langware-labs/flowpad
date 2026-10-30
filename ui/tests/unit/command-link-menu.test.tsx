@@ -114,12 +114,16 @@ describe('command link menu', () => {
   });
 });
 
+async function openBrowserSubmenu() {
+  openMenu();
+  const trigger = await screen.findByTestId('link-menu-command-browser');
+  act(() => trigger.focus());
+  fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+}
+
 describe('Browser ▸ choice', () => {
   async function chooseWork() {
-    openMenu();
-    const trigger = await screen.findByTestId('link-menu-command-browser');
-    act(() => trigger.focus());
-    fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+    await openBrowserSubmenu();
     await pick('command-browser-chrome-Profile 1');
     expect(mocks.prefs.get(PrefKey.COMMAND_LINK_BROWSER)).toEqual({ browser: 'chrome', profile: 'Profile 1' });
   }
@@ -157,10 +161,7 @@ describe('Browser ▸ choice', () => {
   it('System default runs the command as written', async () => {
     mocks.prefs.set(PrefKey.COMMAND_LINK_BROWSER, { browser: 'chrome', profile: 'Profile 1' });
     render(<Harness />);
-    openMenu();
-    const trigger = await screen.findByTestId('link-menu-command-browser');
-    act(() => trigger.focus());
-    fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+    await openBrowserSubmenu();
     await pick('command-browser-default');
     expect(mocks.prefs.get(PrefKey.COMMAND_LINK_BROWSER)).toBeNull();
     click();
@@ -185,7 +186,7 @@ describe('approval before running', () => {
   it('Run runs it and asks again next time', async () => {
     render(<Harness />);
     click();
-    fireEvent.click(await screen.findByTestId('command-confirm-run'));
+    fireEvent.click(await screen.findByTestId('command-confirm-confirm'));
     await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledTimes(1));
     expect(mocks.prefs.get(PrefKey.COMMAND_LINK_CONFIRM)).toBe(true);
     click();
@@ -196,7 +197,7 @@ describe('approval before running', () => {
     render(<Harness />);
     click();
     fireEvent.click(await screen.findByTestId('command-confirm-dont-ask'));
-    fireEvent.click(screen.getByTestId('command-confirm-run'));
+    fireEvent.click(screen.getByTestId('command-confirm-confirm'));
     await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledTimes(1));
     expect(mocks.prefs.get(PrefKey.COMMAND_LINK_CONFIRM)).toBe(false);
     click();

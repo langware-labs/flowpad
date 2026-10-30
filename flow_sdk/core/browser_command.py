@@ -54,6 +54,7 @@ def with_browser(command: str, choice: ProfileChoice | None, grammar: Grammar) -
     if grammar == "posix":
         return f"BROWSER={shlex.quote(value)} {command}"
     if grammar == "powershell":
+        # Not cli_serialization.quote_powershell_literal: importing the driver package costs ~1s on every page opened.
         return "$env:BROWSER = '{}'; {}".format(value.replace("'", "''"), command)
     return f'set "BROWSER={value}" && {command}'
 

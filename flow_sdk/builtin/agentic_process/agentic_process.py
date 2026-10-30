@@ -2735,10 +2735,15 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="prompt is required")
         if self.hub_route:
             return await self._relay_json("enqueue", body=body)
-        self.queue.enqueue(prompt, source=str(body.get("source") or "ui"))
+        await self._enqueue(prompt, source=str(body.get("source") or "ui"))
+        return ApiSuccessResponse(data=self.queue.read())
+
+    async def _enqueue(self, prompt: str, *, source: str) -> dict:
+        """Queue *prompt* behind the running turn: persist it, tell watchers, and arm the drain."""
+        entry = self.queue.enqueue(prompt, source=source)
         await self.notify_updated()
         self._schedule_queue_drain("enqueue")
-        return ApiSuccessResponse(data=self.queue.read())
+        return entry
 
     @action.post(action_name="drain-queue")
     async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -3728,16 +3733,14 @@ class AgenticProcess(Entity):
         a discrete Enter, each once the terminal has gone quiet. Not ``prompt``: that path also
         names the session after its first prompt and queues behind a running turn.
         """
-        escape = getattr(self.driver, "pty_shell_escape", None)
+        escape = self._shell_escape()
         if not escape:
             return ApiFailResponse(message=f"{self.driver.name} has no shell mode", status_code=409)
         if not await self._is_live_pty():
             return ApiFailResponse(message="the session has no live terminal to type into", status_code=409)
         if is_turn_busy(self):
             # Keys typed while the agent answers are lost; the queue delivers it once the turn ends.
-            entry = self.queue.enqueue(f"{escape} {command}", source="shell-command")
-            await self.notify_updated()
-            self._schedule_queue_drain("enqueue")
+            entry = await self._enqueue(f"{escape} {command}", source="shell-command")
             return ApiSuccessResponse(data={"status": "queued", "entry_id": entry.get("id")})
         shell = await self.shell()
         typed = await self.input(escape)
@@ -6820,6 +6823,10 @@ class AgenticProcess(Entity):
             except OSError as e:
                 logger.warning("delete of %s failed: %s", victim, e)
 
+    def _shell_escape(self) -> str | None:
+        """The driver's shell-mode key (``pty_shell_escape``); a driver predating the trait has none."""
+        return getattr(self.driver, "pty_shell_escape", None)
+
     def _supports_plan_mode(self) -> bool:
         """Driver capability flag surfaced on the entity for the chat plan
         toggle. Defensive: a driver predating the capability resolves False
@@ -7046,7 +7053,7 @@ class AgenticProcess(Entity):
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
         # A command link can run in this session's own shell mode (``run_shell_command``).
-        data["supports_shell_command"] = bool(getattr(self.driver, "pty_shell_escape", None)) and bool(self.pty_mode)
+        data["supports_shell_command"] = bool(self._shell_escape() and self.pty_mode)
         data["additional_dirs"] = [
             path
             for path in (data.get("additional_dirs") or [])

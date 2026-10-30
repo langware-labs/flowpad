@@ -129,6 +129,6 @@ describe('command link actions', () => {
   });
 
   it("a command someone else wrote opens the menu instead of running", () => {
-    expect(linkActions(ctx({ trusted: false })).primary).toBe('menu');
+    expect(linkActions(ctx({ trusted: false })).primary).toBeNull();
   });
 });

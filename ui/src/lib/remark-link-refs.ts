@@ -36,7 +36,7 @@ function link(url: string, child: PhrasingContent): Link {
 
 function splitText(node: Text): PhrasingContent[] | null {
   // Web URLs are remark-gfm's: by now they are link nodes, never text.
-  const matches = linkMatches(node.value).filter((m) => !/^https?:/i.test(m.text));
+  const matches = linkMatches(node.value, undefined, { web: false });
   if (matches.length === 0) return null;
   const out: PhrasingContent[] = [];
   let at = 0;
