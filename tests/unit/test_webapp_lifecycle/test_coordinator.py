@@ -155,3 +155,20 @@ async def test_a_bad_handlings_file_is_said_to_the_person(world):
     rec = await coordinator.bring_up(world.app, wait=True)
     assert rec.state is LifecycleState.NEEDS_PERSON and rec.failure.code is FailureCode.BAD_HANDLINGS
     assert world.fixer == 0
+
+
+async def test_a_port_another_program_holds_is_the_persons_never_an_agents(world):
+    world.outcomes = [FailureCode.PORT_HELD]
+    rec = await coordinator.bring_up(world.app, wait=True)
+    assert rec.state is LifecycleState.NEEDS_PERSON and world.fixer == 0 and world.stops == 0
+
+
+async def test_a_missing_credential_is_the_persons_never_an_agents(world, monkeypatch):
+    from flow_sdk.core.webapp.failure import make as typed
+
+    async def owed(_app, *, display):
+        return typed(FailurePhase.DEPENDENCY, FailureCode.CREDENTIAL_MISSING, "Google Cloud: not signed in")
+
+    monkeypatch.setattr(coordinator, "_setup_owed", owed)
+    rec = await coordinator.bring_up(world.app, wait=True)
+    assert rec.state is LifecycleState.NEEDS_PERSON and "Google Cloud" in rec.detail and world.fixer == 0

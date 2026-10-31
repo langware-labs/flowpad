@@ -8,8 +8,11 @@ import type { WebAppLifecycle } from '@sdk';
 import { deliverClaimedQuestion } from '@src/components/ask/ask-claims';
 
 const ID = '11111111-1111-4111-8111-111111111111';
+// Like the backend, every record a test makes changed state later than the one before (`since`).
+let clock = Date.parse('2026-10-31T00:00:00Z');
 const rec = (state: WebAppLifecycle['state'], extra: Partial<WebAppLifecycle> = {}) =>
-  ({ webapp_id: ID, state, detail: '', recovery: '', ports: {}, pids: {}, failure: null, attempts: [], agent_call: '', setup_owed: '', ...extra }) as WebAppLifecycle;
+  ({ webapp_id: ID, state, detail: '', recovery: '', since: new Date((clock += 1000)).toISOString(), ports: {}, pids: {},
+     failure: null, attempts: [], agent_call: '', setup_owed: '', ...extra }) as WebAppLifecycle;
 
 const h = vi.hoisted(() => ({
   app: null as null | Record<string, unknown>,
