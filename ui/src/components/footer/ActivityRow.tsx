@@ -31,6 +31,7 @@ import { fraction } from '@sdk/activity';
 import { cn } from '@src/lib/utils';
 import { humanizeSeconds } from '@src/utils/duration';
 import { iconForActivity } from './activity-icon';
+import { activityWord } from './activity-words';
 import { useElapsedMs } from '@src/hooks/useActivity';
 
 /**
@@ -142,7 +143,7 @@ export const ActivityRow = memo(function ActivityRow({
         >
           <span className="flex w-full min-w-0 items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-sm font-medium" title={spec.label || spec.name}>
-              {spec.label || spec.name}
+              {activityWord(spec.label || spec.name)}
             </span>
             {detail &&
               counters.map(([name, n]) => (
