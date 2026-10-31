@@ -28,6 +28,9 @@ export interface WebappDisplayProps {
  * recovers — this only forwards what the page reports (every post, settled or not, with its `load_id`
  * verbatim) and says what the record says.
  */
+/** The frames already asked for a report (by src): a document reports by itself on every new load. */
+const askedReport = new Set<string>();
+
 export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayProps>(function WebappDisplay(
   { endpoint, src, testId, cacheKey = 0, lifecycle = null },
   ref,
@@ -46,17 +49,17 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
     [],
   );
 
-  // A frame hidden while the app was not showable parked whatever it last showed (the broken page): coming
-  // back to showable loads the app again.
+  // The frame shows what it last loaded — a broken page, the relay's "server did not answer". When the record
+  // comes back to `up` from anything else (hidden while it was set up, or degraded while it recovered), the app
+  // is loaded again.
   const [returns, setReturns] = useState(0);
-  const wasHidden = useRef(!showFrame);
+  const state = lifecycle?.record?.state ?? null;
+  const wasUp = useRef(state === 'up' || !lifecycle);
   useEffect(() => {
-    if (!showFrame) wasHidden.current = true;
-    else if (wasHidden.current) {
-      wasHidden.current = false;
-      setReturns((n) => n + 1);
-    }
-  }, [showFrame]);
+    const up = state === 'up' || !lifecycle;
+    if (up && !wasUp.current) setReturns((n) => n + 1);
+    wasUp.current = up;
+  }, [state, lifecycle]);
 
   // The reporter's posts, forwarded as they come — only from this display's own frame.
   const reportPage = lifecycle?.reportPage;
@@ -72,10 +75,14 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   useEffect(() => {
     if (!showFrame || !reportPage) return;
     window.addEventListener('message', forward);
-    // A frame this mount did not load reports only when asked.
-    frameRef.current?.postToGuest({ type: PAGE_REPORT_REQUEST });
+    // A frame loaded before any display listened reports only when asked — once per document: a warm return to
+    // the same page asks the backend nothing (its verdict is already on the record).
+    if (src && !askedReport.has(src)) {
+      askedReport.add(src);
+      frameRef.current?.postToGuest({ type: PAGE_REPORT_REQUEST });
+    }
     return () => window.removeEventListener('message', forward);
-  }, [showFrame, forward, reportPage]);
+  }, [showFrame, forward, reportPage, src]);
 
   if (!showFrame && lifecycle) return <AppLifecyclePanel lifecycle={lifecycle} />;
 

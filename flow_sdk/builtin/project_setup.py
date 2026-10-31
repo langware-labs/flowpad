@@ -711,6 +711,9 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         tree = tree or await ProjectTree(project, ai=ai, connect_here=connect_here).load()
         control = _CONTROLS[key] = SetupControl()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
+        # The project is in scope whatever the run is rooted at: a run of one declared node (a dependency a
+        # handling runs) names apps within THIS project, never the first of that name anywhere.
+        scope = {"project": pid}
 
         async def run_setup():
             # The run's shell: what the setup does not answer itself runs here, one start per run.
@@ -741,7 +744,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
             async with SharedShell() as base:
                 result = await execute_setup(
                     root or tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
-                    subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
+                    subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None, inputs=scope,
                     shell=functools.partial(_setup_shell, inner=base),
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
                     approved=True, control=control,
@@ -754,7 +757,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     operational = LoadTree(tree)
                     loaded = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
-                        subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
+                        subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None, inputs=scope,
                         shell=functools.partial(_setup_shell, inner=base), approved=True, control=control,
                         # Its "done" (a source has nothing to load) must never stand in for a setup that fell
                         # short: the run's record stays the setup's own verdict.

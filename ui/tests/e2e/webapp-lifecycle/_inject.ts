@@ -1,5 +1,5 @@
 /** Fault injection for the scenarios: kill a process, hold a port, corrupt an install marker. */
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -44,4 +44,17 @@ export function failHealth(appDir: string, on = true): void {
   const f = join(appDir, '.fail_health');
   if (on) writeFileSync(f, '1');
   else rmSync(f, { force: true });
+}
+
+/** Stop whatever still listens on the suite's fixture ports — a server a crashed earlier run left behind. */
+export function freeFixturePorts(ports: number[]): void {
+  for (const port of ports) {
+    let pids = '';
+    try {
+      pids = execFileSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN']).toString().trim();
+    } catch {
+      continue; // nothing listens
+    }
+    for (const pid of pids.split('\n').filter(Boolean)) sigkill(Number(pid));
+  }
 }

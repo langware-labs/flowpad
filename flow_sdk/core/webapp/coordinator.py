@@ -63,6 +63,8 @@ _DETERMINISTIC: dict[FailureCode, HandlingAction] = {
     FailureCode.OUT_OF_MEMORY: HandlingAction.NEEDS_PERSON,
     FailureCode.FOLDER_GONE: HandlingAction.NEEDS_PERSON,
     FailureCode.PORT_CONFLICT: HandlingAction.NEEDS_PERSON,
+    # A required port another program holds (another checkout's server, a container): only the person may stop it.
+    FailureCode.PORT_HELD: HandlingAction.NEEDS_PERSON,
 }
 
 
@@ -194,7 +196,26 @@ async def _setup_owed(app, *, display: str) -> Optional[WebappFailureSpec]:
         return None
     why = (_unmet(result, target) if result is not None else "") or _leaf_failure(checked.root, owed=True)
     logger.info("web app %s: setup still owes %s (%s)", app.name, why, run)
+    # The failing step's own typed failure (a dependency's start that found its port held) keeps its code: the
+    # ladder decides on what went wrong, not on "setup is owed".
+    typed = _typed_leaf(result.root if result is not None else None)
+    if typed is not None:
+        return typed
     return make(FailurePhase.DEPENDENCY, FailureCode.SETUP_OWED, why or "its setup is not done", folder=app.asset_ref)
+
+
+def _typed_leaf(node) -> Optional[WebappFailureSpec]:
+    """The first typed ``webapp.failure`` a failed step of the setup tree answered with, depth first."""
+    if node is None:
+        return None
+    for child in getattr(node, "children", None) or []:
+        if (found := _typed_leaf(child)) is not None:
+            return found
+    for wizard in (getattr(node, "prepare", None), getattr(node, "run", None)):
+        for answer in (getattr(wizard, "steps", None) or {}).values() if wizard is not None and not wizard.ok else ():
+            if not answer.ok and (found := of_step(answer.value)) is not None:
+                return found
+    return None
 
 
 # ── the ladder ────────────────────────────────────────────────────────────────

@@ -70,11 +70,13 @@ class WebApp(SetupSkippable, Entity):
             from flow_sdk.core.webapp import record  # noqa: PLC0415
 
             rec = record.read(str(self.id), self.project_id or "")
-            if rec.state.value == "down":
+            from flow_sdk.schema.data_spec.webapp_lifecycle_spec import LifecycleState  # noqa: PLC0415
+
+            if rec.state is LifecycleState.DOWN:
                 from flow_sdk.builtin.webapp_setup import _processes  # noqa: PLC0415
 
                 if not _processes(self):  # files Flowpad serves itself: up while placed (docs/webapp-lifecycle.md)
-                    rec = rec.model_copy(update={"state": "up", "detail": "files Flowpad serves itself"})
+                    rec = rec.model_copy(update={"state": LifecycleState.UP, "detail": "files Flowpad serves itself"})
             return rec.model_dump(mode="json")
         except Exception:  # noqa: BLE001 — a record that cannot be read is no record, never a broken row
             return None

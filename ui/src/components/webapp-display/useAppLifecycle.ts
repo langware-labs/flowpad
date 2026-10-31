@@ -32,6 +32,15 @@ export interface AppLifecycle {
  * Opening an app means "make it work": `autoUp` asks the backend to bring it up ONCE per app when its record
  * is neither showable nor busy. The backend owns every retry from there.
  */
+const sinceOf = (rec: WebAppLifecycle | null): number => (rec?.since ? Date.parse(rec.since) || 0 : 0);
+
+/** The later of two records of one app (by when its state changed); the pushed one on a tie. */
+export function newer(live: WebAppLifecycle | null, answered: WebAppLifecycle | null): WebAppLifecycle | null {
+  if (!answered) return live;
+  if (!live) return answered;
+  return sinceOf(answered) > sinceOf(live) ? answered : live;
+}
+
 export function useAppLifecycle(
   webappId: string | null,
   { display = '', autoUp = true }: { display?: string; autoUp?: boolean } = {},
@@ -40,15 +49,13 @@ export function useAppLifecycle(
   const { data: app, isLoading, notFound } = useEntity<WebApp>(typeId, { watch: true });
   const live = app?.lifecycle ?? null;
 
-  // An action's answer is the record as of that call; the next push (a new `live`) supersedes it.
-  const [answered, setAnswered] = useState<{ base: WebAppLifecycle | null; record: WebAppLifecycle } | null>(null);
-  const record = answered && answered.base === live ? answered.record : live;
-  const answer = useCallback(
-    (next: WebAppLifecycle | null) => {
-      if (next) setAnswered({ base: live, record: next });
-    },
-    [live],
-  );
+  // An action's answer shows at once; a push supersedes it as soon as it says something newer. Compared by the
+  // record's own `since` (when its state last changed), never by reference — the store updates the row in place.
+  const [answered, setAnswered] = useState<WebAppLifecycle | null>(null);
+  const record = newer(live, answered);
+  const answer = useCallback((next: WebAppLifecycle | null) => {
+    if (next) setAnswered(next);
+  }, []);
 
   const upAsked = useRef<string | null>(null);
   useEffect(() => {

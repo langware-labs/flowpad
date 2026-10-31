@@ -118,7 +118,8 @@ function useDirectUrl(endpoint: ServedApp | null): { url: string; pending: boole
   const { data, isPending } = useQuery({
     // The port too: a restarted server keeps its mount and moves its address.
     queryKey: ['service_endpoint', endpoint?.id ?? null, 'direct-url', endpoint?.mount ?? null, port],
-    queryFn: () => endpoint!.directUrl().catch(() => ''),
+    // A failure is not an answer: it is asked again (react-query's own retry), never kept as '' for good.
+    queryFn: () => endpoint!.directUrl(),
     enabled: !!endpoint,
     staleTime: Infinity,
   });
@@ -190,7 +191,9 @@ export function useAppDisplay(
   const servedFound = local.find((app) => app.backend?.type === 'static') ?? null;
   // Held by VALUE (the proxy and the mount): `served()` builds a fresh view per render, and everything
   // downstream — the direct-url query, the frame's key — must not see a new app each time.
-  const held = `${devFound?.id ?? ''}/${devFound?.mount ?? ''}|${servedFound?.id ?? ''}/${servedFound?.mount ?? ''}`;
+  // The dev server's PORT too: a server that comes up on another port (a first start, a moved one) is a new address.
+  const devPort = devFound?.backend?.type === 'proxy' ? devFound.backend.port : '';
+  const held = `${devFound?.id ?? ''}/${devFound?.mount ?? ''}:${devPort}|${servedFound?.id ?? ''}/${servedFound?.mount ?? ''}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const [devEndpoint, servedEndpoint] = useMemo(() => [devFound, servedFound], [held]);
   // An address not answered yet is not an idle app: until it is, nothing is chosen (no setup gate).
