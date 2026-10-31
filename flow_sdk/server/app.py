@@ -131,7 +131,7 @@ async def _on_server_startup():
     try:
         from flow_sdk.core.webapp.coordinator import adopt_on_start  # noqa: PLC0415
 
-        await adopt_on_start()
+        adopt_on_start()
     except Exception:
         logging.getLogger(__name__).exception("Web app lifecycle records could not be settled")
 

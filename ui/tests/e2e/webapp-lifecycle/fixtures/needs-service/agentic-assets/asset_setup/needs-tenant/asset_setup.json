@@ -1,7 +1,6 @@
 {
   "name": "needs-tenant",
-  "label": "Tenant service is up",
-  "subject": "",
+  "label": "service-stub's tenant is up",
   "run": "webapp-service-up",
-  "inputs": { "webapp": "<filled at seed time>", "service": "tenant" }
+  "inputs": { "webapp": "service-stub", "service": "tenant" }
 }

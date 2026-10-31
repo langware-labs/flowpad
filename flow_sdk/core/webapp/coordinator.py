@@ -224,19 +224,26 @@ async def _ladder(app, failure: WebappFailureSpec, *, display: str, reason: Reas
         return
     hint = found.arg if found is not None and found.action is HandlingAction.ESCALATE else ""
 
-    # 1. A learned handling, by code.
-    if found is not None and found.action is not HandlingAction.ESCALATE and counter.handled < HANDLING_TRIES:
-        outcome = await _act(app, failure, found.action, found.arg, label=f"handling {found.id}", display=display,
-                             counts={"handled": 1})
-        handlings.count(folder, found.id, fixed=outcome is None)
-        handlings.log(folder, failure, found.action.value, "fixed" if outcome is None else "not_fixed", found.id)
+    async def rung(action: HandlingAction, arg: str, label: str, counts: dict, handling_id: str = "") -> bool:
+        """One rung by code; True when the ladder is done (it held, or a new failure took over)."""
+        nonlocal failure
+        outcome = await _act(app, failure, action, arg, label=label, display=display, counts=counts)
+        if handling_id:
+            handlings.count(folder, handling_id, fixed=outcome is None)
+        handlings.log(folder, failure, action.value, "fixed" if outcome is None else "not_fixed", handling_id)
         if outcome is None:
-            return
-        tried.append(f"handling {found.id} ({found.action.value}): did not hold")
+            return True
+        tried.append(f"{label}: did not hold")
         if outcome.fingerprint != failure.fingerprint and depth < MAX_CHAIN:
             await _ladder(app, outcome, display=display, reason=reason, depth=depth + 1)
-            return
+            return True
         failure = outcome
+        return False
+
+    # 1. A learned handling, by code.
+    if found is not None and found.action is not HandlingAction.ESCALATE and counter.handled < HANDLING_TRIES:
+        if await rung(found.action, found.arg, f"handling {found.id}", {"handled": 1}, found.id):
+            return
 
     # 2. One deterministic action, by its code.
     action = _DETERMINISTIC.get(failure.code)
@@ -244,15 +251,8 @@ async def _ladder(app, failure: WebappFailureSpec, *, display: str, reason: Reas
         await _needs_person(key, failure, failure.raw or failure.text)
         return
     if found is None and action is not None and record.read(key).counter(failure.fingerprint).deterministic == 0:
-        outcome = await _act(app, failure, action, "", label=action.value, display=display, counts={"deterministic": 1})
-        handlings.log(folder, failure, action.value, "fixed" if outcome is None else "not_fixed")
-        if outcome is None:
+        if await rung(action, "", action.value, {"deterministic": 1}):
             return
-        tried.append(f"{action.value}: did not hold")
-        if outcome.fingerprint != failure.fingerprint and depth < MAX_CHAIN:
-            await _ladder(app, outcome, display=display, reason=reason, depth=depth + 1)
-            return
-        failure = outcome
 
     # 3. The fixer agent, once per fingerprint per cooldown (a person's Fix it may run it again).
     counter = record.read(key).counter(failure.fingerprint)
@@ -362,12 +362,7 @@ async def _agent(app, failure: WebappFailureSpec, *, hint: str, tried: list[str]
     fresh = await _app(key) or app  # the fixer may have changed webapp.json
     if failure.phase is FailurePhase.PAGE:
         await record.change(key, failure=None)
-    outcome = await _up(fresh, display=display)
-    counter = record.read(key).counter(failure.fingerprint)
-    await record.change(key, attempts=record.bumped(record.read(key), failure.fingerprint,
-                                                    last_outcome="fixed" if outcome is None else "not_fixed"))
-    del counter
-    return outcome
+    return await _up(fresh, display=display)
 
 
 async def _run_fixer(key: str, request: WebappFixRequest) -> None:
@@ -469,19 +464,22 @@ async def stop(app: Any) -> WebappLifecycleSpec:
                                   pids={k: v for k, v in rec.pids.items() if k not in ("install", "build")})
 
 
-async def adopt_on_start() -> None:
-    """Backend start: a record left mid-run (its run died with the old backend) is settled by reading what runs
-    now — never by redoing work. Best effort, in the background."""
-    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+def adopt_on_start() -> None:
+    """Backend start: a record left mid-run (its run died with the old backend) is settled to ``down`` — never by
+    redoing its work. In the background, off the start path."""
+    from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
 
-    base = data_dir_for("micro_app", "x").parent
-    if not base.is_dir():
-        return
-    for path in base.glob(f"*/{record.RECORD_FILE}"):
-        rec = record.read(path.parent.name)
-        if rec.state in BUSY or rec.agent_call:
-            await record.change(rec.webapp_id, state=LifecycleState.DOWN, detail="the backend restarted mid-run",
-                                recovery="", agent_call="", push=False)
+    def settle() -> None:
+        from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+        base = data_dir_for("micro_app", "x").parent
+        for path in base.glob(f"*/{record.RECORD_FILE}") if base.is_dir() else ():
+            rec = record.read(path.parent.name)
+            if rec.state in BUSY or rec.agent_call:
+                record._write(rec.webapp_id, "", {"state": LifecycleState.DOWN, "recovery": "", "agent_call": "",
+                                                  "detail": "the backend restarted mid-run"})
+
+    create_detached_task(asyncio.to_thread(settle), name="webapp-lifecycle-adopt")
 
 
 __all__ = ["adopt_on_start", "bring_up", "report_page", "running", "stop"]

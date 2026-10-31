@@ -150,9 +150,9 @@ class _Relay:
         if "text/html" in upstream.headers.get("content-type", "") and request.method == "GET":
             body = await upstream.aread()
             await upstream.aclose()
-            import uuid  # noqa: PLC0415
+            from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
-            load_id = uuid.uuid4().hex
+            load_id = str(mint_uuid())  # the document's id: a correlation token, never an entity
             if request.headers.get("sec-fetch-dest", "document") in ("document", "iframe", ""):
                 _LATEST_LOAD[self.port] = load_id
             response = Response(inject(body, load_id), status_code=upstream.status_code)

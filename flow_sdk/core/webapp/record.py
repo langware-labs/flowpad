@@ -37,14 +37,29 @@ def path_of(webapp_id: str) -> Path:
     return data_dir_for("micro_app", _bare(webapp_id)) / RECORD_FILE
 
 
+#: Each record as last parsed, by path, with the file's (mtime, size): a row serialized many times reads it once.
+_PARSED: dict[Path, tuple[tuple[int, int], WebappLifecycleSpec]] = {}
+
+
 def read(webapp_id: str, project_id: str = "") -> WebappLifecycleSpec:
     """The app's record; a fresh ``down`` one when there is none (or it cannot be read)."""
     from flow_sdk.instances.atomic import read_json  # noqa: PLC0415
 
-    data = read_json(path_of(webapp_id))
+    path = path_of(webapp_id)
+    try:
+        stat = path.stat()
+        token = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        token = None
+    kept = _PARSED.get(path)
+    if token is not None and kept is not None and kept[0] == token:
+        return kept[1]
+    data = read_json(path) if token is not None else {}
     if data:
         try:
-            return WebappLifecycleSpec.model_validate(data)
+            parsed = WebappLifecycleSpec.model_validate(data)
+            _PARSED[path] = (token, parsed)
+            return parsed
         except ValueError as exc:
             logger.warning("unreadable lifecycle record of %s: %s", webapp_id, exc)
     return WebappLifecycleSpec(webapp_id=_bare(webapp_id), project_id=str(project_id or ""))
@@ -65,9 +80,8 @@ def _write(webapp_id: str, project_id: str, changes: dict[str, Any]) -> tuple[We
             update.setdefault("project_id", str(project_id))
         after = before.model_copy(update=update)
         after = WebappLifecycleSpec.model_validate(after.model_dump(mode="json"))
-        changed = after.model_dump(mode="json", exclude={"checked_at"}) != before.model_dump(
-            mode="json", exclude={"checked_at"})
-        if changed or "checked_at" in update:
+        changed = after != before
+        if changed:
             write_json_atomic(path, after.model_dump(mode="json"))
     return after, changed
 

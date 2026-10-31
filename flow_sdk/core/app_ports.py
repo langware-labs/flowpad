@@ -369,3 +369,13 @@ def stop(found: Iterable[Listener]) -> None:
 
 
 __all__ = ["Declared", "Listener", "PortAnswer", "decide", "free_port", "kill_trees", "launched_by", "listeners", "listening_under", "of_app", "stop", "stranger_on"]
+
+
+def pid_alive(pid: int) -> bool:
+    """``pid`` is a live process (a zombie is not)."""
+    import psutil  # noqa: PLC0415
+
+    try:
+        return psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+        return False

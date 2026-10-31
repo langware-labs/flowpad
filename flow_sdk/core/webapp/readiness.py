@@ -36,16 +36,6 @@ def _page_open(rec: WebappLifecycleSpec) -> bool:
     return rec.failure is not None and rec.failure.phase is FailurePhase.PAGE
 
 
-def _pid_alive(pid: int) -> bool:
-    import psutil  # noqa: PLC0415
-
-    try:
-        proc = psutil.Process(int(pid))
-        return proc.status() != psutil.STATUS_ZOMBIE
-    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
-        return False
-
-
 async def quick(app: Any, rec: WebappLifecycleSpec) -> bool:
     """The record says up, and that still holds — cheaply (see module doc)."""
     from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
@@ -57,7 +47,9 @@ async def quick(app: Any, rec: WebappLifecycleSpec) -> bool:
         return True  # files Flowpad serves itself: up while placed (``ready`` checks the placement)
     if any(name not in rec.ports for name in (p.name for p in processes)):
         return False
-    if any(not _pid_alive(pid) for pid in rec.pids.values() if pid):
+    from flow_sdk.core.app_ports import pid_alive  # noqa: PLC0415
+
+    if any(not pid_alive(pid) for pid in rec.pids.values() if pid):
         return False
     probes = [asyncio.to_thread(webapp_setup._health_ok, rec.ports[p.name], p.serving) for p in processes]
     return all(await asyncio.gather(*probes))

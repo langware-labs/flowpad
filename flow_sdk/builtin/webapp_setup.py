@@ -26,7 +26,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.core import app_ports
+from flow_sdk.core.webapp import record, stamps
+from flow_sdk.core.webapp.failure import make, of_step
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
+from flow_sdk.schema.data_spec.webapp_lifecycle_spec import FailureCode, FailurePhase, LifecycleState
 from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
@@ -53,8 +56,6 @@ def _failed(phase: str, code: str, detail: str, *, ran: bool = True, process: st
             exit_code: ExitCode = ExitCode.NOT_YET) -> ReturnedValue:
     """A step that did not reach its goal, its failure typed (``webapp.failure``) in the answer's value — so
     recovery matches it by code and fingerprint, never by parsing ``detail``."""
-    from flow_sdk.core.webapp.failure import make  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import FailureCode, FailurePhase  # noqa: PLC0415
 
     failure = make(FailurePhase(phase), FailureCode(code), detail, process=process, folder=folder)
     return ReturnedValue(exit_code=exit_code, detail=detail, ran=ran, value=failure.model_dump(mode="json"))
@@ -129,7 +130,6 @@ def _run(command: str, folder: Path, log_name: str, seconds: float, on_spawn=Non
     Its own group, so a Stop or the step's budget ends the whole command (``npm`` and what it spawned), not only
     the shell. ``on_spawn(pid)``: told the group's pid as soon as it runs."""
     import os  # noqa: PLC0415
-    import signal  # noqa: PLC0415
 
     from flow_sdk.core.dev_server import log_dir, log_tail  # noqa: PLC0415
 
@@ -148,15 +148,10 @@ def _run(command: str, folder: Path, log_name: str, seconds: float, on_spawn=Non
             code = proc.wait(timeout=seconds)
         except subprocess.TimeoutExpired:
             code = 124
-        finally:
-            if proc.poll() is None or code == 124:
-                try:
-                    if os.name == "nt":
-                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, check=False)
-                    else:
-                        os.killpg(proc.pid, signal.SIGKILL)
-                except (OSError, ProcessLookupError):
-                    pass
+        if proc.poll() is None or code == 124:
+            from flow_sdk.core.dev_server import stop_group  # noqa: PLC0415
+
+            stop_group(proc.pid)  # the whole group, waited for — the one kill policy (``app_ports.kill_trees``)
     return code, f"{log_tail(str(log_file))}\n(log: {log_file})"
 
 
@@ -167,9 +162,14 @@ async def _placed(app):
     return next((p for p in await webapp_routes(str(app.id)) if p.backend.type == "proxy"), None)
 
 
-async def step(webapp_id: str, which: str, *, check: bool, display: str = "") -> ReturnedValue:
+async def step(webapp_id: str, which: str, *, check: bool, display: str = "", service: str = "",
+               project: str = "") -> ReturnedValue:
     """One of the app's setup/load steps (``install`` / ``build`` / ``start`` / ``present``). ``check`` judges what is ON THIS
-    MACHINE now and changes nothing. Never raises for an outcome."""
+    MACHINE now and changes nothing. Never raises for an outcome. ``service``: the step ``service`` — one process
+    (and what it calls first) of the app ``webapp_id`` NAMES, within ``project`` (a dependency's setup node)."""
+    if which == "service":
+        found = await app_named(webapp_id, project)
+        webapp_id, which = (str(found.id) if found is not None else webapp_id), f"start:{service}"
     app = await _app(webapp_id)
     if app is None or not app.asset_ref:
         return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
@@ -226,24 +226,11 @@ async def app_named(name_or_id: str, project_id: str = ""):
 async def _start_one(app, service: str, *, check: bool) -> ReturnedValue:
     """One process of the app (``service``: a service's name, ``page`` for the page) and the services declared
     before it — what it calls first. The dependency another app declares on this one (``webapp-service-up``)."""
-    folder = Path(app.asset_ref)
-    processes = _processes(app)
-    names = [p.name or "page" for p in processes]
+    names = [p.name or "page" for p in _processes(app)]
     if service not in names:
         return _failed("dependency", "dependency_down",
                        f"{app.name} has no process {service!r} (it has {', '.join(names) or 'none'})", ran=False)
-    upto = processes[: names.index(service) + 1]
-    others = await _declared_elsewhere(app)
-    snapshot = await asyncio.to_thread(app_ports.listeners) if check else None
-    env = {port_env(name): str(declared.port) for _who, name, declared in _declared_by(app) if name}
-    answer = _answer(ExitCode.OK, f"{app.name}'s {service} is up", ran=False)
-    for process in upto:
-        answer = await _start(app, folder, process, others, env, check=check, snapshot=snapshot)
-        if not answer.ok:
-            return answer
-        if process.service is not None:
-            env[port_env(process.name)] = str(answer.value)
-    return answer
+    return await _start_all(app, Path(app.asset_ref), check=check, upto=names.index(service) + 1)
 
 
 async def _up(webapp_id: str, *, check: bool, display: str = "") -> ReturnedValue:
@@ -251,8 +238,6 @@ async def _up(webapp_id: str, *, check: bool, display: str = "") -> ReturnedValu
     Checking runs every check and answers the first that does not hold. The first step that fails ends it.
     A run (not a check) writes where it is into the app's lifecycle record, and how it ended: UP with its
     ports, or its typed failure — what recovery (``core/webapp/coordinator``) acts on."""
-    from flow_sdk.core.webapp import record  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import LifecycleState  # noqa: PLC0415
 
     app = None if check else await _app(webapp_id)
     project_id = str(getattr(app, "project_id", "") or "")
@@ -270,8 +255,6 @@ async def _up(webapp_id: str, *, check: bool, display: str = "") -> ReturnedValu
         answer = await step(webapp_id, which, check=False, display=display)
         ran = ran or answer.ran
         if not answer.ok:
-            from flow_sdk.core.webapp.failure import make, of_step  # noqa: PLC0415
-            from flow_sdk.schema.data_spec.webapp_lifecycle_spec import FailureCode, FailurePhase  # noqa: PLC0415
 
             failure = of_step(answer.value) or make(
                 FailurePhase(which if which in ("install", "build", "start") else "setup"), FailureCode.UNKNOWN,
@@ -288,17 +271,16 @@ async def _record_up(webapp_id: str, app, project_id: str, answer: ReturnedValue
     """The app is up: its live ports and pids, the stamps of what it was installed and built from."""
     from datetime import datetime, timezone  # noqa: PLC0415
 
-    from flow_sdk.core.webapp import record, stamps  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import LifecycleState  # noqa: PLC0415
 
-    ports, pids = await asyncio.to_thread(_live, app) if app is not None else ({}, {})
+    def observe() -> dict:
+        ports, pids = _live(app)
+        return {"ports": ports, "pids": pids, "install_stamp": stamps.install(app), "build_stamp": stamps.build(app)}
+
+    seen = await asyncio.to_thread(observe) if app is not None else {}
     before = record.read(webapp_id, project_id)
     page_failure = before.failure is not None and before.failure.phase.value == "page"
-    await record.set_state(
-        webapp_id, LifecycleState.UP, "up", project_id=project_id, ports=ports, pids=pids,
-        checked_at=datetime.now(timezone.utc), failure=before.failure if page_failure else None,
-        install_stamp=stamps.install(app) if app is not None else "", build_stamp=stamps.build(app) if app is not None else "",
-    )
+    await record.set_state(webapp_id, LifecycleState.UP, "up", project_id=project_id,
+                           checked_at=datetime.now(timezone.utc), failure=before.failure if page_failure else None, **seen)
 
 
 def _live(app) -> tuple[dict[str, int], dict[str, int]]:
@@ -321,7 +303,7 @@ async def _install(app, folder: Path, serving, *, check: bool) -> ReturnedValue:
     declared = serving.install_cmd
     if not declared and not (folder / "package.json").exists():
         return _answer(ExitCode.OK, "nothing to install", ran=False)
-    owed = _owed(app, "install")
+    owed = await asyncio.to_thread(_owed, app, "install")
     if owed:
         if check:
             return _answer(ExitCode.NOT_YET, owed, ran=False)
@@ -348,7 +330,7 @@ async def _build(app, folder: Path, serving, *, check: bool) -> ReturnedValue:
     if not command:
         return _answer(ExitCode.OK, "no build step", ran=False)
     built = folder / (app.build if app.build not in ("", ".") else "dist")
-    owed = _owed(app, "build")
+    owed = await asyncio.to_thread(_owed, app, "build")
     if owed:
         if check:
             return _answer(ExitCode.NOT_YET, owed, ran=False)
@@ -363,14 +345,11 @@ async def _build(app, folder: Path, serving, *, check: bool) -> ReturnedValue:
 def _owed(app, which: str) -> str:
     """Why the app's ``which`` (install/build) must run again although something is on disk, else ``""``: a
     run of it that never finished (its mark is still in the record), or what it was made from changed since."""
-    from flow_sdk.core.webapp import record, stamps  # noqa: PLC0415
 
     kept = record.read(str(app.id))
     pid = kept.pids.get(which)
     if pid:
-        import psutil  # noqa: PLC0415
-
-        if psutil.pid_exists(int(pid)):
+        if app_ports.pid_alive(int(pid)):
             return f"{which} is still running (pid {pid})"
         return f"the last {which} did not finish"
     was = kept.install_stamp if which == "install" else kept.build_stamp
@@ -385,7 +364,6 @@ async def _run_step(command: str, folder: Path, log_name: str, *, done: str, app
     While it runs the app's record holds its pid under ``which`` — the mark of a step that has not finished: a
     run cut short (Stop, a restart, a kill) leaves it, and the next check redoes the step instead of trusting
     whatever half of it is on disk."""
-    from flow_sdk.core.webapp import record  # noqa: PLC0415
 
     webapp_id = str(getattr(app, "id", "") or "")
 
@@ -528,10 +506,10 @@ def port_env(name: str) -> str:
     return "FLOWPAD_APP_PORT_" + "".join(ch if ch.isalnum() else "_" for ch in name.upper())
 
 
-async def _start_all(app, folder: Path, *, check: bool) -> ReturnedValue:
-    """Every process of the app, what the page calls first. The answer is the page's; a process that
-    does not come up stops the rest and says which one it was."""
-    processes = _processes(app)
+async def _start_all(app, folder: Path, *, check: bool, upto: Optional[int] = None) -> ReturnedValue:
+    """Every process of the app (``upto``: only the first that many), what the page calls first. The answer is
+    the last one's; a process that does not come up stops the rest and says which one it was."""
+    processes = _processes(app)[:upto]
     others = await _declared_elsewhere(app)
     # A check reads the process table once for the whole app; a start reads it as it goes.
     snapshot = await asyncio.to_thread(app_ports.listeners) if check else None
@@ -759,9 +737,22 @@ async def ports(webapp_id: str) -> list[dict]:
                 "note": f"also declared by {clash}" if clash else found.note,
                 "log": _log_of(app, process, found.port) if live else None,
                 "changes": changes,
+                "lint": _lint(process.serving),
             }
         )
     return rows
+
+
+def _lint(serving) -> list[str]:
+    """What a process's serving should declare and does not: readiness is judged on its health path, and a
+    port nothing declares is picked fresh each start (docs/webapp-lifecycle.md)."""
+    declared = getattr(serving, "model_fields_set", set())
+    out = []
+    if "health" not in declared:
+        out.append("declare `health`: a path of the app's own that answers once it is up (`/` is assumed)")
+    if serving.declared_port() is None:
+        out.append("declare `ports.local.port` (required or not) so the app keeps one address")
+    return out
 
 
 def _log_of(app, process, port) -> Optional[str]:

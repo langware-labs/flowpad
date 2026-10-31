@@ -1,9 +1,8 @@
 /**
- * HTTP helpers against the instance's backend: seed a project, copy + index a fixture app,
- * read the load record (`project/<id>/load-state`), the app's processes (`app-ports`) and the
- * setup-fixer runs (`/api/v1/runs`).
+ * HTTP helpers against the instance's backend: seed a project, copy + index a fixture app, read the app's
+ * lifecycle record (`micro_app/<id>/lifecycle`), its processes (`app-ports`) and the fixer runs (`/api/v1/runs`).
  */
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,28 +75,39 @@ export class Api {
     await this.json('DELETE', `${this.graph}/project/${id}`).catch(() => undefined);
   }
 
-  /** Copy `fixtures/<fixture>` into the project as `agentic-assets/webapp/<fixture>` and index it. */
+  /** Copy `fixtures/<fixture>` into the project as `agentic-assets/webapp/<fixture>` and index it — the app and any
+   *  setup node it declares inside its own folder (`agentic-assets/asset_setup/<name>`: what opening it needs). */
   async indexApp(project: Seeded, fixture: string): Promise<App> {
     const dir = join(project.root, 'agentic-assets', 'webapp', fixture);
     mkdirSync(join(project.root, 'agentic-assets', 'webapp'), { recursive: true });
-    cpSync(join(FIXTURES, fixture), dir, {
-      recursive: true,
-      // Project-level assets a fixture carries (needs-service's asset_setup) go to the project, not the app.
-      filter: (src) => !src.includes(`${fixture}/agentic-assets`),
-    });
-    const extra = join(FIXTURES, fixture, 'agentic-assets');
-    try {
-      cpSync(extra, join(project.root, 'agentic-assets'), { recursive: true });
-    } catch {
-      /* no project-level assets */
-    }
+    cpSync(join(FIXTURES, fixture), dir, { recursive: true });
     const q = new URLSearchParams({ type: 'micro_app', path: dir });
     const indexed = await this.json('POST', `${this.graph}/compute_node/@local/fs-records/index?${q}`);
     const typeid = String(indexed?.data?.typeid ?? indexed?.typeid ?? '');
     if (!/^micro_app-[0-9a-f-]{36}$/.test(typeid)) {
       throw new Error(`index ${fixture} failed: ${JSON.stringify(indexed).slice(0, 300)}`);
     }
+    const setups = join(dir, 'agentic-assets', 'asset_setup');
+    if (existsSync(setups)) {
+      for (const name of readdirSync(setups)) {
+        const sq = new URLSearchParams({ type: 'asset_setup', path: join(setups, name) });
+        await this.json('POST', `${this.graph}/compute_node/@local/fs-records/index?${sq}`);
+      }
+    }
     return { name: fixture, typeid, dir };
+  }
+
+  /** The app's lifecycle record on this machine (`webapp.lifecycle`) — THE state of the app. */
+  async lifecycle(typeid: string): Promise<any> {
+    const id = typeid.replace(/^micro_app-/, '');
+    const r = await this.json('GET', `${this.graph}/micro_app/${id}/lifecycle`);
+    return r?.data ?? null;
+  }
+
+  /** Agent attempts the record counts (every fingerprint) — what the fixer policy is judged on. */
+  async agentAttempts(typeid: string): Promise<number> {
+    const rec = await this.lifecycle(typeid);
+    return (rec?.attempts ?? []).reduce((n: number, a: any) => n + Number(a.agent || 0), 0);
   }
 
   /** Fill a JSON field of a project-level file at seed time (needs-tenant's `inputs.webapp`). */

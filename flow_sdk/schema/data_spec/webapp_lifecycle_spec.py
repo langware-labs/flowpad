@@ -15,7 +15,7 @@ The contract is ``docs/webapp-lifecycle.md``. Three values:
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import ClassVar, Literal, Optional
+from typing import ClassVar, Optional
 
 from pydantic import ConfigDict, Field
 
@@ -118,7 +118,6 @@ class AttemptCounter(DataSpec):
     #: Times the fixer agent ran for it.
     agent: int = 0
     last_agent_at: Optional[datetime] = None
-    last_outcome: Literal["fixed", "not_fixed", ""] = ""
 
 
 class WebappLifecycleSpec(DataSpec):
@@ -140,10 +139,6 @@ class WebappLifecycleSpec(DataSpec):
     ports: dict[str, int] = Field(default_factory=dict)
     #: Pid per process Flowpad started (and of a running install/build), for adoption and Stop.
     pids: dict[str, int] = Field(default_factory=dict)
-    #: Whether the page is served with the error reporter (``server/reporter_relay``): a page check is expected.
-    reporter: bool = False
-    #: The document id the reporter of the last served page carries; reports from any other are stale.
-    load_id: str = ""
     #: Content stamps of the last good install/build (``core/webapp/stamps``): a cut-short one has none.
     install_stamp: str = ""
     build_stamp: str = ""
