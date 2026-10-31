@@ -181,6 +181,9 @@ describe('secured transfer — the journey in the UI', () => {
     await get.waitFor({ timeout: 30_000 });
     await shot(bob, 'L2-bob-get-the-secret');
     await get.click();
+    // the click's request must land before anything reloads the page (a reload cancels it in flight)
+    await bob.page.locator('[data-testid="sealed-card"][data-state="requested"], [data-testid="sealed-card"][data-state="pending"]')
+      .first().waitFor({ timeout: 30_000 });
     const card = bob.page.locator('[data-testid="sealed-card"][data-state="pending"]').first();
     await pollUntil(async () => {
       if (await card.count()) return true;
@@ -197,7 +200,8 @@ describe('secured transfer — the journey in the UI', () => {
     // Alice's side: the quiet, automatic thread lines are there
     await openConversation(alice, conv.id);
     await pollUntil(async () => {
-      await alice.page.reload({ waitUntil: 'domcontentloaded' });
+      await openConversation(alice, conv.id).catch(() => undefined);  // a slow load is just another round
+      await alice.page.getByTestId('sealed-values-panel').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
       const open = alice.page.getByTestId('thread-stack-open').first();
       if (await open.count()) await open.click().catch(() => undefined);
       return (await alice.page.getByTestId('sealed-note-line').count()) >= 1 ? true : null;

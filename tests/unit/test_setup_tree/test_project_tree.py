@@ -148,7 +148,7 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
     assert node["micro_app-a1"].run is None, "a web app has no separate setup: its one step brings it up"
     assert [s.ref for s in node["micro_app-a1"].on_load.steps] == ["micro_app-a1:up"]
     up = tree.ops["micro_app-a1:up"]
-    assert up.completion_check.webapp_step == "up" and [r.subkind for r in up.attempts] == ["agent", "cli"]
+    assert up.completion_check.webapp_step == "up" and up.attempts == []  # recovery is the coordinator's
     assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
 
 

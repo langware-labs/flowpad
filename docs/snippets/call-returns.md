@@ -193,7 +193,6 @@ class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     completion_check: CliOp | None            # the SAME class as a cli op's exe_data
     status_check: str | None                  # OR a status fact (install:<harness>), asked in-process
     isolated_shell: bool                      # its own shell, not the run's shared one
-    fix_on_load: bool                         # keep the agent rung on a plain load too
     attempts: list[Rung]                      # further rungs, any kind but ask, tried in order
     not_applicable_codes: list[int]
     setup: Text                               # setup.md — what an agent or a model is given

@@ -220,7 +220,15 @@ async def materialize_flow_message(
     flip ``remote`` themselves after a successful hub push.
     """
     if FlowMessageKind.hub_only(str(payload.get("kind") or "")):
-        return None  # a hub-only kind (a sealed value) is read from the hub, never kept as a local row
+        # A hub-only kind (a sealed value, its ack) is read from the hub, never kept as a local row. A frame that
+        # arrived without its kind may have left one already: drop it now that the kind is known.
+        stray = await FlowMessage.get_one({"id": payload.get("id")}) if payload.get("id") else None
+        if stray is not None:
+            try:
+                await stray.delete()
+            except Exception:  # noqa: BLE001 — the next sync tries again
+                logger.debug("hub-only stray row %s not removed yet", payload.get("id"), exc_info=True)
+        return None
     payload = dict(payload)  # don't mutate caller's dict
     payload.setdefault("conversation_id", conversation_id)
 

@@ -126,6 +126,15 @@ async def _on_server_startup():
     except Exception:
         logging.getLogger(__name__).exception("Direct webhook listener could not start")
 
+    # A web app's lifecycle record left mid-run by the previous backend is settled from what runs now, never
+    # by redoing its work (``core/webapp/coordinator.adopt_on_start``).
+    try:
+        from flow_sdk.core.webapp.coordinator import adopt_on_start  # noqa: PLC0415
+
+        await adopt_on_start()
+    except Exception:
+        logging.getLogger(__name__).exception("Web app lifecycle records could not be settled")
+
     # The two audience doors — one listener per audience a browser can enter this box by.
     from flow_sdk.server import audience_listener
 

@@ -947,13 +947,15 @@ class Project(SetupSkippable, Entity):
 
     @action.post(action_name="app-start")
     async def app_start_action(self, app: str = "", wait: bool = False) -> "ApiResponse":
-        """Bring the app up the one way (``bring_up``): validate → load → setup → fix. Answers each app's
-        load verdict — a running one is followed through ``load-state``, or waited for (``wait``)."""
+        """Bring the app up the one way (``core/webapp/coordinator``): warm check → setup when owed → up →
+        bounded recovery. Answers each app's load verdict — a running one is followed through ``load-state``,
+        or waited for (``wait``)."""
         return await self._run_apps(app, stop=False, start=True, wait=wait)
 
     async def _run_apps(self, app: str, *, stop: bool, start: bool, wait: bool = False) -> "ApiResponse":
         from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
-        from flow_sdk.core.setup.load import bring_up, forget  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up  # noqa: PLC0415
+        from flow_sdk.core.webapp import coordinator  # noqa: PLC0415
         from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
 
         found = await self._own_apps(app)
@@ -963,11 +965,11 @@ class Project(SetupSkippable, Entity):
         for one in found:
             row: dict = {"app": one.name, "asset": str(one.typeid)}
             if stop:
-                answer = await webapp_setup.stop(str(one.id))
-                # What it was checked against is gone: the next open asks again.
-                forget(str(self.id), str(one.typeid))
-                row.update(ok=answer.ok, detail=answer.detail)
-                if not answer.ok:
+                stopped = await coordinator.stop(one)
+                still = [p for p in await webapp_setup.ports(str(one.id)) if p.get("port")]
+                row.update(ok=not still, detail=stopped.detail if not still else
+                           f"{one.name} is still served on port {still[0]['port']} by a program Flowpad did not start")
+                if still:
                     results.append(row)
                     continue
             if start:
@@ -981,6 +983,42 @@ class Project(SetupSkippable, Entity):
                 )
             results.append(row)
         return ApiSuccessResponse(data={"apps": results})
+
+    @action.get(action_name="app-lifecycle")
+    async def app_lifecycle_action(self, app: str = "") -> "ApiResponse":
+        """Each app's lifecycle record on this machine (``webapp.lifecycle``) — ``flow app status``."""
+        found = await self._own_apps(app)
+        if not found:
+            return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
+        return ApiSuccessResponse(data={"apps": [{"app": one.name, "asset": str(one.typeid), "lifecycle": one.lifecycle}
+                                                 for one in found]})
+
+    @action.post(action_name="app-handling")
+    async def app_handling_action(self, app: str = "", fingerprint: str = "", handling: dict | None = None,
+                                  test: bool = False) -> "ApiResponse":
+        """Add a learned handling to an app (``flow app handling add``), or only test it (``test``): it must match
+        the failure ``fingerprint`` names (the app's open failure, or one in its failure log)."""
+        from flow_sdk.core.webapp import handling as handlings  # noqa: PLC0415
+        from flow_sdk.core.webapp import record  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webapp_lifecycle_spec import WebappHandlingSpec  # noqa: PLC0415
+
+        found = await self._own_apps(app)
+        if len(found) != 1:
+            return ApiFailResponse(message=f"Name one web app of this project (got {app!r})", status_code=404)
+        one = found[0]
+        proof = handlings.proof_of(one.asset_ref, fingerprint, record.read(str(one.id)))
+        if proof is None:
+            return ApiFailResponse(message=f"No failure with fingerprint {fingerprint!r} for {one.name}", status_code=404)
+        try:
+            spec = WebappHandlingSpec.model_validate(handling or {})
+            if test:
+                return ApiSuccessResponse(data={"matches": handlings.matches(
+                    spec if (spec.fingerprint or spec.pattern) else spec.model_copy(update={"fingerprint": proof.fingerprint}),
+                    proof), "failure": proof.model_dump(mode="json")})
+            added = handlings.add(one.asset_ref, spec, proof=proof)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=422)
+        return ApiSuccessResponse(data={"added": added.model_dump(mode="json"), "file": str(handlings.file_of(one.asset_ref))})
 
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":

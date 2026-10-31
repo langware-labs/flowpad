@@ -29,6 +29,8 @@ import {
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { SealedNoteLine, SealedValuesPanel } from './SealedValuesPanel';
+
+const HUB_ONLY_KINDS = new Set(['sealed_value', 'sealed_ack', 'sealed_pending', 'sealed_request']);
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
@@ -681,6 +683,9 @@ export function ConversationView({
       if (fm?.kind === FlowMessageKind.SESSION_EVENT) {
         return <SessionEventLine key={item.key} text={fm.text ?? ''} />;
       }
+      // Hub-only secured-transfer frames (a sealed value, its ack, a promise, a request) are never chat rows; one
+      // that arrived without its kind is removed on the next sync — never shown meanwhile.
+      if (fm && HUB_ONLY_KINDS.has(String(fm.kind))) return null;
       if (fm?.kind === FlowMessageKind.SEALED_NOTE) {
         return <SealedNoteLine key={item.key} text={fm.text ?? ''} />;
       }

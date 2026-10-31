@@ -38,30 +38,13 @@ logger = logging.getLogger(__name__)
 PROJECT = "project"
 
 
-#: The agent that repairs a web app's setup step when the step itself fails (``agentic-assets/agent/setup-fixer``).
-FIXER_AGENT = "setup-fixer"
-
-
-def _op(name: str, label: str, step: str, *, kind: str = "webapp_step", fixer: str = "",
-        fix_on_load: bool = False) -> ComputeOpSpec:
+def _op(name: str, label: str, step: str, *, kind: str = "webapp_step") -> ComputeOpSpec:
     """An in-process step of the run's web app (``webapp_step``) or source (``source_step``): the call is the
-    step, the check is the same step in check mode. ``fixer``: the prompt of the step's last resort — while
-    its check still fails, the setup-fixer repairs what the step stands on, then the step runs again; the
-    check is the proof. A load never runs it (``LoadTree`` strips it): only a setup run fixes."""
-    attempts = [
-        {"subkind": "agent", "exe_data": {"agent": FIXER_AGENT, "prompt": fixer}},
-        {"subkind": "cli", "exe_data": {kind: step}},
-    ] if fixer else []
+    step, the check is the same step in check mode. A web app's recovery is its coordinator's
+    (``core/webapp/coordinator``), never a rung of the step."""
     return ComputeOpSpec.model_validate({
         "name": name, "label": label, "subkind": "cli", "exe_data": {kind: step}, "completion_check": {kind: step},
-        "attempts": attempts, "fix_on_load": fix_on_load,
     })
-
-
-def _fixer_prompt(project_id: str, app) -> str:
-    return (f"Use the setup-fixer skill. The step above of web app {app.name} ({app.typeid}, folder "
-            f"{app.asset_ref}) in project {project_id} failed. Repair what it stands on; the step runs again "
-            "after you and its own check is the proof.")
 
 
 def _holder(asset_ref: str) -> str:
@@ -370,8 +353,9 @@ class ProjectTree:
         if self._skipped(node_id, label, app.setup_skipped):
             return node_id
         # ONE step: the app up and shown (``webapp_setup.UP``: install → build → start → verify, each only
-        # when needed). Its check is the same step checking; its last resort is the fixer, on load too.
-        op = _op(f"{node_id}:up", f"Start {label}", "up", fixer=_fixer_prompt(self.pid, app), fix_on_load=True)
+        # when needed). Its check is the same step checking.
+        # Recovery is the app's coordinator's (``core/webapp/coordinator``), never a rung of this step.
+        op = _op(f"{node_id}:up", f"Start {label}", "up")
         self.ops[op.name] = op
         load = WizardSpec.model_validate({"name": node_id, "label": f"Load {label}",
                                           "steps": [{"id": "up", "label": "Start", "kind": "compute", "ref": op.name}]})

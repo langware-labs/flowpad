@@ -465,39 +465,6 @@ def _look(
     return answer, mine, up
 
 
-async def answers_now(webapp_id: str) -> bool:
-    """The app is usable where it runs now: every process answers its health path (one probe each, side by
-    side), its page loaded clean the last time it was checked, and its ``setup/start_app.py check`` holds.
-    No process table, no start, no write. The check an open of an app it already loaded asks."""
-    from flow_sdk.builtin.webapp_placement import service_endpoint_name, service_endpoint_ports  # noqa: PLC0415
-
-    app = await _app(webapp_id)
-    if app is None or not app.asset_ref:
-        return False
-    processes = _processes(app)
-    placed = await _placed(app)
-    services = await service_endpoint_ports(app) if any(p.service is not None for p in processes) else {}
-    ports = [
-        (placed.backend.port if placed is not None else None)
-        if process.service is None
-        else services.get(service_endpoint_name(app, process.service))
-        for process in processes
-    ]
-    if not ports or not all(ports):
-        return False
-    probes = (
-        asyncio.to_thread(health_answers, int(port), process.serving.health) for port, process in zip(ports, processes)
-    )
-    if not all(await asyncio.gather(*probes)):
-        return False
-    # Usable, not only answering: the page loaded clean the last time it was checked, and the app's own check holds.
-    from flow_sdk.builtin import webapp_check  # noqa: PLC0415
-
-    if app.report_errors and not webapp_check.page_was_clean(app.asset_ref):
-        return False
-    return await asyncio.to_thread(start_app_check, Path(app.asset_ref), int(ports[-1]))
-
-
 async def where(app, serving) -> app_ports.PortAnswer:
     """Where ``serving`` — a process of ``app`` — runs or should start: the rule's answer, changing nothing."""
     process = next((one for one in _processes(app) if one.serving is serving), _Process(serving))
@@ -671,7 +638,6 @@ def _answers_by(port: int, serving, deadline: float, proc) -> bool:
     """The health path answers before ``deadline``. A start command that exits with an error ends the
     wait at once: a server that died will never answer."""
     while True:
-        import sys as _s; from flow_sdk.core.dev_server import loopback_urls as _lu, loopback_status as _ls; print('DBG', port, proc.poll(), [(_u,_ls(_u,1)) for _u in _lu(port,'/')], file=_s.stderr)
         if _health_ok(port, serving):
             return True
         if proc.poll() not in (None, 0) or time.monotonic() >= deadline:

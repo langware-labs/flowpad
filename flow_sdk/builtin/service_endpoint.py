@@ -338,34 +338,24 @@ class ServiceEndpoint(Entity):
         return f"http://localhost:{port}" if port else None
 
     @action.post(action_name="page-report")
-    async def page_report_action(self, errors: list | None = None, settled: bool = True, route: str | None = None):
-        """``POST service_endpoint/<id>/page-report`` — what the app's page threw while it loaded, decided.
+    async def page_report_action(self, errors: list | None = None, settled: bool = True, route: str | None = None,
+                                 load_id: str = ""):
+        """``POST service_endpoint/<id>/page-report`` — what the app's page threw, handed to its coordinator.
 
-        The viewer forwards the reporter's message (``server/reporter_relay``). Each error is matched against
-        the app's ``setup/webapp_errors.json`` (``builtin/webapp_check``): ``usable`` when every error is
-        ignored; otherwise ``recover`` lists what needs recovery, with each matched rule's ``fix``.
+        The viewer forwards the reporter's message (``server/reporter_relay``). Each error is matched against the
+        app's learned handlings (``core/webapp/handling``); one no handling ignores moves the app to DEGRADED and
+        starts recovery on the backend (``core/webapp/coordinator.report_page``) — the screen only shows it.
+        ``load_id``: the document the report came from; a report for an older one decides nothing.
         """
-        from flow_sdk.builtin import webapp_check  # noqa: PLC0415
+        from flow_sdk.core.webapp import coordinator  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         app = await self._webapp_of(route)
         if app is None or not app.asset_ref:
             return ApiFailResponse(message="this endpoint serves no web app with a folder", status_code=409)
-        found = [webapp_check.PageError(text=str(e.get("text", "")), source=str(e.get("source") or "page"))
-                 for e in (errors or []) if isinstance(e, dict) and e.get("text")]
-        rules = await asyncio.to_thread(webapp_check.load_rules, app.asset_ref)
-        verdict = webapp_check.triage(found, rules)
-        await asyncio.to_thread(webapp_check.record, app.asset_ref, verdict,
-                                "opened" if verdict.usable else "recover", rules)
-        return ApiSuccessResponse(data={
-            "usable": verdict.usable,
-            "settled": bool(settled),
-            "webapp_id": str(app.typeid),
-            "app_folder": str(app.asset_ref),
-            "decisions": [{"source": d.error.source, "text": d.error.text, "action": d.action,
-                           "rule": d.rule.id if d.rule else None, "fix": d.rule.fix if d.rule else ""}
-                          for d in verdict.decisions],
-        })
+        decided = await coordinator.report_page(app, list(errors or []), load_id=load_id, settled=bool(settled))
+        return ApiSuccessResponse(data={**decided, "settled": bool(settled), "webapp_id": str(app.typeid),
+                                        "app_folder": str(app.asset_ref)})
 
     @action.post(action_name="probe")
     async def probe_action(self, route: str | None = None):

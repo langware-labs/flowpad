@@ -358,6 +358,47 @@ def app_stop_cmd(name: Annotated[str, typer.Argument(help="The app's name.")]) -
     _ok(_project_action("app-stop", {"app": name}))
 
 
+@app_app.command("status", help="An app's lifecycle record on this machine: state, failure, what recovery tried.")
+def app_status_cmd(name: Annotated[str, typer.Argument(help="The app's name (empty: every app).")] = "") -> None:
+    _ok(_project_action(f"app-lifecycle?app={name}" if name else "app-lifecycle"))
+
+
+handling_app = typer.Typer(help="An app's learned handlings (setup/webapp_handlings.json): what fixes a failure.",
+                           no_args_is_help=True)
+app_app.add_typer(handling_app, name="handling")
+
+
+def _handling_body(name: str, fingerprint: str, action: str, arg: str, pattern: str, handling_id: str, note: str,
+                   test: bool) -> dict:
+    handling = {"id": handling_id or f"learned-{fingerprint[:8]}", "action": action, "arg": arg, "note": note}
+    if pattern:
+        handling["pattern"] = pattern
+    return {"app": name, "fingerprint": fingerprint, "handling": handling, "test": test}
+
+
+@handling_app.command("add", help="Record what fixes a failure, so the next one is handled by code, with no agent.")
+def handling_add_cmd(
+    name: Annotated[str, typer.Argument(help="The app's name.")],
+    fingerprint: Annotated[str, typer.Option("--fingerprint", help="The failure's fingerprint (flow app status).")],
+    action: Annotated[str, typer.Option("--action", help="ignore|restart|setup|free_ports|reinstall|rebuild|run|escalate|needs_person")],
+    arg: Annotated[str, typer.Option("--arg", help="setup: the node id; run: the start_app verb; escalate/needs_person: the message")] = "",
+    pattern: Annotated[str, typer.Option("--pattern", help="Match by a regex on the normalized text instead of the exact fingerprint")] = "",
+    handling_id: Annotated[str, typer.Option("--id", help="The handling's id (default learned-<fingerprint>)")] = "",
+    note: Annotated[str, typer.Option("--note", help="Why, in one line")] = "",
+) -> None:
+    _ok(_project_action("app-handling", _handling_body(name, fingerprint, action, arg, pattern, handling_id, note, False)))
+
+
+@handling_app.command("test", help="Say whether a handling would match a failure, without writing it.")
+def handling_test_cmd(
+    name: Annotated[str, typer.Argument(help="The app's name.")],
+    fingerprint: Annotated[str, typer.Option("--fingerprint")],
+    action: Annotated[str, typer.Option("--action")] = "ignore",
+    pattern: Annotated[str, typer.Option("--pattern")] = "",
+) -> None:
+    _ok(_project_action("app-handling", _handling_body(name, fingerprint, action, "", pattern, "", "", True)))
+
+
 @app_app.command("restart", help="Stop an app of this project and start it again on its port.")
 def app_restart_cmd(name: Annotated[str, typer.Argument(help="The app's name.")]) -> None:
     _ok(_project_action("app-stop", {"app": name, "restart": True}))

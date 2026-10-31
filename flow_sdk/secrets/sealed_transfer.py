@@ -312,16 +312,22 @@ async def _post(conversation_id: str, kind: str, metadata: dict, *, text: str = 
 
 
 async def _note(conversation_id: str, text: str, root: Optional[str]) -> None:
-    """The quiet, automatic line of a "get it" exchange — a reply in the share's thread. The hub does not echo a
-    message to its own sender, so the poster keeps its row through the one materializer, as any hub message."""
-    msg = await _post(conversation_id, NOTE_KIND, {"automatic": True}, text=text, reply_to=root)
-    if isinstance(msg, dict) and msg.get("id"):
-        try:
-            from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
+    """The quiet, automatic line of a "get it" exchange — a reply in the share's thread, sent through the one local
+    message path (``handle_add_message``): it threads it, keeps this install's row and pushes it to the hub. A
+    conversation not known locally gets it on the hub directly."""
+    try:
+        from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
 
-            await materialize_flow_message(msg, conversation_id, someone_typeid=None, notify=True, remote=True)
-        except Exception:  # noqa: BLE001 — the next conversation sync brings it
-            logger.debug("[sealed] note not kept locally yet", exc_info=True)
+        local_user = await User.get_local()
+        body = {"conversation_id": conversation_id, "message": text, "kind": NOTE_KIND,
+                **({"reply_to_id": root} if root else {})}  # fmt: skip
+        sent = await handle_add_message(body, local_user.typeid if local_user else None)
+        if str(getattr(sent, "status", "")).lower() == "success":
+            return
+    except Exception:  # noqa: BLE001 — fall back to the hub
+        logger.debug("[sealed] note not sent locally", exc_info=True)
+    await _post(conversation_id, NOTE_KIND, {"automatic": True}, text=text, reply_to=root)
 
 
 def _my_name() -> str:

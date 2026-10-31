@@ -194,6 +194,15 @@ and picks **Secured transfer** or **Secret manager** (above). Secured transfer n
   is never read as an `@path`) — only variables the receiver's own credential declares. Then a `sealed_ack`
   (no value); the sender deletes the envelope once every recipient answered.
 
+- **A member with no key yet** (Flowpad not installed, or receiving off) gets no warning on the sender's side: the
+  share posts a hub-only promise (`sealed_pending`: transfer id, recipients, expiry — no names, no values) and the sender
+  records it (`pending.json`). The recipient opens the message → **Get the secret** (`credentials/sealed/get`) publishes
+  their key and asks (`sealed_request`); the sender's Flowpad answers by itself — live, or on its catch-up after
+  sign-in — sealing for the new device (`answers` the promise). Both steps leave a quiet `sealed_note` reply in the
+  share's thread. A promise waits as long as a share (7 days).
+- **CLI**: `flow credentials secure [--on|--off] [--rotate]` — receiving on this install and its key (id only).
+  Sharing, filling in and getting values are clicks in Flowpad, never the CLI.
+
 Code: `flow_sdk/secrets/sealed.py` (crypto, pure), `flow_sdk/secrets/sealed_transfer.py` (keys, hub, writer),
 hub `flowpad/hub/builtin/device_key.py`. Tests: `tests/unit/test_secrets/test_sealed*.py`, hub
 `tests/api/test_device_key.py`, end to end `ui/tests/hub/credential_secure_share_two_client{,.ui}.test.ts`.

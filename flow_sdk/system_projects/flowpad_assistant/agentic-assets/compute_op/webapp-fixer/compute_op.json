@@ -1,0 +1,13 @@
+{
+  "type": "compute_op",
+  "id": "6f0c2a1e-9b7d-4c3e-8a51-2d4e6f8a9b10",
+  "name": "webapp-fixer",
+  "label": "Repair the web app",
+  "description": "The one fixer of a web app on this machine: run by recovery (core/webapp/coordinator) once per failure no learned handling knows. Its input is a webapp.fix_request.",
+  "subkind": "agent",
+  "exe_data": {
+    "agent": "setup-fixer",
+    "prompt": "Use the setup-fixer skill. Your input folder holds a webapp.fix_request: the web app, its folder, the typed failure (phase, code, fingerprint, text) and what recovery already tried. Repair what the failure stands on, then record what you learned with `flow app handling add <app> --fingerprint <fingerprint> --action <action> [--arg ...]` so the next occurrence is handled by code, and write the why in the app's setup/recovery.md. Do not start or open the app yourself: recovery checks it again after you, and that check is the proof."
+  },
+  "input": "webapp.fix_request"
+}

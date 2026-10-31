@@ -183,6 +183,25 @@ def recent(folder: str | Path, limit: int = 50) -> list[dict]:
     return rows[::-1]
 
 
+def proof_of(folder: str | Path, fingerprint: str, rec=None) -> Optional[WebappFailureSpec]:
+    """The failure with ``fingerprint``: the app's record's open one, else the newest in its failure log."""
+    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import FailureCode, FailurePhase  # noqa: PLC0415
+
+    if not fingerprint:
+        return None
+    if rec is not None and rec.failure is not None and rec.failure.fingerprint == fingerprint:
+        return rec.failure
+    for row in recent(folder, limit=500):
+        if row.get("fingerprint") == fingerprint:
+            try:
+                return WebappFailureSpec(phase=FailurePhase(row["phase"]), code=FailureCode(row["code"]),
+                                         source=str(row.get("source") or ""), text=str(row.get("text") or ""),
+                                         fingerprint=fingerprint)
+            except (KeyError, ValueError):
+                return None
+    return None
+
+
 def migrate(folder: str | Path) -> bool:
     """Convert a ``setup/webapp_errors.json`` (the regex rules before handlings) once: ``ignore`` stays
     ignore, a ``restart`` fix becomes RESTART, any other ``recover`` becomes ESCALATE with its fix as the
@@ -216,4 +235,4 @@ def migrate(folder: str | Path) -> bool:
 
 
 __all__ = ["BUILTIN", "HandlingFileError", "add", "count", "file_of", "load", "log", "match", "matches", "migrate",
-           "recent", "set_action", "shipped"]
+           "proof_of", "recent", "set_action", "shipped"]

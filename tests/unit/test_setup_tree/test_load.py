@@ -8,7 +8,7 @@ import pytest
 
 from flow_sdk.builtin import project_setup
 from flow_sdk.core.setup import execute as setup_execute
-from flow_sdk.core.setup.load import LoadTree, forget, load_project, load_state, validate
+from flow_sdk.core.setup.load import LoadTree, forget, load_project, load_state
 from flow_sdk.core.setup.tree import SetupNode
 from flow_sdk.core.wizard import state as wizard_state
 from flow_sdk.core.wizard.runner import Resolved
@@ -321,24 +321,6 @@ async def test_a_credential_nobody_gave_never_keeps_the_app_beside_it_from_openi
     assert shown.state is LoadState.READY, shown.detail
 
 
-def test_one_apps_running_load_is_never_another_apps_answer():
-    """Acme Admin's setup run (asking for Google Cloud) was answered for the Back Office beside it, so
-    opening the Back Office showed Admin's question. Two apps of one project are two loads."""
-    from flow_sdk.core.setup import load as load_module
-
-    pid = "p-two-apps"
-    load_module._keep(pid, "micro_app-admin", load_module.LoadResult(
-        state=LoadState.RUNNING, project_id=pid, run="setup-micro_app-admin"))
-    try:
-        assert load_module.load_state(pid, asset="micro_app-backoffice") is None
-        assert load_module.load_state(pid, asset="micro_app-admin").run == "setup-micro_app-admin"
-        # A poll that names no app is about the one last loaded.
-        assert load_module.load_state(pid).run == "setup-micro_app-admin"
-    finally:
-        load_module._RESULTS.pop((pid, "micro_app-admin"), None)
-        load_module._LATEST.pop(pid, None)
-
-
 def one_app(machine, app_id="micro_app-up"):
     root = machine.tree.root
     machine.nodes[root] = SetupNode(id=root, children=(app_id,))
@@ -360,97 +342,6 @@ def answering(monkeypatch):
     return state
 
 
-@pytest.mark.asyncio
-async def test_an_app_loaded_ready_that_still_answers_opens_without_walking_anything(machine, answering, monkeypatch):
-    app = one_app(machine)
-    machine.installed.update(("install", "app"))
-    assert (await load_project(machine.project, tree=machine.tree, asset=app)).state is LoadState.READY
-
-    def no_tree(*_a, **_kw):
-        raise AssertionError("a validated open walks nothing")
-
-    import flow_sdk.core.setup as setup_package
-    monkeypatch.setattr(setup_execute, "execute_setup", no_tree)
-    monkeypatch.setattr(setup_package, "execute_setup", no_tree)
-    assert (await validate(machine.project.id, app.typeid)).state is LoadState.READY
-    assert (await load_project(machine.project, tree=machine.tree, asset=app)).state is LoadState.READY
-    # Another session's display was never checked: its open is a load, not a validation.
-    assert await validate(machine.project.id, app.typeid, "agentic_process-x") is None
-    answering["up"] = False
-    assert await validate(machine.project.id, app.typeid) is None
-
-
-@pytest.mark.asyncio
-async def test_a_running_app_opens_at_once_and_says_what_its_setup_still_owes(machine, answering):
-    """Spora Admin answered on its port while its Google sign-in had expired under it: the open said READY
-    and nothing told the person. It still opens at once; the check behind it names what is owed."""
-    from flow_sdk.core.setup import load as load_module
-
-    app = one_app(machine)
-    login = "login"
-    machine.ops[login] = machine.ops["install"].model_copy(update={
-        "name": login, "exe_data": machine.ops["install"].exe_data.model_copy(update={
-            "commands": {p: f"make {login}" for p in ("linux", "darwin", "win32")}}),
-        "completion_check": machine.ops["install"].completion_check.model_copy(update={
-            "commands": {p: f"have {login}" for p in ("linux", "darwin", "win32")}})})
-    machine.nodes["credential:cloud"] = SetupNode(id="credential:cloud", label="Cloud", run=wizard(login))
-    machine.nodes[app.typeid] = SetupNode(id=app.typeid, label="Up", run=wizard("install"), on_load=wizard("app"),
-                                          children=("credential:cloud",))
-    machine.installed.update(("install", "app"))
-
-    opened = await load_project(machine.project, tree=machine.tree, asset=app)
-    assert opened.state is LoadState.READY and opened.setup_owed is None  # shown now, checked behind
-    await load_module._AUDITS[(machine.project.id, app.typeid)]
-    owed = load_state(machine.project.id, asset=app.typeid)
-    assert owed.state is LoadState.READY and owed.setup_owed and owed.setup_owed.startswith("Cloud")
-    assert login not in machine.ran  # a check: nothing was set up behind the person's back
-
-    machine.installed.add(login)  # signed in again
-    await validate(machine.project.id, app.typeid, project=machine.project, tree=machine.tree)
-    await load_module._AUDITS[(machine.project.id, app.typeid)]
-    assert load_state(machine.project.id, asset=app.typeid).setup_owed == ""
-
-
-@pytest.mark.asyncio
-async def test_a_running_app_validates_without_a_kept_verdict_but_a_display_needs_one(machine, answering):
-    app = one_app(machine)
-    # A running app opens as it is, never loaded or not; a display session's presentation is never assumed.
-    assert (await validate(machine.project.id, app.typeid)).state is LoadState.READY
-    assert await validate(machine.project.id, app.typeid, "agentic_process-x") is None
-
-
-@pytest.mark.asyncio
-async def test_a_run_rooted_at_one_app_leaves_its_siblings_verdicts(machine, answering):
-    app = one_app(machine)
-    machine.installed.update(("install", "app"))
-    shown = await load_project(machine.project, tree=machine.tree, asset=app, display="agentic_process-x")
-    assert shown.state is LoadState.READY
-    forget(machine.project.id, "micro_app-sibling")  # a run of the app beside it ended
-    assert (await validate(machine.project.id, app.typeid, "agentic_process-x")).state is LoadState.READY
-    assert await validate(machine.project.id, app.typeid, "agentic_process-y") is None
-    forget(machine.project.id, app.typeid)
-    assert await validate(machine.project.id, app.typeid, "agentic_process-x") is None
-
-
-@pytest.mark.asyncio
-async def test_a_running_load_says_whether_it_starts_or_sets_up(machine):
-    app = one_app(machine)
-    machine.installed.add("install")
-    started = await load_project(machine.project, tree=machine.tree, asset=app)
-    assert started.state is LoadState.RUNNING and started.phase == "load"
-    await project_setup._RUNS[(machine.project.id, app.typeid)]
-
-    other = one_app(machine, "micro_app-new")
-    machine.installed.clear()
-    setting_up = await load_project(machine.project, tree=machine.tree, asset=other, approved=True)
-    assert setting_up.state is LoadState.RUNNING and setting_up.phase == "setup"
-    await project_setup._RUNS[(machine.project.id, other.typeid)]
-
-
-
-# ── fix: the setup-fixer is a rung of the step, kept only by a setup run ─────────────────────────
-
-
 def _ladder_tree():
     from flow_sdk.core.setup.derive import _op
 
@@ -460,18 +351,6 @@ def _ladder_tree():
         return Resolved(op, True) if name == op.name else None
 
     return SimpleNamespace(root="r", resolve_node=None, resolve_op=resolve_op), op
-
-
-@pytest.mark.asyncio
-async def test_a_plain_load_never_runs_the_fixer():
-    tree, op = _ladder_tree()
-    assert (await LoadTree(tree).resolve_op(op.name)).spec.attempts == []
-
-
-@pytest.mark.asyncio
-async def test_the_load_a_setup_run_ends_with_keeps_the_fixer():
-    tree, op = _ladder_tree()
-    assert (await LoadTree(tree, fix=True).resolve_op(op.name)).spec.attempts == op.attempts
 
 
 @pytest.mark.asyncio

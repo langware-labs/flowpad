@@ -43,10 +43,13 @@ REQUEST_TYPE = "flowpad:page-report-request"
 REPORTER_JS = """(() => {
   if (window.__flowpadReporter || window.parent === window) return;
   window.__flowpadReporter = true;
+  // The document this page is: minted by the relay per HTML response, so a report says which load it is about.
+  const me = document.currentScript && document.currentScript.src || '';
+  const loadId = (me.match(/[?&]load=([\\w-]+)/) || [])[1] || '';
   const errors = [];
   let settled = false, timer = null;
   const post = () => { try { window.parent.postMessage({ type: '%(type)s', errors: errors.slice(-50), settled,
-    url: location.href }, '*'); } catch (_) {} };
+    url: location.href, load_id: loadId }, '*'); } catch (_) {} };
   const settle = () => { clearTimeout(timer); timer = setTimeout(() => { settled = true; post(); }, 1500); };
   const add = (source, text) => { errors.push({ source, text: String(text).slice(0, 2000) });
     if (settled) post(); else settle(); };
@@ -68,7 +71,17 @@ REPORTER_JS = """(() => {
 })();
 """ % {"type": MESSAGE_TYPE, "request": REQUEST_TYPE}
 
-_SCRIPT_TAG = f'<script src="{REPORTER_PATH}"></script>'.encode()
+#: The document id each relay last served, by upstream port: a report for any other is about an older page.
+_LATEST_LOAD: dict[int, str] = {}
+
+
+def latest_load(upstream_port: int | None) -> str:
+    """The id of the last HTML document the relay of ``upstream_port`` served; ``""`` when none."""
+    return _LATEST_LOAD.get(int(upstream_port), "") if upstream_port else ""
+
+
+def _script_tag(load_id: str) -> bytes:
+    return f'<script src="{REPORTER_PATH}?load={load_id}"></script>'.encode()
 _HEAD = re.compile(rb"<head[^>]*>", re.I)
 
 #: Request headers the relay does not pass: hop-by-hop and ``host`` (httpx sets the upstream's). A request
@@ -77,11 +90,12 @@ _DROP_OUT = _HOP | {"host"}
 _DROP_IN = _HOP | {"content-length", "content-encoding"}
 
 
-def inject(html: bytes) -> bytes:
-    """``html`` with the reporter as the first thing in its head (or at its top when it has none)."""
+def inject(html: bytes, load_id: str = "") -> bytes:
+    """``html`` with the reporter as the first thing in its head (or at its top when it has none), naming the
+    document ``load_id``."""
     match = _HEAD.search(html)
     at = match.end() if match else 0
-    return html[:at] + _SCRIPT_TAG + html[at:]
+    return html[:at] + _script_tag(load_id) + html[at:]
 
 
 def _not_answering(request: Request) -> Response:
@@ -136,7 +150,12 @@ class _Relay:
         if "text/html" in upstream.headers.get("content-type", "") and request.method == "GET":
             body = await upstream.aread()
             await upstream.aclose()
-            response = Response(inject(body), status_code=upstream.status_code)
+            import uuid  # noqa: PLC0415
+
+            load_id = uuid.uuid4().hex
+            if request.headers.get("sec-fetch-dest", "document") in ("document", "iframe", ""):
+                _LATEST_LOAD[self.port] = load_id
+            response = Response(inject(body, load_id), status_code=upstream.status_code)
         else:
             response = StreamingResponse(upstream.aiter_bytes(), status_code=upstream.status_code,
                                          background=BackgroundTask(upstream.aclose))
@@ -165,4 +184,4 @@ async def relay_port(upstream_port: int) -> Optional[int]:
         return relay.port
 
 
-__all__ = ["MESSAGE_TYPE", "REPORTER_PATH", "inject", "relay_port"]
+__all__ = ["MESSAGE_TYPE", "REPORTER_PATH", "inject", "latest_load", "relay_port"]

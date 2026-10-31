@@ -216,7 +216,24 @@ class WebappHandlingsFile(DataSpec):
     handlings: list[WebappHandlingSpec] = Field(default_factory=list)
 
 
+class WebappFixRequest(DataSpec):
+    """What the fixer agent is handed when recovery reaches it: the app, the failure, what was tried."""
+
+    spec_kind: ClassVar[str] = "webapp.fix_request"
+
+    webapp_id: str
+    app_name: str = ""
+    project_id: str = ""
+    #: The app's folder — where it, its ``setup/`` and its ``webapp.json`` are.
+    folder: str = ""
+    failure: WebappFailureSpec
+    #: A learned handling's hint (ESCALATE) or what the person asked.
+    hint: str = ""
+    #: What recovery already tried for this failure, one line each.
+    tried: list[str] = Field(default_factory=list)
+
+
 __all__ = [
     "AGENT_COOLDOWN", "AttemptCounter", "BUSY", "FailureCode", "FailurePhase", "HandlingAction", "LifecycleState",
-    "SHOWABLE", "WebappFailureSpec", "WebappHandlingSpec", "WebappHandlingsFile", "WebappLifecycleSpec",
+    "SHOWABLE", "WebappFailureSpec", "WebappFixRequest", "WebappHandlingSpec", "WebappHandlingsFile", "WebappLifecycleSpec",
 ]

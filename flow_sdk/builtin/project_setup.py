@@ -635,8 +635,6 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
     "Setup required" button stays as cheap as the credential check it sits beside."""
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_setup import step  # noqa: PLC0415
-
     out = [
         SetupRequirementSpec(kind=REQUIREMENT_SOURCE, name=str(source.name or source.provider),
                              satisfied=source.status != SourceStatus.SETUP.value,
@@ -648,13 +646,18 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
         for source in (sources if sources is not None else await project_sources(project))
         if include_ready or source.status == SourceStatus.SETUP.value
     ]
+    from flow_sdk.core.webapp import readiness, record  # noqa: PLC0415
+
     apps = [app for app in await WebApp.get_all({"match": {"project_id": str(project.id)}}) if app.asset_ref]
-    answers = await asyncio.gather(*(step(str(app.id), "start", check=True) for app in apps))
+    # The app's record says whether it is up here (``core/webapp/readiness.quick``: its pids and health, no
+    # process table) — the one rule, as cheap as the credential check beside it.
+    records = [record.read(str(app.id), str(project.id)) for app in apps]
+    answers = await asyncio.gather(*(readiness.quick(app, rec) for app, rec in zip(apps, records)))
     out += [
-        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=bool(answer.ok), used_by=[PROJECT],
-                             note=answer.detail, typeid=str(app.typeid), skipped=app.setup_skipped,
+        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=bool(ok), used_by=[PROJECT],
+                             note=rec.detail if not ok else "up", typeid=str(app.typeid), skipped=app.setup_skipped,
                              **skip_always_of(project, [_root(app, ROOT_WEBAPP)]))
-        for app, answer in zip(apps, answers) if include_ready or not answer.ok
+        for app, rec, ok in zip(apps, records, answers) if include_ready or not ok
     ]
     return out
 
@@ -730,8 +733,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     # The setup's own verdict stays the answer when it fell short.
                     from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
 
-                    # The load a setup run ends with keeps the fixer: this run is the person's "make it work".
-                    operational = LoadTree(tree, fix=True)
+                    operational = LoadTree(tree)
                     loaded = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
                         subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
