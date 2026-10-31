@@ -72,6 +72,21 @@ class HubLLMEndpoint:
 
 # ``None`` (unbound -- every desktop install) is a real cached value, hence ``in``.
 _cache: dict[str, HubLLMEndpoint | None] = {}
+#: The ``config.json`` stamp each memo was read at. A box runs several processes (the chat
+#: service, the admin service, the workspace) and the hub's push lands in only one of them,
+#: so a memo that never looked at the file again kept every other process on the old budget
+#: until it restarted -- a deployed agent kept calling a deleted allocation and got 403.
+_stamp: dict[str, tuple[int, int] | None] = {}
+
+
+def _config_stamp() -> tuple[int, int] | None:
+    """``(inode, mtime_ns)`` of the instance's ``config.json``; ``None`` when it does not exist.
+    ``app_config`` writes by ``os.replace``, so every write moves at least one of the two."""
+    try:
+        st = app_config._config_file_path().stat()
+    except OSError:
+        return None
+    return (st.st_ino, st.st_mtime_ns)
 
 
 def _validated(
@@ -122,10 +137,15 @@ def _parse(raw) -> HubLLMEndpoint | None:
 def get_hub_llm_endpoint() -> HubLLMEndpoint | None:
     """The endpoint the hub bound this instance to, or ``None`` when unbound."""
     key = get_instance_settings().instance_name
-    if key in _cache:
+    stamp = _config_stamp()
+    if key in _cache and _stamp.get(key) == stamp:
         return _cache[key]
     bound = _parse(app_config.get_config(_CONFIG_KEY))
+    if key in _cache and bound != _cache[key]:
+        # Another process on this box rebound it: as fresh as a binding written here.
+        _bound_at[key] = time.monotonic()
     _cache[key] = bound
+    _stamp[key] = stamp
     return bound
 
 
@@ -149,6 +169,7 @@ def set_hub_llm_endpoint(
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
     instance = get_instance_settings().instance_name
     _cache[instance] = bound
+    _stamp[instance] = _config_stamp()
     # When this binding was written, so a listing fetched BEFORE it cannot be read as denying
     # it (see ``listing_supersedes_binding``). Monotonic: only ever compared with the memo's
     # own clock, never with wall time.
@@ -160,13 +181,16 @@ def clear_hub_llm_endpoint() -> bool:
     """Drop the binding. Returns whether one was set."""
     was_bound = get_hub_llm_endpoint() is not None
     app_config.set_config(_CONFIG_KEY, None)
-    _cache[get_instance_settings().instance_name] = None
+    instance = get_instance_settings().instance_name
+    _cache[instance] = None
+    _stamp[instance] = _config_stamp()
     return was_bound
 
 
 def reset_cache() -> None:
     """Drop the memos. For tests, which move instance dirs under the module's feet."""
     _cache.clear()
+    _stamp.clear()
     _list_cache.clear()
     _bound_at.clear()
 

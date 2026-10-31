@@ -911,3 +911,34 @@ async def test_a_refresh_never_drops_a_public_binding(env, monkeypatch) -> None:
     status = await hub_llm_endpoint_status()
     assert (_bound(status), status["binding"]["public"]) == ("llm_endpoint:open", True)
     assert llm_endpoint.get_hub_llm_endpoint() is not None
+
+
+def test_binding_written_by_another_process_is_seen_without_a_restart(env):
+    """The hub's push lands in ONE process on the box; the chat service is another. A deployed
+    agent kept calling a deleted allocation (403) until its machine restarted, because this
+    process's memo never re-read ``config.json``. Another process's write is simulated by
+    writing the file straight through ``app_config``, past this process's memo."""
+    import os
+
+    from flow_sdk.cli import app_config
+    from flow_sdk.instance_settings import llm_endpoint
+
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint-old", "/api/v1/graph/llm_endpoint/old/invoke")
+    assert llm_endpoint.get_hub_llm_endpoint().endpoint_typeid == "llm_endpoint-old"
+
+    app_config.set_config(
+        "hub_llm_endpoint",
+        {"endpoint_typeid": "llm_endpoint-new", "invoke_path": "/api/v1/graph/llm_endpoint/new/invoke"},
+    )
+    path = app_config._config_file_path()
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))  # a coarse clock still moves
+
+    bound = llm_endpoint.get_hub_llm_endpoint()
+    assert bound.endpoint_typeid == "llm_endpoint-new"
+    assert bound.invoke_path == "/api/v1/graph/llm_endpoint/new/invoke"
+
+    app_config.set_config("hub_llm_endpoint", None)
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 2_000_000))
+    assert llm_endpoint.get_hub_llm_endpoint() is None
