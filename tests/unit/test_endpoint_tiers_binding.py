@@ -108,8 +108,16 @@ async def test_claudes_own_size_word_is_a_size(env) -> None:
 async def test_a_size_the_endpoint_does_not_declare_is_refused_in_words(env) -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
 
-    with pytest.raises(WorkerSpawnError, match="declares no 'lg' model"):
+    with pytest.raises(WorkerSpawnError, match="Model mismatch: this session needs the 'lg' model size"):
         await _bind("claude", "lg", models={"sm": TIERS["sm"], "md": TIERS["md"]})
+
+
+async def test_no_size_asked_and_none_declared_says_the_endpoint_declares_none(env) -> None:
+    """Nobody asked for a size (the default one runs): the endpoint is what is missing, not a mismatch."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
+
+    with pytest.raises(WorkerSpawnError, match="declares no 'md' model"):
+        await _bind("claude", None, models={"sm": TIERS["sm"]})
 
 
 async def test_a_named_model_passes_through(env) -> None:

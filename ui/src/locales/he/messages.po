@@ -2687,6 +2687,7 @@ msgstr "אסימון גישה"
 msgid "Account key"
 msgstr "מפתח החשבון"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Accurate"
 msgstr "מדויק"
@@ -5179,6 +5180,7 @@ msgstr "גיבוי בסיס נתונים"
 msgid "bad"
 msgstr "לא טוב"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Balanced"
 msgstr "מאוזן"
@@ -13119,6 +13121,7 @@ msgstr "גיבויים"
 msgid "Family"
 msgstr "סוג פריטים"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/i18n/pref-labels.ts
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -16848,6 +16851,10 @@ msgstr "לעזוב את השיחה הזו?"
 msgid "Left / limit"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Left alone, the agent works with whatever model your budget gives it. Pick a size to require it: if your budget does not offer that size, the agent will not start and tells you why."
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
 msgstr "עזבתם את השיחה"
@@ -18513,6 +18520,11 @@ msgstr "ספק מודל · {0}"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "model size"
 msgstr "גודל המודל"
+
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Model size"
+msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -31242,6 +31254,10 @@ msgstr "הסוכן עדיין עובד, או מחכה לתשובה שלכם בט
 msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
 msgstr "הסוכן השאיר עבודה שרצה ברקע. אפשר להמשיך לשוחח. עצירה תסיים את העבודה הזו."
 
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "The agent requires this model size"
+msgstr ""
+
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
 msgstr "הסוכן שהקישור מציין לא נמצא בקבצי הפרויקט."
@@ -35123,6 +35139,10 @@ msgstr "על מה הייתם רוצים לעבוד?"
 
 #~ msgid "What's in the box."
 #~ msgstr "מה יש בחבילה."
+
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Whatever I get"
+msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "WhatsApp Business account ID"
