@@ -1,10 +1,8 @@
-import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
-import { webappAsset } from '@src/components/project-setup/use-project-load';
-import { PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { useCallback, useEffect, useRef } from 'react';
 import { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
-import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
+import { AppLifecyclePanel } from '@src/components/webapp-display/AppLifecyclePanel';
+import { useAppLifecycle } from '@src/components/webapp-display/useAppLifecycle';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { type AppRuntime } from '@src/navigation/app-dock';
@@ -12,9 +10,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
-import { useEntity } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
+import { Loader2 } from 'lucide-react';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
@@ -129,7 +127,6 @@ export function AppDisplayViewer({
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
-  const { data: definition, notFound } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
@@ -138,6 +135,17 @@ export function AppDisplayViewer({
     { artifactId, microAppId, endpointId, route, options: options ?? {} },
     runtime ?? null,
   );
+
+  // The webapp asset behind what is shown — named by the address, or by the route serving it. Its lifecycle
+  // record decides whether the frame is on screen; opening it asks the backend to make it work, once.
+  const webappId = microAppId ?? appDisplay.endpoint?.webapp_id ?? appDisplay.idleDev?.webapp_id ?? null;
+  // Files served as they are need nothing brought up, wherever they live (a mock in $TMPDIR).
+  const servedFiles = appDisplay.endpoint?.backend?.type === 'static';
+  const lifecycle = useAppLifecycle(appDisplay.loading ? null : webappId, {
+    display: currentDock?.hostProcessId ?? '',
+    autoUp: active && !servedFiles,
+  });
+  const definition = microAppId ? lifecycle.app : null;
 
   useEffect(() => {
     reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
@@ -191,14 +199,11 @@ export function AppDisplayViewer({
     return () => window.removeEventListener('message', onGuest);
   }, [pushSkin, appDisplay.src, navigation, project?.id]);
 
-  // A web app ASSET whose dev server does not answer is set up, not reported missing: its node of the
-  // project's setup tree runs with the live tree on screen, and the app takes over once it answers.
-  // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
-  // a setup for an app (a built-in editor, say) that is no node of this project's tree.
+  // Nothing is known until the endpoints serving the app answered: an app not looked up yet is not down.
   if (appDisplay.loading) return null;
   // The app itself is not on this machine (removed, or a link from another one): there is nothing to
-  // set up or wait for, and saying "opening" forever would be a lie.
-  if (microAppId && notFound && !appDisplay.src) {
+  // bring up or wait for, and saying "opening" forever would be a lie.
+  if (microAppId && lifecycle.notFound && !appDisplay.src) {
     return (
       <div
         role="alert"
@@ -209,10 +214,15 @@ export function AppDisplayViewer({
       </div>
     );
   }
-  const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
-  const setupProject = appDisplay.idleDev?.project_id ?? definition?.project_id ?? project?.id ?? '';
-  if (!appDisplay.src && setupWebapp && setupProject) {
-    return <WebappSetupGate projectId={setupProject} webappId={setupWebapp} />;
+  if (!appDisplay.src && webappId) {
+    // Not served yet: the record says what the backend is doing; up but not re-read yet, a moment's status.
+    return lifecycle.showable ? (
+      <div className="flex h-full items-center justify-center" data-testid="app-opening">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      </div>
+    ) : (
+      <AppLifecyclePanel lifecycle={lifecycle} />
+    );
   }
 
   if (!appDisplay.src) {
@@ -264,28 +274,11 @@ export function AppDisplayViewer({
             endpoint={appDisplay.endpoint}
             testId="vibe-app-frame"
             src={appDisplay.src}
-            // The repair run attaches to the webapp definition when there is one.
-            targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
+            lifecycle={webappId && !servedFiles ? lifecycle : null}
           />
         </div>
       )}
     </div>
   );
-  // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
-  const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
-  // Files served as they are need nothing set up, wherever they live (a mock in $TMPDIR):
-  // the tab belongs to the project, the page does not wait on it.
-  const servedFiles = appDisplay.endpoint?.backend?.type === 'static';
-  return provider && !servedFiles && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.hostProcessId ? (
-    <ProjectLoadGate
-      key={provider}
-      projectId={provider}
-      // An artifact-addressed app is judged on the webapp serving it, not the whole project.
-      asset={webappAsset(microAppId ?? appDisplay.endpoint?.webapp_id)}
-    >
-      {display}
-    </ProjectLoadGate>
-  ) : (
-    display
-  );
+  return display;
 }

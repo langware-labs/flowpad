@@ -175,6 +175,8 @@ async def step(webapp_id: str, which: str, *, check: bool, display: str = "") ->
         return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
     if which == UP:
         return await _up(webapp_id, check=check, display=display)
+    if which.startswith("start:"):
+        return await _start_one(app, which.split(":", 1)[1], check=check)
     if which not in STEPS:
         return _answer(
             ExitCode.NOT_FOUND, f"a web app has no setup step {which!r} (it has {', '.join(STEPS)})", ran=False
@@ -201,6 +203,47 @@ async def step(webapp_id: str, which: str, *, check: bool, display: str = "") ->
 
 #: The lifecycle state an ``up`` is in while it runs each step.
 _STEP_STATE = {"install": "installing", "build": "building", "start": "starting", "present": "starting"}
+
+
+async def app_named(name_or_id: str, project_id: str = ""):
+    """The web app ``name_or_id`` names: by id, else by name — within ``project_id`` when there are several."""
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+
+    bare = str(name_or_id or "").removeprefix("micro_app-")
+    if not bare:
+        return None
+    try:
+        found = await WebApp.get_by_id(bare)
+    except Exception:  # noqa: BLE001 — not an id: a name
+        found = None
+    if found is not None:
+        return found
+    rows = [row for row in await WebApp.get_all({"name": bare}) if row.asset_ref and Path(row.asset_ref).is_dir()]
+    mine = [row for row in rows if project_id and str(row.project_id) == str(project_id)]
+    return (mine or rows or [None])[0]
+
+
+async def _start_one(app, service: str, *, check: bool) -> ReturnedValue:
+    """One process of the app (``service``: a service's name, ``page`` for the page) and the services declared
+    before it — what it calls first. The dependency another app declares on this one (``webapp-service-up``)."""
+    folder = Path(app.asset_ref)
+    processes = _processes(app)
+    names = [p.name or "page" for p in processes]
+    if service not in names:
+        return _failed("dependency", "dependency_down",
+                       f"{app.name} has no process {service!r} (it has {', '.join(names) or 'none'})", ran=False)
+    upto = processes[: names.index(service) + 1]
+    others = await _declared_elsewhere(app)
+    snapshot = await asyncio.to_thread(app_ports.listeners) if check else None
+    env = {port_env(name): str(declared.port) for _who, name, declared in _declared_by(app) if name}
+    answer = _answer(ExitCode.OK, f"{app.name}'s {service} is up", ran=False)
+    for process in upto:
+        answer = await _start(app, folder, process, others, env, check=check, snapshot=snapshot)
+        if not answer.ok:
+            return answer
+        if process.service is not None:
+            env[port_env(process.name)] = str(answer.value)
+    return answer
 
 
 async def _up(webapp_id: str, *, check: bool, display: str = "") -> ReturnedValue:

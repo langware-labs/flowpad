@@ -71,8 +71,10 @@ async def ready(app: Any, *, display: str = "") -> Verdict:
     answer = await webapp_setup.step(str(app.id), webapp_setup.UP, check=True, display=display)
     if not answer.ok:
         return Verdict(False, answer.detail, of_step(answer.value))
+    if not app.asset_ref or not Path(app.asset_ref).is_dir():
+        return Verdict(True, answer.detail)
     processes = webapp_setup._processes(app)
-    if processes and app.asset_ref:
+    if processes:
         port = await webapp_setup.where(app, processes[-1].serving)
         if port.state == "running" and not await asyncio.to_thread(
                 webapp_setup.start_app_check, Path(app.asset_ref), int(port.port)):

@@ -1,3 +1,6 @@
 .venv/
 __pycache__/
 data/*.db*
+
+# Flowpad: this machine's failure log for the app (setup/webapp_handlings.json and recovery.md are committed)
+setup/logs/

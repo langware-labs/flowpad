@@ -408,8 +408,8 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // a status that is always 0 -- measured identical whether the dev server was
     // alive or refusing connections. It therefore reported "available"
     // unconditionally, and its `catch` for connection-refused was unreachable.
-    // Availability is decided by `useWebappDiagnostics`, which asks the endpoint's
-    // machine to probe its port directly. This component is purely the
+    // Availability is decided by the app's lifecycle record (`useAppLifecycle`), which the backend keeps
+    // from its own probes. This component is purely the
     // mechanism: it mounts a frame and reports load state.
     const refreshIframe = useCallback(() => {
       registry.refresh(src);

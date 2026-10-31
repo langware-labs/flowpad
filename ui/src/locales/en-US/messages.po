@@ -2152,8 +2152,8 @@ msgid "<one short line>"
 msgstr "<one short line>"
 
 #: src/components/webapp-display/useWebappFix.ts
-msgid "<what was wrong and what you did>"
-msgstr "<what was wrong and what you did>"
+#~ msgid "<what was wrong and what you did>"
+#~ msgstr "<what was wrong and what you did>"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "~2s. Use to check what's on disk without changing anything."
@@ -2437,12 +2437,12 @@ msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "a key the hub holds (the chain could not be read from here)"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "A known error is fixed on the spot; an unknown one goes to recovery."
-msgstr "A known error is fixed on the spot; an unknown one goes to recovery."
+#~ msgid "A known error is fixed on the spot; an unknown one goes to recovery."
+#~ msgstr "A known error is fixed on the spot; an unknown one goes to recovery."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "A known fix for this error (setup/webapp_errors.json)."
-msgstr "A known fix for this error (setup/webapp_errors.json)."
+#~ msgid "A known fix for this error (setup/webapp_errors.json)."
+#~ msgstr "A known fix for this error (setup/webapp_errors.json)."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A machine"
@@ -3909,6 +3909,10 @@ msgstr "An <0>orphan</0> is a row in the search index whose source file is gone 
 #~ msgid "An absent optional value does not park the run"
 #~ msgstr "An absent optional value does not park the run"
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "An agent is repairing the app"
+msgstr "An agent is repairing the app"
+
 #: src/components/automations/KindGallery.tsx
 msgid "An agent reads the task and tells you if it needs you."
 msgstr "An agent reads the task and tells you if it needs you."
@@ -4355,6 +4359,10 @@ msgstr "Applies to"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Apply"
 msgstr "Apply"
+
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Applying a known fix"
+msgstr "Applying a known fix"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Applying…"
@@ -5837,6 +5845,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/components/workspace/workspace-switcher.tsx
 #: src/pages/entry/InstallLanding.tsx
@@ -6200,20 +6209,20 @@ msgid "Check"
 msgstr "Check"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Check — is the app running and its page clean?"
-msgstr "Check — is the app running and its page clean?"
+#~ msgid "Check — is the app running and its page clean?"
+#~ msgstr "Check — is the app running and its page clean?"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Check — loading the page and watching for errors"
-msgstr "Check — loading the page and watching for errors"
+#~ msgid "Check — loading the page and watching for errors"
+#~ msgstr "Check — loading the page and watching for errors"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Check — the app is not ready to show"
-msgstr "Check — the app is not ready to show"
+#~ msgid "Check — the app is not ready to show"
+#~ msgstr "Check — the app is not ready to show"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Check — the page threw an error while loading"
-msgstr "Check — the page threw an error while loading"
+#~ msgid "Check — the page threw an error while loading"
+#~ msgstr "Check — the page threw an error while loading"
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
@@ -6304,7 +6313,7 @@ msgstr "Checking out the projects and opening the session."
 msgid "Checking project membership…"
 msgstr "Checking project membership…"
 
-#: src/components/webapp-display/WebappDisplay.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Checking the app…"
 msgstr "Checking the app…"
 
@@ -7219,6 +7228,10 @@ msgstr "Column Weights"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Columns: name, email, budget"
 msgstr "Columns: name, email, budget"
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "coming up…"
+msgstr "coming up…"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "command"
@@ -10723,7 +10736,6 @@ msgstr "Detail"
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
-#: src/components/webapp-display/WebDebugComponent.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Details"
 msgstr "Details"
@@ -12117,8 +12129,8 @@ msgid "Error Loading Transcript"
 msgstr "Error Loading Transcript"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Error rules — webapp_errors.json"
-msgstr "Error rules — webapp_errors.json"
+#~ msgid "Error rules — webapp_errors.json"
+#~ msgstr "Error rules — webapp_errors.json"
 
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Error while displaying the suggestion, contact support"
@@ -13698,7 +13710,7 @@ msgid "Fix All"
 msgstr "Fix All"
 
 #: src/components/project-setup/SetupFailureActions.tsx
-#: src/components/webapp-display/WebDebugComponent.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Fix it"
 msgstr "Fix it"
 
@@ -13720,8 +13732,8 @@ msgstr "Fix the configuration — credentials or settings — then press Verify 
 #~ msgstr "Fix the setup"
 
 #: src/components/webapp-display/useWebappFix.ts
-msgid "Fix the web app"
-msgstr "Fix the web app"
+#~ msgid "Fix the web app"
+#~ msgstr "Fix the web app"
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Fix…"
@@ -13740,8 +13752,8 @@ msgid "Fixing these tightens the skill for every future run."
 msgstr "Fixing these tightens the skill for every future run."
 
 #: src/components/webapp-display/WebDebugComponent.tsx
-msgid "Fixing…"
-msgstr "Fixing…"
+#~ msgid "Fixing…"
+#~ msgstr "Fixing…"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 #~ msgid "Flow answers from its own box · shown here"
@@ -13869,8 +13881,8 @@ msgstr "FlowPad didn't open? Install it, then come back to this page."
 #~ msgstr "FlowPad didn't open. Install it from flowpad.ai, then try again."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
-msgstr "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
+#~ msgid "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
+#~ msgstr "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -14812,6 +14824,10 @@ msgstr "Handed over to {0}"
 msgid "Handling"
 msgstr "Handling"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Handlings — webapp_handlings.json"
+msgstr "Handlings — webapp_handlings.json"
+
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Harness · sessions"
 msgstr "Harness · sessions"
@@ -14933,8 +14949,8 @@ msgid "Helpers used"
 msgstr "Helpers used"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
-msgstr "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
+#~ msgid "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
+#~ msgstr "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
 
 #: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
@@ -14978,8 +14994,8 @@ msgid "Hide all types"
 msgstr "Hide all types"
 
 #: src/components/webapp-display/WebDebugComponent.tsx
-msgid "Hide details"
-msgstr "Hide details"
+#~ msgid "Hide details"
+#~ msgstr "Hide details"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Hide empty"
@@ -15494,8 +15510,8 @@ msgid "ignore"
 msgstr "ignore"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Ignore"
-msgstr "Ignore"
+#~ msgid "Ignore"
+#~ msgstr "Ignore"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "ignore patterns"
@@ -16308,8 +16324,8 @@ msgid "It is no longer one of the endpoints the hub lists for you — or this ma
 msgstr "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "It is not answering on its port, or its page failed the last time it opened."
-msgstr "It is not answering on its port, or its page failed the last time it opened."
+#~ msgid "It is not answering on its port, or its page failed the last time it opened."
+#~ msgstr "It is not answering on its port, or its page failed the last time it opened."
 
 #: src/pages/entry/EntityLanding.tsx
 msgid "It lives in git under {repoPath}. Clone it, and open it in the FlowPad desktop app."
@@ -16330,8 +16346,8 @@ msgid "It may have been deleted, or it wasn't shared with this account."
 msgstr "It may have been deleted, or it wasn't shared with this account."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
-msgstr "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
+#~ msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
+#~ msgstr "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "It runs again the next time the project opens."
@@ -16718,11 +16734,9 @@ msgstr "Last 7 days"
 msgid "Last attempt"
 msgstr "Last attempt"
 
-#. placeholder {0}: check.errors
-#. placeholder {1}: check.at
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Last check found {0} error(s) · {1}"
-msgstr "Last check found {0} error(s) · {1}"
+#~ msgid "Last check found {0} error(s) · {1}"
+#~ msgstr "Last check found {0} error(s) · {1}"
 
 #. placeholder {0}: clockTime(last)
 #: src/components/inbound/InboundView.tsx
@@ -17895,7 +17909,6 @@ msgid "Logout"
 msgstr "Logout"
 
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/webapp-display/AppStatusLine.tsx
 msgid "Logs"
 msgstr "Logs"
 
@@ -19000,6 +19013,11 @@ msgstr "Needs values"
 msgid "Needs you — above"
 msgstr "Needs you — above"
 
+#. placeholder {0}: record.failure?.text || record.detail
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Needs you: {0}"
+msgstr "Needs you: {0}"
+
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Needs your approval"
 msgstr "Needs your approval"
@@ -19418,17 +19436,17 @@ msgstr "next: {0}"
 msgid "Next: {0}"
 msgstr "Next: {0}"
 
-#: src/components/webapp-display/PageCheckPanel.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Next: check again"
 msgstr "Next: check again"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Next: open the page and check it for errors"
-msgstr "Next: open the page and check it for errors"
+#~ msgid "Next: open the page and check it for errors"
+#~ msgstr "Next: open the page and check it for errors"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Next: show the app"
-msgstr "Next: show the app"
+#~ msgid "Next: show the app"
+#~ msgstr "Next: show the app"
 
 #: src/components/data-sources/DataDriversView.tsx
 msgid "no"
@@ -19944,6 +19962,10 @@ msgstr "No GitHub repos linked"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "no guides published"
 msgstr "no guides published"
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "No handlings yet. A failure no handling knows goes to recovery, which adds one for it."
+msgstr "No handlings yet. A failure no handling knows goes to recovery, which adds one for it."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "No help desk in this repository"
@@ -20510,8 +20532,8 @@ msgid "No rule code to show."
 msgstr "No rule code to show."
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
-msgstr "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
+#~ msgid "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
+#~ msgstr "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "No run"
@@ -20913,6 +20935,7 @@ msgid "None yet."
 msgstr "None yet."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "None."
 msgstr "None."
@@ -20951,7 +20974,6 @@ msgstr "Not available in Local mode"
 msgid "Not checked"
 msgstr "Not checked"
 
-#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Not checked yet"
 msgstr "Not checked yet"
@@ -21104,7 +21126,6 @@ msgstr "Not published yet"
 msgid "Not pushed yet"
 msgstr "Not pushed yet"
 
-#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/inbound/RouteCheck.tsx
 msgid "not reachable"
 msgstr "not reachable"
@@ -21122,6 +21143,10 @@ msgstr "Not ready yet"
 #~ msgid "not respected"
 #~ msgstr "not respected"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Not run on this machine yet"
+msgstr "Not run on this machine yet"
+
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "not run yet"
@@ -21136,6 +21161,7 @@ msgid "Not runnable here"
 msgstr "Not runnable here"
 
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "not running"
 msgstr "not running"
 
@@ -22786,8 +22812,8 @@ msgid "Opening {name}…"
 msgstr "Opening {name}…"
 
 #: src/components/webapp-display/WebappSetupGate.tsx
-msgid "Opening app…"
-msgstr "Opening app…"
+#~ msgid "Opening app…"
+#~ msgstr "Opening app…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"
@@ -22806,8 +22832,8 @@ msgid "Opening your agent…"
 msgstr "Opening your agent…"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Opening your app…"
-msgstr "Opening your app…"
+#~ msgid "Opening your app…"
+#~ msgstr "Opening your app…"
 
 #: src/pages/entry/InvitePage.tsx
 msgid "Opening your invite…"
@@ -22895,8 +22921,8 @@ msgid "Or pick a person, or type an email"
 msgstr "Or pick a person, or type an email"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Or recover it, if the page throws an error."
-msgstr "Or recover it, if the page throws an error."
+#~ msgid "Or recover it, if the page throws an error."
+#~ msgstr "Or recover it, if the page throws an error."
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "or script (relative to the flow folder)"
@@ -23170,8 +23196,8 @@ msgid "Page {page} of {totalPages}"
 msgstr "Page {page} of {totalPages}"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Page errors are not reported — the app opens without a check."
-msgstr "Page errors are not reported — the app opens without a check."
+#~ msgid "Page errors are not reported — the app opens without a check."
+#~ msgstr "Page errors are not reported — the app opens without a check."
 
 #: src/components/ui/pagination.tsx
 msgid "pagination"
@@ -23234,8 +23260,8 @@ msgid "Part of a setup — see its progress"
 msgstr "Part of a setup — see its progress"
 
 #: src/components/webapp-display/messages.tsx
-msgid "Part of your app didn't load."
-msgstr "Part of your app didn't load."
+#~ msgid "Part of your app didn't load."
+#~ msgstr "Part of your app didn't load."
 
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Participant"
@@ -24983,8 +25009,8 @@ msgid "Reading projects…"
 msgstr "Reading projects…"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Reading setup/recovery.md first · {toolCount} steps so far"
-msgstr "Reading setup/recovery.md first · {toolCount} steps so far"
+#~ msgid "Reading setup/recovery.md first · {toolCount} steps so far"
+#~ msgstr "Reading setup/recovery.md first · {toolCount} steps so far"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Reading the data model…"
@@ -25010,8 +25036,12 @@ msgid "Reading…"
 msgstr "Reading…"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Reads and updates setup/recovery.md and setup/webapp_errors.json."
-msgstr "Reads and updates setup/recovery.md and setup/webapp_errors.json."
+#~ msgid "Reads and updates setup/recovery.md and setup/webapp_errors.json."
+#~ msgstr "Reads and updates setup/recovery.md and setup/webapp_errors.json."
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Reads and updates setup/recovery.md and setup/webapp_handlings.json."
+msgstr "Reads and updates setup/recovery.md and setup/webapp_handlings.json."
 
 #: src/components/assets/DependencyChips.tsx
 msgid "ready"
@@ -25023,10 +25053,9 @@ msgstr "ready"
 msgid "Ready"
 msgstr "Ready"
 
-#. placeholder {0}: check.at
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Ready · last check {0}"
-msgstr "Ready · last check {0}"
+#~ msgid "Ready · last check {0}"
+#~ msgstr "Ready · last check {0}"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
 msgid "ready · Open"
@@ -25242,12 +25271,12 @@ msgid "recover"
 msgstr "recover"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Recover"
-msgstr "Recover"
+#~ msgid "Recover"
+#~ msgstr "Recover"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Recover — an agent repairs the app"
-msgstr "Recover — an agent repairs the app"
+#~ msgid "Recover — an agent repairs the app"
+#~ msgstr "Recover — an agent repairs the app"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Recover it from the workdir, or pick a new project via the project chip."
@@ -25256,6 +25285,11 @@ msgstr "Recover it from the workdir, or pick a new project via the project chip.
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Recover project"
 msgstr "Recover project"
+
+#. placeholder {0}: record.recovery || record.detail
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Recovering: {0}"
+msgstr "Recovering: {0}"
 
 #: src/components/terminal/project-list-menu.tsx
 msgid "Recovery failed"
@@ -26255,7 +26289,6 @@ msgstr "REST API"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#: src/components/webapp-display/AppStatusLine.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -26293,8 +26326,8 @@ msgid "Restart setup"
 msgstr "Restart setup"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Restart the app's server"
-msgstr "Restart the app's server"
+#~ msgid "Restart the app's server"
+#~ msgstr "Restart the app's server"
 
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
@@ -26974,7 +27007,6 @@ msgstr "Run:"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
-#: src/components/webapp-display/AppStatusLine.tsx
 msgid "running"
 msgstr "running"
 
@@ -27047,6 +27079,10 @@ msgstr "Running the old definition — Restart to apply"
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Running the setup. Steps that pass stay green; you are asked only for what is missing."
 msgstr "Running the setup. Steps that pass stay green; you are asked only for what is missing."
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "running, with problems"
+msgstr "running, with problems"
 
 #: src/components/account/settings-section.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -28712,9 +28748,13 @@ msgstr "Set values"
 #~ msgstr "Set{0}"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
-#: src/components/webapp-display/WebappSetupOverlay.tsx
 msgid "Setting things up"
 msgstr "Setting things up"
+
+#. placeholder {0}: record.detail || record.state
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Setting up — {0}"
+msgstr "Setting up — {0}"
 
 #. placeholder {0}: now.label
 #: src/components/project-setup/ProjectSetupDialog.tsx
@@ -29101,6 +29141,10 @@ msgstr "Shell unavailable"
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "shipped"
 msgstr "shipped"
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Shipped handlings"
+msgstr "Shipped handlings"
 
 #: src/pages/entry/useOpenFlowpad.ts
 msgid "Short-lived key for Open-in-FlowPad deep link"
@@ -30014,8 +30058,8 @@ msgid "Someone else is using this machine"
 msgstr "Someone else is using this machine"
 
 #: src/components/webapp-display/messages.tsx
-msgid "Something is using this port, but it isn't your app."
-msgstr "Something is using this port, but it isn't your app."
+#~ msgid "Something is using this port, but it isn't your app."
+#~ msgstr "Something is using this port, but it isn't your app."
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
@@ -30258,8 +30302,8 @@ msgid "Start"
 msgstr "Start"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Start — starting the app's server"
-msgstr "Start — starting the app's server"
+#~ msgid "Start — starting the app's server"
+#~ msgstr "Start — starting the app's server"
 
 #. placeholder {0}: workerLabel(worker)
 #: src/components/workers/ContextWorkerToolbar.tsx
@@ -30449,8 +30493,8 @@ msgstr "Starting the session without the attached files."
 
 #: src/components/webapp-display/messages.tsx
 #: src/components/webapp-display/WebappDisplay.tsx
-msgid "Starting your app…"
-msgstr "Starting your app…"
+#~ msgid "Starting your app…"
+#~ msgstr "Starting your app…"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Starting your sandbox…"
@@ -30581,7 +30625,6 @@ msgstr "Still working — waiting on the cloud. This can take a minute."
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
-#: src/components/webapp-display/AppStatusLine.tsx
 msgid "Stop"
 msgstr "Stop"
 
@@ -31850,16 +31893,20 @@ msgid "the other participant"
 msgstr "the other participant"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "The page is loading. It opens as soon as it loads without errors."
-msgstr "The page is loading. It opens as soon as it loads without errors."
+#~ msgid "The page is loading. It opens as soon as it loads without errors."
+#~ msgstr "The page is loading. It opens as soon as it loads without errors."
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "The page loads and reports its errors; each is decided by the rules below."
-msgstr "The page loads and reports its errors; each is decided by the rules below."
+#~ msgid "The page loads and reports its errors; each is decided by the rules below."
+#~ msgstr "The page loads and reports its errors; each is decided by the rules below."
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "The page loads and reports its errors; each is matched against the handlings below."
+msgstr "The page loads and reports its errors; each is matched against the handlings below."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
-msgstr "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
+#~ msgid "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
+#~ msgstr "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
@@ -31934,8 +31981,8 @@ msgid "The recipient will see a PROMPT to approve."
 msgstr "The recipient will see a PROMPT to approve."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "The repair counts only when the page loads clean."
-msgstr "The repair counts only when the page loads clean."
+#~ msgid "The repair counts only when the page loads clean."
+#~ msgstr "The repair counts only when the page loads clean."
 
 #~ msgid "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
 #~ msgstr "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
@@ -32047,8 +32094,12 @@ msgid "The source was not removed."
 msgstr "The source was not removed."
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "The start command; a rule whose fix is “restart” restarts it without an agent."
-msgstr "The start command; a rule whose fix is “restart” restarts it without an agent."
+msgid "The start command; a handling whose action is “restart” restarts it without an agent."
+msgstr "The start command; a handling whose action is “restart” restarts it without an agent."
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+#~ msgid "The start command; a rule whose fix is “restart” restarts it without an agent."
+#~ msgstr "The start command; a rule whose fix is “restart” restarts it without an agent."
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "The stored API key for this provider is removed from this machine. You can add it again later."
@@ -33651,8 +33702,6 @@ msgstr "Triggers"
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
-#: src/components/webapp-display/PageCheckPanel.tsx
-#: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
@@ -34052,6 +34101,10 @@ msgstr "Untitled task"
 #~ msgid "Untracked sharing"
 #~ msgstr "Untracked sharing"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Up"
+msgstr "Up"
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "up to date"
 msgstr "up to date"
@@ -34062,6 +34115,13 @@ msgstr "up to date"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Up to date"
 msgstr "Up to date"
+
+#. placeholder {0}: record.detail
+#. placeholder {0}: record.failure?.text || record.detail
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Up, with problems: {0}"
+msgstr "Up, with problems: {0}"
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -34909,8 +34969,8 @@ msgid "Waiting for the link"
 msgstr "Waiting for the link"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)"
-msgstr "Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)"
+#~ msgid "Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)"
+#~ msgstr "Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)"
 
 #: src/components/ask/AskChoiceBlock.tsx
 #~ msgid "Waiting for the sign-in…"
@@ -35012,8 +35072,8 @@ msgid "Ways to answer"
 msgstr "Ways to answer"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "We could not recover the app"
-msgstr "We could not recover the app"
+#~ msgid "We could not recover the app"
+#~ msgstr "We could not recover the app"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "We couldn't confirm this sign-in: {statusReason}"
@@ -36084,44 +36144,44 @@ msgid "Your API Keys"
 msgstr "Your API Keys"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Your app crashed while loading — recovering it"
-msgstr "Your app crashed while loading — recovering it"
+#~ msgid "Your app crashed while loading — recovering it"
+#~ msgstr "Your app crashed while loading — recovering it"
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app is running, but parts of it may not work."
-msgstr "Your app is running, but parts of it may not work."
+#~ msgid "Your app is running, but parts of it may not work."
+#~ msgstr "Your app is running, but parts of it may not work."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app is running, but this page wasn't found."
-msgstr "Your app is running, but this page wasn't found."
+#~ msgid "Your app is running, but this page wasn't found."
+#~ msgstr "Your app is running, but this page wasn't found."
 
 #: src/components/webapp-display/WebappSetupOverlay.tsx
-msgid "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
-msgstr "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
+#~ msgid "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
+#~ msgstr "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app isn't running right now."
-msgstr "Your app isn't running right now."
+#~ msgid "Your app isn't running right now."
+#~ msgstr "Your app isn't running right now."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app keeps redirecting to itself."
-msgstr "Your app keeps redirecting to itself."
+#~ msgid "Your app keeps redirecting to itself."
+#~ msgstr "Your app keeps redirecting to itself."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app loaded but is showing nothing."
-msgstr "Your app loaded but is showing nothing."
+#~ msgid "Your app loaded but is showing nothing."
+#~ msgstr "Your app loaded but is showing nothing."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app opened but crashed while starting."
-msgstr "Your app opened but crashed while starting."
+#~ msgid "Your app opened but crashed while starting."
+#~ msgstr "Your app opened but crashed while starting."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app started but hit an error while loading."
-msgstr "Your app started but hit an error while loading."
+#~ msgid "Your app started but hit an error while loading."
+#~ msgstr "Your app started but hit an error while loading."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app started but stopped responding."
-msgstr "Your app started but stopped responding."
+#~ msgid "Your app started but stopped responding."
+#~ msgstr "Your app started but stopped responding."
 
 #: src/components/graph-view/webglSupport.tsx
 msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."

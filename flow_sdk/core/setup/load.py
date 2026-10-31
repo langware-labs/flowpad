@@ -167,7 +167,7 @@ def app_load_state(pid: str, asset: str, display: str = "") -> Optional[LoadResu
     rec = record.read(asset, pid)
     base = dict(project_id=pid, asset=asset, display=display or None)
     if rec.showable:
-        return LoadResult(state=LoadState.READY, setup_owed=rec.setup_owed, detail=rec.detail, **base)
+        return LoadResult(state=LoadState.READY, setup_owed=rec.setup_owed, **base)
     if rec.state in BUSY or coordinator.running(asset):
         return LoadResult(state=LoadState.RUNNING, run=setup_run_address(pid, asset), phase="load",
                           detail=rec.detail, **base)

@@ -641,9 +641,10 @@ function ContentPanelBody({
   const providerProject = currentDock?.options?.[PROVIDER_PROJECT_PARAM];
   const display = currentDock?.hostProcessId ?? '';
   const isAppBody = bodyViewType === ViewType.APP;
-  // Only an app needs its project running; a file or entity in the display opens as it is.
-  const loadProject = providerProject || (display && isAppBody ? project?.id : undefined);
   const homeAgent = currentDock?.options?.[HOME_AGENT_PARAM];
+  // An app view is brought up by its own lifecycle record (`AppDisplayViewer`), never by a project gate; a
+  // provider's other views (its home, its files) still wait for the provider to load.
+  const loadProject = isAppBody && !homeAgent ? undefined : providerProject;
   const consumerProject = currentDock?.options?.[CONSUMER_PROJECT_PARAM] || currentDock?.scopeProjectId;
   const renderedBody =
     homeAgent && consumerProject ? (
@@ -651,16 +652,8 @@ function ContentPanelBody({
     ) : (
       renderBody(bodyViewType)
     );
-  const appAddress = isAppBody && !homeAgent ? appDockAddress(currentDock) : null;
   const body = loadProject ? (
-    <OwnerLoadGate
-      urlProject={loadProject}
-      appId={appAddress?.microAppId ?? null}
-      artifactId={appAddress?.artifactId ?? null}
-      endpointId={appAddress?.endpointId ?? null}
-      route={appAddress?.route ?? null}
-      display={display}
-    >
+    <OwnerLoadGate urlProject={loadProject} display={display}>
       {renderedBody}
     </OwnerLoadGate>
   ) : (

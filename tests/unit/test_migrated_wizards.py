@@ -33,7 +33,6 @@ WIZARD_ROOT = system_projects_root() / "flowpad_assistant" / "agentic-assets" / 
 LAUNCHED = {
     "task-analyze": "task-analyze",
     "asset-cleanup-wizard": "asset-cleanup",
-    "webapp-fixer": "webapp-fixer",
 }
 
 
@@ -109,6 +108,12 @@ def test_every_shipped_wizard_is_reachable():
     for doc in skills.rglob("*"):
         if doc.suffix in {".md", ".mjs", ".py", ".sh"} and doc.is_file():
             named = re.findall(r"flow wizard run ([a-z0-9-]+)", doc.read_text(encoding="utf-8", errors="ignore"))
+            reachable |= {folder_of[n] for n in named if n in folder_of}
+    # A setup node runs it: a shipped `asset_setup` names it as its prepare/run/on_load, or a shipped skill tells
+    # an author to declare one that does (`"run": "webapp-service-up"` — an app's dependency on another app).
+    for doc in WIZARD_ROOT.parents[1].rglob("*"):
+        if doc.is_file() and (doc.name == "asset_setup.json" or (doc.suffix == ".md" and skills in doc.parents)):
+            named = re.findall(r'"(?:prepare|run|on_load)":\s*"([a-z0-9-]+)"', doc.read_text(encoding="utf-8", errors="ignore"))
             reachable |= {folder_of[n] for n in named if n in folder_of}
     # A step names its callee by `name`, which need not be its folder's.
     frontier = list(reachable)

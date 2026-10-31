@@ -9,13 +9,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { RefreshCw } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useWebappHealth, type WebappHealth } from './use-webapp-health';
+import { isAppBusy, isAppShowable, type WebAppLifecycle } from '@sdk';
 
 export type AppRuntimeOption = 'dev' | 'served';
 
 interface WebappDisplayToolbarProps {
-  /** The URL the display iframe points at (health is pinged here). */
-  host: string;
+  /** The app's lifecycle record — the LED says what it says. Null: not known yet. */
+  record: WebAppLifecycle | null;
   /** The dev server's own address (`host:port`), shown as text; '' for a served build. */
   address: string;
   /** Re-mount / reload the iframe. */
@@ -32,19 +32,29 @@ const RUNTIME_LABEL: Record<AppRuntimeOption, React.ReactNode> = {
   served: <Trans>Served</Trans>,
 };
 
-const LED: Record<WebappHealth, { color: string; label: React.ReactNode }> = {
+type Led = 'up' | 'degraded' | 'busy' | 'down' | 'checking';
+
+const LED: Record<Led, { color: string; label: React.ReactNode }> = {
   up: { color: 'bg-green-500', label: <Trans>running</Trans> },
-  down: { color: 'bg-red-500', label: <Trans>not reachable</Trans> },
+  degraded: { color: 'bg-amber-500', label: <Trans>running, with problems</Trans> },
+  busy: { color: 'bg-yellow-400 animate-pulse', label: <Trans>coming up…</Trans> },
+  down: { color: 'bg-red-500', label: <Trans>not running</Trans> },
   checking: { color: 'bg-yellow-400 animate-pulse', label: <Trans>checking…</Trans> },
 };
 
+function ledOf(record: WebAppLifecycle | null): Led {
+  if (!record) return 'checking';
+  if (isAppShowable(record)) return record.state === 'degraded' ? 'degraded' : 'up';
+  return isAppBusy(record) ? 'busy' : 'down';
+}
+
 /**
  * PER-TYPE toolbar for a shown web app: a running/health LED, the dev server's
- * address, the runtime switch and refresh. Health comes from pinging the URL the
- * frame loads (see useWebappHealth), so it works for any endpoint.
+ * address, the runtime switch and refresh. The LED reads the app's lifecycle record
+ * (`webapp.lifecycle`) — never a ping of its own.
  */
 export function WebappDisplayToolbar({
-  host,
+  record,
   address,
   onRefresh,
   runtime = null,
@@ -52,8 +62,7 @@ export function WebappDisplayToolbar({
   onRuntimeChange,
 }: WebappDisplayToolbarProps) {
   const { t } = useLingui();
-  const health = useWebappHealth(host);
-  const led = LED[health];
+  const led = LED[ledOf(record)];
   // Only a genuine choice earns a control: an app with one runtime shows none.
   const showSwitch = runtimes.length > 1 && !!onRuntimeChange;
 

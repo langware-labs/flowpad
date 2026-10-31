@@ -10,6 +10,7 @@ agent home page OPENS (its last chat, else a new one) is the frontend's —
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -282,18 +283,15 @@ async def test_opening_a_static_home_app_starts_nothing(tmp_path, monkeypatch):
 
 async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_answers_at_once(tmp_path, monkeypatch):
     """An app that declares a dev server and has no build is not up until that server answers: the open starts
-    the app's own node of the setup tree — its load wizard alone — and answers its address; the view adopts that
-    run as the app's setup. The open never waits on it."""
-    from flow_sdk.builtin import project_setup
+    the app's own bring-up (``core/webapp/coordinator``) and answers at once; the open never waits on it."""
+    from flow_sdk.core.webapp import coordinator
 
     started = []
 
-    async def start(project, *, root="", tree=None, **_kw):
-        app_node = await tree.resolve_node(str(app.typeid))
-        started.append((root, app_node.run.name))
-        return f"setup-project-{project.id}"
+    async def run(key, **_kw):
+        started.append(key)
 
-    monkeypatch.setattr(project_setup, "start_setup", start)
+    monkeypatch.setattr(coordinator, "_run", run)
     root = tmp_path / "dev-home"
     project = await _project(root)
     app = await _web_app(root, "console", mounts=[{
@@ -304,9 +302,10 @@ async def test_opening_a_home_app_whose_dev_server_is_down_starts_its_load_and_a
     answer = await project.open_home_page()
 
     assert answer["asset"] == str(app.typeid) and answer["type"] == "micro_app"
-    assert answer["load_run"] == f"setup-project-{project.id}"
+    assert answer["load_run"] == f"setup-{app.typeid}"  # the app's own run (core/webapp/coordinator)
     assert answer["lifecycle"]["state"] == "running"
-    assert started == [(str(app.typeid), str(app.typeid))], "the app's own run: nothing beside it holds it"
+    await asyncio.sleep(0)
+    assert started == [str(app.id)], "the app's own run: nothing beside it holds it"
 
 
 @pytest.mark.parametrize("reference", ["./../foreign", "./agentic-assets/../../foreign", "./C:/foreign", "./.", "./"])

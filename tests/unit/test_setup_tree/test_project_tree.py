@@ -311,3 +311,26 @@ async def test_an_app_whose_folder_is_gone_is_not_something_to_set_up(monkeypatc
     monkeypatch.setattr(WebApp, "get_all", get_all)
     tree = ProjectTree(SimpleNamespace(id="p1", name="Shop", fs_storage_mount_path=str(tmp_path)))
     assert [app.name for app in await tree._webapps()] == ["here"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", ["child first", "parent first"])
+async def test_a_dependency_declared_under_another_declaration_attaches_in_any_order(project, monkeypatch, order):
+    """Spora App: the tenant node, and Admin's API beneath it (``subject: asset_setup:tenant``). The index may hand
+    either row first; the API is the tenant's child either way, and the tenant is the app's."""
+    specs = {
+        "tenant": AssetSetupSpec(name="tenant"),
+        "admin-api": AssetSetupSpec(name="admin-api", subject="asset_setup:tenant", run="", inputs={"service": "api"}),
+    }
+    rows = [AssetSetup(name=n, asset_ref=f"/p/agentic-assets/webapp/site/agentic-assets/asset_setup/{n}")
+            for n in (("admin-api", "tenant") if order == "child first" else ("tenant", "admin-api"))]
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: specs[str(self.name)])
+
+    async def declared(_q):
+        return rows
+
+    monkeypatch.setattr(AssetSetup, "get_all", declared)
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["asset_setup:tenant"].children == ("asset_setup:admin-api",)
+    assert tree.nodes["micro_app-a1"].children == ("asset_setup:tenant",)
+    assert dict(tree.nodes["asset_setup:admin-api"].inputs)["service"] == "api"

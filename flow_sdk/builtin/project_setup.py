@@ -647,15 +647,32 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
         if include_ready or source.status == SourceStatus.SETUP.value
     ]
     from flow_sdk.core.webapp import readiness, record  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import LifecycleState  # noqa: PLC0415
 
     apps = [app for app in await WebApp.get_all({"match": {"project_id": str(project.id)}}) if app.asset_ref]
     # The app's record says whether it is up here (``core/webapp/readiness.quick``: its pids and health, no
     # process table) — the one rule, as cheap as the credential check beside it.
     records = [record.read(str(app.id), str(project.id)) for app in apps]
-    answers = await asyncio.gather(*(readiness.quick(app, rec) for app, rec in zip(apps, records)))
+    answers = list(await asyncio.gather(*(readiness.quick(app, rec) for app, rec in zip(apps, records))))
+    # Never brought up here (or not up by its record): one full check, and an app found up — started by hand,
+    # or before this backend — is adopted into its record, so the next poll is the cheap one again.
+    for i, (app, rec) in enumerate(zip(apps, records)):
+        if not answers[i] and rec.state is not LifecycleState.UP or (not answers[i] and not rec.ports):
+            verdict = await readiness.ready(app)
+            if verdict.ok:
+                from flow_sdk.builtin.webapp_setup import _record_up  # noqa: PLC0415
+
+                try:
+                    await _record_up(str(app.id), app, str(project.id), verdict)
+                except Exception as exc:  # noqa: BLE001 — adopting is a convenience; the verdict stands
+                    logger.debug("adopting %s into its record failed: %s", app.name, exc)
+                records[i], answers[i] = record.read(str(app.id)), True
+            else:
+                records[i] = rec.model_copy(update={"detail": verdict.detail or rec.detail})
     out += [
         SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=bool(ok), used_by=[PROJECT],
-                             note=rec.detail if not ok else "up", typeid=str(app.typeid), skipped=app.setup_skipped,
+                             note=(rec.detail or f"{app.name} is not running") if not ok else "up",
+                             typeid=str(app.typeid), skipped=app.setup_skipped,
                              **skip_always_of(project, [_root(app, ROOT_WEBAPP)]))
         for app, rec, ok in zip(apps, records, answers) if include_ready or not ok
     ]

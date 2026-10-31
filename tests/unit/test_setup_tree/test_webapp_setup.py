@@ -824,3 +824,21 @@ async def test_a_running_process_reports_what_it_no_longer_matches_in_the_saved_
     (page,) = await webapp_setup.ports("a1")
     assert page["changes"] == [f"port {port} → {moved}", "start command"]
     assert (await webapp_setup.stop("a1")).ok
+
+
+@pytest.mark.asyncio
+async def test_one_service_starts_with_what_it_calls_first_and_not_the_page(app):
+    """What another app declares it needs (``webapp-service-up``): ``start:<service>`` starts that service and the
+    services declared before it — never the page, never the services after it."""
+    def own(name):  # a command of its own per service: one process is never taken for another
+        return _service(name=name, command=f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1 --directory {name}")
+
+    for name in ("db", "api", "extra"):
+        (app.folder / name).mkdir()
+    app.make(services=[own("db"), own("api"), own("extra")])
+    answer = await webapp_setup.step("a1", "start:api", check=False)
+    assert answer.ok, answer.detail
+    assert set(app.services) == {"db", "api"} and app.endpoint is None and len(app.started) == 2
+    assert (await webapp_setup.step("a1", "start:api", check=True)).ok
+    missing = await webapp_setup.step("a1", "start:nope", check=False)
+    assert not missing.ok and "has no process 'nope'" in missing.detail

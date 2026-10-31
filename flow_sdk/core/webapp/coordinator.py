@@ -99,12 +99,19 @@ async def bring_up(app: Any, *, display: str = "", reason: Reason = "open", wait
 
         if await readiness.quick(app, rec):
             return rec
+    from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+
+    if failure is None and not webapp_setup._processes(app) and not running(key):
+        # Files Flowpad serves itself: placing them is the whole of it — done here, at once, no run (B9).
+        found = await _up(app, display=display)
+        if found is not None:
+            await _ladder(app, found, display=display, reason=reason)
+        return record.read(key, project_id)
     task = _TASKS.get(key)
     if task is None or task.done():
         from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
 
-        if rec.state not in BUSY:
-            rec = await record.set_state(key, LifecycleState.STARTING, "checking what it needs", project_id=project_id)
+        # Claimed before any await: a second caller arriving meanwhile joins this run, never starts its own.
         task = _TASKS[key] = create_detached_task(_run(key, display=display, reason=reason, failure=failure),
                                                   name=f"webapp-up:{key}")
     if wait:
@@ -114,6 +121,8 @@ async def bring_up(app: Any, *, display: str = "", reason: Reason = "open", wait
 
 async def _run(key: str, *, display: str, reason: Reason, failure: Optional[WebappFailureSpec]) -> None:
     try:
+        if record.read(key).state not in BUSY:
+            await record.set_state(key, LifecycleState.STARTING, "checking what it needs")
         app = await _app(key)
         if app is None or not app.asset_ref:
             await record.set_state(key, LifecycleState.FAILED, "there is no such web app here",

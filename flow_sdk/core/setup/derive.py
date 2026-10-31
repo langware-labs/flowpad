@@ -361,7 +361,7 @@ class ProjectTree:
                                           "steps": [{"id": "up", "label": "Start", "kind": "compute", "ref": op.name}]})
         setup = None
         # A stopped server is a LOAD, never a missing setup prerequisite.
-        inputs = (("webapp", str(app.id)), ("display", self.display))
+        inputs = (("webapp", str(app.id)), ("display", self.display), ("project", self.pid))
         self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=inputs, run=setup, on_load=load,
                                         independent=True)
         return node_id
@@ -417,6 +417,9 @@ class ProjectTree:
                 wizard(spec.prepare, row.asset_ref), wizard(spec.run, row.asset_ref), wizard(spec.on_load, row.asset_ref))
             missing = [n for n, w in ((spec.prepare, prepare), (spec.run, run), (spec.on_load, load)) if n and w is None]
             children = tuple(f"asset_setup:{c}" if c in by_name else c for c in spec.children)
+            # A declaration that named THIS one as its subject before it was built waits in ``under``: it is a
+            # child all the same, whatever order the index handed the rows in.
+            children = tuple(dict.fromkeys((*under.get(node_id, []), *children)))
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=spec.label or spec.name or row.name, prepare=prepare,
                 run=run, on_load=load, children=children, trusted=row.is_system(),
