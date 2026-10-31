@@ -183,13 +183,11 @@ async def test_a_warm_open_rechecks_a_stale_owed_note_in_the_background(world, m
     async def recheck(app, *, display):
         checks.append(app.id)
         await record.change("a1", setup_owed="")
-        coordinator._OWED_CHECKS.pop("a1", None)
 
     monkeypatch.setattr(coordinator, "_recheck_owed", recheck)
     rec = await coordinator.bring_up(world.app)
     assert rec.state is LifecycleState.UP and world.ups == 1, "the warm open itself starts nothing"
     await asyncio.gather(*list(coordinator._OWED_CHECKS.values()), return_exceptions=True)
-    await asyncio.sleep(0)
     assert checks == ["a1"] and record.read("a1").setup_owed == ""
     await coordinator.bring_up(world.app)
     assert checks == ["a1"], "no note, no recheck"

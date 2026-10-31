@@ -99,16 +99,16 @@ export class Api {
 
   /** The app's lifecycle record on this machine (`webapp.lifecycle`) — THE state of the app. */
   async lifecycle(typeid: string): Promise<any> {
-    const id = typeid.replace(/^micro_app-/, '');
-    const r = await this.json('GET', `${this.graph}/micro_app/${id}/lifecycle`);
-    return r?.data ?? null;
+    return (await this.json('GET', this.appUrl(typeid, 'lifecycle')))?.data ?? null;
   }
 
   /** Open the app the way a tab does (`WebApp.up`): a warm open, which also rechecks a stale owed note. */
   async lifecycleUp(typeid: string): Promise<any> {
-    const id = typeid.replace(/^micro_app-/, '');
-    const r = await this.json('POST', `${this.graph}/micro_app/${id}/up`, { input: {} });
-    return r?.data ?? null;
+    return (await this.json('POST', this.appUrl(typeid, 'up'), { input: {} }))?.data ?? null;
+  }
+
+  private appUrl(typeid: string, action: string): string {
+    return `${this.graph}/micro_app/${typeid.replace(/^micro_app-/, '')}/${action}`;
   }
 
   /** Agent attempts the record counts (every fingerprint) — what the fixer policy is judged on. */

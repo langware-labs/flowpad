@@ -70,10 +70,9 @@ for (const app of ['spora-admin', 'spora-backoffice', 'spora-app']) {
       // renders, and the note of what it owed clears once its dependencies hold (rechecked on the next open).
       expect(rec?.state, `${app}: ${rec?.detail}`).toBe('up');
       expect(ready, `${app} is up but its page never rendered`).not.toBeNull();
-      await expect.poll(async () => {
-        await api.lifecycleUp(typeids[app]);
-        return (await api.lifecycle(typeids[app]))?.setup_owed ?? '';
-      }, { timeout: WATCH, intervals: [2000] }).toBe('');
+      await api.lifecycleUp(typeids[app]); // one warm open: it rechecks the note in the background
+      await expect.poll(async () => (await api.lifecycle(typeids[app]))?.setup_owed ?? '',
+        { timeout: WATCH, intervals: [2000] }).toBe('');
     } else if (rec?.state === 'up') {
       expect(ready, `${app} is up but its page never rendered`).not.toBeNull();
     } else {
