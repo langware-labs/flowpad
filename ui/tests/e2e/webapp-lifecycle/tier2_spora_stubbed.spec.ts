@@ -87,6 +87,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!api || !project) return;
   await api.json('POST', `${api.graph}/project/${project.id}/app-stop`).catch(() => undefined);
+  freeFixturePorts([8300]); // the stub tenant is no app's process: nothing else stops it, and a real app must never
+  // bootstrap from it afterwards (tier 3 found exactly that)
 });
 
 const tenant = async () => (await api.appPorts(project.id)).length >= 0 && fetch('http://127.0.0.1:8300/api/bootstrap')

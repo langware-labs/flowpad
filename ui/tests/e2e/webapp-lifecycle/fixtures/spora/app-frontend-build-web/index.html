@@ -5,6 +5,6 @@
 <script>
   fetch('http://127.0.0.1:8300/api/bootstrap')
     .then((r) => r.json())
-    .then((b) => { const s = document.getElementById('s'); s.setAttribute('data-testid', 'stub-ready'); s.textContent = 'Spora · ' + b.tenant.id; })
+    .then((b) => { const s = document.getElementById('s'); s.setAttribute('data-testid', 'stub-ready'); s.textContent = 'Spora · ' + b.tenant; })
     .catch(() => setTimeout(() => { throw ''; }));
 </script>

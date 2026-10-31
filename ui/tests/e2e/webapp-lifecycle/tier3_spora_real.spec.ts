@@ -14,7 +14,7 @@ import { expect, test } from '@playwright/test';
 import { Api } from './_api';
 import { INSTANCE, instanceOk } from './_instance';
 import { record } from './_metrics';
-import { openApp, timeToReady, visibleState } from './_page';
+import { openApp, visibleState } from './_page';
 import { reportDir } from './_reportdir';
 
 const SPORA = process.env.SPORA_ROOT || join(homedir(), 'Flowpad workspace', 'sapora-streams');
@@ -48,6 +48,7 @@ test.beforeAll(async () => {
 for (const app of ['spora-admin', 'spora-backoffice', 'spora-app']) {
   test(`${app}: opens on real Spora — up, or exactly what the person must do; never an agent for a missing secret`, async ({ page }, info) => {
     const t0 = Date.now();
+    const agentsBefore = await api.agentAttempts(typeids[app]); // the record keeps earlier runs' attempts
     await openApp(page, typeids[app]);
     const settled = async () => {
       const rec = await api.lifecycle(typeids[app]);
@@ -55,9 +56,14 @@ for (const app of ['spora-admin', 'spora-backoffice', 'spora-app']) {
     };
     await expect.poll(settled, { timeout: WATCH, intervals: [2000] }).toBe(true);
     const rec = await api.lifecycle(typeids[app]);
-    const ready = rec?.state === 'up' ? await timeToReady(page, 60_000) : null;
+    // A real app has no stub marker: it is ready when its frame renders something.
+    const ready = rec?.state === 'up'
+      ? await expect.poll(async () => (await page.frameLocator('[data-testid="vibe-app-frame"]').first().locator('body')
+          .innerText({ timeout: 2000 }).catch(() => '')).trim().length, { timeout: 60_000 }).toBeGreaterThan(0)
+          .then(() => Date.now() - t0).catch(() => null)
+      : null;
     record(info, { app, scenario: 'T3', timings: { settled: Date.now() - t0, ready },
-      agentRuns: await api.agentAttempts(typeids[app]),
+      agentRuns: (await api.agentAttempts(typeids[app])) - agentsBefore,
       notes: [`record ${rec?.state}: ${rec?.detail}`, `owed: ${rec?.setup_owed ?? ''}`, `shows: ${ready === null ? await visibleState(page) : 'ready'}`] });
     if (rec?.state === 'up') {
       expect(ready, `${app} is up but its page never rendered`).not.toBeNull();
@@ -65,6 +71,6 @@ for (const app of ['spora-admin', 'spora-backoffice', 'spora-app']) {
       // Not up: it must say what the person must do, and no agent may have been spent on it.
       expect(`${rec?.detail} ${rec?.setup_owed}`.trim().length).toBeGreaterThan(0);
     }
-    expect(await api.agentAttempts(typeids[app])).toBe(0);
+    expect((await api.agentAttempts(typeids[app])) - agentsBefore, 'no agent for what only the person can give').toBe(0);
   });
 }

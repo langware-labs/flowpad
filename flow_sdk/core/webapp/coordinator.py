@@ -65,6 +65,8 @@ _DETERMINISTIC: dict[FailureCode, HandlingAction] = {
     FailureCode.PORT_CONFLICT: HandlingAction.NEEDS_PERSON,
     # A required port another program holds (another checkout's server, a container): only the person may stop it.
     FailureCode.PORT_HELD: HandlingAction.NEEDS_PERSON,
+    # A credential, a sign-in: only the person has it — never an agent's to invent or work around.
+    FailureCode.CREDENTIAL_MISSING: HandlingAction.NEEDS_PERSON,
 }
 
 
@@ -201,7 +203,20 @@ async def _setup_owed(app, *, display: str) -> Optional[WebappFailureSpec]:
     typed = _typed_leaf(result.root if result is not None else None)
     if typed is not None:
         return typed
+    if _owed_by_person(result.root if result is not None else checked.root):
+        return make(FailurePhase.DEPENDENCY, FailureCode.CREDENTIAL_MISSING, why or "a credential is not set up",
+                    folder=app.asset_ref)
     return make(FailurePhase.DEPENDENCY, FailureCode.SETUP_OWED, why or "its setup is not done", folder=app.asset_ref)
+
+
+def _owed_by_person(node) -> bool:
+    """Whether what holds the setup up is a credential or a connection — a value or a sign-in only the person gives."""
+    if node is None or node.state.value in ("done", "skipped"):
+        return False
+    stuck = [child for child in getattr(node, "children", None) or [] if child.state.value not in ("done", "skipped")]
+    if stuck:
+        return any(_owed_by_person(child) for child in stuck)
+    return str(node.id).startswith(("credential:", "connection:"))
 
 
 def _typed_leaf(node) -> Optional[WebappFailureSpec]:

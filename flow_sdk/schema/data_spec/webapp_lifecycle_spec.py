@@ -82,6 +82,8 @@ class FailureCode(StrEnum):
     NO_PLACEMENT = "no_placement"
     BAD_HANDLINGS = "bad_handlings"
     SETUP_OWED = "setup_owed"
+    #: A credential or a sign-in only the person can give (its question unanswered, its check failing).
+    CREDENTIAL_MISSING = "credential_missing"
     UNKNOWN = "unknown"
 
 

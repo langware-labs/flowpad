@@ -88,7 +88,7 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
 
   return (
     <div className="flex h-full w-full flex-col" data-testid="webapp-display">
-      {degraded && lifecycle ? <AppLifecyclePanel lifecycle={lifecycle} /> : null}
+      {lifecycle && (degraded || lifecycle.record?.setup_owed) ? <AppLifecyclePanel lifecycle={lifecycle} /> : null}
       <div className="relative min-h-0 flex-1">
         <PersistentIframe ref={frameRef} src={src} testId={testId} cacheKey={cacheKey + returns} />
       </div>

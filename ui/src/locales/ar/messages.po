@@ -18857,6 +18857,11 @@ msgstr "يحتاج إلى إعداد"
 msgid "Needs setup"
 msgstr ""
 
+#. placeholder {0}: record.setup_owed
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Needs setup: {0}"
+msgstr ""
+
 #: src/components/project-setup/ProjectLoadGate.tsx
 msgid "Needs setup: {owed}"
 msgstr "يلزم الإعداد: {owed}"
@@ -28432,6 +28437,7 @@ msgstr "جعله عامًا"
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "إعداد"

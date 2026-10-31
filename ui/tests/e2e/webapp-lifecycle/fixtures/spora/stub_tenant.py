@@ -12,7 +12,7 @@ import urllib.request
 
 BODY = json.dumps({
     "schema": 1,
-    "tenant": {"id": "local", "name": "Stub tenant"},
+    "tenant": "local",
     "connect": {"project": "stub", "oauth_web_client_id": "", "api": ""},
     "runtime": {"project": "stub", "database": "cloudtest", "web": ""},
     "services": {}, "emulators": {},
