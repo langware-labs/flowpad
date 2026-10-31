@@ -122,7 +122,7 @@ function Question({ lifecycle }: { lifecycle: AppLifecycle }) {
 
 /** The app's node of its project's setup tree — re-read on every record change (pushed), never polled. */
 function SetupTree({ record }: { record: WebAppLifecycle }) {
-  const asset = webappAsset(record.webapp_id.replace(/^micro_app-/, ''));
+  const asset = webappAsset((record.webapp_id ?? '').replace(/^micro_app-/, ''));
   const projectId = record.project_id ?? '';
   const { data } = useQuery({
     queryKey: ['webapp-setup-tree', projectId, asset, record.state, record.detail],

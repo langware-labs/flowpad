@@ -46,7 +46,6 @@ export interface WebAppAttempt {
   deterministic: number;
   agent: number;
   last_agent_at?: string | null;
-  last_outcome: 'fixed' | 'not_fixed' | '';
 }
 
 /** THE record of a web app on this machine (`webapp.lifecycle`), carried on every `WebApp` GET and push. */
@@ -60,10 +59,6 @@ export interface WebAppLifecycle {
   checked_at?: string | null;
   ports: Record<string, number>;
   pids: Record<string, number>;
-  /** The page reports itself (the relay's reporter is in front of it). */
-  reporter: boolean;
-  /** The served document the record is about; a page report for any other one is ignored. */
-  load_id: string;
   install_stamp?: string;
   build_stamp?: string;
   failure: WebAppFailure | null;

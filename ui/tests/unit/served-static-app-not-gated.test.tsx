@@ -2,11 +2,11 @@
  * A page served as plain files (`flow app serve`, a static endpoint) opens in its project's tab
  * without waiting on that project's setup: its files can live anywhere (a mock in $TMPDIR) and
  * need nothing set up. Reported: a mock showed "flowpad-oss: waiting on Slack sign-in, github-pat,
- * Gmail · Set up" instead of its HTML. An app with a server of its own still goes through the gate.
+ * Gmail · Set up" instead of its HTML. An app with a server of its own is shown only when its lifecycle
+ * record is showable.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -27,16 +27,16 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock: null, navigation: { openDock: vi.fn() } }),
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: projectId } }) }));
-vi.mock('@src/components/project-setup/ProjectLoadGate', () => ({
-  ProjectLoadGate: () => <p data-testid="project-load-gate" />,
+const lifecycle = vi.hoisted(() => ({
+  of: (id: string | null) =>
+    ({
+      app: null, record: id ? { state: 'down' } : null, loading: false, notFound: false,
+      showable: false, questionId: null,
+      settleQuestion: () => {}, fixIt: async () => {}, stop: async () => {}, reportPage: async () => null,
+    }) as unknown,
 }));
+vi.mock('@src/components/webapp-display/useAppLifecycle', () => ({ useAppLifecycle: (id: string | null) => lifecycle.of(id) }));
 vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null }));
-vi.mock('@src/components/webapp-display/useWebappDiagnostics', () => ({
-  useWebappDiagnostics: () => ({ severity: 'ok', code: 'ok', detail: [], refresh: vi.fn() }),
-}));
-vi.mock('@src/components/webapp-display/useWebappFix', () => ({
-  useWebappFix: () => ({ running: false, toolCount: 0, start: vi.fn(), autoAttempted: false }),
-}));
 
 const { AppDisplayViewer } = await import('@src/pages/flow-page/app-display-viewer');
 
@@ -52,7 +52,7 @@ const open = (backend: Record<string, unknown>) => {
     runtime: 'served',
     available: ['served'],
     idleDev: null,
-    endpoint: { id: 'ep-1', project_id: projectId, webapp_id: null, backend },
+    endpoint: { id: 'ep-1', project_id: projectId, webapp_id: 'cf255aa4-1156-45d2-bfa0-3767d01a2e25', backend },
   };
   render(
     <QueryClientProvider client={client}>
@@ -63,12 +63,14 @@ const open = (backend: Record<string, unknown>) => {
   );
 };
 
-it('a page served as static files opens without the project setup gate', () => {
+it('a page served as static files opens at once, whatever its record says', () => {
   open({ type: 'static', root: '/tmp/mockify/x/mock-message-landing' });
-  expect(screen.queryByTestId('project-load-gate')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('app-lifecycle-panel')).not.toBeInTheDocument();
+  expect(screen.getByTestId('webapp-display')).toBeInTheDocument();
 });
 
-it('an app behind its own server still waits on the project load', () => {
+it('an app behind its own server waits on its lifecycle record', () => {
   open({ type: 'proxy', port: 5173 });
-  expect(screen.getByTestId('project-load-gate')).toBeInTheDocument();
+  expect(screen.getByTestId('app-lifecycle-panel')).toBeInTheDocument();
+  expect(screen.queryByTestId('webapp-display')).not.toBeInTheDocument();
 });
