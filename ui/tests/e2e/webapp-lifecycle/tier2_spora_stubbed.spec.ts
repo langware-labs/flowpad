@@ -8,9 +8,8 @@
  *     empty `Uncaught` when the tenant is down;
  *   - the `spora-tenant-launch` op body starts a stub tenant on :8300 instead of launching the real one through Admin
  *     (same node, same completion check). Tier 3 runs the real one.
- * No secret is needed here.
+ * No secret is needed here: the google-cloud credential's sign-in check is stubbed to "not signed in".
  */
-import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -61,12 +60,20 @@ test.beforeAll(async () => {
     }
   }
   copy(join(SPORA, 'agentic-assets', 'credential', 'google-cloud'), join(assets, 'credential', 'google-cloud'));
+  // Stubbed secrets: the gcloud sign-in this tier stands for is never given, whatever this machine holds — so the
+  // missing-credential path is the one walked here, every run. Tier 3 walks the real sign-in.
+  api.patchJson(join(assets, 'credential', 'google-cloud', 'credential.json'), (doc) => {
+    for (const os of Object.keys(doc.vars.GCLOUD_ADC.check.commands)) doc.vars.GCLOUD_ADC.check.commands[os] = 'exit 1';
+  });
   for (const app of ['spora-app', 'spora-backoffice', 'spora-admin']) {
     copy(join(SPORA, 'agentic-assets', 'webapp', app), join(assets, 'webapp', app));
   }
   // The stand-ins. The stub tenant needs no Admin to launch it: the node under the tenant that starts Admin's API
   // (for the real launch) is not part of tier 2 — tier 3 runs it.
   rmSync(join(assets, 'webapp', 'spora-app', 'agentic-assets', 'asset_setup', 'spora-admin-api'), { recursive: true, force: true });
+  // Nor the gcloud key the real launch reads: the stub tenant starts without it. Only Admin still owes it.
+  api.patchJson(join(assets, 'webapp', 'spora-app', 'agentic-assets', 'asset_setup', 'spora-tenant-local', 'asset_setup.json'),
+    (doc) => { doc.children = (doc.children ?? []).filter((c: string) => c !== 'credential:google-cloud'); });
   writeFileSync(join(assets, 'compute_op', 'spora-tenant-launch', 'compute_op.json'),
     readFileSync(join(FIXTURES, 'spora', 'spora-tenant-launch.compute_op.json'), 'utf8').replaceAll('__STUB__', STUB));
   mkdirSync(join(project.root, 'app', 'frontend', 'build'), { recursive: true });
@@ -136,10 +143,6 @@ test('Spora Back Office: comes up, warm return asks nothing; no agent', async ({
 });
 
 test('Spora Admin: the google-cloud credential is asked of the person when missing, never of an agent', async ({ page }, info) => {
-  // The case is the credential missing. Signed in here, Admin would go on to install from a clone that holds no
-  // `platform/` — real Admin with real secrets is tier 3's (tier3_spora_real.spec.ts).
-  const signedIn = spawnSync('gcloud', ['auth', 'application-default', 'print-access-token'], { stdio: 'ignore' }).status === 0;
-  test.skip(signedIn, 'this machine is signed in to Google Cloud: the missing-credential case cannot happen; tier 3 covers Admin');
   await openApp(page, typeids['spora-admin']);
   const owes = async () => {
     const rec = await api.lifecycle(typeids['spora-admin']);
