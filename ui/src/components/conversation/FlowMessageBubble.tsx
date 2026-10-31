@@ -50,6 +50,7 @@ import { MessageRunStatus } from './MessageRunStatus';
 import { MessageSessionChip } from './MessageSessionChip';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { CredentialValueLock } from './CredentialValueLock';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
@@ -1137,6 +1138,11 @@ export function MessageEntityChip({
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
   const runnable = !!attachment && TESTABLE_TYPES.has(typeId.type);
+  // A shared credential whose value travelled too (secured transfer or a project vault) carries a lock.
+  const valueLock =
+    typeId.type === 'credential' ? (
+      <CredentialValueLock typeId={typeId} name={attachment?.name} conversationId={conversationId} />
+    ) : null;
   const runButton = runnable ? (
     <button
       type="button"
@@ -1193,6 +1199,7 @@ export function MessageEntityChip({
             onClick={() => void onStagedClick()}
           />
           {runButton}
+          {valueLock}
         </span>
         {dialog}
         {runPicker}
@@ -1236,6 +1243,7 @@ export function MessageEntityChip({
           projectId={projectId}
         />
         {runButton}
+        {valueLock}
       </span>
       {dialog}
       {runPicker}
