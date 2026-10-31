@@ -40,7 +40,7 @@ export function SealedValuesPanel({ conversationId, version }: { conversationId:
       else await credentialsService.sealedGet(conversationId, card.transfer_id);
       await load();
     } catch (e) {
-      setError(errorMessage(e, t`The values could not be filled in.`));
+      setError(errorMessage(e, what === 'get' ? t`The values could not be requested.` : t`The values could not be filled in.`));
     } finally {
       setBusy(null);
     }

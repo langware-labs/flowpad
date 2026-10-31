@@ -32,6 +32,7 @@ from flow_sdk.secrets.sealed import (
     open_sealed,
     seal,
 )
+from flow_sdk.stream_inbox._locks import loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
 
@@ -417,10 +418,6 @@ async def seal_credential(credential_typeid: str, conversation_id: str, recipien
     in ``cannot_receive`` (they get the spec, not the values); nobody able to receive → ``sealed_for`` empty and
     nothing posted.
     """
-    from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
-    from flow_sdk.builtin.credential_service import get_credential  # noqa: PLC0415
-    from flow_sdk.builtin.credential_store import Placement, scope_of  # noqa: PLC0415
-
     spec, values = await _credential_values(credential_typeid)
     me = _user_id()
     keys = await member_keys(conversation_id)
@@ -494,16 +491,18 @@ async def _promise(conversation_id: str, credential_typeid: str, users: list[str
     return transfer_id
 
 
-_pending_locks: dict = {}
+_pending_locks = new_registry()
 
 
 def _lock():
     """One writer of ``pending.json`` at a time (per event loop): a promise recorded while an answer pass runs must
     not be lost. Not re-entrant — code holding it never takes it again."""
-    import asyncio  # noqa: PLC0415
+    return loop_lock(_pending_locks)
 
-    loop = asyncio.get_running_loop()
-    return _pending_locks.setdefault(id(loop), asyncio.Lock())
+
+def _meta(message: dict, key: str) -> str:
+    """One metadata field of a hub message, as text ("" when absent)."""
+    return str((message.get("metadata") or {}).get(key) or "")
 
 
 async def answer_requests(conversation_id: str) -> list[str]:
@@ -526,7 +525,7 @@ async def _answer_requests(conversation_id: str) -> list[str]:
     keys: Optional[dict] = None
     served: list[str] = []
     for m in messages:
-        tid = str((m.get("metadata") or {}).get("transfer_id") or "")
+        tid = _meta(m, "transfer_id")
         uid = str(m.get("sender_id") or "")
         p = pending.get(tid)
         if m.get("kind") != REQUEST_KIND or p is None or uid not in p["recipients"] or uid in p["answered"]:
@@ -571,7 +570,7 @@ async def get_secret(conversation_id: str, transfer_id: str) -> dict:
     from flow_sdk.preferences import PREF_SECURE_RECEIVING, write_instance_pref  # noqa: PLC0415
 
     promise = next((m for m in await _hub_messages(conversation_id) if m.get("kind") == PENDING_KIND
-                    and str((m.get("metadata") or {}).get("transfer_id")) == transfer_id), None)  # fmt: skip
+                    and _meta(m, "transfer_id") == transfer_id), None)  # fmt: skip
     meta = (promise or {}).get("metadata") or {}
     if promise is None or _user_id() not in (meta.get("recipients") or []):
         raise SealedError("gone", "these values are no longer waiting for you — ask the sender to share again")
@@ -651,8 +650,8 @@ async def _incoming(snap: _Snapshot) -> list[dict]:
 
 def _promise_cards(snap: _Snapshot, me: str) -> list[dict]:
     """Promises naming me that no sealed value answered yet: ``get`` (Get the secret) or ``requested`` (waiting)."""
-    answered = {str((m.get("metadata") or {}).get("answers") or "") for m in snap.of_kind(SEALED_KIND)}
-    asked = {str((m.get("metadata") or {}).get("transfer_id") or ""): m for m in snap.of_kind(REQUEST_KIND)
+    answered = {_meta(m, "answers") for m in snap.of_kind(SEALED_KIND)}
+    asked = {_meta(m, "transfer_id"): m for m in snap.of_kind(REQUEST_KIND)
              if str(m.get("sender_id")) == me}  # fmt: skip
     cards = []
     for m in snap.of_kind(PENDING_KIND):
