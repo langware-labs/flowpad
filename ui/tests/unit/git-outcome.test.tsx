@@ -41,7 +41,7 @@ const conflict = { kind: 'conflict' as const, branch: 'main', message: 'Conflict
 
 describe('notifyGitOutcome', () => {
   for (const mode of ['vibe', 'standard', 'advanced', 'dev']) {
-    for (const op of ['push', 'pull'] as const) {
+    for (const op of ['push', 'pull', 'cherry-pick'] as const) {
       it(`${op} conflict in ${mode}: forced toast with Resolve aimed at the repo`, () => {
         viewMode.current = mode;
         notifyGitOutcome(op, conflict, '/repo');

@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@sdk', async (orig) => ({ ...(await orig<typeof import('@sdk')>()), initSdk: vi.fn(async () => {}) }));
 
-import { AgenticProcess, ComputeNode, Project, Shell, tabManager } from '@sdk';
+import { AgenticProcess, ComputeNode, Project, ServiceEndpoint, Shell, tabManager, WebApp } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 import { resetAgentAutoLaunchForTests } from '@src/agents/agent-auto-launch-redirect';
@@ -40,6 +40,9 @@ const CN = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const SHELL = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const PROC = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const PROC_SHELL = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+/** A webapp asset, and the audience proxy that serves it at a route. */
+const WEBAPP = 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0';
+const PROXY = 'abababab-abab-4bab-8bab-abababababab';
 /** The world's one project — seeded into the cache and served as the project list. */
 const PROJECT_ROW = { id: P, name: 'p', fs_storage_mount_path: '/w/p' };
 
@@ -80,6 +83,9 @@ const worldRows: Row[] = [
     name: 'project: a chart asset folder under docs/',
     url: `/dock/project/${P}/editor/chart/vfs/compute_node-%40local/w/p/docs/network/acme-net`,
   },
+  // An app is brought up by its own lifecycle record, in the VIEW (useAppLifecycle) — never in the loader.
+  { name: 'app: a webapp asset', url: `/dock/app/micro_app-${WEBAPP}` },
+  { name: 'app: a route of an audience proxy', url: `/dock/app/service_endpoint-${PROXY}?route=sales` },
   { name: 'project: the project page', url: `/dock/project/${P}` },
   { name: 'project: the project setup page (Project Home ☰ → Project setup)', url: `/dock/project/${P}/project-setup` },
   { name: 'vibe: an agentic process as the Vibe host (aligned to its project)', url: `/dock/vibe/agentic_process-${PROC}` },
@@ -122,6 +128,23 @@ function seedWorld(): void {
     shell_id: PROC_SHELL,
     pty_mode: true,
     visible: true,
+  } as never).markAsExpanded();
+  new WebApp({
+    id: WEBAPP,
+    name: 'sales',
+    project_id: P,
+    lifecycle: { webapp_id: WEBAPP, state: 'up' },
+  } as never).markAsExpanded();
+  new ServiceEndpoint({
+    id: PROXY,
+    name: 'app',
+    subkind: 'app',
+    project_id: P,
+    protocol: { spec_kind: 'web.app', entry: 'index.html' },
+    backend: {
+      type: 'routed',
+      routes: { sales: { backend: { type: 'proxy', port: 4400 }, webapp_id: WEBAPP, artifact_id: null } },
+    },
   } as never).markAsExpanded();
 }
 

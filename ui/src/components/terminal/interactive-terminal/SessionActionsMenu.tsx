@@ -37,12 +37,14 @@ import {
   Menu,
   RotateCcw,
   ScrollText,
+  SlidersHorizontal,
   SquareTerminal,
   type LucideIcon,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { CommandStatusViewer } from './command-status-viewer';
 import { EntityShareDialog } from './EntityShareDialog';
 import { SessionInfoPopover } from './SessionInfoPopover';
 import { useCommitMerge, useOpenInWorktree } from './use-worktree-actions';
@@ -85,6 +87,7 @@ export function SessionActionsMenu({
   // first open and stays, rather than idling under every session's top bar.
   const [assets, setAssets] = useState<'unmounted' | 'open' | 'closed'>('unmounted');
   const [exportOpen, setExportOpen] = useState(false);
+  const [commandStatusOpen, setCommandStatusOpen] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
 
   const hasSession = !!process.session_id;
@@ -177,6 +180,12 @@ export function SessionActionsMenu({
               </>
             )}
             <ActionItem
+              testId="session-action-command-options"
+              icon={SlidersHorizontal}
+              label={t`Command line options`}
+              onSelect={() => setCommandStatusOpen(true)}
+            />
+            <ActionItem
               testId="session-action-assets"
               icon={Boxes}
               label={t`Manage assets`}
@@ -256,6 +265,12 @@ export function SessionActionsMenu({
           onOpenChange={(open) => setAssets(open ? 'open' : 'closed')}
         />
       )}
+
+      <CommandStatusViewer
+        open={commandStatusOpen}
+        onClose={() => setCommandStatusOpen(false)}
+        process={process}
+      />
 
       {exportOpen && (
         <EntityShareDialog

@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Literal, Optional
+from urllib.parse import quote
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
@@ -308,6 +309,7 @@ class ServiceEndpoint(Entity):
                 return ApiFailResponse(
                     message="a static route has no address of its own on this machine", status_code=409
                 )
+            url = static_dev_address(self, route, url)
         if str(redirect).lower() in ("1", "true", "yes"):
             return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
         return ApiSuccessResponse(data={"url": url})
@@ -336,34 +338,24 @@ class ServiceEndpoint(Entity):
         return f"http://localhost:{port}" if port else None
 
     @action.post(action_name="page-report")
-    async def page_report_action(self, errors: list | None = None, settled: bool = True, route: str | None = None):
-        """``POST service_endpoint/<id>/page-report`` — what the app's page threw while it loaded, decided.
+    async def page_report_action(self, errors: list | None = None, settled: bool = True, route: str | None = None,
+                                 load_id: str = ""):
+        """``POST service_endpoint/<id>/page-report`` — what the app's page threw, handed to its coordinator.
 
-        The viewer forwards the reporter's message (``server/reporter_relay``). Each error is matched against
-        the app's ``setup/webapp_errors.json`` (``builtin/webapp_check``): ``usable`` when every error is
-        ignored; otherwise ``recover`` lists what needs recovery, with each matched rule's ``fix``.
+        The viewer forwards the reporter's message (``server/reporter_relay``). Each error is matched against the
+        app's learned handlings (``core/webapp/handling``); one no handling ignores moves the app to DEGRADED and
+        starts recovery on the backend (``core/webapp/coordinator.report_page``) — the screen only shows it.
+        ``load_id``: the document the report came from; a report for an older one decides nothing.
         """
-        from flow_sdk.builtin import webapp_check  # noqa: PLC0415
+        from flow_sdk.core.webapp import coordinator  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         app = await self._webapp_of(route)
         if app is None or not app.asset_ref:
             return ApiFailResponse(message="this endpoint serves no web app with a folder", status_code=409)
-        found = [webapp_check.PageError(text=str(e.get("text", "")), source=str(e.get("source") or "page"))
-                 for e in (errors or []) if isinstance(e, dict) and e.get("text")]
-        rules = await asyncio.to_thread(webapp_check.load_rules, app.asset_ref)
-        verdict = webapp_check.triage(found, rules)
-        await asyncio.to_thread(webapp_check.record, app.asset_ref, verdict,
-                                "opened" if verdict.usable else "recover", rules)
-        return ApiSuccessResponse(data={
-            "usable": verdict.usable,
-            "settled": bool(settled),
-            "webapp_id": str(app.typeid),
-            "app_folder": str(app.asset_ref),
-            "decisions": [{"source": d.error.source, "text": d.error.text, "action": d.action,
-                           "rule": d.rule.id if d.rule else None, "fix": d.rule.fix if d.rule else ""}
-                          for d in verdict.decisions],
-        })
+        decided = await coordinator.report_page(app, list(errors or []), load_id=load_id, settled=bool(settled))
+        return ApiSuccessResponse(data={**decided, "settled": bool(settled), "webapp_id": str(app.typeid),
+                                        "app_folder": str(app.asset_ref)})
 
     @action.post(action_name="probe")
     async def probe_action(self, route: str | None = None):
@@ -419,6 +411,24 @@ def local_direct_url(endpoint, route: Optional[str] = None) -> Optional[str]:
         return sandbox_public_url(audience_ports()[endpoint.subkind], sandbox_id) + (f"/{route}/" if route else "/")
     backend = endpoint.proxy_of(route)
     return f"http://localhost:{int(backend.port)}" if backend is not None else None
+
+
+def static_dev_address(endpoint, route: Optional[str], origin: str) -> str:
+    """*origin* with the app's service path, when the route runs the static dev server.
+
+    A page learns which app it is from its own path (``…/service_endpoint/<id>/service/<mount>/``,
+    ``ts_sdk/src/apps/host.ts``). The static dev server (``server/dev_front.py``) serves its folder
+    under that same path on its own origin, so a dev page resolves its app exactly as the served one.
+    Any other dev server is addressed at its root, as it always was.
+    """
+    from flow_sdk.core.dev_server import is_static_dev  # noqa: PLC0415
+    from flow_sdk.server.service_proxy import service_path  # noqa: PLC0415
+
+    backend = endpoint.proxy_of(route)
+    if backend is None or not is_static_dev(backend.start_cmd or ""):
+        return origin
+    mount = f"{quote(route, safe='')}/" if route else ""
+    return origin.rstrip("/") + service_path(endpoint.id) + mount
 
 
 async def _http_state(port: int, path: str, timeout: float) -> tuple[str, str]:

@@ -637,9 +637,6 @@ class ComputeOpSpec(AssetDocumentSpec):
     #: as many rungs as are named. Needs a completion_check: nothing else can
     #: say a rung missed.
     attempts: list[Rung] = []
-    #: Keep the agent rung of ``attempts`` on a plain load too (``core/setup/load.LoadTree``); by default a
-    #: load runs no agent and only a setup run repairs. A web app's step sets it: opening an app is "make it work".
-    fix_on_load: bool = False
     #: Exit codes from the completion check that mean "not this machine's
     #: problem". EMPTY by default: nothing is ever silently skipped unless an
     #: author asked for it.

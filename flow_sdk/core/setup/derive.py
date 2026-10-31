@@ -38,30 +38,13 @@ logger = logging.getLogger(__name__)
 PROJECT = "project"
 
 
-#: The agent that repairs a web app's setup step when the step itself fails (``agentic-assets/agent/setup-fixer``).
-FIXER_AGENT = "setup-fixer"
-
-
-def _op(name: str, label: str, step: str, *, kind: str = "webapp_step", fixer: str = "",
-        fix_on_load: bool = False) -> ComputeOpSpec:
+def _op(name: str, label: str, step: str, *, kind: str = "webapp_step") -> ComputeOpSpec:
     """An in-process step of the run's web app (``webapp_step``) or source (``source_step``): the call is the
-    step, the check is the same step in check mode. ``fixer``: the prompt of the step's last resort — while
-    its check still fails, the setup-fixer repairs what the step stands on, then the step runs again; the
-    check is the proof. A load never runs it (``LoadTree`` strips it): only a setup run fixes."""
-    attempts = [
-        {"subkind": "agent", "exe_data": {"agent": FIXER_AGENT, "prompt": fixer}},
-        {"subkind": "cli", "exe_data": {kind: step}},
-    ] if fixer else []
+    step, the check is the same step in check mode. A web app's recovery is its coordinator's
+    (``core/webapp/coordinator``), never a rung of the step."""
     return ComputeOpSpec.model_validate({
         "name": name, "label": label, "subkind": "cli", "exe_data": {kind: step}, "completion_check": {kind: step},
-        "attempts": attempts, "fix_on_load": fix_on_load,
     })
-
-
-def _fixer_prompt(project_id: str, app) -> str:
-    return (f"Use the setup-fixer skill. The step above of web app {app.name} ({app.typeid}, folder "
-            f"{app.asset_ref}) in project {project_id} failed. Repair what it stands on; the step runs again "
-            "after you and its own check is the proof.")
 
 
 def _holder(asset_ref: str) -> str:
@@ -74,6 +57,34 @@ def _holder(asset_ref: str) -> str:
             if parts[i] == family and i + 1 < len(parts) and parts[i + 1] != "asset_setup":
                 return f"{family}:{parts[i + 1]}"
     return PROJECT
+
+
+def _declared_vaults(project: Any) -> dict[str, Any]:
+    """The project's declared vaults (``secret_vaults`` in its manifest), by name; {} when it has none."""
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
+
+    return vaults_of(project)
+
+
+def _on_path(binary: str, platform: str) -> str:
+    return f"where {binary} >nul 2>&1" if platform == "win32" else f"command -v {binary} >/dev/null 2>&1"
+
+
+def _vault_commands(name: str, vault: Any) -> Optional[dict[str, dict[str, str]]]:
+    """Per OS, the manager's ``install`` / ``login`` / ``check`` for this vault, its ``{vault}`` and config keys
+    filled in (``{vault}`` = the config's ``vault``, else the project's name for it). None: unknown manager."""
+    from flow_sdk.secrets.managers import OSES, cli_command, get_manager  # noqa: PLC0415  (lazy: managers load assets)
+
+    try:
+        manager = get_manager(vault.manager)
+    except Exception:  # noqa: BLE001 — UnknownSecretManager: the vault node reports it, never a broken tree
+        return None
+    fill = {"vault": name, **{k: str(v) for k, v in (vault.config or {}).items()}}
+
+    def render(op: str, platform: str) -> str:
+        return cli_command(manager, op, platform, **fill) or ""
+
+    return {op: {p: render(op, p) for p in OSES} for op in ("install", "login", "check")}
 
 
 class ProjectTree:
@@ -97,6 +108,11 @@ class ProjectTree:
         self.first_stage: dict[str, str] = {}
         self._drivers: dict[str, Any] = {}
         self._wizards: dict[tuple[str, str], Any] = {}
+        #: The project's declared vaults by name: a credential whose variables point into one fetches from it
+        #: first, below that vault's own node (install → sign in → check).
+        self.vaults = _declared_vaults(project)
+        #: Each pack credential's vaults, by credential name (``Credential.vault_names``), read in ``load``.
+        self._cred_vaults: dict[str, tuple[str, ...]] = {}
 
     async def _driver(self, provider: str) -> Any:
         """A driver once per tree, however many sources run it."""
@@ -134,6 +150,8 @@ class ProjectTree:
         from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP  # noqa: PLC0415
 
         requirements = await collect_requirements(self.project)
+        if self.vaults:
+            await self._read_credential_vaults(requirements)
         self.gaps = [r for r in requirements if r.kind == REQUIREMENT_GAP]
         sources = await project_sources(self.project)
         source_names = {str(s.name or s.provider): s for s in sources}
@@ -178,13 +196,77 @@ class ProjectTree:
             label = f"{req.title or req.name} sign-in" if req.is_oauth else (req.title or req.name)
             if self._skipped(node_id, label, req.skipped):
                 return node_id
-            wizard, ops = compile_setup(self.pid, [req], ai=self.ai, connect_here=self.connect_here)
+            vaults = self._cred_vaults.get(req.name, ())
+            wizard, ops = compile_setup(self.pid, [req], ai=self.ai, connect_here=self.connect_here,
+                                        vaults=vaults)
             self.ops.update(ops)
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=label,
                 run=wizard.model_copy(update={"name": node_id, "label": label}) if wizard.steps else None,
-                children=self._connection_needs(req) if req.is_oauth else (),
+                children=self._connection_needs(req) if req.is_oauth else tuple(self._vault_node(v) for v in vaults),
             )
+        return node_id
+
+    async def _read_credential_vaults(self, requirements: list) -> None:
+        """Which declared vaults each pack credential's variables point into. A credential that cannot be read
+        here has none: its values are asked, as without a vault."""
+        from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_PACK  # noqa: PLC0415
+
+        for req in requirements:
+            if req.kind != REQUIREMENT_PACK or req.is_oauth or req.name in self._cred_vaults:
+                continue
+            try:
+                cred = await Credential.get(req.name, self.project)
+            except Exception:  # noqa: BLE001
+                continue
+            self._cred_vaults[req.name] = tuple(v for v in cred.vault_names() if v in self.vaults)
+
+    def _vault_node(self, name: str) -> str:
+        """``vault:<name>``: the vault's manager CLI is installed (skipped while it is on PATH), signed in
+        (skipped while its check passes), then checked (the manager's own check; ``flow secrets check`` is the action) — so a credential below
+        it fetches from a vault this machine can read. Built from the manager's commands for each OS."""
+        node_id = f"vault:{name}"
+        if node_id in self.nodes:
+            return node_id
+        vault = self.vaults[name]
+        label = f"{name} vault"
+        commands = _vault_commands(name, vault)
+        if commands is None:
+            self.nodes[node_id] = SetupNode(id=node_id, label=label,
+                                            problem=f"vault {name!r} names an unknown secret manager {vault.manager!r}")
+            return node_id
+        from flow_sdk.builtin.project_setup import _cli  # noqa: PLC0415
+        from flow_sdk.secrets.managers import OSES  # noqa: PLC0415
+
+        binary = {p: (commands["check"][p].split() or [""])[0] for p in OSES}
+        manager_check = {"commands": commands["check"]}
+        specs = []
+        if any(commands["install"].values()):
+            specs.append({
+                "name": f"{node_id}:install", "label": f"Install {vault.manager}",
+                "description": f"{vault.manager}'s command line is on this machine.", "subkind": "cli",
+                "exe_data": {"commands": commands["install"]},
+                "completion_check": {"commands": {p: _on_path(binary[p], p) for p in OSES if binary[p]}},
+            })
+        if any(commands["login"].values()):
+            specs.append({
+                "name": f"{node_id}:login", "label": f"Sign in to {vault.manager}",
+                "description": f"This machine is signed in to {vault.manager} and can read vault {name}.",
+                "subkind": "cli", "exe_data": {"commands": commands["login"]}, "completion_check": manager_check,
+            })
+        specs.append({
+            "name": f"{node_id}:check", "label": f"Check vault {name}",
+            "description": f"Vault {name} is readable from this machine.", "subkind": "cli",
+            "exe_data": _cli("secrets", "check", name, "--project", self.pid), "completion_check": manager_check,
+        })
+        steps = []
+        for spec in specs:
+            op = ComputeOpSpec.model_validate(spec)
+            self.ops[op.name] = op
+            steps.append({"id": op.name.rsplit(":", 1)[1], "label": op.label, "kind": "compute", "ref": op.name})
+        run = WizardSpec.model_validate({"name": node_id, "label": label, "steps": steps})
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, run=run)
         return node_id
 
     def _connection_needs(self, req) -> tuple[str, ...]:
@@ -271,14 +353,15 @@ class ProjectTree:
         if self._skipped(node_id, label, app.setup_skipped):
             return node_id
         # ONE step: the app up and shown (``webapp_setup.UP``: install → build → start → verify, each only
-        # when needed). Its check is the same step checking; its last resort is the fixer, on load too.
-        op = _op(f"{node_id}:up", f"Start {label}", "up", fixer=_fixer_prompt(self.pid, app), fix_on_load=True)
+        # when needed). Its check is the same step checking.
+        # Recovery is the app's coordinator's (``core/webapp/coordinator``), never a rung of this step.
+        op = _op(f"{node_id}:up", f"Start {label}", "up")
         self.ops[op.name] = op
         load = WizardSpec.model_validate({"name": node_id, "label": f"Load {label}",
                                           "steps": [{"id": "up", "label": "Start", "kind": "compute", "ref": op.name}]})
         setup = None
         # A stopped server is a LOAD, never a missing setup prerequisite.
-        inputs = (("webapp", str(app.id)), ("display", self.display))
+        inputs = (("webapp", str(app.id)), ("display", self.display), ("project", self.pid))
         self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=inputs, run=setup, on_load=load,
                                         independent=True)
         return node_id
@@ -334,6 +417,9 @@ class ProjectTree:
                 wizard(spec.prepare, row.asset_ref), wizard(spec.run, row.asset_ref), wizard(spec.on_load, row.asset_ref))
             missing = [n for n, w in ((spec.prepare, prepare), (spec.run, run), (spec.on_load, load)) if n and w is None]
             children = tuple(f"asset_setup:{c}" if c in by_name else c for c in spec.children)
+            # A declaration that named THIS one as its subject before it was built waits in ``under``: it is a
+            # child all the same, whatever order the index handed the rows in.
+            children = tuple(dict.fromkeys((*under.get(node_id, []), *children)))
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=spec.label or spec.name or row.name, prepare=prepare,
                 run=run, on_load=load, children=children, trusted=row.is_system(),

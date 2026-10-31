@@ -118,6 +118,37 @@ def wait_for_port(port: int, timeout: float, *, exited: Optional[Callable[[], bo
     return port_open(port)
 
 
+#: How a plain web-app folder (an ``index.html``, no package manifest) is run in dev: the folder live with
+#: Flowpad's ``/sdk`` and ``/api`` beside it, like the served app (``server/dev_front.py``).
+STATIC_DEV_CMD = '"{python}" -m flow_sdk.server.dev_front --port {{port}}'
+
+#: The bare file server that command replaces. A dev route stored before it existed still names this one,
+#: and on it a page's ``/sdk/flowpad-sdk.js`` is a 404 — so it is upgraded wherever a command is started or
+#: matched (:func:`dev_command`).
+_BARE_STATIC = re.compile(r"""^\s*(?:"[^"]*"|'[^']*'|\S+)\s+-m\s+http\.server\s+(\{port\}|\d+)(?:\s+--bind\s+\S+)?\s*$""")
+
+
+def static_dev_cmd() -> str:
+    """:data:`STATIC_DEV_CMD` for this interpreter — the one that has ``flow_sdk``."""
+    import sys  # noqa: PLC0415
+
+    return STATIC_DEV_CMD.format(python=sys.executable)
+
+
+def is_static_dev(command: str) -> bool:
+    """*command* runs the static dev server — as written, or once :func:`dev_command` upgrades it."""
+    return "-m flow_sdk.server.dev_front" in dev_command(command or "")
+
+
+def dev_command(command: str) -> str:
+    """*command* as it is run: a bare ``python -m http.server <port>`` becomes the static dev server on the
+    same port; anything else is the author's own and runs unchanged."""
+    found = _BARE_STATIC.match(command or "")
+    if not found:
+        return command
+    return static_dev_cmd().replace("{port}", found.group(1))
+
+
 def _slug(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", name).strip("-") or "webapp"
 
@@ -141,7 +172,7 @@ def start_process(
     log_file = logs / f"{_slug(name)}-{port}.log"
     log = log_file.open("ab")
     proc = subprocess.Popen(  # noqa: S602 -- the command is the app author's own start command
-        command,
+        dev_command(command),
         cwd=str(cwd),
         shell=True,
         stdin=subprocess.DEVNULL,

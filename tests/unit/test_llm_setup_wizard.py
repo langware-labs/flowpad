@@ -380,8 +380,11 @@ async def test_the_popup_is_for_a_persons_own_machine_not_a_box_the_hub_launched
 
     calls = []
 
+    async def check(check_only=False):
+        return SimpleNamespace(ok=False)  # something is missing, so there is a reason to show it
+
     async def wizard_for(_trigger):
-        return SimpleNamespace(popup=True)
+        return SimpleNamespace(popup=True, run=check)
 
     async def navigate(_wizard):
         calls.append("popup")

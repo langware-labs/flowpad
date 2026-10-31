@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "handlings": [
+    { "id": "stub-known", "source": "page", "pattern": "^StubKnownError", "action": "ignore",
+      "note": "The stub's known error does not stop the page." }
+  ]
+}

@@ -67,13 +67,13 @@ async def _source() -> DataSource:
 
 async def _land(
     src: DataSource, key: str, *, at: datetime | None = None, ends: bool = False, mark: MessageMarkSpec | None = None, outcomes: list | None = None,
-    text: str | None = None, item_changed: bool = False,
+    text: str | None = None, item_changed: bool = False, chips: tuple[MessageMarkSpec, ...] | None = None,
 ) -> SourceItem:
     """One message from Dana in thread ``pr-7``, ingested and projected — no sync round."""
     origin = lambda k: CloudOrigin(kind=PROVIDER, namespace=src.account_key, key=k)  # noqa: E731
     data = MessageData(
         text=text or key, sender=UserProfile(origin=origin(DANA), address=DANA), conversation=origin("pr-7"),
-        sent_at=at or datetime.now(timezone.utc), ends_conversation=ends, mark=mark,
+        sent_at=at or datetime.now(timezone.utc), ends_conversation=ends, mark=mark, conversation_marks=chips,
     )
     outcome = await ingest_item(envelope_of(MessageItem(origin=origin(key), data=data), data_source_id=str(src.id), provider=PROVIDER))
     if outcomes is not None:
@@ -159,6 +159,25 @@ async def test_an_ending_message_ends_the_conversation_and_a_later_one_reopens_i
     assert merged.model_dump(mode="json")["ended_at"], "ended_at reaches the local wire"
     assert backfill.ended_at is not None, "a message older than the end does not reopen it"
     assert reopened.ended_at is None
+
+
+async def test_a_message_s_conversation_marks_become_the_conversation_s_chips_and_none_keeps_them():
+    repo = MessageMarkSpec(key="repo:octo/deps", label="deps")
+    bot = MessageMarkSpec(key="dependabot", label="Dependabot")
+    with scripted_provider(PROVIDER, projected=True):
+        src = await _source()
+        chat = await _chat(src)
+        read = lambda: Conversation.get_one({"id": str(chat.id)})  # noqa: E731
+        await _land(src, "opened", chips=(repo, bot))
+        chipped = await read()
+        await _land(src, "echo")
+        kept = await read()
+        await _land(src, "moved", chips=(repo,))
+        replaced = await read()
+    assert [m.label for m in chipped.marks] == ["deps", "Dependabot"]
+    assert chipped.model_dump(mode="json")["marks"][1]["key"] == "dependabot", "marks reach the local wire"
+    assert [m.label for m in kept.marks] == ["deps", "Dependabot"], "a message naming none keeps them"
+    assert [m.label for m in replaced.marks] == ["deps"]
 
 
 @contextmanager

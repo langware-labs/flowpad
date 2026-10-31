@@ -92,6 +92,10 @@ export interface ShareSource {
    *  titled "<Name> has shared <thing>", git or copy by project membership, and
    *  an invite link at the end. */
   shareAsThing?: boolean;
+  /** The entity whose type may need a step before the share (``pre_share`` action: a credential
+   *  needs its project's secret manager). The dialog asks the backend first and shows that step
+   *  when it answers ``needed``; nothing here knows a type. */
+  preShareRef?: TypeId;
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
 }
 
@@ -127,6 +131,7 @@ export function genericEntityShareSource(
     // File-backed assets may be shared by their Git origin — the dialog's Git
     // toggle preflights this ref; eligibility is decided backend-side.
     gitPreflightRef: typeId,
+    preShareRef: typeId,
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],

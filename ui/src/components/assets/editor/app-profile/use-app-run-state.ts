@@ -2,7 +2,7 @@ import { Project, type ProjectAppPort } from '@sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 
-/** The same query, key and period `AppStatusLine` reads: one process-table walk serves every open view. */
+/** One query, key and period: one process-table walk serves every open view. */
 const POLL_MS = 10_000;
 
 export interface AppRunState {

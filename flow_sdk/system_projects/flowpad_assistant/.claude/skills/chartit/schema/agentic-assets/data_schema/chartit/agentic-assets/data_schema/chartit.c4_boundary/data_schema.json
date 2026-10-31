@@ -1,0 +1,29 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id; elements name it in `boundary`, inner boundaries in `parent`."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The boundary's name, top left of its box."
+    },
+    "kind": {
+      "shape": "?string",
+      "description": "system, container, zone, deployment, tenant, team or group — shown as the boundary's tag."
+    },
+    "tech": {
+      "shape": "?string",
+      "description": "For a deployment node: what it runs on (AWS EKS, eu-west-1)."
+    },
+    "parent": {
+      "shape": "?string",
+      "description": "The boundary this one sits in."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Shown on hover."
+    }
+  }
+}

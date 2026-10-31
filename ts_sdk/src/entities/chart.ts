@@ -4,13 +4,26 @@ import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 
 /** How a chart is drawn — and which file in its folder is the source. Mirrors Python's `ChartFormat`. */
-export const CHART_FORMATS = ['sequence', 'excalidraw', 'mermaid'] as const;
+export const CHART_FORMATS = ['sequence', 'excalidraw', 'mermaid', 'c4'] as const;
 
 export type ChartFormat = (typeof CHART_FORMATS)[number];
+
+/** The file in a chart's folder that holds its drawing — Python's `CHART_SOURCES` (a mermaid chart's is CHART.md). */
+export const CHART_SOURCE_FILE: Record<ChartFormat, string> = {
+  sequence: 'chart.json',
+  excalidraw: 'board.json',
+  mermaid: 'CHART.md',
+  c4: 'c4.json',
+};
 
 /** A row without a known `format` is a board. */
 export function chartFormatOf(value: unknown): ChartFormat {
   return CHART_FORMATS.includes(value as ChartFormat) ? (value as ChartFormat) : 'excalidraw';
+}
+
+/** A format named but not known here: a chart made by a newer Flowpad. Never drawn as a board. */
+export function isUnknownChartFormat(value: unknown): value is string {
+  return typeof value === 'string' && value !== '' && !CHART_FORMATS.includes(value as ChartFormat);
 }
 
 /**
@@ -20,6 +33,7 @@ export function chartFormatOf(value: unknown): ChartFormat {
  *   <name>/CHART.md       — frontmatter {id, name, description, format, session?} + prose + auto-managed mermaid block
  *   <name>/chart.json     — format `sequence`: a chartit.sequence value {participants, messages}
  *   <name>/board.json     — format `excalidraw`: {kind, version, data} Excalidraw payload
+ *   <name>/c4.json        — format `c4`: a chartit.c4 value {level, elements, boundaries, relations}
  *   <name>/thumbnail.svg  — regenerated on save
  * Format `mermaid` keeps its source in CHART.md's mermaid block.
  *

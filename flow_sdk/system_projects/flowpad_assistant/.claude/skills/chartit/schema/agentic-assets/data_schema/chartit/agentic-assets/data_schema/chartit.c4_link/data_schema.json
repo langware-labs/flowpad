@@ -1,0 +1,17 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "label": {
+      "shape": "string",
+      "description": "The chip's text."
+    },
+    "href": {
+      "shape": "?string",
+      "description": "A project path (src/x.kt:42, docs/a.md) or an http(s) URL."
+    },
+    "asset": {
+      "shape": "?string",
+      "description": "An asset's TypeId (data_source-<uuid>, skill-<uuid>)."
+    }
+  }
+}

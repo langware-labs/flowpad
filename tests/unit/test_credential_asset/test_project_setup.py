@@ -208,6 +208,23 @@ async def test_a_credential_compiles_to_asks_with_ai_assist_then_a_store_on_one_
     assert plain["ask-telegram-TELEGRAM_BOT_TOKEN"].exe_data.assist_agent == ""
 
 
+async def test_with_a_secret_manager_the_values_are_fetched_before_anyone_is_asked(project, templates, monkeypatch):
+    _sources(monkeypatch, "telegram")
+    reqs = await project_setup.collect_requirements(project)
+
+    wizard, ops = project_setup.compile_setup(project.id, reqs, vaults=("team",))
+
+    assert [s.id for s in wizard.steps] == ["fetch-telegram", "ask-telegram-TELEGRAM_BOT_TOKEN", "store-telegram"]
+    fetch = ops["fetch-telegram"]
+    assert "secrets fetch telegram --project" in fetch.exe_data.command_for("linux")
+    assert fetch.completion_check == ops["ask-telegram-TELEGRAM_BOT_TOKEN"].completion_check, "a full fetch skips the asks"
+
+    _w, at_deployment = project_setup.compile_setup(project.id, reqs, vaults=("team",), deployment_id="d-1")
+    assert "fetch-telegram" not in at_deployment, "a fetch writes this computer's store only"
+    _w, none = project_setup.compile_setup(project.id, reqs)
+    assert "fetch-telegram" not in none
+
+
 async def test_a_credentials_own_setup_timeout_rides_its_questions(project, templates):
     await save_credential(
         manifest={"name": "slow-key", "setup": "Request a key; it takes a while to issue.", "setup_timeout_seconds": 1500,

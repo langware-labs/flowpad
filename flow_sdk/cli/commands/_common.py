@@ -85,6 +85,18 @@ def fail(exit_code: int, error_code: str, message: str, extra: "dict[str, Any] |
     raise typer.Exit(exit_code)
 
 
+def parse_config_pairs(pairs: Optional[list[str]], error_code: str, usage: str) -> dict[str, str]:
+    """``--config key=value`` options as a dict (key stripped, value as typed). A pair with no ``=``
+    or an empty key fails with ``error_code`` and ``"<usage>, got '<pair>'"``."""
+    out: dict[str, str] = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or not key.strip():
+            fail(EXIT_INVALID_ARG, error_code, f"{usage}, got {pair!r}")
+        out[key.strip()] = value
+    return out
+
+
 def ok(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps({"ok": True, **payload}))
 
@@ -312,6 +324,18 @@ def current_process_typeid() -> "str | None":
     return None
 
 
+def current_process_id() -> Optional[str]:
+    """The AgenticProcess this command runs inside (``FLOWPAD_EXECUTION_SCOPE``), or ``None``."""
+    from flow_sdk.utils.environment import get_execution_scope
+
+    for s in get_execution_scope():
+        if isinstance(s, dict) and s.get("type") == "agentic_process" and s.get("id"):
+            return str(s["id"])
+        if isinstance(s, str) and s.startswith("agentic_process-"):
+            return s.split("-", 1)[1]
+    return None
+
+
 def resolve_process_id(process_opt: Optional[str]) -> str:
     """Target AgenticProcess id from ``--process`` (bare id or
     ``agentic_process-<id>`` TypeId), falling back to the current process
@@ -320,13 +344,8 @@ def resolve_process_id(process_opt: Optional[str]) -> str:
         raw = process_opt.strip()
         return raw.split("agentic_process-", 1)[1] if raw.startswith("agentic_process-") else raw
 
-    from flow_sdk.utils.environment import get_execution_scope
-
-    for s in get_execution_scope():
-        if isinstance(s, dict) and s.get("type") == "agentic_process" and s.get("id"):
-            return str(s["id"])
-        if isinstance(s, str) and s.startswith("agentic_process-"):
-            return s.split("-", 1)[1]
+    if found := current_process_id():
+        return found
 
     fail(
         EXIT_INVALID_ARG,

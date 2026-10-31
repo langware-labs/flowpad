@@ -799,11 +799,13 @@ export async function openTerminalFromComputeNode(
   computeNodeId: string,
   command: string,
   cwd?: string,
+  /** Pages the command opens land in this browser profile (`BROWSER`); omit for the system default. */
+  browser?: { browser: string; profile: string } | null,
 ): Promise<{ command: string; cwd: string | null } | null> {
   const actionInfo = new ActionInfo('open-terminal', 'compute_node', computeNodeId, 'POST');
-  actionInfo.bodyParameters = { command, cwd };
+  actionInfo.bodyParameters = browser ? { command, cwd, browser } : { command, cwd };
   return dataManager.callAction<
-    { command: string; cwd?: string },
+    { command: string; cwd?: string; browser?: { browser: string; profile: string } },
     { command: string; cwd: string | null } | null
   >(actionInfo);
 }

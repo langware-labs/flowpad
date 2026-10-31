@@ -222,6 +222,7 @@ class ClaudeDriver:
     #: it gets its embedded agents as prompt text; a Chief of Staff on it delegates through tasks.
     spawns_subagents = True
     pty_submits_on_paste = True
+    pty_shell_escape = "!"
     # Real Claude Code PTY captures expose two grounded blank-composer frames:
     # a fresh boot paints the rotating ``Try "…"`` placeholder (2.1.207+),
     # while a resumed session can paint a bare prompt followed immediately by

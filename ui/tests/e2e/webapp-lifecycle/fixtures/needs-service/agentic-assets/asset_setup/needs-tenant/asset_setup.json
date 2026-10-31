@@ -1,0 +1,6 @@
+{
+  "name": "needs-tenant",
+  "label": "service-stub's tenant is up",
+  "run": "webapp-service-up",
+  "inputs": { "webapp": "service-stub", "service": "tenant" }
+}

@@ -5,7 +5,6 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -31,16 +30,16 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock: null, navigation: { openDock: vi.fn() } }),
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: projectId } }) }));
-vi.mock('@src/components/project-setup/ProjectLoadGate', () => ({
-  ProjectLoadGate: ({ children }: { children: ReactNode }) => children,
-}));
 vi.mock('@src/components/display-toolbar', () => ({ WebappDisplayToolbar: () => null }));
-vi.mock('@src/components/webapp-display/useWebappDiagnostics', () => ({
-  useWebappDiagnostics: () => ({ severity: 'ok', code: 'ok', detail: [], refresh: vi.fn() }),
+const lifecycle = vi.hoisted(() => ({
+  of: (id: string | null) =>
+    ({
+      app: null, record: id ? { state: 'up' } : null, loading: false, notFound: false,
+      showable: true, questionId: null,
+      settleQuestion: () => {}, fixIt: async () => {}, stop: async () => {}, reportPage: async () => null,
+    }) as unknown,
 }));
-vi.mock('@src/components/webapp-display/useWebappFix', () => ({
-  useWebappFix: () => ({ running: false, toolCount: 0, start: vi.fn(), autoAttempted: false }),
-}));
+vi.mock('@src/components/webapp-display/useAppLifecycle', () => ({ useAppLifecycle: (id: string | null) => lifecycle.of(id) }));
 vi.mock('@src/lib/open-external', () => ({ openExternal: opened }));
 
 const { AppDisplayViewer } = await import('@src/pages/flow-page/app-display-viewer');

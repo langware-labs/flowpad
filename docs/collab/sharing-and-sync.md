@@ -161,11 +161,23 @@ share; the receiver overlays it onto the materialized rows by id. Sender-local f
 (scope, project_id, asset_ref, git_origin) are stripped via `Entity.to_common_json()`
 and re-derived on receive.
 
-For file-backed entities, the receiver resolves the `GitOrigin` to a local repo:
-prefer the conversation's mapped project checkout when it matches, then any known
-local clone, then clone the remote. Once the checkout exists, the receiver indexes
-the entity from the filesystem path named by `GitOrigin.rel_path` and applies the
-sender's `metadata.json` as metadata. Markdown documents restored this way become
+For file-backed entities, the receiver brings the shared commit into its OWN
+checkout of the repo — the project the share opens in (`GitOriginDriver.receive`,
+`flow_sdk/builtin/drivers/git_driver.py`); with no checkout it is refused
+(`no-checkout`), never cloned behind the receiver's back. The commit is fetched,
+then `plan_receive` decides (a `ReceivePlan`): `have` — the checkout already holds
+that version of `GitOrigin.rel_path`, open in place; `pull` — on the shared
+branch and behind, `GitRepo.pull`; `cherry_pick` — anywhere else,
+`GitRepo.cherry_pick -x` of the commits that touch the path and are not on the
+branch yet. `pull` / `cherry_pick` write the receiver's branch, so they run only
+with consent (`apply` on `install` / `open-shared`, `share_consent`); without it
+the answer is `needs: "apply"` with the plan, and nothing is written. A conflict
+is left in place (`git_share_error: "conflict"` with `operation`, `workdir`,
+`conflicted`) for the Resolve flow. The receiver then indexes the entity from its
+path in that checkout and applies the sender's `metadata.json` as metadata. A
+newer version on the shared branch is counted by `git_share_status` and brought
+in by `git_share_update` the same way; the receiver's own edits go back like any
+edit (commit, push, or share it back). Markdown documents restored this way become
 ordinary indexed markdown records and are searchable after the
 receive/download/open indexing step.
 

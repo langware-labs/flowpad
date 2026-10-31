@@ -360,6 +360,9 @@ export interface IAgenticProcess extends IEntity {
   /** Backend-computed driver capability: this worker supports CLI plan mode
    *  (`--permission-mode plan`). Drives the headless-chat plan toggle. */
   supports_plan_mode?: boolean;
+  /** Backend-computed driver capability: a command can run in this session's own shell mode
+   *  (`runShellCommand`, Claude Code's `!`). */
+  supports_shell_command?: boolean;
   /** tabbed / tab_order / last_active_at come from IEntity (base-Entity fields). */
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
@@ -644,6 +647,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     scratch?: boolean;
     /** First prompt — placed on the queue, popped as the launch instruction. */
     launchPrompt?: string;
+    /** Tab title — pinned, so the worker's auto-naming never replaces it. */
+    title?: string;
     /** Mount the Flowpad Assistant skills/agents for this worker. */
     enableAssistant?: boolean;
     /** String TypeIds stamped onto the process's `shared_context_entities`. */
@@ -679,6 +684,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         pty_mode: ptyMode,
         watchProcess: false,
         ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}),
+        ...(opts.title ? { title: opts.title } : {}),
       },
     );
     process.openTerminalDock();
@@ -1152,6 +1158,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
 
   /** Backend-computed driver capability (claude only, for now). */
   supports_plan_mode?: boolean;
+
+  /** Backend-computed: a command can run in this session's own shell mode (`runShellCommand`). */
+  supports_shell_command?: boolean;
 
   /** Tab-strip membership (base-Entity field; see IEntity.tabbed). */
   tabbed?: boolean;
@@ -1731,6 +1740,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // selects headless.
     this.pty_mode = entity.pty_mode ?? true;
     this.supports_plan_mode = entity.supports_plan_mode ?? false;
+    this.supports_shell_command = entity.supports_shell_command ?? false;
     this.tabbed = entity.tabbed ?? entity.visible ?? false;
     this.tab_order = entity.tab_order ?? 0;
     this.last_active_at = entity.last_active_at ?? null;
@@ -2870,6 +2880,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * subprocess via ``cancelPrompt``. Lets both the chat pane and the floating
    * assistant share one "stop generating" handler.
    */
+  /**
+   * Run `command` in this session's own shell mode (Claude Code's `! cmd`), as if the user
+   * typed it: it runs in the session's shell and its output joins the conversation. Only when
+   * `supports_shell_command`.
+   */
+  async runShellCommand(command: string): Promise<void> {
+    const actionInfo = new ActionInfo('run-shell-command', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { command };
+    await dataManager.callAction<{ command: string }, { status: string }>(actionInfo);
+  }
+
   async interruptTurn(): Promise<void> {
     // Keys on the TRANSPORT (`pty_mode`), never tab-visibility: a hidden live
     // PTY (`visible=false, pty_mode=true`) is still a PTY, and routing it to

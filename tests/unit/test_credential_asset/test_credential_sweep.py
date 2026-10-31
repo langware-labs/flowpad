@@ -80,7 +80,7 @@ def google(monkeypatch):
 
 
 async def _bound_source(prefix: str, *, bind: bool = True):
-    store = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme", "prefix": prefix})
+    store = await SecretStore.get("gcp", {"project": "acme", "prefix": prefix})
     if bind:
         await store.set_connection(Connection(provider="google", display_name="Google", connected=True))
     row = make_data_source("sweep-test")
@@ -94,7 +94,7 @@ async def test_a_remote_store_a_source_binds_is_read(home, google):
 
     result = await sweep(names=["REMOTE_KEY"])
 
-    assert [(f.store, f.where, f.name) for f in result.found] == [("gcp_secret_manager", "acme/app-", "REMOTE_KEY")]
+    assert [(f.store, f.where, f.name) for f in result.found] == [("gcp", "GCP project acme · app-*", "REMOTE_KEY")]
 
 
 async def test_a_store_that_cannot_be_read_is_unchecked_not_clean(home, google):
@@ -103,7 +103,7 @@ async def test_a_store_that_cannot_be_read_is_unchecked_not_clean(home, google):
     result = await sweep(names=["REMOTE_KEY"])
 
     assert not result.clean and result.found == []
-    assert [(u.store, "StoreNeedsConnection" in u.error) for u in result.unchecked] == [("gcp_secret_manager", True)]
+    assert [(u.store, "StoreNeedsConnection" in u.error) for u in result.unchecked] == [("gcp", True)]
 
 
 async def test_the_hub_leg_reports_what_its_script_finds_and_an_unreadable_hub(home, tmp_path, monkeypatch):

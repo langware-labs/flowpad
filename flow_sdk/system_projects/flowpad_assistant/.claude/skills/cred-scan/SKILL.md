@@ -46,7 +46,9 @@ Credential assets — `agentic-assets/credential/<name>/credential.json` + `setu
 | 3 · Bundle | `phases/3-bundle.md` | declared, indexed CredentialSpec folders, verified and shown |
 
 A bare `cred-scan` runs all three, stopping at the phase-2 review. `cred-scan
-report` stops there for good — nothing is declared.
+report` stops there for good — nothing is declared. `cred-scan test <name>` writes
+one credential's `test` and proves it against the provider (`phases/test.md`) —
+what the credential's Test button asks for when it has none.
 
 ## Reference
 
@@ -55,5 +57,6 @@ report` stops there for good — nothing is declared.
 | run the mechanical inventory, or read what is already declared | `scripts/cred_scan.py` (`scan [root]`, `declared`) |
 | know every place a credential can hide and what each one proves | `references/sources.md` |
 | know which dependency reads which variable on its own | `references/sdk-implicit.md` |
+| write a credential's `test` (are the values GOOD, not only present) | `references/tests.md` |
 | know what a CredentialSpec may declare | `flow_sdk/schema/data_spec/credential_spec.py` (repo) |
 | show the result to the user | the `flowpad-navigation` skill |

@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>page-errors</title>
+<h1 data-testid="stub-ready">page-errors ready</h1>
+<script>
+  // ?err=known|unknown-<x>; the dock route passes no query, so mode.txt (written by the test) is the fallback.
+  (async () => {
+    let err = new URLSearchParams(location.search).get('err');
+    if (!err) {
+      try { const r = await fetch('mode.txt', { cache: 'no-store' }); if (r.ok) err = (await r.text()).trim(); } catch {}
+    }
+    if (err === 'known') { const e = new Error('the stub threw its known error'); e.name = 'StubKnownError'; throw e; }
+    if (err && err.startsWith('unknown-')) throw new Error('StubUnknown ' + err.slice('unknown-'.length));
+  })().catch((e) => setTimeout(() => { throw e; }));
+</script>

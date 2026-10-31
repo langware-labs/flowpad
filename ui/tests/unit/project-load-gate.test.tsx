@@ -7,7 +7,6 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Project, type ProjectLoadResult } from '@sdk';
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 import { useProjectLoadStore } from '@src/components/project-setup/project-load-store';
-import { validLoad } from '@src/components/project-setup/use-project-load';
 
 vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }), useWatch: () => {} }));
 vi.mock('@src/hooks/use-process-progress-info', () => ({
@@ -23,8 +22,6 @@ const ready: ProjectLoadResult = { state: 'ready', detail: 'Ready', run: null, p
 afterEach(() => {
   cleanup();
   useProjectLoadStore.getState().setOpen(false);
-  // Each test opens the app fresh: no verdict held from the one before.
-  validLoad.set(validLoad.key(projectId), false);
   vi.restoreAllMocks();
 });
 
@@ -65,32 +62,6 @@ it('runs Load again when the same completed dependency home is opened, without r
     [projectId, { approved: false }],
   ]);
   expect(useProjectLoadStore.getState().open).toBe(false);
-});
-
-it('an app with no asset to validate, already seen up this session, shows at once while its load checks it', async () => {
-  validLoad.set(validLoad.key(projectId), true);
-  vi.spyOn(Project, 'loadState').mockResolvedValue(ready);
-  const load = vi.spyOn(Project, 'load').mockReturnValue(new Promise(() => {}));
-  gate();
-  expect(screen.getByText('Service home')).toBeInTheDocument();
-  expect(screen.queryByTestId('project-load-status')).not.toBeInTheDocument();
-  await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-});
-
-it('a held app whose load does not come back ready gives way to the gate', async () => {
-  validLoad.set(validLoad.key(projectId), true);
-  const failed: ProjectLoadResult = {
-    ...ready,
-    state: 'failed',
-    detail: 'Service: it cannot start',
-    setup_available: false,
-  };
-  vi.spyOn(Project, 'loadState').mockResolvedValue(failed);
-  vi.spyOn(Project, 'load').mockResolvedValue(failed);
-  gate();
-  expect(screen.getByText('Service home')).toBeInTheDocument();
-  expect(await screen.findByText('Service: it cannot start')).toBeInTheDocument();
-  expect(screen.queryByText('Service home')).not.toBeInTheDocument();
 });
 
 function gate(asset = '') {
@@ -189,49 +160,20 @@ it('a gate for the project alone offers Set up instead of starting the whole set
   expect(useProjectLoadStore.getState().open).toBe(false);
 });
 
-it('an app that validates opens at once, never loads, and a re-open shows it on the first frame', async () => {
-  const asset = 'micro_app-11111111-1111-4111-8111-111111111111';
-  vi.spyOn(Project, 'loadState').mockResolvedValue(ready);
-  const validate = vi.spyOn(Project, 'validateLoad').mockResolvedValue({ ...ready, asset });
-  const load = vi.spyOn(Project, 'load').mockResolvedValue(ready);
-  const first = gate(asset);
-  expect(await screen.findByText('Service home')).toBeInTheDocument();
-  expect(load).not.toHaveBeenCalled();
-  first.unmount();
-  gate(asset);
-  // No await: the verdict this window already holds is rendered synchronously, checked behind it.
-  expect(screen.getByText('Service home')).toBeInTheDocument();
-  await waitFor(() => expect(validate).toHaveBeenCalledTimes(2));
-  expect(load).not.toHaveBeenCalled();
-});
-
-it('a running app whose setup owes something stays shown under a bar, and Set up runs that setup', async () => {
+it('a ready load whose setup owes something stays shown under a bar, and Set up runs that setup', async () => {
   // Spora Admin answered on its port while its Google sign-in had expired: it opened as ready, silently.
   const asset = 'micro_app-22222222-2222-4222-8222-222222222222';
   const owes: ProjectLoadResult = { ...ready, asset, setup_owed: 'Google Cloud: the sign-in expired — sign in again' };
-  vi.spyOn(Project, 'validateLoad').mockResolvedValue({ ...ready, asset });
   vi.spyOn(Project, 'loadState').mockResolvedValue(owes);
   vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: '', running: false, tree: null });
-  const load = vi.spyOn(Project, 'load').mockResolvedValue({ ...ready, asset, state: 'running', run: 'setup-x', phase: 'setup' });
+  const load = vi.spyOn(Project, 'load').mockResolvedValueOnce(owes);
+  load.mockResolvedValue({ ...ready, asset, state: 'running', run: 'setup-x', phase: 'setup' });
   gate(asset);
   expect(await screen.findByTestId('project-load-setup-owed')).toHaveTextContent('Google Cloud: the sign-in expired');
   expect(screen.getByText('Service home')).toBeInTheDocument();
-  expect(load).not.toHaveBeenCalled();
+  expect(load).toHaveBeenCalledTimes(1);
   await userEvent.click(screen.getByRole('button', { name: 'Set up' }));
   await waitFor(() => expect(load).toHaveBeenCalledWith(projectId, { approved: true, asset }));
-});
-
-it('an app that does not validate is loaded, and a load-only run says Starting, not the setup tree', async () => {
-  const asset = 'micro_app-22222222-2222-4222-8222-222222222222';
-  const starting: ProjectLoadResult = { ...ready, state: 'running', run: 'run-1', phase: 'load' };
-  vi.spyOn(Project, 'validateLoad').mockResolvedValue(null);
-  vi.spyOn(Project, 'loadState').mockResolvedValue(starting);
-  vi.spyOn(Project, 'setupRun').mockResolvedValue({ tree: null } as never);
-  const load = vi.spyOn(Project, 'load').mockResolvedValue(starting);
-  gate(asset);
-  await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
-  expect(await screen.findByText('Starting…')).toBeInTheDocument();
-  expect(screen.queryByText('Service home')).not.toBeInTheDocument();
 });
 
 function failedForGood() {

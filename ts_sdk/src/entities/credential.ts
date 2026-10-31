@@ -144,6 +144,8 @@ export interface ICredential extends IEntity {
   /** `ONE_OF`: how each way of several variables is offered, by way name. */
   ways?: Record<string, CredentialWay>;
   manifest_schema?: number;
+  /** The last test run on this machine (`state` ok / invalid / error, `detail`, `at`). */
+  test_result?: { state: string; detail: string; at: string } | null;
   /** `user` | `project` | `system` (a shipped template). */
   scope?: string | null;
   project_id?: string | null;
@@ -170,6 +172,7 @@ export class Credential extends APIEntity<Credential> implements ICredential {
   vars: Record<string, CredentialVar> = {};
   ways: Record<string, CredentialWay> = {};
   manifest_schema: number = 2;
+  test_result: { state: string; detail: string; at: string } | null = null;
 
   /**
    * Re-apply the payload after construction: `useDefineForClassFields: false`
@@ -191,6 +194,13 @@ export class Credential extends APIEntity<Credential> implements ICredential {
     return Object.entries(this.vars ?? {})
       .filter(([, v]) => isRequired(v))
       .map(([k]) => k);
+  }
+
+  /** Ask whoever shared this credential for access to `vault` — a `secret_access_request` share
+   *  reply in the conversation it arrived through (names only, never a value). */
+  async requestSecretAccess(vault: string): Promise<void> {
+    if (!this.id) throw new Error('requestSecretAccess requires this.id');
+    await this.post<unknown>('request-secret-access', { vault });
   }
 
   /** A shipped catalogue entry — added to a scope, never used directly. */

@@ -168,8 +168,8 @@ msgid "· assigned to {assignee}"
 msgstr "· assigned to {assignee}"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "· click an element to pick it"
-msgstr "· click an element to pick it"
+#~ msgid "· click an element to pick it"
+#~ msgstr "· click an element to pick it"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· local"
@@ -180,8 +180,8 @@ msgid "· pick a branch"
 msgstr "· pick a branch"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "· picked"
-msgstr "· picked"
+#~ msgid "· picked"
+#~ msgstr "· picked"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· remote"
@@ -528,6 +528,11 @@ msgstr "{0} — opened \"{fallbackName}\" instead."
 msgid "{0} · {1} · {2}ms"
 msgstr "{0} · {1} · {2}ms"
 
+#. placeholder {0}: f.label
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "{0} (optional)"
+msgstr "{0} (optional)"
+
 #. placeholder {0}: hot.info.from
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "{0} (self-call)"
@@ -594,6 +599,10 @@ msgstr "{0} available"
 msgid "{0} can now spend {1}."
 msgstr "{0} can now spend {1}."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "{0} can't receive values here and got the description only."
+#~ msgstr "{0} can't receive values here and got the description only."
+
 #. placeholder {0}: deployment.name
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "{0} cannot pay for its next turn"
@@ -610,15 +619,13 @@ msgstr "{0} caught · {1} passed over"
 msgid "{0} changed"
 msgstr "{0} changed"
 
-#. placeholder {0}: openRows.length
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
-msgstr "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
+#~ msgid "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
+#~ msgstr "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
 
-#. placeholder {0}: openRows.length
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "{0} comment(s) sent to the session that builds this chart."
-msgstr "{0} comment(s) sent to the session that builds this chart."
+#~ msgid "{0} comment(s) sent to the session that builds this chart."
+#~ msgstr "{0} comment(s) sent to the session that builds this chart."
 
 #. placeholder {0}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -677,6 +684,12 @@ msgstr "{0} disconnect failed"
 #: src/hooks/use-rag-roots.tsx
 msgid "{0} documents, {1} chunks"
 msgstr "{0} documents, {1} chunks"
+
+#. placeholder {0}: value.elements.length
+#. placeholder {1}: value.relations.length
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "{0} elements · {1} relations"
+msgstr "{0} elements · {1} relations"
 
 #. placeholder {0}: totals.estimated_requests
 #. placeholder {1}: totals.unpriced_requests
@@ -1036,6 +1049,12 @@ msgstr "{0} secret{1}"
 msgid "{0} selected"
 msgstr "{0} selected"
 
+#. placeholder {0}: card.sender_name || t`A member`
+#. placeholder {1}: card.credential_title || card.credential_name || t`a credential`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "{0} sent you values for {1}"
+msgstr "{0} sent you values for {1}"
+
 #~ msgid "{0} stayed in .env.local."
 #~ msgstr "{0} stayed in .env.local."
 
@@ -1101,6 +1120,11 @@ msgstr "{0} was not fully deleted"
 msgid "{0} was upgraded and restarted."
 msgstr "{0} was upgraded and restarted."
 
+#. placeholder {0}: sealOutcome.later.length
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "{0} will get them when they open the message in Flowpad."
+msgstr "{0} will get them when they open the message in Flowpad."
+
 #. placeholder {0}: removing?.name ?? ''
 #. placeholder {1}: team.name
 #: src/components/organization/tabs/TeamDetail.tsx
@@ -1118,6 +1142,13 @@ msgstr "{0} will no longer be able to spend from {1}. Money already spent is not
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: {1}"
 msgstr "{0}: {1}"
+
+#. placeholder {0}: value.title || t`C4 chart`
+#. placeholder {1}: value.elements.length
+#. placeholder {2}: value.relations.length
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "{0}: {1} elements, {2} relations"
+msgstr "{0}: {1} elements, {2} relations"
 
 #. placeholder {0}: value.title || t`Sequence chart`
 #. placeholder {1}: value.participants.length
@@ -1647,6 +1678,14 @@ msgstr "{pendingChanges} not published"
 #~ msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 #~ msgstr "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{projectName} has no secret manager"
+msgstr "{projectName} has no secret manager"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{projectName} has none, so its values have nowhere to come from."
+msgstr "{projectName} has none, so its values have nowhere to come from."
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "{projectName} is already shared"
 msgstr "{projectName} is already shared"
@@ -1808,6 +1847,26 @@ msgstr "{title} › Your own number"
 msgid "{title} sign-in needs renewing"
 msgstr "{title} sign-in needs renewing"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{title}: fetched from the vault"
+msgstr "{title}: fetched from the vault"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "{title}: key rejected"
+msgstr "{title}: key rejected"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "{title}: shared through vault {vault}"
+msgstr "{title}: shared through vault {vault}"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "{title}: the provider took the key"
+msgstr "{title}: the provider took the key"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "{title}: the test could not run"
+msgstr "{title}: the test could not run"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "{tokenCount} tokens"
 msgstr "{tokenCount} tokens"
@@ -1885,6 +1944,11 @@ msgstr "{who} allowance"
 msgid "{who} asks for access to <0>{where}</0>"
 msgstr "{who} asks for access to <0>{where}</0>"
 
+#. placeholder {0}: detail.manager ? ` (${detail.manager})` : ''
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "{who} asks for access to vault <0>{vault}</0>{0}"
+msgstr "{who} asks for access to vault <0>{vault}</0>{0}"
+
 #. placeholder {0}: detail.project_name ?? '—'
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
@@ -1918,6 +1982,7 @@ msgstr "/path/to/db"
 msgid "/run reclaimable "
 msgstr "/run reclaimable "
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
@@ -2087,8 +2152,8 @@ msgid "<one short line>"
 msgstr "<one short line>"
 
 #: src/components/webapp-display/useWebappFix.ts
-msgid "<what was wrong and what you did>"
-msgstr "<what was wrong and what you did>"
+#~ msgid "<what was wrong and what you did>"
+#~ msgstr "<what was wrong and what you did>"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "~2s. Use to check what's on disk without changing anything."
@@ -2303,6 +2368,10 @@ msgstr "A capped sub-budget of yours, for an agent or app."
 #~ msgid "A chain draws on another endpoint and can only narrow what passes."
 #~ msgstr "A chain draws on another endpoint and can only narrow what passes."
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "a credential"
+msgstr "a credential"
+
 #: src/components/automations/AutomationPage.tsx
 msgid "A cron expression has five parts."
 msgstr "A cron expression has five parts."
@@ -2368,16 +2437,20 @@ msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "a key the hub holds (the chain could not be read from here)"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "A known error is fixed on the spot; an unknown one goes to recovery."
-msgstr "A known error is fixed on the spot; an unknown one goes to recovery."
+#~ msgid "A known error is fixed on the spot; an unknown one goes to recovery."
+#~ msgstr "A known error is fixed on the spot; an unknown one goes to recovery."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "A known fix for this error (setup/webapp_errors.json)."
-msgstr "A known fix for this error (setup/webapp_errors.json)."
+#~ msgid "A known fix for this error (setup/webapp_errors.json)."
+#~ msgstr "A known fix for this error (setup/webapp_errors.json)."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A machine"
 msgstr "A machine"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "A member"
+msgstr "A member"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "a minute"
@@ -2494,6 +2567,14 @@ msgstr "A team without a budget gets its own pool, drawn from this one."
 msgid "A thread quiet this long ends; the next message starts a new one. Empty — never."
 msgstr "A thread quiet this long ends; the next message starts a new one. Empty — never."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "A variable points at a vault the project does not declare."
+msgstr "A variable points at a vault the project does not declare."
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "A vault where this project's shared values live. Teammates fetch from it; values never go into Git or a message."
+msgstr "A vault where this project's shared values live. Teammates fetch from it; values never go into Git or a message."
+
 #: src/components/search-index/IndexRecommendedBanner.tsx
 msgid "a while ago"
 msgstr "a while ago"
@@ -2602,6 +2683,18 @@ msgstr "Access is managed on the hub."
 #: src/components/connections-manager.tsx
 msgid "Access requested"
 msgstr "Access requested"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Access to {projectName} vault {vault}"
+msgstr "Access to {projectName} vault {vault}"
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Access to vault {vault} is granted. Fetch again."
+msgstr "Access to vault {vault} is granted. Fetch again."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Access to vault {vault} requested"
+msgstr "Access to vault {vault} requested"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -2715,6 +2808,7 @@ msgid "Activity"
 msgstr "Activity"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -2731,6 +2825,10 @@ msgstr "Activity"
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add"
 msgstr "Add"
+
+#: src/components/assets/editor/chart/chartControls.tsx
+msgid "Add & run"
+msgstr "Add & run"
 
 #: src/components/contact-picker/ContactPicker.tsx
 msgid "Add <0>{typedEmail}</0>"
@@ -2809,6 +2907,10 @@ msgstr "Add a project data source to include its packages"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Add a source"
 msgstr "Add a source"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Add a vault"
+#~ msgstr "Add a vault"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -3752,6 +3854,10 @@ msgstr "Already up to date"
 msgid "Also"
 msgstr "Also"
 
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Also changes {0} other file(s)."
+#~ msgstr "Also changes {0} other file(s)."
+
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also deliver to…"
 msgstr "Also deliver to…"
@@ -3759,6 +3865,10 @@ msgstr "Also deliver to…"
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Also share the secret values, through a <0/> or by <1/>."
+msgstr "Also share the secret values, through a <0/> or by <1/>."
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Also to"
@@ -3798,6 +3908,10 @@ msgstr "An <0>orphan</0> is a row in the search index whose source file is gone 
 
 #~ msgid "An absent optional value does not park the run"
 #~ msgstr "An absent optional value does not park the run"
+
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "An agent is repairing the app"
+msgstr "An agent is repairing the app"
 
 #: src/components/automations/KindGallery.tsx
 msgid "An agent reads the task and tells you if it needs you."
@@ -3992,6 +4106,10 @@ msgstr "Answer"
 
 #~ msgid "Answer here instead"
 #~ msgstr "Answer here instead"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Answer or ask the agent…"
+msgstr "Answer or ask the agent…"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Answered by"
@@ -4242,6 +4360,10 @@ msgstr "Applies to"
 msgid "Apply"
 msgstr "Apply"
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Applying a known fix"
+msgstr "Applying a known fix"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Applying…"
 msgstr "Applying…"
@@ -4252,6 +4374,7 @@ msgstr "Approval failed"
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approve"
 msgstr "Approve"
@@ -4644,6 +4767,10 @@ msgstr "Assistant is responding"
 msgid "Assistants & keys"
 msgstr "Assistants & keys"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "async"
+msgstr "async"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "At"
 msgstr "At"
@@ -4702,8 +4829,8 @@ msgid "Attach files or a screenshot (or paste one into the details)"
 msgstr "Attach files or a screenshot (or paste one into the details)"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Attach image"
-msgstr "Attach image"
+#~ msgid "Attach image"
+#~ msgstr "Attach image"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Attach more files or assets"
@@ -4730,8 +4857,8 @@ msgid "Attached channels"
 msgstr "Attached channels"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "attached image"
-msgstr "attached image"
+#~ msgid "attached image"
+#~ msgstr "attached image"
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Attachment unavailable — no body was uploaded"
@@ -4891,6 +5018,10 @@ msgstr "Automate messages like this"
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Automate messages like this…"
 msgstr "Automate messages like this…"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "automatic"
+msgstr "automatic"
 
 #~ msgid "Automatic"
 #~ msgstr "Automatic"
@@ -5222,6 +5353,7 @@ msgstr "Bot token (xoxb-…)"
 msgid "Both"
 msgstr "Both"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Boundary"
 msgstr "Boundary"
@@ -5247,13 +5379,29 @@ msgstr "breadcrumb"
 msgid "breaker open"
 msgstr "breaker open"
 
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Bring {0} change(s) into {1}?"
+#~ msgstr "Bring {0} change(s) into {1}?"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Bring back"
 msgstr "Bring back"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Bring it in"
+msgstr "Bring it in"
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Bring the shared changes ({count}) into {branch}."
+msgstr "Bring the shared changes ({count}) into {branch}."
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Bring your own key"
 msgstr "Bring your own key"
+
+#: src/lib/publish-state.ts
+msgid "Brought in"
+msgstr "Brought in"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Browse"
@@ -5288,6 +5436,10 @@ msgstr "Browse the working directory"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Browse…"
 msgstr "Browse…"
+
+#: src/components/links/LinkMenu.tsx
+msgid "Browser"
+msgstr "Browser"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
@@ -5467,6 +5619,14 @@ msgstr "By name"
 msgid "By scope"
 msgstr "By scope"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "C4 architecture"
+msgstr "C4 architecture"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "C4 chart"
+msgstr "C4 chart"
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "cache hit rate"
 msgstr "cache hit rate"
@@ -5505,6 +5665,7 @@ msgstr "Cache Write"
 msgid "Cache write: {0}"
 msgstr "Cache write: {0}"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "call"
 msgstr "call"
@@ -5609,6 +5770,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/ReplayDialog.tsx
@@ -5631,6 +5793,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -5661,6 +5824,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/share-to-conversation/GitignoredNotice.tsx
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -5681,6 +5845,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/components/workspace/workspace-switcher.tsx
 #: src/pages/entry/InstallLanding.tsx
@@ -5824,6 +5989,7 @@ msgid "Chain"
 msgstr "Chain"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -5837,6 +6003,10 @@ msgstr "Change allocation"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Change avatar"
 msgstr "Change avatar"
+
+#: src/components/assets/editor/chart/chartControls.tsx
+msgid "Change chart"
+msgstr "Change chart"
 
 #: src/components/inbound/AddRuleDialog.tsx
 #: src/components/inbound/RouteCheck.tsx
@@ -5962,8 +6132,8 @@ msgid "Chart"
 msgstr "Chart"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "CHART"
-msgstr "CHART"
+#~ msgid "CHART"
+#~ msgstr "CHART"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/quick-create/ChartCreateDialog.tsx
@@ -5972,8 +6142,8 @@ msgid "Chart created"
 msgstr "Chart created"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Chart feedback"
-msgstr "Chart feedback"
+#~ msgid "Chart feedback"
+#~ msgstr "Chart feedback"
 
 #: src/i18n/type-labels.ts
 msgid "Charts"
@@ -6039,20 +6209,20 @@ msgid "Check"
 msgstr "Check"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Check — is the app running and its page clean?"
-msgstr "Check — is the app running and its page clean?"
+#~ msgid "Check — is the app running and its page clean?"
+#~ msgstr "Check — is the app running and its page clean?"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Check — loading the page and watching for errors"
-msgstr "Check — loading the page and watching for errors"
+#~ msgid "Check — loading the page and watching for errors"
+#~ msgstr "Check — loading the page and watching for errors"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Check — the app is not ready to show"
-msgstr "Check — the app is not ready to show"
+#~ msgid "Check — the app is not ready to show"
+#~ msgstr "Check — the app is not ready to show"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Check — the page threw an error while loading"
-msgstr "Check — the page threw an error while loading"
+#~ msgid "Check — the page threw an error while loading"
+#~ msgstr "Check — the page threw an error while loading"
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
@@ -6143,7 +6313,7 @@ msgstr "Checking out the projects and opening the session."
 msgid "Checking project membership…"
 msgstr "Checking project membership…"
 
-#: src/components/webapp-display/WebappDisplay.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Checking the app…"
 msgstr "Checking the app…"
 
@@ -6597,8 +6767,8 @@ msgid "Click a node to view its properties,<0/>edges, and neighbors."
 msgstr "Click a node to view its properties,<0/>edges, and neighbors."
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Click any box or arrow in the chart to change what this comment is about."
-msgstr "Click any box or arrow in the chart to change what this comment is about."
+#~ msgid "Click any box or arrow in the chart to change what this comment is about."
+#~ msgstr "Click any box or arrow in the chart to change what this comment is about."
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Click Restart to spawn a fresh PTY."
@@ -6710,7 +6880,7 @@ msgstr "Cloning the repo and indexing it."
 msgid "Cloning…"
 msgstr "Cloning…"
 
-#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -6752,8 +6922,8 @@ msgid "Close ({closeIn})"
 msgstr "Close ({closeIn})"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Close (Esc)"
-msgstr "Close (Esc)"
+#~ msgid "Close (Esc)"
+#~ msgstr "Close (Esc)"
 
 #: src/components/milkdown-editor/MarkdownFindBar.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
@@ -7059,6 +7229,10 @@ msgstr "Column Weights"
 msgid "Columns: name, email, budget"
 msgstr "Columns: name, email, budget"
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "coming up…"
+msgstr "coming up…"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "command"
 msgstr "command"
@@ -7072,6 +7246,10 @@ msgstr "command"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Command"
 msgstr "Command"
+
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Command line options"
+msgstr "Command line options"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
@@ -7596,6 +7774,7 @@ msgstr "context tokens"
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/survey/SurveyView.tsx
 msgid "Continue"
 msgstr "Continue"
@@ -7782,6 +7961,10 @@ msgstr "Copy code"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Copy code & open GitHub"
 msgstr "Copy code & open GitHub"
+
+#: src/components/links/LinkMenu.tsx
+msgid "Copy command"
+msgstr "Copy command"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Compute Node ID"
@@ -8234,6 +8417,10 @@ msgstr "Could not end room"
 msgid "could not fetch — showing local copy"
 msgstr "could not fetch — showing local copy"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not fetch {title}"
+msgstr "Could not fetch {title}"
+
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #~ msgid "Could not fetch the dependencies"
 #~ msgstr "Could not fetch the dependencies"
@@ -8241,6 +8428,10 @@ msgstr "could not fetch — showing local copy"
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Could not fetch the packages"
 msgstr "Could not fetch the packages"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not fetch the values"
+msgstr "Could not fetch the values"
 
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
@@ -8266,6 +8457,10 @@ msgstr "Could not give access"
 #: src/components/connections-manager.tsx
 msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Could not grant access."
+msgstr "Could not grant access."
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #~ msgid "Could not install the dependency"
@@ -8310,6 +8505,10 @@ msgstr "Could not link this project."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Could not list budgets: {loadError}"
 msgstr "Could not list budgets: {loadError}"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Could not list the secret managers."
+msgstr "Could not list the secret managers."
 
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not load automations"
@@ -8407,15 +8606,24 @@ msgstr "Could not open setup"
 msgid "Could not open skill"
 msgstr "Could not open skill"
 
+#: src/components/assets/editor/chart/useOpenChart.ts
+msgid "Could not open the data schema"
+msgstr "Could not open the data schema"
+
 #: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
 msgstr "Could not open the folder"
 
+#: src/components/assets/editor/chart/useOpenChart.ts
+msgid "Could not open the link"
+msgstr "Could not open the link"
+
+#: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not open the shared version"
 msgstr "Could not open the shared version"
 
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/useOpenChart.ts
 msgid "Could not open the sub-flow"
 msgstr "Could not open the sub-flow"
 
@@ -8439,6 +8647,14 @@ msgstr "Could not pause the cloud machine"
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not publish"
 msgstr "Could not publish"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not publish {title}"
+msgstr "Could not publish {title}"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Could not publish to vault {vault}."
+msgstr "Could not publish to vault {vault}."
 
 #: src/components/data-sources/source-parts.tsx
 #~ msgid "Could not pull {0}"
@@ -8636,6 +8852,10 @@ msgstr "Could not run it"
 msgid "Could not run schedule"
 msgstr "Could not run schedule"
 
+#: src/components/links/link-handlers.ts
+msgid "Could not run the command"
+msgstr "Could not run the command"
+
 #: src/components/connections-manager.tsx
 msgid "Could not run the connection test."
 msgstr "Could not run the connection test."
@@ -8717,6 +8937,10 @@ msgstr "Could not save the rule code"
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not save the snippet"
 msgstr "Could not save the snippet"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Could not save the vault."
+msgstr "Could not save the vault."
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not send"
@@ -8876,6 +9100,10 @@ msgstr "Could not switch to chat"
 #: src/components/terminal/interactive-terminal/use-process-surface.ts
 msgid "Could not switch to terminal"
 msgstr "Could not switch to terminal"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Could not test {title}"
+msgstr "Could not test {title}"
 
 #: src/components/automations/BusView.tsx
 msgid "Could not test it"
@@ -9732,6 +9960,7 @@ msgstr "Declared on the agent's card. Not yet applied to the worker."
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/PromptCallCard.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/git/InvitationsStrip.tsx
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
@@ -9756,9 +9985,9 @@ msgstr "Decline failed"
 msgid "declined"
 msgstr "declined"
 
-#: src/components/conversation/SessionCard.tsx
-#~ msgid "Declined"
-#~ msgstr "Declined"
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Declined"
+msgstr "Declined"
 
 #: src/components/git/InvitationsStrip.tsx
 msgid "Declined {fullName}"
@@ -9778,6 +10007,7 @@ msgstr "default"
 
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Default"
@@ -9897,7 +10127,6 @@ msgstr "delete"
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
-#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -10444,6 +10673,7 @@ msgstr "Describe who this agent is, what it does, and what it must never do…"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/CredentialDialog.tsx
@@ -10506,7 +10736,6 @@ msgstr "Detail"
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
-#: src/components/webapp-display/WebDebugComponent.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Details"
 msgstr "Details"
@@ -10660,7 +10889,7 @@ msgstr "Diagnosis was not recorded — try again."
 msgid "Diagnostic complete — no issue found."
 msgstr "Diagnostic complete — no issue found."
 
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
 msgstr "Diagram"
 
@@ -10984,6 +11213,7 @@ msgstr "Domains accessible from sandbox"
 msgid "Don't ask"
 msgstr "Don't ask"
 
+#: src/components/links/LinkMenu.tsx
 #: src/navigation/smart-ask.ts
 msgid "Don't ask again"
 msgstr "Don't ask again"
@@ -11058,7 +11288,6 @@ msgstr "Dot-separated; * matches one part, a trailing * matches the rest (task.*
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/code-editor/EditorPane.tsx
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -11119,8 +11348,8 @@ msgid "Download bundle"
 msgstr "Download bundle"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
-msgid "Download failed"
-msgstr "Download failed"
+#~ msgid "Download failed"
+#~ msgstr "Download failed"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -11367,10 +11596,11 @@ msgstr "Edges by kind"
 msgid "Edit"
 msgstr "Edit"
 
+#. placeholder {0}: agent.displayName
 #. placeholder {0}: d.title
 #. placeholder {0}: entry.app.displayName
-#. placeholder {0}: only.app.displayName
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 msgid "Edit {0}"
@@ -11379,6 +11609,10 @@ msgstr "Edit {0}"
 #: src/components/triggers-view/TriggerEditor.tsx
 #~ msgid "Edit a system trigger?"
 #~ msgstr "Edit a system trigger?"
+
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Edit agent"
+msgstr "Edit agent"
 
 #: src/components/triggers-view/TriggerEditor.tsx
 #~ msgid "Edit anyway"
@@ -11486,6 +11720,10 @@ msgstr "Effective filters at this endpoint"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Effort"
 msgstr "Effort"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Element"
+msgstr "Element"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/token-plan/AllocateDialog.tsx
@@ -11891,8 +12129,8 @@ msgid "Error Loading Transcript"
 msgstr "Error Loading Transcript"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Error rules — webapp_errors.json"
-msgstr "Error rules — webapp_errors.json"
+#~ msgid "Error rules — webapp_errors.json"
+#~ msgstr "Error rules — webapp_errors.json"
 
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Error while displaying the suggestion, contact support"
@@ -12410,6 +12648,15 @@ msgstr "Expert Assistance"
 msgid "Expert details"
 msgstr "Expert details"
 
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Expired — ask {0} to share again."
+msgstr "Expired — ask {0} to share again."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Expired before everyone filled them in."
+msgstr "Expired before everyone filled them in."
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Expires after"
 msgstr "Expires after"
@@ -12861,6 +13108,10 @@ msgstr "Failed to send status request"
 msgid "Failed to send the changes"
 msgstr "Failed to send the changes"
 
+#: src/components/conversation/useConversationSession.ts
+msgid "Failed to send to the session"
+msgstr "Failed to send to the session"
+
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Failed to set project"
 msgstr "Failed to set project"
@@ -12989,25 +13240,26 @@ msgstr "Feed Entry"
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Feedback"
-msgstr "Feedback"
+#~ msgid "Feedback"
+#~ msgstr "Feedback"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #~ msgid "Feedback is off: {0}"
 #~ msgstr "Feedback is off: {0}"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Feedback is off: {offReason}"
-msgstr "Feedback is off: {offReason}"
+#~ msgid "Feedback is off: {offReason}"
+#~ msgstr "Feedback is off: {offReason}"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
-msgstr "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
+#~ msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
+#~ msgstr "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 #~ msgid "Feeds"
 #~ msgstr "Feeds"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
 msgstr "Fetch"
@@ -13143,6 +13395,18 @@ msgstr "Files on disk not yet in the DB"
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Files: {files}"
 msgstr "Files: {files}"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Fill in"
+msgstr "Fill in"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Filled in"
+msgstr "Filled in"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Filled in by {filled} · the sealed copy was deleted from the hub"
+msgstr "Filled in by {filled} · the sealed copy was deleted from the hub"
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -13423,6 +13687,10 @@ msgstr "First time on this machine?"
 msgid "First time? Install Flowpad, then hover a row for its install line."
 msgstr "First time? Install Flowpad, then hover a row for its install line."
 
+#: src/components/assets/editor/chart/chartControls.tsx
+msgid "Fit"
+msgstr "Fit"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
 msgstr "Fit (f)"
@@ -13442,7 +13710,7 @@ msgid "Fix All"
 msgstr "Fix All"
 
 #: src/components/project-setup/SetupFailureActions.tsx
-#: src/components/webapp-display/WebDebugComponent.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Fix it"
 msgstr "Fix it"
 
@@ -13464,8 +13732,8 @@ msgstr "Fix the configuration — credentials or settings — then press Verify 
 #~ msgstr "Fix the setup"
 
 #: src/components/webapp-display/useWebappFix.ts
-msgid "Fix the web app"
-msgstr "Fix the web app"
+#~ msgid "Fix the web app"
+#~ msgstr "Fix the web app"
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Fix…"
@@ -13484,8 +13752,8 @@ msgid "Fixing these tightens the skill for every future run."
 msgstr "Fixing these tightens the skill for every future run."
 
 #: src/components/webapp-display/WebDebugComponent.tsx
-msgid "Fixing…"
-msgstr "Fixing…"
+#~ msgid "Fixing…"
+#~ msgstr "Fixing…"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 #~ msgid "Flow answers from its own box · shown here"
@@ -13517,6 +13785,7 @@ msgstr "flow name…"
 
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/token-plan/FundingChain.tsx
+#: src/components/version-popover/hub-release-label.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
@@ -13612,8 +13881,8 @@ msgstr "FlowPad didn't open? Install it, then come back to this page."
 #~ msgstr "FlowPad didn't open. Install it from flowpad.ai, then try again."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
-msgstr "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
+#~ msgid "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
+#~ msgstr "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -13667,8 +13936,7 @@ msgstr "FlowPad stops, upgrades and starts again on each. Anyone working in them
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 
-#: src/components/version-popover/version-popover.tsx
-#: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-chip.tsx
 msgid "Flowpad version"
 msgstr "Flowpad version"
 
@@ -13877,6 +14145,7 @@ msgstr "Free-form JSON for experimental feature toggles. Invalid JSON is not sav
 msgid "from"
 msgstr "from"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -14115,6 +14384,10 @@ msgstr "Get it at flowpad.ai"
 #~ msgid "Get my link code"
 #~ msgstr "Get my link code"
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Get the secret"
+msgstr "Get the secret"
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your {label} messages here, and answer them from Flowpad."
 msgstr "Get your {label} messages here, and answer them from Flowpad."
@@ -14134,6 +14407,11 @@ msgstr "Getting the controller project"
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Getting the project to work on"
 msgstr "Getting the project to work on"
+
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Getting the values from {0}'s Flowpad… they arrive by themselves."
+msgstr "Getting the values from {0}'s Flowpad… they arrive by themselves."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Getting your Slack link…"
@@ -14403,6 +14681,10 @@ msgstr "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgid "Got it — your answer was sent."
 msgstr "Got it — your answer was sent."
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Granted"
+msgstr "Granted"
+
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
 msgstr "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
@@ -14542,6 +14824,10 @@ msgstr "Handed over to {0}"
 msgid "Handling"
 msgstr "Handling"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Handlings — webapp_handlings.json"
+msgstr "Handlings — webapp_handlings.json"
+
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Harness · sessions"
 msgstr "Harness · sessions"
@@ -14663,8 +14949,8 @@ msgid "Helpers used"
 msgstr "Helpers used"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
-msgstr "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
+#~ msgid "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
+#~ msgstr "Here is what was tried. Try again, or open Edit app → Setup for the error log and learnings."
 
 #: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
@@ -14708,8 +14994,8 @@ msgid "Hide all types"
 msgstr "Hide all types"
 
 #: src/components/webapp-display/WebDebugComponent.tsx
-msgid "Hide details"
-msgstr "Hide details"
+#~ msgid "Hide details"
+#~ msgstr "Hide details"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Hide empty"
@@ -15069,6 +15355,7 @@ msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/version-popover/hub-release-label.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
@@ -15113,8 +15400,8 @@ msgstr "Hub errors suppressed"
 #~ msgstr "Hub project id or link"
 
 #: src/components/version-popover/hub-release-label.tsx
-msgid "Hub release, and the UI build serving it"
-msgstr "Hub release, and the UI build serving it"
+#~ msgid "Hub release, and the UI build serving it"
+#~ msgstr "Hub release, and the UI build serving it"
 
 #: src/pages/discover-page/ProvenanceLink.tsx
 msgid "hub repository"
@@ -15148,6 +15435,10 @@ msgstr "Hunk {hunkNumber}: Lines {oldStart}–{oldEnd} → {newStart}–{newEnd}
 #: src/notifications/renderDesktopNotification.ts
 msgid "I invited you to project \"{0}\"."
 msgstr "I invited you to project \"{0}\"."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "I received the {title} credential, but {projectName} has no secret manager vault to fetch its values from. Please set one up on the project."
+msgstr "I received the {title} credential, but {projectName} has no secret manager vault to fetch its values from. Please set one up on the project."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "I want…  (e.g. email, slack, calendar)"
@@ -15219,8 +15510,8 @@ msgid "ignore"
 msgstr "ignore"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Ignore"
-msgstr "Ignore"
+#~ msgid "Ignore"
+#~ msgstr "Ignore"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "ignore patterns"
@@ -15302,6 +15593,14 @@ msgstr "Improving…"
 #~ msgid "In .env.local at line {0}, not declared yet"
 #~ msgstr "In .env.local at line {0}, not declared yet"
 
+#: src/components/links/LinkMenu.tsx
+msgid "in a new Flowpad terminal"
+msgstr "in a new Flowpad terminal"
+
+#: src/components/links/LinkMenu.tsx
+msgid "in an external terminal window"
+msgstr "in an external terminal window"
+
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git ({gitLabel}), click to open."
 msgstr "In git ({gitLabel}), click to open."
@@ -15337,6 +15636,10 @@ msgstr "In Slack, create a private channel named"
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "In Telegram, message @BotFather and send /newbot."
 msgstr "In Telegram, message @BotFather and send /newbot."
+
+#: src/components/links/LinkMenu.tsx
+msgid "in this chat's session"
+msgstr "in this chat's session"
 
 #: src/components/conversation/task-it.tsx
 msgid "In this conversation"
@@ -15974,6 +16277,10 @@ msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full 
 msgid "Issues"
 msgstr "Issues"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "It also changes:"
+msgstr "It also changes:"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
 msgstr "It can read your Slack channels."
@@ -16017,8 +16324,8 @@ msgid "It is no longer one of the endpoints the hub lists for you — or this ma
 msgstr "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "It is not answering on its port, or its page failed the last time it opened."
-msgstr "It is not answering on its port, or its page failed the last time it opened."
+#~ msgid "It is not answering on its port, or its page failed the last time it opened."
+#~ msgstr "It is not answering on its port, or its page failed the last time it opened."
 
 #: src/pages/entry/EntityLanding.tsx
 msgid "It lives in git under {repoPath}. Clone it, and open it in the FlowPad desktop app."
@@ -16039,8 +16346,8 @@ msgid "It may have been deleted, or it wasn't shared with this account."
 msgstr "It may have been deleted, or it wasn't shared with this account."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
-msgstr "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
+#~ msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
+#~ msgstr "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "It runs again the next time the project opens."
@@ -16062,9 +16369,18 @@ msgstr "It shows up in Runs as a test."
 msgid "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "It was not written."
+msgstr "It was not written."
+
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "It was shared with you, but its files are not here yet."
 msgstr "It was shared with you, but its files are not here yet."
+
+#. placeholder {0}: WHERE[state.mode]()
+#: src/components/links/LinkMenu.tsx
+msgid "It will run {0}."
+msgstr "It will run {0}."
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Italic"
@@ -16239,6 +16555,10 @@ msgstr "Key ending {0} — only the owner can change it."
 #~ msgid "Key not set"
 #~ msgstr "Key not set"
 
+#: src/components/connections-manager/credential-rows-view.tsx
+msgid "Key rejected"
+msgstr "Key rejected"
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Key removed"
 msgstr "Key removed"
@@ -16293,6 +16613,7 @@ msgstr "kind"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
@@ -16413,11 +16734,9 @@ msgstr "Last 7 days"
 msgid "Last attempt"
 msgstr "Last attempt"
 
-#. placeholder {0}: check.errors
-#. placeholder {1}: check.at
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Last check found {0} error(s) · {1}"
-msgstr "Last check found {0} error(s) · {1}"
+#~ msgid "Last check found {0} error(s) · {1}"
+#~ msgstr "Last check found {0} error(s) · {1}"
 
 #. placeholder {0}: clockTime(last)
 #: src/components/inbound/InboundView.tsx
@@ -16836,6 +17155,10 @@ msgstr "Link project to cloud"
 msgid "Link project to cloud to securely and privately manage your shared assets."
 msgstr "Link project to cloud to securely and privately manage your shared assets."
 
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "Link target not found"
+msgstr "Link target not found"
+
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Link the project to the cloud first: its members are the cloud project's members."
 msgstr "Link the project to the cloud first: its members are the cloud project's members."
@@ -17132,6 +17455,7 @@ msgstr "Loading budgets…"
 msgid "Loading capabilities…"
 msgstr "Loading capabilities…"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
@@ -17585,7 +17909,6 @@ msgid "Logout"
 msgstr "Logout"
 
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/webapp-display/AppStatusLine.tsx
 msgid "Logs"
 msgstr "Logs"
 
@@ -18690,6 +19013,11 @@ msgstr "Needs values"
 msgid "Needs you — above"
 msgstr "Needs you — above"
 
+#. placeholder {0}: record.failure?.text || record.detail
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Needs you: {0}"
+msgstr "Needs you: {0}"
+
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Needs your approval"
 msgstr "Needs your approval"
@@ -19015,6 +19343,10 @@ msgstr "New team"
 msgid "New Terminal"
 msgstr "New Terminal"
 
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "New test run"
+msgstr "New test run"
+
 #: src/components/credentials/VariableDetails.tsx
 msgid "New variable"
 msgstr "New variable"
@@ -19104,17 +19436,17 @@ msgstr "next: {0}"
 msgid "Next: {0}"
 msgstr "Next: {0}"
 
-#: src/components/webapp-display/PageCheckPanel.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Next: check again"
 msgstr "Next: check again"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Next: open the page and check it for errors"
-msgstr "Next: open the page and check it for errors"
+#~ msgid "Next: open the page and check it for errors"
+#~ msgstr "Next: open the page and check it for errors"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Next: show the app"
-msgstr "Next: show the app"
+#~ msgid "Next: show the app"
+#~ msgstr "Next: show the app"
 
 #: src/components/data-sources/DataDriversView.tsx
 msgid "no"
@@ -19303,7 +19635,7 @@ msgstr "No channel links to this agent yet"
 msgid "No channel reaches this Agent yet. Give it an email address to start."
 msgstr "No channel reaches this Agent yet. Give it an email address to start."
 
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/useOpenChart.ts
 msgid "No chart named “{ref}” in this project"
 msgstr "No chart named “{ref}” in this project"
 
@@ -19411,6 +19743,10 @@ msgstr "no cost cap"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
 msgstr "No data available"
+
+#: src/components/assets/editor/chart/useOpenChart.ts
+msgid "No data schema named “{kind}” in this project"
+msgstr "No data schema named “{kind}” in this project"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "No data sources in this project yet"
@@ -19555,6 +19891,14 @@ msgstr "No events yet"
 msgid "No feed items"
 msgstr "No feed items"
 
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "No file at the link's path. Did you mean one of these for {name}?"
+msgstr "No file at the link's path. Did you mean one of these for {name}?"
+
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "No file named {name} was found."
+msgstr "No file named {name} was found."
+
 #: src/components/code-editor/EditorFileTree.tsx
 msgid "No file tree for this location"
 msgstr "No file tree for this location"
@@ -19618,6 +19962,10 @@ msgstr "No GitHub repos linked"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "no guides published"
 msgstr "no guides published"
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "No handlings yet. A failure no handling knows goes to recovery, which adds one for it."
+msgstr "No handlings yet. A failure no handling knows goes to recovery, which adds one for it."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "No help desk in this repository"
@@ -19760,6 +20108,10 @@ msgstr "No machine data available"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "No machine is waiting on that code. Check the code, or run flow connect again — codes expire after 15 minutes."
 msgstr "No machine is waiting on that code. Check the code, or run flow connect again — codes expire after 15 minutes."
+
+#: src/components/links/link-handlers.ts
+msgid "No machine to open a terminal on"
+msgstr "No machine to open a terminal on"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "No machine yet"
@@ -20180,8 +20532,8 @@ msgid "No rule code to show."
 msgstr "No rule code to show."
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
-msgstr "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
+#~ msgid "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
+#~ msgstr "No rules yet. An error no rule knows goes to recovery, which adds a rule for it."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "No run"
@@ -20389,6 +20741,14 @@ msgstr "No terminal or chat is attached to this process. Restart it to spawn a f
 msgid "No terminal process was found for session {0}."
 msgstr "No terminal process was found for session {0}."
 
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "No test runs yet"
+msgstr "No test runs yet"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "No test yet — an agent writes one"
+msgstr "No test yet — an agent writes one"
+
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "No timeline data in this trace."
 msgstr "No timeline data in this trace."
@@ -20575,6 +20935,7 @@ msgid "None yet."
 msgstr "None yet."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "None."
 msgstr "None."
@@ -20613,7 +20974,6 @@ msgstr "Not available in Local mode"
 msgid "Not checked"
 msgstr "Not checked"
 
-#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Not checked yet"
 msgstr "Not checked yet"
@@ -20684,6 +21044,10 @@ msgstr "Not found"
 #~ msgid "Not in a git repository — can't be published"
 #~ msgstr "Not in a git repository — can't be published"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "not in a vault yet"
+msgstr "not in a vault yet"
+
 #~ msgid "Not indexed here yet — install it from its origin"
 #~ msgstr "Not indexed here yet — install it from its origin"
 
@@ -20726,6 +21090,7 @@ msgstr "Not logged in · Please run /login"
 #~ msgstr "Not needed here: mark its values optional"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/project-home/MissingDependenciesDialog.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
@@ -20761,7 +21126,6 @@ msgstr "Not published yet"
 msgid "Not pushed yet"
 msgstr "Not pushed yet"
 
-#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/inbound/RouteCheck.tsx
 msgid "not reachable"
 msgstr "not reachable"
@@ -20779,6 +21143,10 @@ msgstr "Not ready yet"
 #~ msgid "not respected"
 #~ msgstr "not respected"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Not run on this machine yet"
+msgstr "Not run on this machine yet"
+
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "not run yet"
@@ -20793,6 +21161,7 @@ msgid "Not runnable here"
 msgstr "Not runnable here"
 
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "not running"
 msgstr "not running"
 
@@ -20804,12 +21173,10 @@ msgstr "Not running"
 msgid "Not saved"
 msgstr "Not saved"
 
-#. placeholder {0}: err instanceof Error ? err.message : String(err)
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Not saved: {0}"
-msgstr "Not saved: {0}"
+#~ msgid "Not saved: {0}"
+#~ msgstr "Not saved: {0}"
 
-#: src/components/assets/editor/GitShareBar.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -20868,10 +21235,9 @@ msgstr "Not started"
 msgid "Not started yet — its terminal appears when the deployment first runs."
 msgstr "Not started yet — its terminal appears when the deployment first runs."
 
-#. placeholder {0}: err instanceof Error ? err.message : String(err)
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Not submitted: {0}"
-msgstr "Not submitted: {0}"
+#~ msgid "Not submitted: {0}"
+#~ msgstr "Not submitted: {0}"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Not sure, so no"
@@ -21592,6 +21958,7 @@ msgstr "Open"
 #. placeholder {0}: file.path
 #. placeholder {0}: item.label
 #: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
@@ -21617,6 +21984,7 @@ msgid "Open {key} in {fileName} at line {line}"
 msgstr "Open {key} in {fileName} at line {line}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/editor/chart/C4ChartView.tsx
 msgid "Open {label}"
 msgstr "Open {label}"
 
@@ -21650,6 +22018,8 @@ msgstr "Open {vendorLabel} in an OS terminal here"
 msgid "Open {workerName} terminal"
 msgstr "Open {workerName} terminal"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Open ↗"
 msgstr "Open ↗"
@@ -22442,8 +22812,8 @@ msgid "Opening {name}…"
 msgstr "Opening {name}…"
 
 #: src/components/webapp-display/WebappSetupGate.tsx
-msgid "Opening app…"
-msgstr "Opening app…"
+#~ msgid "Opening app…"
+#~ msgstr "Opening app…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"
@@ -22462,8 +22832,8 @@ msgid "Opening your agent…"
 msgstr "Opening your agent…"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Opening your app…"
-msgstr "Opening your app…"
+#~ msgid "Opening your app…"
+#~ msgstr "Opening your app…"
 
 #: src/pages/entry/InvitePage.tsx
 msgid "Opening your invite…"
@@ -22551,8 +22921,8 @@ msgid "Or pick a person, or type an email"
 msgstr "Or pick a person, or type an email"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Or recover it, if the page throws an error."
-msgstr "Or recover it, if the page throws an error."
+#~ msgid "Or recover it, if the page throws an error."
+#~ msgstr "Or recover it, if the page throws an error."
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "or script (relative to the flow folder)"
@@ -22826,8 +23196,8 @@ msgid "Page {page} of {totalPages}"
 msgstr "Page {page} of {totalPages}"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Page errors are not reported — the app opens without a check."
-msgstr "Page errors are not reported — the app opens without a check."
+#~ msgid "Page errors are not reported — the app opens without a check."
+#~ msgstr "Page errors are not reported — the app opens without a check."
 
 #: src/components/ui/pagination.tsx
 msgid "pagination"
@@ -22890,12 +23260,16 @@ msgid "Part of a setup — see its progress"
 msgstr "Part of a setup — see its progress"
 
 #: src/components/webapp-display/messages.tsx
-msgid "Part of your app didn't load."
-msgstr "Part of your app didn't load."
+#~ msgid "Part of your app didn't load."
+#~ msgstr "Part of your app didn't load."
 
 #: src/components/assets/editor/chart/SequenceChartView.tsx
-msgid "Participant · click to comment"
-msgstr "Participant · click to comment"
+msgid "Participant"
+msgstr "Participant"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+#~ msgid "Participant · click to comment"
+#~ msgstr "Participant · click to comment"
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Participants"
@@ -22934,6 +23308,10 @@ msgstr "Past questions"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Past runs stay in the history."
 msgstr "Past runs stay in the history."
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Past test runs"
+msgstr "Past test runs"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Paste"
@@ -23474,6 +23852,10 @@ msgstr "Please fill in both fields"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Please fix the issue in your repository and try again."
 msgstr "Please fix the issue in your repository and try again."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Please give me read access to vault {vault} of {projectName}, so I can fetch {title}."
+msgstr "Please give me read access to vault {vault} of {projectName}, so I can fetch {title}."
 
 #: src/components/credentials-view/LoginRequiredPanel.tsx
 msgid "Please log in to manage credentials."
@@ -24275,6 +24657,7 @@ msgstr "Public repos are already open to everyone."
 
 #: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
+#: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Publish"
 msgstr "Publish"
 
@@ -24297,6 +24680,10 @@ msgstr "Publish this agent to share it"
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
 msgstr "Publish this agent to the cloud and give it a machine that logs in as itself."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Publish to vault {vault}"
+#~ msgstr "Publish to vault {vault}"
 
 #~ msgid "published"
 #~ msgstr "published"
@@ -24331,6 +24718,10 @@ msgstr "Published from a folder on the publisher's machine"
 msgid "Published to the project."
 msgstr "Published to the project."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Published to the project's secret manager; recipients fetch them from there."
+msgstr "Published to the project's secret manager; recipients fetch them from there."
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Published version — edit it on the author's computer"
@@ -24344,6 +24735,7 @@ msgstr "Published version up to date"
 msgid "Published when you deploy"
 msgstr "Published when you deploy"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
 #: src/components/status-bar/GitPullButton.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
@@ -24356,6 +24748,10 @@ msgstr "Pull"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Pull {0}"
 msgstr "Pull {0}"
+
+#: src/components/assets/editor/GitShareBar.tsx
+#~ msgid "Pull {0}?"
+#~ msgstr "Pull {0}?"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
@@ -24613,8 +25009,8 @@ msgid "Reading projects…"
 msgstr "Reading projects…"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Reading setup/recovery.md first · {toolCount} steps so far"
-msgstr "Reading setup/recovery.md first · {toolCount} steps so far"
+#~ msgid "Reading setup/recovery.md first · {toolCount} steps so far"
+#~ msgstr "Reading setup/recovery.md first · {toolCount} steps so far"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Reading the data model…"
@@ -24640,8 +25036,12 @@ msgid "Reading…"
 msgstr "Reading…"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Reads and updates setup/recovery.md and setup/webapp_errors.json."
-msgstr "Reads and updates setup/recovery.md and setup/webapp_errors.json."
+#~ msgid "Reads and updates setup/recovery.md and setup/webapp_errors.json."
+#~ msgstr "Reads and updates setup/recovery.md and setup/webapp_errors.json."
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Reads and updates setup/recovery.md and setup/webapp_handlings.json."
+msgstr "Reads and updates setup/recovery.md and setup/webapp_handlings.json."
 
 #: src/components/assets/DependencyChips.tsx
 msgid "ready"
@@ -24653,10 +25053,9 @@ msgstr "ready"
 msgid "Ready"
 msgstr "Ready"
 
-#. placeholder {0}: check.at
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Ready · last check {0}"
-msgstr "Ready · last check {0}"
+#~ msgid "Ready · last check {0}"
+#~ msgstr "Ready · last check {0}"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
 msgid "ready · Open"
@@ -24756,6 +25155,10 @@ msgstr "Received project"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Received project — review before installing."
 msgstr "Received project — review before installing."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Receiving secrets requires a secret manager vault on the project."
+msgstr "Receiving secrets requires a secret manager vault on the project."
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Recency Boost"
@@ -24868,12 +25271,12 @@ msgid "recover"
 msgstr "recover"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Recover"
-msgstr "Recover"
+#~ msgid "Recover"
+#~ msgstr "Recover"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Recover — an agent repairs the app"
-msgstr "Recover — an agent repairs the app"
+#~ msgid "Recover — an agent repairs the app"
+#~ msgstr "Recover — an agent repairs the app"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Recover it from the workdir, or pick a new project via the project chip."
@@ -24882,6 +25285,11 @@ msgstr "Recover it from the workdir, or pick a new project via the project chip.
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Recover project"
 msgstr "Recover project"
+
+#. placeholder {0}: record.recovery || record.detail
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Recovering: {0}"
+msgstr "Recovering: {0}"
 
 #: src/components/terminal/project-list-menu.tsx
 msgid "Recovery failed"
@@ -25042,6 +25450,10 @@ msgstr "Reject"
 #: src/components/harness-login/funding-pill.ts
 msgid "Rejected"
 msgstr "Rejected"
+
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Relation"
+msgstr "Relation"
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
@@ -25291,8 +25703,8 @@ msgid "Remove session from this message"
 msgstr "Remove session from this message"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Remove the image"
-msgstr "Remove the image"
+#~ msgid "Remove the image"
+#~ msgstr "Remove the image"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
@@ -25480,8 +25892,8 @@ msgid "Replace existing"
 msgstr "Replace existing"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Replace image"
-msgstr "Replace image"
+#~ msgid "Replace image"
+#~ msgstr "Replace image"
 
 #: src/components/conversation/asset-review/ReplacePrompt.tsx
 msgid "Replace it"
@@ -25585,6 +25997,7 @@ msgstr "Repo:"
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Report"
 msgstr "Report"
@@ -25651,6 +26064,7 @@ msgid "Request"
 msgstr "Request"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Request access"
 msgstr "Request access"
 
@@ -25666,6 +26080,7 @@ msgstr "Request status"
 msgid "requested"
 msgstr "requested"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Requested"
 msgstr "Requested"
@@ -25874,7 +26289,6 @@ msgstr "REST API"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#: src/components/webapp-display/AppStatusLine.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -25912,8 +26326,8 @@ msgid "Restart setup"
 msgstr "Restart setup"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Restart the app's server"
-msgstr "Restart the app's server"
+#~ msgid "Restart the app's server"
+#~ msgstr "Restart the app's server"
 
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
@@ -26047,8 +26461,8 @@ msgid "Retry"
 msgstr "Retry"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
-msgid "Retry download"
-msgstr "Retry download"
+#~ msgid "Retry download"
+#~ msgstr "Retry download"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #~ msgid "Retry pull"
@@ -26331,6 +26745,7 @@ msgstr "Rules — the most specific wins: sender › group › everything else"
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Run"
 msgstr "Run"
@@ -26454,6 +26869,18 @@ msgstr "Run from your terminal, then restart Flowpad:"
 msgid "Run headless"
 msgstr "Run headless"
 
+#: src/components/links/LinkMenu.tsx
+msgid "Run in chat"
+msgstr "Run in chat"
+
+#: src/components/links/LinkMenu.tsx
+msgid "Run in external terminal"
+msgstr "Run in external terminal"
+
+#: src/components/links/LinkMenu.tsx
+msgid "Run in Flowpad terminal"
+msgstr "Run in Flowpad terminal"
+
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
 msgid "Run in terminal"
@@ -26561,6 +26988,14 @@ msgstr "Run this agent on its own, at a time you pick. Runs are headless and sho
 #~ msgid "Run this as a prompt on {hostName}'s machine"
 #~ msgstr "Run this as a prompt on {hostName}'s machine"
 
+#: src/components/links/LinkMenu.tsx
+msgid "Run this command?"
+msgstr "Run this command?"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Run this credential's test"
+msgstr "Run this credential's test"
+
 #: src/components/collaboration/useApproveLiveSession.tsx
 msgid "Run this live session in which project?"
 msgstr "Run this live session in which project?"
@@ -26572,7 +27007,6 @@ msgstr "Run:"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
-#: src/components/webapp-display/AppStatusLine.tsx
 msgid "running"
 msgstr "running"
 
@@ -26645,6 +27079,10 @@ msgstr "Running the old definition — Restart to apply"
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Running the setup. Steps that pass stay green; you are asked only for what is missing."
 msgstr "Running the setup. Steps that pass stay green; you are asked only for what is missing."
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "running, with problems"
+msgstr "running, with problems"
 
 #: src/components/account/settings-section.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -26807,12 +27245,12 @@ msgstr "Sandbox upgraded"
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
-#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -26912,10 +27350,9 @@ msgstr "Saved — it will send after you sign in"
 msgid "Saved — Restart runs it"
 msgstr "Saved — Restart runs it"
 
-#. placeholder {0}: rows.length
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Saved ({0})"
-msgstr "Saved ({0})"
+#~ msgid "Saved ({0})"
+#~ msgstr "Saved ({0})"
 
 #. placeholder {0}: payload.assetLabel
 #. placeholder {1}: result.version ?? ''
@@ -27188,6 +27625,19 @@ msgstr "Scroll to bottom"
 msgid "scroll to navigate"
 msgstr "scroll to navigate"
 
+#. placeholder {0}: changes ? ' · click an element to change it' : ''
+#: src/components/assets/editor/chart/C4ChartView.tsx
+msgid "Scroll to zoom · drag to pan{0}"
+msgstr "Scroll to zoom · drag to pan{0}"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Sealed on this computer for each recipient's Flowpad — only they can open them."
+msgstr "Sealed on this computer for each recipient's Flowpad — only they can open them."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Sealed values"
+msgstr "Sealed values"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -27427,6 +27877,10 @@ msgstr "Searching…"
 msgid "Secret (mask value)"
 msgstr "Secret (mask value)"
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Secret access request"
+msgstr "Secret access request"
+
 #: src/components/quick-create/registry.ts
 msgid "Secret created"
 msgstr "Secret created"
@@ -27434,6 +27888,15 @@ msgstr "Secret created"
 #: src/components/account/secrets-section.tsx
 msgid "Secret deleted"
 msgstr "Secret deleted"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "secret manager"
+msgstr "secret manager"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Secret manager"
+msgstr "Secret manager"
 
 #~ msgid "Secret Origin"
 #~ msgstr "Secret Origin"
@@ -27459,6 +27922,18 @@ msgstr "Secrets are stored write-only on the hub — nobody can read them back."
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
 msgstr "Secrets enabled"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "secured transfer"
+msgstr "secured transfer"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Secured transfer"
+msgstr "Secured transfer"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Secured transfer — only the recipients can open the values."
+msgstr "Secured transfer — only the recipients can open the values."
 
 #. placeholder {0}: results.length
 #: src/pages/home-landing/InlineSearchResults.tsx
@@ -27770,8 +28245,8 @@ msgid "Send message"
 msgstr "Send message"
 
 #: src/components/assets/editor/GitShareBar.tsx
-msgid "Send my edits back"
-msgstr "Send my edits back"
+#~ msgid "Send my edits back"
+#~ msgstr "Send my edits back"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
@@ -27987,8 +28462,8 @@ msgid "Session {0} is not in Claude, Codex, or Copilot history."
 msgstr "Session {0} is not in Claude, Codex, or Copilot history."
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "session {session} not found"
-msgstr "session {session} not found"
+#~ msgid "session {session} not found"
+#~ msgstr "session {session} not found"
 
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
@@ -28137,6 +28612,11 @@ msgstr "sessions: {sessions}"
 msgid "set"
 msgstr "set"
 
+#. placeholder {0}: v.env_var
+#: src/components/credentials-view/CredentialView.tsx
+msgid "Set {0}"
+msgstr "Set {0}"
+
 #: src/components/token-plan/BudgetHero.tsx
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Set budget"
@@ -28251,6 +28731,10 @@ msgstr "Set up LLM"
 msgid "Set up project"
 msgstr "Set up project"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Set up secret manager"
+#~ msgstr "Set up secret manager"
+
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "Set up team budget"
 #~ msgstr "Set up team budget"
@@ -28264,9 +28748,13 @@ msgstr "Set values"
 #~ msgstr "Set{0}"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
-#: src/components/webapp-display/WebappSetupOverlay.tsx
 msgid "Setting things up"
 msgstr "Setting things up"
+
+#. placeholder {0}: record.detail || record.state
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Setting up — {0}"
+msgstr "Setting up — {0}"
 
 #. placeholder {0}: now.label
 #: src/components/project-setup/ProjectSetupDialog.tsx
@@ -28474,6 +28962,10 @@ msgstr "Share project"
 msgid "Share sandbox"
 msgstr "Share sandbox"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share secrets"
+msgstr "Share secrets"
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 #~ msgid "Share the agent with someone first — the link only works for people it's shared with."
 #~ msgstr "Share the agent with someone first — the link only works for people it's shared with."
@@ -28516,6 +29008,10 @@ msgstr "Share to conversation"
 #~ msgid "Share using Git origin"
 #~ msgstr "Share using Git origin"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share values"
+msgstr "Share values"
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Share with team"
 msgstr "Share with team"
@@ -28557,6 +29053,11 @@ msgstr "Shared Task"
 #: src/pages/entry/MessageLanding.tsx
 msgid "Shared Task: {taskTitle}"
 msgstr "Shared Task: {taskTitle}"
+
+#. placeholder {0}: vaults.join(', ')
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Shared through the project's vaults: <0>{0}</0>"
+msgstr "Shared through the project's vaults: <0>{0}</0>"
 
 #: src/components/conversation/task-it.tsx
 msgid "Shared via cloud"
@@ -28640,6 +29141,10 @@ msgstr "Shell unavailable"
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "shipped"
 msgstr "shipped"
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Shipped handlings"
+msgstr "Shipped handlings"
 
 #: src/pages/entry/useOpenFlowpad.ts
 msgid "Short-lived key for Open-in-FlowPad deep link"
@@ -28736,6 +29241,11 @@ msgstr "Show hidden path segments"
 #: src/components/code-editor/SnippetView.tsx
 msgid "Show imports"
 msgstr "Show imports"
+
+#. placeholder {0}: target.label
+#: src/components/browseable-tree/BrowseableTree.tsx
+msgid "Show in {0}"
+msgstr "Show in {0}"
 
 #: src/components/links/LinkMenu.tsx
 msgid "Show in Display"
@@ -28979,6 +29489,11 @@ msgstr "Sign in first, then this source can fund a run."
 msgid "Sign in to {0}"
 msgstr "Sign in to {0}"
 
+#. placeholder {0}: chosen.title
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Sign in to {0} first, then save again."
+msgstr "Sign in to {0} first, then save again."
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Sign in to {name}"
 msgstr "Sign in to {name}"
@@ -29038,6 +29553,10 @@ msgstr "Sign in to see who's a member"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Sign in to the hub to deploy to a cloud machine."
 msgstr "Sign in to the hub to deploy to a cloud machine."
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Sign in to the secret manager first (the project setup), then fetch again."
+msgstr "Sign in to the secret manager first (the project setup), then fetch again."
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
@@ -29539,8 +30058,8 @@ msgid "Someone else is using this machine"
 msgstr "Someone else is using this machine"
 
 #: src/components/webapp-display/messages.tsx
-msgid "Something is using this port, but it isn't your app."
-msgstr "Something is using this port, but it isn't your app."
+#~ msgid "Something is using this port, but it isn't your app."
+#~ msgstr "Something is using this port, but it isn't your app."
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
@@ -29783,8 +30302,8 @@ msgid "Start"
 msgstr "Start"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
-msgid "Start — starting the app's server"
-msgstr "Start — starting the app's server"
+#~ msgid "Start — starting the app's server"
+#~ msgstr "Start — starting the app's server"
 
 #. placeholder {0}: workerLabel(worker)
 #: src/components/workers/ContextWorkerToolbar.tsx
@@ -29974,8 +30493,8 @@ msgstr "Starting the session without the attached files."
 
 #: src/components/webapp-display/messages.tsx
 #: src/components/webapp-display/WebappDisplay.tsx
-msgid "Starting your app…"
-msgstr "Starting your app…"
+#~ msgid "Starting your app…"
+#~ msgstr "Starting your app…"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Starting your sandbox…"
@@ -30106,7 +30625,6 @@ msgstr "Still working — waiting on the cloud. This can take a minute."
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
-#: src/components/webapp-display/AppStatusLine.tsx
 msgid "Stop"
 msgstr "Stop"
 
@@ -30305,10 +30823,9 @@ msgstr "Subject"
 msgid "Submit"
 msgstr "Submit"
 
-#. placeholder {0}: openRows.length
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Submit ({0})"
-msgstr "Submit ({0})"
+#~ msgid "Submit ({0})"
+#~ msgstr "Submit ({0})"
 
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "Submit answer"
@@ -30519,6 +31036,10 @@ msgstr "system"
 msgid "System"
 msgstr "System"
 
+#: src/components/links/LinkMenu.tsx
+msgid "System default"
+msgstr "System default"
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
 msgid "System Diagnoses"
@@ -30548,6 +31069,10 @@ msgstr "System prompt"
 #~ msgid "System-installed triggers are seeded at boot via <0>set_service_triggers()</0>. User-driven creation is API-only for now (UI builder coming soon)."
 #~ msgstr "System-installed triggers are seeded at boot via <0>set_service_triggers()</0>. User-driven creation is API-only for now (UI builder coming soon)."
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "systems, containers and components, zoomable level by level"
+msgstr "systems, containers and components, zoomable level by level"
+
 #: src/i18n/type-labels.ts
 msgid "Tab"
 msgstr "Tab"
@@ -30556,7 +31081,7 @@ msgstr "Tab"
 msgid "Tab failed to open"
 msgstr "Tab failed to open"
 
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 msgid "Table"
 msgstr "Table"
 
@@ -30801,6 +31326,7 @@ msgstr "test"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/TestPanel.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials/CredentialTestButton.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
@@ -30808,6 +31334,11 @@ msgstr "test"
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Test"
 msgstr "Test"
+
+#. placeholder {0}: drawer.title
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Test {0}"
+msgstr "Test {0}"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
@@ -30830,6 +31361,10 @@ msgstr "test run"
 #: src/components/automations/automation-words.ts
 msgid "Test run: {base}"
 msgstr "Test run: {base}"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "Test runs"
+msgstr "Test runs"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 #~ msgid "Test trigger"
@@ -30953,6 +31488,10 @@ msgstr "The agent left work running in the background. You can keep chatting. St
 msgid "The agent this link names isn't in the project's files."
 msgstr "The agent this link names isn't in the project's files."
 
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "The agent writes this credential's test."
+msgstr "The agent writes this credential's test."
+
 #: src/components/agent-resources/AgentWebhooksSection.tsx
 msgid "The agent's machine may use it"
 msgstr "The agent's machine may use it"
@@ -31056,6 +31595,14 @@ msgstr "The credential is removed from your account. No project is using it righ
 #: src/components/connections-manager.tsx
 msgid "The credential was removed from your account."
 msgstr "The credential was removed from your account."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The credential was shared, but its values could not be sent securely."
+msgstr "The credential was shared, but its values could not be sent securely."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
+#~ msgstr "The credential's spec travels with the project; its values travel only through the secret manager: your local value goes into it, and the spec carries the secret's location."
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The credentials could not be saved."
@@ -31346,12 +31893,20 @@ msgid "the other participant"
 msgstr "the other participant"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "The page is loading. It opens as soon as it loads without errors."
-msgstr "The page is loading. It opens as soon as it loads without errors."
+#~ msgid "The page is loading. It opens as soon as it loads without errors."
+#~ msgstr "The page is loading. It opens as soon as it loads without errors."
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "The page loads and reports its errors; each is decided by the rules below."
-msgstr "The page loads and reports its errors; each is decided by the rules below."
+#~ msgid "The page loads and reports its errors; each is decided by the rules below."
+#~ msgstr "The page loads and reports its errors; each is decided by the rules below."
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "The page loads and reports its errors; each is matched against the handlings below."
+msgstr "The page loads and reports its errors; each is matched against the handlings below."
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+#~ msgid "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
+#~ msgstr "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
@@ -31407,10 +31962,16 @@ msgstr "The provider is fixed once a budget exists."
 msgid "The provider rejected the stored token."
 msgstr "The provider rejected the stored token."
 
+#. placeholder {0}: result?.at
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "The provider took the key ({0})"
+msgstr "The provider took the key ({0})"
+
 #: src/components/rag/RagView.tsx
 msgid "The query failed"
 msgstr "The query failed"
 
+#: src/components/conversation/ShareReplyCard.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "The receiver"
 msgstr "The receiver"
@@ -31420,8 +31981,8 @@ msgid "The recipient will see a PROMPT to approve."
 msgstr "The recipient will see a PROMPT to approve."
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "The repair counts only when the page loads clean."
-msgstr "The repair counts only when the page loads clean."
+#~ msgid "The repair counts only when the page loads clean."
+#~ msgstr "The repair counts only when the page loads clean."
 
 #~ msgid "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
 #~ msgstr "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
@@ -31456,6 +32017,12 @@ msgstr "The selected entity has no name yet. Choose one — it will be saved to 
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "The selected project has no folder on this machine."
 msgstr "The selected project has no folder on this machine."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "the sender"
+msgstr "the sender"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "the sender is still staging it"
@@ -31494,6 +32061,10 @@ msgstr "The setup wizard is not installed."
 msgid "The share was sent, but a link could not be created."
 msgstr "The share was sent, but a link could not be created."
 
+#: src/lib/publish-state.ts
+msgid "The shared changes are now in your project."
+msgstr "The shared changes are now in your project."
+
 #: src/components/ask/AskChoiceBlock.tsx
 msgid "The sign-in did not finish."
 msgstr "The sign-in did not finish."
@@ -31523,8 +32094,12 @@ msgid "The source was not removed."
 msgstr "The source was not removed."
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "The start command; a rule whose fix is “restart” restarts it without an agent."
-msgstr "The start command; a rule whose fix is “restart” restarts it without an agent."
+msgid "The start command; a handling whose action is “restart” restarts it without an agent."
+msgstr "The start command; a handling whose action is “restart” restarts it without an agent."
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+#~ msgid "The start command; a rule whose fix is “restart” restarts it without an agent."
+#~ msgstr "The start command; a rule whose fix is “restart” restarts it without an agent."
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "The stored API key for this provider is removed from this machine. You can add it again later."
@@ -31545,6 +32120,10 @@ msgstr "The task is now a folder in the project."
 #: src/navigation/NavigationActions.ts
 #~ msgid "The terminal is not ready yet"
 #~ msgstr "The terminal is not ready yet"
+
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "The test did not run."
+msgstr "The test did not run."
 
 #. placeholder {0}: made.claim?.key
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -31569,13 +32148,30 @@ msgstr "The value is stored in your operating system keychain and never readable
 #~ msgid "The value is written to this project's .env.local and stays on this machine."
 #~ msgstr "The value is written to this project's .env.local and stays on this machine."
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "The values could not be filled in."
+msgstr "The values could not be filled in."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "The values go straight into your credential — they are not shown here."
+msgstr "The values go straight into your credential — they are not shown here."
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "the vault"
 msgstr "the vault"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "The vault holds no value for it yet — ask the owner to publish it."
+msgstr "The vault holds no value for it yet — ask the owner to publish it."
+
 #: src/components/assets/editor/GitShareBar.tsx
 msgid "The version that was shared with you"
 msgstr "The version that was shared with you"
+
+#: src/components/assets/editor/chart/chartControls.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
+msgid "the whole chart"
+msgstr "the whole chart"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -31648,6 +32244,11 @@ msgstr "These conversations exist only on this device."
 msgid "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
 msgstr "These react to what a coding agent is doing — before a tool runs, when a turn ends — and decide in code. Each is a folder with a record.json and a trigger.py."
 
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "These values can't be opened here — ask {0} to share again."
+msgstr "These values can't be opened here — ask {0} to share again."
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "They approve the steps and what you sent along, describe the issue, and decide whether the result is sent to you."
 msgstr "They approve the steps and what you sent along, describe the issue, and decide whether the result is sent to you."
@@ -31661,6 +32262,10 @@ msgstr "They are still in the list — Execute to try again."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "They reported"
 msgstr "They reported"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "They were sent before this Flowpad could receive them — get them now, it takes a moment."
+msgstr "They were sent before this Flowpad could receive them — get them now, it takes a moment."
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
@@ -31803,6 +32408,11 @@ msgstr "This budget is not available to you"
 msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
 
+#. placeholder {0}: chart?.format
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "This chart is a “{0}” chart, which needs a newer Flowpad to open."
+msgstr "This chart is a “{0}” chart, which needs a newer Flowpad to open."
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."
 msgstr "This chat has no resumable session."
@@ -31845,6 +32455,10 @@ msgstr "This conversation came from a project called \"{remoteProjectName}\" on 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This conversation came from a project on another machine. Pick the local project folder it should map to."
 msgstr "This conversation came from a project on another machine. Pick the local project folder it should map to."
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "This conversation has no project to grant from."
+msgstr "This conversation has no project to grant from."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "This conversation is local-only. It will be removed from this device."
@@ -32190,6 +32804,7 @@ msgstr "this project"
 #: src/components/automations/AutomationsList.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "This project"
 msgstr "This project"
@@ -32240,6 +32855,10 @@ msgstr "This project has no dataset."
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This project has no folder on disk and can't be opened."
 msgstr "This project has no folder on disk and can't be opened."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This project has no secret manager yet — Share secrets continues to set one up."
+msgstr "This project has no secret manager yet — Share secrets continues to set one up."
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "This project has no secrets declared yet."
@@ -32687,6 +33306,7 @@ msgstr "Title"
 msgid "to"
 msgstr "to"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -33082,8 +33702,6 @@ msgstr "Triggers"
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
-#: src/components/webapp-display/PageCheckPanel.tsx
-#: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
@@ -33217,6 +33835,10 @@ msgstr "Type your first message…"
 #: src/i18n/pref-labels.ts
 msgid "Ui"
 msgstr "Ui"
+
+#: src/components/version-popover/hub-release-label.tsx
+msgid "UI"
+msgstr "UI"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "UI & Display"
@@ -33479,6 +34101,10 @@ msgstr "Untitled task"
 #~ msgid "Untracked sharing"
 #~ msgstr "Untracked sharing"
 
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+msgid "Up"
+msgstr "Up"
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "up to date"
 msgstr "up to date"
@@ -33489,6 +34115,13 @@ msgstr "up to date"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Up to date"
 msgstr "Up to date"
+
+#. placeholder {0}: record.detail
+#. placeholder {0}: record.failure?.text || record.detail
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Up, with problems: {0}"
+msgstr "Up, with problems: {0}"
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -33501,7 +34134,7 @@ msgid "Update ({0} newer)"
 msgstr "Update ({0} newer)"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
-#: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-chip.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Update available"
@@ -33511,6 +34144,7 @@ msgstr "Update available"
 msgid "Update channel for auto-updates"
 msgstr "Update channel for auto-updates"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
 msgstr "Update CHART.md"
@@ -33978,6 +34612,11 @@ msgstr "Values for"
 msgid "Values live in"
 msgstr "Values live in"
 
+#. placeholder {0}: sealOutcome.sealed_for.length
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Values sealed for {0} recipient(s)."
+msgstr "Values sealed for {0} recipient(s)."
+
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
 msgstr "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
@@ -34003,6 +34642,11 @@ msgstr "Variables"
 
 #~ msgid "Vault"
 #~ msgstr "Vault"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Vault name"
+msgstr "Vault name"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Vault root"
@@ -34098,7 +34742,7 @@ msgid "Vibe only"
 msgstr "Vibe only"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -34278,6 +34922,10 @@ msgstr "Visitors can try this agent"
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "Waiting for {hostName} to approve the live session…"
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Waiting for {waiting} recipient(s) · only they can open them"
+msgstr "Waiting for {waiting} recipient(s) · only they can open them"
+
 #: src/components/connections-manager.tsx
 msgid "Waiting for approval…"
 msgstr "Waiting for approval…"
@@ -34319,6 +34967,10 @@ msgstr "waiting for the first signed delivery…"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Waiting for the link"
 msgstr "Waiting for the link"
+
+#: src/components/webapp-display/PageCheckPanel.tsx
+#~ msgid "Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)"
+#~ msgstr "Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)"
 
 #: src/components/ask/AskChoiceBlock.tsx
 #~ msgid "Waiting for the sign-in…"
@@ -34420,8 +35072,8 @@ msgid "Ways to answer"
 msgstr "Ways to answer"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "We could not recover the app"
-msgstr "We could not recover the app"
+#~ msgid "We could not recover the app"
+#~ msgstr "We could not recover the app"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "We couldn't confirm this sign-in: {statusReason}"
@@ -34648,13 +35300,14 @@ msgstr "What it worked on"
 #~ msgid "What Published does"
 #~ msgstr "What Published does"
 
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "What should change here?"
 msgstr "What should change here?"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "What should change? (paste an image here too)"
-msgstr "What should change? (paste an image here too)"
+#~ msgid "What should change? (paste an image here too)"
+#~ msgstr "What should change? (paste an image here too)"
 
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "What should issue your LLM calls?"
@@ -34931,9 +35584,10 @@ msgstr "Who was given how much, and by whom"
 msgid "Who's spending"
 msgstr "Who's spending"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
-msgid "Whole chart"
-msgstr "Whole chart"
+#~ msgid "Whole chart"
+#~ msgstr "Whole chart"
 
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
@@ -35379,6 +36033,11 @@ msgstr "You have a message"
 msgid "You have access to this {label}."
 msgstr "You have access to this {label}."
 
+#. placeholder {0}: denied.join(', ')
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "You have no access to vault {0} yet."
+msgstr "You have no access to vault {0} yet."
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "You have no budget you can hand out."
 msgstr "You have no budget you can hand out."
@@ -35485,44 +36144,44 @@ msgid "Your API Keys"
 msgstr "Your API Keys"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
-msgid "Your app crashed while loading — recovering it"
-msgstr "Your app crashed while loading — recovering it"
+#~ msgid "Your app crashed while loading — recovering it"
+#~ msgstr "Your app crashed while loading — recovering it"
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app is running, but parts of it may not work."
-msgstr "Your app is running, but parts of it may not work."
+#~ msgid "Your app is running, but parts of it may not work."
+#~ msgstr "Your app is running, but parts of it may not work."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app is running, but this page wasn't found."
-msgstr "Your app is running, but this page wasn't found."
+#~ msgid "Your app is running, but this page wasn't found."
+#~ msgstr "Your app is running, but this page wasn't found."
 
 #: src/components/webapp-display/WebappSetupOverlay.tsx
-msgid "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
-msgstr "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
+#~ msgid "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
+#~ msgstr "Your app is starting. Everything it needs comes up first — this page opens on the app when it is ready."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app isn't running right now."
-msgstr "Your app isn't running right now."
+#~ msgid "Your app isn't running right now."
+#~ msgstr "Your app isn't running right now."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app keeps redirecting to itself."
-msgstr "Your app keeps redirecting to itself."
+#~ msgid "Your app keeps redirecting to itself."
+#~ msgstr "Your app keeps redirecting to itself."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app loaded but is showing nothing."
-msgstr "Your app loaded but is showing nothing."
+#~ msgid "Your app loaded but is showing nothing."
+#~ msgstr "Your app loaded but is showing nothing."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app opened but crashed while starting."
-msgstr "Your app opened but crashed while starting."
+#~ msgid "Your app opened but crashed while starting."
+#~ msgstr "Your app opened but crashed while starting."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app started but hit an error while loading."
-msgstr "Your app started but hit an error while loading."
+#~ msgid "Your app started but hit an error while loading."
+#~ msgstr "Your app started but hit an error while loading."
 
 #: src/components/webapp-display/messages.tsx
-msgid "Your app started but stopped responding."
-msgstr "Your app started but stopped responding."
+#~ msgid "Your app started but stopped responding."
+#~ msgstr "Your app started but stopped responding."
 
 #: src/components/graph-view/webglSupport.tsx
 msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
@@ -35562,8 +36221,8 @@ msgid "Your display name"
 msgstr "Your display name"
 
 #: src/components/assets/editor/GitShareBar.tsx
-msgid "Your edits were sent back"
-msgstr "Your edits were sent back"
+#~ msgid "Your edits were sent back"
+#~ msgstr "Your edits were sent back"
 
 #~ msgid "Your FlowPad account"
 #~ msgstr "Your FlowPad account"
@@ -35576,6 +36235,10 @@ msgstr "Your group status report is ready"
 #: src/components/help/AskForHelpButton.tsx
 msgid "Your help requests"
 msgstr "Your help requests"
+
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Your local value of {credential} is copied into the vault, and the credential records where it is."
+msgstr "Your local value of {credential} is copied into the vault, and the credential records where it is."
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup and caption on this image will be lost."
@@ -35617,6 +36280,10 @@ msgstr "Your own provider key"
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Your own provider key. Usage is billed to your provider account."
 msgstr "Your own provider key. Usage is billed to your provider account."
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Your project is behind on {branch}. Pull to bring the shared version in."
+msgstr "Your project is behind on {branch}. Pull to bring the shared version in."
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
@@ -35685,6 +36352,11 @@ msgstr "zendesk, gmail"
 msgid "ZIP files will be added as codebase connections"
 msgstr "ZIP files will be added as codebase connections"
 
+#: src/components/assets/editor/chart/C4ChartView.tsx
+#~ msgid "Zoom"
+#~ msgstr "Zoom"
+
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-view/GraphView.tsx
@@ -35692,6 +36364,7 @@ msgstr "ZIP files will be added as codebase connections"
 msgid "Zoom in"
 msgstr "Zoom in"
 
+#: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-view/GraphView.tsx

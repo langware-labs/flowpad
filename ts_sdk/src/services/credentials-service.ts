@@ -47,6 +47,8 @@ export interface CredentialVarStatus {
   store: CredentialValueStore;
   /** A value exists in that store; for a `cli` variable, its check passed. */
   present: boolean;
+  /** Where this variable's shared value lives (`{vault, key}`); absent: not published yet. */
+  secret_ref?: { vault: string; key: string } | null;
   /** `ONE_OF`: the way this variable belongs to; empty = its own name. */
   way?: string;
   /** `cli`: the command that signs in on THIS machine; empty for every other kind. */
@@ -98,7 +100,21 @@ export interface CredentialStatusRow {
   setup_choice?: string;
   /** `ONE_OF`: how each way of several variables is offered, by way name (`CredentialSpec.ways`). */
   ways?: Record<string, CredentialWay>;
+  /** The credential declares a `test` (Test runs it; without one, Test asks an agent to write it). */
+  has_test?: boolean;
+  /** The last test run on this machine; absent = never tested here. */
+  test_result?: CredentialTestResult | null;
 }
+
+/** A credential test's answer — value-free. `untested`: it declares no test. */
+export interface CredentialTestResult {
+  state: 'ok' | 'invalid' | 'error' | 'untested';
+  detail: string;
+  at: string;
+}
+
+/** What `credentials/test` answers: the result, and whether the credential declares a test at all. */
+export type CredentialTestAnswer = CredentialTestResult & { has_test: boolean };
 
 export type CredentialKind = 'env' | 'oauth';
 
@@ -150,6 +166,9 @@ export interface CredentialsStatus {
   vault_enabled: boolean;
   credentials: CredentialStatusRow[];
   files: CredentialScopeFile[];
+  /** The project's vault names (`secret_vaults` in project_manifest.json) — where a teammate's
+   *  values are published and fetched. Empty: none. */
+  secret_vaults?: string[];
 }
 
 /** What a write answers: which credential, and where it lives. */
@@ -169,6 +188,48 @@ export interface StoreForgotten {
   kept: string[];
   /** Why the store could not be checked; every name counts as kept. */
   error: string;
+}
+
+/** One vault of the project: which secret manager holds it, and that manager's config. Never a value. */
+export interface SecretVault {
+  manager: string;
+  config: Record<string, unknown>;
+}
+
+/** A secret manager installed here (its `secret_manager.json`). */
+export interface SecretManagerInfo {
+  name: string;
+  title: string;
+  icon: string;
+  description: string;
+  config_fields: { name: string; label: string; required: boolean }[];
+  install: Record<string, string>;
+  login: Record<string, string>;
+  check: string;
+  grant: string;
+}
+
+/** What `publish` copied into a vault — names only. `not_here`: no value on this computer. */
+export interface SecretPublishResult {
+  published: string[];
+  not_here: string[];
+  vault: string;
+}
+
+/** What `fetch` brought from the vaults — names only. `missing`: no ref or no value in the vault;
+ *  `denied`: vaults this person may not read. */
+export interface SecretFetchResult {
+  fetched: string[];
+  missing: string[];
+  denied: string[];
+  vaults: string[];
+}
+
+/** Whether a vault is reachable from this computer. */
+export interface SecretVaultCheck {
+  vault: string;
+  ready: boolean;
+  reason: string;
 }
 
 /** What "use mine" copied into a deployment's store, and what this computer does not hold. Names only. */
@@ -306,6 +367,81 @@ export class CredentialsService {
     return { copied: res?.copied ?? [], not_here: res?.not_here ?? [], hub_funded: res?.hub_funded ?? [] };
   }
 
+  // ── the project's vaults: values between people. A refusal carries `error_code`:
+  //    `no_vault`, `unknown_vault`, `needs_connection` or `denied`. ──
+
+  /** The secret managers this Flowpad can use. */
+  async listManagers(): Promise<SecretManagerInfo[]> {
+    const res = await dataManager.callAction<unknown, { managers?: SecretManagerInfo[] }>(this.action('managers', 'GET'));
+    return res?.managers ?? [];
+  }
+
+  /** The project's vaults by name. */
+  async vaults(projectId: string): Promise<Record<string, SecretVault>> {
+    const action = this.action('vaults', 'GET');
+    action.queryParameters = { project_id: projectId };
+    const res = await dataManager.callAction<unknown, { vaults?: Record<string, SecretVault> }>(action);
+    return res?.vaults ?? {};
+  }
+
+  /** Add or replace the project's vault `name`; answers every vault. */
+  async addVault(projectId: string, name: string, vault: SecretVault): Promise<Record<string, SecretVault>> {
+    return this.vaultWrite('vault-set', { project_id: projectId, name, spec: vault });
+  }
+
+  /** Forget the project's vault `name` (the manager keeps its secrets); answers every vault left. */
+  async removeVault(projectId: string, name: string): Promise<Record<string, SecretVault>> {
+    return this.vaultWrite('vault-remove', { project_id: projectId, name });
+  }
+
+  private async vaultWrite(verb: string, body: Record<string, unknown>): Promise<Record<string, SecretVault>> {
+    const action = this.action(verb, 'POST');
+    action.bodyParameters = body;
+    const res = await dataManager.callAction<unknown, { vaults?: Record<string, SecretVault> }>(action);
+    return res?.vaults ?? {};
+  }
+
+  /** Is `vault` reachable from this computer (manager installed, signed in)? */
+  async checkVault(projectId: string, vault: string): Promise<SecretVaultCheck> {
+    const action = this.action('vault-check', 'POST');
+    action.bodyParameters = { project_id: projectId, vault };
+    const res = await dataManager.callAction<unknown, Partial<SecretVaultCheck>>(action);
+    return { vault, ready: res?.ready ?? false, reason: res?.reason ?? '' };
+  }
+
+  /** Copy this computer's values of credential `name` into `vault`, recording each variable's
+   *  `secret_ref` in its credential.json. Names come back, never a value. */
+  async publish(name: string, projectId: string, vault: string): Promise<SecretPublishResult> {
+    const action = this.action('publish', 'POST');
+    action.bodyParameters = { name, project_id: projectId, vault };
+    const res = await dataManager.callAction<unknown, Partial<SecretPublishResult>>(action);
+    return { published: res?.published ?? [], not_here: res?.not_here ?? [], vault: res?.vault ?? vault };
+  }
+
+  /** Fetch credential `name`'s values from the vaults its refs name into this computer's store. */
+  async fetch(name: string, projectId: string): Promise<SecretFetchResult> {
+    const action = this.action('fetch', 'POST');
+    action.bodyParameters = { name, project_id: projectId };
+    const res = await dataManager.callAction<unknown, Partial<SecretFetchResult>>(action);
+    return { fetched: res?.fetched ?? [], missing: res?.missing ?? [], denied: res?.denied ?? [], vaults: res?.vaults ?? [] };
+  }
+
+  /** Run credential `name`'s `test` with this computer's values; `untested` when it declares none. */
+  async test(name: string, projectId: string): Promise<CredentialTestAnswer> {
+    const action = this.action('test', 'POST');
+    action.bodyParameters = { name, project_id: projectId };
+    const res = await dataManager.callAction<unknown, Partial<CredentialTestAnswer>>(action);
+    return { has_test: !!res?.has_test, state: res?.state ?? 'error', detail: res?.detail ?? '', at: res?.at ?? '' };
+  }
+
+  /** Give `email` read access to `vault` through its manager's own sharing. */
+  async grant(projectId: string, vault: string, email: string): Promise<{ vault: string; email: string }> {
+    const action = this.action('grant', 'POST');
+    action.bodyParameters = { project_id: projectId, vault, email };
+    const res = await dataManager.callAction<unknown, Partial<{ vault: string; email: string }>>(action);
+    return { vault: res?.vault ?? vault, email: res?.email ?? email };
+  }
+
   /** Remove a credential and its values from every store. `removed` is false, and the
    *  credential stays, when a store still holds a value (`kept`) or could not be reached. */
   async remove(typeid: string): Promise<CredentialDeleted> {
@@ -314,6 +450,96 @@ export class CredentialsService {
     const res = await dataManager.callAction<unknown, Partial<CredentialDeleted>>(action);
     return { removed: !!res?.removed, deleted: res?.deleted ?? [], kept: res?.kept ?? [], stores: res?.stores ?? [] };
   }
+
+  // ── secured transfer (flow_sdk/secrets/sealed_transfer.py) — names only, never a value ──
+
+  /** Seal `typeid`'s values for the conversation's members (all others when `recipients` is empty) and post them. */
+  async sealedSeal(typeid: string, conversationId: string, recipients: string[] = []): Promise<SealedSealResult> {
+    const action = this.action('sealed/seal', 'POST');
+    action.bodyParameters = { typeid, conversation_id: conversationId, recipients };
+    return (await dataManager.callAction<unknown, SealedSealResult>(action)) as SealedSealResult;
+  }
+
+  /** Which members of the conversation can receive values here: `{user_id: 'ok' | 'no_key'}`. */
+  async sealedReceivers(conversationId: string): Promise<Record<string, 'ok' | 'no_key'>> {
+    const action = this.action('sealed/receivers', 'GET');
+    action.queryParameters = { conversation_id: conversationId };
+    return ((await dataManager.callAction<unknown, Record<string, 'ok' | 'no_key'>>(action)) ?? {}) as Record<string, 'ok' | 'no_key'>;
+  }
+
+  /** The conversation's secured transfers in ONE read: this device's cards and the sender's transfers. */
+  async sealedState(conversationId: string): Promise<{ incoming: SealedCard[]; sent: SealedSent[] }> {
+    const action = this.action('sealed/state', 'GET');
+    action.queryParameters = { conversation_id: conversationId };
+    const res = await dataManager.callAction<unknown, { incoming?: SealedCard[]; sent?: SealedSent[] }>(action);
+    return { incoming: res?.incoming ?? [], sent: res?.sent ?? [] };
+  }
+
+  /** This device's cards in the conversation — what was sealed for it, names only. */
+  async sealedIncoming(conversationId: string): Promise<SealedCard[]> {
+    const action = this.action('sealed/incoming', 'GET');
+    action.queryParameters = { conversation_id: conversationId };
+    return ((await dataManager.callAction<unknown, SealedCard[]>(action)) ?? []) as SealedCard[];
+  }
+
+  /** The sender's transfers in the conversation, and who filled / declined / is pending. */
+  async sealedSent(conversationId: string): Promise<SealedSent[]> {
+    const action = this.action('sealed/sent', 'GET');
+    action.queryParameters = { conversation_id: conversationId };
+    return ((await dataManager.callAction<unknown, SealedSent[]>(action)) ?? []) as SealedSent[];
+  }
+
+  async sealedFill(conversationId: string, messageId: string, projectId?: string | null): Promise<{ filled: string[]; credential: string }> {
+    const action = this.action('sealed/fill', 'POST');
+    action.bodyParameters = projectId ? { conversation_id: conversationId, message_id: messageId, project_id: projectId }
+      : { conversation_id: conversationId, message_id: messageId };
+    return (await dataManager.callAction<unknown, { filled: string[]; credential: string }>(action)) as { filled: string[]; credential: string };
+  }
+
+  /** "Get the secret": publish this install's key and ask the sender's Flowpad for values promised before it could receive. */
+  async sealedGet(conversationId: string, transferId: string): Promise<void> {
+    const action = this.action('sealed/get', 'POST');
+    action.bodyParameters = { conversation_id: conversationId, transfer_id: transferId };
+    await dataManager.callAction<unknown, unknown>(action);
+  }
+
+  async sealedDecline(conversationId: string, messageId: string): Promise<void> {
+    const action = this.action('sealed/decline', 'POST');
+    action.bodyParameters = { conversation_id: conversationId, message_id: messageId };
+    await dataManager.callAction<unknown, unknown>(action);
+  }
+
+}
+
+export interface SealedSealResult {
+  transfer_id: string | null;
+  sealed_for: string[];
+  /** Members with no key yet: promised — they get the values after opening the message in Flowpad. */
+  later?: string[];
+  cannot_receive: string[];
+  variables: string[];
+}
+
+export interface SealedCard {
+  message_id: string;
+  transfer_id: string;
+  sender_id?: string;
+  sender_name?: string;
+  expires_at: string;
+  /** `pending` | `filled` | `declined` | an error code (`expired`, `bad_signature`, `key_gone`, …). */
+  state: string;
+  credential_name?: string;
+  credential_title?: string;
+  variables?: string[];
+  error?: string;
+}
+
+export interface SealedSent {
+  message_id: string;
+  transfer_id: string;
+  expires_at: string;
+  recipients: Record<string, 'pending' | 'filled' | 'declined'>;
+  expired: boolean;
 }
 
 /** Ready-to-use singleton wired to the local compute node. */

@@ -148,7 +148,7 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
     assert node["micro_app-a1"].run is None, "a web app has no separate setup: its one step brings it up"
     assert [s.ref for s in node["micro_app-a1"].on_load.steps] == ["micro_app-a1:up"]
     up = tree.ops["micro_app-a1:up"]
-    assert up.completion_check.webapp_step == "up" and [r.subkind for r in up.attempts] == ["agent", "cli"]
+    assert up.completion_check.webapp_step == "up" and up.attempts == []  # recovery is the coordinator's
     assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
 
 
@@ -311,3 +311,26 @@ async def test_an_app_whose_folder_is_gone_is_not_something_to_set_up(monkeypatc
     monkeypatch.setattr(WebApp, "get_all", get_all)
     tree = ProjectTree(SimpleNamespace(id="p1", name="Shop", fs_storage_mount_path=str(tmp_path)))
     assert [app.name for app in await tree._webapps()] == ["here"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", ["child first", "parent first"])
+async def test_a_dependency_declared_under_another_declaration_attaches_in_any_order(project, monkeypatch, order):
+    """Spora App: the tenant node, and Admin's API beneath it (``subject: asset_setup:tenant``). The index may hand
+    either row first; the API is the tenant's child either way, and the tenant is the app's."""
+    specs = {
+        "tenant": AssetSetupSpec(name="tenant"),
+        "admin-api": AssetSetupSpec(name="admin-api", subject="asset_setup:tenant", run="", inputs={"service": "api"}),
+    }
+    rows = [AssetSetup(name=n, asset_ref=f"/p/agentic-assets/webapp/site/agentic-assets/asset_setup/{n}")
+            for n in (("admin-api", "tenant") if order == "child first" else ("tenant", "admin-api"))]
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: specs[str(self.name)])
+
+    async def declared(_q):
+        return rows
+
+    monkeypatch.setattr(AssetSetup, "get_all", declared)
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["asset_setup:tenant"].children == ("asset_setup:admin-api",)
+    assert tree.nodes["micro_app-a1"].children == ("asset_setup:tenant",)
+    assert dict(tree.nodes["asset_setup:admin-api"].inputs)["service"] == "api"

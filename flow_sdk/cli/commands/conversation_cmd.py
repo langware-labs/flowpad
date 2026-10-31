@@ -39,6 +39,9 @@ from flow_sdk.cli.commands._common import (
     bad_response_message as _bad_response_message,
 )
 from flow_sdk.cli.commands._common import (
+    current_process_id as _current_process_id,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
 )
 from flow_sdk.cli.commands._common import (
@@ -312,6 +315,13 @@ def show_message(
     typer.echo("\n".join(lines))
 
 
+def _origin_session() -> dict:
+    """``{"origin_process": <id>}`` when run inside a session: the backend links that session to the
+    conversation and the message (local links only — never an attachment). Empty outside one."""
+    pid = _current_process_id()
+    return {"origin_process": pid} if pid else {}
+
+
 def _add_message_url(port: int, conversation_id: str) -> str:
     return _graph_url(port, f"conversation/{conversation_id}/add_message")
 
@@ -371,7 +381,7 @@ def send_message(
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
     port = _discover_port()
-    body: dict = {"text": message}
+    body: dict = {"text": message, **_origin_session()}
     if reply_to:
         body["reply_to_id"] = _message_id(reply_to)
     if prompt and prompt.strip():
@@ -504,7 +514,7 @@ def new_conversation(
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
         _fail(EXIT_ACTION_FAILED, "SHARE_FAILED",
               f"inviting {shown} failed ({body.get('message') or resp.status_code}); {retry}")
-    data = _post_json(_add_message_url(port, cid), {"text": message})
+    data = _post_json(_add_message_url(port, cid), {"text": message, **_origin_session()})
     data["invited"] = invitees
     _emit_send_result(cid, data)
 
@@ -578,7 +588,7 @@ def attach_message(
             _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"Entity not found: {tgt}")
         if probe.status_code != 200:
             _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", f"Could not resolve entity {tgt}: HTTP {probe.status_code}")
-        entity_body = {"text": message, "asset_references": [tgt]}
+        entity_body = {"text": message, "asset_references": [tgt], **_origin_session()}
         if session:
             entity_body["remote_worker_session_id"] = session.strip()
         data = _post_json(
@@ -604,7 +614,7 @@ def attach_message(
     except OSError as e:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Cannot read file {tgt}: {e}")
         return
-    form_fields = {"text": message}
+    form_fields = {"text": message, **_origin_session()}
     if session:
         form_fields["remote_worker_session_id"] = session.strip()
     try:
@@ -646,7 +656,12 @@ def reply_on_channel(
     missing = [p for p in paths if not os.path.isfile(p)]
     if missing:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"no such file: {missing[0]}")
-    payload = {"text": text, "files": paths, **({"reply_to_id": reply_to.strip()} if reply_to else {})}
+    payload = {
+        "text": text,
+        "files": paths,
+        **({"reply_to_id": reply_to.strip()} if reply_to else {}),
+        **_origin_session(),
+    }
     url = f"http://127.0.0.1:{_discover_port()}/api/v1/conversations/{cid}/reply"
     body = local_request("POST", url, json=payload, timeout=30).json()
     if body.get("status") != "SUCCESS":

@@ -56,6 +56,8 @@ class FieldType(StrEnum):
     CSV = "csv"
     NUMBER = "number"
     PATH = "path"
+    #: On/off; a source that never set it gets the config class's default.
+    BOOL = "bool"
 
 
 class ManifestError(ValueError):

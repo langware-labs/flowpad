@@ -3,11 +3,11 @@
  * plain text become markdown links, so one `a` renderer handles them alongside
  * authored `[a](b)` links and the URLs `remark-gfm` already linked.
  *
- * - **text** — every `fileLinkMatches` hit is cut out into a link. Web URLs are
+ * - **text** — every command (`! cmd` on its own line or quoted) and file reference is cut out into a link. Web URLs are
  *   `remark-gfm`'s (run it first); text already inside a link is left alone.
  * - **inline code** — `` `ui/src/a.ts:42` `` links when the WHOLE span is one
- *   reference; the code styling stays as the link's child. A span that merely
- *   contains a path (`` `cat a/b.txt` ``) is a command, not a link.
+ *   reference or one command (`` `! gcloud auth login` ``); the code styling stays as the
+ *   link's child. A span that merely contains a path (`` `cat a/b.txt` ``) is not a link.
  *
  * Every link the layer follows — found here or authored — carries its raw reference as
  * `data-link-ref`. The href cannot: `code.py:12` reads as a `code.py:` URL scheme, which
@@ -17,7 +17,7 @@
  * Pure: it only reshapes the tree. What a click does is not decided here.
  */
 import type { InlineCode, Link, Parent, PhrasingContent, Root, Text } from 'mdast';
-import { fileLinkMatches, linkMatches } from './link-matches';
+import { linkMatches } from './link-matches';
 
 const NOT_INTO = new Set(['link', 'linkReference', 'definition']);
 
@@ -35,7 +35,8 @@ function link(url: string, child: PhrasingContent): Link {
 }
 
 function splitText(node: Text): PhrasingContent[] | null {
-  const matches = fileLinkMatches(node.value);
+  // Web URLs are remark-gfm's: by now they are link nodes, never text.
+  const matches = linkMatches(node.value, undefined, { web: false });
   if (matches.length === 0) return null;
   const out: PhrasingContent[] = [];
   let at = 0;

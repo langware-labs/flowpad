@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+from flow_sdk.core.dev_server import static_dev_cmd
 
 EXCLUDED_DIRS = {
     ".git",
@@ -190,9 +191,9 @@ def _candidate_from_static(index_html: Path, root: Path, query_terms: set[str]) 
         name=name,
         path=str(app_dir),
         kind="static",
-        # sys.executable, not "python3": the flow CLI is itself Python, so this always
-        # names a real interpreter. `python3` is a dangling Store alias on stock Windows.
-        start_cmd=f'"{sys.executable}" -m http.server {{port}}',
+        # The folder live with Flowpad's /sdk and /api beside it — never a bare file server, on which
+        # the page's SDK is a 404. sys.executable: the flow CLI's own interpreter, which has flow_sdk.
+        start_cmd=static_dev_cmd(),
         port=None,
         health="/",
         score=score,

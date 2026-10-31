@@ -1,4 +1,5 @@
 import { Trans } from '@lingui/react/macro';
+import type { ReactNode } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +33,8 @@ interface ConfirmDialogProps {
    */
   entity?: { remote?: boolean } | null;
   testId?: string;
+  /** Extra content between the description and the buttons (a command, a checkbox). */
+  children?: ReactNode;
 }
 
 export function ConfirmDialog({
@@ -46,6 +49,7 @@ export function ConfirmDialog({
   onCancel,
   entity,
   testId,
+  children,
 }: ConfirmDialogProps) {
   const handleConfirm = () => {
     onConfirm();
@@ -69,10 +73,14 @@ export function ConfirmDialog({
             </AlertDialogDescription>
           )}
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={handleCancel}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel onClick={handleCancel} data-testid={testId && `${testId}-cancel`}>
+            {cancelLabel}
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={handleConfirm}
+            data-testid={testId && `${testId}-confirm`}
             className={
               variant === 'destructive' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''
             }

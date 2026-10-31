@@ -404,9 +404,10 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `channel_answered`: whether anything here answers the channel — stamped by the local projection.
             # `updated_date`: local recency (the hub clock is `hub_updated_date`).
             # `archived_at`/`dismissed_at`: this viewer's own archive/dismiss — never travel.
+            # `marks`: the chips a local source puts on the whole conversation — local.
             ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "archived",
              "channel_spec", "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
-             "channel_answered", "updated_date", "archived_at", "dismissed_at"],
+             "channel_answered", "updated_date", "archived_at", "dismissed_at", "marks"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -423,6 +424,8 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "status",
                 "last_active_at",
                 "last_edited_at",
+                # A list of mark values: the harness fills strings, not specs.
+                "marks",
                 "message_count",
                 "message_ids",
                 # A projection like `message_count`: only `recompute_unread` may write it.

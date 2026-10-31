@@ -52,6 +52,8 @@ export interface WizardRunState {
   result?: WizardResult | null;
   /** A person approved this non-shipped wizard to run shell here. */
   approved?: boolean;
+  /** The last run only checked (`check_only`): nothing was asked or installed yet. */
+  checked?: boolean;
 }
 
 export interface IWizard extends IEntity {

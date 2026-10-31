@@ -1,3 +1,5 @@
+import type { AppDisplayViewerProps } from '@src/pages/flow-page/app-display-viewer';
+
 /**
  * The terminal pool — a runtime (xterm + PTY attach) lives as long as its TAB,
  * not as long as the layout that happens to show it (docs/navigation/dock-loading.md, I6).
@@ -31,11 +33,28 @@
 
 type Listener = () => void;
 
-export interface TerminalPoolSnapshot {
-  /** Keys (tabHash) the pool holds a panel for: shown at least once and not given back since. */
+export interface RuntimePoolSnapshot<P = undefined> {
+  /** Keys the pool holds a runtime for: shown at least once and not given back since. */
   readonly mounted: ReadonlySet<string>;
   /** Keys a slot is showing right now. */
   readonly shown: ReadonlySet<string>;
+  /** The props each mounted key was last shown with (`show`'s last argument). */
+  readonly props: ReadonlyMap<string, P>;
+}
+
+export type TerminalPoolSnapshot = RuntimePoolSnapshot<undefined>;
+
+export interface RuntimePoolOptions {
+  /** `data-testid` of the stack element. */
+  stackTestId: string;
+  /** `dataset` field each container carries its key in (`terminalKey` → `data-terminal-key`). */
+  keyAttr: string;
+  /**
+   * Hide (`display: none`) every container no slot shows. A terminal panel hides itself; a view
+   * whose content is drawn OUTSIDE its container (an app's frame, positioned over its host by the
+   * iframe registry) needs the host to measure 0×0 while it is not on screen.
+   */
+  hideUnshown?: boolean;
 }
 
 interface SlotEntry {
@@ -43,8 +62,16 @@ interface SlotEntry {
   host: HTMLElement;
 }
 
-class TerminalPoolStore {
+/**
+ * A pool of runtimes kept per key for the life of their tab (I6) — the terminal pool's
+ * mechanism, generalized: `show(slot, key, host, props)` records the props the key's
+ * runtime renders with, so the pool's renderer can draw it without its slot.
+ */
+export class RuntimePoolStore<P = undefined> {
+  constructor(private readonly options: RuntimePoolOptions) {}
+
   private listeners = new Set<Listener>();
+  private props = new Map<string, P>();
   private containers = new Map<string, HTMLDivElement>();
   private slots = new Map<symbol, SlotEntry>();
   /** Slots in the order they last showed; the stack follows the newest. */
@@ -53,14 +80,14 @@ class TerminalPoolStore {
   private stackEl: HTMLDivElement | null = null;
   private scrolled = new Map<Element, { top: number; left: number }>();
   private settlePending = false;
-  private snapshot: TerminalPoolSnapshot = { mounted: new Set(), shown: new Set() };
+  private snapshot: RuntimePoolSnapshot<P> = { mounted: new Set(), shown: new Set(), props: new Map() };
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
 
-  getSnapshot = (): TerminalPoolSnapshot => this.snapshot;
+  getSnapshot = (): RuntimePoolSnapshot<P> => this.snapshot;
 
   /** True while the pool holds `key`'s panel — a return to it is a warm switch. */
   has(key: string): boolean {
@@ -71,7 +98,7 @@ class TerminalPoolStore {
   stack(): HTMLDivElement {
     if (!this.stackEl) {
       const el = document.createElement('div');
-      el.dataset.testid = 'terminal-pool-stack';
+      el.dataset.testid = this.options.stackTestId;
       el.style.position = 'absolute';
       el.style.inset = '0';
       el.addEventListener('scroll', this.onScroll, { capture: true, passive: true });
@@ -86,7 +113,7 @@ class TerminalPoolStore {
     let el = this.containers.get(key);
     if (!el) {
       el = document.createElement('div');
-      el.dataset.terminalKey = key;
+      el.dataset[this.options.keyAttr] = key;
       el.style.position = 'absolute';
       el.style.inset = '0';
       this.containers.set(key, el);
@@ -96,8 +123,9 @@ class TerminalPoolStore {
   }
 
   /** A slot shows `key` inside `host`: the key becomes (and stays) mounted. */
-  show(slot: symbol, key: string, host: HTMLElement): void {
+  show(slot: symbol, key: string, host: HTMLElement, ...rest: P extends undefined ? [props?: P] : [props: P]): void {
     this.slots.set(slot, { key, host });
+    if (rest.length) this.props.set(key, rest[0] as P);
     this.recency = [...this.recency.filter((s) => s !== slot), slot];
     this.container(key);
     this.place();
@@ -147,11 +175,12 @@ class TerminalPoolStore {
     this.stackEl?.remove();
     this.stackEl = null;
     this.containers.clear();
+    this.props.clear();
     this.slots.clear();
     this.recency = [];
     this.scrolled.clear();
     this.parking = null;
-    this.snapshot = { mounted: new Set(), shown: new Set() };
+    this.snapshot = { mounted: new Set(), shown: new Set(), props: new Map() };
     this.emit();
   }
 
@@ -171,9 +200,11 @@ class TerminalPoolStore {
     for (const entry of this.slots.values()) {
       if (entry.host !== stack.parentElement && entry.key !== owner?.key) elsewhere.set(entry.key, entry.host);
     }
+    const shown = this.options.hideUnshown ? new Set([...this.slots.values()].map((s) => s.key)) : null;
     for (const [key, el] of this.containers) {
       const target = elsewhere.get(key) ?? stack;
       if (el.parentElement !== target) target.appendChild(el);
+      if (shown) el.style.display = shown.has(key) ? '' : 'none';
     }
   }
 
@@ -182,6 +213,7 @@ class TerminalPoolStore {
     for (const key of keys) {
       this.containers.get(key)?.remove();
       this.containers.delete(key);
+      this.props.delete(key);
     }
     if (keys.length) this.forgetDetachedScroll();
     this.publish();
@@ -220,8 +252,10 @@ class TerminalPoolStore {
   private publish(): void {
     const mounted = new Set(this.containers.keys());
     const shown = new Set([...this.slots.values()].map((s) => s.key));
-    if (sameSet(mounted, this.snapshot.mounted) && sameSet(shown, this.snapshot.shown)) return;
-    this.snapshot = { mounted, shown };
+    const props = this.snapshot.props;
+    const propsSame = props.size === this.props.size && [...this.props].every(([k, v]) => props.get(k) === v);
+    if (sameSet(mounted, this.snapshot.mounted) && sameSet(shown, this.snapshot.shown) && propsSame) return;
+    this.snapshot = { mounted, shown, props: propsSame ? props : new Map(this.props) };
     this.emit();
   }
 
@@ -236,4 +270,22 @@ function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   return true;
 }
 
-export const terminalPool = new TerminalPoolStore();
+export const terminalPool = new RuntimePoolStore({ stackTestId: 'terminal-pool-stack', keyAttr: 'terminalKey' });
+
+export interface PooledAppProps {
+  /** What the pooled `AppDisplayViewer` renders with. */
+  viewer: AppDisplayViewerProps;
+  /** The tab that showed the view last: the view lives as long as that tab (I6). */
+  tabHash: string;
+}
+
+/**
+ * The app views (`components/app-pool`), kept per `appViewKey` for the life of their tab. Hidden
+ * containers are `display: none`: an app's frame is drawn over its host by the iframe registry,
+ * so a parked host must measure 0×0 or its frame would still cover the screen.
+ */
+export const appPool = new RuntimePoolStore<PooledAppProps>({
+  stackTestId: 'app-pool-stack',
+  keyAttr: 'appKey',
+  hideUnshown: true,
+});

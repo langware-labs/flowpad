@@ -573,3 +573,21 @@ async def test_scoped_source_folder_indexes_itself_without_sibling_channels(tmp_
     assert source is not None and source.read_only and source.provider == "gmail"
     assert await DataSource.get_by_id(sibling_id) is None
     assert source_file.read_bytes() == before
+
+
+async def test_an_asset_folder_with_its_own_flow_json_is_never_made_a_project(tmp_path):
+    """A chart (or any asset) inside a project may list its own links in flow.json. Resolving a
+    dependency on it must not try to make that folder a project — that used to write the link, then
+    refuse with "projects do not nest"."""
+    from flow_sdk.builtin.project_dependencies import DependencyState, dependency_project
+
+    owner = await _project(tmp_path, "gallery")
+    chart = Path(owner.fs_storage_mount_path) / "agentic-assets" / "chart" / "flow-b"
+    chart.mkdir(parents=True)
+    (chart / "flow.json").write_text(json.dumps({"dependencies": {}}), encoding="utf-8")
+    before = {str(p.id) for p in await Project.get_all()}
+
+    state = DependencyState(name="flow-b", source="chart-00000000-0000-4000-8000-000000000000", state="ready",
+                            local_path=str(chart))
+    assert await dependency_project(state, create=True) is None
+    assert {str(p.id) for p in await Project.get_all()} == before

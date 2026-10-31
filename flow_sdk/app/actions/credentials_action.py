@@ -51,6 +51,8 @@ async def credentials_action() -> ApiResponse:
 
     method = request_info.request.method.upper()
     sub_path = (request_info.sub_path or "").strip("/")
+    if sub_path.startswith("sealed/"):
+        return await _sealed(method, sub_path[len("sealed/"):], request_info.request)
     try:
         if method == "GET" and sub_path == "status":
             from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
@@ -65,6 +67,12 @@ async def credentials_action() -> ApiResponse:
             except ValueError as e:
                 return ApiFailResponse(message=str(e))
             return ApiSuccessResponse(data=status.model_dump(mode="json"))
+        if method == "GET" and sub_path in ("managers", "vaults"):
+            from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
+
+            if sub_path == "managers":
+                return ApiSuccessResponse(data={"managers": svc.list_managers()})
+            return ApiSuccessResponse(data=await svc.list_vaults(request_info.request.query_params.get("project_id") or ""))
         if method == "POST":
             payload = await request_info.get_post_data() or {}
             if sub_path == "save":
@@ -94,7 +102,7 @@ async def credentials_action() -> ApiResponse:
                 spec = await set_credential_by_name(
                     payload.get("name") or "", payload.get("values") or {},
                     project_id=payload.get("project_id"), deployment_id=payload.get("deployment_id"),
-                    choice=payload.get("choice") or "",
+                    choice=payload.get("choice") or "", read_files=bool(payload.get("read_files")),
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "declare":
@@ -133,6 +141,25 @@ async def credentials_action() -> ApiResponse:
 
                 names = payload.get("names")
                 return ApiSuccessResponse(data=await use_mine(payload.get("deployment_id") or "", list(names) if names else None))
+            # The project's vaults (``credential_service``): values between people, names only.
+            if sub_path == "test":
+                from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
+
+                return ApiSuccessResponse(data=await svc.test_credential(payload.get("name") or "", payload.get("project_id") or ""))
+            if sub_path in ("publish", "fetch", "vault-check", "grant", "vault-set", "vault-remove"):
+                from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
+
+                pid, vault = payload.get("project_id") or "", payload.get("vault") or ""
+                if sub_path == "publish":
+                    return ApiSuccessResponse(data=await svc.publish(payload.get("name") or "", pid, vault))
+                if sub_path == "fetch":
+                    return ApiSuccessResponse(data=await svc.fetch(payload.get("name") or "", pid))
+                if sub_path == "vault-check":
+                    return ApiSuccessResponse(data=await svc.vault_check(pid, vault))
+                if sub_path == "grant":
+                    return ApiSuccessResponse(data=await svc.grant(pid, vault, payload.get("email") or ""))
+                spec = payload.get("spec") if sub_path == "vault-set" else None
+                return ApiSuccessResponse(data=await svc.set_vault(pid, payload.get("name") or "", spec))
             if sub_path == "audit":
                 from flow_sdk.builtin.credential_sweep import sweep_local  # noqa: PLC0415
 
@@ -155,3 +182,64 @@ async def credentials_action() -> ApiResponse:
     except Exception as e:
         logger.error("credentials action error [%s %s]: %s", method, sub_path, e)
         return ApiFailResponse(message=str(e))
+
+
+# ── secured transfer (``flow_sdk/secrets/sealed_transfer.py``) ──────────────
+#
+#   GET  /credentials/sealed/state?conversation_id=       → {incoming, sent} — the conversation's card, one hub read
+#   GET  /credentials/sealed/{receivers|incoming|sent}?conversation_id=
+#   GET  /credentials/sealed/device                       → this device's key id (expert view)
+#   POST /credentials/sealed/seal     {typeid, conversation_id, recipients?}  (Flowpad's own UI only)
+#   POST /credentials/sealed/fill     {conversation_id, message_id, project_id?}  (Flowpad's own UI only)
+#   POST /credentials/sealed/decline  {conversation_id, message_id}
+#   POST /credentials/sealed/get      {conversation_id, transfer_id}  — "Get the secret" (Flowpad's own UI only)
+#   POST /credentials/sealed/publish  {rotate?}           → publish / rotate / withdraw this device's key
+
+_SEALED_GET = {"state": "state", "receivers": "receivers", "incoming": "incoming", "sent": "sent_status"}
+#: Sharing or filling in values is a person's click — never a worker, the CLI or a served app.
+_FROM_THE_UI_ONLY = {"seal", "fill", "get"}
+
+
+async def _sealed(method: str, verb: str, request) -> ApiResponse:
+    from flow_sdk.secrets import sealed_transfer as st  # noqa: PLC0415
+    from flow_sdk.secrets.sealed import SealedError  # noqa: PLC0415
+    from flow_sdk.server.middleware.cookie_gate_middleware import from_flowpad_ui  # noqa: PLC0415
+
+    try:
+        if method == "GET":
+            if verb == "device":
+                return ApiSuccessResponse(data=st.key_info())
+            if verb in _SEALED_GET:
+                fn = getattr(st, _SEALED_GET[verb])
+                return ApiSuccessResponse(data=await fn(request.query_params.get("conversation_id") or ""))
+            return ApiFailResponse(message=f"Unknown GET credentials/sealed/{verb}")
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        if verb in _FROM_THE_UI_ONLY and not from_flowpad_ui(request):
+            return ApiFailResponse(message="sharing or filling in values takes a click in Flowpad",
+                                   data={"error_code": "human_only"}, status_code=403)  # fmt: skip
+        conv, msg = body.get("conversation_id") or "", body.get("message_id") or ""
+        post = {
+            "seal": lambda: st.seal_credential(body.get("typeid") or "", conv, [str(r) for r in body.get("recipients") or []]),
+            "fill": lambda: st.fill(conv, msg, project_id=body.get("project_id")),
+            "decline": lambda: st.decline(conv, msg),
+            "get": lambda: st.get_secret(conv, body.get("transfer_id") or ""),
+        }
+        if verb in post:
+            return ApiSuccessResponse(data=await post[verb]())
+        if verb == "publish":
+            advert = await st.publish_device_key(rotate=bool(body.get("rotate")))
+            return ApiSuccessResponse(data={**st.key_info(), **({"key_id": advert.key_id} if advert else {})})
+        return ApiFailResponse(message=f"Unknown POST credentials/sealed/{verb}")
+    except SealedError as e:
+        return ApiFailResponse(message=str(e), data={"error_code": e.code}, status_code=400)
+    except Exception as e:  # noqa: BLE001
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+        if isinstance(e, HubError):
+            return ApiFailResponse(message=str(e), data={"error_code": "hub"}, status_code=502)
+        logger.error("credentials sealed error [%s %s]: %s", method, verb, type(e).__name__)
+        return ApiFailResponse(message="secured transfer failed")

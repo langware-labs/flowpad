@@ -1,6 +1,8 @@
 import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryFilter, QueryRequest } from '../FlowSync/query';
+import type { AgenticProcess } from '../process/agentic-process';
+import { lastChatQuery, recencyOf } from '../process/last-chat';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
@@ -396,6 +398,35 @@ export class Agent extends APIEntity<Agent> {
       ...autoPromptBody(autoPrompt),
       ...launchSurfaceField(),
     })) as AgentUseResult;
+  }
+
+  /** This agent's opened chats in `projectId`, newest first (at most `limit`). */
+  async recentChats(projectId: string, limit = 20): Promise<AgenticProcess[]> {
+    const rows = await dataManager.query<AgenticProcess>(lastChatQuery(projectId, this.typeId.toString()));
+    return [...rows].sort((a, b) => recencyOf(b) - recencyOf(a)).slice(0, limit);
+  }
+
+  /** This agent's last opened chat in `projectId`, or null — the rule every opener shares (`lastChatQuery`). */
+  async lastChat(projectId: string): Promise<AgenticProcess | null> {
+    return (await this.recentChats(projectId, 1))[0] ?? null;
+  }
+
+  /**
+   * A NEW chat with this agent in `projectId`, started: `use()` with the auto prompt queued, then the
+   * queue kicked so the auto prompt is turn 1. The page-side opener (`<flowpad-agent>`); the app's
+   * launcher adds its vibe layer on top (`prepareAgentSession`).
+   */
+  async newChat(projectId: string): Promise<AgenticProcess> {
+    const { process_id } = await this.use(projectId, true);
+    const proc = await dataManager.getByTypeId<AgenticProcess>(new TypeId('agentic_process', process_id));
+    if (!proc) throw new Error(`the new chat ${process_id} could not be read`);
+    await proc.drainQueue().catch((e: unknown) => console.warn('[agent] auto prompt not started', e));
+    return proc;
+  }
+
+  /** The last chat with this agent in `projectId`, else a new one. */
+  async openChat(projectId: string): Promise<AgenticProcess> {
+    return (await this.lastChat(projectId)) ?? this.newChat(projectId);
   }
 
   /**

@@ -57,8 +57,8 @@ function readPersistedExpandedIds(persistKey: string): Set<string> | null {
  *    pass `persistKey` to restore/persist via localStorage, and
  *    `defaultExpandedIds` to seed first-open expansion).
  *  - `loadStates` tracks per-node children fetches (idle / loading / ready / error).
- *  - `expandParentsForPointer(p)` walks every owning root's pathFor() and
- *    expands every ancestor, priming the cache for each along the way.
+ *  - `expandParentsForPointer(p, rootId?)` expands the ancestors of `p` in
+ *    the first root that holds it (or in `rootId`), priming the cache.
  */
 export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTreeOptions = {}) {
   const { persistKey, defaultExpandedIds } = options;
@@ -285,9 +285,9 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
    * visible match deterministically.
    */
   const expandParentsForPointer = useCallback(
-    async (pointer: DockPointer | null): Promise<Browseable[]> => {
+    async (pointer: DockPointer | null, rootId?: string): Promise<Browseable[]> => {
       if (!pointer) return [];
-      const owners = roots.filter((r) => r.ownsPointer(pointer));
+      const owners = roots.filter((r) => (!rootId || r.id === rootId) && r.ownsPointer(pointer));
       if (owners.length === 0) return [];
 
       const leaves: Browseable[] = [];
@@ -342,6 +342,8 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
             }
           }
         }
+        // One tree opens per pointer: the first owning root (or `rootId`).
+        break;
       }
 
       return leaves;

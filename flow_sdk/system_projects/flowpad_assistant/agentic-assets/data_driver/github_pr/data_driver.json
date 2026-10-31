@@ -13,7 +13,7 @@
     "permission.github.pull_requests.read": {
       "mechanism": "oauth",
       "oauth_scopes": ["repo", "read:org"],
-      "why": "Reads the pull requests assigned to you, with their comments, reviews, pushes and checks."
+      "why": "Reads the pull requests you opened or that await your review, with their comments, reviews, pushes and checks."
     },
     "permission.github.pull_requests.comment": {
       "mechanism": "oauth",
@@ -34,6 +34,11 @@
       "label": "Repositories",
       "placeholder": "octo-org/octo-repo",
       "hint": "owner/repo per line; empty = every repository you can reach"
+    },
+    "dependabot": {
+      "type": "bool",
+      "label": "Include Dependabot PRs",
+      "hint": "Dependabot's open PRs in these repositories — or, with none listed, in your organisations and your own account."
     },
     "base_url": {
       "type": "text",

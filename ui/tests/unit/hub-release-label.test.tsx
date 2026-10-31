@@ -1,4 +1,4 @@
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HubReleaseLabel } from '@src/components/version-popover/hub-release-label';
 
@@ -18,16 +18,20 @@ afterEach(() => {
 });
 
 describe('HubReleaseLabel', () => {
-  it('shows the hub release and the UI build side by side', () => {
+  it('shows a desktop-style chip and lists hub + ui in its popover', () => {
     config.ui_version = '9.9.9';
     render(<HubReleaseLabel hubVersion="0.29.31" />);
-    expect(screen.getByTestId('hub-release-label').textContent).toBe('hub 0.29.31 · ui 9.9.9');
+    const chip = screen.getByTestId('hub-release-label');
+    expect(chip.textContent).toBe('v9.9.9');
+    fireEvent.click(chip);
+    const details = screen.getByTestId('hub-release-details').textContent;
+    expect(details).toContain('0.29.31');
+    expect(details).toContain('9.9.9');
   });
 
-  it('omits the hub half when the hub ships no version yet', () => {
-    config.ui_version = '9.9.9';
-    render(<HubReleaseLabel hubVersion={null} />);
-    expect(screen.getByTestId('hub-release-label').textContent).toBe('ui 9.9.9');
+  it('falls back to the hub release when the UI build has no stamp', () => {
+    render(<HubReleaseLabel hubVersion="0.29.31" />);
+    expect(screen.getByTestId('hub-release-label').textContent).toBe('v0.29.31');
   });
 
   it('renders nothing when neither version is known', () => {

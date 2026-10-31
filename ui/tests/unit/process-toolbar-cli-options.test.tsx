@@ -194,6 +194,7 @@ describe('ProcessToolbar — one bar for every surface', () => {
     expect(items).toEqual([
       'session-action-info',
       'session-action-transcript',
+      'session-action-command-options',
       'session-action-assets',
       'process-toolbar-restart',
       'session-action-terminal',
@@ -212,6 +213,7 @@ describe('ProcessToolbar — one bar for every surface', () => {
     expect(items).toEqual([
       'session-action-info',
       'session-action-transcript',
+      'session-action-command-options',
       'session-action-assets',
       'process-toolbar-restart',
     ]);

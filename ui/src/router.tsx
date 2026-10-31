@@ -5,6 +5,7 @@ import DeveloperLayout from '@src/components/developer-layout/developer-layout';
 import { FloatingChatWindow } from '@src/components/floating-chat';
 import { WizardHost } from '@src/components/wizard/WizardHost';
 import { TerminalPool } from '@src/components/terminal/TerminalPool';
+import { AppPool } from '@src/components/app-pool/AppPool';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // `WorkflowTracePreviewPage` was a dev-only standalone preview that bypassed
@@ -118,6 +119,7 @@ function RootLayout() {
           tab — a layout swap moves a terminal, it never rebuilds one
           (docs/navigation/dock-loading.md, I6). */}
       <TerminalPool />
+      <AppPool />
     </App>
   );
 }

@@ -25,17 +25,17 @@ from typing import Any, NoReturn, Optional
 import typer
 from typing_extensions import Annotated
 
+from flow_sdk.cli.commands._common import _graph_json as graph_json
 from flow_sdk.cli.commands._common import (
-    EXIT_INVALID_ARG,
     data_source_create_path,
     discover_port,
     fail,
     get_graph_json,
     graph_url,
     ok,
+    parse_config_pairs,
     post_graph_json,
 )
-from flow_sdk.cli.commands._common import _graph_json as graph_json
 
 source_app = typer.Typer(name="source", help="Configure, verify, sync and message through data sources.", add_completion=False, no_args_is_help=True)
 
@@ -64,16 +64,6 @@ def _post(path: str, payload: Optional[dict] = None, *, not_found: str = "", tim
 
 def _get(path: str) -> Any:
     return get_graph_json(_url(path), on_error=_on_error())
-
-
-def _config(pairs: Optional[list[str]]) -> dict:
-    out: dict = {}
-    for pair in pairs or []:
-        key, sep, value = pair.partition("=")
-        if not sep or not key.strip():
-            fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--config expects key=value, got {pair!r}")
-        out[key.strip()] = value
-    return out
 
 
 def _rows(data) -> list:
@@ -113,7 +103,7 @@ def create(
     reflect: Annotated[str, typer.Option("--reflect", help="How a file source lands its files: none | copy | symlink.")] = "",
     window_days: Annotated[int, typer.Option("--window-days", help="How far back a sync reads.")] = 0,
 ) -> None:
-    payload: dict = {"provider": provider, "name": name or provider, "config": _config(config)}
+    payload: dict = {"provider": provider, "name": name or provider, "config": parse_config_pairs(config, "INVALID_ARG", "--config expects key=value")}
     if account_key:
         payload["account_key"] = account_key
     if reflect:
@@ -159,7 +149,7 @@ def step(
 
 @source_app.command("choices", help="What the credential can see for one config field.")
 def choices(provider: str, field: str, config: ConfigOpt = None) -> None:
-    ok({"choices": _post("data_source/choices", {"provider": provider, "field": field, "config": _config(config)})})
+    ok({"choices": _post("data_source/choices", {"provider": provider, "field": field, "config": parse_config_pairs(config, "INVALID_ARG", "--config expects key=value")})})
 
 
 @source_app.command("sync", help="Run one sync cycle now and report what it wrote.")

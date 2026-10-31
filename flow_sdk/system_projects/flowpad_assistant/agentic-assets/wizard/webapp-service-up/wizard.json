@@ -1,0 +1,11 @@
+{
+  "name": "webapp-service-up",
+  "label": "Start an app's service",
+  "description": "One step: the service the node's inputs name (`webapp`, `service`) is up — started when its check says it is not.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Server",
+  "steps": [
+    {"id": "up", "label": "Start the service", "kind": "compute", "ref": "webapp-service-up", "on_fail": "abort"}
+  ]
+}

@@ -2,16 +2,26 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Chart, Project, QueryRequest, TypeId, type FSRef } from '@sdk';
+import type { Chart, FSRef } from '@sdk';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { Button } from '@src/components/ui/button';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { notify } from '@src/notifications';
 import { writeChartMermaid, autoNote } from './chartDoc';
-import { ChartFeedbackToolbar } from './ChartFeedbackToolbar';
 import { ChartHeading } from './ChartHeading';
+import { CHART_SLOTS as SLOTS, chartTokens } from './chartTheme';
+import { useOpenChart } from './useOpenChart';
+import { usePanZoom } from './usePanZoom';
+import {
+  ChangeWholeChart,
+  ChartChangeBox,
+  ChartTooltip,
+  Marks,
+  ViewToggle,
+  ZoomControls,
+  elementQuote,
+  tipStyle,
+  type ChartChanges,
+} from './chartControls';
 import {
   parseSequence,
   sequenceToMermaid,
@@ -22,47 +32,12 @@ import {
 
 /**
  * A `sequence` chart: chart.json ({participants, messages}) drawn as a network-flow
- * sequence diagram — the React port of the chartit skill's `templates/sequence/index.html`.
+ * sequence diagram.
  * Identity rides the categorical dot and the arrow colour (the sender's), never the text;
  * a message with `ref` is a sub-flow block whose "Open ↗" navigates to that chart.
  */
 
 const AUTO_NOTE = autoNote('chart.json');
-
-// Validated categorical slots (light / dark), fixed order, never cycled: the 5th+ participant is neutral.
-const LIGHT = {
-  '--surface-0': '#f4f3f0',
-  '--surface-1': '#fcfcfb',
-  '--surface-2': '#f0efec',
-  '--text-primary': '#0b0b0b',
-  '--text-secondary': '#52514e',
-  '--text-muted': '#8a8984',
-  '--hairline': '#e3e2de',
-  '--hairline-strong': '#c9c8c2',
-  '--s1': '#2a78d6',
-  '--s2': '#eb6834',
-  '--s3': '#1baf7a',
-  '--s4': '#6250d6',
-  '--s-other': '#8a8984',
-  '--focus': '#2a78d6',
-};
-const DARK = {
-  '--surface-0': '#121211',
-  '--surface-1': '#1a1a19',
-  '--surface-2': '#252523',
-  '--text-primary': '#f0efec',
-  '--text-secondary': '#c3c2b7',
-  '--text-muted': '#8f8e88',
-  '--hairline': '#2e2e2b',
-  '--hairline-strong': '#44443f',
-  '--s1': '#3987e5',
-  '--s2': '#d95926',
-  '--s3': '#199e70',
-  '--s4': '#9085e9',
-  '--s-other': '#8f8e88',
-  '--focus': '#3987e5',
-};
-const SLOTS = ['--s1', '--s2', '--s3', '--s4'];
 
 const STYLES = `
 .cseq svg text { font-family: inherit; }
@@ -89,11 +64,14 @@ const STYLES = `
 .cseq svg.focusing .m:not(.hot), .cseq svg.focusing .p:not(.hot) { opacity: .28; transition: opacity .12s; }
 .cseq .m.hot .line { stroke-width: 2.5; }
 .cseq .m:focus, .cseq .p:focus { outline: none; }
-.cseq .m:focus-visible .lbl-bg, .cseq .p:focus-visible rect.head { stroke: var(--focus); stroke-width: 2; }
+.cseq svg { touch-action: none; }
 .cseq [data-target] { cursor: pointer; }
-.cseq [data-target].ck-on .lbl-bg, .cseq [data-target].ck-on rect.head { stroke: var(--focus); stroke-width: 2; }
-.cseq [data-target].ck-on .line { stroke-width: 3; }
-.cseq [data-target].ck-has .label, .cseq [data-target].ck-has .name { text-decoration: underline dotted; text-underline-offset: 3px; }
+.cseq .p.picked rect.head, .cseq .m.picked .lbl-bg, .cseq .m.sub.picked rect.block { stroke: var(--focus); stroke-width: 2; }
+.cseq .popen { cursor: pointer; }
+.cseq .popen rect { fill: var(--surface-1); stroke: var(--hairline-strong); }
+.cseq .popen text { fill: var(--text-primary); font-size: 11px; font-weight: 600; }
+.cseq .popen:hover rect, .cseq .popen:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
+.cseq .m:focus-visible .lbl-bg, .cseq .p:focus-visible rect.head { stroke: var(--focus); stroke-width: 2; }
 `;
 
 interface Info {
@@ -327,27 +305,20 @@ export function layoutSequence(value: SequenceValue) {
   };
 }
 
-/** Where the tooltip sits for a pointer at (x, y). */
-const tipStyle = (x: number, y: number) => ({
-  left: `${Math.min(window.innerWidth - 328, x + 14)}px`,
-  top: `${Math.max(8, y - 72)}px`,
-});
-
 /** Width of a label plate before layout can be measured (jsdom, first paint). */
 const estimate = (text: string) => text.length * 6.8;
 
 interface SequenceChartViewProps {
   fsRef: FSRef;
   chart?: Chart;
-  /** The building session (CHART.md `session`) feedback is submitted to. */
-  session?: string;
   projectId?: string;
   actions?: React.ReactNode;
+  /** Pick a participant or message → "Change this" → the chart's Changes tab and context worker. */
+  changes?: ChartChanges;
 }
 
-export function SequenceChartView({ fsRef, chart, session, projectId, actions }: SequenceChartViewProps) {
+export function SequenceChartView({ fsRef, chart, projectId, actions, changes }: SequenceChartViewProps) {
   const { t } = useLingui();
-  const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   const chartRef = useMemo(() => fsRef.child('chart.json'), [fsRef]);
   const docRef = useMemo(() => fsRef.child('CHART.md'), [fsRef]);
@@ -359,10 +330,8 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
   const [hot, setHot] = useState<{ target: string; info: Info } | null>(null);
   const tipPos = useRef({ x: 0, y: 0 });
   const tipRef = useRef<HTMLDivElement>(null);
-  const [target, setTarget] = useState('');
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [commented, setCommented] = useState<Set<string>>(new Set());
-  const svgRef = useRef<SVGSVGElement>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [picked, setPicked] = useState<{ id: string; label: string; at: { x: number; y: number } } | null>(null);
   const [plates, setPlates] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
 
   const { folderName, dirPath } = useMemo(() => {
@@ -389,6 +358,16 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
   }, [chartRef]);
 
   const layout = useMemo(() => (value ? layoutSequence(value) : null), [value]);
+  const pz = usePanZoom(layout?.width ?? 1, layout?.height ?? 1);
+  const setPzSvg = pz.svgRef;
+  // A stable ref: an inline one re-attaches (and re-sets pan-zoom state) on every render.
+  const attachSvg = useCallback(
+    (el: SVGSVGElement | null) => {
+      svgRef.current = el;
+      setPzSvg(el);
+    },
+    [setPzSvg],
+  );
 
   // label plates: measured after layout, so text never sits on a line
   useLayoutEffect(() => {
@@ -404,54 +383,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
     setPlates((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
   }, [layout, view]);
 
-  const labelOf = useCallback(
-    (id: string) => {
-      if (!id) return t`Whole chart`;
-      const lane = layout?.laneOf.get(id);
-      if (lane) return `${id} · ${lane.lines[0]}`;
-      const item = layout?.itemOf.get(id);
-      return item ? `${id} · ${item.label}` : id;
-    },
-    [layout, t],
-  );
-
-  const openRef = useCallback(
-    async (ref: string) => {
-      try {
-        const scope = projectId ? [new TypeId(Project.type, projectId)] : [];
-        const found = await Chart.query(
-          new QueryRequest({ type: Chart.type, query: { match: { name: ref } }, scope, name: `chart-subflow-${ref}` }),
-        );
-        // A name can repeat across folders: the chart beside this one wins.
-        const parentOf = (p?: string) => (p ?? '').replace(/\/+$/, '').replace(/\/[^/]*$/, '');
-        const here = parentOf(fsRef.path);
-        const next = found.find((c) => here && parentOf(c.asset_ref) === here) ?? found[0];
-        if (!next) {
-          notify.error({ title: t`No chart named “${ref}” in this project` });
-          return;
-        }
-        // The same editor pointer a Charts tree row opens, kept on the project route so the
-        // project tree (the chart viewer) stays and its selection follows.
-        if (!next.asset_ref) {
-          navigation.openDock(next.dockPointer);
-          return;
-        }
-        const editor = DockPointer.forAssetEditor(Chart.type, next.asset_ref);
-        navigation.openDock(projectId ? DockPointer.rebaseAssetsOntoProject(editor, projectId) : editor);
-      } catch (err) {
-        notify.error({
-          title: t`Could not open the sub-flow`,
-          message: err instanceof Error ? err.message : String(err),
-        });
-      }
-    },
-    [fsRef, navigation, projectId, t],
-  );
-
-  const pick = useCallback((id: string) => {
-    setTarget((cur) => (cur === id ? '' : id));
-    setPanelOpen(true);
-  }, []);
+  const openRef = useOpenChart(fsRef, projectId);
 
   const regenerateDoc = useCallback(async () => {
     if (!value) return;
@@ -470,8 +402,8 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
     );
   }
 
-  const { lanes, items, width, height, bottom, TOP, HEAD_W, HEAD_H, DOT_X, ICON_X, ICON_SIZE } = layout;
-  const tokens = resolvedTheme === 'dark' ? DARK : LIGHT;
+  const { lanes, items, bottom, TOP, HEAD_W, HEAD_H, DOT_X, ICON_X, ICON_SIZE } = layout;
+  const tokens = chartTokens(resolvedTheme);
   const moveTip = (target: string, info: Info, x: number, y: number) => {
     tipPos.current = { x, y };
     const el = tipRef.current;
@@ -484,8 +416,29 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
     const b = el.getBoundingClientRect();
     moveTip(target, info, b.left + b.width / 2, b.top);
   };
-  const markClass = (id: string) =>
-    `${hot?.target === id ? ' hot' : ''}${target === id ? ' ck-on' : ''}${commented.has(id) ? ' ck-has' : ''}`;
+  const markClass = (id: string) => `${hot?.target === id ? ' hot' : ''}${picked?.id === id ? ' picked' : ''}`;
+  const pick = (id: string, label: string, e: { clientX: number; clientY: number }) => {
+    if (!changes) return;
+    setHot(null);
+    setPicked((cur) => (cur?.id === id ? null : { id, label, at: { x: e.clientX + 12, y: e.clientY + 12 } }));
+  };
+  const marksOf = (id: string, label: string) => changes?.marks.get(elementQuote(id, label));
+  const openPill = (fn: () => void) => ({
+    className: 'popen',
+    tabIndex: 0,
+    role: 'link',
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      fn();
+    },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      e.stopPropagation();
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fn();
+      }
+    },
+  });
   const plateFor = (key: string, text: string, x: number, y: number, anchor: 'start' | 'middle') =>
     plates[key] ?? {
       x: (anchor === 'middle' ? x - estimate(text) / 2 : x) - 5,
@@ -511,6 +464,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
         onRevealInFinder={() => void fsRef.open({ select: true })}
         actions={
           <>
+            {changes && <ChangeWholeChart changes={changes} />}
             {actions}
             <Button size="sm" variant="outline" onClick={() => void regenerateDoc()} data-testid="chart-regenerate-doc">
               <Trans>Update CHART.md</Trans>
@@ -539,49 +493,24 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                   </Trans>
                 </p>
               </div>
-              <div
-                className="inline-flex rounded-lg p-[3px]"
-                style={{ background: 'var(--surface-2)' }}
-                role="group"
-                aria-label={t`View`}
-              >
-                {(['chart', 'table'] as const).map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    aria-pressed={view === v}
-                    onClick={() => setView(v)}
-                    data-testid={`chart-view-${v}`}
-                    className="rounded-md px-3 py-1 text-[13px] font-medium"
-                    style={
-                      view === v
-                        ? {
-                            background: 'var(--surface-1)',
-                            color: 'var(--text-primary)',
-                            boxShadow: '0 1px 2px rgba(0,0,0,.08)',
-                          }
-                        : { color: 'var(--text-secondary)' }
-                    }
-                  >
-                    {v === 'chart' ? <Trans>Diagram</Trans> : <Trans>Table</Trans>}
-                  </button>
-                ))}
-              </div>
+              <ViewToggle view={view} onChange={setView} />
             </header>
 
             {view === 'chart' ? (
               <div
-                className="overflow-auto rounded-xl border"
+                className="relative overflow-hidden rounded-xl border"
                 style={{ background: 'var(--surface-1)', borderColor: 'var(--hairline)' }}
               >
+                <ZoomControls onFit={pz.fit} onIn={pz.zoomIn} onOut={pz.zoomOut} />
                 <svg
-                  ref={svgRef}
+                  ref={attachSvg}
+                  {...pz.handlers}
                   xmlns="http://www.w3.org/2000/svg"
                   role="img"
-                  className={`mx-auto block${hot ? 'focusing' : ''}`}
-                  width={width}
-                  height={height}
-                  viewBox={`0 0 ${width} ${height}`}
+                  className={`block${hot ? ' focusing' : ''}`}
+                  style={{ width: '100%', height: 'calc(100vh - 290px)', minHeight: 360 }}
+                  viewBox={pz.viewBox}
+                  data-zoomed={pz.zoomed ? 'true' : 'false'}
                   aria-label={t`${value.title || t`Sequence chart`}: ${value.participants.length} participants, ${value.messages.length} messages`}
                   onPointerLeave={() => setHot(null)}
                   data-testid="chart-sequence-svg"
@@ -619,8 +548,13 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                           onPointerMove={(e) => showTip(lane.p.id, lane.info, e)}
                           onFocus={(e) => focusTip(lane.p.id, lane.info, e.currentTarget)}
                           onBlur={() => setHot(null)}
-                          onClick={() => pick(lane.p.id)}
-                          onKeyDown={(e) => keyActivate(e, () => pick(lane.p.id))}
+                          onClick={(e) => pick(lane.p.id, lane.lines[0], e)}
+                          onKeyDown={(e) =>
+                            keyActivate(e, () => {
+                              const b = e.currentTarget.getBoundingClientRect();
+                              pick(lane.p.id, lane.lines[0], { clientX: b.left + b.width / 2, clientY: b.bottom });
+                            })
+                          }
                         >
                           <line className="life" x1={lane.x} y1={TOP + HEAD_H} x2={lane.x} y2={bottom} />
                           <rect
@@ -660,6 +594,19 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                             </text>
                           )}
                           <rect className="act" x={lane.x - 4} y={bottom - 6} width={8} height={6} rx={2} />
+                          {lane.p.ref && (
+                            <g
+                              {...openPill(() => void openRef(lane.p.ref!))}
+                              aria-label={t`Open ${lane.lines[0]}`}
+                              data-testid="chart-participant-open"
+                            >
+                              <rect x={lane.x - 31} y={TOP + HEAD_H + 6} width={62} height={20} rx={10} />
+                              <text x={lane.x} y={TOP + HEAD_H + 20} textAnchor="middle">
+                                {t`Open ↗`}
+                              </text>
+                            </g>
+                          )}
+                          <Marks ns={marksOf(lane.p.id, lane.lines[0])} x={lane.x - HEAD_W / 2 + 2} y={TOP + 2} />
                         </g>
                       );
                     })}
@@ -675,8 +622,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                         onFocus: (e: React.FocusEvent<SVGGElement>) =>
                           focusTip(item.target, item.info, e.currentTarget),
                         onBlur: () => setHot(null),
-                        onClick: () => pick(item.target),
-                        onKeyDown: (e: React.KeyboardEvent) => keyActivate(e, () => pick(item.target)),
+                        onClick: (e: React.MouseEvent) => pick(item.target, item.label, e),
                       };
                       if (item.kind === 'sub') {
                         const { lo, hi, y } = item;
@@ -707,7 +653,6 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                               aria-label={t`Open ${item.label}`}
                               data-testid="chart-subflow-open"
                               onClick={(e) => {
-                                // before the block's own click picks it for a comment
                                 e.stopPropagation();
                                 void openRef(item.ref);
                               }}
@@ -721,6 +666,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                                 {t`Open ↗`}
                               </text>
                             </g>
+                            <Marks ns={marksOf(item.target, item.label)} x={hi - 92} y={y - 16} />
                           </g>
                         );
                       }
@@ -753,6 +699,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                               </text>
                             </>
                           )}
+                          <Marks ns={marksOf(item.target, item.label)} x={plate.x + plate.width + 10} y={plate.y + plate.height / 2} />
                         </g>
                       );
                     })}
@@ -812,23 +759,25 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
           </div>
         </div>
 
-        {hot && (
-          <div
-            ref={tipRef}
-            role="tooltip"
-            data-testid="chart-tooltip"
-            className="pointer-events-none fixed z-10 max-w-[320px] rounded-lg border px-2.5 py-2 text-xs shadow-lg"
-            style={{
-              ...tipStyle(tipPos.current.x, tipPos.current.y),
-              background: 'var(--surface-1)',
-              borderColor: 'var(--hairline-strong)',
+        {picked && changes && (
+          <ChartChangeBox
+            label={picked.label}
+            at={picked.at}
+            onClose={() => setPicked(null)}
+            onSubmit={(instruction, runNow) => {
+              changes.request({ quote: elementQuote(picked.id, picked.label), instruction, runNow });
+              setPicked(null);
             }}
-          >
+          />
+        )}
+
+        {hot && !picked && (
+          <ChartTooltip ref={tipRef} at={tipPos.current}>
             {hot.info.participant ? (
               <>
                 <span className="block text-[13px] font-semibold">{hot.info.label}</span>
                 <span className="mt-0.5 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  <Trans>Participant · click to comment</Trans>
+                  <Trans>Participant</Trans>
                 </span>
               </>
             ) : (
@@ -847,22 +796,9 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                 {hot.info.note}
               </span>
             )}
-          </div>
+          </ChartTooltip>
         )}
 
-        {chart && (
-          <ChartFeedbackToolbar
-            chart={chart}
-            projectId={projectId}
-            session={session}
-            target={target}
-            onTargetChange={setTarget}
-            labelOf={labelOf}
-            onCommented={setCommented}
-            open={panelOpen}
-            onOpenChange={setPanelOpen}
-          />
-        )}
       </div>
     </div>
   );

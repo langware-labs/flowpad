@@ -82,3 +82,4 @@ export type {
 
 // Which surface launches processes from this runtime — the app sets 'app' at boot.
 export { setLaunchSurface, launchSurfaceField, type LaunchSurface } from './launch-surface';
+export { lastChatQuery, mostRecentProcess, recencyOf, toMs } from './last-chat';

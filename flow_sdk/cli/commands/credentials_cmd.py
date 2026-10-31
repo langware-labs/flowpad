@@ -7,6 +7,7 @@
     flow credentials set <name> --from-inputs      — store what a wizard step was given
     flow credentials delete <name>                 — remove it and its values from every store
     flow credentials audit --project … --name …    — is anything deleted still stored anywhere?
+    flow credentials secure [--on|--off] [--rotate] — secured transfer on this install (receiving, device key)
 
 ``declare`` is how a project says what it needs; ``check`` and ``set`` are what ``flow project setup``
 runs: ``check`` is every key step's completion check, and ``set`` is how a typed answer — or an agent
@@ -121,7 +122,7 @@ def _set(
     port = discover_port(required=False)
     if port is not None:
         payload = {"name": name, "values": values, "project_id": _project_id(port, project_id),
-                   "deployment_id": deployment_id, "choice": choice}
+                   "deployment_id": deployment_id, "choice": choice, "read_files": True}
         return post_graph_json(f"{_url(port)}/set", payload, on_error=_refused)
 
     async def here() -> dict:
@@ -130,7 +131,8 @@ def _set(
         project = await _project(project_id)
         try:
             spec = await set_credential_by_name(
-                name, values, project_id=str(project.id) if project else None, deployment_id=deployment_id, choice=choice
+                name, values, project_id=str(project.id) if project else None, deployment_id=deployment_id, choice=choice,
+                read_files=True,
             )
         except CredentialError as e:
             fail(EXIT_NOT_YET, e.code or "REFUSED", str(e))
@@ -221,16 +223,51 @@ def check_credential(
     project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
     deployment: Annotated[Optional[str], _DEPLOYMENT] = None,
 ) -> None:
-    """Exit 0 when every value NAME needs at the deployment (default: this computer) is present; 1
-    when not. Prints no value."""
+    """Exit 0 when every value NAME needs at the deployment (default: this computer) is present — and,
+    when NAME declares a ``test`` and this is this computer, the provider takes them; 1 when not.
+    Prints no value."""
     row = status_row(_status(project, deployment), name)
     missing = _missing(row)
     ready = row is not None and row.get("state") == "connected"
     from flow_sdk.builtin.credential_status import why_not_ready  # noqa: PLC0415
 
     why = why_not_ready(row)
+    if ready and row.get("has_test") and not deployment:
+        # Only a REJECTED key holds setup back; a test that could not run (no network, a missing tool) is
+        # this computer's problem, not the key's.
+        tested = _test(name, row.get("project_id"))
+        if tested.get("state") == "invalid":
+            ready, why = False, f"the provider rejected the key: {tested.get('detail') or 'rejected'}"
     ok({"name": name, "declared": row is not None, "ready": ready, "missing": missing, **({"detail": why} if why else {})})
     if not ready:
+        raise typer.Exit(EXIT_NOT_YET)
+
+
+def _test(name: str, project_id: Optional[str]) -> dict:
+    port = discover_port(required=False)
+    if port is not None:
+        payload = {"name": name, "project_id": _project_id(port, project_id)}
+        return post_graph_json(f"{_url(port)}/test", payload, on_error=_refused)
+
+    async def here() -> dict:
+        from flow_sdk.builtin.credential_service import test_credential  # noqa: PLC0415
+
+        project_row = await _project(project_id)
+        return await test_credential(name, str(project_row.id) if project_row is not None else "")
+
+    return _here(here())
+
+
+@credentials_app.command("test")
+def test_cmd(
+    name: Annotated[str, typer.Argument(help="The credential's name (e.g. bright_data).")],
+    project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
+) -> None:
+    """Run NAME's ``test`` with this computer's values: exit 0 when the provider takes them, 1 when it
+    refuses them or NAME declares no test (``state: untested``). Prints no value."""
+    tested = _test(name, project)
+    ok(tested)
+    if tested.get("state") != "ok":
         raise typer.Exit(EXIT_NOT_YET)
 
 
@@ -348,6 +385,27 @@ def diff(
     a, b = presence(first), presence(second)
     rows = [{"name": n, first: a.get(n), second: b.get(n)} for n in sorted(set(a) | set(b))]
     ok({"differ": [r for r in rows if (r[first] or {}).get("present") != (r[second] or {}).get("present")], "all": rows})
+
+
+@credentials_app.command("secure")
+def secure_cmd(
+    receive: Annotated[Optional[bool], typer.Option("--on/--off", help="Let members send this install credential values (default: on).")] = None,
+    rotate: Annotated[bool, typer.Option("--rotate", help="Replace this install's device key now (it rotates every 30 days anyway).")] = False,
+) -> None:
+    """Secured transfer on this install: whether members can send it values, and its device key (id only).
+    Sharing values and filling them in are clicks in Flowpad (Share → Share values → Secured transfer; the
+    conversation's card) — never from the command line."""
+    port = discover_port(required=False)
+    if port is None:
+        fail(EXIT_NOT_YET, "NO_BACKEND", "start Flowpad first: the key is published through its hub session")
+    if receive is not None:
+        from flow_sdk.preferences import PREF_SECURE_RECEIVING, write_instance_pref  # noqa: PLC0415
+
+        write_instance_pref(PREF_SECURE_RECEIVING, receive)
+    if receive is None and not rotate:
+        ok(get_graph_json(f"{_url(port)}/sealed/device", on_error=_refused))
+        return
+    ok(post_graph_json(f"{_url(port)}/sealed/publish", {"rotate": rotate}, on_error=_refused))
 
 
 @credentials_app.command("use-mine")

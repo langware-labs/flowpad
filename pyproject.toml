@@ -57,6 +57,8 @@ dependencies = [
     # source with Rust and fails on any Mac without the Xcode command line tools. Reached
     # transitively via mcp -> pyjwt[crypto]; 48.0.1 is the last release with a universal2 wheel.
     "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    # Secured transfer (``flow_sdk/secrets/sealed.py``): X25519, Ed25519, ChaCha20-Poly1305, HKDF.
+    "cryptography>=44",
     "numpy",
     "bs4>=0.0.2",
     "h2",

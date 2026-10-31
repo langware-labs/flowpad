@@ -9,7 +9,7 @@ import type { Conversation } from '@sdk/entities/conversation';
 import type { IActionSpec } from '@sdk/models/ChannelSpec';
 import type { FlowMessage } from '@sdk/entities/flow-message';
 import { ConversationActions, ConversationEndedLine } from '@src/components/conversation/ConversationActions';
-import { MessageMarkChip } from '@src/components/conversation/ChannelMessageExtras';
+import { ConversationMarkChips, MessageMarkChip } from '@src/components/conversation/ChannelMessageExtras';
 
 afterEach(cleanup);
 
@@ -135,5 +135,24 @@ describe('MessageMarkChip', () => {
     expect(chip.textContent).toBe('Changes requested');
     expect(chip.getAttribute('data-tone')).toBe('negative');
     expect(chip.className).toContain('border-red-500/60');
+  });
+});
+
+describe('ConversationMarkChips', () => {
+  it('draws one chip per conversation mark, in order', () => {
+    render(
+      <ConversationMarkChips
+        marks={[
+          { key: 'repo:octo/deps', label: 'deps', tone: 'neutral' },
+          { key: 'dependabot', label: 'Dependabot', tone: 'neutral' },
+        ]}
+      />,
+    );
+    expect(screen.getAllByTestId('message-mark').map((c) => c.textContent)).toEqual(['deps', 'Dependabot']);
+  });
+
+  it('draws nothing for a conversation without marks', () => {
+    render(<ConversationMarkChips marks={[]} />);
+    expect(screen.queryByTestId('conversation-marks')).toBeNull();
   });
 });

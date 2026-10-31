@@ -383,6 +383,16 @@ export function reloadOnNewEpoch(src: string, epoch: number | undefined, reload:
   if (seen !== undefined && seen !== epoch) reload();
 }
 
+/**
+ * Free the frame kept for `src` — its guest document, its load state and its epoch. For the owner
+ * of a view's lifetime (the app pool, when the view's tab closes); a display that merely unmounts
+ * parks its frame instead.
+ */
+export function releaseFrame(src: string): void {
+  registry.cleanup(src);
+  shownAtEpoch.delete(src);
+}
+
 const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProps>(
   ({ src, cacheKey, sandbox, allow, testId, onLoad, onError }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -398,8 +408,8 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // a status that is always 0 -- measured identical whether the dev server was
     // alive or refusing connections. It therefore reported "available"
     // unconditionally, and its `catch` for connection-refused was unreachable.
-    // Availability is decided by `useWebappDiagnostics`, which asks the endpoint's
-    // machine to probe its port directly. This component is purely the
+    // Availability is decided by the app's lifecycle record (`useAppLifecycle`), which the backend keeps
+    // from its own probes. This component is purely the
     // mechanism: it mounts a frame and reports load state.
     const refreshIframe = useCallback(() => {
       registry.refresh(src);

@@ -309,7 +309,13 @@ export function DataSourceDialog({
   const renderField = ([key, field]: [string, SpecConfigField]) => {
     const value = draft.fields[key] ?? '';
     const input =
-      field.type === FieldType.LINES ? (
+      field.type === FieldType.BOOL ? (
+        <Switch
+          id={`ds-${key}`}
+          checked={value === 'true'}
+          onCheckedChange={(on) => setField(key, on ? 'true' : 'false')}
+        />
+      ) : field.type === FieldType.LINES ? (
         <Textarea
           id={`ds-${key}`}
           rows={3}

@@ -278,7 +278,8 @@ async def _webapp_step(op: CliOp, env: Optional[dict], *, check: bool) -> CliRes
     webapp = _run_value(env, "webapp")
     which = str(op.webapp_step)
     display = _run_value(env, "display")
-    answer = await step(webapp, which, check=check, display=display)
+    answer = await step(webapp, which, check=check, display=display, service=_run_value(env, "service"),
+                        project=_run_value(env, "project"))
     return CliResult(
         exit_code=answer.exit_code, detail=answer.detail, ran=answer.ran, value=answer.value,
         command=f"app step {webapp} {which}" + (" --check" if check else ""),

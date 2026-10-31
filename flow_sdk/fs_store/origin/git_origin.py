@@ -34,6 +34,15 @@ def _head_commit(repo_path: str) -> Optional[str]:
         return None
 
 
+def _last_commit_touching(repo_path: str, rel: str) -> Optional[str]:
+    """The newest commit on HEAD that changed ``rel`` — the commit a share of that
+    path pins, so a receiver can bring exactly it in (``cherry-pick``). ``None``
+    when the path was never committed."""
+    from flow_sdk.utils.git import _sync  # noqa: PLC0415
+
+    return _sync(repo_path, "log", "-1", "--format=%H", "HEAD", "--", rel) or None
+
+
 def as_git(origin: Any) -> "Optional[GitOrigin]":
     """Narrow an entity's ``origin`` to the git kind — the read seam for every
     clone/branch site. ``None`` for absent, non-git or malformed."""
@@ -173,6 +182,10 @@ class GitOrigin(FSOrigin):
         rel = rel.replace(os.sep, "/")
         if not is_safe_rel_path(rel):
             return None
+        # Pin the asset's own last commit, not the repo's HEAD: later commits that
+        # never touched it are not part of what was shared.
+        if head and rel != ".":
+            head = _last_commit_touching(root, rel)
         return cls(provider=provider, owner=owner, name=name, branch=branch, head_commit=head, rel_path=rel)
 
 

@@ -787,6 +787,36 @@ async def unplace_webapp(webapp_id: str) -> None:
             await row.delete()
 
 
+async def webapp_asset_at(path) -> Optional[Any]:
+    """The webapp asset whose folder is *path* — a folder holding ``webapp.json`` — indexed now if it is not yet.
+
+    None for any other folder. Indexing goes through the indexer's own entry (``reindex_paths``), so the
+    asset lands in the project the folder belongs to and is placed like every other indexed webapp.
+    """
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+    from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+    from flow_sdk.fs_store.resolve import NotAnAsset, resolve_asset  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.webapp_spec import WebappManifestSpec  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    folder = Path(path)
+    if not (folder / str(WebappManifestSpec.main_file)).is_file():
+        return None
+
+    async def owned() -> Optional[Any]:
+        try:
+            resolved = await resolve_asset(folder, write=False, type_name=EntityType.MICRO_APP.value)
+        except NotAnAsset:
+            return None
+        return await WebApp.get_by_id(resolved.id)
+
+    app = await owned()
+    if app is None:
+        await reindex_paths([str(folder / str(WebappManifestSpec.main_file))])
+        app = await owned()
+    return app
+
+
 def served_dir(artifact_path: str, dist: object) -> Optional[Path]:
     """The folder an app's built output is served from, or None when there is none yet.
 
@@ -1015,6 +1045,7 @@ __all__ = [
     "set_app_route",
     "set_route",
     "show_webapp_locally",
+    "webapp_asset_at",
     "tell_hub",
     "upsert_artifact",
     "upsert_artifact_endpoints",
