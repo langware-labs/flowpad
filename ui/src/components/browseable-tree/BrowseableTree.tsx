@@ -133,7 +133,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
       rowMatchesActive(node, activePointer, activeResourcePointer, activeKey) ||
       tree.getChildren(node.id).some(has);
     const reveal = roots.find((r) => r.id === revealRootId);
-    return (reveal && has(reveal) ? reveal : roots.find(has))?.id ?? null;
+    return (reveal && has(reveal) ? reveal : roots.find((r) => r !== reveal && has(r)))?.id ?? null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roots, tree.state.loadStates, activePointer, activeResourcePointer, activeKey, revealRootId]);
 
