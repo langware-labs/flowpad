@@ -65,7 +65,16 @@ for (const app of ['spora-admin', 'spora-backoffice', 'spora-app']) {
     record(info, { app, scenario: 'T3', timings: { settled: Date.now() - t0, ready },
       agentRuns: (await api.agentAttempts(typeids[app])) - agentsBefore,
       notes: [`record ${rec?.state}: ${rec?.detail}`, `owed: ${rec?.setup_owed ?? ''}`, `shows: ${ready === null ? await visibleState(page) : 'ready'}`] });
-    if (rec?.state === 'up') {
+    if (process.env.WL_TIER3_SECRETS === '1') {
+      // This machine has every secret (WL_TIER3_SECRETS=1): nothing may be left for the person — the app is up,
+      // renders, and the note of what it owed clears once its dependencies hold (rechecked on the next open).
+      expect(rec?.state, `${app}: ${rec?.detail}`).toBe('up');
+      expect(ready, `${app} is up but its page never rendered`).not.toBeNull();
+      await expect.poll(async () => {
+        await api.lifecycleUp(typeids[app]);
+        return (await api.lifecycle(typeids[app]))?.setup_owed ?? '';
+      }, { timeout: WATCH, intervals: [2000] }).toBe('');
+    } else if (rec?.state === 'up') {
       expect(ready, `${app} is up but its page never rendered`).not.toBeNull();
     } else {
       // Not up: it must say what the person must do, and no agent may have been spent on it.

@@ -104,6 +104,13 @@ export class Api {
     return r?.data ?? null;
   }
 
+  /** Open the app the way a tab does (`WebApp.up`): a warm open, which also rechecks a stale owed note. */
+  async lifecycleUp(typeid: string): Promise<any> {
+    const id = typeid.replace(/^micro_app-/, '');
+    const r = await this.json('POST', `${this.graph}/micro_app/${id}/up`, { input: {} });
+    return r?.data ?? null;
+  }
+
   /** Agent attempts the record counts (every fingerprint) — what the fixer policy is judged on. */
   async agentAttempts(typeid: string): Promise<number> {
     const rec = await this.lifecycle(typeid);

@@ -10,6 +10,7 @@
  *     (same node, same completion check). Tier 3 runs the real one.
  * No secret is needed here.
  */
+import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -134,7 +135,11 @@ test('Spora Back Office: comes up, warm return asks nothing; no agent', async ({
   expect(await api.agentAttempts(typeids['spora-backoffice'])).toBe(0);
 });
 
-test('Spora Admin: what it owes (the google-cloud credential) is asked of the person, never an agent', async ({ page }, info) => {
+test('Spora Admin: the google-cloud credential is asked of the person when missing, never of an agent', async ({ page }, info) => {
+  // The case is the credential missing. Signed in here, Admin would go on to install from a clone that holds no
+  // `platform/` — real Admin with real secrets is tier 3's (tier3_spora_real.spec.ts).
+  const signedIn = spawnSync('gcloud', ['auth', 'application-default', 'print-access-token'], { stdio: 'ignore' }).status === 0;
+  test.skip(signedIn, 'this machine is signed in to Google Cloud: the missing-credential case cannot happen; tier 3 covers Admin');
   await openApp(page, typeids['spora-admin']);
   const owes = async () => {
     const rec = await api.lifecycle(typeids['spora-admin']);
