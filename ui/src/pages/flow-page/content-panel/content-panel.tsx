@@ -44,7 +44,6 @@ import { StreamInboxView } from '@src/components/stream-inbox-view/StreamInboxVi
 import { AgentStreamInboxView } from '@src/components/stream-inbox-view/AgentStreamInboxView';
 import { TabbedTerminal } from '@src/components/terminal';
 import { HubTerminal } from '@src/components/terminal/HubTerminal';
-import { AppDisplayViewer } from '../app-display-viewer';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
@@ -52,6 +51,8 @@ import { Tab, tabForDockKey } from '@sdk';
 import { useTerminalTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { appDockAddress } from '@src/navigation/app-dock';
+import { AppSlot } from '@src/components/app-pool/AppSlot';
+import { appViewKey } from '@src/components/app-pool/app-view-key';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import {
   DEFAULT_NAVIGATOR_POLICY,
@@ -400,10 +401,18 @@ function ContentPanelBody({
         // An app addressed by its artifact, its webapp definition or its endpoint.
         // Distinct from WEB_APP (a raw external URL): the address is stable
         // identity and the endpoint that serves it is derived, which is what makes
-        // a shown app bookmarkable and restorable at all. The epoch rides along
-        // because a remount alone does not reload a frame the registry parked.
+        // a shown app bookmarkable and restorable at all. A SLOT of the app pool:
+        // the view lives as long as its tab (I6); the epoch reaches it as a prop
+        // (a new one reloads the frame once), never as a remount.
         const app = appDockAddress(currentDock);
-        return app ? <AppDisplayViewer {...app} reloadKey={contentEpoch} /> : null;
+        const appTarget = currentDock?.targetTypeId;
+        return app && appTarget ? (
+          <AppSlot
+            viewKey={appViewKey(currentDock?.hostProcessId, appTarget.toString(), app.route)}
+            tabHash={currentDock?.tabHash ?? ''}
+            viewer={{ ...app, reloadKey: contentEpoch }}
+          />
+        ) : null;
       }
       case ViewType.DIFF:
         if (currentDock?.pointer?.startsWith('asset-compare/')) {

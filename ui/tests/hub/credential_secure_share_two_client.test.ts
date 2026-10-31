@@ -15,7 +15,7 @@
  * The hub must run the device-key code (flowpad/hub/builtin/device_key.py); both instances must be relaunched
  * after any flow_sdk change (backends do not hot-reload).
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -99,7 +99,13 @@ beforeAll(async () => {
   aliceHub = await hubLogin(a.email, a.password);
   bobHub = await hubLogin(b.email, b.password);
 
-  // Both installs publish their device key (sign-in does this too; explicit here so the test does not race it).
+  // Both installs can receive (another suite may have turned Bob's off), then publish their device key (sign-in
+  // does this too; explicit here so the test does not race it).
+  for (const name of [INST_1, INST_2]) {
+    const prefs = path.join(instanceDir(name), 'preferences.json');
+    const cur = existsSync(prefs) ? JSON.parse(readFileSync(prefs, 'utf-8')) : {};
+    writeFileSync(prefs, JSON.stringify({ ...cur, 'preferences.sharing.secure_receiving': true }));
+  }
   for (const inst of [alice, bob]) {
     const pub = await ok(sealed(inst, 'publish', {}), `publish ${inst.name}`);
     expect(pub.key_id).toBeTruthy();

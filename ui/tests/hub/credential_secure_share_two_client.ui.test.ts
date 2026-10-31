@@ -53,6 +53,7 @@ beforeAll(async () => {
   browser = await launchBrowser();
   alice = await openInstancePage(browser, INST_1);
   bob = await openInstancePage(browser, INST_2);
+  setBobReceiving(true);
   for (const inst of [alice, bob]) await ok(postApi(inst.apiUrl, `${CREDS}/sealed/publish`, {}), `publish ${inst.name}`);
 
   const manifest = { name: CRED, title: 'Acme Gmail (UI)', setup: 'manual', vars: { [`UI${RUN}_ADDRESS`]: {}, [`UI${RUN}_PASSWORD`]: {} } };
@@ -66,8 +67,19 @@ beforeAll(async () => {
   await ok(postApi(bob.apiUrl, `${CREDS}/save`, { scope: 'project', project_id: bobProject.id, manifest }), 'bob declares');
 }, 180_000);
 
+/** Bob's install: secure receiving on/off — off = "has not installed Flowpad yet" (no key). */
+function setBobReceiving(on: boolean) {
+  const prefs = path.join(os.homedir(), '.flow', 'instances', INST_2, 'preferences.json');
+  const cur = existsSync(prefs) ? JSON.parse(readFileSync(prefs, 'utf-8')) : {};
+  writeFileSync(prefs, JSON.stringify({ ...cur, 'preferences.sharing.secure_receiving': on }));
+}
+
 afterAll(async () => {
   await browser?.close();
+  if (bob) {
+    setBobReceiving(true);  // leave Bob able to receive for whatever runs next
+    await postApi(bob.apiUrl, `${CREDS}/sealed/publish`, {}).catch(() => undefined);
+  }
 });
 
 beforeEach((context: any) => {
@@ -134,9 +146,7 @@ describe('secured transfer — the journey in the UI', () => {
 
   it('Bob installs later: no warning to Alice; Bob clicks Get the secret; the values arrive; Bob fills', async () => {
     // Bob "has not installed Flowpad yet": receiving off → no key on the hub.
-    const prefs = path.join(os.homedir(), '.flow', 'instances', INST_2, 'preferences.json');
-    const cur = existsSync(prefs) ? JSON.parse(readFileSync(prefs, 'utf-8')) : {};
-    writeFileSync(prefs, JSON.stringify({ ...cur, 'preferences.sharing.secure_receiving': false }));
+    setBobReceiving(false);
     await ok(postApi(bob.apiUrl, `${CREDS}/sealed/publish`, {}), 'bob withdraws');
 
     // Alice shares in the UI exactly as before — the outcome promises, it never warns
@@ -155,8 +165,14 @@ describe('secured transfer — the journey in the UI', () => {
     expect(await outcome.textContent()).not.toMatch(/can't/);
     await shot(alice, 'L1-alice-shared-no-warning');
 
+    // The conversation this share created: the one where Alice's Flowpad holds a promise for Bob.
     const convs: any[] = (await jsonApi(alice.apiUrl, '/graph/conversation')).data ?? [];
-    const conv = convs.sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)))[0];
+    let conv: any = null;
+    for (const c of convs) {
+      const st = (await jsonApi(alice.apiUrl, `${CREDS}/sealed/state?conversation_id=${c.id}`)).data;
+      if ((st?.sent ?? []).some((r: any) => Object.values(r.recipients ?? {}).includes('pending'))) conv = c;
+    }
+    expect(conv?.id).toBeTruthy();
 
     // Bob opens the message after "installing": Get the secret → the values arrive by themselves → Fill in
     await syncAssignedConversationAt(`${bob.apiUrl}/api/v1`, conv.id, INST_2);

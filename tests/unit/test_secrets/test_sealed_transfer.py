@@ -522,3 +522,17 @@ async def test_two_triggers_at_once_answer_a_request_once(world, monkeypatch):
     with inst["alice"].acting(monkeypatch):
         await asyncio.gather(st.answer_requests(CONV), st.answer_requests(CONV))
     assert len([m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]) == 1
+
+
+async def test_a_promise_made_during_an_answer_pass_is_kept(world, monkeypatch):
+    """Two promises in two conversations: an answer pass over one must not drop the other's record."""
+    hub, inst = world
+    hub.members["conv-2"] = ["alice", "bob", "carol"]
+    hub.messages["conv-2"] = []
+    await publish(inst["alice"], monkeypatch)
+    await share_message(world, monkeypatch)
+    await share(world, monkeypatch)
+    with inst["alice"].acting(monkeypatch):
+        await st.seal_credential(str(inst["alice"].credential.typeid), "conv-2", ["bob"])
+        await st.answer_requests(CONV)  # nothing asked yet in CONV: both records stay
+        assert sorted(p["conversation_id"] for p in st._read_json("pending.json").values()) == [CONV, "conv-2"]

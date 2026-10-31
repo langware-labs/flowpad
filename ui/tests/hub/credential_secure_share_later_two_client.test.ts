@@ -13,7 +13,7 @@ import http from 'node:http';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getAliceCreds, getBobCreds, hubAvailable, hubJson, hubLogin } from './_hub';
 import { pollUntil } from './_matrix';
 import { testEntityName, trackForCleanup } from '../_cleanup';
@@ -127,6 +127,14 @@ beforeAll(async () => {
 
 beforeEach((context: any) => {
   if (skipReason) context.skip();
+});
+
+afterAll(async () => {
+  if (!bob) return;
+  const prefs = path.join(instanceDir(INST_2), 'preferences.json');
+  const cur = existsSync(prefs) ? JSON.parse(readFileSync(prefs, 'utf-8')) : {};
+  writeFileSync(prefs, JSON.stringify({ ...cur, [PREF]: true }));  // leave Bob able to receive
+  await postApi(bob.apiUrl, `${CREDS}/sealed/publish`, {}).catch(() => undefined);
 });
 
 describe('secured transfer — the recipient installs later', () => {

@@ -14,6 +14,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar, List, Optional
 
+from pydantic import computed_field
+
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.core import Entity, action
 from flow_sdk.core.setup.skip_mark import SetupSkippable
@@ -56,6 +58,20 @@ class WebApp(SetupSkippable, Entity):
         """A tab showing the app is labelled by its title ("Sales Desk"), else its folder name —
         always, like a chat tab follows its chat (``Tab.reconcile_target_name``)."""
         return SimpleNamespace(name=(self.title or "").strip() or self.name)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def lifecycle(self) -> Optional[dict]:
+        """THE record of this app on this machine (``core/webapp/record``), read from its instance file on every
+        serialization — never stored on the row, so a GET and a push always carry the current one."""
+        if not getattr(self, "id", None) or not self.asset_ref:
+            return None
+        try:
+            from flow_sdk.core.webapp import record  # noqa: PLC0415
+
+            return record.read(str(self.id), self.project_id or "").model_dump(mode="json")
+        except Exception:  # noqa: BLE001 — a record that cannot be read is no record, never a broken row
+            return None
 
     def is_file_backed(self) -> bool:
         """A row with no folder is a delivery row from before endpoints — DB-only,

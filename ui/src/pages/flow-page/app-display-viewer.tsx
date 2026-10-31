@@ -55,6 +55,12 @@ export interface AppDisplayViewerProps {
   /** The host's content epoch — a re-show of the same app, or the agent's turn
    *  end. A change reloads the frame; see `reloadOnNewEpoch`. */
   reloadKey?: number;
+  /** Pooled (`AppPool`): whether a slot shows this view right now. A view kept for its tab while
+   *  another is on screen is `false`; coming back re-checks the app's files. Defaults to true. */
+  active?: boolean;
+  /** Pooled: told the frame's `src` whenever it changes, so the pool can free the frame when its
+   *  tab closes. */
+  onFrameSrc?: (src: string) => void;
 }
 
 /** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
@@ -117,6 +123,8 @@ export function AppDisplayViewer({
   runtime,
   options,
   reloadKey,
+  active = true,
+  onFrameSrc,
 }: AppDisplayViewerProps) {
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
@@ -136,8 +144,12 @@ export function AppDisplayViewer({
   }, [appDisplay.src, reloadKey]);
 
   useEffect(() => {
-    void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
-  }, [appDisplay.src]);
+    if (active) void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
+  }, [appDisplay.src, active]);
+
+  useEffect(() => {
+    if (appDisplay.src) onFrameSrc?.(appDisplay.src);
+  }, [appDisplay.src, onFrameSrc]);
 
   // An app the hub relays cannot run in this frame (`hub-relayed.ts`): it is offered in a tab of its own.
   const relayed = isHubRelayed(appDisplay.src);

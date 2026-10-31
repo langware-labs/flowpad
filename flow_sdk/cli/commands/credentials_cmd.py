@@ -7,6 +7,7 @@
     flow credentials set <name> --from-inputs      — store what a wizard step was given
     flow credentials delete <name>                 — remove it and its values from every store
     flow credentials audit --project … --name …    — is anything deleted still stored anywhere?
+    flow credentials secure [--on|--off] [--rotate] — secured transfer on this install (receiving, device key)
 
 ``declare`` is how a project says what it needs; ``check`` and ``set`` are what ``flow project setup``
 runs: ``check`` is every key step's completion check, and ``set`` is how a typed answer — or an agent
@@ -384,6 +385,27 @@ def diff(
     a, b = presence(first), presence(second)
     rows = [{"name": n, first: a.get(n), second: b.get(n)} for n in sorted(set(a) | set(b))]
     ok({"differ": [r for r in rows if (r[first] or {}).get("present") != (r[second] or {}).get("present")], "all": rows})
+
+
+@credentials_app.command("secure")
+def secure_cmd(
+    receive: Annotated[Optional[bool], typer.Option("--on/--off", help="Let members send this install credential values (default: on).")] = None,
+    rotate: Annotated[bool, typer.Option("--rotate", help="Replace this install's device key now (it rotates every 30 days anyway).")] = False,
+) -> None:
+    """Secured transfer on this install: whether members can send it values, and its device key (id only).
+    Sharing values and filling them in are clicks in Flowpad (Share → Share values → Secured transfer; the
+    conversation's card) — never from the command line."""
+    port = discover_port(required=False)
+    if port is None:
+        fail(EXIT_NOT_YET, "NO_BACKEND", "start Flowpad first: the key is published through its hub session")
+    if receive is not None:
+        from flow_sdk.preferences import PREF_SECURE_RECEIVING, write_instance_pref  # noqa: PLC0415
+
+        write_instance_pref(PREF_SECURE_RECEIVING, receive)
+    if receive is None and not rotate:
+        ok(get_graph_json(f"{_url(port)}/sealed/device", on_error=_refused))
+        return
+    ok(post_graph_json(f"{_url(port)}/sealed/publish", {"rotate": rotate}, on_error=_refused))
 
 
 @credentials_app.command("use-mine")

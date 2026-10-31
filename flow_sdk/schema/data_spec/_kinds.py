@@ -117,6 +117,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
     import flow_sdk.schema.data_spec.webapp_spec  # noqa: F401  — registers ``webapp.mount`` / ``webapp.service``
+    import flow_sdk.schema.data_spec.webapp_lifecycle_spec  # noqa: F401  — registers ``webapp.lifecycle`` / ``webapp.failure`` / ``webapp.handling``
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.plan`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``

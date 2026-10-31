@@ -86,7 +86,8 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   await expect(async () => {
     if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
     if (await modal.isVisible()) {
-      await page.getByTestId('ask-modal-cancel').click();
+      // One question has its own Cancel; a wizard's questions asked together share the list's.
+      await page.getByTestId('ask-modal-cancel').or(page.getByTestId('ask-items-cancel')).click();
     }
     const statuses = await stepStatuses(page);
     const pending = Object.entries(statuses).filter(([, s]) => UNSETTLED.has(s));

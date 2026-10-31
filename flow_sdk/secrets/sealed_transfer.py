@@ -454,7 +454,16 @@ async def _seal_and_post(conversation_id: str, spec, values, keys, users: list[s
         credential_title=spec.title or spec.name, values=values,
     )  # fmt: skip
     await _post(conversation_id, SEALED_KIND, {SEALED_KIND: env.model_dump(mode="json"), **({"answers": answers} if answers else {})})
+    _record_sent(env.transfer_id, conversation_id, users, env.expires_at)
     return env.transfer_id
+
+
+def _record_sent(transfer_id: str, conversation_id: str, users: list[str], expires_at: str) -> None:
+    """The sender's record of a transfer (users, never values) — its card outlives the envelope deleted once everyone
+    answered. Synchronous: no await between the read and the write, so it needs no lock."""
+    sent = _read_json("sent.json")
+    sent[transfer_id] = {"conversation_id": conversation_id, "recipients": users, "expires_at": expires_at}
+    _write_json("sent.json", sent)
 
 
 async def _promise(conversation_id: str, credential_typeid: str, users: list[str]) -> str:
@@ -470,15 +479,25 @@ async def _promise(conversation_id: str, credential_typeid: str, users: list[str
     transfer_id, expires = mint_uuid(), (_now() + SEALED_TTL).isoformat()
     msg = await _post(conversation_id, PENDING_KIND,
                       {"transfer_id": transfer_id, "recipients": users, "expires_at": expires, "root": root})  # fmt: skip
-    pending = _read_json("pending.json")
-    pending[transfer_id] = {"conversation_id": conversation_id, "credential_typeid": credential_typeid,
-                            "recipients": users, "answered": [], "root": root, "expires_at": expires,
-                            "message_id": str((msg or {}).get("id") or "")}  # fmt: skip
-    _write_json("pending.json", pending)
+    async with _lock():
+        pending = _read_json("pending.json")
+        pending[transfer_id] = {"conversation_id": conversation_id, "credential_typeid": credential_typeid,
+                                "recipients": users, "answered": [], "root": root, "expires_at": expires,
+                                "message_id": str((msg or {}).get("id") or "")}  # fmt: skip
+        _write_json("pending.json", pending)
     return transfer_id
 
 
-_answering = None
+_pending_locks: dict = {}
+
+
+def _lock():
+    """One writer of ``pending.json`` at a time (per event loop): a promise recorded while an answer pass runs must
+    not be lost. Not re-entrant — code holding it never takes it again."""
+    import asyncio  # noqa: PLC0415
+
+    loop = asyncio.get_running_loop()
+    return _pending_locks.setdefault(id(loop), asyncio.Lock())
 
 
 async def answer_requests(conversation_id: str) -> list[str]:
@@ -489,12 +508,7 @@ async def answer_requests(conversation_id: str) -> list[str]:
 
     One at a time: a request and its note arrive as two messages, each a trigger — two concurrent passes would both
     see the request unanswered and seal twice."""
-    import asyncio  # noqa: PLC0415
-
-    global _answering
-    if _answering is None:
-        _answering = asyncio.Lock()
-    async with _answering:
+    async with _lock():
         return await _answer_requests(conversation_id)
 
 
@@ -505,7 +519,6 @@ async def _answer_requests(conversation_id: str) -> list[str]:
     messages = await _hub_messages(conversation_id)
     keys: Optional[dict] = None
     served: list[str] = []
-    all_pending = _read_json("pending.json")
     for m in messages:
         tid = str((m.get("metadata") or {}).get("transfer_id") or "")
         uid = str(m.get("sender_id") or "")
@@ -522,14 +535,18 @@ async def _answer_requests(conversation_id: str) -> list[str]:
         await _note(conversation_id, f"Secured transfer key sent to {m.get('sender_name') or 'them'}", p.get("root"))
         p["answered"].append(uid)
         served.append(uid)
+    done = [tid for tid, p in pending.items()
+            if set(p["recipients"]) <= set(p["answered"]) or datetime.fromisoformat(p["expires_at"]) <= _now()]  # fmt: skip
+    for tid in done:
+        if pending[tid].get("message_id"):
+            await _remove(conversation_id, pending[tid]["message_id"])
+    current = _read_json("pending.json")  # re-read: only this conversation's entries change here
     for tid, p in pending.items():
-        if set(p["recipients"]) <= set(p["answered"]) or datetime.fromisoformat(p["expires_at"]) <= _now():
-            if p.get("message_id"):
-                await _remove(conversation_id, p["message_id"])
-            all_pending.pop(tid, None)
-        else:
-            all_pending[tid] = p
-    _write_json("pending.json", all_pending)
+        if tid in done:
+            current.pop(tid, None)
+        elif tid in current:
+            current[tid] = p
+    _write_json("pending.json", current)
     return served
 
 
@@ -563,21 +580,22 @@ async def get_secret(conversation_id: str, transfer_id: str) -> dict:
 
 
 async def _sent(snap: _Snapshot) -> list[dict]:
-    """The sender's view: per transfer it sent here, who filled / declined / is still pending. A transfer every
-    recipient answered (or that expired) has its envelope deleted from the hub."""
+    """The sender's view: per transfer it sent here, who filled / declined / is still pending — from its own record
+    (``sent.json``) and the acks, so the card stays after the envelope is gone. The envelope is deleted from the hub
+    once every recipient answered (or it expired)."""
     me = _user_id()
-    owner = {a.device_id: uid for uid, ads in snap.keys.items() for a in ads}
+    envelopes = {env.transfer_id: m for m, env in _envelopes(snap.messages) if str(m.get("sender_id")) == me}
     out, done = [], []
-    for m, env in _envelopes(snap.messages):
-        if str(m.get("sender_id")) != me:
+    for tid, rec in _read_json("sent.json").items():
+        if rec.get("conversation_id") != snap.conversation_id:
             continue
-        recipients = sorted({owner.get(r.device_id, "") for r in env.recipients} - {""})
-        answered = snap.acks.get(env.transfer_id, {})
-        state = {uid: answered.get(uid, "pending") for uid in recipients}
-        expired = datetime.fromisoformat(env.expires_at) <= _now()
-        if expired or (recipients and "pending" not in state.values()):
-            done.append(str(m["id"]))
-        out.append({"message_id": m["id"], "transfer_id": env.transfer_id, "expires_at": env.expires_at,
+        answered = snap.acks.get(tid, {})
+        state = {uid: answered.get(uid, "pending") for uid in rec.get("recipients") or []}
+        expired = datetime.fromisoformat(rec["expires_at"]) <= _now() and "pending" in state.values()
+        message = envelopes.get(tid)
+        if message is not None and (expired or "pending" not in state.values()):
+            done.append(str(message["id"]))
+        out.append({"message_id": (message or {}).get("id") or tid, "transfer_id": tid, "expires_at": rec["expires_at"],
                     "recipients": state, "expired": expired})  # fmt: skip
     for m in snap.of_kind(PENDING_KIND):  # promised to members with no key yet: waiting, calmly
         meta = m.get("metadata") or {}
@@ -648,7 +666,8 @@ def _promise_cards(snap: _Snapshot, me: str) -> list[dict]:
 async def state(conversation_id: str) -> dict:
     """Both views from ONE read of the hub: ``{incoming, sent}`` — what the conversation's card shows."""
     snap = await _Snapshot.read(conversation_id)
-    if not snap.keys and not snap.of_kind(PENDING_KIND):
+    sent_here = any(r.get("conversation_id") == conversation_id for r in _read_json("sent.json").values())
+    if not snap.keys and not snap.of_kind(PENDING_KIND) and not snap.of_kind(ACK_KIND) and not sent_here:
         return {"incoming": [], "sent": []}
     return {"incoming": await _incoming(snap), "sent": await _sent(snap)}
 

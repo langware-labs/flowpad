@@ -1,0 +1,3 @@
+[
+  { "id": "stub-known", "type": "js_runtime", "source": "page", "pattern": "^StubKnownError", "action": "ignore", "fix": "" }
+]
