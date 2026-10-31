@@ -228,11 +228,10 @@ async def publish_device_key(*, rotate: bool = False) -> Optional[DeviceKeyAdver
 
 async def withdraw_device_key() -> None:
     """Remove EVERY advert this install published (its current device and any it started over from), so nobody seals
-    to a key this install no longer holds. Asks the hub only when this install ever published."""
+    to a key this install no longer holds. Asks the hub, not the local record: an advert left by an older keyring is
+    known only there."""
     from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
 
-    if not _read_json("published.json"):
-        return
     HubProxy, Types = _hub()
     mine = await HubProxy.try_call("GET", Types.USER, _user_id(), "device_key") or []
     install = instance_uid()
@@ -313,8 +312,16 @@ async def _post(conversation_id: str, kind: str, metadata: dict, *, text: str = 
 
 
 async def _note(conversation_id: str, text: str, root: Optional[str]) -> None:
-    """The quiet, automatic line of a "get it" exchange — a reply in the share's thread."""
-    await _post(conversation_id, NOTE_KIND, {"automatic": True}, text=text, reply_to=root)
+    """The quiet, automatic line of a "get it" exchange — a reply in the share's thread. The hub does not echo a
+    message to its own sender, so the poster keeps its row through the one materializer, as any hub message."""
+    msg = await _post(conversation_id, NOTE_KIND, {"automatic": True}, text=text, reply_to=root)
+    if isinstance(msg, dict) and msg.get("id"):
+        try:
+            from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
+
+            await materialize_flow_message(msg, conversation_id, someone_typeid=None, notify=True, remote=True)
+        except Exception:  # noqa: BLE001 — the next conversation sync brings it
+            logger.debug("[sealed] note not kept locally yet", exc_info=True)
 
 
 def _my_name() -> str:
@@ -471,11 +478,27 @@ async def _promise(conversation_id: str, credential_typeid: str, users: list[str
     return transfer_id
 
 
+_answering = None
+
+
 async def answer_requests(conversation_id: str) -> list[str]:
     """Answer every "get it" request this install owes in the conversation — automatically: the sender approved the
     share. For each request from a member a pending promise names: read their key through the members action, seal
     this computer's values for their devices, post them (``answers`` the promise) and a quiet thread note. A promise
-    everyone answered (or that expired) is withdrawn. Answers the user ids served."""
+    everyone answered (or that expired) is withdrawn. Answers the user ids served.
+
+    One at a time: a request and its note arrive as two messages, each a trigger — two concurrent passes would both
+    see the request unanswered and seal twice."""
+    import asyncio  # noqa: PLC0415
+
+    global _answering
+    if _answering is None:
+        _answering = asyncio.Lock()
+    async with _answering:
+        return await _answer_requests(conversation_id)
+
+
+async def _answer_requests(conversation_id: str) -> list[str]:
     pending = {t: p for t, p in _read_json("pending.json").items() if p.get("conversation_id") == conversation_id}
     if not pending:
         return []

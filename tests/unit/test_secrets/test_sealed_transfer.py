@@ -507,3 +507,18 @@ def test_the_hub_only_kinds_never_become_local_rows_and_the_note_does():
         assert FlowMessageKind.hub_only(kind)
     assert not FlowMessageKind.hub_only(st.NOTE_KIND)
     assert FlowMessageKind.sendable(st.NOTE_KIND) is FlowMessageKind.SEALED_NOTE
+
+
+async def test_two_triggers_at_once_answer_a_request_once(world, monkeypatch):
+    """A request and its note arrive as two messages — two concurrent passes must not seal twice."""
+    import asyncio
+
+    hub, inst = world
+    await publish(inst["alice"], monkeypatch)
+    await share_message(world, monkeypatch)
+    await share(world, monkeypatch)
+    with inst["bob"].acting(monkeypatch):
+        await st.get_secret(CONV, (await st.incoming(CONV))[0]["transfer_id"])
+    with inst["alice"].acting(monkeypatch):
+        await asyncio.gather(st.answer_requests(CONV), st.answer_requests(CONV))
+    assert len([m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]) == 1

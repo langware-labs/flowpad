@@ -9,6 +9,7 @@
  * Launch recipe: the same as credential_secure_share_two_client.test.ts (sst-1 = Alice, sst-2 = Bob).
  */
 import { execFileSync } from 'node:child_process';
+import http from 'node:http';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,12 +59,25 @@ async function ok(p: Promise<any>, what: string) {
   if (!/success/i.test(String(body?.status))) throw new Error(`${what}: ${JSON.stringify(body)}`);
   return body.data;
 }
+/** One request on a FRESH connection (`agent: false`): a pooled keep-alive socket the server closed while an
+ *  instance was being relaunched would otherwise surface as ECONNRESET on reuse. */
+function call(url: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined ? undefined : JSON.stringify(body);
+    const req = http.request(url, { method, agent: false, headers: { 'Content-Type': 'application/json', ...headers } }, (res) => {
+      let raw = '';
+      res.on('data', (c) => (raw += c));
+      res.on('end', () => { try { resolve({ http: res.statusCode, ...JSON.parse(raw || '{}') }); } catch (e) { reject(e); } });
+    });
+    req.on('error', reject);
+    if (data) req.write(data);
+    req.end();
+  });
+}
 const sealed = (inst: ResolvedInstance, verb: string, body: any, headers: Record<string, string> = {}) =>
-  fetch(`${inst.apiUrl}/api/v1${CREDS}/sealed/${verb}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
-  }).then(async (r) => ({ http: r.status, ...(await r.json()) }));
+  call(`${inst.apiUrl}/api/v1${CREDS}/sealed/${verb}`, 'POST', body, headers);
 const stateOf = async (inst: ResolvedInstance, conv: string) =>
-  (await ok(jsonApi(inst.apiUrl, `${CREDS}/sealed/state?conversation_id=${conv}`), `state ${inst.name}`)) as { incoming: any[]; sent: any[] };
+  (await ok(call(`${inst.apiUrl}/api/v1${CREDS}/sealed/state?conversation_id=${conv}`), `state ${inst.name}`)) as { incoming: any[]; sent: any[] };
 const hubMessages = async (token: string, conv: string) => ((await hubJson(token, `/graph/conversation/${conv}/flow_message`)) as any[]) ?? [];
 const ofKind = (rows: any[], kind: string) => rows.filter((m) => m.kind === kind);
 
@@ -145,8 +159,9 @@ describe('secured transfer — the recipient installs later', () => {
     // the quiet thread: two notes, replies to the share message, on the hub and as local rows on BOTH sides
     const onHub = await hubMessages(aliceHub.token, convId);
     const notes = ofKind(onHub, 'sealed_note');
-    expect(notes.map((n) => n.text).sort()).toEqual(
-      [expect.stringMatching(/shared public key for secured transfer$/), expect.stringMatching(/^Secured transfer key sent to /)].sort());
+    expect(notes.length).toBe(2);
+    expect(notes.some((n) => /shared public key for secured transfer$/.test(n.text))).toBe(true);
+    expect(notes.some((n) => /^Secured transfer key sent to /.test(n.text))).toBe(true);
     for (const n of notes) expect(n.reply_to_id).toBe(root);
     for (const inst of [alice, bob]) {
       const local = await pollUntil(async () => {

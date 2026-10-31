@@ -6,7 +6,7 @@
  *
  * Same launch recipe as credential_secure_share_two_client.test.ts (SHARE_INST_1/2 and the ALICE_ / BOB_ credentials).
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Browser } from 'playwright';
@@ -131,4 +131,61 @@ describe('secured transfer — the journey in the UI', () => {
     }, 30_000, 'Alice sees Filled in');
     await shot(alice, '06-alice-filled-in');
   }, 180_000);
+
+  it('Bob installs later: no warning to Alice; Bob clicks Get the secret; the values arrive; Bob fills', async () => {
+    // Bob "has not installed Flowpad yet": receiving off → no key on the hub.
+    const prefs = path.join(os.homedir(), '.flow', 'instances', INST_2, 'preferences.json');
+    const cur = existsSync(prefs) ? JSON.parse(readFileSync(prefs, 'utf-8')) : {};
+    writeFileSync(prefs, JSON.stringify({ ...cur, 'preferences.sharing.secure_receiving': false }));
+    await ok(postApi(bob.apiUrl, `${CREDS}/sealed/publish`, {}), 'bob withdraws');
+
+    // Alice shares in the UI exactly as before — the outcome promises, it never warns
+    await alice.page.goto(`${alice.feUrl}/dock/assets/credential-${credId}`, { waitUntil: 'domcontentloaded' });
+    await alice.page.getByTestId('entity-actions-share').first().click();
+    await alice.page.getByTestId('share-preshare-step').waitFor({ timeout: 20_000 });
+    await alice.page.getByTestId('share-values-checkbox').click();
+    await alice.page.getByTestId('share-preshare-continue').click();
+    const skip = alice.page.getByTestId('share-skip-link');
+    if (await skip.waitFor({ timeout: 5_000 }).then(() => true, () => false)) await skip.click();
+    await alice.page.getByTestId('share-secured-line').waitFor({ timeout: 20_000 });
+    await driveShareDialog(alice.page, { recipientEmail: process.env.BOB_EMAIL!.trim() });
+    const outcome = alice.page.getByTestId('share-sealed-outcome');
+    await outcome.waitFor({ timeout: 30_000 });
+    expect(await outcome.textContent()).toMatch(/will get them when they open the message in Flowpad/);
+    expect(await outcome.textContent()).not.toMatch(/can't/);
+    await shot(alice, 'L1-alice-shared-no-warning');
+
+    const convs: any[] = (await jsonApi(alice.apiUrl, '/graph/conversation')).data ?? [];
+    const conv = convs.sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)))[0];
+
+    // Bob opens the message after "installing": Get the secret → the values arrive by themselves → Fill in
+    await syncAssignedConversationAt(`${bob.apiUrl}/api/v1`, conv.id, INST_2);
+    await openConversation(bob, conv.id);
+    const get = bob.page.getByTestId('sealed-get').first();
+    await get.waitFor({ timeout: 30_000 });
+    await shot(bob, 'L2-bob-get-the-secret');
+    await get.click();
+    const card = bob.page.locator('[data-testid="sealed-card"][data-state="pending"]').first();
+    await pollUntil(async () => {
+      if (await card.count()) return true;
+      await bob.page.reload({ waitUntil: 'domcontentloaded' });
+      return null;
+    }, 40_000, 'the values arrived for Bob');
+    await shot(bob, 'L3-bob-values-arrived');
+    await bob.page.getByTestId('sealed-fill').first().click();
+    await pollUntil(async () => (await bob.page.locator('[data-testid="sealed-card"][data-state="filled"]').count() ? true : null),
+      20_000, 'Bob filled');
+    const envFile = path.join(bobProject.fs_storage_mount_path, '.env.local');
+    expect(readFileSync(envFile, 'utf-8')).toContain(SECRET);
+
+    // Alice's side: the quiet, automatic thread lines are there
+    await openConversation(alice, conv.id);
+    await pollUntil(async () => {
+      await alice.page.reload({ waitUntil: 'domcontentloaded' });
+      const open = alice.page.getByTestId('thread-stack-open').first();
+      if (await open.count()) await open.click().catch(() => undefined);
+      return (await alice.page.getByTestId('sealed-note-line').count()) >= 1 ? true : null;
+    }, 40_000, 'automatic thread lines on Alice\'s side');
+    await shot(alice, 'L4-alice-automatic-thread');
+  }, 240_000);
 });
