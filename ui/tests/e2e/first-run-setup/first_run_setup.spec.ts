@@ -74,12 +74,8 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     expect(started, 'the wizard has started running').toBe(true);
   }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
 
-  // 3. All four tools are on the page.
-  for (const id of STEPS) {
-    await expect(page.getByTestId(`wizard-step-${id}`)).toBeVisible();
-  }
-
-  // 4. Declining every install question, the run reaches an answer for every step. The source
+  // 3–4. All four tools are on the page (`stepStatuses` reads every row), and declining every
+  //    install question, the run reaches an answer for each. The source
   //    chooser can still open here: right after Start the popup shows the opening check's
   //    statuses, so step 2 may finish before the chooser appears. Skipping it is an answer.
   const modal = page.getByTestId('ask-modal');
