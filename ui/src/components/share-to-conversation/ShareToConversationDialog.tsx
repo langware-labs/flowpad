@@ -870,8 +870,8 @@ export function ShareToConversationDialog({
                 {sealOutcome.sealed_for.length ? (
                   <Trans>Values sealed for {sealOutcome.sealed_for.length} recipient(s).</Trans>
                 ) : null}{' '}
-                {sealOutcome.cannot_receive.length ? (
-                  <Trans>{sealOutcome.cannot_receive.length} can't receive values here and got the description only.</Trans>
+                {sealOutcome.later?.length ? (
+                  <Trans>{sealOutcome.later.length} will get them when they open the message in Flowpad.</Trans>
                 ) : null}
               </p>
             )}

@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 
 SEALED_KIND = FlowMessageKind.SEALED_VALUE.value
 ACK_KIND = FlowMessageKind.SEALED_ACK.value
+PENDING_KIND = FlowMessageKind.SEALED_PENDING.value
+REQUEST_KIND = FlowMessageKind.SEALED_REQUEST.value
+NOTE_KIND = FlowMessageKind.SEALED_NOTE.value
 #: A device rotates its keys this often; the retired keys stay until what was sealed to them expired.
 ROTATE_AFTER = timedelta(days=30)
 DEVICE_KEYS = "device_keys"
@@ -55,7 +58,12 @@ def _hub():
 
 
 async def on_sealed_arrival(conversation_id: str) -> None:
-    """A sealed value or ack arrived live: refresh the conversation so its card re-reads the hub."""
+    """A hub-only secured-transfer message arrived live: answer any "get it" request this install owes (the sender
+    already approved the share), then refresh the conversation so its card re-reads the hub."""
+    try:
+        await answer_requests(conversation_id)
+    except Exception:  # noqa: BLE001 — retried by the next arrival and by the catch-up after sign-in
+        logger.info("[sealed] could not answer requests in %s", conversation_id, exc_info=True)
     try:
         from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
 
@@ -219,13 +227,19 @@ async def publish_device_key(*, rotate: bool = False) -> Optional[DeviceKeyAdver
 
 
 async def withdraw_device_key() -> None:
-    """Remove this install's advert from the hub — once: nothing published, nothing to ask."""
-    published = _read_json("published.json")
-    if not published:
+    """Remove EVERY advert this install published (its current device and any it started over from), so nobody seals
+    to a key this install no longer holds. Asks the hub only when this install ever published."""
+    from flow_sdk.instance_settings.runtime import instance_uid  # noqa: PLC0415
+
+    if not _read_json("published.json"):
         return
     HubProxy, Types = _hub()
-    await HubProxy.try_call("DELETE", Types.USER, _user_id(), "device_key",
-                            params={"device_id": published.get("device_id") or device_id()})  # fmt: skip
+    mine = await HubProxy.try_call("GET", Types.USER, _user_id(), "device_key") or []
+    install = instance_uid()
+    for advert in mine:
+        did = str((advert or {}).get("device_id") or "")
+        if did == install or did.startswith(f"{install}."):
+            await HubProxy.try_call("DELETE", Types.USER, _user_id(), "device_key", params={"device_id": did})
     _write_json("published.json", {})
 
 
@@ -292,10 +306,22 @@ async def _hub_messages(conversation_id: str) -> list[dict]:
     return [m for m in rows or [] if isinstance(m, dict)]
 
 
-async def _post(conversation_id: str, kind: str, metadata: dict) -> dict:
+async def _post(conversation_id: str, kind: str, metadata: dict, *, text: str = "", reply_to: Optional[str] = None) -> dict:
     HubProxy, Types = _hub()
-    return await HubProxy.call("POST", Types.CONVERSATION, conversation_id, "add_message",
-                               payload={"text": "", "kind": kind, "metadata": metadata})  # fmt: skip
+    payload = {"text": text, "kind": kind, "metadata": metadata, **({"reply_to_id": reply_to} if reply_to else {})}
+    return await HubProxy.call("POST", Types.CONVERSATION, conversation_id, "add_message", payload=payload)
+
+
+async def _note(conversation_id: str, text: str, root: Optional[str]) -> None:
+    """The quiet, automatic line of a "get it" exchange — a reply in the share's thread."""
+    await _post(conversation_id, NOTE_KIND, {"automatic": True}, text=text, reply_to=root)
+
+
+def _my_name() -> str:
+    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+
+    user = get_user() or {}
+    return str(user.get("name") or user.get("email") or "A member")
 
 
 async def _remove(conversation_id: str, message_id: str) -> None:
@@ -351,6 +377,9 @@ class _Snapshot:
         keys = await member_keys(conversation_id) if has_sealed else {}
         return cls(conversation_id, messages, _acks(messages), keys)
 
+    def of_kind(self, kind: str) -> list[dict]:
+        return [m for m in self.messages if m.get("kind") == kind]
+
     def find(self, message_id: str) -> tuple[dict, SealedValueSpec]:
         for m, env in _envelopes(self.messages):
             if str(m.get("id")) == message_id:
@@ -379,6 +408,25 @@ async def seal_credential(credential_typeid: str, conversation_id: str, recipien
     from flow_sdk.builtin.credential_service import get_credential  # noqa: PLC0415
     from flow_sdk.builtin.credential_store import Placement, scope_of  # noqa: PLC0415
 
+    spec, values = await _credential_values(credential_typeid)
+    me = _user_id()
+    keys = await member_keys(conversation_id)
+    # No list: every other member of the conversation (a share into a new conversation knows emails, not ids).
+    wanted = [u for u in dict.fromkeys(recipient_user_ids or list(keys)) if u and u != me]
+    sealed_for = [u for u in wanted if keys.get(u)]
+    later = [u for u in wanted if not keys.get(u)]
+    transfer_id = await _seal_and_post(conversation_id, spec, values, keys, sealed_for) if sealed_for else None
+    if later:  # no key yet: a promise they redeem after installing — no warning to the sender
+        await _promise(conversation_id, credential_typeid, later)
+    return {"transfer_id": transfer_id, "sealed_for": sealed_for, "later": later, "cannot_receive": [],
+            "variables": sorted(values)}
+
+
+async def _credential_values(credential_typeid: str):
+    from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
+    from flow_sdk.builtin.credential_service import get_credential  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import Placement, scope_of  # noqa: PLC0415
+
     spec = await get_credential(credential_typeid)
     if spec is None:
         raise SealedError("no_credential", "credential not found")
@@ -386,26 +434,109 @@ async def seal_credential(credential_typeid: str, conversation_id: str, recipien
     values = await resolve_project_secrets(project, only=list(spec.stored_var_names()), placement=await Placement.of(None))
     if not values:
         raise SealedError("no_values", f"{spec.title or spec.name} has no values on this computer to share")
+    return spec, values
 
-    me = _user_id()
-    keys = await member_keys(conversation_id)
-    # No list: every other member of the conversation (a share into a new conversation knows emails, not ids).
-    wanted = [u for u in dict.fromkeys(recipient_user_ids or list(keys)) if u and u != me]
-    sealed_for = [u for u in wanted if keys.get(u)]
-    cannot = [u for u in wanted if not keys.get(u)]
-    if not sealed_for:
-        return {"transfer_id": None, "sealed_for": [], "cannot_receive": cannot, "variables": sorted(values)}
 
+async def _seal_and_post(conversation_id: str, spec, values, keys, users: list[str], *, answers: str = "") -> str:
     ring, previous = load_keyring()
     if previous is not None:  # a due rotation: publish it before sealing with the new key
         await publish_device_key()
     env = seal(
-        ring.current, sender_user_id=me, sender_device_id=ring.device_id, conversation_id=conversation_id,
-        recipients=[a for u in sealed_for for a in keys[u]], credential_name=spec.name,
+        ring.current, sender_user_id=_user_id(), sender_device_id=ring.device_id, conversation_id=conversation_id,
+        recipients=[a for u in users for a in keys[u]], credential_name=spec.name,
         credential_title=spec.title or spec.name, values=values,
     )  # fmt: skip
-    await _post(conversation_id, SEALED_KIND, {SEALED_KIND: env.model_dump(mode="json")})
-    return {"transfer_id": env.transfer_id, "sealed_for": sealed_for, "cannot_receive": cannot, "variables": sorted(values)}
+    await _post(conversation_id, SEALED_KIND, {SEALED_KIND: env.model_dump(mode="json"), **({"answers": answers} if answers else {})})
+    return env.transfer_id
+
+
+async def _promise(conversation_id: str, credential_typeid: str, users: list[str]) -> str:
+    """A promise to members with no key yet: a hub-only ``sealed_pending`` (names only the users, never the
+    credential), and this install's own record of what to seal when they ask (``pending.json``)."""
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.secrets.sealed import SEALED_TTL  # noqa: PLC0415
+
+    me, ref = _user_id(), credential_typeid.split("-", 1)[-1]
+    shares = [m for m in await _hub_messages(conversation_id) if str(m.get("sender_id")) == me
+              and any(ref in str((a or {}).get("data") or "") for a in m.get("attachment") or [])]  # fmt: skip
+    root = str(shares[-1]["id"]) if shares else None
+    transfer_id, expires = mint_uuid(), (_now() + SEALED_TTL).isoformat()
+    msg = await _post(conversation_id, PENDING_KIND,
+                      {"transfer_id": transfer_id, "recipients": users, "expires_at": expires, "root": root})  # fmt: skip
+    pending = _read_json("pending.json")
+    pending[transfer_id] = {"conversation_id": conversation_id, "credential_typeid": credential_typeid,
+                            "recipients": users, "answered": [], "root": root, "expires_at": expires,
+                            "message_id": str((msg or {}).get("id") or "")}  # fmt: skip
+    _write_json("pending.json", pending)
+    return transfer_id
+
+
+async def answer_requests(conversation_id: str) -> list[str]:
+    """Answer every "get it" request this install owes in the conversation — automatically: the sender approved the
+    share. For each request from a member a pending promise names: read their key through the members action, seal
+    this computer's values for their devices, post them (``answers`` the promise) and a quiet thread note. A promise
+    everyone answered (or that expired) is withdrawn. Answers the user ids served."""
+    pending = {t: p for t, p in _read_json("pending.json").items() if p.get("conversation_id") == conversation_id}
+    if not pending:
+        return []
+    messages = await _hub_messages(conversation_id)
+    keys: Optional[dict] = None
+    served: list[str] = []
+    all_pending = _read_json("pending.json")
+    for m in messages:
+        tid = str((m.get("metadata") or {}).get("transfer_id") or "")
+        uid = str(m.get("sender_id") or "")
+        p = pending.get(tid)
+        if m.get("kind") != REQUEST_KIND or p is None or uid not in p["recipients"] or uid in p["answered"]:
+            continue
+        if datetime.fromisoformat(p["expires_at"]) <= _now():
+            continue
+        keys = keys if keys is not None else await member_keys(conversation_id)
+        if not keys.get(uid):
+            continue  # their key is not listed (yet) through the members action: the next arrival retries
+        spec, values = await _credential_values(p["credential_typeid"])
+        await _seal_and_post(conversation_id, spec, values, keys, [uid], answers=tid)
+        await _note(conversation_id, f"Secured transfer key sent to {m.get('sender_name') or 'them'}", p.get("root"))
+        p["answered"].append(uid)
+        served.append(uid)
+    for tid, p in pending.items():
+        if set(p["recipients"]) <= set(p["answered"]) or datetime.fromisoformat(p["expires_at"]) <= _now():
+            if p.get("message_id"):
+                await _remove(conversation_id, p["message_id"])
+            all_pending.pop(tid, None)
+        else:
+            all_pending[tid] = p
+    _write_json("pending.json", all_pending)
+    return served
+
+
+async def answer_pending() -> None:
+    """The catch-up after sign-in: answer what was requested while this install was offline."""
+    for conversation_id in sorted({p.get("conversation_id") for p in _read_json("pending.json").values()} - {None}):
+        try:
+            await answer_requests(conversation_id)
+        except Exception:  # noqa: BLE001 — one conversation's failure never blocks the others
+            logger.info("[sealed] catch-up failed for %s", conversation_id, exc_info=True)
+
+
+async def get_secret(conversation_id: str, transfer_id: str) -> dict:
+    """The recipient's one click: turn on receiving here (publish this install's key), ask the sender's Flowpad, and
+    leave a quiet note in the share's thread. The values arrive by themselves when the sender's Flowpad answers."""
+    from flow_sdk.preferences import PREF_SECURE_RECEIVING, write_instance_pref  # noqa: PLC0415
+
+    promise = next((m for m in await _hub_messages(conversation_id) if m.get("kind") == PENDING_KIND
+                    and str((m.get("metadata") or {}).get("transfer_id")) == transfer_id), None)  # fmt: skip
+    meta = (promise or {}).get("metadata") or {}
+    if promise is None or _user_id() not in (meta.get("recipients") or []):
+        raise SealedError("gone", "these values are no longer waiting for you — ask the sender to share again")
+    if datetime.fromisoformat(meta["expires_at"]) <= _now():
+        raise SealedError("expired", "these values expired — ask the sender to share again")
+    if not receiving_enabled():
+        write_instance_pref(PREF_SECURE_RECEIVING, True)
+    await publish_device_key()
+    await _post(conversation_id, REQUEST_KIND, {"transfer_id": transfer_id})
+    await _note(conversation_id, f"{_my_name()} shared public key for secured transfer", meta.get("root"))
+    return {"requested": transfer_id}
 
 
 async def _sent(snap: _Snapshot) -> list[dict]:
@@ -425,6 +556,11 @@ async def _sent(snap: _Snapshot) -> list[dict]:
             done.append(str(m["id"]))
         out.append({"message_id": m["id"], "transfer_id": env.transfer_id, "expires_at": env.expires_at,
                     "recipients": state, "expired": expired})  # fmt: skip
+    for m in snap.of_kind(PENDING_KIND):  # promised to members with no key yet: waiting, calmly
+        meta = m.get("metadata") or {}
+        if str(m.get("sender_id")) == me:
+            out.append({"message_id": m["id"], "transfer_id": meta.get("transfer_id"), "expires_at": meta.get("expires_at"),
+                        "recipients": {u: "pending" for u in meta.get("recipients") or []}, "expired": False})  # fmt: skip
     for message_id in done:
         await _remove(snap.conversation_id, message_id)
     return out
@@ -462,13 +598,34 @@ async def _incoming(snap: _Snapshot) -> list[dict]:
         except SealedError as e:
             card.update(state=e.code, error=str(e))
         out.append(card)
+    out.extend(_promise_cards(snap, me))
     return out
+
+
+def _promise_cards(snap: _Snapshot, me: str) -> list[dict]:
+    """Promises naming me that no sealed value answered yet: ``get`` (Get the secret) or ``requested`` (waiting)."""
+    answered = {str((m.get("metadata") or {}).get("answers") or "") for m in snap.of_kind(SEALED_KIND)}
+    asked = {str((m.get("metadata") or {}).get("transfer_id") or ""): m for m in snap.of_kind(REQUEST_KIND)
+             if str(m.get("sender_id")) == me}  # fmt: skip
+    cards = []
+    for m in snap.of_kind(PENDING_KIND):
+        meta = m.get("metadata") or {}
+        tid = str(meta.get("transfer_id") or "")
+        if me not in (meta.get("recipients") or []) or tid in answered:
+            continue
+        expired = datetime.fromisoformat(str(meta.get("expires_at"))) <= _now()
+        request = asked.get(tid)
+        cards.append({"message_id": m["id"], "transfer_id": tid, "sender_id": m.get("sender_id"),
+                      "sender_name": m.get("sender_name"), "expires_at": meta.get("expires_at"),
+                      "state": "expired" if expired else ("requested" if request else "get"),
+                      "requested_at": (request or {}).get("created_date")})  # fmt: skip
+    return cards
 
 
 async def state(conversation_id: str) -> dict:
     """Both views from ONE read of the hub: ``{incoming, sent}`` — what the conversation's card shows."""
     snap = await _Snapshot.read(conversation_id)
-    if not snap.keys:
+    if not snap.keys and not snap.of_kind(PENDING_KIND):
         return {"incoming": [], "sent": []}
     return {"incoming": await _incoming(snap), "sent": await _sent(snap)}
 
@@ -544,7 +701,10 @@ async def _answer(conversation_id: str, transfer_id: str, outcome: str) -> None:
 __all__ = [
     "KeychainKeyStore",
     "decline",
+    "answer_pending",
+    "answer_requests",
     "fill",
+    "get_secret",
     "incoming",
     "key_info",
     "member_keys",

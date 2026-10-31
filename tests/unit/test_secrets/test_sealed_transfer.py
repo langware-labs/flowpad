@@ -58,6 +58,8 @@ class FakeHub:
                 advert = payload["advert"]
                 self.keys.setdefault(self.caller, {})[advert["device_id"]] = advert
                 return {"published": advert["device_id"]}
+            if method == "GET":
+                return list(self.keys.get(self.caller, {}).values())
             if method == "DELETE":
                 self.keys.get(self.caller, {}).pop((params or {}).get("device_id"), None)
                 return {}
@@ -69,7 +71,10 @@ class FakeHub:
             return [{"user_id": u, "devices": list(self.keys.get(u, {}).values())} for u in self.members[entity_id]]
         if et == "conversation" and action == "add_message":
             msg = {"id": f"m{sum(len(v) for v in self.messages.values()) + 1}", "sender_id": self.caller,
-                   "kind": payload.get("kind"), "metadata": copy.deepcopy(payload.get("metadata") or {})}
+                   "sender_name": self.caller.title(), "kind": payload.get("kind"), "text": payload.get("text", ""),
+                   "reply_to_id": payload.get("reply_to_id"), "attachment": payload.get("attachment") or [],
+                   "created_date": f"2026-10-31T00:00:{sum(len(v) for v in self.messages.values()):02d}+00:00",
+                   "metadata": copy.deepcopy(payload.get("metadata") or {})}
             self.messages[entity_id].append(msg)
             return msg
         if et == "conversation" and action == "remove_message":
@@ -88,6 +93,7 @@ class Install:
 
     def __init__(self, hub, user, device, root: Path):
         self.hub, self.user, self.device = hub, user, device
+        self.install = device  # the install id; a device that starts over is "<install>.<suffix>"
         self.keys = MemoryKeyStore()
         self.state = root / f"state-{device}"
         self.state.mkdir(parents=True)
@@ -99,7 +105,9 @@ class Install:
         self.hub.caller = self.user
         with monkeypatch.context() as m:
             m.setattr(st, "_user_id", lambda: self.user)
+            m.setattr(st, "_my_name", lambda: self.user.title())
             m.setattr(st, "_new_device_id", lambda: self.device)
+            m.setattr("flow_sdk.instance_settings.runtime.instance_uid", lambda: self.install)
             m.setattr(st, "_state_dir", lambda: self.state)
             previous = st.set_key_store(self.keys)
             try:
@@ -116,6 +124,8 @@ async def world(home, tmp_path, monkeypatch):
     monkeypatch.setattr(HubProxy, "call", hub.call)
     monkeypatch.setattr(HubProxy, "try_call", hub.try_call)
     monkeypatch.setattr(st, "on_sealed_arrival", lambda *_: None)
+    monkeypatch.setattr(st, "receiving_enabled", lambda: True)
+    monkeypatch.setattr("flow_sdk.preferences.write_instance_pref", lambda *_a, **_k: True)
     installs = {}
     for user, device in (("alice", "alice-mac"), ("bob", "bob-mac"), ("carol", "carol-1")):
         inst = Install(hub, user, device, tmp_path)
@@ -180,8 +190,9 @@ async def test_a_member_without_a_key_gets_no_values(world, monkeypatch):
     hub, inst = world
     await publish(inst["alice"], monkeypatch)
     sent = await share(world, monkeypatch, recipients=("bob",))
-    assert sent["sealed_for"] == [] and sent["cannot_receive"] == ["bob"] and sent["transfer_id"] is None
+    assert sent["sealed_for"] == [] and sent["later"] == ["bob"] and sent["transfer_id"] is None
     assert not [m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]
+    assert [m["kind"] for m in hub.messages[CONV]] == [st.PENDING_KIND]  # a promise, no values
 
 
 async def test_mixed_recipients_seal_only_for_those_with_a_key(world, monkeypatch):
@@ -189,7 +200,7 @@ async def test_mixed_recipients_seal_only_for_those_with_a_key(world, monkeypatc
     for who in ("alice", "bob"):
         await publish(inst[who], monkeypatch)
     sent = await share(world, monkeypatch, recipients=("bob", "carol"))
-    assert sent["sealed_for"] == ["bob"] and sent["cannot_receive"] == ["carol"]
+    assert sent["sealed_for"] == ["bob"] and sent["later"] == ["carol"]
     with inst["alice"].acting(monkeypatch):
         assert await st.receivers(CONV) == {"bob": "ok", "carol": "no_key"}
 
@@ -292,7 +303,7 @@ async def test_an_unsigned_key_swap_is_not_followed(world, monkeypatch):
     inst["bob"].keys.clear()  # the hub (or a reinstall) presents a different key for the same device
     await publish(inst["bob"], monkeypatch)
     sent = await share(world, monkeypatch)
-    assert sent["cannot_receive"] == ["bob"]
+    assert sent["later"] == ["bob"] and sent["sealed_for"] == []
 
 
 async def test_an_install_that_lost_its_keys_starts_as_a_new_device(world, monkeypatch):
@@ -304,9 +315,9 @@ async def test_an_install_that_lost_its_keys_starts_as_a_new_device(world, monke
     with inst["alice"].acting(monkeypatch):
         await st.member_keys(CONV)  # alice pins bob-mac
     inst["bob"].keys.clear()
-    inst["bob"].device = "bob-mac-2"  # what the real minter does: instance id + a fresh suffix
+    inst["bob"].device = "bob-mac.2"  # what the real minter does: instance id + a fresh suffix
     await publish(inst["bob"], monkeypatch)
-    assert sorted(hub.keys["bob"]) == ["bob-mac-2"]  # the old device's advert is gone
+    assert sorted(hub.keys["bob"]) == ["bob-mac.2"]  # the old device's advert is gone
     sent = await share(world, monkeypatch)
     assert sent["sealed_for"] == ["bob"]
     with inst["bob"].acting(monkeypatch):
@@ -323,10 +334,10 @@ async def test_a_keyring_from_before_device_ids_is_published_under_its_new_devic
     legacy = inst["bob"].keys.load()
     legacy.pop("device_id")
     inst["bob"].keys.save(legacy)
-    inst["bob"].device = "bob-mac-upgraded"
+    inst["bob"].device = "bob-mac.upgraded"
     await publish(inst["bob"], monkeypatch)
-    assert sorted(hub.keys["bob"]) == ["bob-mac-upgraded"]
-    assert inst["bob"].keys.load()["device_id"] == "bob-mac-upgraded", "the minted id is saved, not re-minted per load"
+    assert sorted(hub.keys["bob"]) == ["bob-mac.upgraded"]
+    assert inst["bob"].keys.load()["device_id"] == "bob-mac.upgraded", "the minted id is saved, not re-minted per load"
 
 
 async def test_values_fill_only_what_the_receivers_credential_declares(world, monkeypatch):
@@ -392,3 +403,107 @@ async def test_seal_and_fill_refuse_a_worker_or_a_served_app(world):
     assert _from_a_person(req({"referer": "http://localhost:5036/dock/assets/credential-x"}))
     assert not _from_a_person(req({"x-cookie-gate": "secret"}))
     assert not _from_a_person(req({"referer": "http://localhost:9007/api/v1/graph/service_endpoint/e/service/app/"}))
+
+
+# ── a recipient with no key yet ("installs later") ─────────────────────────
+
+
+async def share_message(world, monkeypatch):
+    """The share itself: Alice's message carrying the credential — the thread root the automatic notes reply to."""
+    hub, inst = world
+    hub.caller = "alice"
+    await hub.call("POST", "conversation", CONV, "add_message",
+                   payload={"text": "Eran has shared Acme Gmail", "kind": "user",
+                            "attachment": [{"attachment_type": "type_id", "data": str(inst["alice"].credential.typeid)}]})
+    return hub.messages[CONV][-1]["id"]
+
+
+async def test_bob_installs_later_gets_the_secret_and_alice_answers_by_herself(world, monkeypatch):
+    hub, inst = world
+    await publish(inst["alice"], monkeypatch)
+    root = await share_message(world, monkeypatch)
+    sent = await share(world, monkeypatch)  # Bob has no key: a promise, no warning
+    assert sent["later"] == ["bob"]
+    for leak in (SECRET, "ACME_GMAIL", "acme-gmail"):
+        assert leak not in json.dumps([m for m in hub.messages[CONV] if m["kind"] == st.PENDING_KIND])
+
+    with inst["bob"].acting(monkeypatch):
+        cards = await st.incoming(CONV)
+        assert [c["state"] for c in cards] == ["get"]
+        await st.get_secret(CONV, cards[0]["transfer_id"])  # publishes Bob's key + asks + note
+        assert [c["state"] for c in await st.incoming(CONV)] == ["requested"]
+    assert hub.keys["bob"]
+
+    with inst["alice"].acting(monkeypatch):
+        assert await st.answer_requests(CONV) == ["bob"]  # automatic, no confirmation
+    notes = [m for m in hub.messages[CONV] if m["kind"] == st.NOTE_KIND]
+    assert [n["text"] for n in notes] == ["Bob shared public key for secured transfer", "Secured transfer key sent to Bob"]
+    assert {n["reply_to_id"] for n in notes} == {root}
+    assert not [m for m in hub.messages[CONV] if m["kind"] == st.PENDING_KIND]  # promise kept, withdrawn
+
+    with inst["bob"].acting(monkeypatch):
+        card = next(c for c in await st.incoming(CONV) if c["state"] == "pending")
+        await st.fill(CONV, card["message_id"], project_id=inst["bob"].project.id)
+    assert env_of(inst["bob"])["ACME_GMAIL_APP_PASSWORD"] == SECRET
+
+
+async def test_a_request_made_while_the_sender_was_offline_is_answered_on_catch_up(world, monkeypatch):
+    hub, inst = world
+    await publish(inst["alice"], monkeypatch)
+    await share_message(world, monkeypatch)
+    await share(world, monkeypatch)
+    with inst["bob"].acting(monkeypatch):
+        await st.get_secret(CONV, (await st.incoming(CONV))[0]["transfer_id"])
+    assert not [m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]  # Alice offline: nothing yet
+    with inst["alice"].acting(monkeypatch):
+        await st.answer_pending()  # the post-sign-in catch-up
+    assert [m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]
+
+
+async def test_requests_that_must_not_be_answered(world, monkeypatch):
+    hub, inst = world
+    await publish(inst["alice"], monkeypatch)
+    await share_message(world, monkeypatch)
+    sent = await share(world, monkeypatch, recipients=("bob",))
+    tid = next(m for m in hub.messages[CONV] if m["kind"] == st.PENDING_KIND)["metadata"]["transfer_id"]
+    # carol is not named by the promise; a forged transfer id is in nobody's pending.json
+    await publish(inst["carol"], monkeypatch)
+    hub.caller = "carol"
+    await hub.call("POST", "conversation", CONV, "add_message", payload={"kind": st.REQUEST_KIND, "metadata": {"transfer_id": tid}})
+    await hub.call("POST", "conversation", CONV, "add_message", payload={"kind": st.REQUEST_KIND, "metadata": {"transfer_id": "forged"}})
+    with inst["alice"].acting(monkeypatch):
+        assert await st.answer_requests(CONV) == []
+    assert sent["later"] == ["bob"] and not [m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]
+    # Bob asks; answered once; a replayed request after that seals nothing more
+    with inst["bob"].acting(monkeypatch):
+        await st.get_secret(CONV, tid)
+    with inst["alice"].acting(monkeypatch):
+        assert await st.answer_requests(CONV) == ["bob"]
+        hub.caller = "bob"
+        await hub.call("POST", "conversation", CONV, "add_message", payload={"kind": st.REQUEST_KIND, "metadata": {"transfer_id": tid}})
+        hub.caller = "alice"
+        assert await st.answer_requests(CONV) == []
+    assert len([m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]) == 1
+
+
+async def test_an_expired_promise_is_not_answered_and_shows_expired(world, monkeypatch):
+    hub, inst = world
+    await publish(inst["alice"], monkeypatch)
+    await share_message(world, monkeypatch)
+    await share(world, monkeypatch)
+    promise = next(m for m in hub.messages[CONV] if m["kind"] == st.PENDING_KIND)
+    promise["metadata"]["expires_at"] = "2000-01-01T00:00:00+00:00"
+    with inst["bob"].acting(monkeypatch):
+        assert [c["state"] for c in await st.incoming(CONV)] == ["expired"]
+        with pytest.raises(SealedError) as e:
+            await st.get_secret(CONV, promise["metadata"]["transfer_id"])
+    assert e.value.code == "expired"
+
+
+def test_the_hub_only_kinds_never_become_local_rows_and_the_note_does():
+    from flow_sdk.builtin.flow_message import FlowMessageKind
+
+    for kind in (st.SEALED_KIND, st.ACK_KIND, st.PENDING_KIND, st.REQUEST_KIND):
+        assert FlowMessageKind.hub_only(kind)
+    assert not FlowMessageKind.hub_only(st.NOTE_KIND)
+    assert FlowMessageKind.sendable(st.NOTE_KIND) is FlowMessageKind.SEALED_NOTE

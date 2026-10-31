@@ -79,9 +79,12 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     await expect(page.getByTestId(`wizard-step-${id}`)).toBeVisible();
   }
 
-  // 4. Declining every install question, the run reaches an answer for every step.
+  // 4. Declining every install question, the run reaches an answer for every step. The source
+  //    chooser can still open here: right after Start the popup shows the opening check's
+  //    statuses, so step 2 may finish before the chooser appears. Skipping it is an answer.
   const modal = page.getByTestId('ask-modal');
   await expect(async () => {
+    if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
     if (await modal.isVisible()) {
       await page.getByTestId('ask-modal-cancel').click();
     }

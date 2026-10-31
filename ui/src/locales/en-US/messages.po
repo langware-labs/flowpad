@@ -599,10 +599,9 @@ msgstr "{0} available"
 msgid "{0} can now spend {1}."
 msgstr "{0} can now spend {1}."
 
-#. placeholder {0}: sealOutcome.cannot_receive.length
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "{0} can't receive values here and got the description only."
-msgstr "{0} can't receive values here and got the description only."
+#~ msgid "{0} can't receive values here and got the description only."
+#~ msgstr "{0} can't receive values here and got the description only."
 
 #. placeholder {0}: deployment.name
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
@@ -1120,6 +1119,11 @@ msgstr "{0} was not fully deleted"
 #: src/hooks/use-sandboxes.ts
 msgid "{0} was upgraded and restarted."
 msgstr "{0} was upgraded and restarted."
+
+#. placeholder {0}: sealOutcome.later.length
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "{0} will get them when they open the message in Flowpad."
+msgstr "{0} will get them when they open the message in Flowpad."
 
 #. placeholder {0}: removing?.name ?? ''
 #. placeholder {1}: team.name
@@ -5006,6 +5010,10 @@ msgstr "Automate messages like this"
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Automate messages like this…"
 msgstr "Automate messages like this…"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "automatic"
+msgstr "automatic"
 
 #~ msgid "Automatic"
 #~ msgstr "Automatic"
@@ -14364,6 +14372,10 @@ msgstr "Get it at flowpad.ai"
 #~ msgid "Get my link code"
 #~ msgstr "Get my link code"
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Get the secret"
+msgstr "Get the secret"
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your {label} messages here, and answer them from Flowpad."
 msgstr "Get your {label} messages here, and answer them from Flowpad."
@@ -14383,6 +14395,11 @@ msgstr "Getting the controller project"
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Getting the project to work on"
 msgstr "Getting the project to work on"
+
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Getting the values from {0}'s Flowpad… they arrive by themselves."
+msgstr "Getting the values from {0}'s Flowpad… they arrive by themselves."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Getting your Slack link…"
@@ -17124,6 +17141,10 @@ msgstr "Link project to cloud"
 msgid "Link project to cloud to securely and privately manage your shared assets."
 msgstr "Link project to cloud to securely and privately manage your shared assets."
 
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "Link target not found"
+msgstr "Link target not found"
+
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Link the project to the cloud first: its members are the cloud project's members."
 msgstr "Link the project to the cloud first: its members are the cloud project's members."
@@ -19851,6 +19872,14 @@ msgstr "No events yet"
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "No feed items"
 msgstr "No feed items"
+
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "No file at the link's path. Did you mean one of these for {name}?"
+msgstr "No file at the link's path. Did you mean one of these for {name}?"
+
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "No file named {name} was found."
+msgstr "No file named {name} was found."
 
 #: src/components/code-editor/EditorFileTree.tsx
 msgid "No file tree for this location"
@@ -29169,6 +29198,11 @@ msgstr "Show hidden path segments"
 msgid "Show imports"
 msgstr "Show imports"
 
+#. placeholder {0}: target.label
+#: src/components/browseable-tree/BrowseableTree.tsx
+msgid "Show in {0}"
+msgstr "Show in {0}"
+
 #: src/components/links/LinkMenu.tsx
 msgid "Show in Display"
 msgstr "Show in Display"
@@ -31939,6 +31973,7 @@ msgstr "The selected project has no folder on this machine."
 
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "the sender"
 msgstr "the sender"
 
@@ -32176,6 +32211,10 @@ msgstr "They are still in the list — Execute to try again."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "They reported"
 msgstr "They reported"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "They were sent before this Flowpad could receive them — get them now, it takes a moment."
+msgstr "They were sent before this Flowpad could receive them — get them now, it takes a moment."
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."

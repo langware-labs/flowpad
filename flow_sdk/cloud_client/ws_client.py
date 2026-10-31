@@ -882,8 +882,9 @@ hub_ws_manager = HubWebSocketManager()
 
 async def _publish_device_key() -> None:
     try:
-        from flow_sdk.secrets.sealed_transfer import publish_device_key  # noqa: PLC0415
+        from flow_sdk.secrets.sealed_transfer import answer_pending, publish_device_key  # noqa: PLC0415
 
         await publish_device_key()
+        await answer_pending()  # values members asked for while this install was offline
     except Exception as e:  # noqa: BLE001
         logger.info("[sealed] device key not published: %s", type(e).__name__)

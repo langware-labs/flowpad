@@ -192,11 +192,12 @@ async def credentials_action() -> ApiResponse:
 #   POST /credentials/sealed/seal     {typeid, conversation_id, recipients?}  (Flowpad's own UI only)
 #   POST /credentials/sealed/fill     {conversation_id, message_id, project_id?}  (Flowpad's own UI only)
 #   POST /credentials/sealed/decline  {conversation_id, message_id}
+#   POST /credentials/sealed/get      {conversation_id, transfer_id}  — "Get the secret" (Flowpad's own UI only)
 #   POST /credentials/sealed/publish  {rotate?}           → publish / rotate / withdraw this device's key
 
 _SEALED_GET = {"state": "state", "receivers": "receivers", "incoming": "incoming", "sent": "sent_status"}
 #: Sharing or filling in values is a person's click — never a worker, the CLI or a served app.
-_FROM_THE_UI_ONLY = {"seal", "fill"}
+_FROM_THE_UI_ONLY = {"seal", "fill", "get"}
 
 
 async def _sealed(method: str, verb: str, request) -> ApiResponse:
@@ -225,6 +226,7 @@ async def _sealed(method: str, verb: str, request) -> ApiResponse:
             "seal": lambda: st.seal_credential(body.get("typeid") or "", conv, [str(r) for r in body.get("recipients") or []]),
             "fill": lambda: st.fill(conv, msg, project_id=body.get("project_id")),
             "decline": lambda: st.decline(conv, msg),
+            "get": lambda: st.get_secret(conv, body.get("transfer_id") or ""),
         }
         if verb in post:
             return ApiSuccessResponse(data=await post[verb]())

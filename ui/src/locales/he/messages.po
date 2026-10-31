@@ -596,10 +596,9 @@ msgstr "זמינים: {0}"
 msgid "{0} can now spend {1}."
 msgstr "{0} יכולים עכשיו להשתמש ב-{1}."
 
-#. placeholder {0}: sealOutcome.cannot_receive.length
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "{0} can't receive values here and got the description only."
-msgstr ""
+#~ msgid "{0} can't receive values here and got the description only."
+#~ msgstr ""
 
 #. placeholder {0}: deployment.name
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
@@ -1117,6 +1116,11 @@ msgstr "{0} לא נמחק במלואו"
 #: src/hooks/use-sandboxes.ts
 msgid "{0} was upgraded and restarted."
 msgstr "{0} שודרג והופעל מחדש."
+
+#. placeholder {0}: sealOutcome.later.length
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "{0} will get them when they open the message in Flowpad."
+msgstr ""
 
 #. placeholder {0}: removing?.name ?? ''
 #. placeholder {1}: team.name
@@ -4971,6 +4975,10 @@ msgstr "אוטומציה להודעות כאלה"
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Automate messages like this…"
 msgstr "אוטומציה להודעות כאלה…"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "automatic"
+msgstr ""
 
 #~ msgid "Automatic"
 #~ msgstr "אוטומטי"
@@ -14261,6 +14269,10 @@ msgstr "אפשר להוריד אותו ב-flowpad.ai"
 #~ msgid "Get my link code"
 #~ msgstr ""
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Get the secret"
+msgstr ""
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your {label} messages here, and answer them from Flowpad."
 msgstr "קבלו כאן את ההודעות שלכם מ-{label}, וענו עליהן מתוך Flowpad."
@@ -14280,6 +14292,11 @@ msgstr "מאחזרים את פרויקט הבקר"
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Getting the project to work on"
 msgstr "מביאים את הפרויקט לעבודה"
+
+#. placeholder {0}: card.sender_name || t`the sender`
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Getting the values from {0}'s Flowpad… they arrive by themselves."
+msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Getting your Slack link…"
@@ -16997,6 +17014,10 @@ msgstr "קשרו את הפרויקט לענן"
 msgid "Link project to cloud to securely and privately manage your shared assets."
 msgstr "קשרו את הפרויקט לענן כדי לנהל את הנכסים המשותפים שלכם בצורה מאובטחת ופרטית."
 
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "Link target not found"
+msgstr ""
+
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Link the project to the cloud first: its members are the cloud project's members."
 msgstr "קשרו תחילה את הפרויקט לענן: חבריו הם חברי הפרויקט בענן."
@@ -19699,6 +19720,14 @@ msgstr "אין אירועים עדיין"
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "No feed items"
 msgstr "אין פריטים בהזנה"
+
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "No file at the link's path. Did you mean one of these for {name}?"
+msgstr ""
+
+#: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
+msgid "No file named {name} was found."
+msgstr ""
 
 #: src/components/code-editor/EditorFileTree.tsx
 msgid "No file tree for this location"
@@ -28944,6 +28973,11 @@ msgstr "הצגת קטעי נתיבים מוסתרים"
 msgid "Show imports"
 msgstr "הצגת הייבואים"
 
+#. placeholder {0}: target.label
+#: src/components/browseable-tree/BrowseableTree.tsx
+msgid "Show in {0}"
+msgstr ""
+
 #: src/components/links/LinkMenu.tsx
 msgid "Show in Display"
 msgstr "הצגה ב-Display"
@@ -31694,6 +31728,7 @@ msgstr "לפרויקט הנבחר אין תיקייה במחשב זה"
 
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "the sender"
 msgstr ""
 
@@ -31926,6 +31961,10 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "They reported"
 msgstr "הם דיווחו"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "They were sent before this Flowpad could receive them — get them now, it takes a moment."
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."

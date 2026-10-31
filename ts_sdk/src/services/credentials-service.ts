@@ -496,6 +496,13 @@ export class CredentialsService {
     return (await dataManager.callAction<unknown, { filled: string[]; credential: string }>(action)) as { filled: string[]; credential: string };
   }
 
+  /** "Get the secret": publish this install's key and ask the sender's Flowpad for values promised before it could receive. */
+  async sealedGet(conversationId: string, transferId: string): Promise<void> {
+    const action = this.action('sealed/get', 'POST');
+    action.bodyParameters = { conversation_id: conversationId, transfer_id: transferId };
+    await dataManager.callAction<unknown, unknown>(action);
+  }
+
   async sealedDecline(conversationId: string, messageId: string): Promise<void> {
     const action = this.action('sealed/decline', 'POST');
     action.bodyParameters = { conversation_id: conversationId, message_id: messageId };
@@ -507,6 +514,8 @@ export class CredentialsService {
 export interface SealedSealResult {
   transfer_id: string | null;
   sealed_for: string[];
+  /** Members with no key yet: promised — they get the values after opening the message in Flowpad. */
+  later?: string[];
   cannot_receive: string[];
   variables: string[];
 }

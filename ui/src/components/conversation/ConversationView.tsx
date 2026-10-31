@@ -28,7 +28,7 @@ import {
   dataManager,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
-import { SealedValuesPanel } from './SealedValuesPanel';
+import { SealedNoteLine, SealedValuesPanel } from './SealedValuesPanel';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
@@ -615,7 +615,7 @@ export function ConversationView({
     let prev: { sender_id?: string | null; at: number } | null = null;
     for (const item of groupedItems) {
       const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : null;
-      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT) {
+      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT || fm.kind === FlowMessageKind.SEALED_NOTE) {
         prev = null;
         continue;
       }
@@ -680,6 +680,9 @@ export function ConversationView({
       if (!fm && !messagesLoaded && !messagesError) return null;
       if (fm?.kind === FlowMessageKind.SESSION_EVENT) {
         return <SessionEventLine key={item.key} text={fm.text ?? ''} />;
+      }
+      if (fm?.kind === FlowMessageKind.SEALED_NOTE) {
+        return <SealedNoteLine key={item.key} text={fm.text ?? ''} />;
       }
       // One plan session per conversation. Once any session exists (or
       // is in-flight) every spec-bearing bubble shows the "Open" link

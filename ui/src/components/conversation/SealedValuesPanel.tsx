@@ -31,12 +31,13 @@ export function SealedValuesPanel({ conversationId, version }: { conversationId:
     void load();
   }, [load, version]);
 
-  const act = async (card: SealedCard, fill: boolean) => {
+  const act = async (card: SealedCard, what: 'fill' | 'decline' | 'get') => {
     setBusy(card.message_id);
     setError(null);
     try {
-      if (fill) await credentialsService.sealedFill(conversationId, card.message_id);
-      else await credentialsService.sealedDecline(conversationId, card.message_id);
+      if (what === 'fill') await credentialsService.sealedFill(conversationId, card.message_id);
+      else if (what === 'decline') await credentialsService.sealedDecline(conversationId, card.message_id);
+      else await credentialsService.sealedGet(conversationId, card.transfer_id);
       await load();
     } catch (e) {
       setError(errorMessage(e, t`The values could not be filled in.`));
@@ -64,16 +65,31 @@ export function SealedValuesPanel({ conversationId, version }: { conversationId:
           {card.variables?.length ? (
             <div className="mt-1 font-mono text-xs text-muted-foreground">{card.variables.join(', ')}</div>
           ) : null}
-          {card.state === 'pending' ? (
+          {card.state === 'get' ? (
+            <>
+              <p className="mt-1 text-xs text-muted-foreground">
+                <Trans>They were sent before this Flowpad could receive them — get them now, it takes a moment.</Trans>
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" disabled={busy === card.message_id} onClick={() => void act(card, 'get')} data-testid="sealed-get">
+                  <Trans>Get the secret</Trans>
+                </Button>
+              </div>
+            </>
+          ) : card.state === 'requested' ? (
+            <p className="mt-1 text-xs text-muted-foreground" data-testid="sealed-requested">
+              <Trans>Getting the values from {card.sender_name || t`the sender`}'s Flowpad… they arrive by themselves.</Trans>
+            </p>
+          ) : card.state === 'pending' ? (
             <>
               <p className="mt-1 text-xs text-muted-foreground">
                 <Trans>The values go straight into your credential — they are not shown here.</Trans>
               </p>
               <div className="mt-2 flex gap-2">
-                <Button size="sm" disabled={busy === card.message_id} onClick={() => void act(card, true)} data-testid="sealed-fill">
+                <Button size="sm" disabled={busy === card.message_id} onClick={() => void act(card, 'fill')} data-testid="sealed-fill">
                   <Trans>Fill in</Trans>
                 </Button>
-                <Button size="sm" variant="outline" disabled={busy === card.message_id} onClick={() => void act(card, false)} data-testid="sealed-decline">
+                <Button size="sm" variant="outline" disabled={busy === card.message_id} onClick={() => void act(card, 'decline')} data-testid="sealed-decline">
                   <Trans>Decline</Trans>
                 </Button>
               </div>
@@ -124,6 +140,20 @@ export function SealedValuesPanel({ conversationId, version }: { conversationId:
         );
       })}
       {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+
+/** The quiet, automatic line of a secured-transfer key exchange ("Bob shared public key for secured transfer"). */
+export function SealedNoteLine({ text }: { text: string }) {
+  return (
+    <div data-testid="sealed-note-line" className="flex items-center justify-center gap-1.5 py-0.5 text-[11px] text-muted-foreground/80">
+      <Lock className="h-3 w-3" />
+      <span>{text}</span>
+      <span className="rounded bg-muted px-1 text-[10px]">
+        <Trans>automatic</Trans>
+      </span>
     </div>
   );
 }

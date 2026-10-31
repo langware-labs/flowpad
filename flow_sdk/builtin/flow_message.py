@@ -104,19 +104,25 @@ class FlowMessageKind(str, Enum):
     #: live on the hub only — opaque ``metadata`` the hub relays — and never become a local row (:meth:`hub_only`).
     SEALED_VALUE = "sealed_value"
     SEALED_ACK = "sealed_ack"
+    #: Secured transfer to someone with no key yet: the sender's promise, and the recipient's "get it" (hub-only).
+    SEALED_PENDING = "sealed_pending"
+    SEALED_REQUEST = "sealed_request"
+    #: The quiet, automatic line of that exchange ("Bob shared public key for secured transfer") — a real local row,
+    #: rendered as a slim line in the share's thread.
+    SEALED_NOTE = "sealed_note"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
         """A kind that stays on the hub: ``materialize_flow_message`` refuses it, so no path makes it a chat row."""
-        return value in (cls.SEALED_VALUE.value, cls.SEALED_ACK.value)
+        return value in (cls.SEALED_VALUE.value, cls.SEALED_ACK.value, cls.SEALED_PENDING.value, cls.SEALED_REQUEST.value)
 
     @classmethod
     def sendable(cls, value: "str | None") -> "FlowMessageKind | None":
         """The kind a caller may set via ``add_message``, or None to fall back
         to USER. USER is implicit; INVITATION is a local-only first-row
-        placeholder no caller mints; only SESSION_EVENT is an explicitly
-        sendable non-default kind."""
-        return cls.SESSION_EVENT if value == cls.SESSION_EVENT.value else None
+        placeholder no caller mints; SESSION_EVENT and SEALED_NOTE are the
+        explicitly sendable non-default kinds."""
+        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE) if value == k.value), None)
 
 
 class DeliveryStatus(str, Enum):
