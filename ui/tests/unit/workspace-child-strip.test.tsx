@@ -98,6 +98,21 @@ describe('WorkspaceChildStrip', () => {
     expect(screen.queryByText('child eeee')).toBeNull();
   });
 
+  it('renders the trailing anchor after the tab strip, at the row end', () => {
+    tabManager.adoptGlobal([processTab()]);
+    render(
+      <TooltipProvider>
+        <WorkspaceChildStrip
+          processTab={processTab()}
+          processDock={processDock()}
+          trailing={<div data-testid="anchor-probe" />}
+        />
+      </TooltipProvider>,
+    );
+    const row = screen.getByTestId('workspace-display-tab').parentElement!;
+    expect(row.lastElementChild?.contains(screen.getByTestId('anchor-probe'))).toBe(true);
+  });
+
   it('renders what the agent showed as an ordinary child chip', () => {
     const child = row('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
     tabManager.adoptGlobal([processTab(), child]);

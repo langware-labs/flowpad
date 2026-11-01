@@ -20,7 +20,6 @@ import { normalizeWorkerType, type WorkerType } from '@src/components/workers/wo
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { Agent, AgenticProcess, ProcessKind, toplog, TypeId } from '@sdk';
 import { startAgentSession } from '@src/components/agents/use-agent-launcher';
-import { SessionSurfaceSwitch } from '@src/components/terminal/interactive-terminal/SessionSurfaceSwitch';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useCallback, useEffect, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -266,15 +265,6 @@ export function VibeChatPane({
         dense
         allowAttachments
         composerDisabled={startingNewSession}
-        // The session's surface selector — the same control as the terminal/chat headers.
-        settingsActions={
-          process && !vibeOnlyAgent ? (
-            <div className="flex items-center justify-between gap-2" data-testid="execution-settings-surface">
-              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{t`Show as`}</div>
-              <SessionSurfaceSwitch process={process} />
-            </div>
-          ) : null
-        }
         leadingSlot={({ startNewSession }) => (
           <NewSessionPill
             onClick={() => void handleNewSession(startNewSession)}
