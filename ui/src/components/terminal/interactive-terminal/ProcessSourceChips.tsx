@@ -35,7 +35,8 @@ export function ProcessSourceChips({ process }: { process: AgenticProcess }) {
 
 function SourceChip({ tid }: { tid: TypeId }) {
   return (
-    <span data-testid={`process-source-${tid.type}`}>
+    // Opaque and on top: the expanded label covers the centered session title instead of mixing with it.
+    <span data-testid={`process-source-${tid.type}`} className="relative z-10 rounded-full bg-background">
       <ContextEntityChip typeId={tid} collapsed />
     </span>
   );
