@@ -423,6 +423,10 @@ export class DockPointer implements IDockPointer {
    *  sub-pointer can no longer be inspected. A live URL dock leaves this
    *  undefined and `toJSON` derives the bit from its real pointer. */
   private storedWorkspaceContent?: boolean;
+  /** The project this dock is presented IN when that is not its target's own
+   *  (`flow show` beside a session of another project). Stored in Tab.pointer so the
+   *  backend files the tab in that project's strip; not part of tab identity. */
+  presentedIn: string | null = null;
 
   constructor(data: IDockPointer, layout?: Layout);
   constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout, page?: PageId);
@@ -2379,14 +2383,24 @@ export class DockPointer implements IDockPointer {
     return this.toJSON() ?? (this.isRoot ? this.plainJSON : null);
   }
 
+  /** This dock, presented in `projectId` (see {@link presentedIn}). */
+  presentedInProject(projectId: string): DockPointer {
+    const copy = new DockPointer(this.viewType, this.pointer, this.options, this.layout, this.page);
+    copy.storedWorkspaceContent = this.storedWorkspaceContent;
+    copy.presentedIn = projectId;
+    return copy;
+  }
+
   /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
    *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
   toJSON(): string | null {
     const json = this.baseJSON();
     // A workspace tab stores its workspace-keyed hash: the stored pointer has no host, and the
     // backend reconciles by this hash (`_pointer_to_hash`), so it is the row's identity.
-    if (!json || !this.workspaceHost) return json;
-    return JSON.stringify({ ...JSON.parse(json), tabHash: this.tabHash });
+    const host = this.workspaceHost ? { tabHash: this.tabHash } : null;
+    const presented = this.presentedIn ? { presentedIn: this.presentedIn } : null;
+    if (!json || (!host && !presented)) return json;
+    return JSON.stringify({ ...JSON.parse(json), ...host, ...presented });
   }
 
   private baseJSON(): string | null {
@@ -2455,6 +2469,7 @@ export class DockPointer implements IDockPointer {
         pointer?: string;
         options?: Record<string, string>;
         workspaceContent?: boolean;
+        presentedIn?: string;
       };
       const { viewType, pointer, options } = parsed;
       if (!viewType) return null;
@@ -2480,6 +2495,7 @@ export class DockPointer implements IDockPointer {
       // Carry the stored bit verbatim — absent means false, not "unknown", so a
       // toJSON → fromJSON → toJSON round trip is stable.
       restored.storedWorkspaceContent = parsed.workspaceContent === true;
+      restored.presentedIn = parsed.presentedIn ?? null;
       return restored;
     } catch {
       return null;
