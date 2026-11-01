@@ -22,7 +22,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { NavIconButton } from './NavIconButton';
 import { WebAppIcon } from '@src/components/webapp-display/WebAppIcon';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
-import { projectAppDock, useProjectApps, type ProjectApp } from './use-project-apps';
+import { useOpenProjectApp, useProjectApps, type ProjectApp } from './use-project-apps';
 
 /**
  * The project's apps and agents, with registry icons for each type. A lone app
@@ -40,12 +40,12 @@ export function AppButton({ project }: { project?: Project | null }) {
   const { agents } = useProjectAgents(project);
   const { launch } = useAgentLauncher();
   const [menuOpen, setMenuOpen] = useState(false);
+  const openApp = useOpenProjectApp(project ? String(project.id) : '');
   if (isHubOnly() || !project || (!apps.length && !agents.length)) return null;
 
   const projectId = String(project.id);
   const shownId = appDockAddress(currentDock ?? null)?.microAppId ?? null;
-  const open = (entry: ProjectApp) =>
-    navigation.openDock(projectAppDock(entry, projectId), undefined, { topLevel: true });
+  const open = (entry: ProjectApp) => void openApp(entry);
 
   const label = t`Apps and agents`;
   // The app's editor (`webapp.json` as a form) — the same URL the asset list opens.

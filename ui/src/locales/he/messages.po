@@ -5446,6 +5446,7 @@ msgid "Browse…"
 msgstr "דפדפו…"
 
 #: src/components/links/LinkMenu.tsx
+#: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
 msgstr "דפדפן"
 
@@ -6026,8 +6027,7 @@ msgstr ""
 msgid "Change destination"
 msgstr "שינוי יעד"
 
-#: src/components/assets/editor/app-profile/AppEditor.tsx
-#: src/components/webapp-display/AppInfoPopover.tsx
+#: src/components/webapp-display/WebAppIconPicker.tsx
 msgid "Change icon"
 msgstr "שינוי סמל"
 
@@ -14053,6 +14053,10 @@ msgstr ""
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad ייעצר, יעודכן לגרסה האחרונה ויופעל מחדש ב-{upgradeTargetName}. מי שעובד בו יופרע לדקה או שתיים, וסנדבוקס מושהה יופעל כדי לבצע זאת."
+
+#: src/components/webapp-display/AppOpenInToggle.tsx
+msgid "Flowpad tab"
+msgstr "לשונית Flowpad"
 
 #: src/components/version-popover/version-chip.tsx
 msgid "Flowpad version"
@@ -23002,6 +23006,11 @@ msgstr "OpenRouter"
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "OpenRouter hosts to avoid (one per line)"
 msgstr "מארחי OpenRouter להימנע מהם (אחד בכל שורה)"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppOpenInToggle.tsx
+msgid "Opens in"
+msgstr "נפתח ב"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"

@@ -12,8 +12,9 @@ import { Textarea } from '@src/components/ui/textarea';
 import { Input } from '@src/components/ui/input';
 import { WebAppIconPicker } from '@src/components/webapp-display/WebAppIconPicker';
 import { useWebAppManifest } from '@src/components/webapp-display/use-webapp-manifest';
+import { AppOpenInToggle, appOpenIn, openInPatch } from '@src/components/webapp-display/AppOpenInToggle';
 
-import { SEGMENTED_ACTIVE, SEGMENTED_GROUP, SEGMENTED_IDLE } from '@src/components/ui/segmented';
+import { SegmentedControl } from '@src/components/ui/segmented-control';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -48,38 +49,8 @@ interface AppEditorProps {
   mainRef: FSRef;
 }
 
-const SEG_BUTTON = 'flex h-6 items-center justify-center rounded-sm px-3 text-xs transition-colors';
 const CARD = 'space-y-3 rounded-md border border-border px-3 py-3';
 
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  testId,
-}: {
-  options: [T, string][];
-  value: T;
-  onChange: (value: T) => void;
-  testId: string;
-}) {
-  return (
-    <div role="radiogroup" className={cn(SEGMENTED_GROUP, 'inline-flex h-8')} data-testid={testId}>
-      {options.map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          role="radio"
-          aria-checked={key === value}
-          className={cn(SEG_BUTTON, key === value ? SEGMENTED_ACTIVE : SEGMENTED_IDLE)}
-          onClick={() => key !== value && onChange(key)}
-          data-testid={`${testId}-${key}`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /**
  * The app page: its DEFINITION (`webapp.json`) on the left, where it RUNS on the right — the agent
@@ -306,6 +277,14 @@ export function AppEditor({ app, mainRef }: AppEditorProps) {
                 />
               </Field>
 
+              <Field label={<Trans>Opens in</Trans>}>
+                <AppOpenInToggle
+                  value={appOpenIn(fields)}
+                  disabled={hub}
+                  onChange={(choice) => void save(openInPatch(choice))}
+                />
+              </Field>
+
               <label className="flex items-start gap-2 text-sm" data-testid="app-report-errors">
                 <input
                   type="checkbox"
@@ -334,7 +313,7 @@ export function AppEditor({ app, mainRef }: AppEditorProps) {
                           <Trans>Who opens it</Trans>
                           {label}
                         </span>
-                        <Segmented<Audience>
+                        <SegmentedControl<Audience>
                           options={[
                             ['app', t`Users`],
                             ['admin', t`Admins`],
@@ -390,7 +369,7 @@ export function AppEditor({ app, mainRef }: AppEditorProps) {
                           <Trans>How it runs</Trans>
                           {label}
                         </span>
-                        <Segmented<'proxy' | 'static'>
+                        <SegmentedControl<'proxy' | 'static'>
                           options={[
                             ['proxy', t`Run a command`],
                             ['static', t`Serve a folder`],

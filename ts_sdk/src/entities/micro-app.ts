@@ -150,6 +150,8 @@ export interface IWebApp extends IEntity {
   kind?: string | null;
   /** Lucide icon name or emoji (`webapp.json` `icon`); unset = the type's icon (`APIEntity.icon`). */
   icon?: string | null;
+  /** Where a click opens the app (`webapp.json` `open_in`): a Flowpad tab, or the system browser. */
+  open_in?: 'flowpad' | 'browser' | null;
   /** The app folder on disk, stamped by the indexer (local only). */
   asset_ref?: string;
   /** Served subdir inside the app folder. */

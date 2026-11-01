@@ -12,7 +12,7 @@ and reached.
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import ClassVar, List, Optional
+from typing import ClassVar, List, Literal, Optional
 
 from pydantic import computed_field
 
@@ -35,6 +35,7 @@ class WebApp(SetupSkippable, Entity):
     setup_skipped: Optional[SetupSkipSpec] = APIField(default=None, sharing=Sharing.PRIVATE)
     description: Optional[str] = APIField(default=None, description="What the app is, for the asset browser")
     icon: Optional[str] = APIField(default=None, description="Lucide icon name or emoji; unset = the type's icon")
+    open_in: Literal["flowpad", "browser"] = APIField(default="flowpad", description="Where a click opens the app: flowpad or browser")
     kind: KindStr = APIField(default="application.web", description="Dot-path ontology kind")
     #: What an editor edits beyond its parent: kinds and type names (``flow_sdk.builtin.faas.editors``).
     edits: List[str] = APIField(default_factory=list, description="Kinds and types this editor edits")

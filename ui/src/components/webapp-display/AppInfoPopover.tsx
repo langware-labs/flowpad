@@ -10,6 +10,7 @@ import type { WebApp } from '@sdk';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { CommitInput } from '@src/components/assets/editor/app-profile/AppServingFields';
 import { WebAppIconPicker } from './WebAppIconPicker';
+import { AppOpenInToggle, appOpenIn, openInPatch } from './AppOpenInToggle';
 import { useWebAppManifest } from './use-webapp-manifest';
 
 export interface AppInfo {
@@ -75,6 +76,11 @@ function AppIdentity({ app }: { app: WebApp }) {
         aria-label={t`App name`}
         data-testid="webapp-info-name"
         className="h-9 text-sm font-medium"
+      />
+      <AppOpenInToggle
+        value={appOpenIn(app)}
+        disabled={readOnly}
+        onChange={(choice) => void save(openInPatch(choice))}
       />
     </div>
   );

@@ -5446,6 +5446,7 @@ msgid "Browse…"
 msgstr "استعراض…"
 
 #: src/components/links/LinkMenu.tsx
+#: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
 msgstr "المتصفح"
 
@@ -6026,8 +6027,7 @@ msgstr ""
 msgid "Change destination"
 msgstr "تغيير الوجهة"
 
-#: src/components/assets/editor/app-profile/AppEditor.tsx
-#: src/components/webapp-display/AppInfoPopover.tsx
+#: src/components/webapp-display/WebAppIconPicker.tsx
 msgid "Change icon"
 msgstr "تغيير الأيقونة"
 
@@ -14053,6 +14053,10 @@ msgstr ""
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "يتوقف FlowPad ثم يُحدَّث إلى أحدث إصدار ويُعاد تشغيله على {upgradeTargetName}. يتعطل العمل لدى من يعملون فيه لدقيقة أو دقيقتين، وتُنشَّط البيئة المعزولة المتوقفة مؤقتًا لإنجاز ذلك."
+
+#: src/components/webapp-display/AppOpenInToggle.tsx
+msgid "Flowpad tab"
+msgstr "علامة تبويب Flowpad"
 
 #: src/components/version-popover/version-chip.tsx
 msgid "Flowpad version"
@@ -23002,6 +23006,11 @@ msgstr "OpenRouter"
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "OpenRouter hosts to avoid (one per line)"
 msgstr "مضيفو OpenRouter المطلوب تجنبهم (واحد في كل سطر)"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppOpenInToggle.tsx
+msgid "Opens in"
+msgstr "يفتح في"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
