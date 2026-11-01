@@ -17,12 +17,12 @@ import { Loader2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-import { CONFERRABLE_ROLES, LADDER_ROLES } from '@src/components/conversation/participant-display';
+import { CONFERRABLE_ROLES, PARENT_ROLES } from '@src/components/conversation/participant-display';
 import { useAccess } from '@src/hooks/use-access';
 import type { NodeData } from '../graph/graphModel';
 
 /** `from_role` may match any role, so the wildcard leads its option list. */
-const FROM_ROLE_OPTIONS = [WILDCARD_ROLE, ...LADDER_ROLES];
+const FROM_ROLE_OPTIONS = [WILDCARD_ROLE, ...PARENT_ROLES];
 /** Seeded when switching to Override — an empty list would mean inherit. */
 const DEFAULT_RULE: AccessRule = { from_role: WILDCARD_ROLE, to_role: 'reader' };
 

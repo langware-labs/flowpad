@@ -1,3 +1,4 @@
+import { normalizeMembershipRoles, ROLE_GRANTS } from '../models/roles';
 import { makeObservable, observable, reaction, runInAction } from 'mobx';
 import { dataManager } from '../APIEntity';
 import { ApiResponse } from '../ApiResponse';
@@ -5,7 +6,6 @@ import { EntityTypes } from '../schema/types';
 import { dataContext, TypeId } from '../FlowSync';
 import { ActionInfo, IMembershipRequest, Membership, MentionSendInfo, UserRole } from '../models';
 import { navigator } from './navigationService';
-import { isHubOnly } from '../utils/hub-runtime';
 
 /**
  * Direct member selector — one of these keys identifies the member to act on.
@@ -21,7 +21,7 @@ interface MembershipIdentifiers {
 }
 
 interface MembershipRoleUpdate extends MembershipIdentifiers {
-  role: string;
+  roles: string[];
 }
 
 class RolesLabel {
@@ -34,8 +34,8 @@ class RolesLabel {
         return 'editor';
       case 'reader':
         return 'reader';
-      case 'guest':
-        return 'guest';
+      case 'runner':
+        return 'runner';
       default:
         return 'visitor';
     }
@@ -50,8 +50,8 @@ class RolesLabel {
         return 'Can edit';
       case 'reader':
         return 'Can view';
-      case 'guest':
-        return 'Basic view';
+      case 'runner':
+        return 'Can run';
       default:
         return role; // TODO this is temp till role hierarchy is implemented. Then it should change to throwing an error or writing 'Fix me please';
       // return 'Fix me please';
@@ -67,8 +67,8 @@ class RolesLabel {
         return 'Can edit, but not share with others.';
       case 'reader':
         return 'Cannot edit or share with others.';
-      case 'guest':
-        return 'Guest';
+      case 'runner':
+        return 'Can run without viewing';
       default:
         return 'This should throw an error';
     }
@@ -87,8 +87,8 @@ class RolesLabel {
       case 'reader':
         roleDescription = 'view access';
         break;
-      case 'guest':
-        roleDescription = 'guest';
+      case 'runner':
+        roleDescription = 'run access';
         break;
       default:
         roleDescription = 'view access';
@@ -138,7 +138,7 @@ class MembershipService {
     if (entity_typeId.type == EntityTypes.Workspace) {
       const workspace = dataManager.getByTypeIdFromCache(entity_typeId);
       const roles = workspace?.expand?.roles;
-      if (!roles || (roles.length === 1 && roles[0] === 'guest')) {
+      if (!roles?.length) {
         return [] as Membership[];
       }
     }
@@ -174,26 +174,22 @@ class MembershipService {
     });
   }
 
-  /** The roles a share invite may grant — the backend's global list
-   *  (``GET /graph/share-roles``). Empty on failure: the invite form then offers
-   *  no picker and the backend's default role applies. */
+  /** Grantable choices from the generated canonical hub role registry. */
   async fetchShareRoles(): Promise<string[]> {
-    // The hub serves no `share-roles` (422 "Unknown entity type or action"): don't ask it.
-    if (isHubOnly()) return [];
-    try {
-      const actionInfo = new ActionInfo('share-roles', null, null, 'GET');
-      return (await dataManager.callAction<undefined, string[]>(actionInfo)) ?? [];
-    } catch (error) {
-      console.error('Failed to fetch share roles', error);
-      return [];
-    }
+    return [...ROLE_GRANTS.owner];
   }
 
   async createMembership(entity_typeId: TypeId, membershipRequest: IMembershipRequest): Promise<void> {
+    const request = {
+      ...membershipRequest,
+      invitation_targets: membershipRequest.invitation_targets.map(target => ({
+        ...target, roles: normalizeMembershipRoles(target.roles),
+      })),
+    };
     try {
       const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'POST');
       actionInfo.hubReflect = true; // membership change is hub-owned — reflect to the hub
-      actionInfo.bodyParameters = membershipRequest as any;
+      actionInfo.bodyParameters = request;
       await dataManager.callAction<IMembershipRequest, ApiResponse<void>>(actionInfo);
     } catch (error) {
       if (error instanceof Error) {
@@ -223,17 +219,18 @@ class MembershipService {
       console.error('At least one of user_id, user_email, or invitation_id is required');
       return;
     }
-    if (!membership.role) {
-      console.error('membership.role is required');
+    if (!membership.roles?.length) {
+      console.error('membership.roles is required');
       return;
     }
 
+    const roles = normalizeMembershipRoles(membership.roles);
     try {
       // PUT sends the identifier directly alongside the role — no
       // ``{member_through, value}`` envelope. The hub accepts both shapes.
       const payload: MembershipRoleUpdate = {
         ...this.determineMembershipIdentifiers(membership),
-        role: membership.role,
+        roles,
       };
 
       const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'PUT');

@@ -22,7 +22,7 @@ export function LoginAccessField({ value, onChange, testId, className }: LoginAc
   const { t } = useLingui();
   const labels: Record<(typeof LOGIN_ROLE_CHOICES)[number], string> = {
     owner: t`Owner`,
-    'full-access': t`Full access`,
+    runner: t`Runner`,
     admin: t`Admin`,
     editor: t`Editor`,
     reader: t`Reader`,

@@ -22,6 +22,6 @@ export async function createChildTeam(parentTypeId: TypeId, name: string): Promi
 
   const parent = await dataManager.getByTypeId<APIEntity<never>>(parentTypeId);
   if (!parent) throw new Error('Parent entity not loaded');
-  await parent.addGroupMember(draft.typeId, 'member');
+  await parent.addGroupMember(draft.typeId, 'reader');
   return draft.typeId;
 }

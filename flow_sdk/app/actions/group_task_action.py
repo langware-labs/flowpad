@@ -128,7 +128,7 @@ async def _invite_member(email: str, child: Task, parent: Task, message: str | N
     # The single-assignee body plus the parent guest target — the group form is
     # the primitive's invite with one extra target, not a second wire literal.
     body = assignee_invite_body(email, child, message or f'You have been assigned the task "{parent.title}"')
-    body["invitation_targets"].append({"typeid": f"task-{parent.id}", "role": HubRole.GUEST.value})
+    body["invitation_targets"].append({"typeid": f"task-{parent.id}", "roles": [HubRole.READER.value], "is_final": True})
     await HubProxy.call("POST", BuiltinEntityType.TASK, child.id, "members", payload=body)
 
 

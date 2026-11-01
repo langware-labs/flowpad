@@ -80,7 +80,7 @@ def hub(monkeypatch):
 def _invited_by_id(calls, proj: Project) -> dict[str, str]:
     """``{recipient_user_id: role}`` for every invite POST this share() made."""
     return {
-        body["recipient_user_id"]: target["role"]
+        body["recipient_user_id"]: target["roles"]
         for method, path, body in calls
         if method == "POST" and path == f"/graph/project/{proj.id}/members" and "recipient_user_id" in body
         for target in body["invitation_targets"]
@@ -91,12 +91,12 @@ def _invited_by_id(calls, proj: Project) -> dict[str, str]:
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_invite_by_user_id_defaults_to_member(hub):
+async def test_invite_by_user_id_defaults_to_reader(hub):
     proj = Project(name="invite-by-id-default")
 
     await proj.share(invitees=[ShareInvitee(user_id=BOB)])
 
-    assert _invited_by_id(hub, proj) == {BOB: "member"}
+    assert _invited_by_id(hub, proj) == {BOB: ["reader"]}
 
 
 # do not increase timeout without approval
@@ -106,9 +106,9 @@ async def test_invite_by_user_id_defaults_to_member(hub):
 async def test_invite_by_user_id_honors_its_own_role(hub, role):
     proj = Project(name="invite-by-id-role")
 
-    await proj.share(invitees=[ShareInvitee(user_id=BOB, role=role)])
+    await proj.share(invitees=[ShareInvitee(user_id=BOB, roles=[role])])
 
-    assert _invited_by_id(hub, proj) == {BOB: role}
+    assert _invited_by_id(hub, proj) == {BOB: [role]}
 
 
 # do not increase timeout without approval
@@ -121,7 +121,7 @@ async def test_invite_by_user_id_parses_the_user_typeid_form(hub):
 
     await proj.share(invitees=[ShareInvitee(user_id=f"user-{BOB}")])
 
-    assert _invited_by_id(hub, proj) == {BOB: "member"}
+    assert _invited_by_id(hub, proj) == {BOB: ["reader"]}
 
 
 # do not increase timeout without approval
@@ -134,20 +134,20 @@ async def test_invite_by_user_id_and_by_email_each_keep_their_own_role(hub):
 
     await proj.share(
         invitees=[
-            ShareInvitee(email="grace@example.com", role="admin"),
-            ShareInvitee(user_id=BOB, role="member"),
+            ShareInvitee(email="grace@example.com", roles=["admin"]),
+            ShareInvitee(user_id=BOB, roles=["reader"]),
         ]
     )
 
-    assert _invited_by_id(hub, proj) == {BOB: "member"}
+    assert _invited_by_id(hub, proj) == {BOB: ["reader"]}
     email_posts = [
-        target["role"]
+        target["roles"]
         for method, path, body in hub
         if method == "POST" and path == f"/graph/project/{proj.id}/members" and "recipient_email" in body
         for target in body["invitation_targets"]
         if target["typeid"] == f"project-{proj.id}"
     ]
-    assert email_posts == ["admin"]
+    assert email_posts == [["admin"]]
 
 
 # do not increase timeout without approval
@@ -156,12 +156,12 @@ async def test_invite_by_user_id_and_by_email_each_keep_their_own_role(hub):
 async def test_invite_skips_a_user_id_already_on_the_roster(hub):
     """Re-sharing must not re-invite someone who already holds a role — the
     hub 400s that as "use change_role", failing the whole share."""
-    hub.state["roster"] = [{"user_id": BOB, "role": "member", "status": "approved"}]
+    hub.state["roster"] = [{"user_id": BOB, "roles": ["reader"], "status": "approved"}]
     proj = Project(name="invite-by-id-existing-member")
 
     await proj.share(invitees=[ShareInvitee(user_id=BOB), ShareInvitee(user_id=GRACE)])
 
-    assert _invited_by_id(hub, proj) == {GRACE: "member"}
+    assert _invited_by_id(hub, proj) == {GRACE: ["reader"]}
 
 
 # do not increase timeout without approval
@@ -174,19 +174,19 @@ async def test_invite_silently_skips_an_unparseable_id(hub):
 
     await proj.share(invitees=[ShareInvitee(user_id="not-a-uuid"), ShareInvitee(user_id=BOB)])
 
-    assert _invited_by_id(hub, proj) == {BOB: "member"}
+    assert _invited_by_id(hub, proj) == {BOB: ["reader"]}
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("role", ["owner", "reader", ""])
+@pytest.mark.parametrize("role", ["owner", "member", ""])
 async def test_invite_by_user_id_rejects_a_role_outside_the_allowlist(hub, role):
     """Refused before any hub call — nothing is published or invited."""
     proj = Project(name="invite-by-id-bad-role")
 
-    with pytest.raises(ValueError, match="invite role"):
-        await proj.share(invitees=[ShareInvitee(user_id=BOB, role=role)])
+    with pytest.raises(ValueError, match="role"):
+        await proj.share(invitees=[ShareInvitee(user_id=BOB, roles=[role])])
 
     assert hub == []
 

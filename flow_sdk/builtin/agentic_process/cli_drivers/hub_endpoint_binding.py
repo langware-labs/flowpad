@@ -31,7 +31,6 @@ from flow_sdk.instance_settings.llm_endpoint import (
     fetch_hub_llm_endpoints,
     get_hub_llm_endpoint,
     hub_llm_endpoint_invoke_url,
-    listing_supersedes_binding,
     set_hub_llm_endpoint,
 )
 from flow_sdk.schema.data_spec.llm_source_spec import (
@@ -147,9 +146,8 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
     user is are STATUS facts (``core.status``) and are read there, not repeated here.
     """
     bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
-    # Warming the listing memo is a READ of the hub (the resolver reads only the memo, so a cold
-    # memo would leave every endpoint out of this answer). Dropping a dead binding is a WRITE and
-    # lives in ``prune_dead_binding``, which only the explicit ``status/refresh`` runs.
+    # Listings report readable budgets. A hub-pushed Runner binding remains usable even
+    # when absent from those lists; the hub authorizes each invocation independently.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
     sources, resolved, blocked, notes, endpoints = await _sources_by_kind(scope)
     bound_typeid = bound.endpoint_typeid if bound else ""
@@ -185,29 +183,6 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
 async def _status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> dict:
     """The funding record, as the wire carries it."""
     return (await funding_status(refresh=refresh, scope=scope)).model_dump(mode="json")
-
-
-async def prune_dead_binding() -> bool:
-    """Drop a binding the hub no longer lists. Returns whether one was dropped.
-
-    ``_endpoint_sources`` already stops OFFERING a dead binding, so routing is correct either
-    way -- but the record reads as "this box was given a budget", and leaving a dead id in
-    place makes every status answer name an endpoint that no longer exists. A PUBLIC binding is
-    exempt: a listing scoped to the caller never contains it, so its absence says nothing.
-
-    A write, so it runs only on an explicit refresh (``core.status.refresh_status``), never on a
-    status read -- and never from ``bind``, which has just been handed an endpoint the listing
-    may not have heard of yet.
-    """
-    bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
-    if bound is None or bound.public:
-        return False
-    available = await fetch_hub_llm_endpoints(cached_only=False)
-    if not listing_supersedes_binding() or any(str(e.typeid) == bound.endpoint_typeid for e in available):
-        return False
-    logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
-    clear_hub_llm_endpoint()
-    return True
 
 
 async def hub_llm_endpoint_status(project_id: str = "") -> dict:

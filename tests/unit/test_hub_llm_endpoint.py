@@ -606,41 +606,31 @@ async def test_a_failed_scoped_listing_keeps_the_last_good_list(env, monkeypatch
     assert [e.name for e in await settings.fetch_hub_llm_endpoints()] == ["memo"]
 
 
-async def test_a_refresh_drops_a_binding_the_hub_no_longer_lists(env, monkeypatch) -> None:
-    """The record itself has to go, not just stop being offered.
-
-    ``box_bound`` is read as "this box was given a budget" -- it demotes an unproven device
-    login to the tail of the order -- so a binding left naming a deleted endpoint keeps making
-    a claim that is no longer true, and every status answer reports an endpoint that does not
-    exist. A refresh is where the box learns otherwise, so it is where the record is dropped.
-    """
+async def test_status_refresh_preserves_a_runner_binding_absent_from_read_listings(env, monkeypatch) -> None:
+    """Runner can invoke without Reader; refreshing readable rows cannot unbind it."""
     import time
 
-    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (
-        hub_llm_endpoint_status,
-        prune_dead_binding,
-    )
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
+    from flow_sdk.core.capabilities import discovery
+    from flow_sdk.core.status import refresh_status
     from flow_sdk.instance_settings import llm_endpoint
 
     _login()
-    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:gone", INVOKE_PATH, provider="openrouter", name="Deleted")
-    assert llm_endpoint.get_hub_llm_endpoint() is not None
-    # A listing that SUCCEEDED and does not mention it.
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, provider="openrouter")
     llm_endpoint._list_cache[llm_endpoint.get_instance_settings().instance_name] = (time.monotonic(), [])
 
-    # A status READ never writes: the dead binding is still there after one.
-    await hub_llm_endpoint_status()
-    assert llm_endpoint.get_hub_llm_endpoint() is not None, "a status read must not write"
+    async def no_discovery(*args, **kwargs):
+        pass
 
-    # The explicit refresh (``status/refresh`` runs this) is what drops it.
-    assert await prune_dead_binding() is True
+    monkeypatch.setattr(discovery, "run_discovery", no_discovery)
+    await refresh_status()
     status = await hub_llm_endpoint_status()
-    assert status["binding"] is None
-    assert llm_endpoint.get_hub_llm_endpoint() is None, "the dead binding survived a refresh"
+    assert _bound(status) == "llm_endpoint:ep1"
+    assert status["active_for"]
 
 
 async def test_a_refresh_keeps_a_binding_when_the_hub_could_not_be_reached(env, monkeypatch) -> None:
-    """Unreachable is not a verdict. Only a listing that actually answered may drop a binding."""
+    """An unreachable listing cannot revoke the explicit binding."""
     from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
     from flow_sdk.instance_settings import llm_endpoint
 
@@ -655,18 +645,7 @@ async def test_a_refresh_keeps_a_binding_when_the_hub_could_not_be_reached(env, 
 
 
 async def test_binding_an_endpoint_the_listing_has_not_heard_of_survives_the_bind(env, monkeypatch) -> None:
-    """A bind must never undo itself.
-
-    The hub binds a box to an endpoint the listing may not carry yet -- a fresh allocation, a
-    share made seconds ago -- and ``bind`` answers through the same status path that drops a
-    binding the hub no longer lists. Get that wrong and the push is erased by the very call
-    that delivered it, which is the loudest possible way to fail.
-
-    Written against the BEHAVIOUR rather than the guard, because two things currently prevent
-    it (the ``refresh`` gate, and the bind-time stamp that makes an older listing unable to
-    deny a newer binding) and either one may be simplified away later. The promise is what
-    must survive, not the mechanism.
-    """
+    """A fresh allocation remains bound before the readable listing has heard of it."""
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import bind_hub_llm_endpoint
@@ -686,6 +665,42 @@ async def test_binding_an_endpoint_the_listing_has_not_heard_of_survives_the_bin
     )
     assert _bound(status) == "llm_endpoint:brand-new", "the bind erased its own binding"
     assert llm_endpoint.get_hub_llm_endpoint() is not None
+
+
+async def test_a_listing_started_before_binding_cannot_revoke_that_binding(env, monkeypatch) -> None:
+    """An older read may finish after the hub pushes a new budget into the box."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
+    from flow_sdk.instance_settings import llm_endpoint
+
+    _login()
+
+    async def listing(_method, _type, *, action=None, **kwargs):
+        if action is None:
+            # The request's snapshot precedes this push, but its response arrives afterward.
+            llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, provider="openrouter")
+        return []
+
+    monkeypatch.setattr(HubProxy, "try_call", staticmethod(listing))
+    assert await llm_endpoint.fetch_hub_llm_endpoints() == []
+    status = await hub_llm_endpoint_status()
+    assert status["active_for"], "a pre-binding response hid the newly assigned budget"
+
+
+async def test_a_refused_listing_is_not_authoritative_absence(env, monkeypatch) -> None:
+    """HTTP 200 FAIL is a failed read, never evidence that a budget was revoked."""
+    import httpx
+
+    from flow_sdk.instance_settings import llm_endpoint
+
+    _login()
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, provider="openrouter")
+
+    async def refused(*args, **kwargs):
+        return httpx.Response(200, json={"status": "FAIL", "message": "read refused", "data": None})
+
+    monkeypatch.setattr(HubProxy, "send", staticmethod(refused))
+    assert await llm_endpoint.fetch_hub_llm_endpoints() == []
+    assert llm_endpoint.get_instance_settings().instance_name not in llm_endpoint._list_cache
 
 
 async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, monkeypatch) -> None:
@@ -893,7 +908,7 @@ def test_a_pushed_binding_never_carries_an_origin(env) -> None:
 
 
 async def test_a_refresh_never_drops_a_public_binding(env, monkeypatch) -> None:
-    """The twin of the drop test above, and the reason it needs an exemption.
+    """A public binding survives readable-list omission, just like a Runner-only binding.
 
     A listing is scoped to what the CALLER holds. A public endpoint is spendable precisely by
     people who hold nothing on it, so it is absent from every such listing by construction --

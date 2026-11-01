@@ -54,13 +54,13 @@ def _user(user_id: str, *, email: str | None = None, status: str = "approved", n
         "user_id": user_id,
         "user_email": email,
         "user_name": name,
-        "role": "member",
+        "roles": ["reader"],
         "status": status,
     }
 
 
 def _team(team_id: str, name: str = "A team") -> dict:
-    return {"type": "team", "id": team_id, "user_id": None, "name": name, "role": "member", "status": "approved"}
+    return {"type": "team", "id": team_id, "user_id": None, "name": name, "roles": ["reader"], "status": "approved"}
 
 
 class _Hub(list):
@@ -146,7 +146,7 @@ def hub(monkeypatch):
 def _project(hub: _Hub, name: str, roster: list[dict] | None = None) -> Project:
     proj = Project(name=name)
     hub.rosters[f"/graph/project/{proj.id}/members"] = (
-        roster if roster is not None else [_user(SHARER, email="sharer@example.com", name="Sharer") | {"role": "owner"}]
+        roster if roster is not None else [_user(SHARER, email="sharer@example.com", name="Sharer") | {"roles": ["owner"]}]
     )
     return proj
 
@@ -199,13 +199,13 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     assert person["recipient_user_id"] == IVAN
     assert "notify_by_message" not in person
     assert person["message"] == "Welcome aboard"
-    assert person["invitation_targets"] == [{"typeid": f"project-{proj.id}", "role": "member"}]
+    assert person["invitation_targets"] == [{"typeid": f"project-{proj.id}", "roles": ["reader"]}]
     assert "notify_by_email" not in person
 
     grants = dict(_conversation_grants(hub))
     ((person_conv_path, person_conv),) = [(p, b) for p, b in grants.items() if b.get("recipient_user_id") == IVAN]
     (conversation_target,) = person_conv["invitation_targets"]
-    assert conversation_target["typeid"].startswith("conversation-") and conversation_target["role"] == "member"
+    assert conversation_target["typeid"].startswith("conversation-") and conversation_target["roles"] == ["reader", "runner"]
     assert person_conv["notify_by_email"] is False
     assert person_conv_path == f"/graph/conversation/{conversation_target['typeid'][len('conversation-') :]}/members"
 
@@ -213,7 +213,7 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     # carries the note and the project landing exactly like the person invite.
     (team_grant,) = _group_grants(hub, proj)
     assert team_grant["principal"] == f"team-{INITECH}"
-    assert team_grant["invitation_targets"] == [{"typeid": f"project-{proj.id}", "role": "member"}]
+    assert team_grant["invitation_targets"] == [{"typeid": f"project-{proj.id}", "roles": ["reader"]}]
     assert team_grant["message"] == "Welcome aboard"
     assert team_grant["callback_override"] == person["callback_override"]
     assert "notify_by_email" not in team_grant
@@ -259,7 +259,7 @@ async def test_a_team_already_on_the_roster_is_skipped_without_any_call(hub):
     proj = _project(
         hub,
         "share-team-already-granted",
-        roster=[_user(SHARER, email="sharer@example.com") | {"role": "owner"}, _team(INITECH, "initech")],
+        roster=[_user(SHARER, email="sharer@example.com") | {"roles": ["owner"]}, _team(INITECH, "initech")],
     )
 
     await proj.share(teams=[f"team-{INITECH}"])
@@ -365,7 +365,7 @@ async def test_sharer_member_pending_and_team_covered_people_are_skipped(hub):
         hub,
         "share-skips",
         roster=[
-            _user(SHARER, email="sharer@example.com") | {"role": "owner"},
+            _user(SHARER, email="sharer@example.com") | {"roles": ["owner"]},
             _user(DANA),
             _user(PENDING, status="pending"),
             _team(INITECH),

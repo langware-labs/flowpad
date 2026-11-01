@@ -149,10 +149,6 @@ def set_hub_llm_endpoint(
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
     instance = get_instance_settings().instance_name
     _cache[instance] = bound
-    # When this binding was written, so a listing fetched BEFORE it cannot be read as denying
-    # it (see ``listing_supersedes_binding``). Monotonic: only ever compared with the memo's
-    # own clock, never with wall time.
-    _bound_at[instance] = time.monotonic()
     return bound
 
 
@@ -168,7 +164,6 @@ def reset_cache() -> None:
     """Drop the memos. For tests, which move instance dirs under the module's feet."""
     _cache.clear()
     _list_cache.clear()
-    _bound_at.clear()
 
 
 def hub_origin(endpoint_typeid: str = "") -> str:
@@ -217,44 +212,9 @@ def hub_llm_endpoint_invoke_url() -> str | None:
 _list_cache: dict[str, tuple[float, list["LLMEndpoint"]]] = {}
 
 
-#: instance name -> monotonic time the binding was last WRITTEN in this process.
-#: Absent means the binding was loaded from disk, i.e. it predates everything this process has
-#: done -- which is why the default below is ``0.0`` rather than "now".
-_bound_at: dict[str, float] = {}
-
-
 def invalidate_endpoint_listing() -> None:
-    """Drop the cached listing so the next read asks the hub again.
-
-    Called when the hub says a budget changed. Deliberately does NOT touch
-    ``_bound_at``: the binding did not move, only our picture of what exists, and
-    forgetting when we were bound would let an older listing start denying a newer
-    binding (see ``listing_supersedes_binding``).
-
-    Dropping rather than refetching here keeps this callable from anywhere; the
-    caller decides whether a refresh is worth a round trip.
-    """
+    """Drop the readable endpoint cache; read visibility never revokes a binding."""
     _list_cache.pop(get_instance_settings().instance_name, None)
-
-
-def listing_supersedes_binding() -> bool:
-    """Whether a successful hub listing is NEWER than the binding, and so may contradict it.
-
-    "Has a listing ever succeeded" is the tempting test and it is wrong. The push is
-    deliberately allowed to run ahead of the cache -- the hub binds a box to an endpoint the
-    listing has not heard of yet, and ``_inventory`` reads the listing ``cached_only`` -- so a
-    STALE-but-successful listing would deny a binding that had just arrived, which is exactly
-    the case the stub in ``_endpoint_sources`` exists to serve.
-
-    Only a listing fetched AFTER the binding was written can be read as "the hub knows about
-    this box's endpoint and did not list it". A binding loaded from disk has no write time in
-    this process, so it predates every listing here and any successful one supersedes it.
-    """
-    name = get_instance_settings().instance_name
-    cached = _list_cache.get(name)
-    if cached is None:
-        return False  # nobody has managed to ask; the push stands
-    return cached[0] > _bound_at.get(name, 0.0)
 
 
 def _allows(row: dict, action: str) -> bool | None:
@@ -379,7 +339,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # TWO reads, unioned, because the hub answers "what may I spend" in two places and neither is
     # complete alone. The ordinary type listing is ACCESS-SCOPED: it returns rows this user holds a
     # role edge on. The seeded global root holds no role edge for anybody -- it is stamped
-    # ``authenticated_role: reader`` -- so it appears only in ``catalog``, the deliberately
+    # ``authenticated_roles: reader`` -- so it appears only in ``catalog``, the deliberately
     # un-scoped discovery listing. Reading just the first silently omits the one endpoint EVERY
     # signed-in user can always spend, which is the difference between a picker that offers a
     # fallback and one that tells a logged-in user they have nothing. ``use-llm-endpoints.ts``
@@ -406,13 +366,15 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # catalog is deliberately asked WITHOUT it: those rows reach every signed-in user through a
     # stamp rather than a role edge, and a "cannot change it" there would read as "it was given to
     # me", turning the shared pool into everybody's personal wallet.
-    rows = _rows(await HubProxy.try_call("GET", "llm_endpoint", params={"expand": "permissions"}))
+    # Cache freshness starts when the read begins, rather than after network latency.
+    requested_at = time.monotonic()
+    rows = _rows(await HubProxy.try_call("GET", "llm_endpoint", params={"expand": "permissions"}, strict=True))
     if rows is None:
         return stale
     held = {str(row.get("id") or "") for row in rows if isinstance(row, dict)}
     # A failed catalog read costs only the fallback: answering with the scoped rows beats
     # answering with nothing.
-    rows = list(rows) + list(_rows(await HubProxy.try_call("GET", "llm_endpoint", action="catalog")) or [])
+    rows = list(rows) + list(_rows(await HubProxy.try_call("GET", "llm_endpoint", action="catalog", strict=True)) or [])
     fields = set(LLMEndpoint.model_fields)
     endpoints: list[LLMEndpoint] = []
     seen: set[str] = set()
@@ -445,5 +407,5 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
                 seen.add(row_id)
         except Exception as exc:  # noqa: BLE001 -- one malformed row must not lose the rest
             logger.warning("fetch_hub_llm_endpoints: skipped a row: %s: %s", type(exc).__name__, exc)
-    _list_cache[name] = (time.monotonic(), endpoints)
+    _list_cache[name] = (requested_at, endpoints)
     return endpoints
