@@ -15,7 +15,7 @@ export interface IInvitation extends IEntity {
   target_type?: string;
   target_id?: string;
   target_name?: string;
-  target_role?: string;
+  target_roles?: string[];
   /** The inviter (resolved hub-side from the InvitedBy edge). */
   sender_name?: string;
   sender_user_id?: string;
@@ -38,7 +38,7 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
   target_type?: string;
   target_id?: string;
   target_name?: string;
-  target_role?: string;
+  target_roles?: string[];
   sender_name?: string;
   sender_user_id?: string;
   static type: string = 'invitation';
@@ -54,7 +54,7 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
     this.target_type = entity.target_type;
     this.target_id = entity.target_id;
     this.target_name = entity.target_name;
-    this.target_role = entity.target_role;
+    this.target_roles = entity.target_roles;
     this.sender_name = entity.sender_name;
     this.sender_user_id = entity.sender_user_id;
   }
@@ -85,7 +85,7 @@ export async function declineInvitation(
  *  while the local `Invitation` entity carries them flattened — see
  *  `fetchPendingInvitations` for why the two differ. */
 interface PendingInvitationWire extends IInvitation {
-  target?: { type?: string; id?: string; name?: string; role?: string } | null;
+  target?: { type?: string; id?: string; name?: string; roles?: string[] } | null;
   inviter?: { user_id?: string; name?: string } | null;
 }
 
@@ -118,7 +118,7 @@ export async function fetchPendingInvitations(): Promise<Invitation[]> {
         target_type: row.target?.type,
         target_id: row.target?.id,
         target_name: row.target?.name,
-        target_role: row.target?.role,
+        target_roles: row.target?.roles,
         sender_name: row.inviter?.name,
         sender_user_id: row.inviter?.user_id,
       }),

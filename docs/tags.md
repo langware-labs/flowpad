@@ -159,6 +159,28 @@ EventBus.on(tag_pattern, handler, {target?, scope?}) → unsub
   `<family>_on_tag.py` (Python — dots don't make importable modules) /
   `<family>.onTag.ts` (TS) beside it.
 
+### Another process's events — `POST /api/v1/tags/relay`
+
+The bus is per process, and the app's bus is the one with the TAG triggers and the
+clients. A process of the instance that is not the app — a project's server, a
+trigger's `run_script` — puts its own event there by posting an envelope to the app:
+
+```
+POST /api/v1/tags/relay
+{"tag": "user_app.qa.worker.silent", "target": "<type:id>", "data": {...}}
+```
+
+- **`user_app.*` is the family for such events.** Flowpad never emits it. A TAG trigger
+  catches it (`"tag": {"on": "user_app.qa.*"}`), and the app's clients get it as a
+  `tag_msg` frame.
+- **Only the relayed patterns are taken** (`tags/relay.py RELAYED_TAG_PATTERNS`); any
+  other tag answers 400. The relay is not a way to inject any tag into the app.
+- `target`, `data` and `ctx` are optional and kept as sent. The app emits the event on
+  its own bus, so it gets a new `id`.
+- The app's port is in the instance's `server.json`. A gated instance (a cloud box)
+  also wants its cookie-gate secret ([`cookie-gate.md`](cookie-gate.md)). Best-effort:
+  if the app is not up, the event is lost.
+
 ## Laws
 
 1. **The bus matches `tag` (+ optional target/scope filters); it never interprets

@@ -28,12 +28,12 @@ def test_empty_body_is_a_plain_share() -> None:
 
 def test_recipients_resolve_to_invitees_in_both_wire_shapes() -> None:
     spec = ShareRequestSpec.from_body(
-        {"recipients": ["Eli@Example.com", _USER_ID, {"idOrEmail": "dana@example.com", "role": "editor"}]}
+        {"recipients": ["Eli@Example.com", _USER_ID, {"idOrEmail": "dana@example.com", "roles": ["editor"]}]}
     )
     assert spec.recipients == (
         ShareInvitee(email="eli@example.com"),
         ShareInvitee(user_id=_USER_ID),
-        ShareInvitee(email="dana@example.com", role="editor"),
+        ShareInvitee(email="dana@example.com", roles=["editor"]),
     )
 
 
@@ -57,6 +57,10 @@ def test_the_spec_itself_rejects_unknown_keys() -> None:
     "body",
     [
         {"recipients": "a@b.co"},
+        {"recipients": [{"idOrEmail": "a@b.co", "roles": []}]},
+        {"recipients": [{"idOrEmail": "a@b.co", "roles": ["member"]}]},
+        {"recipients": [{"idOrEmail": "a@b.co", "roles": ["owner_by_api"]}]},
+        {"recipients": [{"idOrEmail": "a@b.co", "role": "reader"}]},
         {"recipients": [""]},
         {"recipients": [{"idOrEmail": "a@b.co", "unexpected": 1}]},
         {"teams": "team-x"},

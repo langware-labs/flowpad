@@ -23,6 +23,7 @@ import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
+import { deployedMachine } from './deployed-machine';
 
 /** One way to connect a channel: Flowpad's own bot/number/app, or the person's own. */
 type Option = { id: string; method: OnboardingMethod; title: string; hint: string };
@@ -130,7 +131,7 @@ export function FirstAgentCard() {
       setMade(agent);
       mark('saved');
       setStep('connect');
-      deploying.current = Onboarding.deploy(agent.agent.id).then((d) => {
+      deploying.current = deployedMachine(agent.agent.id).then((d) => {
         setDeployed(d);
         mark('sandbox');
         return d;

@@ -78,6 +78,9 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   `trigger.json` (a schedule file may still carry it inside `schedule`). Only the machine that place
   runs on arms the rule — an event rule or a file rule checked into a shared project then fires once,
   not once per clone. Empty: every machine that indexes it.
+- **A process of your own fires a rule through the relay.** A project's server or a
+  `run_script` posts `user_app.<anything>` to `POST /api/v1/tags/relay`, and a rule on
+  `"tag": {"on": "user_app.<family>.*"}` catches it (`docs/tags.md`, "Another process's events").
 - **The run a test started is one call away.** `run_once` answers `run_id` (`RunOnceStarted`);
   `Trigger.run(run_id)` — `GET trigger/run?id=`, TypeScript `Trigger.run(started.run_id)` — answers
   `status: "running"` while it works and its history row after. No status file, no polling of `runs`.

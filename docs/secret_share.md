@@ -312,13 +312,16 @@ A cloud deployment also gets one **funding** item, asked of the hub (`Deployment
 `GET deployment/<id>/funding`). It names what pays for its model turns: its token allocation (the deploy
 dialog's "Token allocation", `TokenAllocationSpec`), else the owner's capped default. A used-up limit makes the
 item `missing`, and the fix names the limit. The item is asked at readiness only and never written into the
-agent's requirements. A hub that cannot answer blocks nothing.
+agent's requirements. Funding is **advisory** (`ADVISORY_KINDS` in `requirement_spec.py`): a `missing` funding
+item never refuses a deploy — the deploy goes ahead, its readiness step ends with the warning, and the app shows
+it once as a toast (the deploy dialog shows the item as a warning, not a cross). A hub that cannot answer blocks
+nothing.
 `flow project setup` folds the same per-source derivation (`--deployment` sets up a
 deployment's values).
 
-Readiness **gates a cloud deploy**: `Agent.deploy_to_cloud` publishes, plans the
+Readiness **gates a cloud deploy**: `agent_cloud_deploy.run_deployment_steps` publishes, plans the
 placement, and raises `NotReady` (HTTP 409, `code: not_ready`, with the readiness and the
-planned deployment) before any machine is paid for; the hub checks the same names again
+planned deployment) before any machine is paid for — on a blocking item only, never on funding; the hub checks the same names again
 (`require`). The deploy dialog renders that refusal with Use mine / Authorize per item.
 `flow agent deploy <agent> [--environment E]` exits 1 on it; `flow credentials check|set
 --deployment D` and `flow credentials diff <A|here> <B|here>` (which names each holds) work on

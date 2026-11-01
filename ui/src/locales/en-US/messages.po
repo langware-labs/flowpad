@@ -42,7 +42,7 @@ msgstr " · paused"
 msgid " · the way set up here"
 msgstr " · the way set up here"
 
-#. placeholder {0}: me.role
+#. placeholder {0}: me.roles.join(', ')
 #: src/components/organization/org-detail-panel.tsx
 msgid " · you are {0}"
 msgstr " · you are {0}"
@@ -568,10 +568,9 @@ msgstr "{0} added, {1} updated in {teamName}."
 msgid "{0} allocation"
 msgstr "{0} allocation"
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} already has a cloud machine"
-msgstr "{0} already has a cloud machine"
+#~ msgid "{0} already has a cloud machine"
+#~ msgstr "{0} already has a cloud machine"
 
 #. placeholder {0}: teamLabel(s)
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -765,10 +764,9 @@ msgstr "{0} in {folder}"
 msgid "{0} indexed"
 msgstr "{0} indexed"
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
-msgid "{0} is already deployed"
-msgstr "{0} is already deployed"
+#~ msgid "{0} is already deployed"
+#~ msgstr "{0} is already deployed"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -935,10 +933,9 @@ msgstr "{0} now has \"{1}\"."
 msgid "{0} now has access, but the invite message wasn't sent."
 msgstr "{0} now has access, but the invite message wasn't sent."
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} now runs on a cloud machine"
-msgstr "{0} now runs on a cloud machine"
+#~ msgid "{0} now runs on a cloud machine"
+#~ msgstr "{0} now runs on a cloud machine"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -2728,6 +2725,7 @@ msgstr "Access token"
 msgid "Account key"
 msgstr "Account key"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Accurate"
 msgstr "Accurate"
@@ -5263,6 +5261,7 @@ msgstr "Backup DB"
 msgid "bad"
 msgstr "bad"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Balanced"
 msgstr "Balanced"
@@ -8476,6 +8475,8 @@ msgid "Could not deny"
 msgstr "Could not deny"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Could not deploy"
 msgstr "Could not deploy"
@@ -10710,6 +10711,8 @@ msgid "Deploy an agent"
 msgstr "Deploy an agent"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Deploy failed."
 msgstr "Deploy failed."
 
@@ -10734,8 +10737,12 @@ msgstr "Deployed agent"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "Deployed without its definition"
-msgstr "Deployed without its definition"
+#~ msgid "Deployed without its definition"
+#~ msgstr "Deployed without its definition"
+
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "Deploying without model funding"
+msgstr "Deploying without model funding"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Deployment"
@@ -10748,6 +10755,10 @@ msgstr "Deployment deleted"
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "Deployment details"
 msgstr "Deployment details"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deployment running in the background"
+msgstr "Deployment running in the background"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment type"
@@ -13397,6 +13408,7 @@ msgstr "Fallbacks"
 msgid "Family"
 msgstr "Family"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/i18n/pref-labels.ts
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -14435,8 +14447,8 @@ msgid "Full — complete rescan"
 msgstr "Full — complete rescan"
 
 #: src/pages/hub-home/LoginAccessField.tsx
-msgid "Full access"
-msgstr "Full access"
+#~ msgid "Full access"
+#~ msgstr "Full access"
 
 #: src/notifications/error-detail.ts
 msgid "Full answer"
@@ -17227,6 +17239,10 @@ msgstr "Leave this conversation?"
 msgid "Left / limit"
 msgstr "Left / limit"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Left alone, the agent works with whatever model your budget gives it. Pick a size to require it: if your budget does not offer that size, the agent will not start and tells you why."
+msgstr "Left alone, the agent works with whatever model your budget gives it. Pick a size to require it: if your budget does not offer that size, the agent will not start and tells you why."
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
 msgstr "Left conversation"
@@ -18915,6 +18931,11 @@ msgstr "model provider · {0}"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "model size"
 msgstr "model size"
+
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Model size"
+msgstr "Model size"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -21178,7 +21199,6 @@ msgstr "none"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -27359,6 +27379,10 @@ msgstr "Run this live session in which project?"
 msgid "Run:"
 msgstr "Run:"
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Runner"
+msgstr "Runner"
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -31877,6 +31901,10 @@ msgstr "The agent is still working, or waiting for your answer in the terminal. 
 msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
 msgstr "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
 
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "The agent requires this model size"
+msgstr "The agent requires this model size"
+
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
 msgstr "The agent this link names isn't in the project's files."
@@ -35824,6 +35852,10 @@ msgstr "What would you like to work on?"
 #~ msgid "What's in the box."
 #~ msgstr "What's in the box."
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Whatever I get"
+msgstr "Whatever I get"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "WhatsApp Business account ID"
 msgstr "WhatsApp Business account ID"
@@ -36378,7 +36410,7 @@ msgstr "You already have this. Replace it with the shared version?"
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "You approved this session only — {guestName} will need your approval again next time."
 
-#. placeholder {0}: team.my_role
+#. placeholder {0}: team.my_roles?.join(', ')
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "you are {0}"
 msgstr "you are {0}"

@@ -12,7 +12,7 @@ import { AssistantContextChips } from './AssistantContextChips';
 import { assistantContextInstructions, assistantContextKey } from './assistant-context';
 import type { PendingAsk } from './floating-chat-context';
 import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
-import { VibeModelSelect } from '@src/pages/flow-page/vibe-model-select';
+import { SessionModelSelect } from '@src/pages/flow-page/session-model-select';
 import { WorkerTypeSelect } from '@src/components/workers/WorkerTypeSelect';
 
 /** Rapid tab flips settle to the last one before the assistant looks it up. */
@@ -167,7 +167,11 @@ export function AssistantChat({
   if (!target) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
-        {isLoading ? <Trans>Loading Flowpad Assistant…</Trans> : <Trans>Flowpad Assistant project not available.</Trans>}
+        {isLoading ? (
+          <Trans>Loading Flowpad Assistant…</Trans>
+        ) : (
+          <Trans>Flowpad Assistant project not available.</Trans>
+        )}
       </div>
     );
   }
@@ -234,8 +238,8 @@ export function AssistantChat({
           // The assistant answers quick questions about the page: the small tier, not Vibe's Balanced.
           defaultModel={WorkerModelTier.SM}
           // Vibe's model and worker pickers, in the settings popover.
-          modelSelectSlot={({ value, disabled, onChange }) => (
-            <VibeModelSelect value={value} onChange={onChange} disabled={disabled} />
+          modelSelectSlot={({ value, disabled, onChange, activeProcess }) => (
+            <SessionModelSelect value={value} onChange={onChange} disabled={disabled} activeProcess={activeProcess} />
           )}
           workerSelectSlot={({ value, disabled, onChange }) => (
             <WorkerTypeSelect value={value} onChange={onChange} disabled={disabled} />

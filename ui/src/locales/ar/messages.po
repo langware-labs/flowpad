@@ -42,7 +42,7 @@ msgstr " · متوقف مؤقتاً"
 msgid " · the way set up here"
 msgstr " · كما أُعدّ هنا"
 
-#. placeholder {0}: me.role
+#. placeholder {0}: me.roles.join(', ')
 #: src/components/organization/org-detail-panel.tsx
 msgid " · you are {0}"
 msgstr " · دورك {0}"
@@ -566,10 +566,9 @@ msgstr "تمت إضافة {0} وتحديث {1} في {teamName}."
 msgid "{0} allocation"
 msgstr ""
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} already has a cloud machine"
-msgstr "لدى {0} جهاز سحابي بالفعل"
+#~ msgid "{0} already has a cloud machine"
+#~ msgstr "لدى {0} جهاز سحابي بالفعل"
 
 #. placeholder {0}: teamLabel(s)
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -762,10 +761,9 @@ msgstr "{0} في {folder}"
 msgid "{0} indexed"
 msgstr "{0} مفهرسة"
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
-msgid "{0} is already deployed"
-msgstr "{0} مُنتشر بالفعل"
+#~ msgid "{0} is already deployed"
+#~ msgstr "{0} مُنتشر بالفعل"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -932,10 +930,9 @@ msgstr "لدى {0} الآن \"{1}\"."
 msgid "{0} now has access, but the invite message wasn't sent."
 msgstr "مُنح {0} صلاحية الوصول، لكن لم تُرسل رسالة الدعوة."
 
-#. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "{0} now runs on a cloud machine"
-msgstr "يعمل {0} الآن على جهاز سحابي"
+#~ msgid "{0} now runs on a cloud machine"
+#~ msgstr "يعمل {0} الآن على جهاز سحابي"
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -2711,6 +2708,7 @@ msgstr "رمز الوصول"
 msgid "Account key"
 msgstr "مفتاح الحساب"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Accurate"
 msgstr "دقيق"
@@ -5225,6 +5223,7 @@ msgstr "نسخ احتياطي"
 msgid "bad"
 msgstr "سيئ"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Balanced"
 msgstr "متوازن"
@@ -8420,6 +8419,8 @@ msgid "Could not deny"
 msgstr "تعذّر الرفض"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Could not deploy"
 msgstr "تعذر النشر"
@@ -10648,6 +10649,8 @@ msgid "Deploy an agent"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Deploy failed."
 msgstr "فشل النشر."
 
@@ -10672,8 +10675,12 @@ msgstr "الوكيل المنشور"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "Deployed without its definition"
-msgstr "نُشِر بدون تعريفه"
+#~ msgid "Deployed without its definition"
+#~ msgstr "نُشِر بدون تعريفه"
+
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "Deploying without model funding"
+msgstr "النشر بدون تمويل للنموذج"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Deployment"
@@ -10686,6 +10693,10 @@ msgstr "تم حذف النشر"
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "Deployment details"
 msgstr "تفاصيل النشر"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Deployment running in the background"
+msgstr "النشر قيد التشغيل في الخلفية"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment type"
@@ -13314,6 +13325,7 @@ msgstr "الاحتياطيات"
 msgid "Family"
 msgstr "العائلة"
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/i18n/pref-labels.ts
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -14333,8 +14345,8 @@ msgid "Full — complete rescan"
 msgstr "كامل — إعادة مسح شاملة"
 
 #: src/pages/hub-home/LoginAccessField.tsx
-msgid "Full access"
-msgstr "وصول كامل"
+#~ msgid "Full access"
+#~ msgstr "وصول كامل"
 
 #: src/notifications/error-detail.ts
 msgid "Full answer"
@@ -17100,6 +17112,10 @@ msgstr "مغادرة هذه المحادثة؟"
 msgid "Left / limit"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Left alone, the agent works with whatever model your budget gives it. Pick a size to require it: if your budget does not offer that size, the agent will not start and tells you why."
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
 msgstr "تمت مغادرة المحادثة"
@@ -18773,6 +18789,11 @@ msgstr "مزوّد النموذج · {0}"
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "model size"
 msgstr "حجم النموذج"
+
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Model size"
+msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -21018,7 +21039,6 @@ msgstr "بدون"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -27151,6 +27171,10 @@ msgstr "في أي مشروع تريدون تشغيل هذه الجلسة الم�
 msgid "Run:"
 msgstr ""
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Runner"
+msgstr ""
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -31639,6 +31663,10 @@ msgstr "لا يزال الوكيل يعمل، أو ينتظر إجابتكم ف�
 msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
 msgstr "ترك الوكيل عملًا قيد التشغيل في الخلفية. يمكنكم متابعة المحادثة. إيقاف هذا العمل ينهيه."
 
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "The agent requires this model size"
+msgstr ""
+
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
 msgstr "الوكيل المذكور في هذا الرابط غير موجود في ملفات المشروع."
@@ -35555,6 +35583,10 @@ msgstr "ما الذي يمكنكم العمل عليه؟"
 #~ msgid "What's in the box."
 #~ msgstr "ما بداخل الصندوق."
 
+#: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
+msgid "Whatever I get"
+msgstr ""
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "WhatsApp Business account ID"
 msgstr ""
@@ -36108,7 +36140,7 @@ msgstr ""
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "وافقتم على هذه الجلسة فقط — سيحتاج {guestName} إلى موافقتكم مرة أخرى في المرة القادمة."
 
-#. placeholder {0}: team.my_role
+#. placeholder {0}: team.my_roles?.join(', ')
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "you are {0}"
 msgstr ""

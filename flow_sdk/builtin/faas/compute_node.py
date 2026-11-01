@@ -344,7 +344,7 @@ class ComputeNode(
             node_provider_type=ComputeProviderType.LOCAL_MACHINE,
             fs_storage_provider=StorageProvider.SANDBOX,
             fs_storage_mount_path=os_root,
-            visitor_role="owner",
+            visitor_roles=["owner"],
             # Stable per-process provider id, needed for PTY ops. Set up-front so
             # the create is a single atomic write (no follow-up save).
             node_provider_id=f"name_{uuid.uuid4()}",
@@ -359,7 +359,7 @@ class ComputeNode(
                     logging.info("[compute-node] @local create raced; adopting %s", existing.id)
                     return existing
             raise
-        await node.set_visitor_role("owner")
+        await node.set_visitor_roles(["owner"])
         logging.info("[compute-node] created @local singleton %s mount=%s", node.id, os_root)
         return node
 

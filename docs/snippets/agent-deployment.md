@@ -150,23 +150,31 @@ this fence as written with the hub's three legs (publish, plan the placement, de
 
 ```python
 import flow_sdk
+from flow_sdk.activity import Activity
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_cloud_deploy import run_deployment_steps
 from flow_sdk.builtin.user import User
 
 await flow_sdk.auth.login()
 agent = await Agent.by_name("researcher")
 actor = (await User.get_local()).typeid        # the caller
-receipt = await agent.deploy_to_cloud(actor, provider="e2b")   # publishes through git first
+receipt = await run_deployment_steps(agent, actor, provider="e2b")   # publishes through git first
+deploy = Activity.get(receipt["activity"]["path"], receipt["activity"]["subject_entity"])
+await deploy.wait_released()                   # the machine starts after the answer: a script waits for it
 ```
 
 Deliberately no node and no principal: "were either passable from here they
-would be passable from anywhere." The hub mints the ComputeNode, provisions the
-Identity, logs the box in as the agent, and the returned row is adopted **at
-the hub's id** (`Deployment.adopt_from_hub`) — never re-minted. The deploy is
-refused (`NotReady`, naming each missing value) until the placement's store —
-the hub — holds every value the agent needs: `use_mine(deployment_id)` copies
-this computer's; the hub places them on the machine when it starts. Live only; the
-unit tier stops at the refusal in §2.
+would be passable from anywhere." The answer comes once the placement is planned
+and ready: where the agent's `deploy` activity reports, and the placement's id.
+The hub then mints the ComputeNode, provisions the Identity and logs the box in
+as the agent, and the row is adopted **at the hub's id**
+(`Deployment.adopt_from_hub`) — never re-minted; the activity says when the
+machine is up. The machine step runs in this process after the answer, so a script
+that exits right after `run_deployment_steps` cuts it off: wait for the activity to
+end (`wait_released`), then read its state (`deploy.spec().state`). The deploy is refused (`NotReady`, naming each missing value)
+until the placement's store — the hub — holds every value the agent needs:
+`use_mine(deployment_id)` copies this computer's; the hub places them on the
+machine when it starts. Live only; the unit tier stops at the refusal in §2.
 
 ## 6. Serve it your way — you pick the channels and the routing
 

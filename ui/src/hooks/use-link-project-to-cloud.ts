@@ -17,12 +17,9 @@ export function useLinkProjectToCloud() {
       const operation = (async () => {
         const login = await requireCloudLogin();
         if (!login.ok) throw new Error(login.error);
-        // Linking puts the files in the project's cloud repository, so a cloud machine or a
-        // member can check it out with nothing but a cloud sign-in.
-        await project.publishFiles();
-        await project.reload();
-        if (project.remote !== true) throw new Error('The server did not confirm the cloud link.');
-        return project;
+        const canonical = await project.share();
+        if (canonical.remote !== true) throw new Error('The server did not confirm the cloud link.');
+        return canonical;
       })().finally(() => {
         pending.current.delete(key);
         setLinking(pending.current.size > 0);
