@@ -1009,6 +1009,21 @@ export class Project extends APIEntity<Project> {
     });
   }
 
+  /** Edit a declared dependency in place — only the fields given change. Never fetches. */
+  async updateDependency(
+    name: string,
+    patch: { source?: string; optional?: boolean; label?: string; description?: string },
+  ): Promise<DependencyState[]> {
+    return this.changingDependencies(async () => {
+      const response = await this.post<({ dependencies: DependencyState[] } & ProjectContextPayload) | null>(
+        'update-dependency',
+        { name, ...patch },
+      );
+      this.adoptContext(response);
+      return response?.dependencies ?? [];
+    });
+  }
+
   /** Fetch / clone every required dependency that is missing (`update` also
    *  pulls the ones already here). */
   async resolveDependencies(options: { update?: boolean } = {}): Promise<DependencyState[]> {

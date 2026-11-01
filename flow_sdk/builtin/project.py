@@ -3062,6 +3062,41 @@ class Project(SetupSkippable, Entity):
             flow_json.drop_dependency(Path(self.fs_storage_mount_path), name)
         return await self.dependencies()
 
+    async def update_dependency(
+        self,
+        name: str,
+        *,
+        source: str | None = None,
+        optional: bool | None = None,
+        label: str | None = None,
+        description: str | None = None,
+    ) -> "list[DependencyState]":
+        """Edit ``name``'s entry in ``flow.json`` in place — only the fields given change
+        (``""`` clears a label/description). Nothing is fetched or installed: a required
+        package that is now missing shows up as a warning, like any other."""
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.flow_json_spec import parse_source  # noqa: PLC0415
+
+        if not self.fs_storage_mount_path:
+            raise ValueError("this project has no folder to hold a flow.json")
+        root = Path(self.fs_storage_mount_path)
+        dep = flow_json.read(root).find(name)
+        if dep is None:
+            raise ValueError(f"{name!r} is not declared in flow.json")
+        patch: dict = {}
+        if source is not None and source.strip() != dep.source:
+            patch["source"] = source.strip()
+            parse_source(patch["source"])
+        if optional is not None:
+            patch["required"] = not optional
+        if label is not None:
+            patch["label"] = label or None
+        if description is not None:
+            patch["description"] = description or None
+        if patch:
+            flow_json.write_dependency(root, dep.model_copy(update=patch))
+        return await self.dependencies()
+
     async def install_dependency(self, name: str) -> "DependencyState":
         """Bring in an OPTIONAL dependency — optional ones are never fetched on their own."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
@@ -3175,6 +3210,25 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message="name is required", status_code=400)
         try:
             states = await self.remove_dependency(name, asset=asset or None)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
+
+    @action.post(action_name="update-dependency")
+    async def update_dependency_action(
+        self,
+        name: str = "",
+        source: str | None = None,
+        optional: bool | None = None,
+        label: str | None = None,
+        description: str | None = None,
+    ) -> "ApiResponse":
+        if not name:
+            return ApiFailResponse(message="name is required", status_code=400)
+        try:
+            states = await self.update_dependency(
+                name, source=source, optional=optional, label=label, description=description
+            )
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
