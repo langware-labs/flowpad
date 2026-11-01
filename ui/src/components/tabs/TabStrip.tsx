@@ -506,8 +506,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const iconOnly = density === 'icon' && !isEditing;
     const closable = item.closable !== false;
     const showPopout = density === 'normal' && !!onPopout;
-    // The bookmark star takes the icon's place while the pointer is on the tab.
-    const showStar = !!item.favorite && !isEditing;
+    // On the active tab only, the bookmark star takes the icon's place on hover.
+    const showStar = !!item.favorite && !isEditing && isActive;
     const noteTarget = !isEditing ? item.notes : null;
     const chipNotes = (noteTarget && notesFor.get(noteTarget.typeId.toString())) || NO_NOTES;
 
@@ -574,7 +574,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
             </span>
           )}
-          {noteTarget && !iconOnly && (
+          {noteTarget && isActive && !iconOnly && (
             // Beside the star, after the same hover delay; it floats over the
             // title's first letters rather than reserving width on every chip.
             <span
