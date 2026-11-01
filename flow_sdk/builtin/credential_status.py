@@ -8,6 +8,7 @@ Values are never read.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -117,17 +118,53 @@ async def _remote_names(refs: list["SecretStoreRef"]) -> dict[tuple[str, str], O
     return dict(zip((ref.key for ref in unique), await asyncio.gather(*(names(ref) for ref in unique))))
 
 
-async def _signed_in(var) -> bool:
-    """A ``cli`` variable's own check, run on this computer: exit 0 is signed in. A tool that is not
-    installed, or a check with no command for this OS, is not signed in."""
+async def run_check(op, *, workdir: Path, extra_env: Optional[dict] = None) -> tuple[str, str]:
+    """Run a check op (a sign-in's ``check``, a credential's test) on this computer: ``(outcome, reason)``.
+    ``outcome``: ``ok`` / ``no_command`` (none for this OS) / ``timeout`` / ``not_installed`` / ``failed``.
+    ``reason``: the tool's first line, minus a leading ``ERROR: (tool.verb)`` that names the tool, not the problem."""
     from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
     from flow_sdk.schema.data_spec.compute_op_spec import CHECK_TIMEOUT  # noqa: PLC0415
 
-    command = var.check.command_for() if var.check is not None else None
+    command = op.command_for() if op is not None else None
     if not command:
-        return False
-    said = await run_shell(command, timeout_seconds=var.check.timeout(CHECK_TIMEOUT), workdir=Path.home())
-    return said.returncode == 0 and not said.timed_out
+        return "no_command", ""
+    said = await run_shell(command, timeout_seconds=op.timeout(CHECK_TIMEOUT), workdir=workdir, extra_env=extra_env)
+    if said.timed_out:
+        return "timeout", ""
+    if said.returncode == 0:
+        return "ok", ""
+    if said.returncode == 127:
+        return "not_installed", f"{command.split()[0]} is not installed"
+    first = next((line.strip() for line in (said.stderr or said.stdout or "").splitlines() if line.strip()), "")
+    return "failed", re.sub(r"^(?:error:\s*)?(?:\([^)]*\)\s*)?", "", first, flags=re.IGNORECASE).strip()
+
+
+async def _signed_in(var) -> str:
+    """A ``cli`` variable's own check, run on this computer: ``""`` when signed in, else WHY not, in a
+    person's words. A tool that is not installed, a check with no command for this OS, and a sign-in that
+    lapsed (an expired token: the tool is there, its check fails) are three different things to do."""
+    outcome, reason = await run_check(var.check, workdir=Path.home())
+    if outcome == "ok":
+        return ""
+    if outcome == "no_command":
+        return "no sign-in check for this computer"
+    if outcome == "timeout":
+        return "the sign-in check did not answer"
+    if outcome == "not_installed":
+        return reason
+    return "not signed in, or the sign-in expired — sign in again" + (f" ({reason[:200]})" if reason else "")
+
+
+def why_not_ready(row: Optional[dict]) -> str:
+    """Why a credential status row is not ready, in a person's words: the reason of its first missing sign-in
+    ("not signed in, or the sign-in expired — sign in again (…)"), else empty. The step already names it."""
+    if not row or row.get("state") == "connected":
+        return ""
+    from flow_sdk.schema.data_spec.credential_status_spec import CredentialStatusRowSpec  # noqa: PLC0415
+
+    spec = CredentialStatusRowSpec.model_validate(row)
+    missing = set(spec.missing)
+    return next((v.why for v in spec.vars if v.env_var in missing and v.why), "")
 
 
 def _grant_key(provider: str, scopes) -> tuple[str, tuple[str, ...]]:
@@ -281,7 +318,7 @@ async def credentials_status(
             shadowed_by = str(winner.spec.typeid) if winner is not None and winner.spec.id != spec.id else None
             var_rows.append(CredentialVarStatusSpec(
                 **shown, placeholder=var.placeholder, pattern=var.pattern, secret=var.secret, store=store,
-                present=present, found_in=found_in, warning=warning, shadowed_by=shadowed_by,
+                present=present, found_in=found_in, warning=warning, shadowed_by=shadowed_by, secret_ref=var.secret_ref,
             ))
         rows.append(_Draft(spec, var_rows, required, dict(
             **common,
@@ -292,6 +329,8 @@ async def credentials_status(
             lm_provider=spec.lm_provider or "",
             setup_choice=spec.chosen,
             ways=dict(spec.ways or {}),
+            has_test=spec.has_test,
+            test_result=getattr(spec, "test_result", None),
         )))
 
     # A sign-in lives on this computer: it is asked only for the deployment that IS this computer, and a
@@ -305,9 +344,9 @@ async def credentials_status(
             if v.kind is CredentialVarKind.CLI and not (v.is_one_of and any(o.is_one_of and o.present for o in draft.vars))
         ]
         answers = await asyncio.gather(*(_signed_in(draft.spec.vars[draft.vars[i].env_var]) for draft, i in asked))
-        for (draft, i), signed_in in zip(asked, answers):
-            if signed_in:
-                draft.vars[i] = draft.vars[i].model_copy(update={"present": True, "warning": None})
+        for (draft, i), why in zip(asked, answers):
+            update = {"present": True, "warning": None} if not why else {"why": why}
+            draft.vars[i] = draft.vars[i].model_copy(update=update)
     rows = [row.settle() if isinstance(row, _Draft) else row for row in rows]
 
     return CredentialsStatusSpec(
@@ -324,5 +363,11 @@ async def credentials_status(
         vault_enabled=vault_enabled,
         credentials=rows,
         files=[head for head, _ in files],
+        secret_vaults=_secret_vault_names(project),
     )
 
+
+def _secret_vault_names(project) -> list[str]:
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
+
+    return sorted(vaults_of(project))

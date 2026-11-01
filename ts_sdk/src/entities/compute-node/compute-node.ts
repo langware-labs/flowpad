@@ -224,6 +224,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
        * {@link AgenticProcess.openTab}.
        */
       launchPrompt?: string;
+      /** Tab title for the new process, pinned like a user rename. */
+      title?: string;
     },
   ): Promise<import('../../process/agentic-process').AgenticProcess> {
     const { serializeAgenticContext } = await import('../../process/agentic-context');
@@ -243,6 +245,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
       ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
       ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
+      ...(options?.title?.trim() ? { title: options.title.trim() } : {}),
       // This action spawns the PTY server-side for a visible process, so the
       // theme has to ride the CREATE — the later `open` only reattaches.
       ...(hostTerminalTheme() ? { theme: hostTerminalTheme() } : {}),

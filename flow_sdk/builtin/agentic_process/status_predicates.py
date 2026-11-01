@@ -235,12 +235,9 @@ def turn_owned_elsewhere(process: "AgenticProcess", worker_status: WorkerStatus 
 
 
 def _pid_alive(pid: int) -> bool:
-    import psutil  # noqa: PLC0415
+    from flow_sdk.core.app_ports import pid_alive  # noqa: PLC0415
 
-    try:
-        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        return False
+    return pid_alive(pid)
 
 
 def is_ready_from_busy(

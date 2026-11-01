@@ -221,7 +221,7 @@ export function useTestSource() {
         ...prior,
         [pendingRef.current]: { ok: false, status: 0, model: '', latency_ms: 0, message: String(e) },
       }));
-      notify.error({ title: i18n._(msg`Could not run the test`), message: String(e), durationMs: 4000 });
+      notify.error({ title: i18n._(msg`Could not run the test`), message: String(e), durationMs: 4000, error: e });
     },
   });
   return {

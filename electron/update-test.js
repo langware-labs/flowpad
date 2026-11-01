@@ -27,8 +27,9 @@
  *   FLOWPAD_UPDATE_CONFIG            alternate app-update.yml (a local `generic` feed) for electron-updater (main.js)
  *   FLOWPAD_PYPI_JSON_URL            alternate "latest flowpad" JSON in place of pypi.org (uv-manager.js)
  *   FLOWPAD_UPDATE_TEST_ENGINE_SPEC  what install/upgrade/repair resolve instead of `flowpad@latest` (uv-manager.js)
- *   FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS  how often a running session re-checks both update channels (default 20 min),
- *                                    so a test can watch a held engine at a later tick without waiting (main.js)
+ *   FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS  how often a running session re-checks both update channels, bypassing the update schedule
+ *                                    (update-schedule.js); without it the 5-minute scheduler tick applies. Lets a test
+ *                                    watch a held engine at a later tick without waiting (main.js)
  *   FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS  how long the launch-time desktop update check may take before the app
  *                                    gives up on it (default 20 s). A CI runner can need longer; a check that
  *                                    gave up means no "Updates available" screen at that launch (main.js)

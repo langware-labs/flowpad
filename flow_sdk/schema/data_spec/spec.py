@@ -206,6 +206,16 @@ class DataSpec(BaseModel):
 #: spec still renders ``Optional[X]`` as ``X`` and a ``Literal`` as ``"string"`` (§ above), so no
 #: existing form changes; a class COMPILED from one of these keeps the form it was given.
 OPTIONAL_MARK = "?"
+#: ``"?[kind]"`` — an optional LIST: the one way to mark a list field optional, since ``?`` only
+#: prefixes a string and ``[kind]`` as JSON is a list. Inside the brackets is any string form.
+LIST_OPEN, LIST_CLOSE = "[", "]"
+
+
+def _list_string(form: str) -> str | None:
+    """The element form of ``"[kind]"``, or None when ``form`` is not that."""
+    if form.startswith(LIST_OPEN) and form.endswith(LIST_CLOSE) and len(form) > 2:
+        return form[1:-1]
+    return None
 ENUM_PREFIX = "enum:"
 MAP_KEY = "*"
 #: ``a.kind|b.kind`` (no ``enum:``) -- a REFERENCE to one stored value of any of these kinds
@@ -257,6 +267,9 @@ def _compile(form: Any) -> type:
     if isinstance(form, str):
         if form.startswith(OPTIONAL_MARK):
             return Optional[_compile(form[len(OPTIONAL_MARK):])]  # type: ignore[return-value]
+        element = _list_string(form)
+        if element is not None:
+            return list[_linkable(element)]  # type: ignore[misc]
         if form.startswith(ENUM_PREFIX):
             return Literal[tuple(form[len(ENUM_PREFIX):].split("|"))]  # type: ignore[return-value]
         if KIND_UNION in form:
@@ -290,6 +303,9 @@ def _normalize_form(form: Any) -> Any:
     if isinstance(form, str):
         if form.startswith(OPTIONAL_MARK):
             return OPTIONAL_MARK + _normalize_form(form[len(OPTIONAL_MARK):])
+        element = _list_string(form)
+        if element is not None:
+            return LIST_OPEN + _normalize_form(element) + LIST_CLOSE
         if form.startswith(ENUM_PREFIX):
             values = form[len(ENUM_PREFIX):].split("|")
             if not all(v.strip() for v in values) or len(set(values)) != len(values):

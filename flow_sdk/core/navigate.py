@@ -170,6 +170,19 @@ async def _probe_endpoint(endpoint_id: str, route: Optional[str] = None) -> tupl
     backend = endpoint.proxy_of(route)
     if backend is None or endpoint.remote:
         return ExitCode.OK, None, ""  # nothing on this machine to probe
+    placed = endpoint.route(route or "")
+    webapp_id = (placed.webapp_id if placed is not None else None) or endpoint.webapp_id
+    if webapp_id:
+        # A web app's endpoint: its record is the one answer (``core/webapp/readiness``), never a probe's rule.
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+        from flow_sdk.core.webapp import readiness, record  # noqa: PLC0415
+
+        app = await WebApp.get_by_id(str(webapp_id).removeprefix("micro_app-"))
+        if app is not None and app.asset_ref:
+            rec = record.read(str(app.id), str(app.project_id or ""))
+            if await readiness.quick(app, rec):
+                return ExitCode.OK, "ok", ""
+            return ExitCode.NOT_YET, "not_running", rec.detail or f"{app.name} is not up."
     health = "/" + str(backend.health or "/").lstrip("/")
     found = await probe_webapp(f"http://127.0.0.1:{backend.port}{health}", backend.port)
     verdict = _NAV_VERDICT.get(found.get("nav_error") or "")

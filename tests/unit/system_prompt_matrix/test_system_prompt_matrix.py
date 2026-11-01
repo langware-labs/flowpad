@@ -158,9 +158,9 @@ async def _sdk_typed_run(e: Env) -> AgenticProcess:
 
 
 async def _cli_process_start(e: Env) -> AgenticProcess:
-    # ``flow process start`` (process_cmd.py) — mirrored: the command builds this inline.
+    # ``flow process start`` — mirrored from headless_turn.py, which builds this inline.
     return await AgenticProcess(worker_type=e.worker_type, workdir=e.workdir(), cli_config={"permission_mode": "bypassPermissions"},
-                                pty_mode=False, visible=False, load_flowpad_assistant=False).save()
+                                pty_mode=False, visible=False, load_flowpad_assistant=True).save()
 
 
 async def _agent_deployment(e: Env, **agent_fields) -> AgenticProcess:
@@ -280,7 +280,7 @@ ROWS: tuple[Row, ...] = (
     # A user's own ``AgenticProcess(...)`` / ``.run()`` — the SDK surface, no flow_sdk site.
     Row("sdk_process", _sdk_process, (L.COMMON, L.INSTRUCTIONS)),
     Row("sdk_typed_run", _sdk_typed_run, (L.COMMON, L.INSTRUCTIONS, L.IO)),
-    Row("cli_process_start", _cli_process_start, (L.COMMON,), sites=("flow_sdk/cli/commands/process_cmd.py",)),
+    Row("cli_process_start", _cli_process_start, (L.COMMON,), sites=("flow_sdk/core/headless_turn.py",)),
     Row("agent_deployment", _agent_deployment, (L.COMMON, L.INSTRUCTIONS), sites=(
         "flow_sdk/builtin/deployment.py", "flow_sdk/builtin/agent_run.py", "flow_sdk/builtin/agent.py",
         "flow_sdk/builtin/agent_serve.py",

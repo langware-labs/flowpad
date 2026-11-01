@@ -1,3 +1,4 @@
+import { dataContext } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { useRef } from 'react';
@@ -23,6 +24,10 @@ export function FlowpadAssistantButton() {
   const { t } = useLingui();
   const { open, toggle } = useFloatingChat();
   const ref = useRef<HTMLButtonElement | null>(null);
+
+  // The assistant runs from a project on this backend's disk; the hub has none, so its
+  // window would only say "Flowpad Assistant project not available".
+  if (!dataContext.caps.localFiles) return null;
 
   return (
     <Button

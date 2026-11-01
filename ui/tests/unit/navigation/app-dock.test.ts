@@ -109,3 +109,10 @@ describe('appDockAddress', () => {
     expect(appDockAddress(assetDock({ route: 'x' }))?.route).toBeNull();
   });
 });
+
+describe('appDockAddress on another view', () => {
+  it('is null for the app editor, which names the same micro_app', () => {
+    const editor = new DockPointer(ViewType.ASSETS, `editor/app/typeid/micro_app-${MICRO_APP}`);
+    expect(appDockAddress(editor)).toBeNull();
+  });
+});

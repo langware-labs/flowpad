@@ -3,7 +3,7 @@
  * tabs — Overview (chain tree + limits remaining + effective filters), Usage,
  * Models. The active tab is the URL's, so switching is a navigation.
  */
-import type { LLMEndpoint, LLMEndpointKind } from '@sdk';
+import { LLM_MODEL_SIZES, type LLMChain, type LLMEndpoint, type LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -65,6 +65,36 @@ function EffectiveFilters({ filters }: { filters: Record<string, unknown> }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+function ModelSizes({ tiers, names }: { tiers?: LLMChain['effective_tiers']; names: Record<string, string> }) {
+  if (!tiers) return null;
+  return (
+    <table className="w-full text-sm" data-testid="model-sizes">
+      <tbody>
+        {LLM_MODEL_SIZES.map((size) => {
+          const tier = tiers[size];
+          return (
+            <tr key={size} className="border-b last:border-0" data-testid={`model-size-${size}`}>
+              <td className="w-12 py-1 font-mono text-xs text-muted-foreground">{size}</td>
+              <td className="py-1 font-mono text-xs">{tier?.model ?? '—'}</td>
+              <td className="py-1 text-xs text-muted-foreground">
+                {tier?.model ? (
+                  tier.set_by === 'inherited' ? (
+                    <Trans>inherited</Trans>
+                  ) : (
+                    (names[tier.set_by ?? ''] ?? tier.set_by)
+                  )
+                ) : (
+                  tier?.reason
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -202,6 +232,16 @@ export function LlmEndpointDetail({
                 ))}
               </ol>
             )}
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">
+              <Trans>Model sizes</Trans>
+            </h3>
+            <ModelSizes
+              tiers={chain.data?.effective_tiers}
+              names={Object.fromEntries((chain.data?.hops ?? []).map((h) => [h.id, h.name]))}
+            />
           </section>
 
           <section className="space-y-2">

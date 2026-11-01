@@ -8,8 +8,10 @@ from typing import Any
 import httpx
 
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login
+from flow_sdk.cloud_client.caller import current_caller
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 from flow_sdk.cloud_client.error_reporter import hub_error_reporter
+from flow_sdk.diagnose.baseline import redact
 
 
 class HubAuthExpiredError(httpx.RequestError):
@@ -150,14 +152,18 @@ async def _on_response(response: httpx.Response) -> None:
             # check, not a WS-handshake reject — drop login state.
             await invalidate_hub_login("rejected", detail=_auth_signal_detail(response))
             return
-        await hub_error_reporter.recovered(method=response.request.method, path=request_path(response.request.url))
+        if hub_error_reporter.has_failing:  # skip the redaction on the common, nothing-failed path
+            await hub_error_reporter.recovered(
+                method=response.request.method, path=redact(request_path(response.request.url))
+            )
         return
 
-    if passthrough and status_code == 401 and "json" in response.headers.get("content-type", ""):
-        # A forwarded 401 is a small JSON envelope: read it (``relay`` sends the read copy), so a
-        # dead credential still signs this box out when the call was a verbatim forward.
+    body_read = not passthrough or _is_small_json(response)
+    if passthrough and body_read:
+        # A forwarded error is a small JSON envelope: read it (``relay`` sends the read copy), so
+        # the report carries the hub's own reason and a dead credential still signs this box out.
         await response.aread()
-        if not anonymous and _error_code(response) == "unauthenticated":
+        if status_code == 401 and not anonymous and _error_code(response) == "unauthenticated":
             await invalidate_hub_login("rejected", detail=_auth_signal_detail(response))
     if not passthrough:
         await response.aread()
@@ -173,14 +179,50 @@ async def _on_response(response: httpx.Response) -> None:
     # elsewhere — by an auth-failure envelope on a 2xx (handled above), or
     # by the hub closing the WS with an auth close code (handled in
     # ws_client._handle_closed_connection).
+    path = redact(request_path(response.request.url))
+    # A large or non-JSON passthrough body stays unread (the proxy streams it); the status
+    # still gets reported, and the caller receives the body verbatim.
+    message = redact(_response_message(response)) if body_read else f"HTTP {status_code}"
     await hub_error_reporter.report(
         status_code=status_code,
         method=response.request.method,
-        path=request_path(response.request.url),
-        # The body is off-limits on a passthrough; the status still gets reported,
-        # and the caller receives the hub's message verbatim in the proxied body.
-        message=f"HTTP {status_code}" if passthrough else _response_message(response),
+        path=path,
+        message=message,
+        detail=_error_detail(response, path=path, message=message, body_read=body_read),
     )
+
+
+def _error_detail(response: httpx.Response, *, path: str, message: str, body_read: bool) -> dict[str, Any]:
+    """The failed call as the UI's ``ErrorDetail``: request, the hub's answer, who asked."""
+    url = response.request.url
+    request_id = next((response.headers[h] for h in REQUEST_ID_HEADERS if h in response.headers), None)
+    return {
+        "request": {
+            "method": response.request.method,
+            "url": f"{url.scheme}://{url.netloc.decode()}{path}",
+            "caller": current_caller() or None,
+        },
+        "response": {
+            "status": response.status_code,
+            "message": message,
+            "body": redact(response.text or "")[:MAX_BODY_CHARS] if body_read else None,
+            "errorCode": _error_code(response) if body_read else None,
+            "requestId": request_id,
+        },
+    }
+
+
+# A forwarded error body is read only when it is small JSON — an envelope, not a download.
+MAX_READ_BYTES = 64 * 1024
+MAX_BODY_CHARS = 4096
+REQUEST_ID_HEADERS = ("x-request-id", "x-correlation-id", "x-amzn-trace-id")
+
+
+def _is_small_json(response: httpx.Response) -> bool:
+    if "json" not in response.headers.get("content-type", ""):
+        return False
+    length = response.headers.get("content-length")
+    return length is not None and length.isdigit() and int(length) <= MAX_READ_BYTES
 
 
 def _auth_signal_detail(response: httpx.Response) -> str:

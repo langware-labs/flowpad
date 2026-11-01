@@ -1,4 +1,4 @@
-"""APScheduler singleton for CronEvent scheduling."""
+"""APScheduler singleton for Trigger scheduling."""
 
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ def start_scheduler():
 
         scheduler.add_listener(_log_missed_job, EVENT_JOB_MISSED)
         scheduler.start()
-        logger.info("CronEvent scheduler started")
+        logger.info("Trigger scheduler started")
 
 
 def stop_scheduler():
@@ -126,7 +126,7 @@ def stop_scheduler():
     global _scheduler
     if _scheduler is not None and _scheduler.running:
         _scheduler.shutdown(wait=False)
-        logger.info("CronEvent scheduler stopped")
+        logger.info("Trigger scheduler stopped")
 
 
 async def acquire_job_registration_lock():
@@ -139,7 +139,7 @@ async def prune_orphan_scheduler_jobs() -> int:
 
     The jobstore (``scheduler_jobs.db``) is persistent across restarts. Every
     job is registered with ``id=<entity id>`` and ``replace_existing=True``
-    (see ``Trigger._register_schedule_job`` / ``CronEvent``), so a live entity
+    (see ``Trigger._register_schedule_job``), so a live entity
     can only ever own a single job. But older builds added jobs with random
     ids, and a job whose owning entity is later deleted is never cleaned up —
     so stale jobs accumulate in the persistent store. They all fire every tick,
@@ -147,8 +147,8 @@ async def prune_orphan_scheduler_jobs() -> int:
     27 orphaned "System heartbeat" jobs once pinned the backend at ~63% CPU
     (560 fires/min) and starved all HTTP/WS handlers.
 
-    Valid job ids are exactly the ids of schedule-type ``Trigger`` entities and
-    ``CronEvent`` entities; anything else in the jobstore is an orphan and is
+    Valid job ids are exactly the ids of schedule-type ``Trigger`` entities;
+    anything else in the jobstore is an orphan and is
     removed. Call once at startup, after the scheduler is started and service
     triggers are registered.
 
@@ -163,12 +163,10 @@ async def prune_orphan_scheduler_jobs() -> int:
     # Collect the ids that legitimately own a job. Abort on any failure so a
     # transient DB error can never wipe valid jobs.
     try:
-        from flow_sdk.builtin.cron_event import CronEvent
         from flow_sdk.builtin.trigger import Trigger
         from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
         valid_ids: set[str] = {t.id for t in await Trigger.list_by_type(TriggerType.SCHEDULE) if t.id}
-        valid_ids.update(c.id for c in await CronEvent.get_all() if getattr(c, "id", None))
     except Exception:
         logger.exception("prune_orphan_scheduler_jobs: could not resolve live job ids; skipping prune")
         return 0

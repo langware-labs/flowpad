@@ -12,8 +12,9 @@ import { OpenSessionButton, ContextWorkerToolbar } from '@src/components/workers
  * Conversation-header affordance for the conversation's owning worker session.
  * Renders:
  *
- *   - a **launch toolbar** (claude_code / codex / copilot) — always, so a new
- *     session can start even when one already exists;
+ *   - a **launch toolbar** (claude_code / codex / copilot) — always. A click
+ *     sends to the conversation's session when it is that worker type and has
+ *     not failed; it starts a new one only otherwise (`useConversationSession`);
  *   - plus, when a conversationProcess exists, an **Open** chip → the latest one.
  *
  * Self-contained: it owns its own project-mapping gate + picker dialog, so it

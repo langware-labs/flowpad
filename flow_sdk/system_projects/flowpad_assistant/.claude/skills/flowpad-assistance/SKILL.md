@@ -144,6 +144,7 @@ For records, search, process or message actions, open the matching file in this 
 | search   | [`search.md`](search.md) |
 | process  | [`process.md`](process.md) |
 | message  | [`message.md`](message.md) — read what someone sent (Flowpad conversations, never Slack/Gmail unprompted; needs cloud login) or send |
+| credential test | `flow credentials test <name>` — is a key GOOD, not only present (exit 0 = the provider takes it). No test declared → the **cred-scan** skill, `cred-scan test <name>`, writes one |
 
 When composing two actions in this skill (e.g. `search` then `records`), read both
 files end-to-end before you start running commands.

@@ -36,6 +36,7 @@ import functools
 import hashlib
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
@@ -620,6 +621,9 @@ def record_system(dataset: Any) -> Optional[RecordSystem]:
 #: The datasets (by working-copy root) whose rows the current task is already inside a session of.
 _inside: contextvars.ContextVar[frozenset] = contextvars.ContextVar("store_inside", default=frozenset())
 _locks: Any = None
+#: When each dataset's last pull FINISHED (``time.monotonic``), by working-copy root. A read that waited
+#: behind a pull which finished after it asked serves those rows: it pulls nothing itself.
+_pulled_at: dict[str, float] = {}
 
 
 def _registry() -> Any:
@@ -655,13 +659,16 @@ async def session(dataset: Any, store: Store, *, write: bool) -> AsyncIterator[P
         return
     from flow_sdk.stream_inbox._locks import keyed_loop_lock  # noqa: PLC0415
 
-    async with keyed_loop_lock(_registry(), str(root)):
+    key, asked = str(root), time.monotonic()
+    async with keyed_loop_lock(_registry(), key):
         from flow_sdk.builtin.dataset import ConflictError  # noqa: PLC0415
         from flow_sdk.sources.errors import Conflict  # noqa: PLC0415
 
         with entered(root):
             try:
-                await pull(dataset, store, root)
+                # Concurrent reads share one pull (a pull per read trips the service's HTTP 429); writes always pull.
+                if write or _pulled_at.get(key, float("-inf")) < asked:
+                    await pull(dataset, store, root)
                 yield root
                 if write and store.remote:
                     try:
@@ -697,6 +704,7 @@ async def pull(dataset: Any, store: Store, root: Optional[Path] = None) -> dict:
         gone = list(done.get("gone", []))
         if store.remote:
             await push(dataset, store, root)
+    _pulled_at[str(root)] = time.monotonic()   # every pull that worked serves the reads queued behind it
     return {"moved": moved, "gone": gone}
 
 

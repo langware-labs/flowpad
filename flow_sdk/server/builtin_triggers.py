@@ -376,6 +376,12 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
 
     on_hub_box = get_assigned_runtime() is not None
     if wizard.popup and person_is_watching() and not on_hub_box:
+        # Everything already installed: nothing to read, nothing to press. Stay quiet — the
+        # nav bar's setup button still glows if something is missing later.
+        check = await wizard.run(check_only=True)
+        if check.ok:
+            _log.info("llm setup trigger %r: every step already validated; not opening the popup", trigger.uname)
+            return
         await navigate_to_wizard(wizard)
         return
 

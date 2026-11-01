@@ -4,19 +4,14 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
-from flow_sdk.builtin.agentic_process.model_tiers import COPILOT_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
 
 class CopilotAgentOptions(AgentOptions):
     """Builds Copilot CLI argv for headless JSON streaming or visible PTY mode."""
-
-    # Native sm/md/lg delegate to Copilot auto by omitting --model at emission.
-    MODEL_TIERS = COPILOT_MODEL_TIERS
 
     def __init__(
         self,

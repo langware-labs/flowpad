@@ -18,6 +18,10 @@ PATTERN = re.compile(r"os\.walk\(|\.rglob\(|\.walk\(\)")
 
 #: file → why a raw recursive walk is acceptable there.
 ALLOWED: dict[str, str] = {
+    "flow_sdk/core/webapp/stamps.py": (
+        "walks ONE app's folder for its newest mtime, pruning generated dirs, dot dirs and the app's "
+        "own build output on every level, and gives up past WALK_LIMIT files"
+    ),
     "flow_sdk/datasets/stores.py": "walks ONE dataset's rows/ folder (its store folder or working copy), never a project tree",
     "flow_sdk/fs_store/operations/markdown_dirs.py": "prunes with is_ignored on every level",
     "flow_sdk/schema/data_spec/layout.py": "row_version walks ONE example folder (a dataset row's own files)",
@@ -28,6 +32,9 @@ ALLOWED: dict[str, str] = {
     "flow_sdk/system_projects/flowpad_assistant/.claude/skills/data-management/scripts/dm_ctl.py": (
         "walks only the schema / dataset folders it just copied into a $TMPDIR probe (no .flow), "
         "to read their namespaces and re-namespace their JSON"
+    ),
+    "flow_sdk/system_projects/flowpad_assistant/.claude/skills/chartit/templates/c4/check_c4.py": (
+        "walks only the project's agentic-assets/data_schema folder, whose kinds nest, to list them"
     ),
     "flow_sdk/system_projects/flowpad_assistant/.claude/skills/cred-scan/scripts/cred_scan.py": (
         "prunes dependency/build/cache dirs and nested repos on every level; must read the "

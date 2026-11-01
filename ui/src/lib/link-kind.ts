@@ -10,8 +10,16 @@ import { isLightboxMedia } from '@src/components/ui/media-lightbox';
  * - `app`    — an address inside this app (`/dock/…`, or this origin's URL of one).
  * - `entity` — a TypeId (`skill-<uuid>`).
  * - `file`   — a path or `file://` URL, resolved by the backend against the link's source.
+ * - `command` — `! cmd`, a command the user is asked to run (`COMMAND_LINK`).
  */
-export type LinkKind = 'web' | 'app' | 'entity' | 'file';
+export type LinkKind = 'web' | 'app' | 'entity' | 'file' | 'command';
+
+/**
+ * A command the user is asked to run in the agent's shell mode: `!`, optional spaces, then a
+ * command — a word starting lowercase or a path (`! gcloud auth login`, `!./run.sh`). Prose that
+ * merely starts with `!` (`! Important`) is not one.
+ */
+export const COMMAND_LINK = /^!\s*[a-z_./~$]/;
 
 const APP_PATH = /^\/(dock|win|dev)\//;
 const TYPE_ID = /^[a-z_]+-(?:@[\w.-]+|[0-9a-f]{8}-[0-9a-f-]{27})$/i;
@@ -60,6 +68,7 @@ export function appLinkPath(link: string, origin: string): string | null {
 }
 
 export function linkKind(link: string, origin: string): LinkKind {
+  if (COMMAND_LINK.test(link)) return 'command';
   if (appLinkPath(link, origin)) return 'app';
   if (isWebUrl(link) || localWebUrl(link)) return 'web';
   if (TYPE_ID.test(link)) return 'entity';
@@ -82,4 +91,9 @@ export function lightboxMediaName(link: string): string | null {
     name = link.replace(POSITION_SUFFIX, '');
   }
   return isLightboxMedia(name) ? name.split(/[/\\]/).pop() || name : null;
+}
+
+/** The command a command link runs: its text without the `!` and the spaces after it. Any other link as is. */
+export function commandOf(link: string): string {
+  return COMMAND_LINK.test(link) ? link.replace(/^!\s*/, '').trim() : link;
 }

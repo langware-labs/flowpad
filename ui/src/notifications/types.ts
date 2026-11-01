@@ -22,6 +22,26 @@ export interface NotificationAction {
   args?: Record<string, string | number | boolean>;
 }
 
+/**
+ * Everything known about one error, for its details popup and for Diagnose. Any error/warning
+ * notification may carry one; `notify` fills it from a thrown `error` when the caller passes one.
+ * All fields optional: what a source does not know is simply not shown.
+ */
+export interface ErrorDetail {
+  request?: { method?: string; url?: string; caller?: string };
+  response?: { status?: number; message?: string; body?: string; errorCode?: string; requestId?: string };
+  /** A spending/usage limit that stopped the work. */
+  limit?: { rule?: string; used?: string; cap?: string; endpoint?: string };
+  /** When the same failure first and last happened (ms epoch) and how often, as the source counted it. */
+  firstAt?: number;
+  lastAt?: number;
+  count?: number;
+  /** The backend log the error was written to. */
+  logFile?: string;
+  /** Errors that were hidden because too many came at once — each one in full. */
+  hidden?: { title: string; detail: ErrorDetail }[];
+}
+
 export interface NotificationData {
   /** Stable dedupe + dismiss key. A second emit with the same id REPLACES the first. */
   id: string;
@@ -56,6 +76,11 @@ export interface NotificationData {
    *  never enter the warnings log. An unopenable link is the case — logging it left a permanent
    *  warning for a click the user already saw fail. */
   transient?: boolean;
+  /** What a Details popup shows for an error/warning (see `ErrorDetail`). */
+  detail?: ErrorDetail;
+  /** Stamped by the dispatcher: when an alert under this id was first emitted, and how many times. */
+  firstAt?: number;
+  count?: number;
   /** Stamped on ingest by the dispatcher. */
   timestamp: number;
 }
@@ -68,7 +93,11 @@ export interface NotificationData {
  * title work. Omitting only `timestamp` made `id` mandatory on every call site
  * and put 402 errors on the board.
  */
-export type NotificationInput = Omit<NotificationData, 'timestamp' | 'id'> & { id?: string };
+export type NotificationInput = Omit<NotificationData, 'timestamp' | 'id' | 'firstAt' | 'count'> & {
+  id?: string;
+  /** The thrown error behind an error/warning — `notify` turns it into `detail` (it is not kept). */
+  error?: unknown;
+};
 
 /**
  * The text a copy affordance yields for a notification: the title, and the

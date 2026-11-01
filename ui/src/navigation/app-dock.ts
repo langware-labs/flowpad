@@ -4,6 +4,7 @@ import type { AppRuntime } from '@src/hooks/flow-hooks';
 // (`useAppDisplay`), and consumers of the dock grammar get it from here.
 export type { AppRuntime };
 import type { DockPointer } from './DockPointer';
+import { ViewType } from '@src/types/ViewType';
 import { withoutScopeFilterOptions } from '@src/lib/scope-filter';
 
 export const APP_RUNTIME_PARAM = 'runtime';
@@ -59,19 +60,21 @@ export interface AppDockAddress {
  * - `service_endpoint-<uuid>` + `route` — the proxy and the mount (a bare dev server
  *   shown by port); without `route`, an endpoint that is a service of its own.
  *
- * Null when the pointer is missing, not a TypeId, or names some other type —
+ * Null when the dock is not the APP view, or its pointer is missing, not a TypeId, or names some other type —
  * the caller renders nothing rather than guessing at an app.
  */
 export function appDockAddress(dock: DockPointer | null): AppDockAddress | null {
   // `targetTypeId` is the documented accessor for "the entity this dock targets"
   // and already returns null instead of throwing on a malformed pointer.
-  const target = dock?.targetTypeId ?? null;
+  // Only the APP view runs an app: another view naming the same entity (its editor) is not an app dock.
+  if (dock?.viewType !== ViewType.APP) return null;
+  const target = dock.targetTypeId ?? null;
   if (!target?.id || !APP_TYPES.has(target.type)) return null;
   const {
     [APP_RUNTIME_PARAM]: pinned,
     [APP_ROUTE_PARAM]: route,
     ...passthrough
-  } = withoutScopeFilterOptions(dock!.options ?? {});
+  } = withoutScopeFilterOptions(dock.options ?? {});
   const isEndpoint = target.type === 'service_endpoint';
   return {
     artifactId: target.type === 'artifact' ? target.id : null,

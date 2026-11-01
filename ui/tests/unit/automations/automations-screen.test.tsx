@@ -17,6 +17,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: 'p1' } }) }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
+const gate = vi.hoisted(() => ({ fn: vi.fn(() => Promise.resolve({ ok: true as const })) }));
+vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => gate.fn }));
 vi.mock('@src/hooks/entity-hooks', () => ({
   // One answer for every entity query the screen makes: an agent to pick, and (as a data source) a channel.
   useEntitiesQuery: () => ({ data: [{ id: 'a1', name: 'Chief of Staff', channel: 'gmail' }] }),
@@ -27,6 +29,7 @@ const state = vi.hoisted(() => ({
   runs: [] as AutomationRun[],
   run: null as AutomationRun | null,
   tries: [] as Array<Record<string, unknown>>,
+  cloudWarning: null as null | { error_code: string; message: string },
   mutate: {
     runOnce: vi.fn(),
     setEnabled: vi.fn(),
@@ -47,7 +50,7 @@ const mutation = (fn: ReturnType<typeof vi.fn>) => ({
   variables: undefined,
 });
 vi.mock('@src/hooks/automations/useAutomations', () => ({
-  useAutomations: () => ({ data: state.automations, isLoading: false, error: null }),
+  useAutomations: () => ({ data: state.automations, isLoading: false, error: null, cloudWarning: state.cloudWarning }),
   useAutomation: (id: string | null) => ({ automation: state.automations.find((a) => a.id === id) ?? null }),
   useAutomationTrigger: (id: string | null) => ({
     data:
@@ -147,6 +150,7 @@ beforeEach(() => {
   state.runs = [];
   state.run = null;
   state.tries = [];
+  state.cloudWarning = null;
 });
 afterEach(() => {
   cleanup();
@@ -244,6 +248,98 @@ describe('My automations', () => {
     fireEvent.click(screen.getByTestId('automation-run-once-a1'));
     expect(state.mutate.runOnce).toHaveBeenCalledWith({ triggerId: 'a1' }, expect.anything());
     expect(nav.openDock).not.toHaveBeenCalled();
+  });
+});
+
+describe('where each automation runs', () => {
+  it('every row names its place right after its kind', () => {
+    state.automations = [
+      automation({ id: 'here', place: { kind: 'local', label: 'This computer' } }),
+      automation({ id: 'every', place: { kind: 'local', label: 'This computer', every_machine: true } }),
+      // The words come from `deployment_name`; `label` is the CLI's English and is never read.
+      automation({
+        id: 'box',
+        place: { kind: 'cloud_machine', label: 'CLI words', deployment_id: 'd1', deployment_name: 'box-1' },
+      }),
+      automation({ id: 'legacy' }),
+    ];
+    render(<AutomationsView />);
+    expect(screen.getByTestId('automation-place-here').textContent).toContain('This computer');
+    expect(screen.getByTestId('automation-place-every').textContent).toContain('This computer · every machine');
+    expect(screen.getByTestId('automation-place-box').textContent).toContain('Cloud · box-1');
+    expect(screen.getByTestId('automation-place-box').getAttribute('data-place')).toBe('cloud_machine');
+    // An older backend sends no place: the row is this computer's.
+    expect(screen.getByTestId('automation-place-legacy').textContent).toContain('This computer');
+    // The badge sits right after the kind badge.
+    const kind = screen.getByTestId('automation-row-here').querySelector('[data-kind]');
+    expect(kind?.nextElementSibling?.getAttribute('data-testid')).toBe('automation-place-here');
+  });
+
+  it('a hub row groups by its project like a local one, says Flowpad cloud, and its actions go to the hub', () => {
+    state.automations = [
+      automation({
+        id: 'cloud1',
+        group: 'project',
+        project_id: 'p1',
+        source: 'hub',
+        place: { kind: 'hub', label: 'Flowpad cloud' },
+        agent_type_id: 'agent-a1',
+      }),
+    ];
+    render(<AutomationsView />);
+    const group = screen.getByTestId('automations-group-project');
+    expect(within(group).getByTestId('automation-row-cloud1')).toBeTruthy();
+    expect(screen.getByTestId('automation-place-cloud1').textContent).toContain('Flowpad cloud');
+    fireEvent.click(screen.getByTestId('automation-toggle-cloud1'));
+    expect(state.mutate.setEnabled).toHaveBeenCalledWith(
+      { triggerId: 'cloud1', enabled: false },
+      expect.anything(),
+    );
+    fireEvent.click(screen.getByTestId('automation-run-once-cloud1'));
+    expect(state.mutate.runOnce).toHaveBeenCalledWith({ triggerId: 'cloud1', source: 'hub' }, expect.anything());
+  });
+
+  it('says in one line when the cloud automations could not be read', () => {
+    state.automations = [automation({ id: 'a1' })];
+    state.cloudWarning = { error_code: 'CLOUD_SIGNED_OUT', message: 'Sign in to Flowpad cloud to see them.' };
+    render(<AutomationsView />);
+    expect(screen.getByTestId('automations-cloud-warning').textContent).toContain('Cloud automations not shown: Sign in to Flowpad cloud to see them.');
+  });
+
+  it('no warning, no line', () => {
+    state.automations = [automation({ id: 'a1' })];
+    render(<AutomationsView />);
+    expect(screen.queryByTestId('automations-cloud-warning')).toBeNull();
+  });
+
+  it('a new schedule offers Flowpad cloud once it runs an agent with a prompt, and saves it on the hub', async () => {
+    dock.current = { options: { creating: 'schedule' } };
+    state.mutate.save.mockResolvedValue({ id: 'hub-1' });
+    render(<AutomationsView />);
+    const picker = () => screen.getByTestId<HTMLSelectElement>('runs-on-picker');
+    const options = () => Array.from(picker().options).map((o) => o.value);
+    expect(options()).toEqual(['local']);
+    expect(screen.getByTestId('runs-on-cloud-hint')).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId('then-agent'), { target: { value: 'agent-a1' } });
+    fireEvent.change(screen.getByTestId('then-prompt'), { target: { value: 'Brief me' } });
+    expect(options()).toEqual(['local', 'hub']);
+    fireEvent.change(picker(), { target: { value: 'hub' } });
+    fireEvent.click(screen.getByTestId('automation-save'));
+
+    await waitFor(() => expect(state.mutate.save).toHaveBeenCalledTimes(1));
+    expect(gate.fn).toHaveBeenCalled();
+    const [args] = state.mutate.save.mock.calls[0];
+    expect(args.cloud).toMatchObject({ agent: 'agent-a1', prompt: 'Brief me', project_id: 'p1' });
+    expect(args.triggerId).toBeNull();
+    expect(args.fields).toMatchObject({
+      trigger_type: 'schedule',
+      expr: '0 9 * * 1-5',
+      // Always explicit: the hub reads an empty zone as UTC.
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      actions: [{ action_type: 'run_agent', target_type_id: 'agent-a1', prompt: 'Brief me' }],
+      project_id: 'p1',
+    });
   });
 });
 

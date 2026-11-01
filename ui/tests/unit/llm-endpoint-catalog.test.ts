@@ -52,12 +52,12 @@ describe('emptyDraft / withProvider', () => {
 });
 
 describe('validateDraft — root', () => {
-  it('needs a name and an http(s) base_url', () => {
+  it('needs an http(s) base_url; the name is optional', () => {
     const bad: EndpointDraft = { ...emptyDraft('root'), name: ' ', base_url: 'ftp://x' };
     const msgs = messages(validateDraft(bad, []));
-    expect(msgs).toContain('Name is required.');
+    expect(msgs).not.toContain('Name is required.');
     expect(msgs).toContain('Base URL must be an http(s) URL.');
-    expect(validateDraft({ ...emptyDraft('root'), name: 'r' }, [])).toEqual([]);
+    expect(validateDraft({ ...emptyDraft('root'), name: '' }, [])).toEqual([]);
   });
 
   it('rejects negative filter ceilings and limits, and a bad streaming policy', () => {

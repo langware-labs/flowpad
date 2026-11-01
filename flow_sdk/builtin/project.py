@@ -815,7 +815,12 @@ class Project(SetupSkippable, Entity):
         # What the pull added or changed is re-indexed; what it deleted takes its row with it.
         result, issues = await reconcile_under(root, write=False)
         if issues or result.skipped:
-            raise RuntimeError("Some pulled project assets could not be indexed")
+            # Best effort: the pull landed and the files are on disk. An asset that cannot index is
+            # logged and left for a person to fix; it never fails the update of everything else.
+            log.warning(
+                "project %s: %d pulled asset(s) could not be indexed: skipped=%s issues=%s",
+                self.id, len(result.skipped) + len(issues), result.skipped, issues,
+            )
         _LOAD_READY.difference_update(key for key in tuple(_LOAD_READY) if key[0] == self.id)
 
     async def _index_home_page(self, typeid: str) -> None:
@@ -942,13 +947,15 @@ class Project(SetupSkippable, Entity):
 
     @action.post(action_name="app-start")
     async def app_start_action(self, app: str = "", wait: bool = False) -> "ApiResponse":
-        """Bring the app up the one way (``bring_up``): validate → load → setup → fix. Answers each app's
-        load verdict — a running one is followed through ``load-state``, or waited for (``wait``)."""
+        """Bring the app up the one way (``core/webapp/coordinator``): warm check → setup when owed → up →
+        bounded recovery. Answers each app's load verdict — a running one is followed through ``load-state``,
+        or waited for (``wait``)."""
         return await self._run_apps(app, stop=False, start=True, wait=wait)
 
     async def _run_apps(self, app: str, *, stop: bool, start: bool, wait: bool = False) -> "ApiResponse":
         from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
-        from flow_sdk.core.setup.load import bring_up, forget  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up  # noqa: PLC0415
+        from flow_sdk.core.webapp import coordinator  # noqa: PLC0415
         from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
 
         found = await self._own_apps(app)
@@ -958,11 +965,11 @@ class Project(SetupSkippable, Entity):
         for one in found:
             row: dict = {"app": one.name, "asset": str(one.typeid)}
             if stop:
-                answer = await webapp_setup.stop(str(one.id))
-                # What it was checked against is gone: the next open asks again.
-                forget(str(self.id), str(one.typeid))
-                row.update(ok=answer.ok, detail=answer.detail)
-                if not answer.ok:
+                stopped = await coordinator.stop(one)
+                still = [p for p in await webapp_setup.ports(str(one.id)) if p.get("port")]
+                row.update(ok=not still, detail=stopped.detail if not still else
+                           f"{one.name} is still served on port {still[0]['port']} by a program Flowpad did not start")
+                if still:
                     results.append(row)
                     continue
             if start:
@@ -977,14 +984,52 @@ class Project(SetupSkippable, Entity):
             results.append(row)
         return ApiSuccessResponse(data={"apps": results})
 
+    @action.get(action_name="app-lifecycle")
+    async def app_lifecycle_action(self, app: str = "") -> "ApiResponse":
+        """Each app's lifecycle record on this machine (``webapp.lifecycle``) — ``flow app status``."""
+        found = await self._own_apps(app)
+        if not found:
+            return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
+        return ApiSuccessResponse(data={"apps": [{"app": one.name, "asset": str(one.typeid), "lifecycle": one.lifecycle}
+                                                 for one in found]})
+
+    @action.post(action_name="app-handling")
+    async def app_handling_action(self, app: str = "", fingerprint: str = "", handling: dict | None = None,
+                                  test: bool = False) -> "ApiResponse":
+        """Add a learned handling to an app (``flow app handling add``), or only test it (``test``): it must match
+        the failure ``fingerprint`` names (the app's open failure, or one in its failure log)."""
+        from flow_sdk.core.webapp import handling as handlings  # noqa: PLC0415
+        from flow_sdk.core.webapp import record  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webapp_lifecycle_spec import WebappHandlingSpec  # noqa: PLC0415
+
+        found = await self._own_apps(app)
+        if len(found) != 1:
+            return ApiFailResponse(message=f"Name one web app of this project (got {app!r})", status_code=404)
+        one = found[0]
+        proof = handlings.proof_of(one.asset_ref, fingerprint, record.read(str(one.id)))
+        if proof is None:
+            return ApiFailResponse(message=f"No failure with fingerprint {fingerprint!r} for {one.name}", status_code=404)
+        try:
+            spec = WebappHandlingSpec.model_validate(handling or {})
+            if test:
+                return ApiSuccessResponse(data={"matches": handlings.matches(
+                    spec if (spec.fingerprint or spec.pattern) else spec.model_copy(update={"fingerprint": proof.fingerprint}),
+                    proof), "failure": proof.model_dump(mode="json")})
+            added = handlings.add(one.asset_ref, spec, proof=proof)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=422)
+        return ApiSuccessResponse(data={"added": added.model_dump(mode="json"), "file": str(handlings.file_of(one.asset_ref))})
+
     @action.get(action_name="setup-requirements")
-    async def setup_requirements_action(self) -> "ApiResponse":
-        """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.
-        Every MUST value and needed connection counts; OPTIONAL values never do. Names only."""
+    async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":
+        """`GET /project/<id>/setup-requirements?include_ready=` — ``ready``, what is left to set up, and the gaps.
+        Every MUST value and needed connection counts; OPTIONAL values never do. Names only. ``include_ready``
+        (the Project setup page) also lists what is set up and each step's tree node."""
         from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
 
         try:
-            return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+            readiness = await readiness_of(self, include_ready=include_ready)
+            return ApiSuccessResponse(data=readiness.model_dump(mode="json"))
         except Exception as exc:  # noqa: BLE001 — the caller shows why, not a bare 500
             log.warning("project setup requirements failed for %s: %s", self.id, exc, exc_info=True)
             return ApiFailResponse(message=f"Couldn't check what this project needs here: {exc}")
@@ -1336,6 +1381,23 @@ class Project(SetupSkippable, Entity):
             for p in matches
             if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)
         ]
+
+    @classmethod
+    async def _enclosing_owners(cls, path: str) -> list["Project"]:
+        """Projects whose mount is a PARENT folder of ``path``, nearest first — one indexed IN query
+        over the parents, not one query per level. Shared by the nesting refusal and the dependency
+        resolver (an asset folder inside a project is that project's, never a project of its own)."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        parents = [str(parent) for parent in PurePosixPath(path).parents]
+        matches = await cls.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["fs_storage_mount_path", parents]))
+        )
+        owners = [
+            p for p in matches
+            if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)
+        ]
+        return sorted(owners, key=lambda p: len(p.fs_storage_mount_path or ""), reverse=True)
 
     async def find_existing_for_create(self) -> "Project | None":
         """A folder is one project: a create for an owned mount resolves to its owner.
@@ -1700,7 +1762,9 @@ class Project(SetupSkippable, Entity):
             author=author,
             project_typeid=str(self.typeid),
         )
-        await HubProxy.call("PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": origin.model_dump(mode="json")})
+        await HubProxy.call(
+            "PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": origin.model_dump(mode="json")}
+        )
         return origin
 
     # ── git share: members use the project's private GitHub repo through the hub ──
@@ -1712,7 +1776,9 @@ class Project(SetupSkippable, Entity):
 
         if not self.remote:
             return GitShare()
-        return GitShare.from_hub(await HubProxy.try_call("GET", BuiltinEntityType.PROJECT, str(self.id), action="git_share"))
+        return GitShare.from_hub(
+            await HubProxy.try_call("GET", BuiltinEntityType.PROJECT, str(self.id), action="git_share")
+        )
 
     async def share_git(self) -> "GitShare":
         """Let this project's members clone and push its private GitHub repo through the hub.
@@ -1730,14 +1796,20 @@ class Project(SetupSkippable, Entity):
 
         origin = await self._github_origin()
         data = await HubProxy.call(
-            "POST", BuiltinEntityType.PROJECT, str(self.id), "git_share", payload={"repo": f"{origin.owner}/{origin.name}"}
+            "POST",
+            BuiltinEntityType.PROJECT,
+            str(self.id),
+            "git_share",
+            payload={"repo": f"{origin.owner}/{origin.name}"},
         )
         share = GitShare.from_hub(data)
         if share.shared:
             if not share.git_repo:
                 raise GitShareError("The hub shared the repo but did not say where it serves it")
             served = HubRepoOrigin(repo=share.git_repo, rel_path=".")
-            await HubProxy.call("PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": served.model_dump(mode="json")})
+            await HubProxy.call(
+                "PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": served.model_dump(mode="json")}
+            )
         return share
 
     async def unshare_git(self) -> "GitShare":
@@ -1749,7 +1821,9 @@ class Project(SetupSkippable, Entity):
         origin = await self._github_origin()
         share = GitShare.from_hub(await HubProxy.call("DELETE", BuiltinEntityType.PROJECT, str(self.id), "git_share"))
         # Members who accept the project from now on are pointed at GitHub again.
-        await HubProxy.call("PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": origin.model_dump(mode="json")})
+        await HubProxy.call(
+            "PUT", BuiltinEntityType.PROJECT, str(self.id), payload={"git_origin": origin.model_dump(mode="json")}
+        )
         return share
 
     async def _github_origin(self) -> GitOrigin:
@@ -2692,13 +2766,12 @@ class Project(SetupSkippable, Entity):
         def _counts(other: "Project") -> bool:
             return str(other.id) != str(self.id) and other._visible()
 
-        for parent in PurePosixPath(mount).parents:
-            for owner in await self._mount_owners(str(parent)):
-                if _counts(owner):
-                    raise NestedProjectError(
-                        f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
-                        "projects do not nest"
-                    )
+        for owner in await self._enclosing_owners(mount):
+            if _counts(owner):
+                raise NestedProjectError(
+                    f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
+                    "projects do not nest"
+                )
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         below = await type(self).get_all(
@@ -3751,7 +3824,10 @@ class Project(SetupSkippable, Entity):
 
                     folder_mechanism = trash_path(mount)
                 else:
-                    shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
+                    from flow_sdk.claude_env import _rmtree_safe  # noqa: PLC0415
+
+                    # git writes pack files read-only; on Windows a bare rmtree stops on them.
+                    _rmtree_safe(mount)  # idempotent — FileNotFoundError when absent
             except FileNotFoundError:
                 pass
             except OSError as exc:

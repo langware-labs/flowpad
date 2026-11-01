@@ -28,7 +28,7 @@ describe('an automation, end to end', () => {
     });
     try {
       // Listed as a sentence, not tested yet.
-      const listed = (await Trigger.overview()).find((a) => a.id === created.id);
+      const listed = (await Trigger.overview()).rows.find((a) => a.id === created.id);
       expect(listed).toMatchObject({ kind: 'event', group: 'mine', enabled: false, tested: false });
       expect(listed?.when.event?.pattern).toBe(`${tag}.*`);
 
@@ -48,7 +48,7 @@ describe('an automation, end to end', () => {
         },
         { timeout: 5_000, interval: 200 },
       );
-      expect((await Trigger.overview()).find((a) => a.id === created.id)?.tested).toBe(true);
+      expect((await Trigger.overview()).rows.find((a) => a.id === created.id)?.tested).toBe(true);
 
       // Switched on, a real event fires it.
       await Trigger.setEnabled(created.id, true);
@@ -68,7 +68,7 @@ describe('an automation, end to end', () => {
     } finally {
       await Trigger.remove(created.id);
     }
-    expect((await Trigger.overview()).some((a) => a.id === created.id)).toBe(false);
+    expect((await Trigger.overview()).rows.some((a) => a.id === created.id)).toBe(false);
   });
 
   it('checks an unsaved schedule and previews its runs', async () => {

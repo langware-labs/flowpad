@@ -18,7 +18,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
 from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import (
     MODULE as RUNNER_MODULE,
 )
-from flow_sdk.builtin.agentic_process.model_tiers import DEEPAGENTS_MODEL_TIERS
 
 #: Where a mounted dir keeps its skills — the layout deepagents' skill loader reads natively.
 SKILLS_SUBDIR = Path(".claude") / "skills"
@@ -28,8 +27,6 @@ MEMORY_FILES = ("AGENTS.md", "CLAUDE.md")
 
 class DeepAgentsAgentOptions(AgentOptions):
     """Builds the runner argv for one headless turn."""
-
-    MODEL_TIERS = DEEPAGENTS_MODEL_TIERS
 
     EXECUTABLE = Path(sys.executable).name
     # The runner reads the prompt from stdin to EOF, so a multi-line prompt is safe.

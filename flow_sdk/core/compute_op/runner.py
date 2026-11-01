@@ -237,10 +237,16 @@ def _run_source(env: Optional[dict]) -> str:
     return raw.split("-", 1)[1] if raw.startswith("data_source-") else raw
 
 
-def _check_in_process(spec: ComputeOpSpec) -> bool:
-    """The op's check is a step this backend answers itself (a source's, a web app's) — its detail is a reason."""
+def _check_in_process(spec: ComputeOpSpec, platform: str = "") -> bool:
+    """The op's check is a step this backend answers itself (a source's, a web app's, the setup's own
+    credential check) — its detail is a reason."""
+    from flow_sdk.builtin.project_setup import setup_shell_answers  # noqa: PLC0415
+
     check = spec.completion_check
-    return check is not None and bool(check.source_step or check.webapp_step or check.requirement_step)
+    if check is None:
+        return False
+    return bool(check.source_step or check.webapp_step or check.requirement_step) or setup_shell_answers(
+        check.command_for(platform) or "")
 
 
 async def _in_process(op: CliOp, env: Optional[dict], *, check: bool, platform: str) -> Optional[CliResult]:
@@ -272,7 +278,8 @@ async def _webapp_step(op: CliOp, env: Optional[dict], *, check: bool) -> CliRes
     webapp = _run_value(env, "webapp")
     which = str(op.webapp_step)
     display = _run_value(env, "display")
-    answer = await step(webapp, which, check=check, display=display)
+    answer = await step(webapp, which, check=check, display=display, service=_run_value(env, "service"),
+                        project=_run_value(env, "project"))
     return CliResult(
         exit_code=answer.exit_code, detail=answer.detail, ran=answer.ran, value=answer.value,
         command=f"app step {webapp} {which}" + (" --check" if check else ""),
@@ -440,7 +447,7 @@ async def _run_op(
         if check_only:
             # A check answered in this backend says what is missing in its own words ("Received — connect
             # your own account"); "not installed" is only true of something a command installs.
-            own = before.detail if before is not None and _check_in_process(spec) else ""
+            own = before.detail if before is not None and _check_in_process(spec, platform) else ""
             return exe.ANSWER.not_yet(f"{spec.display_label}: {own or 'not installed yet.'}", check=before, ran=False)
 
         seams = _Seams(

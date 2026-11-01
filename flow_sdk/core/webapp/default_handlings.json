@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "handlings": [
+    {"id": "default:favicon", "source": "network", "pattern": "failed to load \\S*favicon\\.ico", "action": "ignore",
+     "note": "A missing favicon is not a broken app."},
+    {"id": "default:resize-observer", "pattern": "ResizeObserver loop (limit exceeded|completed with undelivered notifications)",
+     "action": "ignore", "note": "A browser warning, harmless."},
+    {"id": "default:react-dev-warning", "source": "console", "pattern": "^Warning: ", "action": "ignore",
+     "note": "React development warnings go through console.error; they never stop the page."},
+    {"id": "default:react-devtools", "source": "console", "pattern": "Download the React DevTools", "action": "ignore"},
+    {"id": "default:vite-hmr-ws", "source": "console", "pattern": "\\[vite\\] (failed to connect to websocket|server connection lost)",
+     "action": "ignore", "note": "The dev server's live-reload socket; the page itself is fine."},
+    {"id": "default:vite-stale-export", "source": "page", "pattern": "does not provide an export named", "action": "restart",
+     "note": "Vite's dependency cache is stale after an install; a restart re-optimizes it."}
+  ]
+}

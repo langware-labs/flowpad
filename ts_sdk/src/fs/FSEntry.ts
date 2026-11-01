@@ -18,6 +18,8 @@ export class FSEntry {
   is_dir?: boolean;
   size?: number;
   last_modified?: number;
+  /** Creation time (unix seconds); absent where the OS has no birth time. */
+  created?: number;
   display_name?: string;
   vfs_abs_path: string;
   symlink_target?: string;
@@ -39,6 +41,7 @@ export class FSEntry {
     this.is_dir = entry.is_dir;
     this.size = entry.size;
     this.last_modified = entry.last_modified;
+    this.created = entry.created;
     this.display_name = entry.display_name;
     this.vfs_abs_path = entry.vfs_abs_path || '';
     this.symlink_target = entry.symlink_target;

@@ -10,7 +10,7 @@ import { RouterProvider } from 'react-router';
 import '@src/contexts/view-mode-context';
 import { initLocale } from '@src/contexts/locale-context';
 import { LocaleProviders } from '@src/contexts/LocaleProviders';
-import { DiagnoseErrorModal } from '@src/notifications';
+import { DiagnoseErrorModal, ErrorDetailsDialog } from '@src/notifications';
 import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
 import { NavigationActions } from '@src/navigation/NavigationActions';
@@ -105,6 +105,7 @@ async function init() {
               when the error screen's stethoscope needs this host. One instance
               here serves both the app and every error boundary. */}
           <DiagnoseErrorModal />
+          <ErrorDetailsDialog />
         </LocaleProviders>
       </ThemeProvider>
     </React.StrictMode>,

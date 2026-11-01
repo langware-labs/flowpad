@@ -1,6 +1,7 @@
 import { toast as sonnerToast } from 'sonner';
 import { getDev } from '@src/contexts/view-mode-context';
 import type { NotificationData, NotificationInput, NotificationLevel } from './types';
+import { detailFromRecentCall, errorDetailFrom } from './error-detail';
 import { useAlertStore } from './alerts-store';
 import { useBadgeStore } from './store';
 import { renderToast } from './NotificationOutlet';
@@ -58,7 +59,23 @@ export function isAlertLevel(level: NotificationLevel): boolean {
 
 function dispatch(input: NotificationInput): string {
   const id = input.id ?? `${input.level}:${djb2(input.title)}`;
-  const data: NotificationData = { ...input, id, timestamp: Date.now() };
+  const { error, ...rest } = input;
+  const now = Date.now();
+  // A repeat of an alert still in the log keeps its first time and counts up — the details
+  // popup says "since … · N times" instead of only the latest.
+  const prev = isAlertLevel(input.level) ? useAlertStore.getState().alerts.find((a) => a.id === id) : undefined;
+  const data: NotificationData = {
+    ...rest,
+    id,
+    detail:
+      rest.detail ??
+      (isAlertLevel(input.level)
+        ? (errorDetailFrom(error) ?? detailFromRecentCall(input.title, input.message))
+        : undefined),
+    firstAt: prev?.firstAt ?? prev?.timestamp ?? now,
+    count: (prev?.count ?? 1) + (prev ? 1 : 0),
+    timestamp: now,
+  };
 
   // Persistent badge → sidebar feed; not a toast.
   if (data.category) {

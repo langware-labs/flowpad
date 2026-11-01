@@ -10,6 +10,7 @@ import { agenticProcessShareSource, genericEntityShareSource, projectShareSource
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { cn } from '@src/lib/utils';
 import { CloudAssetPublishButton } from './CloudAssetPublishButton';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 type Variant = 'prominent' | 'compact';
 
@@ -63,7 +64,8 @@ export function EntityActionsToolbar({
   const isProject = typeId.type === Project.type;
   const { data: project } = useEntity<Project>(isProject ? typeId : null);
   const openShare = () => {
-    if (isProject && project && project.remote !== true) {
+    // On the hub every project IS its hub row — there is nothing to publish first.
+    if (isProject && project && project.remote !== true && !isHubOnly()) {
       setPublishOpen(true);
       return;
     }

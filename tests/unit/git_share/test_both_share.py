@@ -1,7 +1,8 @@
 """A share carries BOTH the git pointer and the bytes; each receiver picks.
 
 One message, three receivers:
-- a project that is a checkout of the shared repo opens it by git, in that project;
+- a project that is a checkout of the shared repo brings it in by git (with
+  the receiver's yes), in that project;
 - anywhere else (another project, the receiver's own folder) opens the copy;
 - a checkout whose git cannot reach the shared commit opens the copy and says why.
 """
@@ -19,6 +20,7 @@ import pytest
 from flow_sdk.app.actions.message_attachment_action import handle_attachment_install
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.drivers.git_driver import share_consent
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
 from flow_sdk.builtin.message_attachment import MessageAttachment
@@ -70,13 +72,18 @@ async def test_a_checkout_of_the_repo_opens_it_by_git_in_that_project(tmp_path):
     git(tmp_path, "clone", "-q", remote.as_uri(), str(mine))
     project = await _project(mine)
 
-    res = await handle_attachment_install(ma_id, "project", project.id)
+    asked = await handle_attachment_install(ma_id, "project", project.id)
+    assert (asked.data or {}).get("needs") == "apply", getattr(asked, "data", asked)
+    assert await Artifact.get_one({"id": art_id}) is None, "the plan step installed something"
+    with share_consent(True):
+        res = await handle_attachment_install(ma_id, "project", project.id)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
     assert "git_share_error" not in (res.data or {})
     got = await Artifact.get_one({"id": art_id})
     assert got.project_id == project.id, "the page did not open in the receiver's project"
+    assert Path(got.asset_ref).resolve() == (mine / REL).resolve()
     assert token in Path(got.asset_ref).read_text(encoding="utf-8")
-    assert git(Path(got.asset_ref).parent, "rev-parse", "HEAD") == git(sender, "rev-parse", "HEAD")
+    assert f"cherry picked from commit {git(sender, 'rev-parse', 'HEAD')}" in git(mine, "log", "-1", "--format=%B")
 
 
 async def test_anywhere_else_opens_the_copy_never_a_hidden_clone(tmp_path):
@@ -130,10 +137,11 @@ async def test_a_file_backed_asset_opens_by_git_in_a_checkout_and_as_a_copy_else
     assert world2.token in copied.read_text(encoding="utf-8"), "the copy did not land in the chosen project"
 
 
-async def _open(ma_id: str, **kw):
+async def _open(ma_id: str, *, apply: bool = False, **kw):
     from flow_sdk.app.actions.message_attachment_action import handle_open_shared
 
-    res = await handle_open_shared(ma_id, **kw)
+    with share_consent(apply):
+        res = await handle_open_shared(ma_id, **kw)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
     return res.data or {}
 
@@ -145,7 +153,9 @@ async def test_one_checkout_opens_there_without_asking_and_binds_the_conversatio
     git(tmp_path, "clone", "-q", remote.as_uri(), str(mine))
     project = await _project(mine)
 
-    data = await _open(ma_id)
+    asked = await _open(ma_id)
+    assert asked.get("needs") == "apply" and asked["project_id"] == project.id, asked
+    data = await _open(ma_id, project_id=asked["project_id"], apply=True)
     assert "needs" not in data and data["project_id"] == project.id
     ma = await MessageAttachment.get_one({"id": ma_id})
     conv = await Conversation.get_one({"id": ma.conversation_id})
@@ -163,7 +173,7 @@ async def test_two_checkouts_ask_once_then_remember(tmp_path):
     data = await _open(ma_id)
     assert data.get("needs") == "choice" and len(data["candidates"]) == 2
     picked = data["candidates"][1]["id"]
-    assert (await _open(ma_id, project_id=picked))["project_id"] == picked
+    assert (await _open(ma_id, project_id=picked, apply=True))["project_id"] == picked
     ma = await MessageAttachment.get_one({"id": ma_id})
     conv = await Conversation.get_one({"id": ma.conversation_id})
     assert conv.project_id == picked
@@ -244,7 +254,7 @@ async def test_the_sender_project_travels_and_the_receiver_remembers_it(tmp_path
     git(tmp_path, "clone", "-q", remote.as_uri(), str(mine))
     project = await _project(mine)
     # One DB plays both sides, so the sender's clone is a checkout too: pick ours.
-    await _open(MessageAttachment.allocate_deterministic_id(fm.id, key), project_id=project.id)
+    await _open(MessageAttachment.allocate_deterministic_id(fm.id, key), project_id=project.id, apply=True)
     assert _load_project_mapping().get(sender_project.id) == project.id
 
 
@@ -254,7 +264,8 @@ async def test_a_newer_version_git_cannot_reach_opens_its_copy_over_the_older_on
     mine.parent.mkdir(parents=True)
     git(tmp_path, "clone", "-q", "--single-branch", "--branch", "main", remote.as_uri(), str(mine))
     project = await _project(mine)
-    assert isinstance(await handle_attachment_install(ma_id, "project", project.id), ApiSuccessResponse)
+    with share_consent(True):
+        assert isinstance(await handle_attachment_install(ma_id, "project", project.id), ApiSuccessResponse)
 
     # v2 of the same file, shared after the receiver opened v1; then git loses it.
     (sender / REL).write_text("<html>v2</html>\n", encoding="utf-8")

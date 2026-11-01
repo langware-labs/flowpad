@@ -18,6 +18,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound, Lock } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
+import { IssueBanners } from '@src/components/asset-counters/issue-counters';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { FundingProvenance } from '@src/components/llm-endpoints/FundingProvenance';
 import { ProviderBadge } from '@src/components/llm-endpoints/LlmEndpointsList';
@@ -194,6 +195,8 @@ export function LlmEndpointAssetView({ value }: LlmEndpointAssetViewProps) {
 
   return (
     <div className="h-full overflow-auto p-4" data-testid="llm-endpoint-asset-view">
+      {/* An open issue about this budget (used up, running low, its key rejected) — the hub names it here too. */}
+      <IssueBanners typeid={`llm_endpoint-${endpoint.id}`} className="-mx-4 -mt-4 mb-4" />
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex flex-wrap items-center gap-2">
           <EndpointIcon className="h-5 w-5 text-muted-foreground" />
@@ -221,7 +224,7 @@ export function LlmEndpointAssetView({ value }: LlmEndpointAssetViewProps) {
         </Section>
 
         <Section title={<Trans>Models</Trans>}>
-          <Models filters={endpoint.filters} models={endpoint.models} />
+          <Models filters={endpoint.filters} models={endpoint.tiers} />
         </Section>
 
         <Section title={<Trans>Details</Trans>}>

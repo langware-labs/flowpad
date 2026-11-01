@@ -38,6 +38,7 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 
 import { CrumbDetailsPopover } from '@src/components/top-nav-bar/CrumbDetailsPopover';
+import { dataContext, RuntimeKind } from '@sdk';
 
 const PATH = '/Users/me/Flowpad workspace/proj/docs/chip_demo.md';
 
@@ -202,6 +203,19 @@ describe('the crumb details popover', () => {
     // Files still works — it navigates in-app, no local machine involved.
     expect(screen.getByTestId('top-nav-crumb-open-files')).toBeTruthy();
   });
+
+  it.each([RuntimeKind.HUB, RuntimeKind.SANDBOX, RuntimeKind.AGENT])(
+    'hides reveal on %s — no file manager reaches a person there',
+    (kind) => {
+      dataContext.bootstrapInfo = { runtime: { kind } } as never;
+      try {
+        open();
+        expect(screen.queryByTestId('top-nav-crumb-reveal')).toBeNull();
+      } finally {
+        dataContext.bootstrapInfo = null as never;
+      }
+    },
+  );
 
   it('falls back to the crumb label when there is no filename', () => {
     open({ filename: null });

@@ -4,6 +4,7 @@ import { ProjectActionsRow } from '@src/components/open-project-component/projec
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import { AssetCounterChips, AssetCounterRow } from '@src/components/asset-counters/AssetCounterRow';
 import { agentCounterGroup } from '@src/components/asset-counters/agent-counters';
+import { IssuesSummaryChip } from '@src/components/asset-counters/issue-counters';
 import { appCounterGroup } from '@src/components/asset-counters/app-counters';
 import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
@@ -73,6 +74,9 @@ export function VibeNewChat() {
           fallback={<AssetCounterRow group={agentCounterGroup} />}
         />
         <AssetCounterRow group={appCounterGroup} />
+        <div className="flex w-full self-start">
+          <IssuesSummaryChip />
+        </div>
       </div>
     </div>
   );

@@ -99,7 +99,7 @@
 
 .project-resource-filter-button.project-resource-filter-active {
   border-color: hsl(var(--primary) / 0.5);
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
   background: hsl(var(--primary) / 0.08);
   position: relative;
 }
@@ -248,7 +248,7 @@
 
 .project-resource-resume-button:hover {
   background: hsl(var(--primary) / 0.15);
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
 }
 
 .project-resource-subtitle {

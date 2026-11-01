@@ -29,7 +29,7 @@ nothing.
 ```python
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
-llm = LLMEndpoint(provider="openrouter")          # kind=api_key, base_url and models filled in
+llm = LLMEndpoint(provider="openrouter")          # kind=api_key, base_url and tiers filled in
 vectors = await llm.create_embeddings(["a hot day in July", "a cold night in January"])
 answer = await llm.create_completion("You answer in one word.", "Capital of France?")
 ```
@@ -57,7 +57,7 @@ same = await LLMEndpoint.by_provider(LMApiProvider.OPENROUTER)      # stored now
 assert endpoint.secret_name == "lm_api.openrouter"
 
 tuned = await LLMEndpoint.by_provider(                              # change one tier, keep the rest
-    LMApiProvider.OPENROUTER, config=LLMEndpointConfig(models={"sm": "z-ai/glm-4.7-flash"})
+    LMApiProvider.OPENROUTER, config=LLMEndpointConfig(tiers={"sm": "z-ai/glm-4.7-flash"})
 )
 ```
 
@@ -136,7 +136,7 @@ endpoint = await LLMEndpoint.ensure_for_secret("openrouter")   # the key stored 
 reply = await endpoint.create_completion(
     "You answer with a single digit.",
     "What is four minus one?",
-    model=endpoint.models["sm"],
+    model=endpoint.tiers["sm"],
 )
 
 system, user = "Answer as JSON.", 'Give {"answer": 3}.'
@@ -301,7 +301,7 @@ What to know before handing an id out:
   the hub's row and a device login is the CLI's session, so a local copy could only drift.
 * **Only `hub` endpoints can be shared.** Sharing hands somebody a budget on the hub; a key
   on this machine is not one.
-* **The embedding dimension is part of the model.** Changing `models["embedding"]` on an
+* **The embedding dimension is part of the model.** Changing `tiers["embedding"]` on an
   endpoint something already indexed against means a full re-embed, not an incremental one.
 * **A hub endpoint carries no slugs of its own.** The hub does not serialize model names, so
   a hub endpoint falls back to its root provider's defaults. Name a model explicitly when the

@@ -202,6 +202,7 @@ jobs:
           tests/unit/test_native_deps_manifest.py
           tests/unit/test_flow_upgrade_cmd.py
           tests/unit/test_version_install_compat.py
+          tests/unit/test_project_delete_readonly_git.py
         shell: bash
 
   e2e-tests:

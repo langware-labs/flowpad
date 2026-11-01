@@ -78,3 +78,38 @@ async def test_only_message_sources_count_toward_the_scope(mail_db, monkeypatch)
     assert not is_message_source(feed), "no channel → not a message source"
     scope = await resolve_agent_stream_inbox_scope(agent_id)
     assert scope.source_id is None and scope.source_ids == frozenset()
+
+
+async def test_read_only_source_is_not_a_message_source(mail_db):
+    """Read-only = knowledge, even on a driver that sends — same rule as the UI's ``isMessageChannel``."""
+    from flow_sdk.builtin.data_driver import DataDriver
+
+    if not getattr(DataDriver.loaded("gmail"), "sends", False):
+        pytest.skip("gmail driver not loaded")
+    assert is_message_source(DataSource(name="m", provider="gmail", channel="a@x"))
+    assert not is_message_source(DataSource(name="m", provider="gmail", channel="a@x", read_only=True))
+
+
+async def test_project_source_is_not_shared_down_to_the_agent(mail_db, monkeypatch, tmp_path):
+    """Project → agent never: a source in the agent's project that the agent does not own stays
+    out of its scope. Agent → project always: the agent's own source carries the project."""
+    from flow_sdk.builtin.project import Project
+
+    project = Project(name="team", path=str(tmp_path / "team"))
+    await project.save()
+    project_id = str(project.id)
+    agent_id = mint_uuid()
+    ada = Agent(id=agent_id, name="Ada", project_id=project_id)
+    monkeypatch.setattr(Agent, "get_one", AsyncMock(return_value=ada))
+    monkeypatch.setattr(Agent, "get_by_id", AsyncMock(return_value=ada))
+    agent_tid = TypeId(type=EntityType.AGENT.value, id=agent_id)
+
+    owned = DataSource(name="ada mail", provider="cloud_email", channel="email", owner=agent_tid)
+    await owned.save()
+    projects = DataSource(name="team mail", provider="gmail", channel="gmail", project_id=project_id)
+    await projects.save()
+
+    scope = await resolve_agent_stream_inbox_scope(agent_id)
+    assert owned.id in scope.source_ids
+    assert projects.id not in scope.source_ids, "a project source must not become the agent's"
+    assert str(owned.project_id) == project_id, "the agent's source belongs to its project"

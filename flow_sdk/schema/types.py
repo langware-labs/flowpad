@@ -34,6 +34,8 @@ class EntityType(StrEnum):
     AGENT_MAILBOX = "agent_mailbox"
     # The hub's webhook chain (builtin/webhook.py): hub-only, no local rows.
     WEBHOOK = "webhook"
+    # The hub's Issues — something stopped working and who must fix it (builtin/issue.py): hub-only, read-only.
+    ISSUE = "issue"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
@@ -210,7 +212,6 @@ class EntityType(StrEnum):
     AGENT_HOOK = "agent_hook"
     TRIGGER = "trigger"
     PROCESS_RESULT = "process_result"
-    CRON_EVENT = "cron_event"
     FLOW_MESSAGE = "flow_message"
     # ── Flow-graph slice (GraphWorkflowManager) — DB-only entities, no asset_ref ──────
     # A station in the flow graph: binds a program (skill/callback/instruction)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.schema.data_spec.permission_spec import STATUS_MISSING
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -50,6 +50,14 @@ class RequirementSpec(DataSpec):
     derived: bool = False
     #: The data sources (by name) that need it.
     used_by: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _bare_name(cls, value):
+        """A bare name (``"GA4_PROPERTY_ID"``) is the common hand-written shorthand: a variable read by name."""
+        if isinstance(value, str) and value.strip():
+            return {"kind": REQUIREMENT_VARIABLE, "name": value.strip()}
+        return value
 
     @field_validator("kind")
     @classmethod

@@ -1,9 +1,9 @@
 import { Conversation, dataManager, MessageAttachment, Project, TypeId } from '@sdk';
-import { useOpenGitShare, type OpenShareOutcome } from './use-open-git-share';
+import { type OpenShareOutcome } from './use-open-git-share';
 import { SharedOpenPanel } from './SharedOpenPanel';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Download, FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
+import { FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@src/components/ui/button';
 import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
@@ -91,10 +91,8 @@ export function AssetInstallActions({
 }) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
-  // Transient failure reason for a Git Download/Setup — shown inline; the
-  // Download button stays clickable so the receiver can retry (each attachment
-  // retries independently; a pull failure never indexes stale content).
-  const [gitError, setGitError] = useState<string | null>(initialOutcome?.error ?? null);
+  // Why opening the git share failed (from the chip's 1-click open) — shown inline.
+  const gitError = initialOutcome?.error ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
   const { scopeId: workspace } = useActiveWorkspace();
   const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen, workspace });
@@ -151,14 +149,10 @@ export function AssetInstallActions({
     [attachment, navigation, t],
   );
 
-  // Git "Download": clone/pull the origin + index (no scope picker — placement
-  // is repo-determined). Setup never runs here; it's a separate action below.
+  // A git share opens through `SharedOpenPanel` (into the receiver's own checkout).
+  // Setup never runs there; it's a separate action below, once it is open.
   const isGit = attachment.transfer_mode === 'git';
   const downloaded = attachment.effectiveScope != null;
-  const { run: openGitShare, busy: gitBusy } = useOpenGitShare(attachment, conversationProjectId);
-  const doGitDownload = useCallback(async () => {
-    setGitError((await openGitShare()).error ?? null);
-  }, [openGitShare]);
 
   const doGitSetup = useCallback(async () => {
     setBusy(true);
@@ -223,35 +217,22 @@ export function AssetInstallActions({
     [attachment, ensureProject, projectItems, navigation, t],
   );
 
-  // Git-shared assets never enter Copy & Install. A single Download clones/pulls
-  // + indexes; Setup (when the type has a setup skill) is a separate optional
-  // action offered only after a successful Download.
-  // Git AND a copy: one Open, and only the question the backend cannot answer.
+  // Git-shared assets never enter Copy & Install. Setup (when the type has a
+  // setup skill) is a separate optional action offered once the share is open.
+  // A git share (with or without a copy): one Open, and only the question the backend cannot answer.
   const both = attachment.transfer_mode === 'both';
-  if (both && !downloaded) return <SharedOpenPanel attachment={attachment} initialOutcome={initialOutcome} />;
+  if ((both || isGit) && !downloaded) return <SharedOpenPanel attachment={attachment} initialOutcome={initialOutcome} />;
 
   if (isGit) {
-    const spinner = busy || gitBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
+    const spinner = busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
     return (
       <div className="flex flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          {!downloaded && (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy || gitBusy}
-              onClick={() => void doGitDownload()}
-              data-testid="asset-git-download"
-            >
-              {spinner ?? <Download className="h-3.5 w-3.5" />}
-              {gitError ? <Trans>Retry download</Trans> : <Trans>Download</Trans>}
-            </Button>
-          )}
           {downloaded && setupLabel && (
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy || gitBusy}
+              disabled={busy}
               onClick={() => void doGitSetup()}
               data-testid="asset-git-setup"
             >

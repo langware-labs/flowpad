@@ -7,9 +7,11 @@ import { Button } from '@src/components/ui/button';
 import { TRANSCRIPT_TIME_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { sandboxShareLandingPath } from '@src/pages/hub-home/share-sandbox';
+import { IssueBanners } from '@src/components/asset-counters/issue-counters';
 import { AgentPlaceCard } from '../AgentPlaceCard';
 import { usePlaceDisplay } from '../use-place-display';
 import { useAgentPlaces } from '../use-agent-places';
+import { DeploymentFundingCard } from './DeploymentFunding';
 import { DeploymentHealth } from './DeploymentHealth';
 import { DeploymentProcessPanel } from './DeploymentProcessPanel';
 import { DeploymentThreads } from './DeploymentThreads';
@@ -71,6 +73,7 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
       : null;
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="agent-deployment-page">
+      <IssueBanners typeid={new TypeId(Deployment.type, deploymentId).toString()} />
       <header className="flex flex-wrap items-center gap-3 border-b px-6 py-3.5">
         <h1 className="text-lg font-semibold">{label}</h1>
         {workspaceUrl && (
@@ -116,6 +119,7 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
       {deployment && (
         <div className="px-4">
           <DeploymentHealth deployment={deployment} />
+          <DeploymentFundingCard agent={agent} deployment={deployment} />
         </div>
       )}
       {settings && place && (

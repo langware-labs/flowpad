@@ -120,10 +120,12 @@ async def test_markdown_in_folder_skips_chart_md(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("frontmatter", "expected"),
     [("format: sequence\n", "sequence"), ("format: excalidraw\n", "excalidraw"),
-     ("format: mermaid\n", "mermaid"), ("", "excalidraw"), ("format: bogus\n", "excalidraw")],
+     ("format: mermaid\n", "mermaid"), ("format: c4\n", "c4"), ("", "excalidraw"),
+     # A format this build does not know is kept as declared: the editor says so, not an empty board.
+     ("format: bogus\n", "bogus")],
 )
 def test_extract_chart_records_the_format(tmp_path: Path, frontmatter: str, expected: str) -> None:
-    """``format`` reaches the record metadata; a legacy (format-less) chart is excalidraw."""
+    """``format`` reaches the record metadata as declared; a legacy (format-less) chart is excalidraw."""
     from flow_sdk.assets.types.chart import extract_chart
 
     folder = tmp_path / "agentic-assets" / "chart" / "c"

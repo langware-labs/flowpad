@@ -101,6 +101,9 @@ class HubClientErrorMessage(BaseMessage):
     path: str
     message: str
     suppressed_count: int = 0
+    # The error's details, in the UI's ``ErrorDetail`` shape (request, response, when, log, hidden);
+    # empty from an older backend.
+    detail: dict[str, Any] = Field(default_factory=dict)
 
 
 class HubClientRecoveredMessage(BaseMessage):

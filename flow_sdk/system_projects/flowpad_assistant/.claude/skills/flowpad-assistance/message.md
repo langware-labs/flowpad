@@ -79,6 +79,9 @@ into a Flowpad conversation, on behalf of the user. Triggered by "send X to my c
 with Y", "attach this doc to the Z conversation", "message Y the report", "send them a prompt
 to run".
 
+Write the text with the `message-formatter` skill before any send below (title = the subject in
+a few words; the text never repeats it).
+
 `flow conversation send <conv-id> <text>` exists and is fine for a **text-only** send. It
 takes no attachment, asset or prompt options, so every richer send goes through the backend's
 own `add_message` action — the same endpoint the UI uses — called over local HTTP. Prefer the

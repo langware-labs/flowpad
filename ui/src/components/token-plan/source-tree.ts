@@ -5,7 +5,7 @@
  *
  * Pure — no React — so it is unit-tested on hand-built rows.
  */
-import type { LLMEndpoint, TokenPlanScope } from '@sdk';
+import type { LLMChain, LLMChainHop, LLMChainRemaining, LLMEndpoint, TokenPlanScope } from '@sdk';
 
 import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { isCostKey } from '@src/components/llm-endpoints/usage-math';
@@ -90,4 +90,84 @@ export function childrenOf(parent: LLMEndpoint, endpoints: readonly LLMEndpoint[
 export function scopeForEndpoint(scopes: readonly TokenPlanScope[], endpointId: string | null | undefined) {
   if (!endpointId) return undefined;
   return scopes.find((s) => !!s.endpoint_id && endpointIdFromTypeId(s.endpoint_id) === endpointId);
+}
+
+/** What a hop is on the funding path, in the token plan's own words (`TokenPlanHopKind`). */
+export type FundingKind = 'me' | 'team' | 'org' | 'global' | 'root' | 'endpoint';
+
+export interface FundingHop {
+  id: string;
+  kind: FundingKind;
+  /** The pool's own name; empty on a hop the hub narrowed. */
+  name: string;
+  /** The team or organization whose pool this is. */
+  scopeName: string | null;
+  /** The caller may not read this hop: the hub sent its kind and scope name only. */
+  redacted: boolean;
+  hop: LLMChainHop;
+}
+
+const KIND_OF_SOURCE: Record<string, FundingKind> = { user: 'me', team: 'team', organization: 'org', global: 'global' };
+
+/** The chain's FIRST path (the one the router tries first), entry → root, as the hub sent it. Hops
+ *  the hub left out (deeper levels the caller may not read) are simply absent. */
+export function fundingPath(chain: LLMChain | null | undefined): FundingHop[] {
+  if (!chain) return [];
+  const byId = new Map((chain.hops ?? []).map((h) => [h.id, h]));
+  const out: FundingHop[] = [];
+  for (const id of chain.paths?.[0] ?? []) {
+    const hop = byId.get(id);
+    if (!hop) continue;
+    const kind = KIND_OF_SOURCE[hop.source_kind ?? ''] ?? (hop.is_root ? 'root' : 'endpoint');
+    out.push({
+      id,
+      kind,
+      name: hop.name ?? '',
+      scopeName: hop.scope_name ?? null,
+      redacted: hop.limits === undefined && hop.remaining === undefined,
+      hop,
+    });
+  }
+  return out;
+}
+
+/** Who pays for the entry: the first hop above it, or null for a root / an unread chain. */
+export function fundedBy(path: readonly FundingHop[]): FundingHop | null {
+  return path[1] ?? null;
+}
+
+/** The name a funding hop is shown by: its scope (team / org) when it has one, else its own name. */
+export function funderName(hop: FundingHop | null | undefined): string {
+  if (!hop) return '';
+  return hop.scopeName || hop.name;
+}
+
+/** The hop's tightest USD window, or null when it carries none (or the hub narrowed it). */
+export function hopCostLeft(hop: Pick<LLMChainHop, 'remaining'>): (LLMChainRemaining & { key: string }) | null {
+  const cost = Object.entries(hop.remaining ?? {})
+    .filter(([key, r]) => r.limit > 0 && isCostKey(key))
+    .map(([key, r]) => ({ key, ...r }));
+  if (!cost.length) return null;
+  return cost.reduce((a, b) => (b.remaining < a.remaining ? b : a));
+}
+
+/** The least left on any hop of `path` the caller can read: what they can spend right now. */
+export function tightestLeft(path: readonly FundingHop[]): number | null {
+  const left = path.map((h) => hopCostLeft(h.hop)).filter((r): r is NonNullable<typeof r> => !!r);
+  if (!left.length) return null;
+  return Math.max(0, Math.min(...left.map((r) => r.remaining)));
+}
+
+/** When a window resets: its `HH:MM` in UTC and the whole hours until then; null for `total`. */
+export function resetOf(
+  r: Pick<LLMChainRemaining, 'window' | 'resets_at'> | null | undefined,
+  now: number = Date.now() / 1000,
+): { window: string; utc: string | null; inHours: number | null } | null {
+  if (!r) return null;
+  if (r.resets_at == null) return { window: r.window, utc: null, inHours: null };
+  return {
+    window: r.window,
+    utc: new Date(r.resets_at * 1000).toISOString().slice(11, 16),
+    inHours: Math.max(0, Math.ceil((r.resets_at - now) / 3600)),
+  };
 }

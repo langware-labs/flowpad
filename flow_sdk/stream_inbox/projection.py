@@ -192,6 +192,16 @@ def _follow_ending(conversation, item) -> bool:
     return False
 
 
+def _follow_marks(conversation, item, source) -> bool:
+    """The conversation wears the chips its newest message names (``MessageData.conversation_marks``);
+    a message that names none (``None``) leaves them. Answers whether anything changed (the caller saves)."""
+    named = getattr(_payload_of(item, source), "conversation_marks", None)
+    if named is None or (marks := list(named)) == list(conversation.marks or ()):
+        return False
+    conversation.marks = marks
+    return True
+
+
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
 #: cursor, because the next sync's sweep picks up whatever is left.
@@ -362,6 +372,8 @@ async def project_source_item(
     if stamp_conversation(conversation, item, ours=ours):
         changed = True
     if _follow_ending(conversation, item):
+        changed = True
+    if _follow_marks(conversation, item, source):
         changed = True
     if changed:
         await conversation.save(notify=False)

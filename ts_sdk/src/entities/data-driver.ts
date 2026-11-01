@@ -25,6 +25,7 @@ export enum FieldType {
   CSV = 'csv',
   NUMBER = 'number',
   PATH = 'path',
+  BOOL = 'bool',
 }
 
 /** One field of the create form, as the manifest declares it. */

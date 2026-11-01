@@ -417,3 +417,69 @@ def test_new_takes_an_email_nobody_knows_yet(conv_cli, contacts, monkeypatch):
     cid = result.output.split("conversation ", 1)[1].split(" was created", 1)[0]
     conv = requests.get(f"{conv_cli.base}/api/v1/graph/conversation/{cid}", timeout=10).json()["data"]
     assert [m.get("email") for m in conv["members"]] == [stranger]
+
+
+@pytest.fixture
+def signed_in(monkeypatch):
+    monkeypatch.setattr(conversation_cmd, "_signed_in", lambda: True)
+
+
+def _conversation_with_a_host(conv_cli, host_user_id: str) -> str:
+    """A conversation whose other member has a hub user id -- someone who can host a live session."""
+    created = requests.post(
+        f"{conv_cli.base}/api/v1/graph/conversation-create",
+        json={
+            "project_id": conv_cli.project_id,
+            "members": [{"email": f"{host_user_id}@example.com", "name": "Bob Example", "user_id": host_user_id}],
+        },
+        timeout=10,
+    )
+    return created.json()["data"]["conversation_id"]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_asks_the_host_and_a_rerun_answers_the_same_session(conv_cli, signed_in):
+    cid = _conversation_with_a_host(conv_cli, "host-cli-live")
+    first = conv_cli.ok_payload(conv_cli.invoke(["conversation", "live-session", f"conversation-{cid}"]))
+    assert first["status"] == "pending" and first["host_user_id"] == "host-cli-live", first
+    assert first["reply_policy"] == "auto" and first["session_id"]
+    again = conv_cli.ok_payload(conv_cli.invoke(["conversation", "live-session", cid]))
+    assert again["session_id"] == first["session_id"]
+    row = requests.get(f"{conv_cli.base}/api/v1/graph/remote_worker_session/{first['session_id']}", timeout=10)
+    assert row.json()["data"]["conversation_id"] == cid
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_passes_the_review_policy(conv_cli, signed_in):
+    cid = _conversation_with_a_host(conv_cli, "host-cli-review")
+    result = conv_cli.invoke(["conversation", "live-session", cid, "--reply-policy", "review"])
+    assert conv_cli.ok_payload(result)["reply_policy"] == "review"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_refuses_when_signed_out(conv_cli):
+    cid = _conversation_with_a_host(conv_cli, "host-cli-signed-out")
+    result = conv_cli.invoke(["conversation", "live-session", cid])
+    assert result.exit_code == 7 and "AUTH_REQUIRED" in result.output, result.output
+    rows = requests.get(f"{conv_cli.base}/api/v1/graph/remote_worker_session", timeout=10).json()["data"]
+    assert not [r for r in rows if r.get("conversation_id") == cid]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_refuses_an_unknown_reply_policy(conv_cli):
+    result = conv_cli.invoke(["conversation", "live-session", conv_cli.conv_id, "--reply-policy", "later"])
+    assert result.exit_code == 2 and "reply-policy" in result.output
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_live_session_needs_someone_else_to_host_it(conv_cli, signed_in):
+    result = conv_cli.invoke(["conversation", "live-session", conv_cli.conv_id])
+    assert result.exit_code == 7 and "other participant" in result.output, result.output
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_send_into_a_session_refuses_text_without_a_prompt(conv_cli):
+    before = conv_cli.summary_text()
+    result = conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "run this", "--session", "any-session"])
+    assert result.exit_code == 2 and "--prompt" in result.output, result.output
+    assert conv_cli.summary_text() == before

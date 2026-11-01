@@ -34,6 +34,7 @@ from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.origin.fs_origin import is_safe_rel_path
 from flow_sdk.schema.data_spec.credential_contract import ENV_LOCAL_FILENAME
 from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 from flow_sdk.tags.envelope import parse_target
 
 #: The one schema this build reads. Bump only with a migration.
@@ -181,6 +182,11 @@ class ProjectManifestSpec(DataSpec):
     #: (values are written to the root file only), ``development`` values only. Here
     #: beside ``home_page`` because a clone of the project needs it too.
     env_files: list[str] = Field(default_factory=list)
+    #: The project's named secret vaults — where its shared values live (``docs/secret_share.md``).
+    #: A credential's values travel between people ONLY through them: a sharer's local value goes
+    #: in, a receiver fetches it into their own store. Empty: the project has none, and a
+    #: credential cannot be shared with its values. A vault names a place, never a value.
+    secret_vaults: dict[str, SecretVaultSpec] = Field(default_factory=dict)
 
     @field_validator("env_files", mode="before")
     @classmethod
@@ -297,6 +303,9 @@ class ProjectManifestSpec(DataSpec):
         if not document.get("env_files"):
             # Silent for ``home_page``'s second reason: an older desk would refuse the key.
             document.pop("env_files", None)
+        if not document.get("secret_vaults"):
+            # Silent for ``home_page``'s second reason: an older desk would refuse the key.
+            document.pop("secret_vaults", None)
         return document
 
 

@@ -25,6 +25,8 @@
     --popover-foreground: 0 0% 3.9%;
 
     --primary: 0 0% 9%;
+    --primary-text: var(--primary);
+    --destructive-text: 0 72% 42%;
     --primary-foreground: 0 0% 98%;
 
     /* Brand blue. `--primary` is theme-local (near-black in light,
@@ -37,7 +39,7 @@
     --secondary-foreground: 0 0% 9%;
 
     --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
+    --muted-foreground: 0 0% 43%;
     --cloud-entity: 221 83% 53%;
 
     --accent: 0 0% 96.1%;
@@ -90,6 +92,7 @@
     --popover-foreground: 0 0% 98%;
 
     --primary: 0 0% 98%;
+    --destructive-text: 0 84% 71%;
     --primary-foreground: 0 0% 9%;
 
     --brand: 221 87% 58%;
@@ -199,6 +202,7 @@
     --popover-foreground: 0 0% 98%;
 
     --primary: 221 87% 52%;
+    --primary-text: 217 92% 72%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 0 0% 14%;

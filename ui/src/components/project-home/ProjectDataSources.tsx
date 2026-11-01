@@ -1,24 +1,22 @@
 import { DataSource } from '@sdk';
-import { useMemo } from 'react';
-import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { t } from '@lingui/core/macro';
+import { useSplitSources } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
-import { projectSourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { sourceGlyphs } from '@src/components/data-sources/source-icon';
 import { openSource } from '@src/components/data-sources/data-sources-pointer';
 
-/** Project home shows only its sources; the dedicated sources page remains instance-wide. */
+/** Project home: its data sources and its message channels, split by the same rule
+ *  (and the same project membership) as the Project assets tree. */
 export function ProjectDataSources({ projectId }: { projectId: string }) {
-  const query = useMemo(() => projectSourcesQuery(projectId), [projectId]);
-  const { data: sources = [] } = useEntitiesQuery<DataSource>(query);
-  const { specFor } = useSourceSpecs({ enabled: sources.length > 0 });
+  const { data, channels, specFor } = useSplitSources(projectId);
   const { navigation } = useDockNavigation();
-  if (!sources.length) return null;
-  return (
-    <div data-testid="project-home-data-sources">
-      <TileSection title={labelForType(DataSource.type)}>
+  if (!data.length && !channels.length) return null;
+  const section = (title: string, sources: DataSource[], testId: string) =>
+    sources.length ? (
+      <TileSection title={title} data-testid={testId}>
         {[...sources]
           .sort((a, b) => (a.name || a.provider).localeCompare(b.name || b.provider))
           .map((source) => (
@@ -33,6 +31,11 @@ export function ProjectDataSources({ projectId }: { projectId: string }) {
             />
           ))}
       </TileSection>
+    ) : null;
+  return (
+    <div data-testid="project-home-data-sources">
+      {section(labelForType(DataSource.type), data, 'project-home-data-section')}
+      {section(t`Message channels`, channels, 'project-home-channels-section')}
     </div>
   );
 }

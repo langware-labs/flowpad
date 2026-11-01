@@ -29,11 +29,29 @@
 
   const isBranch = (s) => !!s.branch_of;
   const find = (id) => J.findIndex((s) => s.id === id);   // -1 when there is no such step
-  const mainAfter = (i) => { for (let k = i + 1; k < J.length; k++) if (!isBranch(J[k])) return k; return i; };
-  // Where a screen goes on: its own `next` (a branch's Try again, a screen that always takes a branch), else
-  // the next main-path screen. Next, its hint and the screen's glowing control all follow this one rule.
-  const onwardOf = (i) => { const n = J[i]?.next ? find(J[i].next) : -1; return n >= 0 ? n : mainAfter(i); };
-  const mainBefore = (i) => { for (let k = i - 1; k >= 0; k--) if (!isBranch(J[k])) return k; return i; };
+  const isRoot = (s) => !isBranch(s) || find(s.branch_of) < 0;   // a main step, or a branch off no known step
+  // Every screen in depth-first order, each with its number: main steps 1, 2, 3, the branches off step 1
+  // 1.1, 1.2, theirs 1.1.1. Next and Back walk this order, so no screen is out of reach and Next never stalls.
+  const tree = () => {
+    const order = [], num = {}, seen = new Set();
+    const visit = (i, label) => {
+      if (seen.has(i)) return;
+      seen.add(i); order.push(i); num[i] = label;
+      let k = 0;
+      J.forEach((s, c) => { if (s.branch_of === J[i].id && !seen.has(c)) visit(c, `${label}.${++k}`); });
+    };
+    let n = 0;
+    J.forEach((s, i) => { if (isRoot(s)) visit(i, String(++n)); });
+    J.forEach((_, i) => visit(i, String(++n)));   // a branch cycle still lands somewhere
+    return { order, num };
+  };
+  const step = (i, by, o = tree().order) => { const k = o[o.indexOf(i) + by]; return k === undefined ? i : k; };
+  // Where a screen goes on: its own `next` when that lies ahead, else the next screen depth-first.
+  // Next, its hint and the screen's glowing control all follow this one rule.
+  const onwardOf = (i) => {
+    const o = tree().order, n = J[i]?.next ? find(J[i].next) : -1;
+    return n >= 0 && o.indexOf(n) > o.indexOf(i) ? n : step(i, 1, o);
+  };
   const show = (id) => {
     document.querySelectorAll('[data-step]').forEach((el) => { el.hidden = el.dataset.step !== id; });
   };
@@ -117,7 +135,7 @@
     .panel h4 { margin: 4px 2px 8px; font-weight: 700; font-size: 11px; color: var(--mk-muted); text-transform: uppercase; letter-spacing: .06em; }
     .row { display: flex; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 8px; align-items: baseline; }
     .row:hover { background: var(--mk-soft); } .row.on { background: var(--mk-soft); font-weight: 700; }
-    .row .num { color: var(--mk-muted); width: 1.6em; flex: none; font-variant-numeric: tabular-nums; }
+    .row .num { color: var(--mk-muted); min-width: 1.6em; margin-right: 4px; flex: none; font-variant-numeric: tabular-nums; }
     .row.br { padding-left: 30px; } .row small { color: var(--mk-muted); margin-left: auto; padding-left: 12px; }
     .note { color: var(--mk-muted); margin: 0 2px 10px; white-space: pre-wrap; }
     textarea { all: unset; box-sizing: border-box; display: block; width: 100%; min-height: 76px; padding: 8px 10px; border: 1.5px solid var(--mk-muted); border-radius: 8px; white-space: pre-wrap; color: var(--mk-fg); }
@@ -249,15 +267,15 @@
   }
   function render() {
     if (!J.length) { $('.step').textContent = data.error || 'Loading the mock…'; $('.n').textContent = ''; return; }
-    const s = J[cur];
+    const s = J[cur], tr = tree();
     $('.step').textContent = (isBranch(s) ? '↳ ' : '') + s.title;
     const multi = multiApp();
     let on = -1; const cs = crumbs();
     cs.forEach((c, k) => { if (c.from <= cur && (!isBranch(s) || c.app === s.app)) on = k; });
     const trail = cs.map((c, k) => (k === on ? `<span class="on">${esc(c.app)}</span>` : esc(c.app))).join(' ▸ ');
     $('.n').innerHTML = (multi ? `<span class="trail">${trail}</span><span class="count">·</span>` : '')
-      + `<span class="count">${cur + 1} of ${J.length}</span>`;
-    $('.back').disabled = cur === 0;
+      + `<span class="count">${J.some(isBranch) ? `${tr.num[cur]} · ` : ''}${tr.order.indexOf(cur) + 1} of ${J.length}</span>`;
+    $('.back').disabled = step(cur, -1, tr.order) === cur;
     $('.next').disabled = onwardOf(cur) === cur;
     const nOpen = openRows().length;
     $('.exec-n').textContent = nOpen ? `(${nOpen})` : '';
@@ -282,11 +300,11 @@
     if (!open) return;
     placePanel();
     if (open === 'steps') {
-      let n = 0;
-      const multi = multiApp();
-      panel.innerHTML = head() + '<h4>Screens</h4>' + J.map((s, i) => {
+      const multi = multiApp(), tr = tree();
+      panel.innerHTML = head() + '<h4>Screens</h4>' + tr.order.map((i) => {
+        const s = J[i];
         const label = (isBranch(s) ? '↳ ' : '') + esc(isBranch(s) && s.when ? `${s.when} — ${s.title}` : s.title);
-        const num = isBranch(s) ? '' : String(++n);
+        const num = tr.num[i];
         return `<button class="row${isBranch(s) ? ' br' : ''}${i === cur ? ' on' : ''}" data-i="${i}"><span class="num">${num}</span>${label}${multi ? `<small>${esc(s.app)}</small>` : ''}</button>`;
       }).join('') + `<button class="row hints-toggle" style="margin-top:6px">${hints ? '☑' : '☐'} Highlight the next step on each screen</button>`;
       return;
@@ -665,7 +683,7 @@
   }
 
   // ── controls ──
-  $('.back').onclick = () => go(mainBefore(cur));
+  $('.back').onclick = () => go(step(cur, -1));
   $('.next').onclick = () => go(onwardOf(cur));
   $('.restart').onclick = () => { setPanel(''); go(0); };
   $('.steps').onclick = () => setPanel(open === 'steps' ? '' : 'steps');

@@ -38,21 +38,19 @@ class LoadTree:
     """The same dependency graph, with only operational wizards enabled.
 
     Keeping children is essential: project and app declarations live on child
-    nodes. Setup's prepare/run never leak into this phase. ``fix``: an op's agent
-    rung (the setup-fixer) and the rungs after it stay; a plain load never runs an
-    agent, only the load a setup run ends with does.
+    nodes. Setup's prepare/run never leak into this phase. A load never runs an agent: a web app's recovery is
+    its coordinator's (``core/webapp/coordinator``), not a rung of a step.
     """
 
-    def __init__(self, tree, *, fix: bool = False):
+    def __init__(self, tree):
         self.tree = tree
         self.root = tree.root
-        self.fix = fix
 
     async def resolve_op(self, name: str):
         resolved = await self.tree.resolve_op(name)
         rungs = list(getattr(resolved.spec, "attempts", None) or []) if resolved is not None else []
         agent = next((at for at, rung in enumerate(rungs) if rung.subkind == "agent"), None)
-        if self.fix or agent is None:
+        if agent is None:
             return resolved
         return dataclasses.replace(resolved, spec=resolved.spec.model_copy(update={"attempts": rungs[:agent]}))
 
@@ -90,6 +88,8 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     # The run was started FOR an app: it is judged on that app whoever asks — a poll that names none
     # must not settle it as ready because the project stands without it.
     asset = asset or _LATEST.get(pid, "")
+    if asset.startswith("micro_app-"):
+        return app_load_state(pid, asset)
     result = _RESULTS.get((pid, asset))
     display = result.display if result is not None else None
     # Opening an app runs that app alone (rooted at it); the project's own run is the other kind.
@@ -130,16 +130,17 @@ def _configuration_failure(node, target: str = "") -> str:
     return next((detail for child in node.children if (detail := _configuration_failure(child, target))), "")
 
 
-def _leaf_failure(node) -> str:
-    """The deepest step that failed, in its own words — a parent's "waiting on X" names nothing to fix."""
-    if node is None:
+def _leaf_failure(node, *, owed: bool = False) -> str:
+    """The deepest step that failed, in its own words — a parent's "waiting on X" names nothing to fix.
+    ``owed``: also a step merely not done yet (a check found it missing), which is what a person acts on."""
+    if node is None or node.state in (SetupState.DONE, SetupState.SKIPPED):
         return ""
-    deeper = next((detail for child in node.children if (detail := _leaf_failure(child))), "")
+    deeper = next((detail for child in node.children if (detail := _leaf_failure(child, owed=owed))), "")
     if deeper:
         return deeper
-    if node.state in (SetupState.FAILED, SetupState.REFUSED) and node.detail:
-        return f"{node.label}: {node.detail}" if node.label else node.detail
-    return ""
+    if not node.detail or not (owed or node.state in (SetupState.FAILED, SetupState.REFUSED)):
+        return ""
+    return f"{node.label}: {node.detail}" if node.label and not node.detail.startswith(f"{node.label}:") else node.detail
 
 
 def _unmet(result, target: str) -> str:
@@ -156,27 +157,36 @@ def _unmet(result, target: str) -> str:
     return _leaf_failure(node) or (f"{node.label}: {node.detail}" if node.detail else f"{node.label} is not set up")
 
 
-async def validate(pid: str, target: str, display: str = "") -> Optional[LoadResult]:
-    """Phase one of an open: an app that answers where it runs opens as it is — no tree, no walk, no lock.
-    None: load it. A running app is shown whatever its setup says (that is the next load's business). A
-    display session needs this provider's READY for THAT display: its saved presentation is checked by a
-    load, never assumed."""
-    if not target.startswith("micro_app-"):
-        return None
-    kept = _RESULTS.get((pid, target))
-    if kept is not None and kept.state is not LoadState.READY:
-        return None
-    if display and (kept is None or kept.display != display):
-        return None
-    from flow_sdk.builtin.webapp_setup import answers_now  # noqa: PLC0415
+def app_load_state(pid: str, asset: str, display: str = "") -> Optional[LoadResult]:
+    """A web app's load, as its lifecycle record says (``core/webapp/record``) — the one answer. None when it
+    was never brought up here and nothing is running for it."""
+    from flow_sdk.builtin.project_setup import setup_run_address  # noqa: PLC0415
+    from flow_sdk.core.webapp import coordinator, record  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import BUSY, LifecycleState  # noqa: PLC0415
 
-    try:
-        if not await answers_now(target):
-            return None
-    except Exception as exc:  # noqa: BLE001 — a failed check is a load, never an error
-        logger.debug("validate of %s failed: %s", target, exc)
-        return None
-    return kept or _keep(pid, target, LoadResult(state=LoadState.READY, project_id=pid, asset=target))
+    rec = record.read(asset, pid)
+    base = dict(project_id=pid, asset=asset, display=display or None)
+    if rec.showable:
+        return LoadResult(state=LoadState.READY, setup_owed=rec.setup_owed, **base)
+    if rec.state in BUSY or coordinator.running(asset):
+        return LoadResult(state=LoadState.RUNNING, run=setup_run_address(pid, asset), phase="load",
+                          detail=rec.detail, **base)
+    if rec.state in (LifecycleState.FAILED, LifecycleState.NEEDS_PERSON):
+        return LoadResult(state=LoadState.FAILED, detail=rec.detail or "the app does not come up",
+                          setup_available=False, **base)
+    return None
+
+
+async def _load_app(project: Any, asset: Any, *, approved: bool, display: str, wait: bool = False) -> LoadResult:
+    """Open a web app: its coordinator brings it up (``core/webapp/coordinator``); the answer is its record.
+    ``approved`` is a person's Fix it: recovery may run the fixer again."""
+    from flow_sdk.core.webapp import coordinator  # noqa: PLC0415
+
+    pid, target = str(project.id), str(asset.typeid)
+    await coordinator.bring_up(asset, display=display, reason="fix" if approved else "open", wait=wait)
+    _LATEST[pid] = target
+    return app_load_state(pid, target, display) or LoadResult(
+        state=LoadState.RUNNING, project_id=pid, asset=target, display=display or None)
 
 
 async def load_project(project: Any, *, approved: bool = False, asset: Any = None, tree: Any = None,
@@ -202,9 +212,8 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             state=LoadState.FAILED, project_id=pid, asset=target,
             detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}"))
         return gone
-    valid = await validate(pid, target, display) if not approved and not ancestors else None
-    if valid is not None:
-        return valid
+    if target.startswith("micro_app-") and not ancestors:
+        return await _load_app(project, asset, approved=approved, display=display)
     # Traverse before taking this provider's lock: opposite ends of a dependency
     # cycle may be loaded concurrently, and must never wait on each other's lock.
     try:
@@ -222,8 +231,11 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             if failed:
                 raise ValueError(f"Dependency {failed.project_id}: {failed.detail}")
             tree = tree or await ProjectTree(project, display=display).load()
-            if getattr(tree, "gaps", None):
-                raise ValueError("; ".join(gap.note or gap.name for gap in tree.gaps))
+            # Showing one app: only ITS gaps hold it — another root's undeclared variable is that root's problem.
+            gaps = [gap for gap in getattr(tree, "gaps", None) or []
+                    if not target or any(root.typeid == target for root in gap.roots)]
+            if gaps:
+                raise ValueError("; ".join(gap.note or gap.name for gap in gaps))
             common = dict(subject_entity=f"project-{pid}", cwd=getattr(project, "fs_storage_mount_path", None),
                           check_only=True, approved=True)
             prerequisites = await execute_setup(tree.root, resolve_node=tree.resolve_node,
@@ -250,7 +262,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                     not _unmet(running, target) if target else running.done == running.total)
                 if loaded and all(c.state is LoadState.READY for c in children):
                     _REPAIRED.discard((pid, target))
-                    result = LoadResult(state=LoadState.READY, project_id=pid)
+                    result = LoadResult(state=LoadState.READY, project_id=pid, setup_owed="" if target else None)
                 else:
                     # The load failed and the person said go: setup first (it redoes only what its own
                     # checks find missing), then the load again. Once — its failure is then the answer.
@@ -272,14 +284,18 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
 
 
 async def bring_up(project: Any, *, asset: Any = None, display: str = "", wait: bool = False) -> LoadResult:
-    """THE way an asset comes up, whoever asks — a screen, ``flow app open``, an agent's auto-open:
-    validate (it answers: done) → load → setup when owed (one repair per failure) → the fixer when setup
-    still fails. An app's owed setup runs unasked: opening it is the person saying "make it work". The
-    project alone stops at SETUP_REQUIRED — its screen asks first. ``wait``: answer once the run it
-    started has settled (a caller that reads where the app runs right after)."""
+    """THE way an asset comes up, whoever asks — a screen, ``flow app open``, an agent's auto-open. A web app is
+    its coordinator's (``core/webapp/coordinator``: warm check → setup when owed → up → bounded recovery). A
+    project alone stops at SETUP_REQUIRED — its screen asks first. ``wait``: answer once the run it started has
+    settled (a caller that reads where the app runs right after)."""
     from flow_sdk.builtin.project_setup import _RUNS  # noqa: PLC0415
 
     pid = str(project.id)
+    if asset is not None and str(asset.typeid).startswith("micro_app-"):
+        on_disk = getattr(asset, "on_disk", None)
+        if callable(on_disk) and not on_disk():
+            return await load_project(project, asset=asset, display=display)
+        return await _load_app(project, asset, approved=False, display=display, wait=wait)
     last = load_state(pid, asset=str(asset.typeid) if asset is not None else "")
     # A load that already failed with setup untried goes straight to setup, never round the load again.
     result = last if last is not None and last.state is LoadState.FAILED and last.setup_available else (
@@ -308,4 +324,4 @@ async def load_asset(project: Any, asset: Any) -> LoadResult:
     return await load_project(project, asset=asset)
 
 
-__all__ = ["LoadTree", "bring_up", "forget", "load_asset", "load_project", "load_state", "validate"]
+__all__ = ["LoadTree", "app_load_state", "bring_up", "forget", "load_asset", "load_project", "load_state"]

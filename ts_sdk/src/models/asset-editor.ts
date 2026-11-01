@@ -44,6 +44,8 @@ export enum AssetEditor {
   ASSET_SETUP = 'asset_setup',
   // A compute op: what it does, whether it is done (Check), and Run.
   COMPUTE_OP = 'compute_op',
+  // A web app: who opens it, how it runs, its services, and where it runs (webapp.json).
+  APP = 'app',
   // File-only display viewers — no backing record type, routed by extension
   // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
   HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
@@ -144,6 +146,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.DIAGNOSIS_REQUEST]: [RecordType.DIAGNOSIS_REQUEST],
   [AssetEditor.ASSET_SETUP]: [RecordType.ASSET_SETUP],
   [AssetEditor.COMPUTE_OP]: [RecordType.COMPUTE_OP],
+  [AssetEditor.APP]: [RecordType.MICRO_APP],
   [AssetEditor.HTML]: [],
   [AssetEditor.MCP_APP]: [],
   [AssetEditor.IMAGE]: [],

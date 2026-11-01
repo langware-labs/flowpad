@@ -1616,17 +1616,32 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * On success the backend returns the updated shared list; we apply it
    * locally so the next render sees the change without waiting for the WS
    * broadcast. Returns the post-update list as TypeIds.
+   *
+   * ``opts.data`` is per-entry sidecar stored with each entry (read back via
+   * ``getContextEntryData``), e.g. ``{role: 'session'}`` on a conversation.
    */
-  public async shareContextEntities(input: TypeId | TypeId[]): Promise<TypeId[]> {
+  public async shareContextEntities(
+    input: TypeId | TypeId[],
+    opts?: { data?: Record<string, unknown> },
+  ): Promise<TypeId[]> {
     const targets = this._normalizeContextEntities(input);
     if (targets.length === 0) return [...this._shared_context_entities_];
     const info = new ActionInfo('share-context', this.typeId.type, this.typeId.id, 'POST');
-    info.bodyParameters =
-      targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) };
+    info.bodyParameters = {
+      ...(targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) }),
+      ...(opts?.data ? { data: opts.data } : {}),
+    };
     const result = await dataManager.callAction<
-      { typeid?: string; typeids?: string[] },
-      { ok: boolean; id: string; type: string; shared_context_entities: string[] }
+      { typeid?: string; typeids?: string[]; data?: Record<string, unknown> },
+      {
+        ok: boolean;
+        id: string;
+        type: string;
+        shared_context_entities: string[];
+        shared_context_entity_data?: Record<string, Record<string, unknown>>;
+      }
     >(info);
+    if (result?.shared_context_entity_data) this._shared_context_entity_data = { ...result.shared_context_entity_data };
     return this._applySharedFromResponse(result?.shared_context_entities);
   }
 

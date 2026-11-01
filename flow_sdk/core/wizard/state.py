@@ -215,19 +215,22 @@ def read_result(wizard_id: str) -> "Optional[WizardResult]":
         return None
 
 
-def record_result(wizard_id: str, result: "WizardResult", *, already_locked: bool = False) -> None:
+def record_result(wizard_id: str, result: "WizardResult", *, already_locked: bool = False, checked: bool = False) -> None:
     """Stamp what the last run answered — the ``WizardResult``, each step's
     output kept to its last ``OUTPUT_CAP`` characters.
 
     This is where output is trimmed: a result a caller READS arrives whole, and
     one written to disk must not grow by whatever a command printed.
 
+    ``checked``: the run only checked (``check_only``) — nothing was asked or installed, so a
+    popup still offers Start rather than reading it as a run that fell short.
+
     ``already_locked``: see ``_mutate``. ``execute_wizard``'s ``on_step``
     callback passes it — its outer ``run.lock`` is held for the run's whole
     duration, so a mid-run partial write here must not try to lock it again.
     """
     dumped = result.trimmed().model_dump(mode="json")
-    _mutate(wizard_id, lambda _state: {"result": dumped}, already_locked=already_locked)
+    _mutate(wizard_id, lambda _state: {"result": dumped, "checked": checked}, already_locked=already_locked)
 
 
 def record_tree(run: str, tree: "SetupTreeResult", *, already_locked: bool = False) -> None:
