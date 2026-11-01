@@ -80,6 +80,7 @@ export function AssetsNavigator() {
         onConfirm={(name) => void m.handleNewFolderConfirm(name)}
       />
       {m.dependencyDialogs}
+      {m.fileOpsDialogs}
     </>
   );
 }

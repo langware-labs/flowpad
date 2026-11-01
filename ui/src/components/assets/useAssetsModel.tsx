@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro';
 import { sectionRecordTypes } from './section-record-types';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
@@ -61,6 +61,9 @@ import {
 } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
 import type { Browseable, BrowseableRoot, DroppedFileEntry } from '@src/components/browseable-tree/types';
 import type { MultiSelectAction } from '@src/components/navigator-panel/types';
+import type { FsOpsHost } from '@src/components/browseable-tree/adapters/fsFileOps';
+import { useMenuDialogs } from '@src/components/ui/browseable-menu';
+import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 
@@ -577,6 +580,31 @@ export function useAssetsModel() {
     return DockPointer.forAssetEditor(openAssetTypeId.type, openAssetFields.asset_ref);
   }, [openAssetTypeId, openAssetFields?.asset_ref]);
 
+  // File-manager actions on the Files and Documents trees: their name prompts
+  // and confirms render once, from the navigator (`fileOpsDialogs`).
+  const fileDialogs = useMenuDialogs();
+  const { requestName, confirm } = fileDialogs;
+  // Read through a ref: rows keep the host they were built with, so the host
+  // must stay one object while the open dock changes underneath it.
+  const openDockRef = useRef(currentDock);
+  openDockRef.current = currentDock;
+  const fileOpsHost = useMemo<FsOpsHost>(
+    () => ({
+      requestName,
+      confirm,
+      navigate: navigateAsset,
+      // A renamed / moved file that is open follows to its new path, so the
+      // editor doesn't sit on a path that no longer exists.
+      onPathMoved: (from, to) => {
+        const open = openDockRef.current?.resourceVfsPath?.machinePath;
+        if (!open) return;
+        if (open === from) navigateAsset(dockPointerForFile(to));
+        else if (open.startsWith(`${from}/`)) navigateAsset(dockPointerForFile(`${to}${open.slice(from.length)}`));
+      },
+    }),
+    [requestName, confirm, navigateAsset],
+  );
+
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
     setNewTypeDialogOpen(true);
@@ -747,6 +775,7 @@ export function useAssetsModel() {
           onNew: handleNew,
           onCreateFolder: handleCreateFolder,
           onMoveItem: handleMoveMarkdownItem,
+          fileOps: fileOpsHost,
           filter: effectiveFilter,
           onOpenKnowledgeBrowser: (absPath) => navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
@@ -776,6 +805,7 @@ export function useAssetsModel() {
         pointerForVfs: (path) => DockPointer.forAssetFs(path),
         filePointerForVfs: fsFileViewerPointerForVfs,
         draggable: true,
+        fileOps: fileOpsHost,
       });
       const taskIdx = displayTypes.findIndex((t) => t.type_name === (RecordType.TASK as string));
       typeRoots.splice(taskIdx >= 0 ? taskIdx + 1 : typeRoots.length, 0, filesRoot);
@@ -812,6 +842,7 @@ export function useAssetsModel() {
     handleNew,
     handleCreateFolder,
     handleMoveMarkdownItem,
+    fileOpsHost,
     creatableTypes,
     effectiveFilter,
     navigation,
@@ -860,5 +891,6 @@ export function useAssetsModel() {
     handleNewFolderConfirm,
     // dependencies — the add flow's dialogs, rendered by the view
     dependencyDialogs: ctxFolder.dialogs,
+    fileOpsDialogs: fileDialogs.dialogs,
   } as const;
 }

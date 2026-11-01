@@ -9,6 +9,7 @@ import type { ScopeFilter } from '@src/lib/scope-filter';
 import type { Browseable, BrowseableDragData, BrowseableRoot } from '@src/components/browseable-tree/types';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
+import { withFsOps, type FsOpsCtx, type FsOpsHost } from './fsFileOps';
 
 /**
  * fsFolderRoot — a real-filesystem browseable root.
@@ -47,6 +48,9 @@ export interface FsFolderRootDeps {
   /** When true, file/folder rows carry an `FsDragItem` drag payload so drop
    *  targets (e.g. the Assets dependency rows) can accept them. */
   draggable?: boolean;
+  /** When set, every row gets the file-manager actions (toolbar, right-click,
+   *  keys, drag move/copy, upload) — see `fsFileOps`. */
+  fileOps?: FsOpsHost;
 }
 
 /** One filesystem entry inside a (possibly multi-item) drag. */
@@ -142,6 +146,8 @@ interface FsNodeCtx {
    *  the factory binds the handlers to that folder's rel path (e.g. copy
    *  dropped rows into that exact subfolder). */
   folderDrop?: (rel: string) => FsFolderDrop;
+  /** File-manager actions bound to this root, when the host asked for them. */
+  ops?: FsOpsCtx;
 }
 
 /** The "open this file" pointer for an fs row: the row's VFS identity put
@@ -198,7 +204,7 @@ function FileTooltip({ label, entry }: { label: string; entry: FSEntry }) {
 
 function fileNode(ctx: FsNodeCtx, rel: string, label: string, entry?: FSEntry): Browseable {
   const id = `fs-file:${ctx.typeId.toString()}:${normalizeRel(rel)}`;
-  return {
+  const node: Browseable = {
     id,
     kind: 'file',
     label,
@@ -208,11 +214,12 @@ function fileNode(ctx: FsNodeCtx, rel: string, label: string, entry?: FSEntry): 
     tooltip: entry ? <FileTooltip label={label} entry={entry} /> : undefined,
     dragData: dragDataFor(ctx, id, rel, label, false),
   };
+  return ctx.ops ? withFsOps(node, ctx.ops, { rel: normalizeRel(rel), isDir: false, label }) : node;
 }
 
 function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
   const id = fsFolderNodeId(ctx.typeId, rel);
-  return {
+  const node: Browseable = {
     id,
     kind: 'folder',
     label,
@@ -223,6 +230,7 @@ function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     dragData: dragDataFor(ctx, id, rel, label, true),
     ...(ctx.folderDrop ? ctx.folderDrop(rel) : {}),
   };
+  return ctx.ops ? withFsOps(node, ctx.ops, { rel: normalizeRel(rel), isDir: true, label }) : node;
 }
 
 /** Public factory: a browseable folder node addressing an absolute compute-node
@@ -343,6 +351,17 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
     filePointerFor: deps.filePointerForVfs,
     draggable: deps.draggable ?? false,
   };
+  if (deps.fileOps) {
+    const rootId = fsRootNodeId(typeId, anchor);
+    ctx.ops = {
+      typeId,
+      locatorTypeId,
+      anchor,
+      dirNodeId: (rel) => (normalizeRel(rel) === anchor ? rootId : fsFolderNodeId(typeId, rel)),
+      filePointerFor: ctx.filePointerFor ?? ctx.pointerFor,
+      host: deps.fileOps,
+    };
+  }
 
   const root: BrowseableRoot = {
     id: fsRootNodeId(typeId, anchor),
@@ -365,5 +384,5 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
       return Promise.resolve(resolveChain(root, ctx, anchor, resource?.entitySubPath ?? null));
     },
   };
-  return root;
+  return ctx.ops ? withFsOps(root, ctx.ops, { rel: anchor, isDir: true, label }, { isTop: true }) : root;
 }

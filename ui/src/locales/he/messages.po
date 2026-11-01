@@ -230,6 +230,20 @@ msgstr "\"{0}\" יוסר. שרשראות שמושכות ממנו יאבדו את
 msgid "\"{0}\" will be removed. This cannot be undone."
 msgstr "\"{0}\" יוסר. לא ניתן לבטל פעולה זו."
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" already exists"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" already exists there"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" can't go inside itself"
+msgstr ""
+
 #: src/components/lens-viewer/CliLogViewer.tsx
 msgid "({keyCount} keys)"
 msgstr "({keyCount} מפתחות)"
@@ -1747,6 +1761,10 @@ msgstr "{selectedCount} נבחרו"
 msgid "{selectedWithFilesCount} of them contain files. The folders go to your Trash and their Flowpad projects are removed; you can restore them from Finder."
 msgstr "{selectedWithFilesCount} מהן מכילות קבצים. התיקיות יועברו לאשפה והפרויקטים שלהן ב-Flowpad יוסרו; אפשר לשחזר אותן מ-Finder."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "{sender} sent you the key"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "{senderName} has shared {sharedThing}"
 msgstr "{senderName} שיתף/ה את {sharedThing}"
@@ -2670,6 +2688,10 @@ msgstr "בקשת הרשאה נשלחה"
 msgid "Access to {projectName} vault {vault}"
 msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Access to the {vaultLabel} vault requested."
+msgstr ""
+
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "Access to vault {vault} is granted. Fetch again."
 msgstr ""
@@ -3211,6 +3233,11 @@ msgstr "הוסיפו משתנה"
 msgid "Add…"
 msgstr "הוספה…"
 
+#. placeholder {0}: entries[0].relPath
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Added \"{0}\""
+msgstr ""
+
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: source.name
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -3222,6 +3249,11 @@ msgstr "{0} נוסף בהצלחה"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Added {0} and stored its key"
 msgstr "{0} נוסף והמפתח שלו נשמר"
+
+#. placeholder {0}: entries.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Added {0} files"
+msgstr ""
 
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -5676,6 +5708,10 @@ msgstr "קריאות"
 msgid "Calls"
 msgstr "קריאות"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Can decrypt"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
 msgstr "לא מצאתם את מה שחיפשתם? שלחו לנו שאלה ומישהו יחזור אליכם."
@@ -6538,6 +6574,10 @@ msgstr "ניקוי ({0})"
 #: src/routes/loaders/load-shell.ts
 msgid "Cleaned invalid sessions"
 msgstr "ניקיון הפעולות הלא תקינות"
+
+#: src/components/footer/activity-words.ts
+msgid "Cleaning up"
+msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Cleaning…"
@@ -7824,11 +7864,30 @@ msgstr "הומר ללוח Excalidraw"
 msgid "Copied"
 msgstr "הועתק"
 
+#. placeholder {0}: items[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied \"{0}\""
+msgstr ""
+
+#. placeholder {0}: items.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied {0} items"
+msgstr ""
+
 #. placeholder {0}: urls.length
 #. placeholder {1}: urls.length > 1 ? 's' : ''
 #: src/components/assets/useAssetsModel.tsx
 msgid "Copied {0} link{1}"
 msgstr "הועתקו {0} קישור{1}"
+
+#. placeholder {0}: paths.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied {0} paths"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied path"
+msgstr ""
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Copied to Clipboard"
@@ -7859,6 +7918,7 @@ msgstr "כרטיסיית Copilot"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/hooks/event-utils.tsx
@@ -7989,6 +8049,7 @@ msgstr "העתקת כתובת השיבוט של החברים"
 msgid "Copy name"
 msgstr "העתיקו שם"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy path"
 msgstr "העתיקו נתיב"
@@ -8028,6 +8089,10 @@ msgstr "העתיקו פרומפט"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "העתיקו מזהה ספק"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copy relative path"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy remote URL"
@@ -8294,6 +8359,10 @@ msgstr "לא ניתן היה ליצור את סביבת העבודה"
 msgid "Could not decide"
 msgstr "לא ניתן היה להכריע"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not decline {name}"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
@@ -8361,6 +8430,10 @@ msgstr "לא הצלחנו להסתיים את החדר"
 msgid "could not fetch — showing local copy"
 msgstr "לא ניתן להוריד — מוצג עותק מקומי"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not fetch {name}"
+msgstr ""
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Could not fetch {title}"
 msgstr ""
@@ -8375,6 +8448,10 @@ msgstr "לא ניתן לאחזר את החבילות"
 
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Could not fetch the values"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not fill in {name}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -8746,6 +8823,10 @@ msgstr "לא ניתן להפעיל את {0} מחדש."
 #: src/components/account/system-diagnoses.tsx
 msgid "Could not report diagnosis"
 msgstr "לא היה ניתן לדווח על הדיאגנוזה"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not request access"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not reset auto-launch"
@@ -9693,10 +9774,21 @@ msgstr "התאמה אישית"
 msgid "Customize response"
 msgstr ""
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Cut"
 msgstr "גזרו"
+
+#. placeholder {0}: items[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Cut \"{0}\""
+msgstr ""
+
+#. placeholder {0}: items.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Cut {0} items"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Daily at {time}"
@@ -9897,6 +9989,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "מוגדר בכרטיס הסוכן. טרם הוחל על העובד."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
@@ -10069,6 +10162,7 @@ msgstr "מחיקה"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -10110,6 +10204,11 @@ msgstr "מחיקה — הסרה קבועה"
 msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
 msgstr "מחקו את \"{0}\" מה-keychain של מערכת ההפעלה? לא ניתן לבטל פעולה זו."
 
+#. placeholder {0}: targets[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Delete \"{0}\"?"
+msgstr ""
+
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Delete ({n})"
 msgstr ""
@@ -10136,6 +10235,11 @@ msgstr "מחקו {0} הקשרים?"
 #: src/components/connections-manager.tsx
 msgid "Delete {0} credential?"
 msgstr "למחוק את אישור {0}?"
+
+#. placeholder {0}: targets.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Delete {0} items?"
+msgstr ""
 
 #. placeholder {0}: deleting?.title ?? ''
 #. placeholder {0}: org.name
@@ -11220,6 +11324,7 @@ msgid "Dot-separated; * matches one part, a trailing * matches the rest (task.*)
 msgstr "מופרד בנקודות; * תואם חלק אחד, * בסוף תואם את כל השאר (task.*)."
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -11271,6 +11376,10 @@ msgstr "הורידו בכל זאת"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Download as a file instead of sending"
 msgstr "הורידו כקובץ במקום לשלוח"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Download as zip"
+msgstr ""
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download attachments"
@@ -11405,6 +11514,10 @@ msgstr "הפעולה מוחקת את רשומות המקור ומאפסת את �
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Due"
 msgstr "תאריך יעד"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Duplicate"
+msgstr ""
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicate assets"
@@ -11844,6 +11957,10 @@ msgstr "זמן סיום"
 #. placeholder {0}: addressOf(mount, app.name)
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "End users open it at {0}."
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "End-to-end encrypted transfer"
 msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
@@ -12578,6 +12695,10 @@ msgstr ""
 msgid "Expired before everyone filled them in."
 msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Expires"
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Expires after"
 msgstr "פג תוקף אחרי"
@@ -12729,6 +12850,10 @@ msgstr "כישלון בשיבוט המאגר"
 msgid "Failed to copy links"
 msgstr "העתקת קישורים נכשלה"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to copy path"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
 msgstr "העתקת הנתיב ללוח נכשלה"
@@ -12747,7 +12872,12 @@ msgstr "נכשל ליצור ארטיפקט"
 msgid "Failed to create contacts group"
 msgstr "יצירת קבוצת אנשי קשר נכשלה"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to create file"
+msgstr ""
+
 #: src/components/assets/useAssetsModel.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Failed to create folder"
 msgstr "יצירת תיקייה נכשלה"
 
@@ -12796,6 +12926,10 @@ msgstr "כשל במחיקת סוד"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Failed to discard draft"
 msgstr "נכשל להשליך טיוטה"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to download"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Failed to enable secrets"
@@ -12965,6 +13099,10 @@ msgstr "הסרת החבילה נכשלה"
 msgid "Failed to remove vibe agent"
 msgstr "הסרת סוכן Vibe נכשלה"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to rename"
+msgstr ""
+
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Failed to resolve [[{name}]]: {errorText}"
 msgstr "לא ניתן היה לפענח את [[{name}]]: {errorText}"
@@ -12972,6 +13110,10 @@ msgstr "לא ניתן היה לפענח את [[{name}]]: {errorText}"
 #: src/routes/loaders/load-next-process.ts
 msgid "Failed to restore this session."
 msgstr "שחזור הסשן נכשל."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to reveal"
+msgstr ""
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Failed to Save"
@@ -13082,6 +13224,10 @@ msgstr "נכשלה עדכון החוק"
 msgid "Failed to update trigger"
 msgstr "עדכון הטריגר נכשל"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to upload"
+msgstr ""
+
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to upload image"
 msgstr "העלאת התמונה נכשלה"
@@ -13176,6 +13322,7 @@ msgstr "רשומה בפיד"
 #~ msgid "Feeds"
 #~ msgstr "מזינה"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
@@ -13313,8 +13460,13 @@ msgstr "קבצים בדיסק שעדיין לא בDB"
 msgid "Files: {files}"
 msgstr "קבצים: {files}"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Fill in"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Fill it in and {name} is ready on this machine."
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
@@ -13906,6 +14058,7 @@ msgid "Folder created"
 msgstr "תיקייה נוצרה"
 
 #: src/components/assets/AssetsNavigator.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
@@ -14276,6 +14429,10 @@ msgstr "הורידו את FlowPad ב-flowpad.ai ←"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get it at flowpad.ai"
 msgstr "אפשר להוריד אותו ב-flowpad.ai"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Get it from the {vaultLabel} vault."
+msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #~ msgid "Get my link code"
@@ -15299,6 +15456,10 @@ msgstr "שגיאות Hub דוכאו"
 msgid "hub repository"
 msgstr "מאגר ה-hub"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Hub sees"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "Hub WebSocket connected."
 msgstr "Hub WebSocket מחובר."
@@ -16015,7 +16176,12 @@ msgstr "השוואת נכסים לא תקינה"
 msgid "Invalid asset pointer"
 msgstr "מצביע נכס לא תקין"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Invalid file name"
+msgstr ""
+
 #: src/components/assets/useAssetsModel.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Invalid folder name"
 msgstr "שם התיקייה אינו תקין"
 
@@ -16038,6 +16204,10 @@ msgstr "JSON לא תקין — לא נשמר"
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Invalid Lens URL"
 msgstr "כתובת עדשה לא חוקית"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Invalid name"
+msgstr ""
 
 #: src/components/show-view/ShowView.tsx
 msgid "Invalid Show Path"
@@ -16433,6 +16603,19 @@ msgstr "מפתח"
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Key ending {0} — only the owner can change it."
 msgstr "המפתח מסתיים ב-{0} — רק לבעלים יש אפשרות לשנות אותו."
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key filled in"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key is in {manager}"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key not available"
+msgstr ""
 
 #~ msgid "Key not set"
 #~ msgstr "המפתח לא הוגדר"
@@ -18196,6 +18379,10 @@ msgstr "חברים הוקצו, אך חלק מההודעות לא נשלחו"
 msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
 msgstr "חברים משבטים ודוחפים את המאגר הזה דרך FlowPad עם הכניסה שלהם ל-FlowPad. אין צורך בגישה ל-GitHub. קוראים יכולים למשוך, עורכים יכולים לדחוף. ניתן לבטל את הסימון בכל עת; מאגר ה-GitHub שלכם לעולם לא משתנה."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Members of the vault"
+msgstr ""
+
 #: src/components/conversation/ConversationMembersLine.tsx
 msgid "Members:"
 msgstr ""
@@ -18335,6 +18522,10 @@ msgstr "הודעות ב"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta official Cloud API"
 msgstr "Meta Cloud API הרשמי"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Method"
+msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
@@ -18814,6 +19005,10 @@ msgstr "name@example.com"
 #~ msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
 #~ msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Names only, never values"
+msgstr ""
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Needed for"
 msgstr "נדרש עבור"
@@ -19055,6 +19250,8 @@ msgstr "מסמך חדש"
 msgid "New endpoint"
 msgstr "נקודת קצה חדשה"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New file"
@@ -19067,6 +19264,8 @@ msgstr "קובץ חדש"
 #~ msgid "New Files ({0})"
 #~ msgstr "קבצים חדשים ({0})"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -20835,6 +21034,10 @@ msgstr "לא מחובר"
 msgid "Not connected — press Connect"
 msgstr "לא מחובר — לחצו על 'חיבור'"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not copied"
+msgstr ""
+
 #~ msgid "Not copied into context folder"
 #~ msgstr "לא הועתקו לתיקיית ההקשר"
 
@@ -20846,6 +21049,10 @@ msgstr "לא מחובר — לחצו על 'חיבור'"
 msgid "Not copied into package folder"
 msgstr "לא הועתק לתיקיית החבילה"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not deleted"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Not deployed yet — it runs nowhere until you launch it."
 msgstr "עדיין לא נפרס — הוא לא רץ בשום מקום עד שיופעל."
@@ -20856,6 +21063,10 @@ msgstr "עדיין לא נפרס — הוא לא רץ בשום מקום עד ש�
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "Not done."
 msgstr "לא הושלם."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not duplicated"
+msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
@@ -20926,6 +21137,10 @@ msgstr "לא מחוברים"
 #: src/i18n/cli-messages.ts
 msgid "Not logged in · Please run /login"
 msgstr "לא מחוברים · הריצו /login"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not moved"
+msgstr ""
 
 #~ msgid "Not needed here: mark its values optional"
 #~ msgstr ""
@@ -21107,6 +21322,7 @@ msgid "not visible"
 msgstr "לא גלוי"
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 msgid "Not yet"
 msgstr "עדיין לא"
 
@@ -21589,6 +21805,10 @@ msgstr "במכונה הריצו <0>flow connect</0>. אם היא לא מחובר
 msgid "On the schedule {expr}"
 msgstr "לפי התזמון {expr}"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "On this machine"
+msgstr ""
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr "במחשב הזה בלבד — אפשר לבטל בכל עת"
@@ -21746,6 +21966,10 @@ msgstr "רק אנשים ששיתפתם איתם יכולים לצפות בסוכ
 msgid "Only the steps below"
 msgstr "רק השלבים שלמטה"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Only this device"
+msgstr ""
+
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "Only this port"
@@ -21756,6 +21980,7 @@ msgid "Oops! Page not found"
 msgstr "אופס! הדף לא נמצא"
 
 #: src/components/assets/editor/WikiResolveView.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
@@ -21973,6 +22198,10 @@ msgstr "פתחו הקשר"
 msgid "Open conversation"
 msgstr "פתח שיחה"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Open credential"
+msgstr ""
+
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Open data_driver.json"
 msgstr "פתיחת data_driver.json"
@@ -22170,6 +22399,7 @@ msgstr "פתיחה בהרצות"
 msgid "Open in Skills tab"
 msgstr "פתחו בכרטיסית מיומנויות"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/tabs/doc-tab-card.tsx
@@ -23133,6 +23363,7 @@ msgstr "הרצות קודמות יישארו בהיסטוריה."
 msgid "Past test runs"
 msgstr ""
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Paste"
 msgstr "הדביקו"
@@ -24872,6 +25103,11 @@ msgstr "מוכן"
 msgid "ready · Open"
 msgstr "מוכן · פתיחה"
 
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Ready on this machine."
+msgstr ""
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Ready to share"
 msgstr "מוכן לשיתוף"
@@ -25620,6 +25856,7 @@ msgstr ""
 #~ msgid "Removing & re-checking…"
 #~ msgstr ""
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -25869,6 +26106,7 @@ msgid "Request"
 msgstr "בקשה"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Request access"
 msgstr "בקשו גישה"
@@ -26301,6 +26539,7 @@ msgstr "הצגת {0} ב-Finder/Explorer"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 #: src/pages/flow-page/display-history-button.tsx
 #: src/pages/flow-page/display-history-button.tsx
@@ -27682,6 +27921,7 @@ msgstr "סוד נמחק"
 msgid "secret manager"
 msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secret manager"
@@ -27722,6 +27962,10 @@ msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secured transfer — only the recipients can open the values."
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Security details"
 msgstr ""
 
 #. placeholder {0}: results.length
@@ -29812,6 +30056,7 @@ msgstr "יש דברים שדורשים תשומת לב."
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/pages/entry/MessageLanding.tsx
@@ -30702,8 +30947,8 @@ msgid "Sweep action"
 msgstr "פעולת ייחוף"
 
 #: src/components/footer/activity-words.ts
-msgid "sweeping"
-msgstr "מנקה"
+#~ msgid "sweeping"
+#~ msgstr "מנקה"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweeping…"
@@ -31905,8 +32150,16 @@ msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפ
 #~ msgid "The value is written to this project's .env.local and stays on this machine."
 #~ msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "The value was shared too — click for details"
+msgstr ""
+
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "The values could not be filled in."
+msgstr ""
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "The values could not be requested."
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
@@ -32238,6 +32491,10 @@ msgstr "שיחה זו כבר אינה קיימת או אינה זמינה."
 msgid "This conversation's project is not a checkout of the shared repo"
 msgstr "הפרויקט של השיחה הזו אינו checkout של המאגר המשותף"
 
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "This could not be opened"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This could not be prepared for download."
 msgstr "לא ניתן היה להכין את זה להורדה."
@@ -32507,6 +32764,10 @@ msgstr ""
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "This organization's budgets could not be read. The server answered with nothing to show."
 #~ msgstr "לא ניתן היה לקרוא את תקציבי הארגון. השרת לא החזיר נתונים."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "This permanently deletes it from disk. This cannot be undone."
+msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
@@ -34012,6 +34273,10 @@ msgstr "ההעלאה נכשלה."
 msgid "Upload files"
 msgstr "העלו קבצים"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Upload files here…"
+msgstr ""
+
 #: src/components/ui/agent-avatar-picker.tsx
 msgid "Upload image"
 msgstr "העלו תמונה"
@@ -34317,6 +34582,10 @@ msgstr "ערך עבור {key}"
 #~ msgid "value name"
 #~ msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Value shared"
+msgstr ""
+
 #~ msgid "Value stays in .env.local"
 #~ msgstr ""
 
@@ -34327,6 +34596,11 @@ msgstr "הערך נשאר ב-{envFileName}"
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr "ערך:"
+
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Values"
+msgstr ""
 
 #~ msgid "Values are kept in .env.local in your home folder"
 #~ msgstr ""
@@ -34384,8 +34658,9 @@ msgstr "שם המשתנה"
 msgid "Variables"
 msgstr "משתנים"
 
-#~ msgid "Vault"
-#~ msgstr ""
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Vault"
+msgstr ""
 
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
@@ -35289,6 +35564,10 @@ msgstr "לוח ציור (Excalidraw)"
 msgid "who calls whom, step by step — with sub-flows and feedback"
 msgstr "מי קורא למי, צעד אחר צעד — עם תת-זרימות ומשוב"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Who can read"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
 msgstr "מי רשאי להתחבר לסנדבוקס הזה"
@@ -35616,6 +35895,7 @@ msgstr "הסור"
 msgid "yes"
 msgstr "כן"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Yes"
 msgstr "כן"
@@ -35744,6 +36024,10 @@ msgstr "אי אפשר להזמין אנשים כאן — פנו אל {ownerName}
 msgid "You can't invite people here."
 msgstr "אי אפשר להזמין אנשים כאן."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "You declined it."
+msgstr ""
+
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "עדיין אינכם משויכים לארגון. ארגונים מוגדרים ב‑Flowpad Cloud, ולאחר שתתווספו — הארגון שלכם וחבריו יופיעו כאן."
@@ -35787,6 +36071,10 @@ msgstr "המאגר הזה נמצא ביותר מפרויקט אחד. פתחו א
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
 msgstr "עליכם להיות מחוברים"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "You need access to the {vaultLabel} vault."
+msgstr ""
 
 #: src/lib/publish-state.ts
 msgid "You now have the latest changes from the cloud."
@@ -36036,6 +36324,10 @@ msgstr "לא ניתן היה לשמור את הבקשה שלך."
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready."
 msgstr "הסנדבוקס שלכם מוכן."
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "your secret manager"
+msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Your session has expired. Sign in again to launch."

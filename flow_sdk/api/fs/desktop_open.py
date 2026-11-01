@@ -4,6 +4,7 @@ This module provides functionality to open files and folders using the OS defaul
 Only available in desktop and local environments for security reasons.
 """
 
+import os
 import platform
 import subprocess
 
@@ -11,6 +12,19 @@ from .fs_api import EntityFSReqInfo
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.storage import get_entity_storage
+
+
+def os_open_command(system: str, abs_path: str, *, reveal: bool = False) -> list[str] | None:
+    """The command that opens ``abs_path`` — or, with ``reveal``, shows it selected in the
+    OS file manager. None for an OS we have no opener for."""
+    if system == "Darwin":
+        return ["open", "-R", abs_path] if reveal else ["open", abs_path]
+    if system == "Windows":
+        return ["explorer", f"/select,{abs_path}"] if reveal else ["cmd", "/c", "start", "", abs_path]
+    if system == "Linux":
+        # No portable "select this file" on Linux: open the containing folder.
+        return ["xdg-open", os.path.dirname(abs_path.rstrip("/")) or "/"] if reveal else ["xdg-open", abs_path]
+    return None
 
 
 async def open_in_os(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[str]:
@@ -56,22 +70,18 @@ async def open_in_os(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Api
     # Both LocalStorageDriver and SandboxStorageDriver (in local mode) support get_storage_path
     abs_path = storage.get_storage_path(fs_info.abs_path)
 
+    reveal = (request_info.request.query_params.get("reveal") or "").lower() in ("1", "true", "yes")
     try:
-        # Determine the command based on the operating system
-        system = platform.system()
-
-        if system == "Darwin":  # macOS
-            subprocess.run(["open", abs_path], check=True)
-        elif system == "Windows":
-            # Use 'start' command via cmd
-            subprocess.run(["cmd", "/c", "start", "", abs_path], check=True, shell=True)
-        elif system == "Linux":
-            subprocess.run(["xdg-open", abs_path], check=True)
-        else:
-            return ApiFailResponse(message=f"Unsupported operating system: {system}")
+        cmd = os_open_command(platform.system(), abs_path, reveal=reveal)
+        if cmd is None:
+            return ApiFailResponse(message=f"Unsupported operating system: {platform.system()}")
+        # Explorer's /select exits non-zero even when it worked, so its result is not checked.
+        subprocess.run(cmd, check=not (reveal and platform.system() == "Windows"))
 
         # Create a friendly message for the response
         target_name = fs_info.vpath.filename or "folder"
+        if reveal:
+            return ApiSuccessResponse(data=f"Revealed {target_name}")
         return ApiSuccessResponse(data=f"Opened {target_name} in default application")
 
     except subprocess.CalledProcessError as e:

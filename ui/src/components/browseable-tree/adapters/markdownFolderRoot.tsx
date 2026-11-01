@@ -20,6 +20,9 @@ import type {
   ToolbarAction,
 } from '@src/components/browseable-tree/types';
 import { AssetTypeCountBadge, parseAssetPointer } from './assetTypeRoot';
+import { withFsOps, type FsOpsCtx, type FsOpsHost } from './fsFileOps';
+import { TypeId } from '@sdk';
+import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { DEFAULT_ASSET_FILTER } from '@src/components/assets/assetFilter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
@@ -45,6 +48,10 @@ export interface MarkdownFolderRootDeps {
    *  Wired by the host (AssetsPage) to navigation.openDock — toolbar actions are
    *  side-effects, so navigation is performed by the host, not here. */
   onOpenKnowledgeBrowser?: (absPath: string) => void;
+  /** When set, every vault, folder and file row gets the file-manager
+   *  actions (toolbar, right-click, keys, drag move/copy, upload) — see
+   *  `fsFileOps`. Replaces `onCreateFolder` / `onMoveItem` on those rows. */
+  fileOps?: FsOpsHost;
 }
 
 export interface MarkdownFolderTarget {
@@ -232,8 +239,9 @@ export function childrenForPrefix(args: {
   prefixRel: string; // vault-relative dir, '' for the vault root
   onCreateFolder?: (target: MarkdownFolderTarget) => void;
   onMoveItem?: (item: MarkdownDragItem, target: MarkdownFolderTarget) => Promise<void> | void;
+  ops?: FsOpsCtx;
 }): Browseable[] {
-  const { typeName, typeid, vaultAbsPath, vaultRelPath, files, prefixRel, onCreateFolder, onMoveItem } = args;
+  const { typeName, typeid, vaultAbsPath, vaultRelPath, files, prefixRel, onCreateFolder, onMoveItem, ops } = args;
   const norm = normalizeRelPath(prefixRel);
   const head = norm ? `${norm}/` : '';
   const folderNames = new Set<string>();
@@ -264,6 +272,7 @@ export function childrenForPrefix(args: {
         kind: 'folder',
         onCreateFolder,
         onMoveItem,
+        ops,
       }),
     );
 
@@ -274,7 +283,7 @@ export function childrenForPrefix(args: {
       const childAbs = vaultAbsForPrefix(vaultAbsPath, childRel);
       const leafType = documentsTreeType(name);
       const LeafIcon = iconForType(leafType);
-      return {
+      const leaf: Browseable = {
         id: `md-file:${typeid}:${childAbs}`,
         kind: 'asset',
         label: name,
@@ -292,6 +301,8 @@ export function childrenForPrefix(args: {
           isDir: false,
         },
       };
+      const rel = normalizeRelPath(vaultRelForPrefix(vaultRelPath, childRel));
+      return ops ? withFsOps(leaf, ops, { rel, isDir: false, label: name }) : leaf;
     });
 
   return [...folders, ...fileLeaves];
@@ -315,6 +326,7 @@ function folderBrowseable(args: {
   onCreateFolder?: (target: MarkdownFolderTarget) => void;
   onMoveItem?: (item: MarkdownDragItem, target: MarkdownFolderTarget) => Promise<void> | void;
   onOpenKnowledgeBrowser?: (absPath: string) => void;
+  ops?: FsOpsCtx;
 }): Browseable {
   const {
     typeName,
@@ -328,6 +340,7 @@ function folderBrowseable(args: {
     onCreateFolder,
     onMoveItem,
     onOpenKnowledgeBrowser,
+    ops,
   } = args;
   // This folder's own paths derive from the vault root + its vault-relative prefix.
   const absPath = vaultAbsForPrefix(vaultAbsPath, prefixRel);
@@ -364,7 +377,7 @@ function folderBrowseable(args: {
       await toggleRoot(absPath);
     },
   };
-  return {
+  const node: Browseable = {
     id: markdownFolderNodeId(typeid, absPath),
     kind,
     label,
@@ -373,7 +386,8 @@ function folderBrowseable(args: {
     icon: <RagFolderIcon Base={Folder} path={absPath} size={kind === 'vault-root' ? 'h-4 w-4' : 'h-3.5 w-3.5'} />,
     hasChildren: true,
     pointer: DockPointer.forAssetFolder(typeName, typeid, relPath),
-    toolbar: [...(folderToolbar(target, onCreateFolder) ?? []), ragAction, ...kbAction],
+    // With file ops on, New folder comes from them (beside New file).
+    toolbar: [...((!ops && folderToolbar(target, onCreateFolder)) || []), ragAction, ...kbAction],
     dragData:
       kind === 'folder'
         ? {
@@ -408,9 +422,13 @@ function folderBrowseable(args: {
         prefixRel,
         onCreateFolder,
         onMoveItem,
+        ops,
       });
     },
   };
+  return ops
+    ? withFsOps(node, ops, { rel: normalizeRelPath(relPath), isDir: true, label }, { isTop: kind === 'vault-root' })
+    : node;
 }
 
 /** Mirror of backend ``apply_scope_filter`` for vault listing. Reads the
@@ -481,6 +499,46 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
     return <RagFolderIcon Base={Base} path={v.absPath} size="h-4 w-4" />;
   };
 
+  // One file-ops binding per vault: its paths live on the vault's entity, and
+  // any change re-walks the vault (its sub-folders list from that one walk).
+  const opsByVault = new Map<string, FsOpsCtx>();
+  const vaultOps = (v: AssetTypeVault): FsOpsCtx | undefined => {
+    if (!deps.fileOps) return undefined;
+    let ctx = opsByVault.get(v.absPath);
+    if (!ctx) {
+      const vaultRel = normalizeRelPath(v.relPath);
+      const inVault = (rel: string) => {
+        const r = normalizeRelPath(rel);
+        return vaultRel && r.startsWith(`${vaultRel}/`) ? r.slice(vaultRel.length + 1) : r === vaultRel ? '' : r;
+      };
+      const machinePathFor = (rel: string) => vaultAbsForPrefix(v.absPath, inVault(rel));
+      const vaultNodeId = markdownFolderNodeId(v.typeid, v.absPath);
+      const typeId = new TypeId(v.typeid);
+      ctx = {
+        typeId,
+        locatorTypeId: typeId,
+        anchor: vaultRel,
+        dirNodeId: () => vaultNodeId,
+        machinePathFor,
+        filePointerFor: (path) => {
+          const machine = machinePathFor(path.entitySubPath);
+          return DockPointer.forAssetEditor(documentsTreeType(machine), machine);
+        },
+        afterChange: () => {
+          _vaultFilesCache.delete(v.absPath);
+          refreshNode(vaultNodeId);
+          // Keep search and counts in step with the disk; the tree no longer waits on it.
+          deps.indexType(type.type_name, deps.filter?.scope, { force: true }).catch((err) => {
+            console.error('[markdownFolderRoot] reindex after file change failed:', err);
+          });
+        },
+        host: deps.fileOps,
+      };
+      opsByVault.set(v.absPath, ctx);
+    }
+    return ctx;
+  };
+
   const buildVaultNode = (v: AssetTypeVault): Browseable => ({
     ...folderBrowseable({
       typeName: type.type_name,
@@ -493,6 +551,7 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
       onCreateFolder: deps.onCreateFolder,
       onMoveItem: deps.onMoveItem,
       onOpenKnowledgeBrowser: deps.onOpenKnowledgeBrowser,
+      ops: vaultOps(v),
     }),
     icon: vaultIcon(v),
   });
@@ -554,6 +613,7 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
               kind: 'folder',
               onCreateFolder: deps.onCreateFolder,
               onMoveItem: deps.onMoveItem,
+              ops: vaultOps(vault),
             }),
           );
         }
@@ -585,6 +645,7 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
               kind: 'folder',
               onCreateFolder: deps.onCreateFolder,
               onMoveItem: deps.onMoveItem,
+              ops: vaultOps(vault),
             }),
           );
         }

@@ -301,6 +301,28 @@ async def _send_to_tab(connection: tuple[str, Any], target: dict[str, Any]) -> N
         )
 
 
+async def _target_project(target: dict[str, Any]) -> Optional[str]:
+    """The project an entity-backed target (an entity, an app) belongs to — its tab opens in
+    that project's strip. ``None`` for a file, a URL or a screen."""
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+
+    if target.get("type") and target.get("id"):
+        return await Entity.project_id_of(str(target["type"]), str(target["id"]))
+    entity_type, _, entity_id = str(target.get("typeid") or "").partition("-")
+    return await Entity.project_id_of(entity_type, entity_id) if entity_id else None
+
+
+def where_shown(placement: dict[str, Any], target_project: Optional[str]) -> str:
+    """Where a show landed, in words for the agent — a show never switches the person's view,
+    so "delivered" alone does not say they can see it."""
+    if placement.get("host"):
+        return "Shown in the session's Display pane."
+    where = "Opened as a tab beside the session's tab" if placement.get("tab_id") else "Opened as a new tab"
+    if target_project and target_project != placement.get("project_id"):
+        where += f" in project {target_project}, not the session's project"
+    return where + "; the person's view was not switched — tell them where to find it."
+
+
 async def deliver(
     pointer: str,
     target: dict[str, Any],
@@ -311,8 +333,8 @@ async def deliver(
     """Hand a resolved target to a session's display or a browser tab. ``OK`` when
     delivered, else why not; the target's health is ``probe_target``'s question."""
     if process is not None:
-        await process.on_show(target)
-        return NavigateResult.satisfied(pointer=pointer, delivered=True)
+        placement = await process.on_show(target)
+        return NavigateResult.satisfied(where_shown(placement, await _target_project(target)), pointer=pointer, delivered=True)
     connection = pick_connection(connection_id)
     if isinstance(connection, NavigateResult):
         return connection.model_copy(update={"pointer": pointer})
@@ -325,7 +347,9 @@ def _verdict(delivered: NavigateResult, probed: tuple[ExitCode, Optional[str], s
     if delivered.exit_code is not ExitCode.OK:
         return delivered
     code, verdict, detail = probed
-    return delivered.model_copy(update={"exit_code": code, "verdict": verdict, "detail": detail})
+    # Where it went (a show's placement) and what the probe found are both worth saying.
+    said = " ".join(part for part in (delivered.detail, detail) if part)
+    return delivered.model_copy(update={"exit_code": code, "verdict": verdict, "detail": said})
 
 
 # ── the call ──────────────────────────────────────────────────────────────────

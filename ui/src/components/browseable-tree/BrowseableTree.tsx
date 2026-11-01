@@ -5,9 +5,17 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from '@src/components/ui/context-menu';
 import { openBrowseable } from './open';
 import { useLocaleInfo } from '@src/contexts/locale-context';
-import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
+import type { Browseable, BrowseableDragData, BrowseableTreeProps, RowKeyAction, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
 import {
   collectDroppedEntries,
@@ -371,6 +379,12 @@ function BrowseableRow({
   const [draft, setDraft] = useState('');
   const canRename = !!node.onRename && !node.content;
 
+  const startRename = useCallback(() => {
+    if (!canRename) return;
+    setDraft(node.label);
+    setEditing(true);
+  }, [canRename, node.label]);
+
   // Restored expansion (persistKey / defaultExpandedIds) marks nodes expanded
   // without the children fetch that interactive expand() runs — load on first
   // render in that state so restored layers aren't empty.
@@ -436,14 +450,53 @@ function BrowseableRow({
   // click both shows the content (right pane) AND expands (left pane).
   const handleDoubleClick = useCallback(() => {
     if (canRename && isSelected) {
-      setDraft(node.label);
-      setEditing(true);
+      startRename();
       return;
     }
     if (hasChildrenHint) {
       void tree.toggleExpand(node);
     }
-  }, [canRename, isSelected, node, hasChildrenHint, tree]);
+  }, [canRename, isSelected, startRename, node, hasChildrenHint, tree]);
+
+  /** The rows an action applies to: the whole multi-selection when this row is
+   *  part of one, else just this row. */
+  const rowsForAction = useCallback(
+    (): Browseable[] => (multiSelected && selection && selection.count > 1 ? selection.selectedNodes : [node]),
+    [multiSelected, selection, node],
+  );
+
+  const handleRowKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (editing || e.target !== e.currentTarget) return;
+      const mod = e.metaKey || e.ctrlKey;
+      let action: RowKeyAction | null = null;
+      if (e.key === 'F2') {
+        if (!canRename) return;
+        e.preventDefault();
+        startRename();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (!openBrowseable(node, onNavigate) && hasChildrenHint) void tree.toggleExpand(node);
+        return;
+      }
+      if (e.key === 'Delete' || (e.key === 'Backspace' && mod)) action = 'delete';
+      else if (mod && !e.shiftKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'c') action = 'copy';
+        else if (k === 'x') action = 'cut';
+        else if (k === 'v') action = 'paste';
+        else if (k === 'd') action = 'duplicate';
+      }
+      const run = action ? node.keyActions?.[action] : undefined;
+      if (!run) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void run(rowsForAction());
+    },
+    [editing, canRename, startRename, node, onNavigate, hasChildrenHint, tree, rowsForAction],
+  );
 
   const commitRename = useCallback(async () => {
     setEditing(false);
@@ -508,9 +561,15 @@ function BrowseableRow({
       if (!node.dragData) return;
       e.stopPropagation();
       writeBrowseableDrag(e, node.dragData);
+      // Dragging a file out of the window onto the desktop saves it there
+      // (Chromium / Electron). Ignored by drop targets inside the app.
+      if (node.downloadUrl) {
+        e.dataTransfer.setData('DownloadURL', `application/octet-stream:${node.label}:${node.downloadUrl}`);
+        e.dataTransfer.effectAllowed = 'copyMove';
+      }
       onDragStart(node.dragData);
     },
-    [node.dragData, onDragStart],
+    [node.dragData, node.downloadUrl, node.label, onDragStart],
   );
 
   const handleDragEnd = useCallback(() => {
@@ -527,7 +586,7 @@ function BrowseableRow({
       if (!canAcceptDrop && !foreign && !external) return;
       e.preventDefault();
       e.stopPropagation();
-      e.dataTransfer.dropEffect = external && !canAcceptDrop && !foreign ? 'copy' : 'move';
+      e.dataTransfer.dropEffect = (external && !canAcceptDrop && !foreign) || e.altKey ? 'copy' : 'move';
       setIsDropTarget(true);
     },
     [canAcceptDrop, dragData, node.onDrop, node.onExternalFilesDrop],
@@ -569,8 +628,10 @@ function BrowseableRow({
       e.stopPropagation();
       setIsDropTarget(false);
       setIsDropping(true);
+      // Alt/Option held at drop time ⇒ copy instead of move.
+      const copy = e.altKey;
       try {
-        await node.onDrop(payload);
+        await node.onDrop(payload, { copy });
       } finally {
         setIsDropping(false);
         onDragEnd();
@@ -619,6 +680,8 @@ function BrowseableRow({
       data-multi-selected={multiSelected || undefined}
       aria-expanded={hasChildrenHint ? expanded : undefined}
       draggable={!!node.dragData}
+      tabIndex={node.keyActions || canRename ? -1 : undefined}
+      onKeyDown={handleRowKeyDown}
       onPointerEnter={handleRowPointerEnter}
       onPointerLeave={handleRowPointerLeave}
       onDragStart={handleDragStart}
@@ -706,11 +769,53 @@ function BrowseableRow({
           data-testid={`browseable-row-toolbar-${node.id}`}
         >
           {node.toolbar.map((a) => (
-            <ToolbarButton key={a.id} action={a} compact />
+            <ToolbarButton key={a.id} action={a} compact onStartRename={startRename} />
           ))}
         </div>
       )}
     </div>
+  );
+
+  // Right-click: the row's menu, built when it opens so live state (a
+  // clipboard to paste) is current. Right-clicking a row outside the
+  // multi-selection drops the selection, like every file manager.
+  const [menuItems, setMenuItems] = useState<ToolbarAction[]>([]);
+  const triggerEl = node.contextMenu ? (
+    <ContextMenu
+      onOpenChange={(open) => {
+        if (!open) return;
+        if (canSelect && !multiSelected) selection.anchorAndClear(node, rootId);
+        setMenuItems(typeof node.contextMenu === 'function' ? node.contextMenu() : (node.contextMenu ?? []));
+      }}
+    >
+      <ContextMenuTrigger asChild>{rowEl}</ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[13rem]" data-testid={`browseable-context-menu-${node.id}`}>
+        {menuItems.map((a, i) => {
+          const disabled = typeof a.disabled === 'function' ? a.disabled() : !!a.disabled;
+          return (
+            <React.Fragment key={a.id}>
+              {a.separatorBefore && i > 0 && <ContextMenuSeparator />}
+              <ContextMenuItem
+                disabled={disabled}
+                className={`gap-2 text-xs ${a.destructive ? 'text-destructive focus:text-destructive' : ''}`}
+                data-testid={`browseable-menu-${a.id}`}
+                onSelect={() => {
+                  // Let the menu close (and give focus back) before the rename input mounts.
+                  if (a.startsRename) setTimeout(startRename, 0);
+                  else void a.run(rowsForAction());
+                }}
+              >
+                <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{a.icon}</span>
+                {a.label}
+                {a.shortcut && <ContextMenuShortcut>{a.shortcut}</ContextMenuShortcut>}
+              </ContextMenuItem>
+            </React.Fragment>
+          );
+        })}
+      </ContextMenuContent>
+    </ContextMenu>
+  ) : (
+    rowEl
   );
 
   return (
@@ -721,7 +826,7 @@ function BrowseableRow({
     >
       {node.tooltip || node.entity ? (
         <Tooltip>
-          <TooltipTrigger asChild>{rowEl}</TooltipTrigger>
+          <TooltipTrigger asChild>{triggerEl}</TooltipTrigger>
           {/* Sideways, never below: rows stack vertically, so a bottom tooltip
               would cover the next row and sit in the pointer's downward travel
               path. WHICH side depends on the host — away from the panel, into
@@ -741,7 +846,7 @@ function BrowseableRow({
           )}
         </Tooltip>
       ) : (
-        rowEl
+        triggerEl
       )}
 
       {expanded && (
@@ -804,7 +909,16 @@ function BrowseableRow({
   );
 }
 
-export function ToolbarButton({ action, compact }: { action: ToolbarAction; compact?: boolean }) {
+export function ToolbarButton({
+  action,
+  compact,
+  onStartRename,
+}: {
+  action: ToolbarAction;
+  compact?: boolean;
+  /** Runs instead of `action.run` for a `startsRename` action. */
+  onStartRename?: () => void;
+}) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   // A destructive action takes two clicks: the first arms it, the second runs.
@@ -813,6 +927,10 @@ export function ToolbarButton({ action, compact }: { action: ToolbarAction; comp
 
   const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (action.startsRename) {
+      onStartRename?.();
+      return;
+    }
     if (action.destructive && !armed) {
       setArmed(true);
       return;
