@@ -21,6 +21,7 @@ import { cn } from '@src/lib/utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { AssetEditor, editorForPath } from '@src/navigation/asset-doc-types';
 import { isImagePath } from '@sdk';
+import { useValueKind, valueKindMeta } from '@src/components/value-viewer/useValueKind';
 import { MediaLightbox, isVideoPath, videoSource } from '@src/components/ui/media-lightbox';
 
 function extOf(name: string): string {
@@ -125,6 +126,9 @@ interface AttachmentChipProps {
    *  Explorer). Reuses the interactive terminal's reveal-in-folder helper.
    *  When provided, an "open external folder" icon shows in the overlay. */
   onRevealInFolder?: () => void;
+  /** The file's local path, when it is on this machine. A value file (`*.value.json`) is read
+   *  from it so the chip names the value's kind instead of "JSON". */
+  localPath?: string | null;
 }
 
 /** What "open" does for this file: browse an archive, show a value, or edit text. */
@@ -142,8 +146,10 @@ export function AttachmentChip({
   downloading = false,
   onOpenInEditor,
   onRevealInFolder,
+  localPath,
 }: AttachmentChipProps) {
   const { t } = useLingui();
+  const valueKind = useValueKind(state === AttachmentChipState.Downloaded ? localPath : null);
   const [imgFailed, setImgFailed] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const [lightbox, setLightbox] = useState(false);
@@ -339,7 +345,10 @@ export function AttachmentChip({
     );
   }
 
-  const { Icon, bg, label } = fileMeta(filename);
+  // A value of a kind is shown as that kind, not as the JSON it is stored in.
+  const { Icon, bg, label } = valueKind
+    ? { ...valueKindMeta(valueKind), bg: 'bg-teal-600' }
+    : fileMeta(filename);
 
   const cardInner = (
     <>

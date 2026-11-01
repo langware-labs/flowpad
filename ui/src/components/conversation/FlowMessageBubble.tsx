@@ -44,6 +44,7 @@ import {
   isAttachmentMissing,
 } from '@sdk/entities/flow-message';
 import { Download, File, Loader2, Play, X } from 'lucide-react';
+import { valueKindMeta } from '@src/components/value-viewer/useValueKind';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
@@ -613,6 +614,7 @@ export function FlowMessageBubble({
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
+            localPath={item.localPath}
             onOpenInEditor={
               item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
             }
@@ -671,6 +673,7 @@ export function FlowMessageBubble({
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
+            localPath={item.localPath}
             onOpenInEditor={
               item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
             }
@@ -916,6 +919,8 @@ function MessageFileChip({
 }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
+  // A value of a kind (`*.value.json`) is named by its kind, not shown as a bare file.
+  const value = attachment.value_kind ? valueKindMeta(attachment.value_kind) : null;
   return (
     <>
       <EntityChip
@@ -923,8 +928,8 @@ function MessageFileChip({
           typeId,
           type: 'file',
           id: String(attachment.asset_id ?? ''),
-          name: attachment.name ?? 'file',
-          icon: File,
+          name: value?.label ?? attachment.name ?? 'file',
+          icon: value?.Icon ?? File,
         }}
         staged={!attachment.installed}
         onClick={() => setReviewOpen(true)}
