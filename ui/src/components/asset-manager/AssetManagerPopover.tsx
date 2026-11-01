@@ -537,6 +537,38 @@ export function AssetManagerPopover({
               workerLabel={workerType ? workerLabel(workerType) : undefined}
               workerIcon={workerType ? workerIcon(workerType) : undefined}
             />
+          </div>
+        )}
+      </div>
+
+      {view !== 'pick-project' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-1.5 border-b bg-muted/20 px-2 py-1.5">
+            <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              type="text"
+              placeholder={searchPlaceholder ?? t`Filter…`}
+              value={listFilter}
+              onChange={(e) => setListFilter(e.target.value)}
+              className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+              data-testid="asset-manager-list-filter"
+            />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'scope' | 'name')}
+              className="rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+              title={t`Sort within each type`}
+              data-testid="asset-manager-list-sort"
+            >
+              <option value="scope">
+                <Trans>By scope</Trans>
+              </option>
+              <option value="name">
+                <Trans>By name</Trans>
+              </option>
+            </select>
+            <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
             {/* Prop-gated: pick surfaces supply neither handler, so no
                   DropdownMenu mounts there at all — which is what keeps this
                   component safe to drop into a composer that forbids nested
@@ -595,38 +627,6 @@ export function AssetManagerPopover({
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-          </div>
-        )}
-      </div>
-
-      {view !== 'pick-project' ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-1.5 border-b bg-muted/20 px-2 py-1.5">
-            <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-            <input
-              autoFocus
-              type="text"
-              placeholder={searchPlaceholder ?? t`Filter…`}
-              value={listFilter}
-              onChange={(e) => setListFilter(e.target.value)}
-              className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-              data-testid="asset-manager-list-filter"
-            />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'scope' | 'name')}
-              className="rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-              title={t`Sort within each type`}
-              data-testid="asset-manager-list-sort"
-            >
-              <option value="scope">
-                <Trans>By scope</Trans>
-              </option>
-              <option value="name">
-                <Trans>By name</Trans>
-              </option>
-            </select>
-            <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
             {/* The run's principal — the Agent it was launched through. */}
