@@ -6126,6 +6126,10 @@ msgid "Changed since publish"
 msgstr "Changed since publish"
 
 #: src/components/assets/editor/changes/useDocChanges.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Changed since use"
+msgstr "Changed since use"
+
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
@@ -21396,6 +21400,10 @@ msgid "Not installed"
 msgstr "Not installed"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Not found on disk"
+msgstr "Not found on disk"
+
 msgid "Not launched yet in this project"
 msgstr "Not launched yet in this project"
 
@@ -29330,6 +29338,10 @@ msgstr "Share {0} over Git"
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 msgid "Share {agentName}"
 msgstr "Share {agentName}"
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Several matches"
+msgstr "Several matches"
+
 
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "Share {orgName}"
@@ -34446,6 +34458,11 @@ msgstr "Unknown Lens Type"
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Unknown list"
 msgstr "Unknown list"
+#. placeholder {0}: unknownUsage.length
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unknown assets ({0})"
+msgstr "Unknown assets ({0})"
+
 
 #. placeholder {0}: draft.provider
 #: src/components/data-sources/source-form.ts
@@ -34479,6 +34496,10 @@ msgstr "Unpin"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Unpin — remove from prompt library"
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unknown name"
+msgstr "Unknown name"
+
 msgstr "Unpin — remove from prompt library"
 
 #. placeholder {0}: opener.label
@@ -34901,8 +34922,8 @@ msgid "Used by: {usedBy}"
 msgstr "Used by: {usedBy}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Used in transcript"
-msgstr "Used in transcript"
+#~ msgid "Used in transcript"
+#~ msgstr "Used in transcript"
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "user"

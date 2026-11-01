@@ -1,5 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import {
   assetDescriptorHasUsage,
   dataContext,
@@ -12,6 +14,7 @@ import {
   VFSPath,
   type Agent,
   type AssetDescriptor,
+  type ProcessAssetUsage,
 } from '@sdk';
 import { LaunchingAgentRow } from '@src/components/agents/LaunchingAgentRow';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -35,8 +38,10 @@ import { EntityIcon, useEntityLocationLabel } from '@src/components/graph-view/u
 import {
   basename as _basename,
   descriptorKey,
+  dirname,
   displayLabelForDescriptor as _displayLabelForDescriptor,
   isOpenableTypeid as _isOpenableTypeid,
+  normalizePath,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -49,6 +54,7 @@ import {
   ArrowDownAZ,
   Boxes,
   ChevronRight,
+  CircleHelp,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -450,6 +456,14 @@ export function AssetManagerPopover({
     return additionalDirs.filter((p) => p.toLowerCase().includes(q));
   }, [additionalDirs, listFilter]);
 
+  // Transcript usage that matched no asset. Expected to be empty; listed last,
+  // and only when there is something to list.
+  const unresolvedUsage = (assets ?? ownAssets).unresolvedUsage;
+  const unknownUsage = useMemo(() => {
+    const q = listFilter.trim().toLowerCase();
+    return (unresolvedUsage ?? []).filter((u) => !q || u.reference.toLowerCase().includes(q));
+  }, [unresolvedUsage, listFilter]);
+
   const filteredProjects = useMemo(() => {
     const q = projectQuery.trim().toLowerCase();
     const list = allProjects.filter((p) => {
@@ -632,14 +646,6 @@ export function AssetManagerPopover({
             {/* The run's principal — the Agent it was launched through. */}
             {showPinnedRows && agent && <LaunchingAgentRow agent={agent} testId="asset-manager-launching-agent" className="m-1 w-[calc(100%-0.5rem)]" />}
             {filteredDirs.map((path) => <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />)}
-            {(assets ?? ownAssets).unresolvedUsage?.map((usage) => (
-              <div key={`${usage.resolution}:${usage.reference}`} className="px-3 py-2 text-xs" data-testid="asset-unresolved-usage">
-                <div className="truncate" title={usage.reference}>{usage.reference}</div>
-                <div className="text-muted-foreground">
-                  <Trans>Used in transcript</Trans> · {usage.resolution}
-                </div>
-              </div>
-            ))}
             {!!scanIssues?.length && (
               <details className="px-3 py-2 text-xs text-amber-700" data-testid="asset-scan-issues">
                 <summary><Trans>Some assets could not be read.</Trans></summary>
@@ -652,7 +658,7 @@ export function AssetManagerPopover({
                 <Trans>Could not verify available assets.</Trans>
               </div>
             )}
-            {!listError && sections.length === 0 && !(assets ?? ownAssets).unresolvedUsage?.length &&
+            {!listError && sections.length === 0 && unknownUsage.length === 0 &&
               filteredDirs.length === 0 &&
               (listIsLoading ? (
                 <div
@@ -702,6 +708,16 @@ export function AssetManagerPopover({
                 ))}
               </Fragment>
             ))}
+            {unknownUsage.length > 0 && (
+              <>
+                <AssetSectionRule testid="asset-manager-section-unknown">
+                  <Trans>Unknown assets ({unknownUsage.length})</Trans>
+                </AssetSectionRule>
+                {unknownUsage.map((usage) => (
+                  <UnknownAssetRow key={`${usage.resolution}:${usage.reference}`} usage={usage} />
+                ))}
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -772,6 +788,44 @@ export function AssetManagerPopover({
 }
 
 // ── Row components ────────────────────────────────────────────────────────────
+
+/** A skill's folder, not its SKILL.md: ".../skills/rca/SKILL.md" → "rca". */
+function unknownUsageName(reference: string): string {
+  const path = normalizePath(reference);
+  const last = _basename(path);
+  return /^SKILL\.md$/i.test(last) && path.includes('/') ? _basename(dirname(path)) : last;
+}
+
+/** Every outcome that lands in the unknown list needs a reason — a new one breaks the build. */
+type UnknownResolution = Exclude<ProcessAssetUsage['resolution'], 'resolved' | 'builtin'>;
+const UNKNOWN_REASONS: Record<UnknownResolution, MessageDescriptor> = {
+  missing: msg`Not found on disk`,
+  unbound: msg`Unknown name`,
+  ambiguous: msg`Several matches`,
+  identity_changed: msg`Changed since use`,
+};
+
+function UnknownAssetRow({ usage }: { usage: ProcessAssetUsage }) {
+  const { t } = useLingui();
+  const reason = UNKNOWN_REASONS[usage.resolution as UnknownResolution];
+  return (
+    <AssetGridRow data-testid="asset-unresolved-usage" data-resolution={usage.resolution}>
+      <span
+        className="flex min-w-0 items-center gap-1.5 rounded border border-dashed px-1.5 py-0.5 text-xs text-muted-foreground"
+        title={usage.reference}
+      >
+        <CircleHelp className="h-3 w-3 flex-shrink-0" aria-hidden />
+        <span className="truncate">{unknownUsageName(usage.reference)}</span>
+      </span>
+      <span className="truncate text-[10px] uppercase tracking-wide text-muted-foreground" data-testid="asset-unresolved-reason">
+        {reason ? t(reason) : usage.resolution}
+      </span>
+      <GridCellSpacer />
+      <GridCellSpacer />
+      <GridCellSpacer />
+    </AssetGridRow>
+  );
+}
 
 function DirRow({ path, onRemove }: { path: string; onRemove?: (path: string) => void | Promise<void> }) {
   const { t } = useLingui();
