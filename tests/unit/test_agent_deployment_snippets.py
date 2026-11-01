@@ -197,7 +197,7 @@ async def test_5_a_machine_of_its_own(monkeypatch):
     assert published == [("researcher", str(ns["actor"]))], "publish comes first, as the caller"
     assert ns["receipt"]["deployment_id"] == "0f8d0356-504f-466c-a0e9-ee2ac90e4a4b", "the planned placement"
     assert ns["receipt"]["activity"]["path"] == "deploy"
-    await machine.wait()
+    assert machine.is_set() and ns["deploy"].spec().state == "completed", "the script waited for the machine"
 
 
 async def test_7_the_shown_loop_is_the_shipped_one():
