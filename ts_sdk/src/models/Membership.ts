@@ -1,7 +1,8 @@
 import { TypeId } from './TypeId';
 
 /** The roles a membership can carry — declared with the shapes that use it. */
-export type UserRole = 'owner' | 'admin' | 'editor' | 'guest' | 'reader' | 'anonymous_viewer';
+export type { Role as UserRole } from './roles';
+import type { Role } from './roles';
 export type MembershipStatus = 'pending' | 'approved';
 
 export type InvitationMethod = 'id' | 'email' | 'invitation';
@@ -10,7 +11,7 @@ export interface Membership {
   user_id: string;
   user_email: string;
   user_name?: string;
-  role: string; // TODO: change to UserRole
+  roles: Role[];
   user_picture?: string;
   status?: MembershipStatus;
   invitation_id?: string;
@@ -19,7 +20,7 @@ export interface Membership {
 
 export interface IInvitationTarget {
   typeid: TypeId | undefined;
-  role: UserRole;
+  roles: Role[];
 }
 
 export interface IMembershipRequest {

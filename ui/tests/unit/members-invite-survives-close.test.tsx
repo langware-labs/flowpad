@@ -15,9 +15,9 @@ vi.mock('@sdk/react/hooks', () => ({
 vi.mock('@src/hooks/use-members', () => ({
   useMembers: () => ({
     members: [
-      { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: myRole },
-      { user_id: 'dana-id', email: 'dana@example.com', name: 'Dana', role: 'member' },
-      { user_id: 'ari-id', email: 'ari@example.com', name: 'Ari', role: 'admin' },
+      { user_id: 'me-id', email: 'me@example.com', name: 'Me', roles: [myRole] },
+      { user_id: 'dana-id', email: 'dana@example.com', name: 'Dana', roles: ['reader'] },
+      { user_id: 'ari-id', email: 'ari@example.com', name: 'Ari', roles: ['admin'] },
     ],
     addMembers,
     removeMember: vi.fn(),

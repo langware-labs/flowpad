@@ -19,7 +19,7 @@ export class User extends APIEntity<User> implements IUser {
   user_id?: string;
   last_login?: Date;
   organization_id?: string;
-  organization_role?: string;
+  organization_roles?: string[];
   onboarded?: boolean;
   static type: string = 'user';
 
@@ -31,7 +31,7 @@ export class User extends APIEntity<User> implements IUser {
     this.user_id = entity.user_id;
     this.last_login = entity.last_login;
     this.organization_id = entity.organization_id;
-    this.organization_role = entity.organization_role;
+    this.organization_roles = entity.organization_roles;
     this.onboarded = entity.onboarded;
   }
 

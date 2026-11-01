@@ -775,7 +775,7 @@ async def get_or_create_local_user() -> User:
         uname="local",
         name=name,
         email=email,
-        visitor_role="owner",
+        visitor_roles=["owner"],
     )
     user.add_label(DESKTOP_LABEL)
 
@@ -803,7 +803,7 @@ async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
 
     Both are the same recipe: a stable per-machine id, a ``uname="local"``
     fallback lookup for rows minted before that id existed, and a create with
-    ``visitor_role="owner"`` that tolerates a concurrent creator.
+    ``visitor_roles=["owner"]`` that tolerates a concurrent creator.
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     (init_local_project / init_local_workspace).
@@ -834,7 +834,7 @@ async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
         type=entity_type,
         uname="local",
         name=name,
-        visitor_role="owner",
+        visitor_roles=["owner"],
     )
     try:
         await entity.save(owner=owner)
@@ -846,18 +846,18 @@ async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
             if existing:
                 return existing
         raise save_error
-    await entity.set_visitor_role("owner")
+    await entity.set_visitor_roles(["owner"])
     logging.info("Created @local %s: %s with owner: %s", entity_type, entity.id, owner.id if owner else "None")
     return entity
 
 
 async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> Project:
-    """Get or create the @local project (uname="local", visitor_role="owner")."""
+    """Get or create the @local project (uname="local", visitor_roles=["owner"])."""
     return await _get_or_create_local(Project, name="my_first_project", owner=desktop_user)
 
 
 async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -> Workspace:
-    """Get or create the @local workspace (uname="local", visitor_role="owner")."""
+    """Get or create the @local workspace (uname="local", visitor_roles=["owner"])."""
     return await _get_or_create_local(Workspace, name="Local Desktop Workspace", owner=desktop_user)
 
 
@@ -988,7 +988,7 @@ async def get_or_create_sandbox_compute_node(
             node_provider_type=ComputeProviderType.E2B,
             fs_storage_provider=StorageProvider.SANDBOX,
             fs_storage_mount_path=sandbox_mount_path,
-            visitor_role="owner",
+            visitor_roles=["owner"],
         )
         try:
             await compute_node.save(owner=desktop_user)
@@ -1010,7 +1010,7 @@ async def get_or_create_sandbox_compute_node(
     if not already_existed:
         if local_project:
             await local_project.add_child(compute_node)
-        await compute_node.set_visitor_role("owner")
+        await compute_node.set_visitor_roles(["owner"])
 
     if not compute_node.node_provider_id:
         try:
@@ -1073,7 +1073,7 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
             name=display_name,
             fs_storage_mount_path=mount_path,
             fs_storage_provider=StorageProvider.LOCAL.value,
-            visitor_role="owner",
+            visitor_roles=["owner"],
             system=True,
         )
         try:
@@ -1085,7 +1085,7 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
                     ensured.append(retry)
                     continue
             raise
-        await project.set_visitor_role("owner")
+        await project.set_visitor_roles(["owner"])
         ensured.append(project)
         logging.info(f"[bootstrap] Created system project '{uname}' at {mount_path}")
 
@@ -2130,7 +2130,7 @@ def entity_to_dict(entity) -> dict:
         "name": getattr(entity, "name", None) or getattr(entity, "title", None),
         "title": getattr(entity, "title", None),
         "email": getattr(entity, "email", None),
-        "visitor_role": entity.visitor_role,
+        "visitor_roles": entity.visitor_roles,
     }
 
 

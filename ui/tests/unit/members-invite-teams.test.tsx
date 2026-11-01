@@ -1,7 +1,7 @@
 /**
  * Teams in the project MEMBERS popover's add-member form.
  *
- * On a Project, whoever can open the add-member form (an editor here, not only
+ * On a Project, whoever can open the add-member form (an admin here, not only
  * an admin) is offered the hub teams this desk knows; a picked team is ONE chip,
  * never expanded, and Apply sends people and teams through ONE `share` action
  * (`Project.invite`), where the hub grants each team as one principal. A granted
@@ -69,16 +69,16 @@ const CONVERSATION = new Conversation({
   remote: true,
 } as Partial<Conversation>);
 
-/** The roster the `members` action answers — I am an editor, not an admin. */
-const ME = { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'editor' };
+/** The roster the `members` action answers — I am an admin, not an admin. */
+const ME = { user_id: 'me-id', email: 'me@example.com', name: 'Me', roles: ['admin'] };
 const ROSTER = [ME];
 /** A roster after sandbox-team was granted: one team row, and its member Dana
  *  listed as an ordinary user row (the hub flattens inherited people). The
  *  popover reads the team's own roster to put Dana back under it. */
 const ROSTER_WITH_TEAM = [
   ME,
-  { type: 'team', id: SANDBOX.id, user_id: null, name: 'sandbox-team', role: 'member', status: 'approved' },
-  { user_id: 'dana-id', email: null, name: 'Dana', role: 'member' },
+  { type: 'team', id: SANDBOX.id, user_id: null, name: 'sandbox-team', roles: ['reader'], status: 'approved' },
+  { user_id: 'dana-id', email: null, name: 'Dana', roles: ['reader'] },
 ];
 
 const EMPTY_RESULT: ShareResult = {
@@ -106,7 +106,7 @@ const deleteCalls = () =>
 beforeEach(() => {
   shareResult = EMPTY_RESULT;
   roster = ROSTER;
-  teamRoster = [{ user_id: 'dana-id', email: null, name: 'Dana', role: 'member' }];
+  teamRoster = [{ user_id: 'dana-id', email: null, name: 'Dana', roles: ['reader'] }];
   refuseDelete = null;
   callAction = vi.spyOn(dataManager, 'callAction').mockImplementation((info: ActionInfo) => {
     if (info.name === 'members' && info.method === 'DELETE' && refuseDelete) {
@@ -130,9 +130,9 @@ afterEach(() => {
 
 async function openInvite(entity: Project | Conversation) {
   h.entity = entity;
-  render(<MembersAvatarStack typeId={new TypeId(entity.typeId.type, entity.id)} inviteRoles={['member', 'admin']} />);
+  render(<MembersAvatarStack typeId={new TypeId(entity.typeId.type, entity.id)} inviteRoles={['reader', 'admin']} />);
   fireEvent.click(screen.getByTestId('members-avatar-stack'));
-  // The form shows once my roster row (editor) has loaded.
+  // The form shows once my roster row (admin) has loaded.
   await screen.findByTestId('members-invite-form');
 }
 
@@ -143,7 +143,7 @@ const teamRows = () => screen.queryAllByTestId(`members-invite-row-team-${SANDBO
 const teamRole = () => screen.getByTestId(`members-invite-role-team-${SANDBOX.id}`);
 
 describe('members popover on a Project — teams', () => {
-  it('suggests sandbox-team as an editor types "sand"; picking it adds one row with the role fixed to member, picking again adds nothing', async () => {
+  it('suggests sandbox-team as an admin types "sand"; picking it adds one row with the role fixed to reader, picking again adds nothing', async () => {
     await openInvite(PROJECT);
 
     type('sand');
@@ -152,7 +152,7 @@ describe('members popover on a Project — teams', () => {
 
     expect(teamRows()).toHaveLength(1);
     expect(teamRows()[0]).toHaveTextContent('sandbox-team');
-    expect(teamRole().value).toBe('member');
+    expect(teamRole().value).toBe('reader');
     expect(teamRole()).toBeDisabled();
 
     type('sand');
@@ -171,7 +171,7 @@ describe('members popover on a Project — teams', () => {
 
     await waitFor(() => expect(shareCalls()).toHaveLength(1));
     expect(shareCalls()[0].bodyParameters).toEqual({
-      recipients: [{ idOrEmail: 'noa@example.com', role: 'member' }],
+      recipients: [{ idOrEmail: 'noa@example.com', roles: ['reader'] }],
       teams: [`team-${SANDBOX.id}`],
     });
     // Sent: the list and the team chip clear.
@@ -281,10 +281,10 @@ describe('members popover on a Project — a granted team on the roster', () => 
     const row = teamRow();
     expect(row.querySelector('[data-testid="member-team-icon"]')).not.toBeNull();
     expect(row.querySelector('[data-testid="member-role-select"]')).toBeNull();
-    expect(row).toHaveTextContent(/member/i);
+    expect(row).toHaveTextContent(/reader/i);
   });
 
-  it('can be removed by an editor, which revokes the grant by team id', async () => {
+  it('can be removed by an admin, which revokes the grant by team id', async () => {
     await openRoster();
 
     fireEvent.click(teamRow().querySelector('[data-testid="member-remove"]') as HTMLElement);
@@ -310,7 +310,7 @@ describe('members popover on a Project — a granted team on the roster', () => 
       return row;
     });
     expect(dana.previousElementSibling).toBe(teamRow());
-    expect(dana).toHaveTextContent(/member/i);
+    expect(dana).toHaveTextContent(/reader/i);
     expect(dana.querySelector('[data-testid="member-remove"]')).toBeNull();
     expect(dana.querySelector('[data-testid="member-role-select"]')).toBeNull();
     // Only the team row keeps its remove control.
@@ -320,8 +320,8 @@ describe('members popover on a Project — a granted team on the roster', () => 
   it('keeps a person with a role of their own on top of the team as a top-level row', async () => {
     roster = [
       ME,
-      { type: 'team', id: SANDBOX.id, user_id: null, name: 'sandbox-team', role: 'member', status: 'approved' },
-      { user_id: 'dana-id', email: null, name: 'Dana', role: 'member, admin' },
+      { type: 'team', id: SANDBOX.id, user_id: null, name: 'sandbox-team', roles: ['reader'], status: 'approved' },
+      { user_id: 'dana-id', email: null, name: 'Dana', roles: ['reader', 'admin'] },
     ];
     await openInvite(PROJECT);
 

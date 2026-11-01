@@ -187,15 +187,15 @@ it('links the canonical owning project and advances the same dialog', async () =
 it('flags a non-member under To; Fix reveals the role picker on Member', async () => {
   stable.membership.status = 'ready';
   stable.membership.nonMembers = ['bob@example.com'];
-  stable.membership.roles = ['guest', 'member'];
+  stable.membership.roles = ['runner', 'reader'];
   show();
   expect(screen.getByTestId('share-non-member').textContent).toContain('bob@example.com is not a member');
   expect(screen.queryByTestId('share-project-role')).toBeNull();
   fireEvent.click(screen.getByTestId('share-non-member-fix'));
-  expect((screen.getByTestId('share-project-role') as HTMLSelectElement).value).toBe('member');
+  expect((screen.getByTestId('share-project-role') as HTMLSelectElement).value).toBe('reader');
   fireEvent.click(screen.getByTestId('share-submit'));
   await waitFor(() => expect(commit).toHaveBeenCalledTimes(1));
-  expect(stable.membership.invite).toHaveBeenCalledWith({ 'bob@example.com': 'member' });
+  expect(stable.membership.invite).toHaveBeenCalledWith({ 'bob@example.com': ['reader'] });
 });
 it('starts with nobody in To when the caller names no one', () => {
   show({ initialParticipants: undefined });
@@ -219,7 +219,7 @@ it('asks to link without a project box: Skip on the left of Link', () => {
 it('does not send after a project invitation fails', async () => {
   stable.membership.status = 'ready';
   stable.membership.nonMembers = ['bob@example.com'];
-  stable.membership.roles = ['guest'];
+  stable.membership.roles = ['runner'];
   stable.membership.invite.mockRejectedValue(new Error('Invitation failed'));
   show();
   fireEvent.click(screen.getByTestId('share-submit'));
@@ -257,14 +257,14 @@ it('does not carry a completed old Link attempt into a reopened draft', async ()
 it('keeps an existing recipient’s role choice when another recipient is added', () => {
   stable.membership.status = 'ready';
   stable.membership.nonMembers = ['bob@example.com'];
-  stable.membership.roles = ['guest', 'member'];
+  stable.membership.roles = ['runner', 'reader'];
   show();
   fireEvent.click(screen.getByTestId('share-non-member-fix'));
-  fireEvent.change(screen.getByTestId('share-project-role'), { target: { value: 'none' } });
+  fireEvent.change(screen.getByTestId('share-project-role'), { target: { value: '' } });
   stable.membership.nonMembers = ['bob@example.com', 'alice@example.com'];
   fireEvent.change(screen.getByTestId('test-recipients'), { target: { value: 'bob@example.com,alice@example.com' } });
   expect((screen.getAllByTestId('share-project-role') as HTMLSelectElement[]).map((choice) => choice.value)).toEqual([
-    'none',
+    '',
   ]);
   expect(screen.getAllByTestId('share-non-member')).toHaveLength(1);
   stable.membership.nonMembers = ['alice@example.com'];
@@ -295,7 +295,7 @@ describe('sharing a thing', () => {
   it('sends Git and a copy whoever the recipients are; each receiver picks', () => {
     stable.membership.outsiders = ['bob@example.com'];
     stable.membership.nonMembers = ['bob@example.com'];
-    stable.membership.roles = ['guest'];
+    stable.membership.roles = ['runner'];
     show({ source: thing, commit: undefined });
     expect(screen.getByTestId('share-transfer-mode').getAttribute('data-mode')).toBe('both');
     // Sharing a file never adds someone to the project on the side.
@@ -306,13 +306,13 @@ describe('sharing a thing', () => {
   it('invites a Fixed outsider before the send, which carries Git and a copy', async () => {
     stable.membership.outsiders = ['bob@example.com'];
     stable.membership.nonMembers = ['bob@example.com'];
-    stable.membership.roles = ['guest', 'member'];
+    stable.membership.roles = ['runner', 'reader'];
     stable.sender.send.mockResolvedValue('cccccccc-cccc-4ccc-8ccc-000000000003');
     show({ source: thing, commit: undefined });
     fireEvent.click(screen.getByTestId('share-non-member-fix'));
     fireEvent.click(screen.getByTestId('share-submit'));
     await waitFor(() => expect(stable.sender.send).toHaveBeenCalledTimes(1));
-    expect(stable.membership.invite).toHaveBeenCalledWith({ 'bob@example.com': 'member' });
+    expect(stable.membership.invite).toHaveBeenCalledWith({ 'bob@example.com': ['reader'] });
     expect(stable.membership.invite.mock.invocationCallOrder[0]).toBeLessThan(
       stable.sender.send.mock.invocationCallOrder[0],
     );

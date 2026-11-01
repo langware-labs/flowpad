@@ -51,7 +51,7 @@ export function filterTeams<T extends TeamSuggestion>(teams: T[], query: string)
  * wire (`teams` is ids only); the backend grants the team as one principal at
  * `PROJECT_DEFAULT_INVITE_ROLE` (`flow_sdk/builtin/project.py`), which this mirrors.
  */
-export const TEAM_INVITE_ROLE = 'member';
+export const TEAM_INVITE_ROLE = 'reader';
 
 /**
  * A picked team as a participant: ONE entry keyed `team-<id>`, never its
@@ -65,7 +65,7 @@ export function teamParticipant(team: TeamSuggestion): ConversationParticipant {
     name: team.name,
     user_id: null,
     email: null,
-    role: TEAM_INVITE_ROLE,
+    roles: [TEAM_INVITE_ROLE],
   };
 }
 

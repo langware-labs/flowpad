@@ -140,16 +140,16 @@ async def test_share_puts_the_callers_invitation_on_the_hub_body(monkeypatch):
 
     await conv.share(
         recipients=["b@x.test"],
-        invitation={"role": "owner", "message": "hi", "role_to_keep": "member", "callback_override": "/mine",
-                    "invitation_targets": [{"typeid": "skill-1", "role": "reader"}]},
+        invitation={"roles": ["owner"], "message": "hi", "roles_to_keep": ["reader", "runner"], "callback_override": "/mine",
+                    "invitation_targets": [{"typeid": "skill-1", "roles": ["reader"]}]},
     )
 
     create.assert_not_awaited()
     (invite,) = hub.called("POST", "conversation", CONV_ID, action="members")
     assert invite.payload == {
         "recipient_email": "b@x.test",
-        "invitation_targets": [{"typeid": f"conversation-{CONV_ID}", "role": "owner"}, {"typeid": "skill-1", "role": "reader"}],
-        "callback_override": "/mine", "message": "hi", "role_to_keep": "member",
+        "invitation_targets": [{"typeid": f"conversation-{CONV_ID}", "roles": ["owner"]}, {"typeid": "skill-1", "roles": ["reader"]}],
+        "callback_override": "/mine", "message": "hi", "roles_to_keep": ["reader", "runner"],
     }
 
 

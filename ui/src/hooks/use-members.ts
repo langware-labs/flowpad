@@ -78,7 +78,7 @@ export interface UseMembersResult {
    *  outcome. It throws only when nothing landed; a partial failure is read
    *  from the result. Any other entity uses the plain ``share`` and returns null. */
   addMembers: (
-    users: { idOrEmail: string; role?: string }[],
+    users: { idOrEmail: string; roles?: string[] }[],
     opts?: { teams?: TypeId[] },
   ) => Promise<ShareResult | null>;
   /** Remove a member by user id. OWNER ONLY — the hub rejects non-owner (and
@@ -89,7 +89,7 @@ export interface UseMembersResult {
    *  below your rank, never self/owner) — denials throw (403). ``role`` is a
    *  lowercase policy role (``admin``/``editor``/``member``/``reader``).
    *  Refreshes the roster after so the new role shows immediately. */
-  setRole: (userId: string, role: string) => Promise<void>;
+  setRole: (userId: string, roles: string[]) => Promise<void>;
 }
 
 /**
@@ -168,7 +168,7 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
   }, [storedRoster, refresh]);
 
   const addMembers = useCallback(
-    async (users: { idOrEmail: string; role?: string }[], opts?: { teams?: TypeId[] }) => {
+    async (users: { idOrEmail: string; roles?: string[] }[], opts?: { teams?: TypeId[] }) => {
       const teams = opts?.teams ?? [];
       if (!users.length && !teams.length) return null;
       if (!entity) throw new Error('useMembers: entity not loaded; cannot invite');
@@ -183,7 +183,7 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
       // One hub MembershipRequest per invitee; the desktop publishes the entity first when needed.
       // Every invitee is tried even when one fails, and the roster refreshes either way.
       try {
-        const results = await Promise.allSettled(users.map((user) => entity.inviteMember(user.idOrEmail, user.role)));
+        const results = await Promise.allSettled(users.map((user) => entity.inviteMember(user.idOrEmail, user.roles)));
         const failed = users.filter((_, i) => results[i].status === 'rejected');
         if (failed.length) {
           const reason = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason;
@@ -218,12 +218,12 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
   // callers should surface it. Refreshes the roster after so the row shows
   // the new role without a manual reload.
   const setRole = useCallback(
-    async (userId: string, role: string) => {
+    async (userId: string, roles: string[]) => {
       const trimmedId = userId.trim();
-      const trimmedRole = role.trim().toLowerCase();
-      if (!trimmedId || !trimmedRole) return;
+      const trimmedRoles = roles.map(role => role.trim().toLowerCase());
+      if (!trimmedId || !trimmedRoles.length) return;
       if (!entity) throw new Error('useMembers: entity not loaded; cannot change role');
-      await (entity as any).setMemberRole(trimmedId, trimmedRole);
+      await (entity as any).setMemberRole(trimmedId, trimmedRoles);
       await refresh();
     },
     [entity, refresh],
