@@ -36,7 +36,8 @@ export function WebAppIconPicker({
           <WebAppIcon app={app} className={iconClassName} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-2">
+      <PopoverContent align="start" className="w-72 p-2">
+        {/* A fixed width: the grid's 1fr columns collapse to nothing in a shrink-to-fit popover. */}
         <IconPicker value={own} onChange={(icon) => onChange(icon ?? undefined)} />
       </PopoverContent>
     </Popover>
