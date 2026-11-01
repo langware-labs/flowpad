@@ -581,7 +581,7 @@ async def test_deepagents_api_binding(env) -> None:
     # Both are read by the runner's model factory; nothing is written to disk.
     assert auth.env["FLOWPAD_DEEPAGENTS_BASE_URL"] == "https://openrouter.ai/api/v1"
     assert auth.env["FLOWPAD_DEEPAGENTS_API_KEY"] == "sk-or-test"
-    assert auth.model_slug == "anthropic/claude-opus-4.1"  # the key endpoint's lg, bare — no opencode-style prefix
+    assert auth.model_slug == "anthropic/claude-opus-5.5"  # the key endpoint's lg, bare — no opencode-style prefix
     assert auth.config_overrides == []
 
 
@@ -690,7 +690,7 @@ async def test_apply_worker_secret_env_stamps_the_resolved_model_slug(env) -> No
     assert process.resolved_model_slug is None
     await apply_worker_secret_env({}, process)
     # No model asked -> the default size (md) of the OpenRouter key endpoint.
-    assert process.resolved_model_slug == "anthropic/claude-sonnet-4.5"
+    assert process.resolved_model_slug == "anthropic/claude-sonnet-5.5"
 
 
 async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
