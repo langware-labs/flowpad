@@ -10,14 +10,14 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
-import { Pencil } from 'lucide-react';
+import { ExternalLink, Pencil } from 'lucide-react';
 import { AppInfoPopover } from '@src/components/webapp-display/AppInfoPopover';
 import { CopyButton } from '@src/components/ui/copy-button';
 
@@ -129,6 +129,7 @@ export function AppDisplayViewer({
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
+  const { t } = useLingui();
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
@@ -243,6 +244,16 @@ export function AppDisplayViewer({
           {appDisplay.src}
         </span>
         <CopyButton value={appDisplay.src} testId="webapp-address-copy" />
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          data-testid="webapp-open-browser"
+          title={t`Open in browser`}
+          onClick={() => openExternal(appDisplay.src)}
+        >
+          <ExternalLink className="size-4" />
+        </Button>
         <AppInfoPopover display={appDisplay} lifecycle={lifecycle} />
         {definition ? (
           <Button

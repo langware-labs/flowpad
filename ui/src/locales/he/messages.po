@@ -22366,6 +22366,7 @@ msgstr "פתיחה בכרטיסייה חדשה"
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
+#: src/pages/flow-page/app-display-viewer.tsx
 msgid "Open in browser"
 msgstr "פתיחה בדפדפן"
 
