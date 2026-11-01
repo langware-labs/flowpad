@@ -295,3 +295,17 @@ def test_helpdesk_invitation_relationships_and_retention_use_source_project(tmp_
         assert {row["invited_to_role"] for _, row in edges} == {"reader", "runner"}
         assert all(row["provenance"] == "keep" for _, row in edges)
         assert UUID(next(key for key, _ in edges if key != "invite")).version == 4
+
+
+def test_owner_self_edge_start_path_marker_is_not_a_role(tmp_path):
+    # The driver writes from_role='$start_path' on a user's own owner edge
+    # (sqlite_driver._create_owner_relationship); it is a path marker, not a role.
+    path = database(tmp_path)
+    add_edge(path, "self-owner", "user", "owner")
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE relationships SET from_role='$start_path', to_id=from_id")
+    report = migrate(path, dry_run=False)
+    assert report["errors"] == []
+    assert report["completed"] is True
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT from_role,to_role FROM relationships").fetchall() == [("$start_path", "owner")]

@@ -239,7 +239,7 @@ def migrate(db_path: Path | str | None = None, *, dry_run: bool = True) -> dict:
 
                     def side(key, kind, runtime=False):
                         value = old[key]
-                        if value in {None, "*"}:
+                        if value in {None, "*", "$start_path"}:
                             return [value]
                         roles = legacy_roles(value, kind, runtime=runtime)
                         entity_key = old["from_id" if key == "from_role" else "to_id"]
