@@ -119,3 +119,12 @@ async def test_stopping_the_run_records_it_stopped_and_frees_the_slot(runs):
     again = await execute_setup("p", resolve_node=_resolve_node, resolve_op=_resolve_op,
                                 shell=Machine(), platform="linux")
     assert again.state is SetupState.DONE
+
+
+@pytest.mark.asyncio
+async def test_a_finished_run_records_when_it_ended(runs):
+    """The setup page's "Last run" reads the record's ``finished_at``."""
+    result = await _run(Machine())
+    recorded = read_setup("p")
+    assert result.finished_at is not None
+    assert recorded.finished_at == result.finished_at

@@ -50,6 +50,8 @@ export enum FlowMessageKind {
   USER = 'user',
   INVITATION = 'invitation',
   SESSION_EVENT = 'session_event',
+  /** Secured transfer: the quiet, automatic line of a key exchange in the share's thread (a slim line). */
+  SEALED_NOTE = 'sealed_note',
 }
 
 /** Single source of truth for the body filename on the hub blob store.

@@ -1,5 +1,6 @@
 import { PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { rememberLaunch } from './last-launch';
 import { type OpenerId } from './tab_opener_types';
 import type { WorkerType } from '@src/components/workers/worker-types';
@@ -69,4 +70,11 @@ export function useLastWorkerType(): UseLastWorkerTypeResult {
   const [lastOpener] = usePreference<OpenerId | null>(PrefKey.LAST_OPENER);
   const lastWorker = openerToWorker(lastOpener);
   return { lastWorker, rememberWorker };
+}
+
+/** The worker a launch surface leads with: the last one launched, else the capability default. */
+export function usePrimaryWorkerType(): WorkerType {
+  const { lastWorker } = useLastWorkerType();
+  const defaultWorker = useDefaultWorkerType();
+  return lastWorker ?? defaultWorker;
 }

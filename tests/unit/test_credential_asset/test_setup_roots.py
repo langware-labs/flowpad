@@ -53,7 +53,7 @@ def _only(monkeypatch, *sources):
 
 
 def _no_running(monkeypatch):
-    async def nothing(_project, *_a):
+    async def nothing(_project, *_a, **_k):
         return []
 
     monkeypatch.setattr(project_setup, "_running_here", nothing)
@@ -197,3 +197,29 @@ async def test_a_held_connection_short_of_scopes_is_widened_by_the_setup_step_no
     assert (await project_setup.requirement_step(str(project.id), f"credential:google:{project.id}:{scopes}", check=True))[0] is False
     assert (await project_setup.requirement_step(str(project.id), f"credential:google:{project.id}:{scopes}", check=False))[0]
     assert set(google.scopes) <= set((await Credential.get("google", project)).scopes)
+
+
+async def test_readiness_lists_what_is_set_up_and_each_step_names_its_node(project, templates, monkeypatch):
+    """The setup page lists Ready steps (``set_up``) beside what is left, and runs one step by its ``node``."""
+    from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_WEBAPP, SetupRequirementSpec
+
+    _only(monkeypatch)
+    await save_credential(manifest=GITHUB_PAT, scope="project", project_id=project.id)
+    app = SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name="Demo App", satisfied=True, used_by=["project"],
+                               typeid="micro_app-11111111-1111-4111-8111-111111111111")
+    asked = {}
+
+    async def running(_project, *_a, include_ready=False):
+        asked["include_ready"] = include_ready
+        return [app]
+
+    monkeypatch.setattr(project_setup, "_running_here", running)
+    readiness = await project_setup.readiness_of(project, include_ready=True)
+
+    assert asked == {"include_ready": True}
+    assert [r.name for r in readiness.set_up] == ["Demo App"]
+    assert readiness.set_up[0].node == app.typeid  # a web app's node is its own typeid
+    assert all(r.node for r in readiness.to_do)
+    # The footer's poll asks for neither.
+    plain = await project_setup.readiness_of(project)
+    assert asked == {"include_ready": False} and plain.set_up == [] and not any(r.node for r in plain.to_do)

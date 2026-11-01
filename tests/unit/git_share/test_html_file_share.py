@@ -2,9 +2,9 @@
 
 The file is registered as an artifact (``Artifact.for_shared_file``) that
 names it; packed in git mode it rides as metadata + origin (zero bytes);
-installing it opens the file at the shared commit — even after the sender
-moved on — without touching the receiver's own checkout, and the receiver
-finds it by name.
+installing it brings the shared commit into the receiver's own checkout (a
+cherry-pick on another branch) — the shared version, even after the sender
+moved on — and the receiver finds it by name.
 """
 
 from __future__ import annotations
@@ -24,7 +24,9 @@ from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
 from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.core import Entity
 from flow_sdk.responses.response import ApiSuccessResponse
-from tests.unit.git_share._world import BRANCH, git, snapshot
+from flow_sdk.builtin.drivers.git_driver import share_consent
+from flow_sdk.builtin.project import Project
+from tests.unit.git_share._world import BRANCH, git
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -52,7 +54,7 @@ def _seed(tmp_path: Path, token: str) -> tuple[Path, Path]:
     return remote, sender
 
 
-async def test_html_file_rides_as_a_pinned_git_pointer(tmp_path):
+async def test_html_file_rides_as_a_git_pointer_into_my_checkout(tmp_path):
     token = f"nudge{uuid.uuid4().hex[:10]}"
     remote, sender = _seed(tmp_path, token)
     pinned = git(sender, "rev-parse", "HEAD")
@@ -84,11 +86,17 @@ async def test_html_file_rides_as_a_pinned_git_pointer(tmp_path):
     mine = tmp_path / "receiver" / "repo"
     mine.parent.mkdir(parents=True, exist_ok=True)
     git(tmp_path, "clone", "-q", "--branch", "main", remote.as_uri(), str(mine))
-    before = snapshot(mine)
+    project = Project(name=f"recv-{uuid.uuid4().hex[:8]}", fs_storage_mount_path=str(mine))
+    await project.save(notify=False)
 
     await Conversation(id=fm.conversation_id, title="share").save(notify=False)
     await unpack_bundle(zip_path, local_user_id="receiver")
-    res = await handle_attachment_install(MessageAttachment.allocate_deterministic_id(fm.id, key), "user", None)
+    ma_id = MessageAttachment.allocate_deterministic_id(fm.id, key)
+    asked = await handle_attachment_install(ma_id, "project", project.id)
+    assert (asked.data or {}).get("needs") == "apply", getattr(asked, "data", asked)
+    assert (asked.data or {})["plan"]["commits"] == [pinned]
+    with share_consent(True):
+        res = await handle_attachment_install(ma_id, "project", project.id)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
     show = (res.data or {}).get("show") or {}
     assert show.get("kind") != "entity", f"a shared page must open as the file, not the artifact: {show}"
@@ -96,9 +104,10 @@ async def test_html_file_rides_as_a_pinned_git_pointer(tmp_path):
     got = await Artifact.get_one({"id": art.id})
     assert got is not None and got.asset_ref, "the receiver cannot open the shared page"
     opened = Path(got.asset_ref)
+    assert opened.resolve() == (mine / REL).resolve(), "the page is not in the receiver's checkout"
     assert token in opened.read_text(encoding="utf-8"), "the receiver did not get the shared version"
-    assert git(opened.parent, "rev-parse", "HEAD") == pinned
-    assert snapshot(mine) == before
+    assert git(mine, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+    assert f"cherry picked from commit {pinned}" in git(mine, "log", "-1", "--format=%B")
     found = await Artifact.shared_file_at(str(opened))
     assert found is not None and found.id == art.id, "the page viewer cannot find the shared page by its path"
     hits = await Entity.search("nudge_backoffice_mock", record_type="artifact")

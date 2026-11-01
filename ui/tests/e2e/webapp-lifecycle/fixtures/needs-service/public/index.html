@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>needs-service</title>
+<p id="s">loading tenant…</p>
+<script>
+  fetch('http://127.0.0.1:48300/api/bootstrap')
+    .then((r) => r.json())
+    .then((b) => {
+      const s = document.getElementById('s');
+      s.dataset.testid = 'stub-ready';
+      s.setAttribute('data-testid', 'stub-ready');
+      s.textContent = 'tenant ' + b.tenant.id;
+    })
+    .catch((e) => {
+      setTimeout(() => { throw new Error('Uncaught tenant bootstrap refused: ' + e); });
+    });
+</script>

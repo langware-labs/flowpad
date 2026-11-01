@@ -13,6 +13,7 @@ import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
 import { AssetVibeWorkspace } from './asset-vibe-workspace';
 import { UnifiedTabStrip } from './content-panel/unified-tab-strip';
 import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
+import { PageId } from '@sdk';
 
 export default function FlowPage() {
   const isVibe = useIsVibe();
@@ -37,7 +38,12 @@ export default function FlowPage() {
   // session of a vibe-only agent has none either: it has no other tab to reach.
   const vibeOnly = !!useVibeOnlyAgent(vibeSession?.processId);
   const framedByStrip =
-    !windowMode && !vibeOnly && layout !== DockLayout.VIBE_NEW_CHAT && layout !== DockLayout.VIBE_NO_PROCESS;
+    !windowMode &&
+    !vibeOnly &&
+    layout !== DockLayout.VIBE_NEW_CHAT &&
+    layout !== DockLayout.VIBE_NO_PROCESS &&
+    // The hub page materializes no tabs: its strip would only ever be an empty band.
+    currentDock?.page !== PageId.HUB;
 
   return (
     /* `flex-col` on the provider's own root (it appends className to a flex div)

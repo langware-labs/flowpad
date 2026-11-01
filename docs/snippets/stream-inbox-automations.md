@@ -265,7 +265,7 @@ import { Trigger } from '@sdk';
 const rule = await Trigger.onMessage({ catch: 'asks for a refund or disputes a charge', sources: [workMail.id], agent: billing.id, prompt });
 const verdict = await Trigger.decideOn(rule.id, { text: 'I was billed twice…' });   // { met, confidence, reason, answers }
 const tries = await Trigger.decideOnRecent(rule.id, { limit: 20 });
-const rows = await Trigger.overview();                                             // the list, one pass over every rule's log
+const rows = (await Trigger.overview()).rows;                                         // the list, one pass over every rule's log
 const started = await Trigger.startedLastHour();                                   // the top-bar counter: the person's own rules, one light call
 ```
 

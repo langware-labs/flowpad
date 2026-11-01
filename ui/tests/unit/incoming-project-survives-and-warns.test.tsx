@@ -25,6 +25,7 @@ vi.mock('@src/hooks/use-projects', () => ({ useProjects: () => ({ projects: h.pr
 import { IncomingProjectDialog } from '@src/components/task-receive/IncomingProjectDialog';
 import { useSharedProjectWarnings } from '@src/components/task-receive/use-shared-project-warnings';
 import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
+import { dataContext, RuntimeKind } from '@sdk';
 
 const ORIGIN = {
   owner: 'acme',
@@ -125,5 +126,32 @@ describe('a shared project not set up here is a warning', () => {
     const { result } = renderHook(() => useSharedProjectWarnings());
 
     expect(result.current).toEqual([]);
+  });
+
+  describe('only where a project can be set up', () => {
+    afterEach(() => {
+      dataContext.bootstrapInfo = null as never;
+    });
+    const asRuntime = (kind: RuntimeKind) => {
+      dataContext.bootstrapInfo = { runtime: { kind } } as never;
+    };
+
+    it.each([RuntimeKind.HUB, RuntimeKind.AGENT])('none on %s — no disk or nobody at it', (kind) => {
+      asRuntime(kind);
+      h.projects = [project(A)];
+
+      const { result } = renderHook(() => useSharedProjectWarnings());
+
+      expect(result.current).toEqual([]);
+    });
+
+    it.each([RuntimeKind.DESKTOP, RuntimeKind.BROWSER, RuntimeKind.SANDBOX])('warns on %s', (kind) => {
+      asRuntime(kind);
+      h.projects = [project(A)];
+
+      const { result } = renderHook(() => useSharedProjectWarnings());
+
+      expect(result.current).toHaveLength(1);
+    });
   });
 });

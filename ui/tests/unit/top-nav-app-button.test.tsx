@@ -33,7 +33,7 @@ const ADMIN = '22222222-2222-4222-8222-222222222222';
 const DEP = '33333333-3333-4333-8333-333333333333';
 const project = { id: 'p1', name: 'Trips' } as unknown as Project;
 const entry = (id: string, name: string, audience = 'app', providerProjectId = 'p1') =>
-  ({ app: { id, name, displayName: name, audience, type: 'micro_app' }, providerProjectId }) as unknown as ProjectApp;
+  ({ app: { id, name, displayName: name, audience, type: 'micro_app', typeId: new TypeId(`micro_app-${id}`) }, providerProjectId }) as unknown as ProjectApp;
 const shop = entry(SHOP, 'shop');
 const admin = entry(ADMIN, 'back-office', 'admin');
 const docs = entry(DEP, 'docs', 'app', 'dep');
@@ -135,4 +135,29 @@ describe('the apps button', () => {
       expect(shown('shop')).toBe('true');
     });
   });
+
+  describe('the pencil', () => {
+    const editorUrl = (id: string) =>
+      DockPointer.forAssetEditorByTypeId('micro_app', new TypeId(`micro_app-${id}`)).toUrl('/');
+
+    it('opens the app editor of its row, not the running app', async () => {
+      apps.current = [shop, admin];
+      mount();
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('top-nav-apps'));
+      await user.click(screen.getByTestId('top-nav-app-edit-back-office'));
+      expect(openDock).toHaveBeenCalledTimes(1);
+      expect(openDock.mock.calls[0][0].toUrl('/')).toBe(editorUrl(ADMIN));
+      expect(editorUrl(ADMIN)).toContain('/editor/app/typeid/micro_app-');
+      expect(screen.queryByTestId('top-nav-app-shop')).toBeNull(); // the menu closed
+    });
+
+    it('sits beside a lone app', async () => {
+      apps.current = [shop];
+      mount();
+      await userEvent.setup().click(screen.getByTestId('top-nav-app-edit-shop'));
+      expect(openDock.mock.calls[0][0].toUrl('/')).toBe(editorUrl(SHOP));
+    });
+  });
 });
+

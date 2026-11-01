@@ -139,7 +139,7 @@ def _split_sections(output: str) -> tuple[dict[str, str], dict[str, str]]:
 # What git operation a conflicted working tree is stopped in. ``None`` with
 # conflicted paths means no operation is open — re-applying a pull's autostash
 # conflicted, and git kept the stash.
-ConflictOperation = Literal["rebase", "merge"]
+ConflictOperation = Literal["rebase", "merge", "cherry-pick"]
 
 
 class GitConflict(_CamelModel):
@@ -283,6 +283,7 @@ class GitPushResult(_CamelModel):
 # Typed pull outcome — mirrored by ``PullKind`` in ts_sdk git-workdir.ts.
 PullKind = Literal[
     "pulled",
+    "picked",
     "nothing",
     "conflict",
     "permission",
@@ -1203,13 +1204,14 @@ class GitRepo:
         return self._unmerged_paths(listed.stdout) if listed.ok else []
 
     async def _open_operation(self) -> ConflictOperation | None:
-        """The rebase or merge this tree is stopped in, if any.
+        """The rebase, merge or cherry-pick this tree is stopped in, if any.
 
         Asks for the rebase's own ``onto`` file (git resolves a ref name against
         the git dir first), never ``REBASE_HEAD``: that ref outlives a finished
         rebase, and would read a clean tree as stuck forever.
         """
-        probes = (("rebase-merge/onto", "rebase"), ("rebase-apply/onto", "rebase"), ("MERGE_HEAD", "merge"))
+        probes = (("rebase-merge/onto", "rebase"), ("rebase-apply/onto", "rebase"), ("MERGE_HEAD", "merge"),
+                  ("CHERRY_PICK_HEAD", "cherry-pick"))
         found = await asyncio.gather(*(self._git("rev-parse", "-q", "--verify", ref) for ref, _ in probes))
         return next((op for (_, op), hit in zip(probes, found) if hit.ok), None)
 
@@ -1520,6 +1522,50 @@ class GitRepo:
         if before == after:
             return GitPullResult(ok=True, kind="nothing", branch=current, message="Already up to date")
         return GitPullResult(ok=True, kind="pulled", branch=current, message="Pulled")
+
+    async def _fallback_identity(self) -> Mapping[str, str] | None:
+        """Flowpad's own identity (``GIT_INIT_CONFIG``) for a commit git makes on its own, when the
+        machine has none configured — git refuses to commit without one. ``None`` when it has one."""
+        if (await self._git("config", "user.email")).stdout.strip():
+            return None
+        name, email = dict(GIT_INIT_CONFIG)["user.name"], dict(GIT_INIT_CONFIG)["user.email"]
+        return {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}
+
+    async def cherry_pick(self, commits: list[str]) -> GitPullResult:
+        """Apply ``commits`` (oldest first) onto the checked-out branch with
+        ``cherry-pick -x``, so each new commit names the one it came from.
+
+        Uncommitted work is stashed around it and put back, as ``pull`` does. A
+        conflict is left in place for the resolve agent (operation
+        ``cherry-pick``), never aborted.
+        """
+        if not await self.is_init():
+            return GitPullResult(ok=False, kind="no_repo", branch=None, message="Not a git repository")
+        current = await self.get_branch()
+        stuck = await self._conflict_state()
+        if stuck.open:
+            return GitPullResult(
+                ok=False, kind="conflict", branch=current, message=self._still_open(stuck), conflicted=stuck.paths
+            )
+        if not commits:
+            return GitPullResult(ok=True, kind="nothing", branch=current, message="Nothing to bring in")
+        dirty = bool((await self._git("status", "--porcelain", "--untracked-files=no")).stdout.strip())
+        who = await self._fallback_identity()
+        if dirty and not (await self._git("stash", "push", "-q", "-m", "flowpad: cherry-pick", env=who)).ok:
+            return GitPullResult(ok=False, kind="generic", branch=current, message="Could not set your edits aside")
+        picked = await self._git("cherry-pick", "-x", "--allow-empty", "--keep-redundant-commits", *commits, env=who)
+        if not picked.ok:
+            kind, msg, conflicted = await self._sync_failure(picked, "Cherry-pick failed")
+            if kind == "conflict" and dirty:
+                msg += " Your own edits are kept in the stash."
+            return GitPullResult(ok=False, kind=kind, branch=current, message=msg, conflicted=conflicted)
+        if dirty:
+            await self._git("stash", "pop", "-q")
+            clash = await self._autostash_clash("the shared changes")
+            if clash:
+                msg, conflicted = clash
+                return GitPullResult(ok=False, kind="conflict", branch=current, message=msg, conflicted=conflicted)
+        return GitPullResult(ok=True, kind="picked", branch=current, message=f"Brought in {len(commits)} commit(s)")
 
     # ------------------------------------------------------------------
     # Dispatch — routes git-ops sub-paths to the appropriate operation

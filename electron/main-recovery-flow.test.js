@@ -30,8 +30,8 @@ const EXPOSE = `
 module.exports.__t = {
   handleFatalFailure, runRecoveryUpdate, showRecoveryEntry, installAndStartBackend, waitForBackend, exportDiagnostics,
   setupElectronAutoUpdater, readRecoveryState,
-  primeLaunchCheck: () => { launchDesktopCheck = updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log }); },
-  setLaunchDesktopCheck: (p) => { launchDesktopCheck = p; },
+  primeLaunchCheck: () => { launchDesktopCheckRan = true; launchDesktopCheck = updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log }); },
+  setLaunchDesktopCheck: (p) => { launchDesktopCheckRan = true; launchDesktopCheck = p; },
   setMainWindow: (w) => { mainWindow = w; },
   setQuitting: (v) => { isQuitting = v; },
   setUvManager: (u) => { uvManager = u; },

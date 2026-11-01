@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 from uuid import uuid4
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
@@ -195,6 +196,16 @@ async def _fill_resolved_model_slug(process: "AgenticProcess", transcript: Path 
             return
 
 
+def headless_parent_model(cli_cfg: dict, env: Mapping[str, str]) -> str | None:
+    """The ``--model`` a headless claude turn passes, or None to pass none.
+
+    Defaults to sonnet (opus's parent-side latency blows the long-test budget). A shell that
+    names its own model (``eval "$(flow llm use …)"``) keeps it: a forced ``--model sonnet``
+    beats ANTHROPIC_MODEL and sends a bare id the endpoint's gateway rejects with a 400.
+    """
+    return cli_cfg.get("model") or (None if env.get("ANTHROPIC_MODEL") else "sonnet")
+
+
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
@@ -211,6 +222,7 @@ class ClaudeDriver:
     #: it gets its embedded agents as prompt text; a Chief of Staff on it delegates through tasks.
     spawns_subagents = True
     pty_submits_on_paste = True
+    pty_shell_escape = "!"
     # Real Claude Code PTY captures expose two grounded blank-composer frames:
     # a fresh boot paints the rotating ``Try "…"`` placeholder (2.1.207+),
     # while a resumed session can paint a bare prompt followed immediately by
@@ -466,10 +478,7 @@ class ClaudeDriver:
         fork_source = cli_cfg.get("fork_session_id")
         if fork_source and self.transcript_path(process) is not None:
             fork_source = None
-        # Default the headless parent to sonnet — opus's parent-side latency
-        # blows past the 28-s long-test budget on multi-step flows. Callers
-        # can override via cli_config["model"] / ["effort"].
-        parent_model = cli_cfg.get("model") or "sonnet"
+        parent_model = headless_parent_model(cli_cfg, os.environ)
         parent_effort = cli_cfg.get("effort")
         # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
         # (agentic_process.py:786-788) so headless workers can route

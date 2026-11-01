@@ -23,6 +23,7 @@ from flow_sdk.app.actions.message_attachment_action import handle_attachment_ins
 from flow_sdk.builtin.chart import Chart
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.drivers.git_driver import share_consent
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
 from flow_sdk.builtin.message_attachment import MessageAttachment
@@ -45,6 +46,14 @@ class Family:
     main: str  # main file, relative to rel_path ("" when rel_path is the file)
 
     def body(self, asset_id: str, token: str) -> str:
+        if self.type == EntityType.CREDENTIAL.value:
+            import json
+
+            return json.dumps(
+                {"name": "bright_data", "title": "Bright Data", "needed_for": token, "schema": 2,
+                 "vars": {"BRIGHT_DATA_API_KEY": {}}},
+                indent=2,
+            ) + "\n"
         if self.type == EntityType.SKILL.value:
             return f"---\nid: {asset_id}\nname: kit\ndescription: shared kit\n---\n\n# kit\n\n{token}\n"
         if self.type == EntityType.CHART.value:
@@ -56,6 +65,10 @@ class Family:
 
     def row(self, asset_id: str, root: Path):
         ref = str(root / self.rel_path)
+        if self.type == EntityType.CREDENTIAL.value:
+            from flow_sdk.builtin.credential import Credential
+
+            return Credential(id=asset_id, name="bright_data", asset_ref=ref)
         if self.type == EntityType.SKILL.value:
             return Skill(id=asset_id, name="kit", asset_ref=ref)
         if self.type == EntityType.CHART.value:
@@ -64,13 +77,17 @@ class Family:
 
     @property
     def entity_cls(self):
-        return {EntityType.SKILL.value: Skill, EntityType.CHART.value: Chart}.get(self.type, Docs)
+        from flow_sdk.builtin.credential import Credential
+
+        classes = {EntityType.SKILL.value: Skill, EntityType.CHART.value: Chart, EntityType.CREDENTIAL.value: Credential}
+        return classes.get(self.type, Docs)
 
 
 FAMILIES = {
     "skill": Family(EntityType.SKILL.value, "tools/kit/.claude/skills/kit", "SKILL.md"),
     "markdown": Family(EntityType.MARKDOWN.value, "product/docs/shared.md", ""),
     "chart": Family(EntityType.CHART.value, "docs/network/net", "CHART.md"),
+    "credential": Family(EntityType.CREDENTIAL.value, "agentic-assets/credential/bright_data", "credential.json"),
 }
 
 BRANCH = "feature/share"
@@ -121,6 +138,12 @@ class World:
         f = self.family.main_file(self.sender)
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(self.family.body(self.asset_id, token), encoding="utf-8")
+        if self.family.type == EntityType.CREDENTIAL.value:  # a folder asset carries its id in a capsule
+            import json
+
+            capsule = f.parent / ".flow" / "capsules" / "identity.json"
+            capsule.parent.mkdir(parents=True, exist_ok=True)
+            capsule.write_text(json.dumps({"data": {"id": self.asset_id}, "version": 1}), encoding="utf-8")
         return f
 
     def sender_commit(self) -> str:
@@ -142,11 +165,13 @@ class World:
         transfer_mode: str = "git",
         install: bool = True,
         before_unpack=None,
+        apply: bool = False,
     ):
         """Sender packs → sender row deleted → receiver unpacks + installs.
 
         ``before_unpack`` runs between pack and unpack (the sender keeps working,
-        rewrites history, the remote goes away). Returns ``(install_response,
+        rewrites history, the remote goes away). ``apply`` is the receiver's
+        yes to a pull / cherry-pick into their checkout. Returns ``(install_response,
         received_row)`` — or ``(attachment_id, None)`` with ``install=False``, for a
         caller that opens it itself. Raises what pack raises.
         """
@@ -190,12 +215,13 @@ class World:
         if not install:
             return ma_id, None
         async with self.phase("install"):
-            res = await handle_attachment_install(
-                ma_id,
-                "project" if project else "user",
-                project.id if project else None,
-                someone_typeid=None,
-            )
+            with share_consent(apply):
+                res = await handle_attachment_install(
+                    ma_id,
+                    "project" if project else "user",
+                    project.id if project else None,
+                    someone_typeid=None,
+                )
         row = await self.family.entity_cls.get_one({"id": self.asset_id})
         return res, row
 
@@ -227,3 +253,8 @@ def snapshot(repo: Path) -> dict:
 
 def head_of(path: Path) -> str:
     return git(path, "rev-parse", "HEAD")
+
+
+def shared_dirs(root: Path) -> list[Path]:
+    """Every ``.shared`` folder under ``root`` — a received share must never make one."""
+    return [p for p in root.rglob(".shared") if p.is_dir()]

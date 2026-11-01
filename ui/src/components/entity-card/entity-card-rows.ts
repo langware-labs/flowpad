@@ -113,7 +113,11 @@ const ROWS: Record<string, RowSpec[]> = {
     STATUS,
     [msg`With`, conversationWith, { copy: true }],
   ],
-  shell: [STATUS, [msg`Machine`, (e) => text(e.compute_node_uname)], [msg`Started`, (e) => ago(e.created_at ?? e.created_date)]],
+  shell: [
+    STATUS,
+    [msg`Machine`, (e) => text(e.compute_node_uname)],
+    [msg`Started`, (e) => ago(e.created_at ?? e.created_date)],
+  ],
   micro_app: [[msg`Kind`, (e) => word(e.kind)], [msg`Build`, (e) => text(e.build)], UPDATED],
   artifact: [
     [msg`Kind`, (e) => word(e.kind)],
@@ -130,11 +134,7 @@ const ROWS: Record<string, RowSpec[]> = {
     [msg`Start`, (e) => text(field(e.backend, 'start_cmd'))],
     [msg`Check`, endpointCheck],
   ],
-  project: [
-    [msg`Members`, (e) => people(e.members)],
-    [msg`Mode`, (e) => word(e.last_mode)],
-    UPDATED,
-  ],
+  project: [[msg`Members`, (e) => people(e.members)], [msg`Mode`, (e) => word(e.last_mode)], UPDATED],
   task: [
     // The task screens' own words: a `to_do` task reads "New" everywhere.
     [msg`Status`, (e) => (text(e.status) ? statusLabel(text(e.status)) : '')],
@@ -167,10 +167,17 @@ const ROWS: Record<string, RowSpec[]> = {
   llm_endpoint: [
     [msg`Provider`, (e) => text(e.provider)],
     [msg`Enabled`, (e) => onOff(e.enabled)],
-    [msg`Models`, (e) => (e.models && typeof e.models === 'object' ? String(Object.keys(e.models).length || '') : '')],
+    [
+      msg`Models`,
+      (e) =>
+        e.tiers && typeof e.tiers === 'object' ? String(Object.values(e.tiers).filter(Boolean).length || '') : '',
+    ],
     [msg`URL`, (e) => text(e.base_url), { copy: true }],
   ],
-  diagnosis_request: [[msg`Runs`, (e) => count(e.run_count)], [msg`Last run`, (e) => ago(e.last_run_at)]],
+  diagnosis_request: [
+    [msg`Runs`, (e) => count(e.run_count)],
+    [msg`Last run`, (e) => ago(e.last_run_at)],
+  ],
   flowpad_diagnosis: [
     [msg`Reported by`, (e) => text(e.reported_by)],
     [msg`Occurred`, (e) => ago(e.occurred_at)],

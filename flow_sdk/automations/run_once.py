@@ -98,9 +98,8 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *
                    message_id: Optional[str] = None) -> RunOnceStarted:
     """Start one test run of ``trigger``. Raises ``RunOnceRefused`` with a fix-it message.
     ``message_id`` runs a stream inbox rule on that message (its real envelope)."""
-    from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired  # noqa: PLC0415
-
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired  # noqa: PLC0415
 
     kind = TriggerType(str(trigger.trigger_type))
     tid = trigger.id or ""

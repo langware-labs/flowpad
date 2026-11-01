@@ -27,6 +27,9 @@ vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
 vi.mock('@src/components/assets/editor/agent-profile/deployment/use-deployment-threads', () => ({
   useDeploymentThreads: () => ({ threads: [], error: null }),
 }));
+vi.mock('@src/components/assets/editor/agent-profile/deployment/DeploymentFunding', () => ({
+  DeploymentFundingCard: () => null,
+}));
 vi.mock('@src/components/assets/editor/agent-profile/deployment/DeploymentHealth', () => ({
   DeploymentHealth: () => null,
 }));

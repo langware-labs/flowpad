@@ -92,14 +92,19 @@ async def runs_here(entity: Any) -> bool:
     runs_on = str(getattr(entity, "runs_on", "") or "")
     if not runs_on:
         return True
+    deployment = await deployment_named(runs_on)
+    return bool(deployment is not None and deployment.is_local)
+
+
+async def deployment_named(runs_on: str) -> Any:
+    """The Deployment a ``runs_on`` names, as known here; None when it is unknown or unreadable."""
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     try:
-        deployment = await Deployment.get_by_id(runs_on)
+        return await Deployment.get_by_id(runs_on)
     except Exception:  # noqa: BLE001 — unresolvable is "not here", never an error
         _log.debug("runs_on %s unresolvable", runs_on, exc_info=True)
-        return False
-    return bool(deployment is not None and deployment.is_local)
+        return None
 
 
 async def arm_after_index(record: Any) -> None:

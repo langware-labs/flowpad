@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 from flow_sdk.schema.data_spec import FrontMatter
 
-ChartFormat = Literal["sequence", "excalidraw", "mermaid"]
+ChartFormat = Literal["sequence", "excalidraw", "mermaid", "c4"]
 
 
 class ChartSpec(FrontMatter):

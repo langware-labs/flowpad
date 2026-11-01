@@ -13,6 +13,7 @@ in this grammar. It is the ONLY copy in the assistant's skills; the others link 
 | `"crm.company\|crm.lead"` | a reference to one row of any of these kinds |
 | `{"name": "string", "age": "int"}` | an object — fields and their shapes (inline, no kind) |
 | `["string"]`, `["crm.note"]` | a list — EXACTLY one element: the shape every element has |
+| `"?[string]"`, `"?[crm.note]"` | a list that may be absent — the only way to make a list optional (`?` prefixes a string) |
 | `"?string"`, `"?crm.company"` | may be absent |
 | `"enum:new|won|lost"` | one of a closed set of strings (`"?enum:a|b"` — optional) |
 | `{"*": "int"}` | a map — any key, every value that shape |

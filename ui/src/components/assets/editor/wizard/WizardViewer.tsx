@@ -416,11 +416,12 @@ function WizardViewerBody({
   // Any step in flight has gone quiet for long enough to be worth saying so — offer to start the whole
   // wizard over (a newer start replaces the one in flight, killing its shell and agent).
   const anyStuck = isPopup && joinedSteps.some(({ live, outcome }) => silentForMs(live, outcome, now) > STUCK_AFTER_MS);
-  const notYetStarted = isPopup && !starting && !runView.live && !state.result;
+  // A check-only result (the first-run trigger looks before it opens the popup) is not a run yet.
+  const notYetStarted = isPopup && !starting && !runView.live && (!state.result || Boolean(state.checked));
   // A settled run that fell short — a step failed, or the person declined one. Popup only: the
   // generic page has its own Run button.
   const notFinished =
-    !conversational && !runView.live && Boolean(state.result) && !isOk(state.result) && Boolean(wizard.failure_message);
+    !conversational && !runView.live && Boolean(state.result) && !state.checked && !isOk(state.result) && Boolean(wizard.failure_message);
 
   const main = (
     <div className="flex flex-col gap-5 p-4" data-testid="wizard-viewer">

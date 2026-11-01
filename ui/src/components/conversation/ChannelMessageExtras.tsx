@@ -48,6 +48,18 @@ export function MessageMarkChip({ mark }: { mark: IMessageMark }) {
   );
 }
 
+/** The chips a source put on the whole conversation (its repository, the bot that opened it). */
+export function ConversationMarkChips({ marks }: { marks?: readonly IMessageMark[] | null }) {
+  if (!marks?.length) return null;
+  return (
+    <span data-testid="conversation-marks" className="inline-flex shrink-0 items-center gap-1 [&>span]:mb-0">
+      {marks.map((mark) => (
+        <MessageMarkChip key={mark.key} mark={mark} />
+      ))}
+    </span>
+  );
+}
+
 /** The message a reply quotes, drawn above its body. Clicking it scrolls to the original. */
 export function QuotedMessage({ sender, text, onJump }: { sender: string; text: string; onJump?: () => void }) {
   const { t } = useLingui();

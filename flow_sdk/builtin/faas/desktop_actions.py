@@ -171,6 +171,20 @@ class DesktopActionsMixin:
 
             cwd = body.get("cwd")
             system = platform.system()
+            # Optional ``browser: {browser, profile}``: pages the command opens land in that profile.
+            env = None
+            if body.get("browser"):
+                import os  # noqa: PLC0415
+
+                from flow_sdk.core.browser_command import browser_env, with_browser  # noqa: PLC0415
+                from flow_sdk.core.browser_profiles import ProfileChoice  # noqa: PLC0415
+
+                choice = ProfileChoice(**body["browser"])
+                if system == "Darwin":
+                    # Terminal.app starts its own login shell, which does not inherit our environment.
+                    command = with_browser(command, choice, "posix")
+                else:
+                    env = {**os.environ, "BROWSER": browser_env(choice)}
 
             if system == "Darwin":
                 # On macOS, open a new Terminal tab and run the command.
@@ -189,7 +203,7 @@ class DesktopActionsMixin:
                 subprocess.Popen(["osascript", "-e", apple_script])
             elif system == "Windows":
                 args = ["cmd", "/c", "start", "cmd", "/k", command]
-                subprocess.Popen(args, cwd=cwd)
+                subprocess.Popen(args, cwd=cwd, env=env)
             else:
                 # Linux - try common terminal emulators
                 for term in ["gnome-terminal", "xterm", "konsole"]:
@@ -197,9 +211,9 @@ class DesktopActionsMixin:
 
                     if shutil.which(term):
                         if term == "gnome-terminal":
-                            subprocess.Popen([term, "--", "bash", "-c", command], cwd=cwd)
+                            subprocess.Popen([term, "--", "bash", "-c", command], cwd=cwd, env=env)
                         else:
-                            subprocess.Popen([term, "-e", command], cwd=cwd)
+                            subprocess.Popen([term, "-e", command], cwd=cwd, env=env)
                         break
                 else:
                     return ApiFailResponse(message="No supported terminal emulator found")

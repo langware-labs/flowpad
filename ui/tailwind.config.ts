@@ -14,6 +14,11 @@ export default {
       },
     },
     extend: {
+      // Text-only shades: the fill colors are too dark to read as text on dark surfaces.
+      textColor: {
+        primary: { DEFAULT: 'hsl(var(--primary-text))' },
+        destructive: { DEFAULT: 'hsl(var(--destructive-text))' },
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

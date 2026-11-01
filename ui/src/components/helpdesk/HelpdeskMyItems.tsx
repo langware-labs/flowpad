@@ -7,6 +7,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { conversationFacets } from '@src/components/conversation/conversation-category';
+import { TicketStateChip } from '@src/components/conversation/CategoryChips';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
@@ -101,6 +102,7 @@ function HelpdeskItemRow({ conv, onOpen }: { conv: Conversation; onOpen: () => v
             <Trans>New reply</Trans>
           </span>
         )}
+        <TicketStateChip ticket={facets.ticket} className="shrink-0" />
         <span className="shrink-0 text-[11px] text-muted-foreground/70">{formatTimeAgo(conv.updated_date)}</span>
       </button>
     </li>

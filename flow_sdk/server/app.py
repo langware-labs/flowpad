@@ -67,6 +67,7 @@ from .routes import (
     favorites_router,
     git_router,
     graph_workflows_router,
+    headless_turn_router,
     hooks_router,
     ingest_router,
     journeys_router,
@@ -124,6 +125,15 @@ async def _on_server_startup():
         await webhook_listener.restore()
     except Exception:
         logging.getLogger(__name__).exception("Direct webhook listener could not start")
+
+    # A web app's lifecycle record left mid-run by the previous backend is settled from what runs now, never
+    # by redoing its work (``core/webapp/coordinator.adopt_on_start``).
+    try:
+        from flow_sdk.core.webapp.coordinator import adopt_on_start  # noqa: PLC0415
+
+        adopt_on_start()
+    except Exception:
+        logging.getLogger(__name__).exception("Web app lifecycle records could not be settled")
 
     # The two audience doors — one listener per audience a browser can enter this box by.
     from flow_sdk.server import audience_listener
@@ -984,6 +994,7 @@ server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(display_router)
 server.add_router(snippet_router)
+server.add_router(headless_turn_router)
 server.add_router(shell_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)

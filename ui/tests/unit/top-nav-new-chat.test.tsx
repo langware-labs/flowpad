@@ -22,7 +22,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@src/components/terminal/openers/useLastWorkerType', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/terminal/openers/useLastWorkerType')>()),
-  useLastWorkerType: () => ({ lastWorker: lastWorker.current, rememberWorker: vi.fn() }),
+  // No capabilities provider here, so the default is claude_code.
+  usePrimaryWorkerType: () => lastWorker.current ?? 'claude_code',
 }));
 
 import { NewChatButton } from '@src/components/top-nav-bar/NewChatButton';

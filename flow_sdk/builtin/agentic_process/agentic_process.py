@@ -203,6 +203,14 @@ def _iter_touched_paths(entries: "Iterable") -> "Iterator[str]":
                 yield p
 
 
+def _ran_shell_command(entries: "Iterable") -> bool:
+    """Whether a turn ran a shell command — the only way it removes a file unseen
+    (``rm``, ``mv``, ``git checkout``); Write/Edit entries name their paths."""
+    from flow_sdk.transcript_analyzer.entries.shell_command import ShellCommandEntry  # noqa: PLC0415
+
+    return any(isinstance(e, ShellCommandEntry) for e in entries)
+
+
 def _shell_compute_is_local(shell: "Shell") -> bool:
     from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
 
@@ -472,6 +480,9 @@ _LAST_BROADCAST_KEYS: dict[str, _BroadcastKey] = {}
 # every turn end rescanned the WHOLE session (prod 2026-09-20: 50,557 entries,
 # 511 paths re-indexed per turn, 9.6s).
 _REINDEX_WATERMARKS: dict[str, int] = {}
+# Whether the tail last read by ``_collect_touched_from_transcript_tail`` ran a
+# shell command — module-level for the same reason as the watermarks.
+_TAIL_RAN_SHELL: dict[str, bool] = {}
 
 # The debounce's own state, keyed by AP id, and module-level for exactly the
 # reason above: ``transcript_subscriber._route_to_ap`` resolves the AP per
@@ -512,6 +523,7 @@ def _release_process_transcript_state(process: "AgenticProcess") -> None:
     process._last_broadcast_key = None  # setter drops the row
     _PENDING_ENTRIES.pop(key, None)
     _REINDEX_WATERMARKS.pop(key, None)
+    _TAIL_RAN_SHELL.pop(key, None)
     _TRANSCRIPT_SIZE_AT_PROMPT.pop(key, None)
     forget_recovered(key)
     task = _DEBOUNCE_TASKS.pop(key, None)
@@ -2723,10 +2735,15 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="prompt is required")
         if self.hub_route:
             return await self._relay_json("enqueue", body=body)
-        self.queue.enqueue(prompt, source=str(body.get("source") or "ui"))
+        await self._enqueue(prompt, source=str(body.get("source") or "ui"))
+        return ApiSuccessResponse(data=self.queue.read())
+
+    async def _enqueue(self, prompt: str, *, source: str) -> dict:
+        """Queue *prompt* behind the running turn: persist it, tell watchers, and arm the drain."""
+        entry = self.queue.enqueue(prompt, source=source)
         await self.notify_updated()
         self._schedule_queue_drain("enqueue")
-        return ApiSuccessResponse(data=self.queue.read())
+        return entry
 
     @action.post(action_name="drain-queue")
     async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -3133,6 +3150,14 @@ class AgenticProcess(Entity):
                     status_code=400,
                 )
 
+        if port is None and not body.get("dist"):
+            # A folder that IS a webapp asset (it holds webapp.json) is served as that asset, not as a bare
+            # artifact: the asset has a webapp id, so the display can set it up and recover it when its
+            # address goes away (a restart) instead of showing a dead end.
+            app = await webapp_placement.webapp_asset_at(artifact_path)
+            if app is not None:
+                return await self._serve_webapp_asset(app, show=bool(body.get("show", True)))
+
         project = await self._resolve_webapp_project()
         # Provenance is the URL scope's, never the body's — an artifact records
         # who actually ran, not who the payload claims.
@@ -3188,6 +3213,33 @@ class AgenticProcess(Entity):
                 "artifact": artifact.model_dump(mode="json"),
                 "deployment": deployment.model_dump(mode="json") if deployment is not None else None,
                 "endpoints": [endpoint.model_dump(mode="json") for endpoint in endpoints],
+                "shown": shown,
+            }
+        )
+
+    async def _serve_webapp_asset(self, app, *, show: bool) -> ApiSuccessResponse | ApiFailResponse:
+        """``register-webapp-artifact`` for a webapp asset: placed and loaded by the one display path, shown by its
+        typeid. The answer keeps the artifact answer's shape — its routes as ``endpoints`` — with ``webapp`` in
+        place of ``artifact``."""
+        from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
+
+        shown = None
+        if show:
+            try:
+                shown = await resolve_display_target(typeid=str(app.typeid))  # places + loads the asset
+            except InvalidDisplayTarget as e:
+                return ApiFailResponse(message=str(e), status_code=400)
+            await self.on_show(shown)
+        else:
+            await webapp_placement.show_webapp_locally(app)
+        routes = await webapp_placement.webapp_routes(str(app.id))
+        return ApiSuccessResponse(
+            data={
+                "artifact": None,
+                "webapp": app.model_dump(mode="json"),
+                "deployment": None,
+                "endpoints": [placed.model_dump(mode="json") for placed in routes],
                 "shown": shown,
             }
         )
@@ -3671,6 +3723,45 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="nothing to submit (no input staged)")
         self._schedule_queue_drain("submit")
         return ApiSuccessResponse(data={"status": "submitted"})
+
+    async def run_shell_command(self, command: str) -> ApiSuccessResponse | ApiFailResponse:
+        """Run *command* in this session's own shell mode — Claude Code's ``! cmd``.
+
+        Exactly what the person gets typing it: the command runs in the session's shell and its
+        output joins the conversation (Claude Code may answer it). Typed in three steps — the
+        escape key alone (the TUI switches to shell mode), the command as a bracketed paste, then
+        a discrete Enter, each once the terminal has gone quiet. Not ``prompt``: that path also
+        names the session after its first prompt and queues behind a running turn.
+        """
+        escape = self._shell_escape()
+        if not escape:
+            return ApiFailResponse(message=f"{self.driver.name} has no shell mode", status_code=409)
+        if not await self._is_live_pty():
+            return ApiFailResponse(message="the session has no live terminal to type into", status_code=409)
+        if is_turn_busy(self):
+            # Keys typed while the agent answers are lost; the queue delivers it once the turn ends.
+            entry = await self._enqueue(f"{escape} {command}", source="shell-command")
+            return ApiSuccessResponse(data={"status": "queued", "entry_id": entry.get("id")})
+        shell = await self.shell()
+        typed = await self.input(escape)
+        if isinstance(typed, ApiFailResponse):
+            return typed
+        await shell.wait_for_input_ready()
+        await self.send(f"\x1b[200~{command}\x1b[201~".encode())
+        await shell.wait_for_input_ready()
+        await self.send(b"\r")
+        return ApiSuccessResponse(data={"status": "ran"})
+
+    @action.post(action_name="run-shell-command")
+    async def _http_run_shell_command(self) -> ApiSuccessResponse | ApiFailResponse:
+        """POST body ``{"command": "..."}`` — see :meth:`run_shell_command`."""
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        command = str(body.get("command", "")).strip()
+        if not command:
+            return ApiFailResponse(message="command is required")
+        return await self.run_shell_command(command)
 
     async def send(self, data: str | bytes) -> None:
         """Write text or raw bytes to the live PTY stdin.
@@ -6732,6 +6823,10 @@ class AgenticProcess(Entity):
             except OSError as e:
                 logger.warning("delete of %s failed: %s", victim, e)
 
+    def _shell_escape(self) -> str | None:
+        """The driver's shell-mode key (``pty_shell_escape``); a driver predating the trait has none."""
+        return getattr(self.driver, "pty_shell_escape", None)
+
     def _supports_plan_mode(self) -> bool:
         """Driver capability flag surfaced on the entity for the chat plan
         toggle. Defensive: a driver predating the capability resolves False
@@ -6840,6 +6935,7 @@ class AgenticProcess(Entity):
             data.setdefault(key, None)
         data["queue"] = data.get("queue") or {"enabled": True, "entries": []}
         data["supports_plan_mode"] = False
+        data["supports_shell_command"] = False
         return data
 
     def _remote_refusal(self, verb: str) -> ApiFailResponse:
@@ -6956,6 +7052,8 @@ class AgenticProcess(Entity):
         )
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
+        # A command link can run in this session's own shell mode (``run_shell_command``).
+        data["supports_shell_command"] = bool(self._shell_escape() and self.pty_mode)
         data["additional_dirs"] = [
             path
             for path in (data.get("additional_dirs") or [])
@@ -7165,7 +7263,14 @@ class AgenticProcess(Entity):
     async def link_roots(self) -> list[str]:
         """Where the worker IS (its shell) first, then its own workdir and project."""
         shell = await self.shell()
-        return [*(await shell.link_roots() if shell else []), *await super().link_roots()]
+        if shell:  # the shell already adds this process's mounted dirs
+            return [*await shell.link_roots(), *await super().link_roots()]
+        return [*await super().link_roots(), *await self.mounted_dirs()]
+
+    async def mounted_dirs(self) -> list[str]:
+        """The ``--add-dir`` folders the worker reads from; its output names paths under them."""
+        await self.get_project()  # stamps the project context dirs resolved_add_dirs reads
+        return list(self.resolved_add_dirs)
 
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""
@@ -8036,17 +8141,18 @@ class AgenticProcess(Entity):
         # fallback (including headless turns that do not populate this buffer).
         self._schedule_reindex_paths(touched, "flush")
 
-    def _schedule_reindex_paths(self, paths: "Iterable[str]", source: str) -> None:
+    def _schedule_reindex_paths(self, paths: "Iterable[str]", source: str, *, sweep_root: str | None = None) -> None:
         """Fire-and-forget one deduplicated reindex batch.
 
         Shared by live transcript flushes and the transport-wide turn-end
         fallback so reindex ownership does not split into parallel paths.
+        ``sweep_root`` also reaps rows under it whose file is gone (see ``_reindex_touched``).
         """
         unique = list(dict.fromkeys(path for path in paths if path))
-        if not unique:
+        if not unique and not sweep_root:
             return
         asyncio.create_task(
-            self._reindex_touched(unique),
+            self._reindex_touched(unique, sweep_root=sweep_root),
             name=f"ap-reindex-{source}-{self.id[:8]}",
         )
 
@@ -8061,11 +8167,13 @@ class AgenticProcess(Entity):
         ``data_op_msg`` (updated_date bump → frontend body re-read)."""
         try:
             touched = self._collect_touched_from_transcript_tail()
-            self._schedule_reindex_paths(touched, f"turn-end-{source}")
+            # Only a shell command can delete a file the transcript does not name.
+            sweep_root = self.workdir if _TAIL_RAN_SHELL.pop(str(self.id), False) else None
+            self._schedule_reindex_paths(touched, f"turn-end-{source}", sweep_root=sweep_root)
         except Exception:
             logger.debug("AP %s: turn-end reindex schedule failed [%s]", self.id, source, exc_info=True)
 
-    async def _reindex_touched(self, paths: list[str]) -> None:
+    async def _reindex_touched(self, paths: list[str], *, sweep_root: str | None = None) -> None:
         """Force-reindex the turn's touched files (fire-and-forget, off the turn
         path). Each resolves to its owning entity, re-parses from disk, and
         broadcasts a ``data_op_msg`` so watching clients refresh.
@@ -8081,10 +8189,11 @@ class AgenticProcess(Entity):
         # and the `finally` below formats `counts` on every exit.
         counts: object = "cancelled"
         try:
-            from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+            from flow_sdk.fs_store.reindex import reindex_paths, sources_gone_under  # noqa: PLC0415
 
+            gone = await sources_gone_under(sweep_root) if sweep_root else []
             # A session writes anywhere — scratch folders included — so only a placed file is minted.
-            result = await reindex_paths(paths, placed_only=True)
+            result = await reindex_paths(paths, gone, placed_only=True)
             counts = result.as_dict()["counts"]
             logger.debug(
                 "AP %s write reindex: %s (in=%d)",
@@ -8204,6 +8313,8 @@ class AgenticProcess(Entity):
         # — safer than re-scanning all, which would re-reindex the whole history.
         t_scan = time.monotonic()
         touched = list(_iter_touched_paths(entries[wm:]))
+        # Read by the turn-end caller: a shell command may have removed files no entry names.
+        _TAIL_RAN_SHELL[str(self.id)] = _ran_shell_command(entries[wm:])
         scan_ms = (time.monotonic() - t_scan) * 1000
         # Whole-transcript parse on the event loop at every turn end — a known
         # source of terminal-wide stalls. ``bytes`` is what the parse is linear

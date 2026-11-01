@@ -50,9 +50,11 @@ class _Hub:
 
     def __init__(self, *, pool=None, messages=None, user=ME):
         self.pool, self.messages, self.user, self.calls, self.tickets = pool or [], list(messages or []), user, [], {TICKET}
+        self.params = {}
 
-    async def get(self, entity_type, entity_id, action):
+    async def get(self, entity_type, entity_id, action, *, params=None):
         self.calls.append(("get", entity_type, entity_id, action))
+        self.params[action] = dict(params or {})
         return self.pool if action == "helpdesk_conversations" else self.messages
 
     async def post(self, entity_type, payload, entity_id, action):
@@ -132,8 +134,9 @@ class _Desk(_Hub):
         super().__init__(pool=pool)
         self.threads = threads
 
-    async def get(self, entity_type, entity_id, action):
+    async def get(self, entity_type, entity_id, action, *, params=None):
         self.calls.append(("get", entity_type, entity_id, action))
+        self.params[action] = dict(params or {})
         return self.pool if action == "helpdesk_conversations" else self.threads.get(entity_id, [])
 
     def reads(self):
@@ -167,6 +170,28 @@ class TestThePool:
         desk.calls.clear()
         third = await driver.traverse(_row(), _view(second))
         assert third.items == [] and third.unchanged is True and desk.reads() == []
+
+    async def test_the_pool_asks_for_closed_tickets_too(self, monkeypatch):
+        desk = _Desk({TICKET: [MSG]}, [{**POOL[0], "status": "closed"}])
+        result = await _serve(monkeypatch, desk).traverse(_row(), _view())
+        assert desk.params["helpdesk_conversations"] == {"include_closed": "true"}, "D7: closed tickets stay listed"
+        assert [i.external_id for i in result.items] == [MSG["id"]]
+
+    async def test_closing_a_ticket_moves_its_stamp_and_a_reply_after_close_arrives(self, monkeypatch):
+        desk = _Desk({TICKET: [MSG]}, [{**POOL[0], "status": "open"}])
+        driver = _serve(monkeypatch, desk)
+        first = await driver.traverse(_row(), _view())
+        desk.pool = [{**POOL[0], "status": "closed"}]
+        desk.calls.clear()
+        closed = await driver.traverse(_row(), _view(first))
+        assert desk.reads() == [TICKET], "a close with no new message still counts as change"
+        assert closed.items == []
+        reply = {**MSG, "id": "ffffffff-ffff-4fff-8fff-ffffffffffff", "text": "still broken",
+                 "created_date": "2026-09-06T10:09:00+00:00", "updated_date": "2026-09-06T10:09:00+00:00"}
+        desk.threads[TICKET].append(reply)
+        desk.pool = [{**POOL[0], "status": "closed", "message_count": 2, "updated_at": reply["updated_date"]}]
+        after = await driver.traverse(_row(), _view(closed))
+        assert [i.external_id for i in after.items] == [reply["id"]], "D6: a reply to a closed ticket still arrives"
 
     async def test_a_new_ticket_is_picked_up_on_the_next_pass(self, monkeypatch):
         desk = _Desk({TICKET: [MSG]}, [POOL[0]])
@@ -213,7 +238,7 @@ class TestMapping:
 
     async def test_the_cursor_holds_each_tickets_change_token_and_message_watermark(self, hub):
         first = await DataDriver.loaded("helpdesk").traverse(_row(), _view())
-        stamp = f"{POOL[0]['message_count']}:{POOL[0]['updated_at']}"
+        stamp = f"{POOL[0]['message_count']}:{POOL[0]['updated_at']}:"
         assert first.cursor == HelpdeskSource.resume_at(POOL[0]["updated_at"], {TICKET: (stamp, MSG["updated_date"], [MSG["id"]])})
         again = await DataDriver.loaded("helpdesk").traverse(_row(), _view(first))
         assert again.items == [] and again.unchanged is True

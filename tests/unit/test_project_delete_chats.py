@@ -18,7 +18,7 @@ from flow_sdk.instance_settings import get_instance_settings, reset_instance_set
 async def test_project_delete_chat_history_option(tmp_path, monkeypatch, delete_chats):
     monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", str(tmp_path / ".claude"))
     reset_instance_settings()
-    project = await Project(name=str(tmp_path / "project")).save()
+    project = await Project(name=str(tmp_path / f"project-{tmp_path.name}")).save()
     session_id = mint_uuid()
     history = get_instance_settings().claude_projects_dir / "project-with-underscores"
     history.mkdir(parents=True)
@@ -39,7 +39,7 @@ async def test_project_delete_chat_history_option(tmp_path, monkeypatch, delete_
 
 
 async def test_delete_stops_a_headless_writer_before_removing_history(tmp_path):
-    project = await Project(name=str(tmp_path / "project")).save()
+    project = await Project(name=str(tmp_path / f"project-{tmp_path.name}")).save()
     chat = await AgenticProcess(project_id=project.id, pty_mode=False).save()
     worker = chat.driver.stream_worker(chat)
     child = await asyncio.create_subprocess_exec(sys.executable, "-c", "import time; time.sleep(60)")

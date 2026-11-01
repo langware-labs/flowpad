@@ -1,0 +1,10 @@
+{
+  "type": "compute_op",
+  "id": "8d2b7c4e-3a1f-4e6b-9c2d-5f7a8b9c0d21",
+  "name": "webapp-service-up",
+  "label": "Start an app's service",
+  "description": "Starts one process of a web app (the node's inputs: `webapp` — its name or id — and `service`, a process name or `page`), with the services declared before it. What an app declares it needs from another app: an asset_setup node whose run is the webapp-service-up wizard.",
+  "subkind": "cli",
+  "exe_data": {"webapp_step": "service"},
+  "completion_check": {"webapp_step": "service"}
+}

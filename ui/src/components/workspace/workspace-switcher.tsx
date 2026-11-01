@@ -18,7 +18,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { errorDetail } from '@src/lib/error-message';
-import { fsManager, vfsToOsPath, Workspace, workspaceDisplayName } from '@sdk';
+import { dataContext, fsManager, vfsToOsPath, Workspace, workspaceDisplayName } from '@sdk';
 import { Check, ChevronDown, Copy, FolderOpen, LayoutGrid, Loader2, Plus } from 'lucide-react';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 import { create } from 'zustand';
@@ -330,16 +330,18 @@ export function NewWorkspaceDialogHost() {
             >
               <bdi dir="ltr">{folder}</bdi>
             </div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => void handleBrowse()}
-              title={t`Choose folder…`}
-              type="button"
-              disabled={!computeNode}
-            >
-              <FolderOpen className="h-4 w-4" />
-            </Button>
+            {dataContext.caps.osDialogs && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => void handleBrowse()}
+                title={t`Choose folder…`}
+                type="button"
+                disabled={!computeNode}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
         <DialogFooter>

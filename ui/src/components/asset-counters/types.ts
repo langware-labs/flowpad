@@ -40,4 +40,14 @@ export interface AssetCounterGroup<T> {
   itemPointer: (item: T) => IDockPointer | null;
   /** What the table's quick search matches against. */
   searchText: (item: T) => string;
+  /** How one item reads as a card (the hub home grid). Absent → the group has no card view. */
+  card?: (item: T) => AssetCard;
+}
+
+/** One item as a card: title and status on top, a two-line description, a type-specific footer. */
+export interface AssetCard {
+  title: ReactNode;
+  description?: ReactNode;
+  status?: { label: ReactNode; active: boolean };
+  footer?: ReactNode;
 }

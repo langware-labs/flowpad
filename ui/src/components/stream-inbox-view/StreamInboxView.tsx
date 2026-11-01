@@ -88,6 +88,7 @@ import {
 } from '@src/components/conversation/conversation-category';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
+import { ConversationMarkChips } from '@src/components/conversation/ChannelMessageExtras';
 import { MembershipInvitations } from './MembershipInvitations';
 import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
@@ -217,6 +218,7 @@ interface ConversationListRowProps {
   /** The list resolves attribution once and hands each row its answer. */
   attributionFor: (
     origin: FlowMessage['origin'],
+    originLocal?: FlowMessage['origin_local'],
     channelSpec?: Conversation['channel_spec'],
   ) => ChannelAttribution | null;
   refSetter: (el: HTMLDivElement | null) => void;
@@ -295,8 +297,14 @@ export function ConversationListRow({
     latestPtrTs: lastPtr?.ts ?? null,
     invitation,
     viewer: { email: myEmail, cloudUserId, localUserId },
+    // A row the help desk SOURCE delivered is a staff row: label its state from the desk's side.
+    staffView: latestMessage?.origin?.kind === 'helpdesk' || firstMessage?.origin?.kind === 'helpdesk' || undefined,
   });
-  const attribution = attributionFor(latestMessage?.origin, conv.channel_spec);
+  // Once staff pick a ticket up, later messages reach them through the hub mirror, not the desk source:
+  // the message the desk source delivered still names which desk the row belongs to.
+  const deskMsg = [latestMessage, firstMessage].find((m) => m?.origin?.kind === 'helpdesk');
+  const attributed = deskMsg ?? latestMessage;
+  const attribution = attributionFor(attributed?.origin, attributed?.origin_local, conv.channel_spec);
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
 
@@ -509,8 +517,9 @@ export function ConversationListRow({
       <span className="min-w-0 flex-1 truncate" data-testid="stream-inbox-row-subject-line">
         {/* Channel conversations carry exactly one compact source chip; hub
             rows have no origin and render none — absence means "ours". A
-            source-backed ticket wears the source chip alone: the kind chip is
-            for the requester's side, where no source exists. */}
+            source-backed ticket wears the source chip (the desk's name) instead of
+            the kind chip — that is for the requester's side, where no source
+            exists — and still wears its state chip (waiting / picked / closed). */}
         <CategoryChips facets={attribution ? { ...facets, kind: 'direct' } : facets} className="me-1" />
         {automationMark && (
           // An automation ran on a message in here: ⚡ + who. Opens that session; the row opens the conversation.
@@ -538,6 +547,7 @@ export function ConversationListRow({
           </button>
         )}
         <SourceChip attribution={attribution} className="me-1" />
+        <ConversationMarkChips marks={conv.marks} />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -645,8 +655,13 @@ export function StreamInboxView({
   } = useAttachedChannels(channelsOwner);
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
   const attributionFor = useCallback(
-    (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) =>
-      attributionForOrigin(origin, null, channelSpec),
+    // The message's own source (origin_local) names WHICH source delivered it: two help desks share
+    // the `helpdesk` channel, so the channel alone would name the first desk for every ticket.
+    (
+      origin: FlowMessage['origin'],
+      originLocal?: FlowMessage['origin_local'],
+      channelSpec?: Conversation['channel_spec'],
+    ) => attributionForOrigin(origin, originLocal ?? null, channelSpec),
     [attributionForOrigin],
   );
   const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());

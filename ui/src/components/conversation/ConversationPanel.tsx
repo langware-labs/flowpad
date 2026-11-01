@@ -18,6 +18,8 @@ import { ConversationBottomRibbon, type ConversationSideTab } from './Conversati
 import { ConversationContextPanel } from './ConversationContextPanel';
 import { MembersAvatarStack } from './MembersAvatarStack';
 import { ChannelParticipants } from './ChannelParticipants';
+import { TicketHeaderChips } from './TicketHeaderChips';
+import { ConversationMarkChips } from './ChannelMessageExtras';
 import { ProjectChip } from '@src/components/project/ProjectChip';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -349,6 +351,8 @@ export function ConversationPanel({
           {headerLabel !== null && (
             <div className={headerWrapper}>
               <EditableConversationTitle conv={convEntity ?? null} fallback={headerLabel} />
+              <TicketHeaderChips conv={convEntity ?? null} />
+              <ConversationMarkChips marks={convEntity?.marks} />
               <ProjectChip projectId={convEntity?.project_id ?? null} className="me-auto" />
               {convEntity?.isChannel ? (
                 <ChannelParticipants conversation={convEntity} />

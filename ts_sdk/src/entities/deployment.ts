@@ -2,6 +2,7 @@ import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../API
 import { ActionInfo } from '../models/ActionInfo';
 import type { CloudDeployProvider } from './agent';
 import type { IEntity, EntityMerge } from '../IEntity';
+import { editorForType } from '../models/asset-editor';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
 import { isTypeId, TypeId } from '../models/TypeId';
@@ -207,9 +208,30 @@ export interface DeploymentSecretsInventory {
   authorizations: DeploymentAuthorizationRow[];
 }
 
+/** What pays for a deployment's turns and whether it can pay for one now (hub `deployment/<id>/funding`). */
+export interface DeploymentFunding {
+  /** `allocation` (its own sub-endpoint), `shared`, `default` (its owner's capped default) or `none`. */
+  kind: 'allocation' | 'shared' | 'default' | 'none' | string;
+  endpoint_typeid: string;
+  name: string;
+  /** The size the agent asks for (`sm`/`md`/`lg`), when it names one. */
+  size?: string | null;
+  /** The model that size — or the pinned model — resolves to. */
+  model?: string | null;
+  /** Why the next turn would be refused; empty = it can be paid for. */
+  exhausted: string;
+}
+
 @registerEntity
 export class Deployment extends APIEntity<Deployment> implements IDeployment {
   static type: string = 'deployment';
+
+  /** What pays for THIS deployment's turns, asked without spending. */
+  async funding(): Promise<DeploymentFunding> {
+    return dataManager.callAction<undefined, DeploymentFunding>(
+      new ActionInfo('funding', Deployment.type, this.id, 'GET'),
+    );
+  }
 
   /**
    * The cloud compute providers a deployment may be placed on — the hub's list (`deployment/providers`,
@@ -276,9 +298,27 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   }
 
   override get dockPointer(): DockPointerData {
+    return Deployment.dockPointerFor(this.id);
+  }
+
+  /** This deployment's own page — nested in its agent's editor, where its funding, threads and health live —
+   *  or `null` when it does not place an agent. */
+  get agentPagePointer(): DockPointerData | null {
+    const parent = this.parent_type_id;
+    const editor = editorForType('agent');
+    if (!editor || !parent || !isTypeId(parent) || new TypeId(parent).type !== 'agent') return null;
+    // The nested-child options the agent editor reads (`DockPointer.withChild`, ui).
+    return new DockPointerData(ViewType.ASSETS, `editor/${editor}/typeid/${parent}`, {
+      child: `${Deployment.type}-${this.id}`,
+      child_section: 'deployment',
+    });
+  }
+
+  /** Where deployment *id* opens, without loading it — an issue's "Open the deployment" names only the id. */
+  static dockPointerFor(id: string): DockPointerData {
     return new DockPointerData(ViewType.WORLDVIEW, WorldViewProjection.DEPLOYMENT, {
-      focus: `${Deployment.type}-${this.id}`,
-      selected: `${Deployment.type}-${this.id}`,
+      focus: `${Deployment.type}-${id}`,
+      selected: `${Deployment.type}-${id}`,
     });
   }
 

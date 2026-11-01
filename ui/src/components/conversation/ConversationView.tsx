@@ -28,6 +28,9 @@ import {
   dataManager,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { SealedNoteLine, SealedValuesPanel } from './SealedValuesPanel';
+
+const HUB_ONLY_KINDS = new Set(['sealed_value', 'sealed_ack', 'sealed_pending', 'sealed_request']);
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
@@ -37,9 +40,8 @@ import { replyPickedUp, ticketAffordances } from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
-import { syncConversationMessages, updateMessage } from '@src/components/stream-inbox-view/stream-inbox-api';
+import { syncConversationMessages } from '@src/components/stream-inbox-view/stream-inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
-import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
@@ -48,11 +50,14 @@ import { MessageComposer } from './MessageComposer';
 import { ConversationActions, ConversationEndedLine } from './ConversationActions';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
+import { useMarkLatestRead } from './useMarkLatestRead';
 import { useMembers } from '@src/hooks/use-members';
 import {
   buildConversationItems,
   groupThreadItems,
   itemThreadId,
+  partitionThreaded,
+  flatThreadIdsOf,
   ConversationItemKind,
   anchorSessionItems,
   shouldShowSoloSendNotice,
@@ -557,6 +562,7 @@ export function ConversationView({
       ),
     [agentId, agentScope?.thread_ids, threads],
   );
+  const flatThreadIds = useMemo(() => flatThreadIdsOf(threads), [threads]);
 
   // Two views of one feed, chosen by the URL:
   //   ?thread=<id> → only that thread's messages, unpacked
@@ -598,16 +604,12 @@ export function ConversationView({
       const inThread = feed.filter((it) => itemThreadId(it, getFm) === threadId);
       return anchorSessionItems(inThread, getFm, sessionAnchors);
     }
-    const threaded: ConversationItem[] = [];
-    const plain: ConversationItem[] = [];
-    for (const item of feed) {
-      (itemThreadId(item, getFm) ? threaded : plain).push(item);
-    }
+    const { threaded, plain } = partitionThreaded(feed, getFm, flatThreadIds);
     return [
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors, calls]);
+  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls]);
 
   // A message right under one from the same sender, moments later, drops its avatar and name.
   const continuations = useMemo(() => {
@@ -615,7 +617,7 @@ export function ConversationView({
     let prev: { sender_id?: string | null; at: number } | null = null;
     for (const item of groupedItems) {
       const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : null;
-      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT) {
+      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT || fm.kind === FlowMessageKind.SEALED_NOTE) {
         prev = null;
         continue;
       }
@@ -680,6 +682,12 @@ export function ConversationView({
       if (!fm && !messagesLoaded && !messagesError) return null;
       if (fm?.kind === FlowMessageKind.SESSION_EVENT) {
         return <SessionEventLine key={item.key} text={fm.text ?? ''} />;
+      }
+      // Hub-only secured-transfer frames (a sealed value, its ack, a promise, a request) are never chat rows; one
+      // that arrived without its kind is removed on the next sync — never shown meanwhile.
+      if (fm && HUB_ONLY_KINDS.has(String(fm.kind))) return null;
+      if (fm?.kind === FlowMessageKind.SEALED_NOTE) {
+        return <SealedNoteLine key={item.key} text={fm.text ?? ''} />;
       }
       // One plan session per conversation. Once any session exists (or
       // is in-flight) every spec-bearing bubble shows the "Open" link
@@ -878,32 +886,11 @@ export function ConversationView({
     ((!!conversation?.initiated_by && conversation.initiated_by === cloudUserId) ||
       (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
 
-  // Open-to-read (URL-first): viewing a conversation marks its latest received
-  // message read — the mutation lives HERE, on the mounted view, so the Stream Inbox
-  // row click / banner click / direct link only navigate (single writer:
-  // navigation → view → action; the backend then reconciles
-  // StreamInboxManager.unread). Focus-gated: a message arriving while the window is
-  // backgrounded must stay unread (it drives the badge) until the user
-  // actually returns — hence the re-run on window focus.
-  const readMarkedRef = useRef<string | null>(null);
-  useEffect(() => {
-    const markLatestRead = () => {
-      if (!document.hasFocus()) return;
-      const latestId = latestPointer(pointers)?.id;
-      const latest = latestId ? messagesById.get(latestId) : undefined;
-      if (!latest?.id || latest.is_read) return;
-      if (authoredBy(senderOf(latest), [cloudUserId, localUser?.id])) return;
-      const key = `${conversationId}:${latest.id}`;
-      if (readMarkedRef.current === key) return;
-      readMarkedRef.current = key;
-      void updateMessage(latest.id, { is_read: true }, agentId ?? undefined).catch(() => {
-        readMarkedRef.current = null; // transient failure — retry on next tick/focus
-      });
-    };
-    markLatestRead();
-    window.addEventListener('focus', markLatestRead);
-    return () => window.removeEventListener('focus', markLatestRead);
-  }, [agentId, conversationId, pointers, messagesById, cloudUserId, localUser?.id]);
+  // Open-to-read (URL-first): viewing a conversation marks its latest received message read —
+  // the mutation lives on the mounted view, so the Stream Inbox row click / banner click / direct
+  // link only navigate (single writer: navigation → view → action).
+  const latestId = latestPointer(pointers)?.id;
+  useMarkLatestRead(latestId ? messagesById.get(latestId) : undefined, cloudUserId, localUser?.id, agentId);
 
   // Delete a message everywhere. The loader/live-query owns the list, so we
   // only fire the SDK action and let the resulting data-op re-render the view
@@ -1201,6 +1188,7 @@ export function ConversationView({
         </p>
       )}
       <ConversationEndedLine endedAt={conversation?.ended_at} />
+      <SealedValuesPanel conversationId={conversationId} version={conversation?.updated_date ? String(conversation.updated_date) : null} />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
         <MessageComposer

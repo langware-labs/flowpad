@@ -18,13 +18,24 @@ export async function printLink(page: Page, shellId: string, link: string, osc =
   await expect(page.locator('.xterm-rows:visible').first()).toContainText(osc ? 'OSC destination' : link);
 }
 
-export async function printedLinkPoint(page: Page, text: string, host = '') {
+/**
+ * The screen point of `text` (or the first match of a pattern) on its newest row. `scrollBack`:
+ * only the rows on screen are drawn, so scroll up, as a person would, until it shows.
+ */
+export async function printedLinkPoint(page: Page, text: string | RegExp, host = '', { scrollBack = false } = {}) {
   // xterm renders spans, not anchors. Click the actual glyph's DOM position.
-  const row = page.locator(`${host} .xterm-rows:visible > div`).filter({ hasText: text }).last();
+  const rows = page.locator(`${host} .xterm-rows:visible > div`).filter({ hasText: text });
+  for (let up = 0; scrollBack && (await rows.count()) === 0 && up < 20; up++) {
+    await page.locator(`${host} .xterm-screen:visible`).last().hover();
+    await page.mouse.wheel(0, -200);
+  }
+  const row = rows.last();
   await expect(row).toBeVisible();
-  return row.evaluate((element, text) => {
+  const pattern = text instanceof RegExp ? text.source : null;
+  return row.evaluate((element, { text, pattern }) => {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    let index = element.textContent?.replace(/\u00a0/g, ' ').indexOf(text) ?? -1;
+    const content = element.textContent?.replace(/\u00a0/g, ' ') ?? '';
+    let index = pattern === null ? content.indexOf(text) : content.search(new RegExp(pattern));
     let node: Node | null;
     while ((node = walker.nextNode())) {
       const length = node.textContent?.length ?? 0;
@@ -36,8 +47,8 @@ export async function printedLinkPoint(page: Page, text: string, host = '') {
       const rect = range.getBoundingClientRect();
       return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
     }
-    throw new Error(`No glyph for ${text}`);
-  }, text);
+    throw new Error(`No glyph for ${pattern ?? text}`);
+  }, { text: String(text), pattern });
 }
 
 export async function clickPrintedLink(page: Page, text: string, host = '') {

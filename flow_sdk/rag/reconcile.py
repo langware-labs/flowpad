@@ -57,7 +57,7 @@ def default_embedding_model(endpoint) -> str:
     rather than left to the client, so the index can record the model it is about to be pinned to.
     """
     dialect = endpoint.dialect
-    return (endpoint.models or {}).get("embedding") or (dialect.default_models.get("embedding", "") if dialect else "")
+    return (endpoint.tiers or {}).get("embedding") or (dialect.default_models.get("embedding", "") if dialect else "")
 
 
 async def embedder_for(index: "RagIndex"):

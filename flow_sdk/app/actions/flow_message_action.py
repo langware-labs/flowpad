@@ -1633,6 +1633,11 @@ async def conversation_pickup() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
 
 
+def _truthy(value) -> bool:
+    """A body flag as sent by JSON (``true``) or a form/query (``"true"``)."""
+    return value is True or str(value or "").strip().lower() in ("true", "1", "yes")
+
+
 @action.post(action_name="helpdesk-tickets-list", types=None)
 async def helpdesk_tickets_list() -> ApiResponse:
     """Staff triage queue: list the helpdesk project's tickets (members-only on
@@ -1675,8 +1680,10 @@ async def helpdesk_tickets_list() -> ApiResponse:
         # A hub refusal stays a refusal, never an empty queue: a non-staff caller is told
         # "no valid access", which is what lets the staff UI tell the two apart.
         try:
+            # D7: closed tickets only when asked -- the hub's default queue is the open one, the call unchanged.
+            extra = {"params": {"include_closed": "true"}} if _truthy(body.get("include_closed")) else {}
             rows = await HubProxy.call(
-                "GET", BuiltinEntityType.PROJECT, helpdesk_id, "helpdesk_conversations", strict=True
+                "GET", BuiltinEntityType.PROJECT, helpdesk_id, "helpdesk_conversations", strict=True, **extra
             )
         except HubError as e:
             return e.fail_response("Could not list help desk tickets")
@@ -1930,8 +1937,6 @@ async def _process_single_hub_message(raw: dict) -> str | None:
          locally-sent messages never produce a bundle) and every pure-text
          reply from a peer.
     """
-    from flow_sdk.app.actions.materialize_flow_message import mirror_referenced_projects  # noqa: PLC0415
-
     fm_id = (raw.get("id") or "").strip()
     if not fm_id:
         return None
@@ -1971,7 +1976,6 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                     # A no-row success means unpack materialized the message;
                     # there is no separate header write left to perform.
                     return fm_id
-                await mirror_referenced_projects(existing, None)
             # Download failed (body still uploading, a transient hub error, or —
             # the receiver pre-accept case — the recipient can't pull the bundle
             # body yet). Do NOT return empty: fall through to materialize the FM
@@ -2041,7 +2045,6 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
         return None
-    await mirror_referenced_projects(fm, None)
     conv_id = (raw.get("conversation_id") or "").strip()
     if conv_id:
         # Set before the edge block so the announcement below is well-defined

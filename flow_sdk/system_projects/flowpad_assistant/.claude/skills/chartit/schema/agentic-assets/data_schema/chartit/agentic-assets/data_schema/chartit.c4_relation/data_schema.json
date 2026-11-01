@@ -1,0 +1,49 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id (r1, r2…): what feedback targets."
+    },
+    "from": {
+      "shape": "string",
+      "description": "The source element id."
+    },
+    "to": {
+      "shape": "string",
+      "description": "The target element id."
+    },
+    "label": {
+      "shape": "string",
+      "description": "What happens, as a short verb phrase (Reads orders, Publishes OrderPlaced)."
+    },
+    "tech": {
+      "shape": "?string",
+      "description": "How (HTTPS/JSON, gRPC, SQL, Kafka)."
+    },
+    "order": {
+      "shape": "?int",
+      "description": "The step number on a dynamic chart; defaults to list order."
+    },
+    "style": {
+      "shape": "?enum:sync|async",
+      "description": "sync: solid (default); async: dashed (events, queues)."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Shown on hover."
+    },
+    "ref": {
+      "shape": "?string",
+      "description": "Another chart (by name, any format — e.g. the sequence chart of this call); drawn as Open ↗ on the arrow."
+    },
+    "data": {
+      "shape": "?string",
+      "description": "The data schema kind the call carries; a chip that opens that schema."
+    },
+    "links": {
+      "shape": "?[chartit.c4_link]",
+      "description": "Code, docs or assets behind this call."
+    }
+  }
+}

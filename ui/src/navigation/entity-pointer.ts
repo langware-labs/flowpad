@@ -1,6 +1,6 @@
 /** Where an entity opens: the dock pointer for a `{type, id}` (plus what a few types need from the
  *  row). Navigation owns this mapping; chips, breadcrumbs, viewers and dialogs all ask it. */
-import { DataSource, TypeId, workerFromSessionType } from '@sdk';
+import { AgenticProcess, DataSource, TypeId, workerFromSessionType } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -43,6 +43,9 @@ export function buildDockPointer(
       return DockPointer.forDataSources({ section: 'source', id: resolved.id, tab: null });
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
+    case AgenticProcess.type:
+      // A session opens in its own tab (the shell dock). `/dock/agentic_process/<id>` has no view.
+      return DockPointer.forSession(resolved.id);
     case 'flow_message': {
       // A message opens in its conversation, scrolled to it.
       const conversationId = (resolved as { conversation_id?: string | null }).conversation_id;

@@ -188,7 +188,7 @@ from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
 agentmail = await DataSource.get("agent mailbox")
-remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
+remote = await SecretStore.get("gcp", {"project": "acme-prod", "prefix": "agentmail-production-"})
 
 google = await Connection.get("google")  # remote.connections.names() → ["google"]
 await google.validate_scopes(remote.connections.scopes("google"))
@@ -610,7 +610,7 @@ A provider key, a budget, or a harness login.
 ```python
 from flow_sdk.builtin.llm_endpoint import LLMEndpoint
 
-llm = LLMEndpoint(provider="openrouter")          # kind=api_key, base_url and models filled in
+llm = LLMEndpoint(provider="openrouter")          # kind=api_key, base_url and tiers filled in
 vectors = await llm.create_embeddings(["a hot day in July", "a cold night in January"])
 answer = await llm.create_completion("You answer in one word.", "Capital of France?")
 ```

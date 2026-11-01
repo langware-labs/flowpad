@@ -46,6 +46,7 @@ Electron (main.js)
 | `flow-rs-keychain.js` | Reading keys from the keychain. |
 | `progress-watchdog.js` | Progress guard: 30 s windows, 3 quiet windows in a row = stalled. Gated by `canStall`, async sampling, overlap-safe. |
 | `update-restart.js` | `createRestartApplier` — "Restart now": stops the backend, installs, and recovers if the restart fails. |
+| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
 | `support-bundle.js` | "Send Report" zip: `collectLogs`, `buildSupportZip`, `redact`. |
@@ -92,7 +93,24 @@ Electron (main.js)
 "engine ≥0.2.173 needs 3.11 but an old desktop pins 3.10" failure for new desktops.
 
 ### 3.2 Updates (new flow)
-- Checked every 20 minutes (`UPDATE_CHECK_INTERVAL_MS`) by `checkPackageUpdateInBackground`.
+- Both channels are checked on a per-account schedule (`update-schedule.js`, FLOWPAD-2308): hourly for an
+  `@langware.ai` login (the hub-validated email the backend writes to the instance's `config.json`), daily
+  otherwise — including logged out. The last check, its answer, the failure streak and the last version
+  announced persist in `update-schedule.json` (userData), so a restart neither resets the cadence nor
+  re-announces the same version; failed checks retry on a growing backoff (10 min → 4 h). A 5-minute tick
+  only asks whether a check is due; login/logout/account switch re-evaluate at once (a directory watch on
+  the instance dir, re-armed by the tick if it dies). The launch check is skipped while a recent answer said
+  "current" (the status is seeded, so engine updates are not held), but a relaunch inside a failure backoff
+  retries for real; recovery panels and the update-cycle harness bypass the schedule. A feed answer that
+  cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —
+  downloaded deferred, installed on the next quit, surfaced by the reminder (`decideDesktopAction`).
+  Each channel keeps its own failure streak: a PyPI outage retries engine-only on its backoff without
+  re-hitting the GitHub feed, and vice versa. There is never more than ONE update window (`startOffer` is
+  the only entry point, and launching it does not block the scheduler); a newer release found while the
+  "Updates available" screen waits supersedes it — the old window closes unanswered (nothing recorded,
+  its saved engine state withdrawn) and one window for the newest version replaces it. Work blocked by an
+  open dialog or running download is a per-half follow-up debt, finished from the cached answer on a near
+  tick and capped at 3 consecutive failed retries per interval.
 - **Desktop and engine both new:** one screen, "Update now / Later". The engine version X is saved to `pending-engine.json`.
   After a consented "Restart now", the new desktop installs exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`).
 - **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine
@@ -151,7 +169,7 @@ On macOS, an app running from a transient location is offered, once per version,
 
 | File | Location |
 | --- | --- |
-| `desktop-version.json`, `app-location-prompt.json`, `pending-engine.json` | `app.getPath('userData')` |
+| `desktop-version.json`, `app-location-prompt.json`, `pending-engine.json`, `update-schedule.json` | `app.getPath('userData')` |
 | `desktop-install-in-progress.json` | `~/.flow/` |
 | Desktop log | `~/.flow/logs/main_desktop/<DDMonYYYY_HH_MM_SS>.log` |
 | Server / monitor logs | `~/.flow/instances/<FLOW_INSTANCE or prod>/logs/{server,monitor}` |

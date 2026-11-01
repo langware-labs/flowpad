@@ -28,6 +28,9 @@ CREDENTIAL = TypeInfo(
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     asset_class="repo",
+    # Opening a received credential refreshes its project first: its values come from the
+    # project's vaults, which the refreshed manifest names (``Credential.setup_on_receive``).
+    receive_handler=True,
     family="credential",
     asset_spec=CredentialSpec,
     fts_content=("name", "description"),

@@ -24,6 +24,12 @@ describe('flowpad:navigate', () => {
     expect(dock?.toUrl()).toBe(`/dock/data-sources/${id}`);
   });
 
+  it("opens a session in its own tab (the shell dock), not a generic page with nothing to show", () => {
+    const id = 'e9b63de2-2368-4f87-b197-bc63dd8413a8';
+    const dock = guestNavigation({ type: 'flowpad:navigate', typeid: `agentic_process-${id}` });
+    expect(dock?.toUrl()).toBe(`/dock/shell/agentic_process-${id}`);
+  });
+
   it.each([
     ['another message type', { type: 'flowpad:theme', address: '/dock/home' }],
     ['a non-dock URL', { type: 'flowpad:navigate', address: 'https://evil.example/dock/home' }],

@@ -3,7 +3,8 @@ import { ViewerChatSlot } from '../ViewerChatToggle';
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
-import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
+import { MilkdownEditor, type RequestChangeOpts, type RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
+import type { ChangeMark } from '@src/components/milkdown-editor/plugins/change-marks';
 import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
 import { Button } from '@src/components/ui/button';
 import { WikiToolbar } from '@src/components/wiki-toolbar';
@@ -46,6 +47,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AssetCollisionBadge, useAssetCollisionSideTab } from '../AssetCollisionUI';
 import { useNestedHost } from '../nested-host';
+import { pointerForResult, resolveSmartLink, type SmartLinkAnswer } from './smart-link';
+import { LinkSuggestDialog } from './LinkSuggestDialog';
 
 export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
@@ -115,6 +118,10 @@ interface MarkdownEditorProps {
   headerLeading?: React.ReactNode;
   /** Appended to the side drawer after Backlinks. */
   extraSideTabs?: ExtraSideTab[];
+  /** Shows the "Change this…" wand on text selections; receives each queued request. */
+  onRequestChange?: (change: RequestedChange, opts?: RequestChangeOpts) => void;
+  /** Queued change requests to mark on the text. */
+  changeMarks?: readonly ChangeMark[];
   /** When true, the "Learning" view-mode chip appears in the header strip. */
   showLearningMode?: boolean;
   /** Body rendered when viewMode === 'learning'. Required when showLearningMode is true. */
@@ -187,6 +194,8 @@ export function MarkdownEditor({
   headerExtras,
   headerLeading,
   extraSideTabs,
+  onRequestChange,
+  changeMarks,
   showLearningMode,
   learningPanel,
   onDelete,
@@ -207,6 +216,8 @@ export function MarkdownEditor({
       headerExtras={headerExtras}
       headerLeading={headerLeading}
       extraSideTabs={extraSideTabs}
+      onRequestChange={onRequestChange}
+      changeMarks={changeMarks}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
       onDelete={onDelete}
@@ -265,6 +276,8 @@ function MarkdownEditorContent({
   headerExtras,
   headerLeading,
   extraSideTabs,
+  onRequestChange,
+  changeMarks,
   showLearningMode,
   learningPanel,
   onDelete,
@@ -283,6 +296,8 @@ function MarkdownEditorContent({
   headerExtras?: MarkdownEditorProps['headerExtras'];
   headerLeading?: MarkdownEditorProps['headerLeading'];
   extraSideTabs?: ExtraSideTab[];
+  onRequestChange?: MarkdownEditorProps['onRequestChange'];
+  changeMarks?: MarkdownEditorProps['changeMarks'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
   onDelete?: MarkdownEditorProps['onDelete'];
@@ -532,6 +547,20 @@ function MarkdownEditorContent({
       />
     );
 
+  const [linkSuggest, setLinkSuggest] = useState<Extract<SmartLinkAnswer, { kind: 'suggest' }> | null>(null);
+  const linkDialog = linkSuggest ? (
+    <LinkSuggestDialog
+      name={linkSuggest.name}
+      results={linkSuggest.results}
+      onClose={() => setLinkSuggest(null)}
+      onPick={(r) => {
+        setLinkSuggest(null);
+        const pointer = pointerForResult(r);
+        if (pointer) navigation.openDock(pointer);
+      }}
+    />
+  ) : null;
+
   const handleLinkClick = useCallback(
     (href: string) => {
       // WikiTip backward link: `/?highlight=<wikiword>` routes home and highlights
@@ -561,13 +590,19 @@ function MarkdownEditorContent({
         return;
       }
 
-      const dir = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
-      const resolvedPath = href.startsWith('/') ? href : `${dir}/${href}`;
       // Nested in another editor the page pointer names the PARENT (e.g. `agent`), not this doc.
       const assetType = nested ? 'markdown' : (currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory');
-      navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
+      if (href.startsWith('/')) {
+        navigation.openDock(DockPointer.forAssetEditor(assetType, href));
+        return;
+      }
+      // Relative link: the path first, then a search by file name.
+      void resolveSmartLink(fsRef, href, assetType).then((answer) => {
+        if (answer.kind === 'open') navigation.openDock(answer.pointer);
+        else setLinkSuggest(answer);
+      });
     },
-    [sourcePathStr, currentDock, navigation, wikiLinkTarget, nested],
+    [fsRef, currentDock, navigation, wikiLinkTarget, nested],
   );
 
   // Deep-link scroll: when opened with a `fragment` (wiki anchor), scroll to the
@@ -694,6 +729,8 @@ function MarkdownEditorContent({
   const milkdownBody = (mode: Exclude<ViewMode, 'markdown'>) => (
     <MilkdownEditor
       content={body}
+      onRequestChange={onRequestChange}
+      changeMarks={changeMarks}
       onChange={handleBodyChange}
       onUserEdit={markEntityEdited}
       onLinkClick={handleLinkClick}
@@ -721,6 +758,7 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <PlainDocumentHeader>{plainHeaderActions?.(shareButton)}</PlainDocumentHeader>
         {shareDialog}
+        {linkDialog}
         <div className="min-h-0 flex-1 overflow-hidden">{milkdownBody('view')}</div>
       </div>
     );
@@ -766,6 +804,7 @@ function MarkdownEditorContent({
       />
 
       <DocumentSaveNotice {...{saveError, metadataError, conflict, inspectCurrent, reload, currentDocument}} />
+      {linkDialog}
       {hasFields && (
         <div className="flex-shrink-0 border-b">
           <button

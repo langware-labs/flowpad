@@ -49,7 +49,7 @@ async def test_a_local_endpoint_completes(provider):
     reply = await endpoint.create_completion(
         "You answer with a single digit and nothing else.",
         "What is four minus one?",
-        model=endpoint.models["sm"],
+        model=endpoint.tiers["sm"],
     )
     assert isinstance(reply, str)
     assert "3" in reply
@@ -104,4 +104,4 @@ async def test_the_default_embedding_model_still_exists(provider):
     slugs = await endpoint.list_models(embeddings_only=True)
     if not slugs:
         pytest.skip(f"{provider} did not answer a model catalog")
-    assert endpoint.models["embedding"] in slugs
+    assert endpoint.tiers["embedding"] in slugs

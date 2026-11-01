@@ -6,7 +6,15 @@
  * a schedule chosen as "Every weekday at 09:00" saves as `0 9 * * 1-5` and
  * reads back as the same preset (the backend's `read_schedule` is the inverse).
  */
-import type { AutomationKind, ITrigger, ScheduleWhen, SchedulePreset, TriggerActionRow } from '@sdk';
+import type {
+  AutomationKind,
+  CloudSchedule,
+  ITrigger,
+  ScheduleWhen,
+  SchedulePreset,
+  TriggerActionRow,
+} from '@sdk';
+import type { RunsOn } from '@src/components/assets/editor/agent-profile/runs-on';
 import { toLocalInputValue } from '@src/components/cron-view/CronForm';
 
 export type EveryUnit = 'minutes' | 'hours' | 'days';
@@ -46,6 +54,8 @@ export interface AutomationDraft {
   /** Steps the builder cannot edit (a built-in callback, a wizard) — kept as they are. */
   keptActions: TriggerActionRow[];
   advanced: { fireOnce: boolean; maxFiresPerMinute: number | null };
+  /** Where a schedule runs. Flowpad cloud saves as a hub Trigger (`draftToCloudSchedule`). */
+  runsOn: RunsOn;
 }
 
 function defaultSchedule(): ScheduleDraft {
@@ -78,6 +88,7 @@ export function defaultDraft(kind: AutomationKind): AutomationDraft {
     then: { choice: 'run_agent', agentTypeId: '', prompt: '', scriptPath: '' },
     keptActions: [],
     advanced: { fireOnce: false, maxFiresPerMinute: null },
+    runsOn: { kind: 'local' },
   };
 }
 
@@ -159,6 +170,8 @@ export function draftToFields(d: AutomationDraft): Partial<ITrigger> & { name: s
   if (d.advanced.maxFiresPerMinute) fields.max_fires_per_minute = d.advanced.maxFiresPerMinute;
   if (d.kind === 'schedule') {
     Object.assign(fields, scheduleExpr(d.schedule), { timezone: d.schedule.timezone || null });
+    // A named machine is kept; none is every machine (the legacy shape), so no key is sent for it.
+    if (d.runsOn.kind !== 'hub' && d.runsOn.deploymentId) fields.runs_on = d.runsOn.deploymentId;
   } else if (d.kind === 'event') {
     Object.assign(fields, { tag_pattern: d.event.pattern.trim(), tag_target: d.event.target.trim() || undefined });
   } else if (d.kind === 'file') {
@@ -192,6 +205,7 @@ export function draftFromTrigger(t: ITrigger, schedule?: ScheduleWhen | null): A
   d.file = { path: t.watch_path ?? '', glob: t.watch_glob ?? '', recursive: !!t.recursive };
   d.hook = { events: [...(t.hook_events ?? [])] };
   d.advanced = { fireOnce: !!t.fire_once, maxFiresPerMinute: t.max_fires_per_minute ?? null };
+  d.runsOn = { kind: 'local', deploymentId: t.runs_on ?? null };
 
   const actions = [...(t.actions ?? [])];
   // The first editable step becomes the "Then"; everything else is kept untouched.
@@ -228,4 +242,28 @@ export function draftProblems(d: AutomationDraft): DraftProblem[] {
   }
   if (d.then.choice === 'run_script' && !d.then.scriptPath.trim()) out.push('script');
   return out;
+}
+
+/** Whether a draft may run on Flowpad cloud: a schedule that runs an agent with a prompt (what the hub validates). */
+export function cloudAllowed(d: AutomationDraft): boolean {
+  return d.kind === 'schedule' && d.then.choice === 'run_agent' && !!d.then.agentTypeId && !!d.then.prompt.trim();
+}
+
+/** A draft as a Flowpad cloud schedule. The zone is always explicit — the hub reads an empty one as UTC — so a
+ *  draft with none takes `fallbackTimezone` (the author's). */
+export function draftToCloudSchedule(
+  d: AutomationDraft,
+  options: { projectId?: string | null; fallbackTimezone: string },
+): CloudSchedule {
+  const { expr, sched_trigger_type } = scheduleExpr(d.schedule);
+  return {
+    name: d.name.trim() || autoName(d),
+    expr,
+    sched_trigger_type,
+    timezone: d.schedule.timezone || options.fallbackTimezone,
+    agent: d.then.agentTypeId,
+    prompt: d.then.prompt.trim(),
+    project_id: options.projectId ?? null,
+    enabled: d.enabled,
+  };
 }

@@ -44,7 +44,6 @@ import { StreamInboxView } from '@src/components/stream-inbox-view/StreamInboxVi
 import { AgentStreamInboxView } from '@src/components/stream-inbox-view/AgentStreamInboxView';
 import { TabbedTerminal } from '@src/components/terminal';
 import { HubTerminal } from '@src/components/terminal/HubTerminal';
-import { AppDisplayViewer } from '../app-display-viewer';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
@@ -52,6 +51,8 @@ import { Tab, tabForDockKey } from '@sdk';
 import { useTerminalTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { appDockAddress } from '@src/navigation/app-dock';
+import { AppSlot } from '@src/components/app-pool/AppSlot';
+import { appViewKey } from '@src/components/app-pool/app-view-key';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import {
   DEFAULT_NAVIGATOR_POLICY,
@@ -400,10 +401,18 @@ function ContentPanelBody({
         // An app addressed by its artifact, its webapp definition or its endpoint.
         // Distinct from WEB_APP (a raw external URL): the address is stable
         // identity and the endpoint that serves it is derived, which is what makes
-        // a shown app bookmarkable and restorable at all. The epoch rides along
-        // because a remount alone does not reload a frame the registry parked.
+        // a shown app bookmarkable and restorable at all. A SLOT of the app pool:
+        // the view lives as long as its tab (I6); the epoch reaches it as a prop
+        // (a new one reloads the frame once), never as a remount.
         const app = appDockAddress(currentDock);
-        return app ? <AppDisplayViewer {...app} reloadKey={contentEpoch} /> : null;
+        const appTarget = currentDock?.targetTypeId;
+        return app && appTarget ? (
+          <AppSlot
+            viewKey={appViewKey(currentDock?.hostProcessId, appTarget.toString(), app.route)}
+            tabHash={currentDock?.tabHash ?? ''}
+            viewer={{ ...app, reloadKey: contentEpoch }}
+          />
+        ) : null;
       }
       case ViewType.DIFF:
         if (currentDock?.pointer?.startsWith('asset-compare/')) {
@@ -632,9 +641,10 @@ function ContentPanelBody({
   const providerProject = currentDock?.options?.[PROVIDER_PROJECT_PARAM];
   const display = currentDock?.hostProcessId ?? '';
   const isAppBody = bodyViewType === ViewType.APP;
-  // Only an app needs its project running; a file or entity in the display opens as it is.
-  const loadProject = providerProject || (display && isAppBody ? project?.id : undefined);
   const homeAgent = currentDock?.options?.[HOME_AGENT_PARAM];
+  // An app view is brought up by its own lifecycle record (`AppDisplayViewer`), never by a project gate; a
+  // provider's other views (its home, its files) still wait for the provider to load.
+  const loadProject = isAppBody && !homeAgent ? undefined : providerProject;
   const consumerProject = currentDock?.options?.[CONSUMER_PROJECT_PARAM] || currentDock?.scopeProjectId;
   const renderedBody =
     homeAgent && consumerProject ? (
@@ -642,16 +652,8 @@ function ContentPanelBody({
     ) : (
       renderBody(bodyViewType)
     );
-  const appAddress = isAppBody && !homeAgent ? appDockAddress(currentDock) : null;
   const body = loadProject ? (
-    <OwnerLoadGate
-      urlProject={loadProject}
-      appId={appAddress?.microAppId ?? null}
-      artifactId={appAddress?.artifactId ?? null}
-      endpointId={appAddress?.endpointId ?? null}
-      route={appAddress?.route ?? null}
-      display={display}
-    >
+    <OwnerLoadGate urlProject={loadProject} display={display}>
       {renderedBody}
     </OwnerLoadGate>
   ) : (

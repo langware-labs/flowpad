@@ -1,0 +1,18 @@
+{
+  "name": "service-stub",
+  "title": "service-stub",
+  "description": "Tier-1 stub: brings the `tenant` service on required port 48300 (the Spora tenant mirror).",
+  "build": "build",
+  "services": [
+    {
+      "name": "tenant",
+      "protocol": { "spec_kind": "api.rest" },
+      "serving": {
+        "type": "proxy",
+        "start_cmd": "python3 tenant.py {port}",
+        "health": "/api/bootstrap",
+        "ports": { "local": { "port": 48300, "required": true } }
+      }
+    }
+  ]
+}
