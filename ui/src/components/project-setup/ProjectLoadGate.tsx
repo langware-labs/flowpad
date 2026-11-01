@@ -46,15 +46,12 @@ export function ProjectLoadGate({
   const fix = useSetupFix(projectId, result, lifecycle.error, (approved) => load(approved));
   const navigate = useNavigate();
   // Joining a provider-only run does not verify this consumer's saved display.
-  // Continue with that check once the shared run completes; never retry a failed load.
+  // Continue with that check once the shared run completes. A refused load stays on screen with
+  // Try again; it is never sent again by itself.
   const displayChecked = !display || result?.display === display;
-  // Once per visit: a refused load stays on screen with Try again, it is not sent again by itself.
-  const displayLoad = useRef<string | null>(null);
   useEffect(() => {
     if (result?.state !== 'ready' || displayChecked || lifecycle.starting || lifecycle.error) return;
-    if (loadedLocation !== location.key || displayLoad.current === location.key) return;
-    displayLoad.current = location.key;
-    void load();
+    if (loadedLocation === location.key) void load();
   }, [result?.state, displayChecked, lifecycle.starting, lifecycle.error, loadedLocation, location.key, load]);
   // Opening an APP means "make it work": its owed setup (or one repair per failure) runs here, unasked,
   // in the view the app will fill. A gate for the project alone offers Set up instead.

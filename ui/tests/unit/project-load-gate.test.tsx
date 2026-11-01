@@ -236,9 +236,12 @@ it('a refused load from a display session says why once and waits for Try again'
   vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: '', running: false, tree: null });
   const load = vi
     .spyOn(Project, 'load')
-    .mockImplementation((_id, options) =>
-      options?.display ? Promise.reject(new Error('Display session gone was not found')) : Promise.resolve(ready),
-    );
+    // As on the page: the load answers after the state read has come back ready.
+    .mockImplementation(async (_id, options) => {
+      await new Promise((r) => setTimeout(r, 20));
+      if (options?.display) throw new Error('Display session gone was not found');
+      return ready;
+    });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
