@@ -78,6 +78,7 @@ import { ShareReplyCard } from './ShareReplyCard';
 import type { WorkerType } from './conversation-session-constants';
 import { PromptCallCard } from './PromptCallCard';
 import type { ProcessCall, ReturnedValue } from '@sdk';
+import { messageDirection } from './message-direction';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -414,7 +415,7 @@ export function FlowMessageBubble({
     fm.sender_id &&
     rosterReady &&
     !participantLabelByUserId(participants, fm.sender_id) &&
-    !(localUser?.id && fm.sender_id === localUser.id) &&
+    messageDirection(fm, localUser?.id) !== 'sent' &&
     !fm.sender_name?.trim() &&
     (creatorIsLocalArtifact || !(creator?.name?.trim() || creator?.email?.trim()))
       ? fm.sender_id
