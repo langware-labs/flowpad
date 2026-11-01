@@ -19,7 +19,8 @@ const h = vi.hoisted(() => ({
   save: vi.fn(),
   invalidate: vi.fn(),
   refetchEndpoints: vi.fn(),
-  models: vi.fn(),
+  listModels: vi.fn(),
+  providerSizes: vi.fn(),
   verdict: vi.fn(),
 }));
 
@@ -29,10 +30,8 @@ vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal
   // The row re-reads the endpoints after a save, because a TEAM edit moves the members' lists on
   // the hub and nothing tells this client about writes it did not make.
   useLlmEndpoints: () => ({ endpoints: [], isLoading: false, refetch: h.refetchEndpoints, error: null }),
-  // Only an INHERITING row reaches this — every row on the budgets page mounts one of these, so it
-  // is deliberately not an unconditional read. `h.models` therefore doubles as the assertion that
-  // the fan-out is bounded: a row with its own list must never call it.
-  useLlmEndpointModels: (...args: unknown[]) => h.models(...args),
+  // Static, the same for every row: the sizes each provider declares, served by the hub.
+  useLlmProviderSizes: (...args: unknown[]) => ({ data: h.providerSizes(...args) }),
 }));
 // The probe itself has its own suite; here it only needs to hand this row a verdict on demand, so
 // the row's own rendering of it is what is under test.
@@ -61,6 +60,7 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     dataManager: { ...(actual.dataManager as object), save: h.save },
+    llmEndpointsService: { ...(actual.llmEndpointsService as object), listModels: h.listModels },
   };
 });
 // Its own dedicated suite covers the call/verdict cycle; here it only needs to exist so the row
@@ -72,6 +72,9 @@ import {
   aliasesForPinnedModel,
   reconcileAliases,
   sameAliases,
+  presetEntries,
+  MODEL_FAMILY_PRESETS,
+  withModelEntries,
 } from '@src/components/organization/budgets/budget-models';
 
 /**
@@ -259,6 +262,23 @@ describe('DEFAULT_MODELS', () => {
   });
 });
 
+/** What the hub serves for `provider-sizes`: one row per provider that declares sizes. */
+const PROVIDER_SIZES = [
+  {
+    provider: 'openrouter',
+    sm: 'anthropic/claude-haiku-5.5',
+    md: 'anthropic/claude-sonnet-5.5',
+    lg: 'anthropic/claude-opus-5.5',
+  },
+  { provider: 'openai', sm: 'openai/gpt-5-mini', md: 'openai/gpt-5', lg: 'openai/gpt-5-pro' },
+  {
+    provider: 'vertex',
+    sm: 'google/gemini-3.5-flash-lite',
+    md: 'google/gemini-3.5-flash',
+    lg: 'google/gemini-3.1-pro-preview',
+  },
+];
+
 function endpoint(over: Record<string, unknown> = {}) {
   return {
     id: UUID,
@@ -270,18 +290,15 @@ function endpoint(over: Record<string, unknown> = {}) {
 }
 
 describe('EndpointControls', () => {
+  beforeEach(() => {
+    h.providerSizes.mockReturnValue(PROVIDER_SIZES);
+  });
+
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
     h.save.mockResolvedValue(undefined);
     h.invalidate.mockResolvedValue(undefined);
-  });
-
-  // Before, not after: the FIRST test needs the default too, and the hook this stands in for always
-  // returns a query object.
-  beforeEach(() => {
-    // The quiet default: nothing inherited to show. Tests about the inherited list say so.
-    h.models.mockReturnValue({ data: undefined, isLoading: false });
   });
 
   it('shows a spinner until the endpoint itself has loaded', () => {
@@ -302,24 +319,10 @@ describe('EndpointControls', () => {
     expect(h.save).not.toHaveBeenCalled();
   });
 
-  it('names the models an empty row INHERITS, instead of saying that it inherits', () => {
-    // An empty list is not "no models" — it is every model the chain above allows, and that list is
-    // one action away. Saying "inherits the budget above" told the reader where to look instead of
-    // answering the question they had.
+  it('shows an empty list as empty, not as the models it would inherit', () => {
     h.endpoint.mockReturnValue(endpoint());
-    h.models.mockReturnValue({
-      data: [
-        { id: 'claude-haiku-4-5', root_id: 'r1' },
-        { id: 'claude-sonnet-4-5', root_id: 'r1' },
-      ],
-      isLoading: false,
-    });
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
-
-    expect(screen.getByTestId('org-models').textContent).toBe('claude-haiku-4-5, claude-sonnet-4-5');
-    expect(screen.getByTestId('org-models').textContent).not.toContain('inherits');
-    // Trimmed to keep the probe on the same row, so the whole list rides in the tooltip.
-    expect(screen.getByTestId('org-models').getAttribute('title')).toContain('claude-haiku-4-5, claude-sonnet-4-5');
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
+    expect(screen.getByTestId('org-models').textContent).toBe('');
   });
 
   it('draws the verdict OVER the model list, out of flow, so the row cannot grow', async () => {
@@ -356,28 +359,6 @@ describe('EndpointControls', () => {
     const overlay = await screen.findByTestId('org-test-overlay');
     expect(overlay.textContent).toContain('429');
     expect(overlay.getAttribute('title')).toContain('limit exceeded');
-  });
-
-  it('reads the inherited list ONLY for a row that actually inherits', () => {
-    // Every row on the budgets page mounts one of these. An unconditional read would be a per-row
-    // fan-out across every team and every person — the cost `BudgetSection` opens its people lists
-    // lazily to avoid.
-    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['claude-haiku-4-5'], aliases: {} } }));
-    h.models.mockReturnValue({ data: undefined, isLoading: false });
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
-
-    // The hook still RUNS (it is a hook), but it is passed no id, which is what disables the query.
-    expect(h.models).toHaveBeenCalledWith(undefined);
-  });
-
-  it('falls back to the old wording when there is no list to print at all', () => {
-    // The read failed, or the chain above allows nothing this row can name. Printing an empty
-    // string there would read as "no models", which is the opposite of what an empty list means.
-    h.endpoint.mockReturnValue(endpoint());
-    h.models.mockReturnValue({ data: [], isLoading: false });
-    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
-
-    expect(screen.getByTestId('org-models').textContent).toContain('inherits');
   });
 
   it('repairs a row that is pinned but has no redirect, without anyone touching it', async () => {
@@ -545,6 +526,154 @@ describe('EndpointControls', () => {
     expect(screen.getByTestId('org-models').textContent).toBe(DEFAULT_MODELS.join(', '));
   });
 
+  it('adds a vendor family from one press, and chains a second onto it', async () => {
+    h.endpoint.mockReturnValue(
+      endpoint({ filters: { models_allow: ['anthropic/claude-*'], aliases: {}, streaming: 'require' } }),
+    );
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
+
+    fireEvent.click(screen.getByTestId('org-models-add-gemini'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    // A whole-object filters PUT again: the other filter fields must survive a preset press.
+    expect(h.save.mock.calls[0][2]).toEqual({
+      filters: { models_allow: ['anthropic/claude-*', 'google/gemini-*'], aliases: {}, streaming: 'require' },
+    });
+  });
+
+  it('starts a list from a family when the row had none of its own', async () => {
+    h.endpoint.mockReturnValue(endpoint());
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
+
+    fireEvent.click(screen.getByTestId('org-models-add-openai'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect((h.save.mock.calls[0][2] as { filters: { models_allow: string[] } }).filters.models_allow).toEqual([
+      'openai/*',
+    ]);
+  });
+
+  it('does not offer a family the list already holds', () => {
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['google/gemini-*'], aliases: {} } }));
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
+    expect(screen.getByTestId<HTMLButtonElement>('org-models-add-gemini').disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>('org-models-add-anthropic').disabled).toBe(false);
+  });
+
+  it('keeps Clear pressable on a row that inherits, where it saves an empty list', async () => {
+    h.endpoint.mockReturnValue(endpoint());
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
+
+    const clear = screen.getByTestId<HTMLButtonElement>('org-models-clear');
+    expect(clear.disabled).toBe(false);
+    fireEvent.click(clear);
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect((h.save.mock.calls[0][2] as { filters: { models_allow: string[] } }).filters.models_allow).toEqual([]);
+  });
+
+  it('writes every model the provider offers into the list when All is pressed, and says so in its tooltip', async () => {
+    h.endpoint.mockReturnValue(
+      endpoint({ filters: { models_allow: ['anthropic/claude-*'], aliases: {}, streaming: 'require' } }),
+    );
+    h.listModels.mockResolvedValue([
+      { id: 'anthropic/claude-sonnet-5.5' },
+      { id: 'google/gemini-3.5-flash' },
+      { id: 'openai/gpt-5-mini' },
+    ]);
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
+
+    const all = screen.getByTestId('org-models-all');
+    expect(all.getAttribute('title')).toBe('Puts everything that is available on OpenRouter');
+    fireEvent.click(all);
+
+    // Two writes: the row is cleared first, so the `models` action answers with the whole catalog
+    // the budget above allows; then exactly that catalog is written, with no redirect derived from it.
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(2));
+    expect(h.save.mock.calls[0][2]).toEqual({ filters: { models_allow: [], aliases: {}, streaming: 'require' } });
+    expect(h.save.mock.calls[1][2]).toEqual({
+      filters: {
+        models_allow: ['anthropic/claude-sonnet-5.5', 'google/gemini-3.5-flash', 'openai/gpt-5-mini'],
+        aliases: {},
+        streaming: 'require',
+      },
+    });
+  });
+
+  it('clears the models AND the hand-written redirects when Clear is pressed', async () => {
+    h.endpoint.mockReturnValue(
+      endpoint({
+        filters: {
+          models_allow: ['google/gemini-3.1-pro-preview'],
+          // Complete already (derived pair + the hand-written one), so the mount-time repair has nothing to do.
+          aliases: {
+            'google/gemini-*': 'google/gemini-3.1-pro-preview',
+            'gemini-*': 'google/gemini-3.1-pro-preview',
+            'claude-*': 'google/gemini-3.1-pro-preview',
+          },
+          max_tokens_ceiling: 4096,
+        },
+      }),
+    );
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
+
+    fireEvent.click(screen.getByTestId('org-models-clear'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect(h.save.mock.calls[0][2]).toEqual({
+      filters: { models_allow: [], aliases: {}, max_tokens_ceiling: 4096 },
+    });
+  });
+
+  it('writes a team the three exact sizes of a family instead of a glob', async () => {
+    h.endpoint.mockReturnValue(endpoint());
+    render(<EndpointControls endpointId={TYPE_ID} scope="team" testIdPrefix="org" manage />);
+
+    fireEvent.click(screen.getByTestId('org-models-add-anthropic'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    const saved = (h.save.mock.calls[0][2] as { filters: { models_allow: string[] } }).filters.models_allow;
+    expect(saved).toEqual(['anthropic/claude-haiku-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
+  });
+
+  it('chains the sizes of a second family onto the first on a team', async () => {
+    const claude = ['anthropic/claude-haiku-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5'];
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: claude, aliases: aliasesForPinnedModel(claude) } }));
+    render(<EndpointControls endpointId={TYPE_ID} scope="team" testIdPrefix="org" manage />);
+
+    fireEvent.click(screen.getByTestId('org-models-add-gemini'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect((h.save.mock.calls[0][2] as { filters: { models_allow: string[] } }).filters.models_allow).toEqual([
+      ...claude,
+      'google/gemini-3.5-flash-lite',
+      'google/gemini-3.5-flash',
+      'google/gemini-3.1-pro-preview',
+    ]);
+  });
+
+  it('leaves a team family button disabled, and says why, while the hub has declared no sizes for it', () => {
+    h.providerSizes.mockReturnValue(undefined);
+    h.endpoint.mockReturnValue(endpoint());
+    render(<EndpointControls endpointId={TYPE_ID} scope="team" testIdPrefix="org" manage />);
+
+    const button = screen.getByTestId<HTMLButtonElement>('org-models-add-anthropic');
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('title')).toBe('No sizes are declared for Anthropic');
+  });
+
+  it('keeps the org on the family glob, which opens the family rather than listing it', async () => {
+    h.endpoint.mockReturnValue(endpoint());
+    render(<EndpointControls endpointId={TYPE_ID} scope="org" testIdPrefix="org" manage />);
+
+    fireEvent.click(screen.getByTestId('org-models-add-gemini'));
+
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect((h.save.mock.calls[0][2] as { filters: { models_allow: string[] } }).filters.models_allow).toEqual([
+      'google/gemini-*',
+    ]);
+  });
+
   it('flips enabled through the switch', async () => {
     h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: DEFAULT_MODELS }, enabled: true }));
     render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage />);
@@ -608,11 +737,56 @@ describe('EndpointControls — read-only', () => {
     expect(enabled?.hasAttribute('disabled') || enabled?.getAttribute('aria-disabled') === 'true').toBe(true);
   });
 
+  it('offers no preset buttons to someone who may not change the row', async () => {
+    h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['anthropic/claude-haiku-4.5'], aliases: {} } }));
+    render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage={false} />);
+
+    await screen.findByTestId('org-models');
+    expect(screen.queryByTestId('org-model-presets')).toBeNull();
+  });
+
   it('does not open the models editor when the field is clicked', async () => {
     h.endpoint.mockReturnValue(endpoint({ filters: { models_allow: ['anthropic/claude-haiku-4.5'], aliases: {} } }));
     render(<EndpointControls endpointId={TYPE_ID} scope="person" testIdPrefix="org" manage={false} />);
 
     fireEvent.click(await screen.findByTestId('org-models'));
     expect(screen.queryByTestId('org-models-input')).toBeNull();
+  });
+});
+
+describe('withModelEntries', () => {
+  it('appends entries in order, once each, keeping what the admin built', () => {
+    expect(withModelEntries([], ['anthropic/claude-*'])).toEqual(['anthropic/claude-*']);
+    expect(withModelEntries(['anthropic/claude-*'], ['google/gemini-*'])).toEqual([
+      'anthropic/claude-*',
+      'google/gemini-*',
+    ]);
+    expect(withModelEntries(['a', 'b'], ['b', 'c'])).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('presetEntries', () => {
+  const anthropic = MODEL_FAMILY_PRESETS.find((p) => p.key === 'anthropic')!;
+
+  it('is the glob on the org, whatever the hub declares', () => {
+    expect(presetEntries(anthropic, 'org', undefined)).toEqual(['anthropic/claude-*']);
+  });
+
+  it('is the three sizes, small to large, of the provider whose sizes belong to the family', () => {
+    expect(presetEntries(anthropic, 'team', PROVIDER_SIZES)).toEqual([
+      'anthropic/claude-haiku-5.5',
+      'anthropic/claude-sonnet-5.5',
+      'anthropic/claude-opus-5.5',
+    ]);
+    for (const preset of MODEL_FAMILY_PRESETS) {
+      const entries = presetEntries(preset, 'team', PROVIDER_SIZES);
+      expect(entries).toHaveLength(3);
+      expect(entries!.some((slug) => slug.includes('*'))).toBe(false);
+    }
+  });
+
+  it('is null while the sizes load, and for a family no provider declares sizes in', () => {
+    expect(presetEntries(anthropic, 'team', undefined)).toBeNull();
+    expect(presetEntries(anthropic, 'team', [PROVIDER_SIZES[2]])).toBeNull();
   });
 });
