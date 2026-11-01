@@ -1,7 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
-import { DockPointerData } from '../models/DockPointer';
-import { ViewType } from '../utils/ui/view-types';
 import type { IEntity, EntityMerge } from '../IEntity';
 import type { WebAudience } from './service-endpoint';
 
@@ -197,11 +195,6 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
     this.mounts = app.mounts ?? [];
     this.report_errors = app.report_errors ?? true;
     this.lifecycle = app.lifecycle ?? null;
-  }
-
-  /** A web app opens running (`/dock/app/micro_app-<id>`), not on the generic Home view. */
-  override get dockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.APP, this.typeId?.toString());
   }
 
   /** An app is labelled by its title ("Sales Desk"); `name` is the folder slug. */
