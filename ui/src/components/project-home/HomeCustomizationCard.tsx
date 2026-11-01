@@ -1,4 +1,4 @@
-import { dataManager, Project, TypeId, type AssetDescriptor } from '@sdk';
+import { dataManager, Project, type AssetDescriptor } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
 import { useProcessAssets } from '@src/components/asset-manager/useProcessAssets';
@@ -14,7 +14,7 @@ import {
   HOME_STRINGS_FILE,
 } from '@src/components/home-customization';
 import { isHomePageCandidate } from '@src/project-home-page/home-page-candidates';
-import { useProjectHomePage } from '@src/project-home-page/use-project-home-page';
+import { useHomePageTypeId, useProjectHomePage } from '@src/project-home-page/use-project-home-page';
 import { isImageFile } from '@src/utils/clipboard-image';
 import { notify } from '@src/notifications';
 import { Check, Image as ImageIcon, Loader2, PackageSearch, RotateCcw, Trash2, Upload } from 'lucide-react';
@@ -63,10 +63,14 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
   const declaredHomePage = useProjectHomePage(project?.id);
   const [homePage, setHomePage] = useState<string | null>(declaredHomePage);
   useEffect(() => setHomePage(declaredHomePage), [declaredHomePage]);
-  // The declared asset, loaded for its name. Any type: the file names a TypeId,
-  // and the picker offers every registered asset.
-  const homePageTypeId = useMemo(() => (homePage ? new TypeId(homePage) : null), [homePage]);
-  const { data: homePageAsset, notFound: homePageMissing } = useEntity(homePageTypeId);
+  // The declared asset, loaded for its name. Any type: the picker offers every
+  // registered asset. The manifest may name it by TypeId or by `./path`.
+  const { typeId: homePageTypeId, missing: homePageUnresolved } = useHomePageTypeId(
+    project?.fs_storage_mount_path,
+    homePage,
+  );
+  const { data: homePageAsset, notFound: homePageNotFound } = useEntity(homePageTypeId);
+  const homePageMissing = homePageUnresolved || homePageNotFound;
   // The picker's own list is the backend's default staging set (what a session
   // can attach), which leaves agents out — and an agent is THE home page. So the
   // card asks for the whole asset catalog, for this project, only while open —
@@ -232,7 +236,7 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
           open={pickerOpen}
           onOpenChange={setPickerOpen}
           assets={homePageCandidates}
-          selectedTypeIds={homePage ? [homePage] : []}
+          selectedTypeIds={homePageTypeId ? [homePageTypeId.toString()] : []}
           // Only what Home can actually open: this project's own assets and its
           // dependencies' — the boundary the backend enforces.
           filter={(d: AssetDescriptor) => isHomePageCandidate(d, project?.context_roots ?? [])}
