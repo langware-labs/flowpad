@@ -139,7 +139,7 @@ async def test_a_gcp_vm_deploy_whose_answer_the_load_balancer_drops_ends_on_the_
         }
 
         await looked.wait()
-        assert hub.sent == [{"environment": "production", "provider": "gcp_vm"}]
+        assert hub.sent == [{"environment": "production", "provider": "gcp_vm", "deployment_id": planned["id"]}]
         waiting = monitor.get(DEPLOY_ACTIVITY, subject_entity=subject)
         assert (waiting.state, [(c.name, c.state) for c in waiting.children][-1]) == (
             ActivityState.RUNNING,

@@ -143,7 +143,13 @@ async def _start_machine(ctx: DeployContext) -> None:
     from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
     try:
-        await deploy_entity_to_cloud(ctx.agent, ctx.environment, provider=ctx.provider, require=ctx.ready.value_names())
+        await deploy_entity_to_cloud(
+            ctx.agent,
+            ctx.environment,
+            provider=ctx.provider,
+            require=ctx.ready.value_names(),
+            deployment_id=str(ctx.deployment.id),
+        )
     except HubError as exc:
         # A transport failure (the load balancer dropped the answer): the hub's push into the local row is the answer.
         if exc.status_code == 0 and exc.kind is HubFailureKind.OFFLINE:
