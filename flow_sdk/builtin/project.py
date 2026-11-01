@@ -10,7 +10,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, Callable, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 from pydantic import (
     BaseModel,
@@ -37,6 +37,7 @@ from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.flowpad_types.enums.auth_enums import ROLE_GRANTS, ROLE_ORDER
 from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
 from flow_sdk.fs_store.origin.field import as_project_origin
 from flow_sdk.fs_store.origin.git_origin import GitOrigin, fresh_clone_slot
@@ -273,10 +274,11 @@ class HelpdeskConfig(BaseModel):
 
 
 # Roles a project invite may carry. The hub's ``can_assign`` is the authority
-# (strictly below the inviter's rank); this only rejects anything else up front.
-ProjectInviteRole = Literal["guest", "member", "admin", "editor"]
-PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("guest", "member", "admin", "editor")
-PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "member"
+# role-set grant policy remains authoritative; reject unknown roles up front.
+
+ProjectInviteRole = str
+PROJECT_INVITE_ROLES: tuple[str, ...] = tuple(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"])
+PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "reader"
 
 
 class ProjectInviteRoleError(ValueError):
@@ -311,7 +313,7 @@ class _SharePerson:
 
     user_id: Optional[str] = None
     email: Optional[str] = None
-    role: Optional[str] = None
+    roles: Optional[list[str]] = None
 
     def identity(self) -> dict[str, Optional[str]]:
         return {"user_id": self.user_id, "email": self.email}
@@ -329,12 +331,12 @@ def _merge_share_people(people: list[_SharePerson]) -> list[_SharePerson]:
     for person in people:
         found = (person.user_id and by_user_id.get(person.user_id)) or (person.email and by_email.get(person.email))
         if not found:
-            found = _SharePerson(**person.identity(), role=person.role)
+            found = _SharePerson(**person.identity(), roles=person.roles)
             merged.append(found)
         else:
             found.user_id = found.user_id or person.user_id
             found.email = found.email or person.email
-            found.role = found.role or person.role
+            found.roles = found.roles or person.roles
         if found.user_id:
             by_user_id[found.user_id] = found
         if found.email:
@@ -363,8 +365,8 @@ def _invite_credentials(invitees: Optional[List["ShareInvitee"]]):
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
 
     for inv in invitees or []:
-        if inv.role is not None and inv.role not in PROJECT_INVITE_ROLES:
-            raise ProjectInviteRoleError(f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.role!r}")
+        if inv.roles is not None and any(role not in PROJECT_INVITE_ROLES for role in inv.roles):
+            raise ProjectInviteRoleError(f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.roles!r}")
     creds = load_credentials()
     if not creds or not creds.api_key:
         raise RuntimeError("Cloud login required")
@@ -895,8 +897,9 @@ class Project(SetupSkippable, Entity):
                 )
             except (ValueError, TypeError, IndexError):
                 process = None
-            if process is None or process.project_id != self.id:
-                return ApiFailResponse(message="The display session does not belong to this project", status_code=400)
+            # Any session may show any app (a mock lives in its own project); it only has to exist.
+            if process is None:
+                return ApiFailResponse(message=f"Display session {display} was not found", status_code=400)
         result = await load_project(self, approved=approved, asset=target, display=display)
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
@@ -947,13 +950,15 @@ class Project(SetupSkippable, Entity):
 
     @action.post(action_name="app-start")
     async def app_start_action(self, app: str = "", wait: bool = False) -> "ApiResponse":
-        """Bring the app up the one way (``bring_up``): validate → load → setup → fix. Answers each app's
-        load verdict — a running one is followed through ``load-state``, or waited for (``wait``)."""
+        """Bring the app up the one way (``core/webapp/coordinator``): warm check → setup when owed → up →
+        bounded recovery. Answers each app's load verdict — a running one is followed through ``load-state``,
+        or waited for (``wait``)."""
         return await self._run_apps(app, stop=False, start=True, wait=wait)
 
     async def _run_apps(self, app: str, *, stop: bool, start: bool, wait: bool = False) -> "ApiResponse":
         from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
-        from flow_sdk.core.setup.load import bring_up, forget  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up  # noqa: PLC0415
+        from flow_sdk.core.webapp import coordinator  # noqa: PLC0415
         from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
 
         found = await self._own_apps(app)
@@ -963,11 +968,11 @@ class Project(SetupSkippable, Entity):
         for one in found:
             row: dict = {"app": one.name, "asset": str(one.typeid)}
             if stop:
-                answer = await webapp_setup.stop(str(one.id))
-                # What it was checked against is gone: the next open asks again.
-                forget(str(self.id), str(one.typeid))
-                row.update(ok=answer.ok, detail=answer.detail)
-                if not answer.ok:
+                stopped = await coordinator.stop(one)
+                still = [p for p in await webapp_setup.ports(str(one.id)) if p.get("port")]
+                row.update(ok=not still, detail=stopped.detail if not still else
+                           f"{one.name} is still served on port {still[0]['port']} by a program Flowpad did not start")
+                if still:
                     results.append(row)
                     continue
             if start:
@@ -981,6 +986,42 @@ class Project(SetupSkippable, Entity):
                 )
             results.append(row)
         return ApiSuccessResponse(data={"apps": results})
+
+    @action.get(action_name="app-lifecycle")
+    async def app_lifecycle_action(self, app: str = "") -> "ApiResponse":
+        """Each app's lifecycle record on this machine (``webapp.lifecycle``) — ``flow app status``."""
+        found = await self._own_apps(app)
+        if not found:
+            return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
+        return ApiSuccessResponse(data={"apps": [{"app": one.name, "asset": str(one.typeid), "lifecycle": one.lifecycle}
+                                                 for one in found]})
+
+    @action.post(action_name="app-handling")
+    async def app_handling_action(self, app: str = "", fingerprint: str = "", handling: dict | None = None,
+                                  test: bool = False) -> "ApiResponse":
+        """Add a learned handling to an app (``flow app handling add``), or only test it (``test``): it must match
+        the failure ``fingerprint`` names (the app's open failure, or one in its failure log)."""
+        from flow_sdk.core.webapp import handling as handlings  # noqa: PLC0415
+        from flow_sdk.core.webapp import record  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webapp_lifecycle_spec import WebappHandlingSpec  # noqa: PLC0415
+
+        found = await self._own_apps(app)
+        if len(found) != 1:
+            return ApiFailResponse(message=f"Name one web app of this project (got {app!r})", status_code=404)
+        one = found[0]
+        proof = handlings.proof_of(one.asset_ref, fingerprint, record.read(str(one.id)))
+        if proof is None:
+            return ApiFailResponse(message=f"No failure with fingerprint {fingerprint!r} for {one.name}", status_code=404)
+        try:
+            spec = WebappHandlingSpec.model_validate(handling or {})
+            if test:
+                return ApiSuccessResponse(data={"matches": handlings.matches(
+                    spec if (spec.fingerprint or spec.pattern) else spec.model_copy(update={"fingerprint": proof.fingerprint}),
+                    proof), "failure": proof.model_dump(mode="json")})
+            added = handlings.add(one.asset_ref, spec, proof=proof)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=422)
+        return ApiSuccessResponse(data={"added": added.model_dump(mode="json"), "file": str(handlings.file_of(one.asset_ref))})
 
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":
@@ -1343,6 +1384,23 @@ class Project(SetupSkippable, Entity):
             for p in matches
             if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)
         ]
+
+    @classmethod
+    async def _enclosing_owners(cls, path: str) -> list["Project"]:
+        """Projects whose mount is a PARENT folder of ``path``, nearest first — one indexed IN query
+        over the parents, not one query per level. Shared by the nesting refusal and the dependency
+        resolver (an asset folder inside a project is that project's, never a project of its own)."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        parents = [str(parent) for parent in PurePosixPath(path).parents]
+        matches = await cls.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["fs_storage_mount_path", parents]))
+        )
+        owners = [
+            p for p in matches
+            if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)
+        ]
+        return sorted(owners, key=lambda p: len(p.fs_storage_mount_path or ""), reverse=True)
 
     async def find_existing_for_create(self) -> "Project | None":
         """A folder is one project: a create for an owned mount resolves to its owner.
@@ -1835,9 +1893,9 @@ class Project(SetupSkippable, Entity):
             if inv.user_id:
                 user_id = parse_recipient_user_id(inv.user_id)
                 if user_id:
-                    people.append(_SharePerson(user_id=user_id, role=inv.role))
+                    people.append(_SharePerson(user_id=user_id, roles=inv.roles))
             elif email := normalize_email(inv.email or ""):
-                people.append(_SharePerson(email=email, role=inv.role))
+                people.append(_SharePerson(email=email, roles=inv.roles))
         people = _merge_share_people(people)
 
         # A grant is idempotent in intent, but inviting someone who already
@@ -1894,7 +1952,7 @@ class Project(SetupSkippable, Entity):
                 # on the project; the conversation invite below sends no email.
                 request = {
                     field: recipient_key,
-                    "invitation_targets": [{"typeid": project_ref, "role": person.role or PROJECT_DEFAULT_INVITE_ROLE}],
+                    "invitation_targets": [{"typeid": project_ref, "roles": person.roles if person.roles is not None else [PROJECT_DEFAULT_INVITE_ROLE]}],
                     # Set on the invitation rather than left to the hub's
                     # fallback, so it holds whichever target the hub picks.
                     "callback_override": project_share_landing_path(self.id),
@@ -1915,7 +1973,7 @@ class Project(SetupSkippable, Entity):
             # so the link and note ride on the project grant, as in ``send_person``.
             request = {
                 "principal": team_ref,
-                "invitation_targets": [{"typeid": project_ref, "role": PROJECT_DEFAULT_INVITE_ROLE}],
+                "invitation_targets": [{"typeid": project_ref, "roles": [PROJECT_DEFAULT_INVITE_ROLE]}],
                 "callback_override": project_share_landing_path(self.id),
             }
             if note and note.strip():
@@ -2711,13 +2769,12 @@ class Project(SetupSkippable, Entity):
         def _counts(other: "Project") -> bool:
             return str(other.id) != str(self.id) and other._visible()
 
-        for parent in PurePosixPath(mount).parents:
-            for owner in await self._mount_owners(str(parent)):
-                if _counts(owner):
-                    raise NestedProjectError(
-                        f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
-                        "projects do not nest"
-                    )
+        for owner in await self._enclosing_owners(mount):
+            if _counts(owner):
+                raise NestedProjectError(
+                    f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
+                    "projects do not nest"
+                )
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         below = await type(self).get_all(

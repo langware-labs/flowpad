@@ -185,7 +185,7 @@ class NotReady(RuntimeError):
         self.readiness = readiness
         #: The placement that was refused — where its fixes go.
         self.deployment = deployment
-        missing = ", ".join(i.requirement.name for i in readiness.items if i.status == STATUS_MISSING)
+        missing = ", ".join(i.requirement.name for i in readiness.items if i.blocks)
         super().__init__(f"not ready to deploy: {missing} missing")
 
 
@@ -338,7 +338,7 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
     items = [i for i in await asyncio.gather(*asked) if i is not None]
     return ReadinessSpec(
         agent_id=str(agent.id), deployment_id=status.deployment_id, environment=status.environment,
-        ready=all(i.status != STATUS_MISSING for i in items), items=items,
+        ready=not any(i.blocks for i in items), items=items,
     )
 
 

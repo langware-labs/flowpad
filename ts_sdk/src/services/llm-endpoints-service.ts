@@ -47,6 +47,14 @@ export interface LLMEndpointModel {
   root_id: string;
 }
 
+/** What one provider declares as its small, medium and large model (hub `ClientDefaults.tiers`). */
+export interface LLMProviderSizes {
+  provider: string;
+  sm: string;
+  md: string;
+  lg: string;
+}
+
 export type LLMBreakerState = 'closed' | 'open';
 
 export interface LLMChainRemaining {
@@ -191,7 +199,7 @@ function action(name: string, id: string, method: HttpMethod, subpath?: string):
 export class LlmEndpointsService {
   /**
    * Endpoints the caller may USE without holding a role edge — the hub's `catalog`
-   * (entities stamped `authenticated_role`, e.g. the seeded global root). They come
+   * (entities stamped `authenticated_roles`, e.g. the seeded global root). They come
    * without a permission expansion, so `readOnly`/`canDelete` are unknown and the
    * screens treat them as read-only.
    */
@@ -235,6 +243,15 @@ export class LlmEndpointsService {
 
   listModels(id: string): Promise<LLMEndpointModel[]> {
     return dataManager.callAction<undefined, LLMEndpointModel[]>(action('models', id, 'GET'));
+  }
+
+  /**
+   * The three sizes every provider declares for itself, one row per provider. Static: the same for every
+   * endpoint, so `id` only addresses the call. A screen that offers "this family's sizes" reads them here
+   * rather than keeping a copy.
+   */
+  listProviderSizes(id: string): Promise<LLMProviderSizes[]> {
+    return dataManager.callAction<undefined, LLMProviderSizes[]>(action('provider-sizes', id, 'GET'));
   }
 
   getChain(id: string): Promise<LLMChain> {

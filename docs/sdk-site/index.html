@@ -951,7 +951,7 @@ pre.code.show-imp .imp-note{display:none}
 <span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.secrets</span><span class="w"> </span><span class="kn">import</span> <span class="n">SecretStore</span>
 
 </span><span class="n">agentmail</span> <span class="o">=</span> <span class="k">await</span> <span class="n">DataSource</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;agent mailbox&quot;</span><span class="p">)</span>
-<span class="n">remote</span> <span class="o">=</span> <span class="k">await</span> <span class="n">SecretStore</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gcp_secret_manager&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;gcp_project&quot;</span><span class="p">:</span> <span class="s2">&quot;acme-prod&quot;</span><span class="p">,</span> <span class="s2">&quot;prefix&quot;</span><span class="p">:</span> <span class="s2">&quot;agentmail-production-&quot;</span><span class="p">})</span>
+<span class="n">remote</span> <span class="o">=</span> <span class="k">await</span> <span class="n">SecretStore</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;gcp&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;project&quot;</span><span class="p">:</span> <span class="s2">&quot;acme-prod&quot;</span><span class="p">,</span> <span class="s2">&quot;prefix&quot;</span><span class="p">:</span> <span class="s2">&quot;agentmail-production-&quot;</span><span class="p">})</span>
 
 <span class="n">google</span> <span class="o">=</span> <span class="k">await</span> <span class="n">Connection</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;google&quot;</span><span class="p">)</span>  <span class="c1"># remote.connections.names() → [&quot;google&quot;]</span>
 <span class="k">await</span> <span class="n">google</span><span class="o">.</span><span class="n">validate_scopes</span><span class="p">(</span><span class="n">remote</span><span class="o">.</span><span class="n">connections</span><span class="o">.</span><span class="n">scopes</span><span class="p">(</span><span class="s2">&quot;google&quot;</span><span class="p">))</span>
@@ -2470,7 +2470,7 @@ from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
 agentmail = await DataSource.get(&quot;agent mailbox&quot;)
-remote = await SecretStore.get(&quot;gcp_secret_manager&quot;, {&quot;gcp_project&quot;: &quot;acme-prod&quot;, &quot;prefix&quot;: &quot;agentmail-production-&quot;})
+remote = await SecretStore.get(&quot;gcp&quot;, {&quot;project&quot;: &quot;acme-prod&quot;, &quot;prefix&quot;: &quot;agentmail-production-&quot;})
 
 google = await Connection.get(&quot;google&quot;)  # remote.connections.names() → [&quot;google&quot;]
 await google.validate_scopes(remote.connections.scopes(&quot;google&quot;))

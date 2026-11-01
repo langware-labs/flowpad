@@ -1,16 +1,17 @@
 import { useMemo } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DataSource, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { SessionWorker } from '@src/hooks/use-transcript';
+import { messageDirection, messageIconTag } from './message-direction';
+import { useLocalUser } from './useLocalUser';
 
 /**
  * Minimal shape we need to render an entity as a clickable label. Covers the
@@ -42,8 +43,6 @@ interface EntityChipProps {
   inside?: { type: string; id: string };
   /** Optional click override — bypass the standard A-inside-B navigation. */
   onClick?: () => void;
-  /** Project shell to use when the chip opens an asset editor pointer. */
-  projectId?: string | null;
   /** Tooltip text. Defaults to "Open <name>". */
   title?: string;
   /** Visual size — "chip" matches the conversation-toolbar buttons. Default "chip". */
@@ -76,19 +75,19 @@ interface EntityChipProps {
  * entity chip stay visually consistent.
  */
 /** Icon for an entity type from the SchemaRegistry (backend TypeInfo.icon is
- *  the single source of truth), with an ExternalLink fallback. */
+ *  the single source of truth), with the generic document glyph as fallback. */
 export function iconForEntity(type: string): LucideIcon {
   // Guarded: dataManager may be uninitialized in isolated unit tests that mount
   // a component before bootstrap/loadTypes ran.
   const name = dataManager?.iconForType?.(type);
-  return (name && lucideByName(name)) || ExternalLink;
+  return (name && lucideByName(name)) || FileText;
 }
 
 /**
  * Backwards-compatible map facade over {@link iconForEntity}. Reads icons from
  * the SchemaRegistry (no hardcoded list); ``ICON_BY_TYPE[type]`` and
  * ``ICON_BY_TYPE.task`` both resolve a LucideIcon, or undefined when the type
- * has no backend icon (so existing ``?? ExternalLink`` fallbacks still work).
+ * has no backend icon (so callers can fall back).
  */
 export const ICON_BY_TYPE: Record<string, LucideIcon> = new Proxy({} as Record<string, LucideIcon>, {
   get(_t, prop): LucideIcon | undefined {
@@ -166,7 +165,6 @@ export function EntityChip({
   entity,
   inside,
   onClick,
-  projectId,
   title,
   size = 'chip',
   muted = false,
@@ -176,7 +174,7 @@ export function EntityChip({
 }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
-  const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
+  const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? FileText;
   const label = entity.name ?? (resolved?.id || '(unnamed)');
   const typeWord = resolved ? resolved.type.charAt(0).toUpperCase() + resolved.type.slice(1).replace(/_/g, ' ') : '';
   const typeStyle = muted
@@ -201,9 +199,10 @@ export function EntityChip({
       if (staged) return;
       if (!resolved || !resolved.id) return;
       const pointer = buildDockPointer({ ...row, ...resolved }, inside);
-      if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
+      // The plain dock: the loader places the entity in ITS OWN project, not the chat's.
+      if (pointer) navigation.openDock(pointer);
     };
-  }, [muted, staged, onClick, resolved, inside, navigation, projectId, row]);
+  }, [muted, staged, onClick, resolved, inside, navigation, row]);
 
   const baseLayout = collapsed
     ? COLLAPSED_CHIP_LAYOUT
@@ -239,7 +238,6 @@ interface ContextEntityChipProps {
   typeId: TypeId;
   inside?: { type: string; id: string };
   onClick?: () => void;
-  projectId?: string | null;
   title?: string;
   size?: 'chip' | 'inline';
   collapsed?: boolean;
@@ -259,7 +257,6 @@ export function ContextEntityChip({
   typeId,
   inside,
   onClick,
-  projectId,
   title,
   size,
   collapsed,
@@ -274,18 +271,27 @@ export function ContextEntityChip({
   // dangling/unmaterialized context reference). Render a muted, non-navigable
   // chip; the SDK's negative cache keeps us from re-fetching every render.
   const resolvedName = data?.displayName ?? (notFound ? `${typeId.type} (unavailable)` : typeId.toString());
+  const chip = { typeId, type: typeId.type, id: typeId.id, name: resolvedName };
+  const Chip = typeId.type === 'flow_message' ? MessageEntityChip : EntityChip;
 
   return (
-    <EntityChip
-      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
+    <Chip
+      entity={chip}
       row={data}
       inside={inside}
       onClick={onClick}
-      projectId={projectId}
       title={title}
       size={size}
       muted={notFound}
       collapsed={collapsed}
     />
   );
+}
+
+/** A message chip: the type's icon with a sent / received arrow badge. Its own component so only
+ *  message chips subscribe to the local user. */
+function MessageEntityChip(props: EntityChipProps) {
+  const { localUser } = useLocalUser();
+  const direction = messageDirection(props.row as { sender_id?: string } | null, localUser?.id);
+  return <EntityChip {...props} entity={{ ...props.entity, icon: lucideByName(messageIconTag(direction)) }} />;
 }

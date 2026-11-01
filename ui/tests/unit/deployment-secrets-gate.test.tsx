@@ -126,6 +126,30 @@ describe('the deploy gate', () => {
     expect(screen.queryByTestId('deployment-secret-use-mine-stripe')).toBeNull();
   });
 
+  it('missing model funding is a warning beside the real blockers, never a red cross', () => {
+    const stripe = item('stripe', { vars: ['STRIPE_KEY'], missing: ['STRIPE_KEY'] });
+    const funding = item('model funding', {
+      requirement: { ...item('model funding').requirement, kind: 'funding' },
+      fix: "limit 'cost_usd_total' exceeded on endpoint my default",
+      remedy: '',
+    });
+
+    renderInQuery(
+      <DeploymentSecretsGate
+        agent={agent()}
+        deployment={new Deployment(DEPLOYMENT as never)}
+        readiness={readiness([stripe, funding])}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const row = screen.getByTestId('deployment-secret-model funding');
+    expect(screen.getByTestId('deployment-secret-warning-model funding')).toBeInTheDocument();
+    expect(row.querySelector('.text-destructive')).toBeNull();
+    expect(screen.getByTestId('deployment-secret-stripe').querySelector('.text-destructive')).not.toBeNull();
+    expect(row).toHaveTextContent('cost_usd_total');
+  });
+
   it('a connection held here but not granted to that machine is authorized for it', async () => {
     const drive = item('permission.google.drive.read', {
       requirement: { ...item('x').requirement, kind: 'permission', name: 'permission.google.drive.read' },

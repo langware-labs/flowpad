@@ -99,7 +99,7 @@ class LLMFilters(BaseModel):
 
 
 #: What sharing a budget confers: spend it, never control it. See ``LLMEndpoint.share``.
-SHARE_ROLE = HubRole.READER.value
+SHARE_ROLES = [HubRole.READER.value, HubRole.RUNNER.value]
 
 #: The sod-store prefix every stored provider key lives under. Mirrors
 #: ``cli.auth.lm_api_keys._PREFIX``; kept here so the entity can name its own secret without
@@ -360,7 +360,7 @@ class LLMEndpoint(Entity):
                 "members",
                 payload={
                     "recipient_email": address,
-                    "invitation_targets": [{"typeid": str(self.typeid), "role": SHARE_ROLE}],
+                    "invitation_targets": [{"typeid": str(self.typeid), "roles": SHARE_ROLES}],
                     "callback_override": endpoint_share_landing_path(self.id),
                 },
             )

@@ -16,7 +16,9 @@
  *   4. The run settles: every step reaches an answer, and a tool already on
  *      the machine (Git) reads as done.
  *
- * A tool missing on the machine raises an "Install X?" question in a modal;
+ * The popup opens only when a step is owed (a box with every tool stays quiet —
+ * `test_wizard_trigger_reconcile.py`), so CI sets Claude Code aside for this
+ * backend. A tool missing on the machine raises an "Install X?" question in a modal;
  * the spec declines every one, so nothing is installed on the runner — a
  * declined step is still an answer, which is what "settles" checks.
  */
@@ -48,14 +50,17 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 30_000 }); // do not increase timeout without approval
   await expect(page).not.toHaveURL(/\/editor\/wizard\/typeid\//);
   await expect(page.getByTestId('wizard-viewer')).toContainText('Finish setting up Flowpad');
+  // The check that decided to open the popup already ran: the tool set aside is owed, and
+  // nothing is running until Start.
+  await expect(page.getByTestId('wizard-step-claude-code')).toHaveAttribute('data-status', 'not_started');
   for (const id of STEPS) {
-    await expect(page.getByTestId(`wizard-step-${id}`)).toHaveAttribute('data-status', 'not_reached');
+    await expect(page.getByTestId(`wizard-step-${id}`)).not.toHaveAttribute('data-status', 'running');
   }
 
   // 2. Start is what actually begins first-run setup. Skipping the chooser
   //    (when it appears) is an answer, and setup steers back to the popup
   //    before the wizard runs — the wizard starts only once the source is
-  //    settled, so a step that has left `not_reached` means that phase is over.
+  //    settled, so the owed step leaving `not_started` means that phase is over.
   await page.getByTestId('wizard-start').click();
   const skip = page.getByTestId('llm-setup-skip');
   await expect(async () => {
@@ -63,26 +68,31 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     // keys" dialog opens only from the first, so skipping needs nothing closed first.
     if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
     await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 1_000 });
-    const started = Object.values(await stepStatuses(page)).some((s) => s !== 'not_reached');
+    // Start resets the owed step to `not_reached` while the source chooser is up; only a step
+    // past both means the wizard itself is running.
+    const started = !['not_started', 'not_reached'].includes((await stepStatuses(page))['claude-code']);
     expect(started, 'the wizard has started running').toBe(true);
   }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
 
-  // 3. All four tools are on the page.
-  for (const id of STEPS) {
-    await expect(page.getByTestId(`wizard-step-${id}`)).toBeVisible();
-  }
-
-  // 4. Declining every install question, the run reaches an answer for every step.
+  // 3–4. All four tools are on the page (`stepStatuses` reads every row), and declining every
+  //    install question, the run reaches an answer for each. The source
+  //    chooser can still open here: right after Start the popup shows the opening check's
+  //    statuses, so step 2 may finish before the chooser appears. Skipping it is an answer.
   const modal = page.getByTestId('ask-modal');
+  // The answers are kept from the attempt that settled: once every step has answered the
+  // popup may close, so a read after the loop can find no rows at all.
+  let settled: Record<string, string> = {};
   await expect(async () => {
+    if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
     if (await modal.isVisible()) {
-      await page.getByTestId('ask-modal-cancel').click();
+      // One question has its own Cancel; a wizard's questions asked together share the list's.
+      await page.getByTestId('ask-modal-cancel').or(page.getByTestId('ask-items-cancel')).click();
     }
     const statuses = await stepStatuses(page);
     const pending = Object.entries(statuses).filter(([, s]) => UNSETTLED.has(s));
     expect(pending, `steps still without an answer: ${JSON.stringify(statuses)}`).toEqual([]);
+    settled = statuses;
   }).toPass({ timeout: 90_000 }); // do not increase timeout without approval
 
-  const statuses = await stepStatuses(page);
-  expect(['satisfied', 'completed'], `git is on every runner: ${JSON.stringify(statuses)}`).toContain(statuses.git);
+  expect(['satisfied', 'completed'], `git is on every runner: ${JSON.stringify(settled)}`).toContain(settled.git);
 });

@@ -11,6 +11,7 @@ from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
+from flow_sdk.sources.values.items import MessageMarkSpec
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.core.urls.service_urls import build_hub_url
@@ -54,7 +55,7 @@ def member_label(member: dict) -> str:
     """How a conversation member is named in plain text: ``name (role)``,
     falling back to email then user id."""
     label = member.get("name") or member.get("email") or member.get("user_id") or "?"
-    role = member.get("role")
+    role = ", ".join(member.get("roles") or [])
     return f"{label} ({role})" if role else str(label)
 
 
@@ -206,6 +207,8 @@ class Conversation(ProjectedFields, Entity):
     address: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     started_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     ended_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
+    #: Chips the source puts on the whole conversation (``MessageData.conversation_marks``).
+    marks: List[MessageMarkSpec] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     # A conversation written here FOR the hub, not there yet — an ask for help captured before
@@ -639,13 +642,14 @@ class Conversation(ProjectedFields, Entity):
             targets (conversation + any shared assets) and cannot drift
             apart."""
             extra = dict(invitation or {})
-            role = extra.pop("role", None) or "member"
             extra_targets = [t for t in (extra.pop("invitation_targets", None) or []) if isinstance(t, dict)]
             own = f"conversation-{self.id}"
+            roles = next((t["roles"] for t in extra_targets if t.get("typeid") == own and "roles" in t), None)
+            roles = roles if roles is not None else extra.pop("roles", ["reader", "runner"])
             body: dict = {
                 **identity,
                 "invitation_targets": [
-                    {"typeid": own, "role": role},
+                    {"typeid": own, "roles": roles},
                     *asset_targets,
                     *(t for t in extra_targets if t.get("typeid") != own),
                 ],
@@ -775,7 +779,7 @@ class Conversation(ProjectedFields, Entity):
                 # needs the wire spelling (subagent → agent until the hub
                 # renames) — same map as build_hub_url.
                 wire = TypeId(type=hub_wire_type(tid.type), id=tid.id)
-                targets.append({"typeid": str(wire), "role": "reader"})
+                targets.append({"typeid": str(wire), "roles": ["reader"]})
             except Exception as e:  # noqa: BLE001
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets

@@ -25,8 +25,10 @@ def declared() -> dict[str, PermissionMappingSpec]:
     """Every permission a loaded driver or store declares. Two declarers of one permission must agree on
     how it is granted; the first wins and a disagreement is logged (an asset bug, not a runtime failure)."""
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+    from flow_sdk.secrets.managers import load_managers  # noqa: PLC0415
     from flow_sdk.secrets.store import _TYPES  # noqa: PLC0415
 
+    load_managers()  # a store registers when its asset's store.py is imported
     sources = [(f"driver {name}", (driver.manifest.permissions if driver.manifest else {})) for name, driver in DRIVERS.items()]
     sources += [(f"store {name}", cls.permissions) for name, cls in sorted(_TYPES.items())]
     out: dict[str, PermissionMappingSpec] = {}

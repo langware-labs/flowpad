@@ -158,10 +158,12 @@ async def tag_context(request: Request):
 
 @router.post("/api/v1/tags/relay")
 async def relay_tag(request: Request):
-    """A tag another process of this instance emitted, for the app's clients (``tags/relay.py``).
+    """A tag another process of this instance emitted, for the app's bus and clients (``tags/relay.py``).
 
     A local agent deployment runs in its own process with its own bus; the app is the only
-    process with clients. Only tags the app forwards anyway are taken.
+    process with clients. Any other process of the instance (a project's server, a trigger's
+    ``run_script``) posts its own events here as ``user_app.*``, for TAG triggers and the app's
+    other subscribers. Only tags the app forwards anyway are taken.
     """
     from flow_sdk.tags.relay import announce_relayed_writes, emit_relayed  # noqa: PLC0415
 

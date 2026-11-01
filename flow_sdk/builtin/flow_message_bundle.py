@@ -1345,9 +1345,10 @@ async def _restore_git_transfer_entry(
     # pull/reuse-local; local = resolve an existing mount). Everything below is
     # origin-kind-agnostic — it operates only on the returned local_root + the
     # universal rel_path.
-    # A received share opens EXACTLY the shared version and never touches the
-    # receiver's own checkout (``materialize_pinned``).
-    local_root, project_id = await get_origin_driver(origin.kind).materialize_pinned(
+    # A received share comes into the receiver's OWN checkout — opened in place
+    # when it already holds that version, else pulled / cherry-picked with
+    # their consent (``receive``).
+    local_root, project_id = await get_origin_driver(origin.kind).receive(
         origin,
         preferred_root=preferred_project_root,
         preferred_project_id=preferred_project_id,
@@ -1714,6 +1715,11 @@ async def _stage_attachment(
     ma.name = name
     ma.description = description
     ma.unpacked_path = unpacked_path
+    if name:
+        from flow_sdk.fs_store.operations.flow_message import default_data_dir  # noqa: PLC0415
+        from flow_sdk.values import kind_of_value_file  # noqa: PLC0415
+
+        ma.value_kind = kind_of_value_file(default_data_dir(top_fm_id) / unpacked_path / name)
     ma.transfer_mode = transfer_mode
     ma.origin = origin
     ma.git_transfer = git_transfer

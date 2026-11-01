@@ -1,6 +1,8 @@
 import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryFilter, QueryRequest } from '../FlowSync/query';
+import type { AgenticProcess } from '../process/agentic-process';
+import { lastChatQuery, recencyOf } from '../process/last-chat';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
@@ -11,6 +13,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
+import type { ActivityProgressSpec } from '../activity';
 import type { IDeployment } from './deployment';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
@@ -398,6 +401,35 @@ export class Agent extends APIEntity<Agent> {
     })) as AgentUseResult;
   }
 
+  /** This agent's opened chats in `projectId`, newest first (at most `limit`). */
+  async recentChats(projectId: string, limit = 20): Promise<AgenticProcess[]> {
+    const rows = await dataManager.query<AgenticProcess>(lastChatQuery(projectId, this.typeId.toString()));
+    return [...rows].sort((a, b) => recencyOf(b) - recencyOf(a)).slice(0, limit);
+  }
+
+  /** This agent's last opened chat in `projectId`, or null — the rule every opener shares (`lastChatQuery`). */
+  async lastChat(projectId: string): Promise<AgenticProcess | null> {
+    return (await this.recentChats(projectId, 1))[0] ?? null;
+  }
+
+  /**
+   * A NEW chat with this agent in `projectId`, started: `use()` with the auto prompt queued, then the
+   * queue kicked so the auto prompt is turn 1. The page-side opener (`<flowpad-agent>`); the app's
+   * launcher adds its vibe layer on top (`prepareAgentSession`).
+   */
+  async newChat(projectId: string): Promise<AgenticProcess> {
+    const { process_id } = await this.use(projectId, true);
+    const proc = await dataManager.getByTypeId<AgenticProcess>(new TypeId('agentic_process', process_id));
+    if (!proc) throw new Error(`the new chat ${process_id} could not be read`);
+    await proc.drainQueue().catch((e: unknown) => console.warn('[agent] auto prompt not started', e));
+    return proc;
+  }
+
+  /** The last chat with this agent in `projectId`, else a new one. */
+  async openChat(projectId: string): Promise<AgenticProcess> {
+    return (await this.lastChat(projectId)) ?? this.newChat(projectId);
+  }
+
   /**
    * Opening the agent again lands on its last chat: re-apply `auto_open` there
    * (`POST /agent/<id>/resume`) — only what is not open yet; the display is not moved.
@@ -690,17 +722,20 @@ function normalizeAgentMailboxState(state: AgentMailboxStateWire): AgentMailboxS
  * `deployment` is the placement ROW — the same entity, at the same id, that the
  * local backend has already adopted by the time this resolves. Callers render
  * the persisted Deployment rather than this response: it is a receipt, not the
- * state. `agent_definition_error` is present when the box came up but
- * `agent.json` failed to land — a live machine that is not yet the agent.
+ * state.
  */
 export interface AgentDeployResult {
   agent_id: string;
   deployment?: IDeployment;
   node_typeid?: string;
   host_url?: string;
-  reused?: boolean;
-  agent_definition?: string;
-  agent_definition_error?: string;
+  /**
+   * A cloud deploy taken on: it runs on, reporting at this activity, until its machine is placed.
+   * Absent on this computer's deploy, whose answer is already the outcome.
+   */
+  activity?: Pick<ActivityProgressSpec, 'path' | 'subject_entity'>;
+  /** The placement a taken-on deploy lands on, before its machine exists. */
+  deployment_id?: string;
 }
 
 /** What `POST /agent/<id>/use` hands back — the session opened as the agent.

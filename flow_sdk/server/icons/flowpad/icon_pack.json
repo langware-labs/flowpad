@@ -88,6 +88,15 @@
       "asset": "sticky-note.svg",
       "tintable": false,
       "source": "Flowpad's own sticky note (folded corner)"
+    },
+    {
+      "kind": "message",
+      "asset": "message.svg",
+      "sub": {
+        "sent": "lucide.arrow-up-right",
+        "received": "lucide.arrow-down-left"
+      },
+      "source": "lucide `message-square` / `arrow-up-right` / `arrow-down-left` (ISC)"
     }
   ]
 }

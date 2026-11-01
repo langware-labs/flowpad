@@ -21,3 +21,6 @@ next-env.d.ts
 # supabase local state
 supabase/.temp/
 supabase/.branches/
+
+# Flowpad: this machine's failure log for the app (setup/webapp_handlings.json and recovery.md are committed)
+setup/logs/

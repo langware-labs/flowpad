@@ -17,6 +17,7 @@ import { withHardBreaks } from './message-markdown';
 import type { LinkHandlers } from '@src/components/links/link-events';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
+import { messageDirection } from './message-direction';
 import { avatarColorForMessage } from './avatar-color';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -289,10 +290,11 @@ export function MessageBubble({
     [flowMessageId, conversationId, message.content],
   );
   linkSource.current = flowMessage ?? null;
-  const links = useLinks(linkSource, run);
-
-  const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
-  const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
+  const direction = messageDirection(flowMessage, localUser?.id);
+  const isFromOther = direction === 'received';
+  // A command someone else wrote never runs on a click: it opens the menu.
+  const links = useLinks(linkSource, run, { trusted: !isFromOther });
+  const isOutgoing = direction === 'sent';
   const showReceipt = isOutgoing && !flowMessage?.is_draft;
 
   // Attachment-action pairs: every CTA (View/Implement Plan, …) comes from
@@ -400,7 +402,7 @@ export function MessageBubble({
               {ago && <span className="ms-1 opacity-70">· {ago}</span>}
             </span>
           )}
-          {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage} />}
+          {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage ?? undefined} />}
           {!editing && favoriteRef && (
             <span className="self-center" data-testid={`message-favorite-star-${flowMessageId}`}>
               <FavoriteStar {...favoriteRef} size={12} hoverSurface="none" revealOnHover className="p-0.5" />

@@ -1692,6 +1692,10 @@ class WorkerDriver(Protocol):
     # (QA C09b). None → no grounded marker; delivery keeps the legacy
     # settle-then-type behaviour. Matched via ``pump_composer_ready``.
     pty_composer_ready_pattern: "re.Pattern[str] | None"
+    # The key that switches this vendor's interactive TUI into its own shell mode (claude's
+    # ``!``), or None. ``AgenticProcess.run_shell_command`` types it, then the command: the
+    # command runs in the session's shell and its output joins the conversation.
+    pty_shell_escape: str | None = None
     # True iff, on resume/fork, this vendor pins the worker's launch cwd
     # (``CLAUDE_PROJECT_DIR`` + ``workdir``) to the recorded cwd of the source
     # session's transcript (claude). Codex/copilot don't rewrite the launch cwd

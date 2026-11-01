@@ -51,13 +51,14 @@ def test_no_unreachable_files():
 
 
 def test_the_three_phases_run_in_order():
-    phases = sorted(p.name for p in (SKILL_DIR / "phases").glob("*.md"))
+    # Numbered files are the scan's phases; `test.md` is its own command (`cred-scan test <name>`).
+    phases = sorted(p.name for p in (SKILL_DIR / "phases").glob("[0-9]-*.md"))
     assert phases == ["1-scan.md", "2-classify.md", "3-bundle.md"]
 
 
 def test_every_phase_file_inlines_the_same_ground_rules():
     index_rules = INDEX.read_text(encoding="utf-8").split("> **Ground rules")[1].split("\n\n")[0]
-    for phase in sorted((SKILL_DIR / "phases").glob("*.md")):
+    for phase in sorted((SKILL_DIR / "phases").glob("[0-9]-*.md")):
         text = phase.read_text(encoding="utf-8")
         assert "Ground rules (inline by design" in text, f"{phase.name} lost its ground rules"
         rules = text.split("> **Ground rules")[1].split("\n\n")[0]

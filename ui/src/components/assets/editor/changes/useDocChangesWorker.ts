@@ -20,16 +20,24 @@ export function buildChangesPrompt(
   docName: string,
   docFile: string,
   changes: readonly DocChange[],
+  /** A chart's requests name an element (or the whole chart), not a passage of text. */
+  subject: 'document' | 'chart' = 'document',
 ): string {
+  const where = subject === 'chart' ? 'On' : 'Where it says:\n  ';
   const items = changes
-    .map((c, i) => `${i + 1}. Where it says:\n   > ${c.quote.replace(/\n/g, '\n   > ')}\n   Change: ${c.instruction}`)
+    .map((c, i) => `${i + 1}. ${where} > ${c.quote.replace(/\n/g, '\n   > ')}\n   Change: ${c.instruction}`)
     .join('\n\n');
   const what = changes.length === 1 ? 'this change request' : `these ${changes.length} change requests`;
   const intro =
-    `Apply ${what} to the document ${docName}.\n` +
-    `The document is the file ${docFile} — edit THAT file in place (not the entity's record folder). ` +
-    `Each request quotes the text it is about; leave everything else as it is. ` +
-    `If a quote no longer matches, find the closest passage and say so.`;
+    subject === 'chart'
+      ? `Apply ${what} to the chart ${docName}.\n` +
+        `The chart's source is the file ${docFile} — edit THAT file in place (not the entity's record folder), ` +
+        `following the chartit skill for its format, and run its checks. ` +
+        `Each request names the element it is about by id; leave everything else as it is.`
+      : `Apply ${what} to the document ${docName}.\n` +
+        `The document is the file ${docFile} — edit THAT file in place (not the entity's record folder). ` +
+        `Each request quotes the text it is about; leave everything else as it is. ` +
+        `If a quote no longer matches, find the closest passage and say so.`;
   const ctx = buildSharedAndPrivateContextSection([new TypeId(doc)], []);
   return [intro, items, ctx].filter(Boolean).join('\n\n');
 }
@@ -116,7 +124,13 @@ async function settleRun(doc: string, processId: string, batch: number | undefin
  * (the list goes in as its next turn), otherwise one is launched with it. When
  * that turn ends the sent changes leave the list; when it fails they stay to retry.
  */
-export function useDocChangesWorker(doc: string | null, docName: string, docFile: string, onRunFinished?: () => void) {
+export function useDocChangesWorker(
+  doc: string | null,
+  docName: string,
+  docFile: string,
+  onRunFinished?: () => void,
+  subject: 'document' | 'chart' = 'document',
+) {
   const { navigation } = useDockNavigation();
   const { lastWorker } = useLastWorkerType();
   const list = useDocChangeList(doc);
@@ -173,7 +187,7 @@ export function useDocChangesWorker(doc: string | null, docName: string, docFile
       const list = getDocChangeList(doc);
       const pending = unsentChanges(list);
       if (starting || pending.length === 0) return;
-      const prompt = buildChangesPrompt(doc, docName, docFile, pending);
+      const prompt = buildChangesPrompt(doc, docName, docFile, pending, subject);
       const store = useDocChangesStore.getState();
       // A run in flight lives on its worker: the next batch goes to the same one.
       const target = opts?.newSession
@@ -241,7 +255,7 @@ export function useDocChangesWorker(doc: string | null, docName: string, docFile
         setStarting(false);
       }
     },
-    [doc, docName, docFile, starting, processes, existing, lastWorker, onRunFinished],
+    [doc, docName, docFile, starting, processes, existing, lastWorker, onRunFinished, subject],
   );
 
   const sessionId = list.sentTo ?? existing?.id ?? null;

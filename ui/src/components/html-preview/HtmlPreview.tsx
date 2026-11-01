@@ -6,6 +6,7 @@ import { GitShareFrame } from '@src/components/assets/editor/GitShareBar';
 import { ContentEpochContext } from '@src/contexts/content-epoch-context';
 import PersistentIframe, { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { useFS } from '@src/hooks/useFS';
+import { openShareLink, previewShareUrl } from './share-links';
 
 /**
  * Render a local HTML file — a chart, a report, a small static site — in an
@@ -88,6 +89,18 @@ export function HtmlPreview({ path }: { path: string }) {
   useEffect(() => {
     if (src) reloadOnNewEpoch(src, contentEpoch, () => frameRef.current?.refresh());
   }, [src, contentEpoch]);
+  // The page's share menu asks the host to open WhatsApp, a mail draft or the mail app,
+  // none of which the sandboxed frame can open itself. Only this frame's own page, and
+  // only the closed list in `previewShareUrl`.
+  useEffect(() => {
+    const onGuest = (event: MessageEvent) => {
+      if (!frameRef.current?.isGuest(event.source)) return;
+      const url = previewShareUrl(event.data);
+      if (url) openShareLink(url);
+    };
+    window.addEventListener('message', onGuest);
+    return () => window.removeEventListener('message', onGuest);
+  }, []);
   // A page received by git is an artifact naming this file: its share bar
   // (version, newer versions, send edits back) sits above the page.
   const [sharedAs, setSharedAs] = useState<AnyEntity | null>(null);

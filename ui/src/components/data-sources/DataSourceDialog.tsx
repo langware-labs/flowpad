@@ -289,7 +289,9 @@ export function DataSourceDialog({
           setSettingUp(source); // the form gives way to the setup wizard; closing that closes both
           return;
         }
-        if (needsSignIn && source.status !== 'active') {
+        // Any source the backend parked in setup (a sign-in, or a driver with its own check) goes
+        // straight to that setup, rather than closing on "Added" beside a "Setup required" banner.
+        if ((needsSignIn || source.status === 'setup') && source.status !== 'active') {
           setSettingUpSource(source); // the form gives way to its setup: "X is added. It needs one thing…"
           return;
         }
@@ -309,7 +311,13 @@ export function DataSourceDialog({
   const renderField = ([key, field]: [string, SpecConfigField]) => {
     const value = draft.fields[key] ?? '';
     const input =
-      field.type === FieldType.LINES ? (
+      field.type === FieldType.BOOL ? (
+        <Switch
+          id={`ds-${key}`}
+          checked={value === 'true'}
+          onCheckedChange={(on) => setField(key, on ? 'true' : 'false')}
+        />
+      ) : field.type === FieldType.LINES ? (
         <Textarea
           id={`ds-${key}`}
           rows={3}

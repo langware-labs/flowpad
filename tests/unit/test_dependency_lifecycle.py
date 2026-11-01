@@ -107,3 +107,23 @@ async def test_the_add_action_answers_before_the_slow_index_and_load(tmp_path, m
     gate.set()
     await project_dependencies.settled(str(consumer.id))
     assert not project_dependencies.is_resolving(str(consumer.id))
+
+
+async def test_load_accepts_a_display_session_from_another_project(tmp_path):
+    """Any session may show any app: a mock lives in its own project, its session in the real one."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    provider = await seed_project(tmp_path / "provider")
+    elsewhere = await seed_project(tmp_path / "elsewhere")
+    session = AgenticProcess(project_id=elsewhere.id)
+    await session.save()
+    response = await provider.load_action(display=str(session.typeid))
+    assert response.status == "SUCCESS", response.message
+
+
+async def test_load_names_a_display_session_that_does_not_exist(tmp_path):
+    provider = await seed_project(tmp_path / "provider")
+    missing = "agentic_process-11111111-1111-4111-8111-111111111111"
+    response = await provider.load_action(display=missing)
+    assert response.status_code == 400
+    assert missing in response.message

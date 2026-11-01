@@ -12,18 +12,36 @@ from flow_sdk.fs_store.record_types import RecordType
 
 CHART_MD = "CHART.md"
 
-# Format source files: ``board.json`` (excalidraw), ``chart.json`` (sequence).
+# Format source files: ``board.json`` (excalidraw), ``chart.json`` (sequence), ``c4.json`` (c4).
 # A mermaid chart keeps its source in the ```mermaid``` block of CHART.md.
 BOARD_JSON = "board.json"
 CHART_JSON = "chart.json"
+C4_JSON = "c4.json"
 
 CHART_FORMATS: tuple[str, ...] = get_args(ChartFormat)
 DEFAULT_CHART_FORMAT = "excalidraw"
 
+# The one table of formats: the file each keeps its source in, what an empty one holds,
+# and which list in it carries icon tags. A new format is one row here (plus its view).
+CHART_SOURCES: dict[str, tuple[str, str]] = {
+    "sequence": (CHART_JSON, '{"participants": [], "messages": []}\n'),
+    "excalidraw": (BOARD_JSON, '{"kind": "excalidraw", "version": 1, "data": {"elements": []}}\n'),
+    "c4": (C4_JSON, '{"level": "context", "elements": [], "boundaries": [], "relations": []}\n'),
+}
+CHART_ICON_LISTS: dict[str, str] = {"sequence": "participants", "c4": "elements"}
+
+
+def declared_chart_format(fm: dict) -> str:
+    """The format as the chart declares it — kept on the row even when THIS build does not know it, so
+    an editor can say "needs a newer Flowpad" instead of opening it as an empty whiteboard. Missing →
+    the default."""
+    fmt = fm.get("format")
+    return fmt.strip() if isinstance(fmt, str) and fmt.strip() else DEFAULT_CHART_FORMAT
+
 
 def chart_format(fm: dict) -> str:
-    """The chart's format from its frontmatter; missing/unknown → excalidraw."""
-    fmt = fm.get("format")
+    """The format THIS build draws the chart as: its declared one when known, else excalidraw."""
+    fmt = declared_chart_format(fm)
     return fmt if fmt in CHART_FORMATS else DEFAULT_CHART_FORMAT
 
 
@@ -72,10 +90,11 @@ def chart_asset_hash(ref: FSRef) -> int:
     return ts
 
 
-def chart_icon_problems(chart_dir: Path) -> list[str]:
-    """Why a sequence chart's participant icons will not render, one line each.
+def chart_icon_problems(chart_dir: Path, fmt: str = "sequence") -> list[str]:
+    """Why a chart's icons will not render, one line each.
 
-    Every ``participants[].icon`` must resolve EXACTLY through the icon registry
+    Every icon in the format's icon list (``participants[]`` of a sequence,
+    ``elements[]`` of a c4 chart) must resolve EXACTLY through the icon registry
     -- the built-in packs plus the icon pack assets of every scope above the
     chart (its project's ``agentic-assets/icon_pack/``). The view still draws a
     fallback glyph; this is what tells the author it is one."""
@@ -83,13 +102,17 @@ def chart_icon_problems(chart_dir: Path) -> list[str]:
 
     from flow_sdk.icons.registry import icon_ref_problem, icons  # noqa: PLC0415
 
+    list_key = CHART_ICON_LISTS.get(fmt)
+    if not list_key:
+        return []
     try:
-        doc = json.loads((chart_dir / CHART_JSON).read_text(encoding="utf-8"))
+        doc = json.loads((chart_dir / CHART_SOURCES[fmt][0]).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
-    participants = doc.get("participants") if isinstance(doc, dict) else None
+    participants = doc.get(list_key) if isinstance(doc, dict) else None
     if not isinstance(participants, list):
         return []
+    kind = "participant" if fmt == "sequence" else "element"
     icons.add_near(chart_dir)
     problems: list[str] = []
     for p in participants:
@@ -97,7 +120,7 @@ def chart_icon_problems(chart_dir: Path) -> list[str]:
             continue
         problem = icon_ref_problem(p.get("icon"))
         if problem:
-            problems.append(f"participant {p.get('id') or p.get('label') or '?'}: {problem}")
+            problems.append(f"{kind} {p.get('id') or p.get('label') or '?'}: {problem}")
     return problems
 
 
@@ -147,16 +170,16 @@ def extract_chart(ref: FSRef, resolved_id: str) -> list[FSRecord]:
         "body": body,
         # Row fields, not just metadata: the editor picks its view from the row's format
         # and sends feedback to the row's session.
-        "format": chart_format(fm),
+        "format": declared_chart_format(fm),
     }
     if isinstance(fm.get("session"), str) and fm["session"]:
         rec_kwargs["session"] = fm["session"]
-    if rec_kwargs["format"] == "sequence":
-        rec_kwargs["problems"] = chart_icon_problems(path)
+    if rec_kwargs["format"] in CHART_ICON_LISTS:
+        rec_kwargs["problems"] = chart_icon_problems(path, rec_kwargs["format"])
     if description:
         rec_kwargs["description"] = description
     if fm:
-        rec_kwargs["metadata"] = {**fm, "format": chart_format(fm)}
+        rec_kwargs["metadata"] = {**fm, "format": declared_chart_format(fm)}
     rec = FSRecord(**rec_kwargs)
     object.__setattr__(rec, "_asset_ref", FSRef(path.resolve()))
     return [rec]

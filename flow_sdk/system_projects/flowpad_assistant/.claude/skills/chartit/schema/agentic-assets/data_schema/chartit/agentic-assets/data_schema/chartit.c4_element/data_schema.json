@@ -1,0 +1,61 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id; relations name it in from / to, and feedback targets it."
+    },
+    "kind": {
+      "shape": "enum:person|role|system|container|component|database|queue|storage|function|api|action|code",
+      "description": "What it is; sets its shape, colour and default icon (person/role: violet; database/queue/storage: aqua cylinder or pill; action: orange; function/action: notched card; the rest: blue card)."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The name on the box."
+    },
+    "tech": {
+      "shape": "?string",
+      "description": "The technology (FastAPI, Postgres, Kafka) — shown in the tag line [Container · FastAPI]."
+    },
+    "description": {
+      "shape": "?string",
+      "description": "What it does, one sentence; up to three lines show on the box."
+    },
+    "external": {
+      "shape": "?bool",
+      "description": "Outside the scope being described: drawn grey and dashed."
+    },
+    "boundary": {
+      "shape": "?string",
+      "description": "The id of the boundary it sits in."
+    },
+    "icon": {
+      "shape": "?string",
+      "description": "An icon tag (<pack>.<icon>); overrides the kind's default icon. Must resolve — `flow icons check`."
+    },
+    "ref": {
+      "shape": "?string",
+      "description": "The name of the chart that zooms into this element; drawn as Open ↗."
+    },
+    "status": {
+      "shape": "?enum:current|migrating|target",
+      "description": "For a migration chart: migrating (orange badge) or target (dashed badge); current shows nothing."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Shown on hover; cite file:line where facts come from code."
+    },
+    "links": {
+      "shape": "?[chartit.c4_link]",
+      "description": "What it is made of or documented by: code (path:line), docs, assets, URLs — chips that open them."
+    },
+    "inputs": {
+      "shape": "?[chartit.c4_param]",
+      "description": "Code level: what it takes, each typed by a data schema kind."
+    },
+    "returns": {
+      "shape": "?string",
+      "description": "Code level: the data schema kind it returns; a chip that opens that schema."
+    }
+  }
+}

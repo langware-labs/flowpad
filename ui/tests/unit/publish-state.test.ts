@@ -76,7 +76,7 @@ describe('gitOutcomeCopy push — Standard never leaks git jargon', () => {
 
 describe('gitOutcomeCopy pull — Standard never leaks git jargon', () => {
   const GIT_TERMS = /\b(pull|pulled|branch|commit|rebase|remote|upstream|git)\b/i;
-  const KINDS = ['pulled', 'nothing', 'conflict', 'permission', 'no_remote', 'network', 'no_repo', 'generic'] as const;
+  const KINDS = ['pulled', 'picked', 'nothing', 'conflict', 'permission', 'no_remote', 'network', 'no_repo', 'generic'] as const;
 
   for (const kind of KINDS) {
     it(`Standard '${kind}' has no git terms`, () => {
@@ -89,6 +89,12 @@ describe('gitOutcomeCopy pull — Standard never leaks git jargon', () => {
     expect(gitOutcomeCopy('pull', 'pulled', ViewMode.Standard).level).toBe('success');
     expect(gitOutcomeCopy('pull', 'nothing', ViewMode.Standard).level).toBe('success');
     expect(gitOutcomeCopy('pull', 'network', ViewMode.Standard).level).toBe('error');
+  });
+
+  it('bringing a shared change in (cherry-pick) is a success worded without git terms', () => {
+    const c = gitOutcomeCopy('cherry-pick', 'picked', ViewMode.Standard);
+    expect(c.level).toBe('success');
+    expect(`${c.title} ${c.message}`).not.toMatch(GIT_TERMS);
   });
 });
 

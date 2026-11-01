@@ -36,7 +36,7 @@ export interface GitStatus {
 }
 
 /** What a conflicted tree is stopped in; null with paths = only a pull's autostash clashed. */
-export type ConflictOperation = 'rebase' | 'merge';
+export type ConflictOperation = 'rebase' | 'merge' | 'cherry-pick';
 
 /** A working tree left mid-conflict — mirror of `GitConflict` in git_repo.py. */
 export interface GitConflict {
@@ -105,6 +105,7 @@ export interface GitPushResult {
 /** Typed pull outcome — mirror of `PullKind` in git_repo.py. */
 export type PullKind =
   | 'pulled'
+  | 'picked'
   | 'nothing'
   | 'conflict'
   | 'permission'

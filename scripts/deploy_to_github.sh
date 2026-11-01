@@ -174,6 +174,13 @@ echo ""
 # Get current branch
 CURRENT_BRANCH=$(git branch --show-current)
 echo -e "Branch: ${GREEN}$CURRENT_BRANCH${NC}"
+# A release must come from release/v0.2. On a detached HEAD the branch push below pushes
+# nothing and only the tag lands -- that is how v0.2.245 shipped a fix release never had.
+RELEASE_BRANCH="release/v0.2"
+if [[ "$CURRENT_BRANCH" != "$RELEASE_BRANCH" ]]; then
+    echo -e "${RED}Error: releases are cut from ${RELEASE_BRANCH}, not '${CURRENT_BRANCH:-detached HEAD}'${NC}"
+    exit 1
+fi
 
 # Check if remote exists
 REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
@@ -194,7 +201,7 @@ if [[ "$SKIP_TESTS" == false ]]; then
     TEST_LOG="${TMPDIR:-/tmp}/deploy-tests-$(date +%Y%m%d-%H%M%S).log"
     echo -e "${YELLOW}Running tests... (live log: tail -f ${TEST_LOG})${NC}"
     # --long: never ship on a run that silently skipped the slow tests.
-    PYTHONUNBUFFERED=1 python3 -m pytest tests/ flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -v --tb=short --durations=20 --long 2>&1 | tee "$TEST_LOG"
+    PYTHONUNBUFFERED=1 python3 -m pytest tests/ flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver flow_sdk/system_projects/flowpad_assistant/agentic-assets/secret_manager -v --tb=short --durations=20 --long 2>&1 | tee "$TEST_LOG"
     if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
         echo -e "${GREEN}Tests passed!${NC}"
     else

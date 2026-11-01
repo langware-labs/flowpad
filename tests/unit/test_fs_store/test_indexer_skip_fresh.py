@@ -287,3 +287,36 @@ async def test_claude_md_skips_fresh_on_second_run(tmp_path: Path) -> None:
         f"unchanged CLAUDE.md was re-parsed: indexed={per2.indexed} skipped={per2.skipped}"
     )
     assert per2.indexed == 0
+
+
+@pytest.mark.asyncio
+async def test_cleanup_sweep_has_its_own_row_until_the_run_ends(tmp_path: Path) -> None:
+    """Once every type row reaches its total the run still sweeps orphans. That step must
+    show as its own counted row, last, so the table never reads finished while it runs."""
+    from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, SWEEP_ROW_NAME
+
+    root = tmp_path / "proj"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "a.md").write_text("# a\n", encoding="utf-8")
+
+    idx = FSIndexer()
+    idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
+    tables = []
+
+    async def on_progress(t):
+        tables.append(t)
+
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], on_progress=on_progress))
+
+    index_tables = [t for t in tables if t.job_name == "index"]
+    sweep = [t.rows[-1] for t in index_tables if t.rows and t.rows[-1].type_name == SWEEP_ROW_NAME]
+    assert sweep, "the sweep never showed a row"
+    assert sweep[-1].total > 0 and sweep[-1].done == sweep[-1].total
+    assert any(r.done < r.total or r.total == 0 for r in sweep), "the row was never seen at work"
+    sweeping = [t for t in index_tables if t.rows and t.rows[-1].type_name == SWEEP_ROW_NAME]
+    assert all(r.finished for t in sweeping for r in t.rows[:-1]), "the type pass is over once cleanup runs"
+    last = index_tables[-1]
+    assert last.text == PROGRESS_TEXT_COMPLETE
+    # Records count, not sweep steps.
+    assert last.done == last.total == sum(r.total for r in last.rows if r.type_name != SWEEP_ROW_NAME)

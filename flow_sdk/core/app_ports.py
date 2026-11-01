@@ -23,7 +23,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Iterable, Literal, Optional
 
-from flow_sdk.core.dev_server import LOOPBACKS, port_open
+from flow_sdk.core.dev_server import LOOPBACKS, dev_command, port_open
 
 #: Programs that hold a port FOR something else (a container's published port, a tunnel). Who is
 #: behind such a port cannot be read from the process table, so it is judged like a holder that
@@ -227,7 +227,10 @@ def launched_by(listener: Listener, start_cmd: str) -> bool:
     merely contains this one is not mistaken for it. Quotes do not count: they are the shell's."""
     if not _unquoted(start_cmd):
         return False
-    return any(_launch_pattern(start_cmd).search(_unquoted(line)) for line in listener.commands)
+    # As stored, and as it is RUN: a stored bare file server is started as the static dev server
+    # (``dev_command``), while one started before that upgrade still runs under the stored command.
+    patterns = {_launch_pattern(start_cmd), _launch_pattern(dev_command(start_cmd))}
+    return any(p.search(text) for text in map(_unquoted, listener.commands) for p in patterns)
 
 
 def of_app(
@@ -366,3 +369,13 @@ def stop(found: Iterable[Listener]) -> None:
 
 
 __all__ = ["Declared", "Listener", "PortAnswer", "decide", "free_port", "kill_trees", "launched_by", "listeners", "listening_under", "of_app", "stop", "stranger_on"]
+
+
+def pid_alive(pid: int) -> bool:
+    """``pid`` is a live process (a zombie is not)."""
+    import psutil  # noqa: PLC0415
+
+    try:
+        return psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+        return False

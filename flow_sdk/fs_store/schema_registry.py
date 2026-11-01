@@ -429,6 +429,11 @@ class TypeInfo:
     # vendor logos are an icon pack). Bytes are already on disk at the pinned
     # commit; this only makes them findable.
     received_with: tuple[str, ...] = field(default=(), metadata=_MERGE)
+    # ``receive_handler``: the type's entity class overrides ``setup_on_receive`` with
+    # work of its own to do when a received copy is opened (a credential refreshes its
+    # project to learn the vaults it names). Dispatched like a ``setup_skill`` type, and
+    # held back the same way by ``auto_run=False`` (Git Download defers to explicit setup).
+    receive_handler: bool = field(default=False, metadata=_MERGE)
 
     @property
     def git_publishable(self) -> bool:

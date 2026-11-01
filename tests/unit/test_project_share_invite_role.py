@@ -54,7 +54,7 @@ def hub(monkeypatch):
 def _invited_roles(calls, proj: Project) -> dict[str, str]:
     """``{recipient_email: role}`` for every invite POST this share() made."""
     return {
-        body["recipient_email"]: target["role"]
+        body["recipient_email"]: target["roles"]
         for method, path, body in calls
         if method == "POST" and path == f"/graph/project/{proj.id}/members"
         for target in body["invitation_targets"]
@@ -65,12 +65,12 @@ def _invited_roles(calls, proj: Project) -> dict[str, str]:
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_invite_defaults_to_member_with_no_role(hub):
+async def test_invite_defaults_to_reader_with_no_role(hub):
     proj = Project(name="invite-role-default")
 
     await proj.share(invitees=[ShareInvitee(email="grace@example.com")])
 
-    assert _invited_roles(hub, proj) == {"grace@example.com": "member"}
+    assert _invited_roles(hub, proj) == {"grace@example.com": ["reader"]}
 
 
 # do not increase timeout without approval
@@ -82,38 +82,38 @@ async def test_invite_grants_a_different_role_per_recipient(hub):
 
     await proj.share(
         invitees=[
-            ShareInvitee(email="grace@example.com", role="admin"),
+            ShareInvitee(email="grace@example.com", roles=["admin"]),
             ShareInvitee(email="alice@example.com"),
         ]
     )
 
     assert _invited_roles(hub, proj) == {
-        "grace@example.com": "admin",
-        "alice@example.com": "member",  # no role on the invitee -> the default
+        "grace@example.com": ["admin"],
+        "alice@example.com": ["reader"],  # no role on the invitee -> the default
     }
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("role", ["editor", "guest"])
-async def test_invite_grants_editor_or_guest(hub, role):
+@pytest.mark.parametrize("role", ["editor", "reader", "runner"])
+async def test_invite_grants_canonical_roles(hub, role):
     proj = Project(name="invite-role-editor")
 
-    await proj.share(invitees=[ShareInvitee(email="grace@example.com", role=role)])
+    await proj.share(invitees=[ShareInvitee(email="grace@example.com", roles=[role])])
 
-    assert _invited_roles(hub, proj) == {"grace@example.com": role}
+    assert _invited_roles(hub, proj) == {"grace@example.com": [role]}
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("role", ["owner", "reader", "", "Admin"])
+@pytest.mark.parametrize("role", ["owner", "guest", "member", "spender", ""])
 async def test_invite_rejects_a_role_outside_the_allowlist(hub, role):
     """Refused before any hub call — nothing is published or invited."""
     proj = Project(name="invite-role-bad")
 
-    with pytest.raises(ValueError, match="invite role"):
-        await proj.share(invitees=[ShareInvitee(email="grace@example.com", role=role)])
+    with pytest.raises(ValueError):
+        await proj.share(invitees=[ShareInvitee(email="grace@example.com", roles=[role])])
 
     assert hub == []

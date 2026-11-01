@@ -497,6 +497,41 @@ async def _link_message_into_context_entities(
             )
 
 
+#: The sidecar on a conversation's context entry that marks a process as THE conversation's session
+#: (a session it was started from or that wrote into it) — not a session shared as an attachment.
+SESSION_ROLE = {"role": "session"}
+
+
+async def link_origin_session(
+    conversation_id: str,
+    flow_message_id: Optional[str],
+    process_id: str,
+    someone_typeid: Optional[str],
+) -> None:
+    """A session wrote into this conversation (``flow conversation send/new/attach/reply``): link it the
+    way a launch from the conversation does — the conversation learns its session, the session learns the
+    message (its chip). Local links only: the session never rides the message, whose shared context is
+    what ships. Best-effort: a stale id or a failed save never undoes the send."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+    try:
+        proc = await AgenticProcess.get_one({"id": process_id})
+        if proc is None:
+            return
+        if flow_message_id and proc.add_shared_context_entities(
+            TypeId(f"{BuiltinEntityType.FLOW_MESSAGE.value}-{flow_message_id}")
+        ):
+            await proc.save(someone_typeid)
+        conv = await Conversation.get_one({"id": conversation_id})
+        if conv is not None and conv.add_shared_context_entities(
+            TypeId(f"agentic_process-{process_id}"), data=SESSION_ROLE
+        ):
+            await conv.save(someone_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[link_origin_session] %s → conversation %s failed (non-fatal): %s",
+                       process_id, conversation_id, e, exc_info=True)
+
+
 async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> "HubFailure | None":
     """Create the hub-side FlowMessage header via the conversation's
     ``add_message`` action.

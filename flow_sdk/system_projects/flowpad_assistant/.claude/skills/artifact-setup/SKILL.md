@@ -64,20 +64,16 @@ flow app open "<artifact name>" --root "<artifact folder>"
 
 - **Static site / design prototype** (an `index.html`, no `package.json` — e.g. a
   Claude Design handoff that loads React + `@babel/standalone` from a CDN and transpiles
-  its `.jsx` in the browser): it renders as-is when served. `flow app open` serves it
-  with `python3 -m http.server`. If discovery misses it, do it explicitly:
+  its `.jsx` in the browser): it renders as-is when served. `flow app open` runs it on
+  Flowpad's static dev server (`python -m flow_sdk.server.dev_front`), which serves the
+  folder AND answers Flowpad's `/sdk/*` and `/api/*`, so a page that loads
+  `/sdk/flowpad-sdk.js` works in dev exactly as when served. Never start a bare
+  `python -m http.server` for it: there the SDK is a 404 and the page never starts. If
+  discovery misses it, serve it through Flowpad from the folder instead:
 
   ```bash
-  PORT=$(flow app free-dev-port --bare)                     # never pick a number — other builds are serving too
-  (cd "<artifact folder>" && "$(command -v python3 || command -v python)" -m http.server $PORT >/dev/null 2>&1 &)
-  curl -fsS "http://localhost:$PORT/index.html" > /dev/null || exit 1   # PROVE it answers first
-  flow show webapp --port $PORT                             # renders it in the Vibe display (run ONCE)
+  (cd "<artifact folder>" && flow app serve)     # Flowpad serves it on its own origin and shows it
   ```
-
-  On Windows use PowerShell and `py -3` — `python3` is a dangling Store alias there, and
-  the launch reports success even when nothing starts. See the **building-deliverables**
-  skill for the PowerShell form. Either way, the `curl`/`Invoke-WebRequest` line is not
-  optional: without it a dead server is indistinguishable from a live one.
 
 ## 3. Confirm it shows
 

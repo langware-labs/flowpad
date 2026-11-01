@@ -160,7 +160,7 @@ async def test_one_wizard_runs_for_two_targets_at_once_each_with_its_own_record(
     inputs its caller put in scope."""
     monkeypatch.setattr(wizard_execute, "run_dir", lambda key: tmp_path / key)
     recorded: dict[str, str] = {}
-    monkeypatch.setattr(wizard_execute, "record_result", lambda key, result: recorded.__setitem__(key, result.detail))
+    monkeypatch.setattr(wizard_execute, "record_result", lambda key, result, **_kw: recorded.__setitem__(key, result.detail))
 
     both_started = asyncio.Barrier(2)
     seen: list[tuple[str, dict]] = []
@@ -195,7 +195,7 @@ async def test_one_wizard_runs_for_two_targets_at_once_each_with_its_own_record(
 @pytest.mark.asyncio
 async def test_the_same_target_twice_is_still_one_slot(monkeypatch, tmp_path):
     monkeypatch.setattr(wizard_execute, "run_dir", lambda key: tmp_path / key)
-    monkeypatch.setattr(wizard_execute, "record_result", lambda key, result: None)
+    monkeypatch.setattr(wizard_execute, "record_result", lambda key, result, **_kw: None)
     started, release = asyncio.Event(), asyncio.Event()
 
     async def _slow(spec, **kwargs):

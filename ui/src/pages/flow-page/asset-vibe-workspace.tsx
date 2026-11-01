@@ -1,3 +1,4 @@
+import { SessionAnchor } from '@src/components/terminal/interactive-terminal/SessionAnchor';
 import type { ShowTarget } from '@sdk';
 import { dataContext, fsStore, TypeId, VFSPath } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
@@ -243,6 +244,7 @@ export function AssetVibeWorkspace({ chatBeside, session }: AssetVibeWorkspacePr
               <WorkspaceChildStrip
                 processTab={session.processTab}
                 processDock={session.processDock}
+                trailing={process && <SessionAnchor process={process} />}
               />
             )}
           </div>

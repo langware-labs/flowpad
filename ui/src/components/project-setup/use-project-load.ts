@@ -11,34 +11,6 @@ export const webappAsset = (webappId?: string | null) => (webappId ? new TypeId(
 export const projectLoadKey = (projectId: string, display = '', asset = '') =>
   ['project-load', projectId, display, asset] as const;
 
-/** Apps this tab last saw loaded and answering — the validate phase's verdict, held for the tab's session
- *  (a reload included: a query's cache would drop it, and the open would wait on a check). Only a hint:
- *  every open still checks it behind the app. */
-const VALID_LOADS = 'flowpad.valid-loads';
-const validLoads = new Set<string>(readValidLoads());
-function readValidLoads(): string[] {
-  try {
-    const kept: unknown = JSON.parse(sessionStorage.getItem(VALID_LOADS) ?? '[]');
-    return Array.isArray(kept) ? kept.filter((one): one is string => typeof one === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-export const validLoad = {
-  key: (projectId: string, asset = '', display = '') => `${projectId}|${asset}|${display}`,
-  has: (key: string) => validLoads.has(key),
-  set: (key: string, up: boolean) => {
-    if (up === validLoads.has(key)) return;
-    if (up) validLoads.add(key);
-    else validLoads.delete(key);
-    try {
-      sessionStorage.setItem(VALID_LOADS, JSON.stringify([...validLoads]));
-    } catch {
-      // Storage refused (a private window): the verdict lives in this page alone.
-    }
-  },
-};
-
 /**
  * Projection of the backend lifecycle. Polling only refreshes progress; it never retries Load.
  *
@@ -65,11 +37,9 @@ export function useProjectLoad(
     // A seeded verdict is whatever the opener last heard, not what the backend holds now: read it once
     // on mount instead of trusting the seed for the app's five-minute default.
     staleTime: 0,
-    // Also while a running app's setup is being checked behind it: its answer (what it owes) lands here.
-    refetchInterval: (q) =>
-      q.state.data?.state === 'running' || (!!asset && q.state.data?.state === 'ready' && q.state.data.setup_owed == null)
-        ? SETUP_POLL_MS
-        : false,
+    // Progress of a setup run on screen (the project gate, the load dialog). An app's own lifecycle is pushed
+    // on its `WebApp` row and never read through here.
+    refetchInterval: (q) => (q.state.data?.state === 'running' ? SETUP_POLL_MS : false),
     // A run finishes whether or not this window is in front: a hidden window that stopped asking kept
     // showing "Preparing…" over a run that had long failed.
     refetchIntervalInBackground: true,
@@ -109,7 +79,8 @@ export function useProjectLoad(
           ...(asset ? { asset } : {}),
           ...(display ? { display } : {}),
         });
-        client.setQueriesData({ queryKey: ['project-load', projectId] }, next);
+        // Only THIS (project, display, asset): a load of one app is not the answer for another app's gate.
+        client.setQueryData(projectLoadKey(projectId, display, asset), next);
         await client.invalidateQueries({ queryKey: ['project-load-tree', projectId] });
         return next;
       } catch (e) {

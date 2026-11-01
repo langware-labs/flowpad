@@ -17,6 +17,12 @@ data, seed it the app's own way (fixtures, seed script, the UI itself) or fill i
 name what you added in your reply. If the app cannot run here at all, STOP and ask (fast mode needs
 the person's words).
 
+**Seed only into what the dev run owns.** A throwaway instance's USER scope is the person's real home
+folder (`~/.env.local`, `~/agentic-assets/`): a command that falls back to it — `flow credentials set` on a name
+the instance's project does not declare — writes into the person's own files. Create the record in a project
+the instance owns (`~/.flow/instances/<name>/workspace/…`), pass that project explicitly, and check where each
+write landed before the next step.
+
 ## 2. Drive it to EVERY screen of the journey, in a real browser
 
 Chrome tools (or the `real-browser` skill), in **your own tab** — others may share the browser. Reach the real

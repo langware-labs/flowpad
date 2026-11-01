@@ -17,6 +17,9 @@ PREF_SHARE_MESSAGE_STATUS = "preferences.notifications.share_message_status"
 DEFAULT_SHARE_MESSAGE_STATUS = True
 #: SmartNavigationLog: append every smart-navigation decision to a dataset in Flowpad's temp folder.
 PREF_SMART_NAVIGATION_LOG = "preferences.advanced.smart_navigation_log"
+#: Secured transfer: this install publishes a device key so members can send it credential values (on unless turned off).
+PREF_SECURE_RECEIVING = "preferences.sharing.secure_receiving"
+DEFAULT_SECURE_RECEIVING = True
 DEFAULT_SMART_NAVIGATION_LOG = False
 #: The model size (sm/md/lg) a worker runs when nobody named one; the endpoint says which model that is.
 PREF_LLM_DEFAULT_SIZE = "preferences.llm.default_size"
@@ -70,6 +73,11 @@ def read_instance_prefs(defaults: dict[str, Any]) -> dict[str, Any]:
 def message_status_sharing_enabled() -> bool:
     """Whether this instance reports delivered/read status to other users."""
     return bool(read_instance_pref(PREF_SHARE_MESSAGE_STATUS, DEFAULT_SHARE_MESSAGE_STATUS))
+
+
+def secure_receiving_enabled() -> bool:
+    """Whether this install can receive credential values by secured transfer (its device key is published)."""
+    return bool(read_instance_pref(PREF_SECURE_RECEIVING, DEFAULT_SECURE_RECEIVING))
 
 
 def smart_navigation_log_enabled() -> bool:

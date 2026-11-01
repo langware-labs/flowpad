@@ -66,6 +66,7 @@ import { AddConnectionDialog } from './connections-manager/add-connection-dialog
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { Plus, Webhook } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
+import { CredentialTestButton, CredentialTestDrawer } from '@src/components/credentials/CredentialTestButton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 export interface ConnectionsManagerProps {
@@ -992,6 +993,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </TableRow>
               );
             })}
+            <CredentialTestDrawer />
             <CredentialConnectionRows
               rows={credentialRows}
               selectedTypeid={selectedTypeid}
@@ -999,6 +1001,20 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               onSetValues={(row) => openDraft(valuesDraft(row.source))}
               onEdit={(row) => openDraft(editDraft(row.source))}
               onDelete={(row) => setPendingDeleteCredential(row)}
+              renderTest={(row) => (
+                <CredentialTestButton
+                  typeid={row.typeid}
+                  name={row.name}
+                  title={row.title}
+                  projectId={row.source.project_id ?? selectedProject?.id ?? null}
+                  workdir={selectedProject?.fs_storage_mount_path ?? null}
+                  hasTest={!!row.source.has_test}
+                  result={row.source.test_result}
+                  onChanged={refreshCredentials}
+                  size="xs"
+                  testId={`connection-test-${row.scope}-${row.name}`}
+                />
+              )}
               onOpenEnvFile={(path) => navigation.openFile(path)}
               onRevealEnvFile={(path) =>
                 void new FSRef(path, new TypeId('compute_node', '@local')).open({ select: true }).catch((error) =>

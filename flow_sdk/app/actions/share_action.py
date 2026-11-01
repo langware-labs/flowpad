@@ -20,6 +20,7 @@ from flow_sdk.actions import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.project import Project, ProjectInviteRoleError
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.flowpad_types.enums.auth_enums import ROLE_GRANTS, ROLE_ORDER
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -48,7 +49,8 @@ def _local_mode_share_blocked() -> bool:
 
 
 # The roles a share invite may grant — one global list, served by ``share-roles``.
-SHARE_ROLES: tuple[str, ...] = ("guest", "editor", "member", "admin")
+
+SHARE_ROLES: tuple[str, ...] = tuple(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"])
 
 
 @action.get(action_name="share-roles", types=None)
@@ -189,7 +191,15 @@ async def share_entity() -> ApiResponse:
     # ``share()`` below.
     try:
         if isinstance(entity, Conversation):
-            await entity.share(recipients=recipients, recipient_user_ids=recipient_user_ids)
+            if any(inv.roles is not None for inv in invitees):
+                for inv in invitees:
+                    await entity.share(
+                        recipients=[inv.email] if inv.email else None,
+                        recipient_user_ids=[inv.user_id] if inv.user_id else None,
+                        invitation={"roles": inv.roles} if inv.roles is not None else None,
+                    )
+            else:
+                await entity.share(recipients=recipients, recipient_user_ids=recipient_user_ids)
         elif project_invite_only:
             await entity.invite(invitees=invitees or None, teams=teams or None, note=note)
         elif isinstance(entity, Project):
@@ -346,9 +356,21 @@ async def conversation_add_message() -> ApiResponse:
     blocked, pending_send = add_message_gate(body)
     if blocked:
         return ApiFailResponse(message=blocked)
-    return await handle_add_message(
+    # The session that wrote this (the `flow` CLI inside a worker) — linked after the send, never sent.
+    origin_process = str(body.pop("origin_process", "") or "").strip()
+    response = await handle_add_message(
         body, request_info.someone_typeid, pending_send=pending_send,
     )
+    if origin_process and isinstance(response, ApiSuccessResponse) and isinstance(response.data, dict):
+        from flow_sdk.app.actions.notification_action import link_origin_session  # noqa: PLC0415
+
+        await link_origin_session(
+            body["conversation_id"],
+            response.data.get("flow_message_id") or response.data.get("id"),
+            origin_process,
+            request_info.someone_typeid,
+        )
+    return response
 
 
 def add_message_gate(body: dict) -> "tuple[str | None, bool]":

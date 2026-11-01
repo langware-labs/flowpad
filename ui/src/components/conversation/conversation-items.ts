@@ -200,6 +200,34 @@ export function itemThreadId(item: ConversationItem, getFm: (id: string) => Flow
 }
 
 /**
+ * The threads that ARE their conversation: a source projects one thread per
+ * conversation (`flow_sdk/stream_inbox/projection.py`), so stacking it would
+ * hide the whole conversation behind its newest message. Only native threads stack.
+ */
+export function flatThreadIdsOf(threads: readonly { id?: string | null; data_source_id?: string | null }[]): Set<string> {
+  return new Set(threads.flatMap((th) => (th.data_source_id && th.id ? [th.id] : [])));
+}
+
+/**
+ * Split the feed into messages to stack by thread and messages that stay in
+ * the timeline. A thread in `flatThreadIds` is the conversation itself (a
+ * channel's thread: one PR, one mail thread), so its messages stay flat.
+ */
+export function partitionThreaded(
+  items: readonly ConversationItem[],
+  getFm: (id: string) => FlowMessage | null,
+  flatThreadIds?: ReadonlySet<string>,
+): { threaded: ConversationItem[]; plain: ConversationItem[] } {
+  const threaded: ConversationItem[] = [];
+  const plain: ConversationItem[] = [];
+  for (const item of items) {
+    const threadId = itemThreadId(item, getFm);
+    (threadId && !flatThreadIds?.has(threadId) ? threaded : plain).push(item);
+  }
+  return { threaded, plain };
+}
+
+/**
  * Partition by `fm.thread_id` — one row per thread, ordered by each thread's
  * newest message.
  *

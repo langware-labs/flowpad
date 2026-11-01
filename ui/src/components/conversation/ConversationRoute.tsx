@@ -23,6 +23,7 @@ import { ConversationMembersLine } from './ConversationMembersLine';
 import { ConversationAutomationChip } from './ConversationAutomationChip';
 import { ChannelParticipants } from './ChannelParticipants';
 import { TicketHeaderChips } from './TicketHeaderChips';
+import { ConversationMarkChips } from './ChannelMessageExtras';
 import {
   applyProjectToConversation,
   applyProjectToTask,
@@ -272,6 +273,7 @@ export function ConversationRoute() {
           className="min-w-0 flex-1 truncate text-sm font-semibold"
         />
         <TicketHeaderChips conv={conversation ?? null} stateOnly />
+        <ConversationMarkChips marks={conversation?.marks} />
       </div>
       <div className="flex justify-center">
         {/* A local project and a local worker are the desktop's; the hub page offers neither. */}

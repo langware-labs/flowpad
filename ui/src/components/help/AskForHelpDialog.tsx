@@ -55,6 +55,9 @@ export interface AskForHelpDialogProps {
   openTasks?: VibeTaskRow[];
   /** Open that request's conversation instead of asking again. */
   onOpenExisting?: (row: VibeTaskRow) => void;
+  /** Filled in when the dialog opens — a surface that knows what went wrong says it (still editable). */
+  initialTitle?: string;
+  initialNotes?: string;
 }
 
 /**
@@ -79,6 +82,8 @@ export function AskForHelpDialog({
   onAsked,
   openTasks = [],
   onOpenExisting,
+  initialTitle = '',
+  initialNotes = '',
 }: AskForHelpDialogProps) {
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
@@ -95,6 +100,12 @@ export function AskForHelpDialog({
   const conversationId = useRef<string>(crypto.randomUUID());
   const picker = usePickedFiles({ enabled: true, disabled: busy });
   const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy, setText: setNotes });
+
+  useEffect(() => {
+    if (!open || (!initialTitle && !initialNotes)) return;
+    setTitle(initialTitle);
+    setNotes(initialNotes);
+  }, [open, initialTitle, initialNotes]);
 
   useEffect(() => {
     if (!open) return;

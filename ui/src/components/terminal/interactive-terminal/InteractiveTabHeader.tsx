@@ -17,18 +17,15 @@ interface HeaderSlots {
   debug: ReactNode;
   /** Entity title — absolutely centered in the row so it stays put across surfaces. */
   title: ReactNode;
-  /** Right cluster: Fork, the session actions menu, and Close when embedded. */
+  /** Right cluster: source chips, then the SessionAnchor ([Fork] | [modes] [menu]) last. */
   right: ReactNode;
-  /** The session's surface selector (Terminal / Chat / Vibe), shown left of the
-   *  right cluster behind a divider. Omitted when embedded. */
-  modes?: ReactNode;
 }
 
-/** [debug] — (centered title) — [modes] | [right]. Share + Bookmark are
+/** [debug] — (centered title) — [right]. Share + Bookmark are
  *  deliberately absent — the top navigation bar already carries them for
  *  whatever it is addressing, and a second copy on the same screen is pure
  *  duplication. */
-export function InteractiveTabHeader({ debug, title, right, modes }: HeaderSlots) {
+export function InteractiveTabHeader({ debug, title, right }: HeaderSlots) {
   return (
     <div data-testid="process-toolbar" className={`${ROW} relative`}>
       {debug}
@@ -37,8 +34,6 @@ export function InteractiveTabHeader({ debug, title, right, modes }: HeaderSlots
           beneath it; the title carries a native tooltip only. */}
       <div className="pointer-events-none absolute inset-x-0 flex justify-center">{title}</div>
       <div className="flex-1" />
-      {/* The surface selector, divided from the action icons to its right. */}
-      {modes && <div className="me-1.5 flex items-center border-e border-border pe-1.5">{modes}</div>}
       {right}
     </div>
   );

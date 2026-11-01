@@ -1,0 +1,9 @@
+{
+  "name": "needs-service",
+  "title": "needs-service",
+  "description": "Tier-1 stub: the page needs service-stub's tenant on :48300 (the Spora App mirror).",
+  "build": ".",
+  "mounts": [
+    { "audience": "app", "serving": { "type": "proxy", "start_cmd": "python3 serve.py {port}", "health": "/health" } }
+  ]
+}

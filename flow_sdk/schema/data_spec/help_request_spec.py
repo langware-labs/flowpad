@@ -32,6 +32,8 @@ class HelpOrigin(str, Enum):
     PORTAL_AGENT_CHAT = "portal_agent_chat"
     LOAD_FAILURE = "load_failure"
     ASSISTANT = "assistant"
+    #: A credential's page: no secret manager to receive from, or no access to it.
+    CREDENTIAL = "credential"
 
 
 class HelpRecipient(DataSpec):

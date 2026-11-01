@@ -56,7 +56,7 @@ class FSOriginDriver(Protocol):
         """
         ...
 
-    async def materialize_pinned(
+    async def receive(
         self,
         origin: "FSOrigin",
         *,
@@ -64,9 +64,10 @@ class FSOriginDriver(Protocol):
         preferred_project_id: Optional[str] = None,
         token: Optional[str] = None,
     ) -> tuple[Path, Optional[str]]:
-        """Open a RECEIVED share: exactly the version it was shared at, never
-        touching a checkout the receiver owns. A driver whose origin pins no
-        version materializes as usual. Same return as :meth:`materialize`."""
+        """Open a RECEIVED share in the receiver's own checkout, bringing the
+        shared version in with git's own verbs (only with the receiver's
+        consent). A driver whose origin pins no version materializes as usual.
+        Same return as :meth:`materialize`."""
         ...
 
     def matches(self, origin: "FSOrigin", local_path: Path) -> bool:

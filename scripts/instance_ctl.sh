@@ -526,11 +526,54 @@ cmd_status() { _ctl_py status "$@"; }
 cmd_list()   { _ctl_py list "$@"; }
 
 # ---------------------------------------------------------------------------
+# restart-backend — kill <name>'s backend and start it again with the SAME env
+# file and data dir (no DB wipe), then wait for bootstrap. The frontend keeps
+# running. Used by the webapp-lifecycle e2e suite (S3: backend restart).
+# ---------------------------------------------------------------------------
+cmd_restart_backend() {
+  local name="${1:-}"
+  [ -n "$name" ] || die "restart-backend needs an instance name"
+  local reg; reg="$(registry "$name")"
+  [ -f "$reg" ] || die "no registry for '$name' — launch it first"
+  local be_pid be_port ef dir
+  be_pid=$(grep -oE '"backend_pid": *[0-9]+' "$reg" | grep -oE '[0-9]+' || true)
+  be_port=$(registry_port "$name" backend)
+  ef=$(grep -oE '"env_file": *"[^"]+"' "$reg" | sed -E 's/.*"env_file": *"([^"]+)".*/\1/' || true)
+  [ -n "$be_port" ] && [ -f "$ef" ] || die "registry for '$name' lacks backend_port/env_file"
+  dir="$(instance_dir "$name")"
+  if [ -n "$be_pid" ]; then
+    kill -TERM -- "-$be_pid" 2>/dev/null || kill -TERM "$be_pid" 2>/dev/null || true
+    local i
+    for i in $(seq 1 30); do kill -0 "$be_pid" 2>/dev/null || break; sleep 1; done
+  fi
+  local pids; pids=$(lsof -nP -tiTCP:"$be_port" -sTCP:LISTEN 2>/dev/null || true)
+  # shellcheck disable=SC2086
+  [ -n "$pids" ] && kill -TERM $pids 2>/dev/null || true
+  local be_log="$dir/launcher-backend.log" new_pid
+  new_pid=$(spawn_detached "$be_log" bash -c "
+    set -a; source '$ef'; set +a
+    cd '$REPO_ROOT'
+    exec uv run -m flow_sdk.server.run
+  ")
+  sed -i.bak -E "s/\"backend_pid\": *[0-9]+/\"backend_pid\": $new_pid/" "$reg" && rm -f "$reg.bak"
+  local up=0 i
+  for i in $(seq 1 60); do   # seconds — do not raise; a slower boot is a bug to fix
+    if curl -fsS -m 2 "http://localhost:$be_port/api/v1/graph/bootstrap" 2>/dev/null | grep -q '"types"'; then
+      up=1; break
+    fi
+    sleep 1
+  done
+  [ "$up" = 1 ] || die "backend for '$name' did not come back within 60s — see $be_log"
+  log "backend for '$name' restarted (pid $new_pid, port $be_port)"
+}
+
+# ---------------------------------------------------------------------------
 main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
     launch) cmd_launch "$@";;
     kill)   cmd_kill   "$@";;
+    restart-backend) cmd_restart_backend "$@";;
     status) cmd_status "$@";;
     list)   cmd_list   "$@";;
     gc)     cmd_gc     "$@";;
@@ -538,6 +581,7 @@ main() {
 usage:
   scripts/instance_ctl.sh launch <name> [--email E] [--password P] [--hub URL]
   scripts/instance_ctl.sh kill   <name> [--keep-env | --purge]
+  scripts/instance_ctl.sh restart-backend <name>
   scripts/instance_ctl.sh status [<name>]
   scripts/instance_ctl.sh list
   scripts/instance_ctl.sh gc     [--yes] [--age DAYS]

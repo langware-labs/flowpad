@@ -17,7 +17,7 @@ def _serve(folder):
 
 def test_inject_puts_script_first_in_head():
     out = inject(b"<html><head><title>x</title></head></html>")
-    assert out.startswith(b'<html><head><script src="/__flowpad/reporter.js"></script><title>')
+    assert out.startswith(b'<html><head><script src="/__flowpad/reporter.js?load="></script><title>')
 
 
 def test_inject_without_head_goes_on_top():

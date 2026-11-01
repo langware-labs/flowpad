@@ -19,6 +19,7 @@ from flow_sdk.fs_store.indexer.index_function import (
 )
 from flow_sdk.fs_store.indexer.progress_table import (
     PROGRESS_TEXT_COMPLETE,
+    SWEEP_ROW_NAME,
     IndexProgressTable,
     TypeProgressRow,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "TypeProgressRow",
     "indexable_types",
     "ScanMode",
+    "SWEEP_ROW_NAME",
     "build_default_indexer",
     "get_auto_scan_indexer",
     "get_shared_indexer",
