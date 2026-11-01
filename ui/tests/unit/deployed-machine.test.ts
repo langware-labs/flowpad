@@ -7,9 +7,6 @@ import { Agent, dataManager, Onboarding } from '@sdk';
 import type { ActivityProgressSpec, ActivityState } from '@sdk/activity';
 import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
 
-const hub = vi.hoisted(() => ({ only: false }));
-vi.mock('@sdk/utils/hub-runtime', () => ({ isHubOnly: () => hub.only }));
-
 import { deployedMachine } from '@src/pages/hub-home/first-agent/deployed-machine';
 
 const AGENT_ID = '33333333-3333-4333-8333-333333333333';
@@ -37,7 +34,6 @@ function desktop() {
 afterEach(() => {
   vi.restoreAllMocks();
   __resetActivityStoreForTest();
-  hub.only = false;
 });
 
 describe('deployedMachine', () => {
@@ -67,12 +63,14 @@ describe('deployedMachine', () => {
     await expect(machine).rejects.toThrow('the provider is out of machines');
   });
 
-  it('on the hub, the answer is the machine: nothing is watched or waited for', async () => {
-    hub.only = true;
-    const watch = vi.spyOn(dataManager, 'watch');
+  it('on the hub, the answer is the machine: nothing is waited for', async () => {
+    const release = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(dataManager, 'watch').mockReturnValue(Promise.resolve(release) as never);
     vi.spyOn(Onboarding, 'deploy').mockResolvedValue({ node_typeid: NODE, deployment: { id: 'dep-1' } });
+    const places = vi.spyOn(Agent, 'getById');
 
     await expect(deployedMachine(AGENT_ID)).resolves.toEqual({ node_typeid: NODE, deployment: { id: 'dep-1' } });
-    expect(watch).not.toHaveBeenCalled();
+    expect(places).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(release).toHaveBeenCalled());
   });
 });
