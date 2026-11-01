@@ -10,7 +10,7 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { SetupFailureActions } from './SetupFailureActions';
 import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
-import { useProjectLoad, validLoad } from './use-project-load';
+import { useProjectLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
 
 /** The route has already selected identity. Operational work starts after the tab mounts. */
@@ -33,40 +33,15 @@ export function ProjectLoadGate({
   const { data: project } = useEntity<Project>(new TypeId(Project.type, projectId));
   const { load } = lifecycle;
   const [loadedLocation, setLoadedLocation] = useState<string | null>(null);
-  // Phase one, validate: an app this session already saw up and that still answers opens at once — no
-  // load, no spinner, nothing refetched under it. Held across opens, so a re-open shows the app on its
-  // first frame and checks behind it; only a failed check falls through to load (and setup).
-  const validKey = validLoad.key(projectId, asset, display);
-  // true: show the app; null: no verdict held, its check in flight — a blank frame for its few
-  // milliseconds, never a status that flashes; false: load. An app with no asset to validate (one shown
-  // on a bare port) is held on its last load instead: it shows at once while the load checks it.
-  const [valid, setValid] = useState<boolean | null>(() =>
-    asset ? validLoad.has(validKey) || null : validLoad.has(validKey),
-  );
   useEffect(() => {
     let live = true;
-    void (async () => {
-      if (asset) {
-        const verdict = await Project.validateLoad(projectId, asset, display).catch(() => null);
-        if (!live) return;
-        const up = verdict?.state === 'ready';
-        validLoad.set(validKey, up);
-        setValid(up);
-        if (up) return;
-      }
-      const next = await load();
-      if (!live) return;
-      // Only a load that did not come back ready takes a held app off screen and brings the gate.
-      if (!asset && next?.state !== 'ready') {
-        validLoad.set(validKey, false);
-        setValid(false);
-      }
-      setLoadedLocation(location.key);
-    })();
+    void load().then(() => {
+      if (live) setLoadedLocation(location.key);
+    });
     return () => {
       live = false;
     };
-  }, [load, location.key, projectId, asset, display, validKey]);
+  }, [load, location.key]);
   const result = lifecycle.result;
   const fix = useSetupFix(projectId, result, lifecycle.error, (approved) => load(approved));
   const navigate = useNavigate();
@@ -90,33 +65,58 @@ export function ProjectLoadGate({
     void load(true);
   }, [result, asset, lifecycle.starting, loadedLocation, location.key, load]);
   const name = project?.displayName || projectId;
-  // Working: a load in flight, or a setup run going that is not waiting on the person.
-  const busy = lifecycle.starting || !result || result.state === 'running';
-  const status =
-    busy && !lifecycle.questionId ? (
-      result?.state === 'running' ? (
-        result.phase === 'load' ? (
-          <Trans>Starting…</Trans>
-        ) : (
-          <Trans>Setting up…</Trans>
-        )
+  // A question on screen means the run waits on the person: no spinner, and say so.
+  // Otherwise working = a load in flight or a setup run going.
+  const waiting = !!lifecycle.questionId;
+  const busy = !waiting && (lifecycle.starting || !result || result.state === 'running');
+  const status = waiting ? (
+    <Trans>Waiting for your answer</Trans>
+  ) : busy ? (
+    result?.state === 'running' ? (
+      result.phase === 'load' ? (
+        <Trans>Starting…</Trans>
       ) : (
-        <Trans>Checking what this needs…</Trans>
+        <Trans>Setting up…</Trans>
       )
     ) : (
-      result?.detail || <Trans>Preparing…</Trans>
-    );
+      <Trans>Checking what this needs…</Trans>
+    )
+  ) : (
+    result?.detail || <Trans>Preparing…</Trans>
+  );
   useEffect(() => {
-    // A load that just brought the app up moved its address; a validated one moved nothing.
+    // A load that just brought something up moved its address.
     if (result?.state === 'ready' && loadedLocation === location.key) {
-      validLoad.set(validKey, true);
       void client.invalidateQueries({ queryKey: ['service_endpoint'] });
     }
-  }, [client, result, loadedLocation, location.key, validKey]);
-  if (valid) return children;
-  if (valid === null) return null;
-  if (result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key)
-    return children;
+  }, [client, result, loadedLocation, location.key]);
+  // Up, but its setup owes something (a sign-in that expired under it): the app stays, a bar says what is
+  // needed, and Set up leaves the fast path for the setup flow the gate already runs.
+  const shown = result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key;
+  const owed = shown ? (result?.setup_owed ?? null) : null;
+  if (owed)
+    return (
+      <div className="flex h-full flex-col">
+        <div
+          role="alert"
+          className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm"
+          data-testid="project-load-setup-owed"
+        >
+          <span className="min-w-0 flex-1 truncate" title={owed}>
+            <Trans>Needs setup: {owed}</Trans>
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void load(true)}
+          >
+            <Trans>Set up</Trans>
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1">{children}</div>
+      </div>
+    );
+  if (shown) return children;
   if (lifecycle.missing)
     return (
       <div className="flex h-full justify-center overflow-auto p-8" data-testid="project-load-missing">

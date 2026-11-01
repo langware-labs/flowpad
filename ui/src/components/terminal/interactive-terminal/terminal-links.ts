@@ -1,5 +1,6 @@
 import type { IBuffer, IBufferLine, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm';
-import { BOX_GLYPHS, ENDS_WHOLE, HAS_RTL, linkMatches, type LinkMatch } from '@src/lib/link-matches';
+import { COMMAND_LINK } from '@src/lib/link-kind';
+import { BOX_GLYPHS, commandLinkMatches, ENDS_WHOLE, HAS_RTL, linkMatches, type LinkMatch } from '@src/lib/link-matches';
 import { isPrimaryClick, type LinkHandlers } from '@src/components/links/link-events';
 
 type ActivateLink = LinkHandlers['activate'];
@@ -8,6 +9,8 @@ interface LogicalLine {
   text: string;
   starts: Array<{ x: number; y: number }>;
   ends: Array<{ x: number; y: number }>;
+  /** Each character's foreground color; -1 is the default color. */
+  fg: number[];
 }
 
 /** What a TUI draws down the side of a box or a quote; layout, never part of the text. */
@@ -191,7 +194,7 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
   while (below(end) && (end - start + 1) * cols < maxCells) end++;
   if ((end - start + 1) * cols >= maxCells) return undefined;
 
-  const line: LogicalLine = { text: '', starts: [], ends: [] };
+  const line: LogicalLine = { text: '', starts: [], ends: [], fg: [] };
   for (let row = start; row <= end; row++) {
     const bufferLine = buffer.getLine(row);
     if (!bufferLine) continue;
@@ -218,13 +221,38 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
         continue;
       const chars = cell.getChars() || ' ';
       line.text += chars;
+      const fg = cell.isFgDefault() ? -1 : (cell.getFgColorMode() << 24) | cell.getFgColor();
       for (let i = 0; i < chars.length; i++) {
+        line.fg.push(fg);
         line.starts.push({ x: col + 1, y: row + 1 });
         line.ends.push({ x: col + cell.getWidth(), y: row + 1 });
       }
     }
   }
   return line;
+}
+
+/**
+ * Inline code a TUI drew in its own color: Claude Code prints `` `! gcloud auth login` `` with
+ * no backticks, so where the command ends is where that color ends.
+ */
+function coloredCommands(line: LogicalLine): LinkMatch[] {
+  const found: LinkMatch[] = [];
+  for (let i = 0; i < line.text.length; i++) {
+    const color = line.fg[i];
+    if (line.text[i] !== '!' || color === -1 || line.fg[i - 1] === color) continue;
+    let end = i + 1;
+    while (end < line.text.length && line.fg[end] === color) end++;
+    const text = line.text.slice(i, end).trimEnd();
+    if (COMMAND_LINK.test(text)) found.push({ text, index: i });
+    i = end - 1;
+  }
+  return found;
+}
+
+/** Every link on a logical line: commands (plain-text and colored), then files and URLs. */
+function lineMatches(line: LogicalLine): LinkMatch[] {
+  return linkMatches(line.text, [...coloredCommands(line), ...commandLinkMatches(line.text)]);
 }
 
 function rangeOf(line: LogicalLine, match: LinkMatch): IBufferRange {
@@ -242,7 +270,7 @@ export class TerminalLinkProvider implements ILinkProvider {
     const line = logicalLine(this.terminal, y);
     if (!line) return callback(undefined);
     callback(
-      linkMatches(line.text).map((match) => ({
+      lineMatches(line).map((match) => ({
         text: match.text,
         range: rangeOf(line, match),
         activate: this.activate,
@@ -262,7 +290,7 @@ function rangeContains(range: IBufferRange, x: number, y: number): boolean {
 export function linkAtCell(terminal: Terminal, x: number, y: number): string | null {
   const line = logicalLine(terminal, y);
   if (!line) return null;
-  const hit = linkMatches(line.text).find((match) => rangeContains(rangeOf(line, match), x, y));
+  const hit = lineMatches(line).find((match) => rangeContains(rangeOf(line, match), x, y));
   return hit?.text ?? null;
 }
 

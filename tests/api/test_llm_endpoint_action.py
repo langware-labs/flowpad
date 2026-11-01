@@ -16,7 +16,11 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 PATH = "/api/v1/graph/compute_node/@local/llm-endpoint"
 INVOKE_PATH = "/api/v1/graph/llm_endpoint/ep1/invoke"
-BIND = {"endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH, "provider": "openrouter", "name": "OR"}
+BIND = {
+    "endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH, "provider": "openrouter", "name": "OR",
+    # The endpoint names the model each size runs; a harness has none of its own to fall back on.
+    "tiers": {"sm": "vendor/small-1", "md": "vendor/medium-1", "lg": "vendor/large-1"},
+}
 
 
 def _patch_hub_key(monkeypatch, key: str | None) -> None:

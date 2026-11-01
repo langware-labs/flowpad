@@ -1,7 +1,8 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useRef, useState } from 'react';
-import { dataManager, MessageAttachment, TypeId, type OpenSharedResult } from '@sdk';
+import { dataManager, MessageAttachment, TypeId, type OpenSharedResult, type ReceivePlan } from '@sdk';
 import { errorMessage } from '@src/lib/error-message';
+import { notifyShareConflict } from '@src/lib/git-outcome';
 import { useDockNavigation } from '@src/navigation';
 import { openDisplayTarget } from '@src/navigation/open-display-target';
 import { notify, registerCommand } from '@src/notifications';
@@ -64,24 +65,40 @@ function noticeFor(ma: MessageAttachment, res: OpenSharedResult): void {
 export interface OpenShareOutcome {
   /** It could not open at all. */
   error?: string;
-  /** Ask the receiver: which project (`choice`), clone vs copy (`placement`), or replace
-   *  what they already have (`overwrite`). */
+  /** Ask the receiver: which project (`choice`), clone vs copy (`placement`), replace what they
+   *  already have (`overwrite`), or yes to the pull / cherry-pick in `plan` (`apply`). */
   needs?: OpenSharedResult['needs'];
   candidates?: OpenSharedResult['candidates'];
-  /** The open that asked, to repeat with the answer (`overwrite: true`). */
+  plan?: ReceivePlan;
+  /** The open that asked, to repeat with the answer (`overwrite: true`, `apply: true`). */
   asked?: OpenShareOpts;
 }
 
-export type OpenShareOpts = { projectId?: string; choice?: 'clone' | 'copy'; overwrite?: boolean };
+export type OpenShareOpts = { projectId?: string; choice?: 'clone' | 'copy'; overwrite?: boolean; apply?: boolean };
+
+/** The 424 a git share answers when bringing it in conflicted: the tree is left for Resolve. */
+function shareConflictOf(e: unknown): { operation: string; branch?: string; workdir: string; message: string } | null {
+  const res = (e as { response?: { data?: { message?: string; data?: Record<string, unknown> } } }).response;
+  const data = res?.data?.data;
+  if (data?.git_share_error !== 'conflict' || typeof data.workdir !== 'string') return null;
+  return {
+    operation: String(data.operation ?? 'cherry-pick'),
+    branch: typeof data.branch === 'string' ? data.branch : undefined,
+    workdir: data.workdir,
+    message: res?.data?.message ?? '',
+  };
+}
 
 /**
  * Open a received share and show it. ONE implementation for the 1-click chip
  * and the review's buttons.
  *
- * - A share that carries Git AND a copy (`both`) goes through `openShared`: the
- *   backend picks the receiver's project, or says what to ask.
- * - A Git-only share installs into the conversation's project (a clone of
- *   theirs at the shared commit is reused), else nowhere in particular.
+ * A git share (with or without a copy) goes through `openShared`: the backend
+ * picks the receiver's project — a checkout of the shared repo — or says what to
+ * ask. It comes into that checkout: in place when the checkout already holds the
+ * shared version, else only after the receiver says yes to the `plan` (a pull on
+ * the shared branch, a cherry-pick anywhere else). A conflict is left in the
+ * checkout and offered to Resolve.
  */
 export function useOpenGitShare(attachment: MessageAttachment | undefined, projectId?: string | null) {
   const { navigation } = useDockNavigation();
@@ -94,18 +111,22 @@ export function useOpenGitShare(attachment: MessageAttachment | undefined, proje
       running.current = true;
       setBusy(true);
       try {
-        if (attachment.transfer_mode === 'both') {
-          const res = await attachment.openShared(opts);
-          if (res.needs) return { needs: res.needs, candidates: res.candidates ?? [], asked: opts };
-          openDisplayTarget(res.show ?? null, navigation);
-          noticeFor(attachment, res);
-          return {};
+        const res = await attachment.openShared({ ...opts, projectId: opts.projectId ?? projectId ?? undefined });
+        if (res.needs) {
+          // The confirm repeats this open in the project the backend picked.
+          const asked = { ...opts, projectId: res.project_id ?? opts.projectId };
+          return { needs: res.needs, candidates: res.candidates ?? [], plan: res.plan, asked };
         }
-        const show = projectId ? await attachment.install('project', projectId) : await attachment.install('user');
-        openDisplayTarget(show, navigation);
+        openDisplayTarget(res.show ?? null, navigation);
+        noticeFor(attachment, res);
         return {};
       } catch (e) {
-        const reason = errorMessage(e, t`Download failed`);
+        const conflict = shareConflictOf(e);
+        if (conflict) {
+          notifyShareConflict(conflict);
+          return { error: conflict.message };
+        }
+        const reason = errorMessage(e, t`Could not open the shared version`);
         notify.error({ title: t`Could not open the shared version`, message: reason });
         return { error: reason };
       } finally {

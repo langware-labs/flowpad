@@ -5,6 +5,7 @@ import { EntityTypes } from '../schema/types';
 import { dataContext, TypeId } from '../FlowSync';
 import { ActionInfo, IMembershipRequest, Membership, MentionSendInfo, UserRole } from '../models';
 import { navigator } from './navigationService';
+import { isHubOnly } from '../utils/hub-runtime';
 
 /**
  * Direct member selector — one of these keys identifies the member to act on.
@@ -177,6 +178,8 @@ class MembershipService {
    *  (``GET /graph/share-roles``). Empty on failure: the invite form then offers
    *  no picker and the backend's default role applies. */
   async fetchShareRoles(): Promise<string[]> {
+    // The hub serves no `share-roles` (422 "Unknown entity type or action"): don't ask it.
+    if (isHubOnly()) return [];
     try {
       const actionInfo = new ActionInfo('share-roles', null, null, 'GET');
       return (await dataManager.callAction<undefined, string[]>(actionInfo)) ?? [];

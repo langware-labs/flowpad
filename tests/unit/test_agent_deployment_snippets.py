@@ -188,16 +188,16 @@ async def test_5_a_machine_of_its_own(monkeypatch):
     monkeypatch.setattr(HubProxy, "call", staticmethod(plan))
     machine = asyncio.Event()
 
-    async def deploy(entity, environment=None, *, provider=None, require=None, deployment_id=None):
+    async def deploy(entity, environment=None, *, provider=None, require=None):
         machine.set()  # the machine starts after the answer
-        return {"deployment_id": deployment_id, "entity": entity.name, "environment": environment or "production"}
+        return {"entity": entity.name, "environment": environment or "production"}
 
     monkeypatch.setattr(cloud_deploy, "deploy_entity_to_cloud", deploy)
     ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
     assert published == [("researcher", str(ns["actor"]))], "publish comes first, as the caller"
     assert ns["receipt"]["deployment_id"] == "0f8d0356-504f-466c-a0e9-ee2ac90e4a4b", "the planned placement"
     assert ns["receipt"]["activity"]["path"] == "deploy"
-    await machine.wait()
+    assert machine.is_set() and ns["deploy"].spec().state == "completed", "the script waited for the machine"
 
 
 async def test_7_the_shown_loop_is_the_shipped_one():

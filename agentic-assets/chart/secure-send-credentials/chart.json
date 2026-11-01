@@ -1,0 +1,22 @@
+{"participants": [
+  {"id": "rcv", "label": "Receiver backend", "sublabel": "Shlomi's Flowpad instance", "icon": "lucide.database", "note": "private keys in the instance vault (sodot)"},
+  {"id": "hub", "label": "Hub", "sublabel": "relay · sees ciphertext only", "icon": "lucide.cloud", "note": "must mirror 2 new message kinds"},
+  {"id": "snd", "label": "Sender backend", "sublabel": "Eran's Flowpad instance", "icon": "lucide.server", "note": "reads values from its own store"},
+  {"id": "user", "label": "Sender", "sublabel": "person, in Flowpad UI", "icon": "lucide.user", "note": "send is human-only"}
+ ],
+ "messages": [
+  {"id": "m1", "from": "rcv", "to": "rcv", "label": "create device keys", "note": "Ed25519 sign + X25519 enc, stored in vault"},
+  {"id": "m2", "from": "rcv", "to": "hub", "label": "post key advert (signed)", "note": "kind secrets.device_key, on join"},
+  {"id": "m3", "from": "hub", "to": "snd", "label": "fan out advert"},
+  {"id": "m4", "from": "snd", "to": "snd", "label": "verify + pin key (TOFU)", "note": "key change blocks next send"},
+  {"id": "m5", "from": "user", "to": "snd", "label": "Send securely → pick member", "note": "Credential.pre_share offers it"},
+  {"id": "m6", "from": "snd", "to": "snd", "label": "read values from own store", "note": "never shown to the sender"},
+  {"id": "m7", "from": "snd", "to": "snd", "label": "seal + sign envelope", "note": "names inside ciphertext; transfer_id, conversation, expiry authenticated"},
+  {"id": "m8", "from": "snd", "to": "hub", "label": "post sealed message", "note": "kind secrets.sealed_value"},
+  {"id": "m9", "from": "hub", "to": "rcv", "label": "fan out opaque blob"},
+  {"id": "m10", "from": "rcv", "to": "rcv", "label": "check sig vs pinned sender key", "note": "dedupe transfer_id, check expiry"},
+  {"id": "m11", "from": "rcv", "to": "rcv", "label": "Fill in → decrypt → _write_values", "note": "credential_service.py:120 — declared vars only; @path off"},
+  {"id": "m12", "from": "rcv", "to": "hub", "label": "ack (no value)", "style": "dashed"},
+  {"id": "m13", "from": "hub", "to": "hub", "label": "delete envelope"},
+  {"id": "m14", "from": "hub", "to": "snd", "label": "Filled in ✓", "style": "dashed"}
+ ]}

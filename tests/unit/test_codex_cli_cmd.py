@@ -64,9 +64,9 @@ def test_model_tier_persists_raw_and_emits_resolved_model():
     assert cmd.model == "sm"
     assert cmd.to_json()["model"] == "sm"
 
+    # On its own login codex picks its default for every size: no ``-m`` (no model ids in code).
     argv, _env = cmd.to_spawn_args()
-    assert argv[argv.index("-m") + 1] == "gpt-5.6-luna"
-    assert "-m gpt-5.6-luna" in cmd.to_shell_string()
+    assert "-m" not in argv
 
 
 def test_json_spawn_args_read_prompt_from_stdin():

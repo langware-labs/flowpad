@@ -136,6 +136,10 @@ API serializer and the disk header). `HubSerializer.body` renames every
 false (a `LocalOrigin`); `HubSerializer.unwire` inverts it on
 the way back, and `membership_sync` goes through it. No kind strings anywhere.
 
+A shared asset's `head_commit` is the last commit that touched its `rel_path`
+(`GitOrigin.for_asset_path`), not the sender's repo HEAD — the commit a receiver
+cherry-picks.
+
 Model dumps stay wire-stable (no `exclude_none`; `head_commit: null` rides):
 
 ```

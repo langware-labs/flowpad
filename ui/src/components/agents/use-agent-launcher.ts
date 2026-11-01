@@ -1,13 +1,12 @@
 import { useCallback, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { Agent, AgenticProcess, tabManager } from '@sdk';
+import { Agent, AgenticProcess, lastChatQuery, mostRecentProcess, tabManager } from '@sdk';
 
 import { notify } from '@src/notifications';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
-import { lastVibeChatQuery, pickLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { holdLaunchWatch, releaseLaunchWatch } from './launch-watch';
 
 /**
@@ -82,8 +81,9 @@ export async function startAgentSession(agent: Agent, projectId: string | null):
  * A resumed chat re-applies the agent's `auto_open` (only what is not open yet) — `Agent.resume`.
  */
 export async function agentSessionDock(agent: Agent, projectId: string): Promise<DockPointer> {
-  const last = pickLastVibeChat(
-    await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, agent.typeId.toString())),
+  // The SDK's rule (`lastChatQuery`), the same one a served page's `<flowpad-agent>` uses (`Agent.lastChat`).
+  const last = mostRecentProcess(
+    await AgenticProcess.query<AgenticProcess>(lastChatQuery(projectId, agent.typeId.toString())),
   );
   let processId: string;
   if (last) {

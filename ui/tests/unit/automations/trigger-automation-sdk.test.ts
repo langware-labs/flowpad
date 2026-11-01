@@ -131,6 +131,88 @@ describe('Trigger automation methods', () => {
     expect(calls[0].bodyParameters).toEqual({ enabled: true });
   });
 
+  // The desktop router keeps a row stored here (and not remote) here, and sends any other id to the hub —
+  // so a call by id always asks for the hub and no caller picks a side.
+  it.each([
+    ['update', () => Trigger.setEnabled(ID, false)],
+    ['update', () => Trigger.updateAutomation(ID, { name: 'n' })],
+    ['delete', () => Trigger.remove(ID)],
+    ['test', () => Trigger.runOnce(ID)],
+    ['fire', () => Trigger.fire(ID)],
+  ] as const)('%s by id is routed by the backend (Hub-Reflect)', async (name, call) => {
+    const calls = capture({});
+    await call();
+    expect(calls[0].name).toBe(name);
+    expect(calls[0].hubReflect).toBe(true);
+    expect(calls[0].actionUrl.split('?')[0]).toBe(`/graph/trigger/${ID}/${name}`);
+  });
+
+  it('load reads the row by id the same way, and a row neither side has is null', async () => {
+    const calls = capture({ id: ID, name: 'n', trigger_type: 'schedule' });
+    const row = await Trigger.load(ID);
+    expect(row?.id).toBe(ID);
+    expect([calls[0].method, calls[0].hubReflect, calls[0].actionUrl]).toEqual(['GET', true, `/graph/trigger/${ID}`]);
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue(
+      Object.assign(new Error('gone'), { isAxiosError: true, response: { status: 404 } }),
+    );
+    expect(await Trigger.load(ID)).toBeNull();
+  });
+
+  it('a create stays on this machine unless it is made on Flowpad cloud', async () => {
+    const calls = capture({ id: ID, name: 'n' });
+    await Trigger.createAutomation({ name: 'n', trigger_type: 'tag' });
+    expect(calls[0].hubReflect).toBe(false);
+  });
+
+  it('run now fires a hub row and runs a local one once', async () => {
+    const calls = capture({});
+    await Trigger.runNow({ id: ID, source: 'hub' });
+    await Trigger.runNow({ id: ID, source: 'local' });
+    expect(calls.map((c) => [c.name, c.method, c.hubReflect])).toEqual([
+      ['fire', 'POST', true],
+      ['test', 'POST', true],
+    ]);
+  });
+
+  it('createOnCloud creates a hub schedule that runs the agent, with its zone always sent', async () => {
+    const calls = capture({ id: ID, name: 'n' });
+    await Trigger.createOnCloud({
+      name: 'Morning',
+      expr: '0 9 * * 1-5',
+      timezone: 'Asia/Jerusalem',
+      agent: ID,
+      prompt: 'Brief me',
+      project_id: 'p1',
+    });
+    expect(calls[0].name).toBe('create');
+    expect(calls[0].hubReflect).toBe(true);
+    expect(calls[0].bodyParameters).toEqual({
+      name: 'Morning',
+      trigger_type: 'schedule',
+      expr: '0 9 * * 1-5',
+      sched_trigger_type: 'cron',
+      timezone: 'Asia/Jerusalem',
+      actions: [{ action_type: 'run_agent', target_type_id: `agent-${ID}`, prompt: 'Brief me' }],
+      enabled: true,
+      project_id: 'p1',
+    });
+  });
+
+  it("overview's CLOUD_* warning reaches the caller beside the rows", async () => {
+    const warning = { error_code: 'CLOUD_UNAVAILABLE', message: 'The cloud did not answer.' };
+    // The overview asks for the whole envelope (`keepEnvelope`), not only its `data`.
+    const calls = capture({ status: 'SUCCESS', data: [{ id: 'a' }], warnings: [warning] });
+    const overview = await Trigger.overview();
+    expect(calls[0].keepEnvelope).toBe(true);
+    expect(overview.rows).toEqual([{ id: 'a' }]);
+    expect(overview.warnings).toEqual([warning]);
+  });
+
+  it('an overview with no warnings has none', async () => {
+    capture({ status: 'SUCCESS', data: [] });
+    expect(await Trigger.overview()).toEqual({ rows: [], warnings: [] });
+  });
+
   it('overview asks for inactive copies only when told to', async () => {
     const calls = capture([]);
     await Trigger.overview();

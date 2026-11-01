@@ -58,4 +58,22 @@ async def remove_orphan_row(entity_id: str, type_name: str) -> bool:
         except Exception:  # noqa: BLE001 — FTS is derived, same reasoning
             logger.debug("fts cleanup failed for %s:%s", type_name, entity_id, exc_info=True)
 
-    return bool(await driver.delete_by_id(entity_id, type_name))
+    removed = bool(await driver.delete_by_id(entity_id, type_name))
+    if removed:
+        await _announce_removal(entity_id, type_name)
+    return removed
+
+
+async def _announce_removal(entity_id: str, type_name: str) -> None:
+    """Tell watching clients the row went — the same DELETE op a regular delete sends.
+
+    Without it a reaped row lingers in every open tree and list until a reload,
+    and clicking it opens a "Missing asset" tab. Best-effort: the row is already gone.
+    """
+    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+    try:
+        await DBEntity.notify_deleted(TypeId(type=type_name, id=entity_id))
+    except Exception:  # noqa: BLE001 — a missed notification must not fail the reap
+        logger.debug("delete notification failed for %s:%s", type_name, entity_id, exc_info=True)

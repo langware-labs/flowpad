@@ -30,6 +30,7 @@ import {
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
+import { useMarkLatestRead } from '@src/components/conversation/useMarkLatestRead';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { MarkdownView } from '@src/components/markdown-view';
@@ -199,6 +200,9 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   const { data: messages = [] } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!sessionId,
   });
+  // Session replies count as unread on the conversation; reading them here clears it, the same
+  // rule as the conversation view (which hides them).
+  useMarkLatestRead(messages[messages.length - 1], cloudUser?.id, localUser?.id);
 
   // The session is named after its first prompt (a session opened before any
   // prompt starts with its `requested` line, which names nothing). Memoized: the

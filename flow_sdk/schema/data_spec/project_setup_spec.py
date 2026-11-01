@@ -162,6 +162,8 @@ class SetupRequirementSpec(DataSpec):
     #: Whether "Skip → Always" can remove it from the project (its asset is the project's own), and if not, why.
     can_skip_always: bool = False
     why_not_always: str = ""
+    #: Its node in the project's setup tree (``derive.requirement_node_id``) — the ``root`` that runs it alone.
+    node: str = ""
 
     @property
     def missing(self) -> list[SetupVarSpec]:
@@ -191,3 +193,5 @@ class ProjectReadinessSpec(DataSpec):
     skipped: list[SetupRequirementSpec] = []
     #: What no credential declares: reported, never runnable (``note`` says what to add).
     gaps: list[SetupRequirementSpec] = []
+    #: What is set up already (not skipped) — what the Project setup page lists as Ready.
+    set_up: list[SetupRequirementSpec] = []

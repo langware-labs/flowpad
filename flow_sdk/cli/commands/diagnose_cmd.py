@@ -413,6 +413,8 @@ async def _run_diagnose(
     step_context: str = "",
     prompt_extra: str = "",
     report_only: bool = False,
+    share=None,
+    someone: str | None = None,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -436,6 +438,11 @@ async def _run_diagnose(
     report.py is identical for both surfaces: it always records the diagnosis and (for
     an issue) its support Conversation/FlowMessage; posting the Feed card is this
     runner's job, so the behavior is fully deterministic and never relies on the worker.
+
+    ``share`` (a ``flow_sdk.diagnose.share.DiagnoseShare``) is who the person picked in the
+    Diagnose window. With ``send_when_done`` the diagnosis is sent to them HERE, when the run
+    finishes -- not by the window, which is usually closed by then. Otherwise ``done`` says
+    ``share_pending`` and the window (or its toast) sends it on a click (``diagnose-send``).
     """
     if emit is None:
         emit = _TerminalSink()
@@ -614,6 +621,19 @@ async def _run_diagnose(
             return False
         return True
 
+    async def _shared(diagnosis) -> dict:
+        """Send to who was picked, when the person chose to send once done; else say a send waits."""
+        if share is None or not share.recipients:
+            return {"shared": [], "share_pending": False}
+        if not share.send_when_done or not someone:
+            return {"shared": [], "share_pending": True}
+        from flow_sdk.diagnose.share import send_diagnosis_to  # noqa: PLC0415
+
+        sent = await send_diagnosis_to(share, diagnosis, message, someone)
+        if sent:
+            emit({"type": "status", "text": "  ✓ Sent to " + ", ".join(s.to for s in sent) + "."})
+        return {"shared": [s.model_dump() for s in sent], "share_pending": not sent}
+
     def done(ok: bool, diagnosis, **ids) -> None:
         """The run's last event: what was recorded (ids) and the diagnosis — the sweep's, when
         the agent recorded nothing."""
@@ -627,6 +647,8 @@ async def _run_diagnose(
                 "feed_posted": bool(ids.get("feed_entry_id")),
                 "feed_entry_id": ids.get("feed_entry_id"),
                 "diagnosis": diagnosis.model_dump(mode="json"),
+                "shared": ids.get("shared") or [],
+                "share_pending": bool(ids.get("share_pending")),
             }
         )
 
@@ -646,7 +668,7 @@ async def _run_diagnose(
             return 1
         feed_entry_id = await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did)
         emit({"type": "status", "text": "  ! The agent could not finish. Recorded what the checks found instead."})
-        done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id)
+        done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id, **await _shared(sweep))
         return 0
 
     try:
@@ -727,6 +749,7 @@ async def _run_diagnose(
                 conversation_id=conv_id,
                 flow_message_id=msg_id,
                 feed_entry_id=feed_entry_id,
+                **await _shared(merged),
             )
             return 0
         return await _answer_with_sweep()

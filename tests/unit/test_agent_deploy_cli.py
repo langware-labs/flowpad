@@ -35,6 +35,8 @@ def app(monkeypatch):
 
     def post(url, payload, *, on_error, **_):
         calls.append(("POST", url, payload))
+        if url.endswith("/watch"):
+            return {}
         if not state["ready"]:
             on_error(409, {"status": "FAIL", "message": "not ready to deploy: stripe missing",
                            "data": {"code": "not_ready", "readiness": READINESS}})
@@ -216,14 +218,16 @@ def test_a_local_deploy_has_nothing_to_follow_and_never_blocks(app, monkeypatch)
     assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "activity": None, "deployment_id": "d-local"}
 
 
-def test_a_refusal_from_the_app_exits_1_before_any_report_is_printed(app, frames):
-    _, state = app
+def test_a_refusal_from_the_app_exits_1_with_what_is_missing_before_any_report_is_printed(app, frames):
+    calls, state = app
     state["ready"] = False
 
     result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", AGENT_ID])
 
-    assert result.exit_code == 1 and "not_ready" in result.output
+    assert result.exit_code == 1
+    assert "not_ready" in result.output and "flow credentials set stripe --stdin" in result.output
     assert "state" not in result.stdout
+    assert [(c[0], c[1].rsplit("/", 1)[-1]) for c in calls] == [("POST", "watch"), ("POST", "deploy")], "an id is not looked up"
 
 
 def test_an_unknown_name_is_not_found(app):

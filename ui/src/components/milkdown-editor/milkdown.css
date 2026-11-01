@@ -157,7 +157,7 @@
 }
 
 .milkdown-editor-wrapper .ProseMirror a {
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-text));
   text-decoration: underline;
   /* Override the UA rule a:any-link:read-write { cursor: text } that fires
      inside the contenteditable root; anchor clicks are intercepted and open. */
@@ -446,3 +446,19 @@ html.light .milkdown-editor-wrapper .token.important {
 /* Find bar (Cmd/Ctrl+F) matches */
 ::highlight(md-find) { background-color: rgb(250 204 21 / 0.4); }
 ::highlight(md-find-active) { background-color: rgb(249 115 22 / 0.7); }
+
+/* Queued "change this" requests (plugins/change-marks.ts) */
+.flowpad-change-mark {
+  background-color: hsl(var(--primary) / 0.15);
+  border-bottom: 2px solid hsl(var(--primary) / 0.7);
+  border-radius: 2px;
+}
+.flowpad-change-mark-sent { background-color: hsl(var(--primary) / 0.08); border-bottom-style: dashed; }
+.flowpad-change-pin {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; margin-inline-start: 3px; padding: 0 3px;
+  border-radius: 9999px; font-size: 10px; font-weight: 600; line-height: 1;
+  vertical-align: super; user-select: none;
+  background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+}
+.flowpad-change-pin[data-sent='true'] { opacity: 0.6; }

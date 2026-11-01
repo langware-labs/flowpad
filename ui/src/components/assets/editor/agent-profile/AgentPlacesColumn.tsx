@@ -19,6 +19,8 @@ import { usePlaceDisplay } from './use-place-display';
 
 /** The deploys whose funding warning was already shown (or that were history when first seen): kept across mounts. */
 const announcedDeploys = new Set<string>();
+/** The deploys seen running whose end is not told yet: one that ends failed is told once. Kept across mounts. */
+const runningDeploys = new Set<string>();
 
 interface AgentPlacesColumnProps {
   agent: Agent;
@@ -65,6 +67,16 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
     announcedDeploys.add(deploy.activity_id);
     notify.warning({ title: t`Deploying without model funding`, message: warning, forceToast: true });
   }, [deploy, warning, t]);
+  // A deploy that fails after the dialog closed (its machine, most often) is told here: nothing else is on screen.
+  useEffect(() => {
+    if (!deploy) return;
+    if (!isTerminal(deploy)) {
+      runningDeploys.add(deploy.activity_id);
+      return;
+    }
+    if (!runningDeploys.delete(deploy.activity_id) || deploy.state === 'completed') return;
+    notify.error({ title: t`Could not deploy`, message: deploy.message ?? t`Deploy failed.`, forceToast: true });
+  }, [deploy, t]);
 
   // The server lists this computer first.
   const visible = (places ?? []).filter((place) => !hub || !place.is_local);

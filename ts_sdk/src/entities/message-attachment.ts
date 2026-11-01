@@ -63,13 +63,30 @@ export interface IMessageAttachment extends IEntity {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface MessageAttachment extends EntityMerge<IMessageAttachment> {}
 
-/** What `openShared` answers. */
+/**
+ * How a received git share comes into the receiver's own checkout — mirror of
+ * `ReceivePlan` (flow_sdk/builtin/git_share_specs.py). `have`: already there;
+ * `pull`: on the shared branch, behind; `cherry_pick`: `commits` (oldest first)
+ * onto `branch`, also changing `other_files` outside the asset.
+ */
+export interface ReceivePlan {
+  action: 'have' | 'pull' | 'cherry_pick';
+  commit: string;
+  branch: string;
+  workdir: string;
+  commits: string[];
+  other_files: string[];
+}
+
+/** What `openShared` / `installShared` answer. */
 export interface OpenSharedResult {
   show?: ReceiveShowTarget | null;
   project_id?: string;
   mismatch?: boolean;
-  /** What to ask: which checkout (`choice`), clone vs copy (`placement`), or replace the copy you already have (`overwrite`). */
-  needs?: 'choice' | 'placement' | 'overwrite';
+  /** What to ask: which checkout (`choice`), clone vs copy (`placement`), replace the copy you already have
+   *  (`overwrite`), or say yes to a pull / cherry-pick into your checkout (`apply`, see `plan`). */
+  needs?: 'choice' | 'placement' | 'overwrite' | 'apply';
+  plan?: ReceivePlan;
   candidates?: { id: string; name: string; path: string }[];
   git_share_error?: string;
   git_share_message?: string;
@@ -146,8 +163,21 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   async install(
     scope: 'user' | 'project',
     projectId?: string,
-    opts: { overwrite?: boolean; name?: string } = {},
+    opts: { overwrite?: boolean; name?: string; apply?: boolean } = {},
   ): Promise<ReceiveShowTarget | null> {
+    return (await this.installShared(scope, projectId, opts)).show ?? null;
+  }
+
+  /**
+   * `install`, answering in full: a git share that would write the receiver's
+   * branch comes back as `needs: 'apply'` with its `plan` and writes nothing;
+   * the same call with `apply: true` runs the pull / cherry-pick.
+   */
+  async installShared(
+    scope: 'user' | 'project',
+    projectId?: string,
+    opts: { overwrite?: boolean; name?: string; apply?: boolean } = {},
+  ): Promise<OpenSharedResult> {
     if (!this.id) throw new Error('install requires this.id');
     const action = new ActionInfo('install', MessageAttachment.type, this.id, 'POST');
     action.bodyParameters = {
@@ -155,9 +185,9 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
       project_id: projectId ?? null,
       overwrite: opts.overwrite ?? false,
       ...(opts.name ? { name: opts.name } : {}),
+      ...(opts.apply ? { apply: true } : {}),
     };
-    const res = await dataManager.callAction<unknown, { entity?: unknown; show?: ReceiveShowTarget | null }>(action);
-    return res?.show ?? null;
+    return (await dataManager.callAction<unknown, OpenSharedResult>(action)) ?? {};
   }
 
   /**
@@ -179,10 +209,11 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
    * says what to ask: `choice` (2+ checkouts, see `candidates`) or `placement`
    * (none: clone the repo, or open the copy). `git_share_error` is set when it
    * opened from the copy because Git could not open it here. `overwrite` answers
-   * `needs: overwrite` — replace the copy the receiver already has.
+   * `needs: overwrite` — replace the copy the receiver already has. `apply`
+   * answers `needs: apply` — yes to the pull / cherry-pick in `plan`.
    */
   async openShared(
-    opts: { projectId?: string; choice?: 'clone' | 'copy'; overwrite?: boolean } = {},
+    opts: { projectId?: string; choice?: 'clone' | 'copy'; overwrite?: boolean; apply?: boolean } = {},
   ): Promise<OpenSharedResult> {
     if (!this.id) throw new Error('openShared requires this.id');
     const action = new ActionInfo('open-shared', MessageAttachment.type, this.id, 'POST');
@@ -190,6 +221,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
       ...(opts.projectId ? { project_id: opts.projectId } : {}),
       ...(opts.choice ? { choice: opts.choice } : {}),
       ...(opts.overwrite ? { overwrite: true } : {}),
+      ...(opts.apply ? { apply: true } : {}),
     };
     return (await dataManager.callAction<unknown, OpenSharedResult>(action)) ?? {};
   }

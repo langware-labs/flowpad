@@ -70,6 +70,8 @@ import {
   DEFAULT_MODELS,
   SEED_BY_SCOPE,
   aliasesForPinnedModel,
+  reconcileAliases,
+  sameAliases,
 } from '@src/components/organization/budgets/budget-models';
 
 /**
@@ -192,6 +194,46 @@ describe('aliasesForPinnedModel', () => {
 
   it('redirects nothing for an empty list', () => {
     expect(aliasesForPinnedModel([])).toEqual({});
+  });
+});
+
+describe('reconcileAliases', () => {
+  const GEMINI = 'google/gemini-3.5-flash';
+
+  it('keeps a redirect an admin wrote across families, which the derivation can never make', () => {
+    const current = { 'anthropic/claude-*': GEMINI, 'claude-*': GEMINI };
+    expect(reconcileAliases(current, [GEMINI])).toEqual({
+      'anthropic/claude-*': GEMINI,
+      'claude-*': GEMINI,
+      'google/gemini-*': GEMINI,
+      'gemini-*': GEMINI,
+    });
+  });
+
+  it('still derives the same-family redirects, and drops the ones a wider list makes obsolete', () => {
+    expect(reconcileAliases({}, [GEMINI])).toEqual(aliasesForPinnedModel([GEMINI]));
+    // The wallet was widened back to the family glob: the old pin's redirect must go, not linger.
+    expect(reconcileAliases({ 'google/gemini-*': GEMINI, 'gemini-*': GEMINI }, ['google/gemini-*'])).toEqual({});
+  });
+
+  it('keeps a redirect whose target is not the pinned model but is of the family the list allows', () => {
+    // An org opened the family and a team pinned one model: the hub follows the redirect to the pin.
+    const pinned = 'google/gemini-3.1-pro-preview';
+    expect(reconcileAliases({ 'claude-*': GEMINI }, [pinned])).toEqual({
+      'claude-*': GEMINI,
+      ...aliasesForPinnedModel([pinned]),
+    });
+  });
+
+  it('drops a hand-written redirect into a family the list does not allow at all', () => {
+    expect(reconcileAliases({ 'claude-*': GEMINI }, ['openai/gpt-5-mini'])).toEqual(
+      aliasesForPinnedModel(['openai/gpt-5-mini']),
+    );
+  });
+
+  it('compares maps regardless of key order', () => {
+    expect(sameAliases({ a: '1', b: '2' }, { b: '2', a: '1' })).toBe(true);
+    expect(sameAliases({ a: '1' }, { a: '2' })).toBe(false);
   });
 });
 

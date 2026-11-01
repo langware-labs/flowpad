@@ -1,8 +1,7 @@
-import { isCompleteGitOrigin, Project } from '@sdk';
+import { canSetUpProjects, dataContext, isCompleteGitOrigin, Project } from '@sdk';
 import { isGitOrigin, type ProjectOrigin, projectOriginOf } from '@sdk/models/FSOrigin';
 import { t } from '@lingui/core/macro';
 import { useAuth } from '@sdk/react/hooks';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { consumeInboundParams, DeepLinkAction, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -89,6 +88,8 @@ async function checkedOutHere(projectId: string | undefined): Promise<boolean> {
  */
 function useOfferNewCloudProjects(held: boolean) {
   const { cloudUser } = useAuth();
+  // Never on the hub (no disk) or an agent box (nobody there).
+  const canSetUp = canSetUpProjects(dataContext.caps);
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
   const [queue, setQueue] = useState<IncomingProjectParams[]>([]);
   const sweptFor = useRef<string | null>(null);
@@ -96,7 +97,7 @@ function useOfferNewCloudProjects(held: boolean) {
 
   const userId = cloudUser?.id ?? null;
   useEffect(() => {
-    if (!userId || isHubOnly() || sweptFor.current === userId) return;
+    if (!userId || !canSetUp || sweptFor.current === userId) return;
     sweptFor.current = userId;
     void Project.newFromHub()
       .then((links) => {
@@ -124,7 +125,7 @@ function useOfferNewCloudProjects(held: boolean) {
       .catch(() => {
         /* the hub is unreachable — the next sign-in or start asks again */
       });
-  }, [userId]);
+  }, [userId, canSetUp]);
 
   // One offer is looked at a time: the next one waits for this one's check.
   const [checking, setChecking] = useState(false);

@@ -23,8 +23,6 @@ from pathlib import Path
 
 import requests
 
-from flow_sdk.builtin.agentic_process.model_tiers import FAMILY_TIERS
-
 HUB = os.environ.get("HUB", "http://localhost:8094").rstrip("/")
 EMAIL = os.environ.get("HUB_OWNER_EMAIL", "matrix-owner@local.test")
 PASSWORD = os.environ.get("HUB_OWNER_PASSWORD", "owner-pw-1234")
@@ -45,6 +43,22 @@ VERTEX_SLUGS = [
     ).split(",")
     if s
 ]
+#: Every slug the matrix spends. Was ``model_tiers.FAMILY_TIERS``; the ``<family>:<size>`` syntax is gone
+#: from the SDK (an endpoint declares its sizes now), so the list lives here.
+MATRIX_SLUGS = [
+    "moonshotai/kimi-k2-thinking",
+    "moonshotai/kimi-k2.5",
+    "moonshotai/kimi-k2.6",
+    "z-ai/glm-4.7",
+    "z-ai/glm-5",
+    "z-ai/glm-5.3",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-5",
+    "anthropic/claude-haiku-5.5",
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-opus-4.8",
+]
 
 
 def _data(response: requests.Response) -> dict:
@@ -61,7 +75,7 @@ def main() -> None:
     token = _data(requests.post(f"{HUB}/api/v1/login/local", json={"email": EMAIL, "password": PASSWORD}))["token"]
     auth = {"Authorization": f"Bearer {token}"}
     graph = f"{HUB}/api/v1/graph/llm_endpoint"
-    every_slug = sorted({slug for sizes in FAMILY_TIERS.values() for slug in sizes.values()})
+    every_slug = sorted(set(MATRIX_SLUGS))
 
     def root(body: dict, credential: str, filters: dict) -> str:
         made = _data(requests.post(graph, headers=auth, json=body))

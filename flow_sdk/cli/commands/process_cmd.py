@@ -34,10 +34,7 @@ flow_sdk installed answers with no flags at all.
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import tempfile
-import uuid
 from typing import Optional
 
 import requests
@@ -69,7 +66,7 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
-from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+from flow_sdk.core.headless_turn import HeadlessTurnRequest, headless_turn
 
 process_app = typer.Typer(
     name="process",
@@ -136,17 +133,13 @@ def restart_process(
     )
 
 
-#: A backend for this instance is already running. ``start`` writes the process row in-process,
-#: and a second writer beside a live server is the SQLite contention ``flow llm`` routes around.
-EXIT_INSTANCE_RUNNING = int(ExitCode.REFUSED)
-
-
 @process_app.command(
     "start",
     help=(
-        "Run one headless turn here and stream the agent's messages: no server, no login. "
-        "Funded by whatever this box resolves — e.g. a public hub endpoint bound with "
-        "`flow llm user use <endpoint-id>`. Exit code is the turn's (0 = answered)."
+        "Run one headless turn and stream the agent's messages. Runs inside the instance's backend "
+        "when one is up, else here with no server. Funded by whatever this box resolves — e.g. a "
+        "public hub endpoint bound with `flow llm user use <endpoint-id>`. Exit code is the turn's "
+        "(0 = answered)."
     ),
 )
 def start_process(
@@ -165,14 +158,15 @@ def start_process(
     workdir: Annotated[
         Optional[str], typer.Option("--workdir", help="Where the agent works. Default: a fresh temp directory.")
     ] = None,
+    llm: Annotated[
+        Optional[str],
+        typer.Option(
+            "--llm",
+            help="Source that funds this run only: a `flow llm list` number, endpoint id or name prefix. "
+            "Pins the process, never the box default.",
+        ),
+    ] = None,
 ) -> None:
-    if _discover_port(required=False) is not None:
-        _fail(
-            EXIT_INSTANCE_RUNNING,
-            "INSTANCE_RUNNING",
-            "A Flowpad backend is running for this instance; `flow process start` runs without one. "
-            "Stop it, or point FLOW_INSTANCE at an instance that is not running.",
-        )
     worker_type = None
     if worker:
         from flow_sdk.flowpad_types.vendors import vendor_or_none  # noqa: PLC0415
@@ -181,58 +175,75 @@ def start_process(
         if vendor is None:
             _fail(EXIT_INVALID_ARG, "UNKNOWN_WORKER", f"No worker named {worker!r}.")
         worker_type = vendor.worker_type
+    endpoint_typeid = None
+    if llm:
+        from flow_sdk.cli.commands.llm_cmd import _pick, _rows, _status  # noqa: PLC0415
+
+        endpoint_typeid = _pick(_rows(_status()), llm).typeid
+    port = _discover_port(required=False)
+    request = HeadlessTurnRequest(prompt=prompt, worker=worker_type, model=model, workdir=workdir, llm=endpoint_typeid)
+    if port is not None:
+        raise typer.Exit(_run_on_server(port, request))
     # ERROR too: a turn that fails says why through its own verdict, so the log would only repeat it.
     quiet_logs(logging.ERROR)
-    raise typer.Exit(run_async(_run_start(prompt, worker_type=worker_type, model=model, workdir=workdir)))
+    raise typer.Exit(run_async(_run_start(request)))
 
 
-async def _run_start(
-    prompt: str,
-    *,
-    worker_type: Optional[str] = None,
-    model: Optional[str] = None,
-    workdir: Optional[str] = None,
-) -> int:
-    """One turn, streamed: the process id and tool steps to stderr, the agent's messages to
-    stdout. No ``worker_type`` takes the builtin-process rule — the selected harness when
-    installed, else the bootstrap worker (``deepagents``, shipped in the wheel)."""
-    from flow_sdk.builtin.agent_serve import Turn, TurnEngine  # noqa: PLC0415
-    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-    from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
+class _Printer:
+    """Prints a turn's events as ``flow process start`` always has -- the process id and tool steps on
+    stderr, the agent's words on stdout -- and keeps the turn's exit code: 1 until a ``done`` arrives."""
+
+    def __init__(self) -> None:
+        self.exit_code: int | None = None
+
+    def feed(self, event: dict) -> None:
+        kind = event.get("kind")
+        if kind == "process":
+            safe_echo(f"running agentic process {event.get('id')}…", err=True)
+        elif kind == "tool":
+            safe_echo(f"· {event.get('name')}", err=True)
+        elif kind == "text":
+            safe_echo(event.get("text") or "")
+        elif kind == "done":
+            if event.get("text"):
+                safe_echo(event["text"])
+            if not event.get("ok"):
+                safe_echo(event.get("detail") or "The turn did not finish.", err=True)
+            self.exit_code = int(event.get("exit_code") or 0)
+
+    def result(self) -> int:
+        if self.exit_code is None:
+            safe_echo("The turn ended before it reported a result.", err=True)
+            return 1
+        return self.exit_code
+
+
+def _run_on_server(port: int, request: HeadlessTurnRequest) -> int:
+    """The turn, run by the live backend (one SQLite writer) and streamed back as NDJSON."""
+    import json  # noqa: PLC0415
+
+    url = f"http://127.0.0.1:{port}/api/v1/agentic_process/headless-turn"
+    try:
+        resp = _local_post(url, json=request.model_dump(), stream=True, timeout=(10, None))
+    except requests.exceptions.RequestException as e:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+        return 1
+    if resp.status_code != 200:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
+        return 1
+    printer = _Printer()
+    for line in resp.iter_lines(decode_unicode=True):
+        if line:
+            printer.feed(json.loads(line))
+    return printer.result()
+
+
+async def _run_start(request: HeadlessTurnRequest) -> int:
+    """One turn in THIS process (no backend up), printed as it streams."""
     from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
 
     await _bootstrap_local()
-    cli_config: dict = {"permission_mode": "bypassPermissions"}
-    if model:
-        cli_config["model"] = model
-    ap = await AgenticProcess(
-        worker_type=worker_type or await resolve_builtin_worker_type(),
-        workdir=workdir or tempfile.mkdtemp(prefix="flow-process-"),
-        cli_config=cli_config,
-        pty_mode=False,
-        visible=False,
-        load_flowpad_assistant=False,
-    ).save()
-    safe_echo(f"running agentic process {ap.typeid}…", err=True)
-    answer = None
-    said = False
-    try:
-        turn = Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=prompt)
-        async for event in TurnEngine().run_stream(turn, process=ap):
-            if event.kind == "text":
-                safe_echo(event.text)
-                said = True
-            elif event.kind == "tool":
-                safe_echo(f"· {event.name}", err=True)
-            elif event.kind == "done":
-                answer = event.answer
-                # A reply written after the stream saw the turn end (codex writes its last message
-                # as the session closes) is still the answer: the engine re-reads the transcript.
-                if not said and answer.text:
-                    safe_echo(answer.text)
-    finally:
-        with contextlib.suppress(Exception):
-            await ap.exit()
-    if not answer.ok:
-        safe_echo(answer.detail or "The turn did not finish.", err=True)
-    return int(answer.exit_code)
+    printer = _Printer()
+    async for event in headless_turn(request):
+        printer.feed(event)
+    return printer.result()

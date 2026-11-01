@@ -53,9 +53,18 @@ export function useSourceSpecs(options?: { enabled?: boolean }) {
  *  The one client-side spelling of `agent_scope.is_message_source`'s driver half. */
 export const isMessageDriverSpec = (spec: DataDriver | undefined | null): boolean => !!spec?.sends;
 
-/** Read-only sources are knowledge dependencies even when their driver also supports sending. */
-export const isKnowledgeSource = (source: Pick<DataSource, 'read_only'>, spec: DataDriver | undefined | null): boolean =>
-  !!source.read_only || !isMessageDriverSpec(spec);
+/** A message channel: on a channel, its driver can send, and it is not read-only.
+ *  The client spelling of `agent_scope.is_message_source` — keep the two identical. */
+export const isMessageChannel = (
+  source: Pick<DataSource, 'read_only' | 'channel'>,
+  spec: DataDriver | undefined | null,
+): boolean => !source.read_only && !!(source.channel || '').trim() && isMessageDriverSpec(spec);
+
+/** Everything that is not a message channel is a knowledge source (data source). */
+export const isKnowledgeSource = (
+  source: Pick<DataSource, 'read_only' | 'channel'>,
+  spec: DataDriver | undefined | null,
+): boolean => !isMessageChannel(source, spec);
 
 /** A driver whose items are files (the `object` family): its page shows those files. */
 export const isObjectDriverSpec = (spec: DataDriver | undefined | null): boolean => spec?.family === 'object';

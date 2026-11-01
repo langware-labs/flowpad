@@ -1452,10 +1452,11 @@ class FsRecordsActionsMixin:
                 queue=queue,
             )
             logging.info(
-                "[auto-index] project %s (%s): %d new, %d errors in %.0fms",
+                "[auto-index] project %s (%s): %d new, %d removed, %d errors in %.0fms",
                 project_id,
                 trigger,
                 result.total_indexed,
+                result.total_orphans_db_removed,
                 result.total_errors,
                 result.duration_ms,
             )
@@ -2002,8 +2003,8 @@ class FsRecordsActionsMixin:
         changed path (resolving inner files to their owning folder asset),
         mint type-inferred new files, and orphan/re-sync deleted ones — each
         with a ``notify=True`` broadcast. The push trigger for the
-        ``file change → reindex → entity change → refresh`` loop; called by the
-        agentic turn-end seam and any client with a changed-file set.
+        ``file change → reindex → entity change → refresh`` loop for a client with
+        a changed-file set (a session's turn end calls ``reindex_paths`` directly).
         """
         from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 

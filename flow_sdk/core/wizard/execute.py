@@ -132,7 +132,7 @@ async def execute_wizard(
         # locking the SAME path again here would not be reentrant (a plain
         # `FileLock` does not know one is already held) and self-deadlocks.
         # This lock is what keeps the write safe without re-acquiring it.
-        record_result(key, partial, already_locked=True)
+        record_result(key, partial, already_locked=True, checked=check_only)
         await _notify_wizard_watchers(wizard_id)
 
     from flow_sdk.core.compute_op.ask import ASKING_RUN  # noqa: PLC0415
@@ -176,7 +176,7 @@ async def execute_wizard(
     # is live-only (a finished root is dropped), so without this the whole
     # outcome of a first-launch setup survives as one log line and the wizard
     # reports "has not run on this machine yet", which is false.
-    record_result(key, result)
+    record_result(key, result, checked=check_only)
     await _notify_wizard_watchers(wizard_id)
     return result
 

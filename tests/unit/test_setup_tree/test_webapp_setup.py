@@ -366,7 +366,7 @@ async def test_a_failed_recheck_answered_in_process_says_its_own_reason(monkeypa
     from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ReturnedValue
 
-    async def step(webapp, which, *, check, display=""):
+    async def step(webapp, which, *, check, display="", **_kw):
         return ReturnedValue(
             exit_code=ExitCode.NOT_YET if check else ExitCode.OK,
             detail="port 3000 is held by another program" if check else "started",
@@ -808,3 +808,37 @@ async def test_a_server_that_answers_a_moment_after_its_port_opens_is_up_on_the_
     started = await webapp_setup.step("a1", "start", check=False)
     assert started.ok and started.ran, started.detail
     assert webapp_setup.health_answers(int(started.value))
+
+
+@pytest.mark.asyncio
+async def test_a_running_process_reports_what_it_no_longer_matches_in_the_saved_definition(app):
+    """The app editor's "N changes not applied": a saved port or start command the running process
+    did not start with is listed, and nothing once it runs the definition as saved."""
+    port, moved = _free(), _free()
+    app.make(ports={"port": port})
+    assert (await webapp_setup.step("a1", "start", check=False)).ok
+    (page,) = await webapp_setup.ports("a1")
+    assert page["changes"] == []
+
+    app.make(ports={"port": moved}, start_cmd=SERVER + " --directory .")
+    (page,) = await webapp_setup.ports("a1")
+    assert page["changes"] == [f"port {port} → {moved}", "start command"]
+    assert (await webapp_setup.stop("a1")).ok
+
+
+@pytest.mark.asyncio
+async def test_one_service_starts_with_what_it_calls_first_and_not_the_page(app):
+    """What another app declares it needs (``webapp-service-up``): ``start:<service>`` starts that service and the
+    services declared before it — never the page, never the services after it."""
+    def own(name):  # a command of its own per service: one process is never taken for another
+        return _service(name=name, command=f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1 --directory {name}")
+
+    for name in ("db", "api", "extra"):
+        (app.folder / name).mkdir()
+    app.make(services=[own("db"), own("api"), own("extra")])
+    answer = await webapp_setup.step("a1", "start:api", check=False)
+    assert answer.ok, answer.detail
+    assert set(app.services) == {"db", "api"} and app.endpoint is None and len(app.started) == 2
+    assert (await webapp_setup.step("a1", "start:api", check=True)).ok
+    missing = await webapp_setup.step("a1", "start:nope", check=False)
+    assert not missing.ok and "has no process 'nope'" in missing.detail

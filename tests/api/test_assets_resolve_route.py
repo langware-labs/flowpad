@@ -78,7 +78,7 @@ async def test_malformed_metadata_retains_document_address_without_writing(boots
     assert document.read_bytes() == original
 
 
-async def test_invalid_spec_keeps_document_address_with_projection_error(bootstrapped_client, tmp_path):
+async def test_invalid_field_costs_only_that_field(bootstrapped_client, tmp_path):
     folder = _skill(tmp_path, 'invalid-spec')
     document = folder / 'SKILL.md'
     original = b'---\nname: invalid-spec\ndescription: [invalid]\n---\nReadable body.\n'
@@ -86,7 +86,7 @@ async def test_invalid_spec_keeps_document_address_with_projection_error(bootstr
     response = await _resolve(bootstrapped_client, folder)
     assert response.status_code == 200, response.text
     data = response.json()['data']
-    assert data['entity'] is None and data['entity_error']
+    assert data['entity'] is not None and not data['entity'].get('description')
     assert Path(data['body']) == document.resolve()
     assert document.read_bytes() == original
 

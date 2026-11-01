@@ -140,21 +140,17 @@ def funding_warnings(agent: "Agent", ready: "ReadinessSpec") -> list[str]:
 async def _start_machine(ctx: DeployContext) -> None:
     from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud, wait_until_placed  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
     try:
-        await deploy_entity_to_cloud(
-            ctx.agent,
-            ctx.environment,
-            provider=ctx.provider,
-            require=ctx.ready.value_names(),
-            deployment_id=str(ctx.deployment.id),
-        )
+        await deploy_entity_to_cloud(ctx.agent, ctx.environment, provider=ctx.provider, require=ctx.ready.value_names())
     except HubError as exc:
-        # No answer at all (status 0): the load balancer in front of the hub dropped the request while the hub
-        # went on placing the machine. Its push, mirrored into the placement's local row, is the answer.
-        if exc.status_code != 0:
-            raise
-        await wait_until_placed(str(ctx.deployment.id))
+        # A transport failure (the load balancer dropped the answer): the hub's push into the local row is the answer.
+        if exc.status_code == 0 and exc.kind is HubFailureKind.OFFLINE:
+            logger.warning("deploy of %s lost the hub's answer (%s); waiting for its push", ctx.agent.id, exc)
+            await wait_until_placed(str(ctx.deployment.id))
+            return
+        raise
 
 
 DEPLOYMENT_STEPS = [

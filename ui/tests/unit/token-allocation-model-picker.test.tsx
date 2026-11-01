@@ -12,18 +12,20 @@ import { Agent, type AgentTokenAllocation } from '@sdk';
 const SOURCE_ID = 'a8473a10-74e5-4ce1-9fda-2babd551a399';
 const SOURCE = `llm_endpoint-${SOURCE_ID}`;
 
-const h = vi.hoisted(() => ({ models: vi.fn() }));
+const h = vi.hoisted(() => ({ models: vi.fn(), chain: vi.fn(() => ({ data: undefined })) }));
+/** A hub row as the listing serves it: the caller's permitted actions ride its expansion. */
+const row = (id: string, name: string, actions: string[]) => ({ id, name, canAllocate: actions.includes('allocate') });
 vi.mock('@src/components/llm-endpoints/use-llm-endpoints', () => ({
   useLlmEndpointModels: (id: string | undefined) => h.models(id),
-}));
-vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
-  useLlmSources: () => ({
-    status: {
-      available: [
-        { id: SOURCE_ID, name: 'Team budget', kind: 'hub', can_administer: true },
-        { id: 'b8473a10-74e5-4ce1-9fda-2babd551a399', name: 'Other budget', kind: 'hub', can_administer: true },
-      ],
-    },
+  useLlmEndpointChain: (id: string | undefined) => h.chain(id),
+  useLlmEndpoints: () => ({
+    endpoints: [
+      row(SOURCE_ID, 'Team budget', ['read', 'update', 'allocate']),
+      row('b8473a10-74e5-4ce1-9fda-2babd551a399', 'Other budget', ['read', 'update', 'allocate']),
+      // Held, not administered: its holder may still carve a sub-budget from it.
+      row('c8473a10-74e5-4ce1-9fda-2babd551a399', 'My allowance', ['read', 'invoke', 'allocate']),
+      row('d8473a10-74e5-4ce1-9fda-2babd551a399', 'Spend only', ['read', 'invoke']),
+    ],
     isLoading: false,
   }),
 }));
@@ -34,7 +36,10 @@ vi.mock('@src/notifications', () => ({
 
 import { TokenAllocationField } from '@src/components/assets/editor/agent-profile/TokenAllocationField';
 
-const offered = (...ids: string[]) => ({ data: ids.map((id) => ({ id, root_id: 'llm_endpoint-root' })), isLoading: false });
+const offered = (...ids: string[]) => ({
+  data: ids.map((id) => ({ id, root_id: 'llm_endpoint-root' })),
+  isLoading: false,
+});
 
 beforeAll(() => {
   // cmdk scrolls its active row into view; jsdom does not implement it.
@@ -46,6 +51,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   h.models.mockReset();
+  h.chain.mockReset();
+  h.chain.mockReturnValue({ data: undefined });
 });
 
 const agent = new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
@@ -72,7 +79,9 @@ describe('Token allocation model', () => {
     const picker = screen.getByTestId('token-allocation-model');
     expect(picker).toHaveAttribute('role', 'combobox');
     await userEvent.click(picker);
-    const names = within(await screen.findByRole('listbox')).getAllByRole('option').map((o) => o.textContent);
+    const names = within(await screen.findByRole('listbox'))
+      .getAllByRole('option')
+      .map((o) => o.textContent);
     expect(names).toEqual(['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5', 'openai/gpt-5']);
 
     await userEvent.click(screen.getByTestId('token-allocation-model-anthropic/claude-sonnet-5'));
@@ -105,7 +114,9 @@ describe('Token allocation model', () => {
     const picker = screen.getByTestId('token-allocation-model');
     expect(picker).toHaveTextContent('haiku');
     await userEvent.click(picker);
-    const names = within(await screen.findByRole('listbox')).getAllByRole('option').map((o) => o.textContent);
+    const names = within(await screen.findByRole('listbox'))
+      .getAllByRole('option')
+      .map((o) => o.textContent);
     expect(names).toEqual(['haiku', 'anthropic/claude-haiku-4.5', 'openai/gpt-5']);
   });
 
@@ -115,5 +126,46 @@ describe('Token allocation model', () => {
     const field = screen.getByTestId('token-allocation-model');
     expect(field.tagName).toBe('INPUT');
     expect(field).toHaveAttribute('placeholder', 'Loading models…');
+  });
+});
+
+describe('token allocation by size', () => {
+  it('offers the sizes the source declares first, each with the model it resolves to', async () => {
+    h.models.mockReturnValue(offered('google/gemini-3.1-flash-lite', 'google/gemini-3.1-pro-preview'));
+    h.chain.mockReturnValue({
+      data: {
+        effective_tiers: {
+          sm: { model: 'google/gemini-3.1-flash-lite', set_by: 'x', reason: '' },
+          md: { model: null, set_by: null, reason: 'none' },
+          lg: { model: 'google/gemini-3.1-pro-preview', set_by: 'x', reason: '' },
+        },
+      },
+    });
+    const onChange = renderField(allocation());
+    await userEvent.click(screen.getByTestId('token-allocation-model'));
+    expect(screen.getByTestId('token-allocation-size-lg')).toHaveTextContent('lg' + 'google/gemini-3.1-pro-preview');
+    expect(screen.queryByTestId('token-allocation-size-md')).toBeNull();
+    await userEvent.click(screen.getByTestId('token-allocation-size-lg'));
+    expect(onChange).toHaveBeenLastCalledWith(allocation('lg'));
+  });
+
+  it('a chosen size reads as the size and its model', () => {
+    h.models.mockReturnValue(offered('google/gemini-3.1-pro-preview', 'google/gemini-3.1-flash-lite'));
+    h.chain.mockReturnValue({
+      data: { effective_tiers: { lg: { model: 'google/gemini-3.1-pro-preview', set_by: 'x', reason: '' } } },
+    });
+    renderField(allocation('lg'));
+    expect(screen.getByTestId('token-allocation-model')).toHaveTextContent('lg · google/gemini-3.1-pro-preview');
+  });
+
+  it('a budget the person holds is a source; one they may only spend is not', async () => {
+    h.models.mockReturnValue(offered());
+    renderField(allocation());
+    const select = screen.getByTestId('token-allocation-source');
+    const names = within(select)
+      .queryAllByRole('option')
+      .map((o) => o.textContent);
+    expect(names.join('|')).toContain('My allowance');
+    expect(names.join('|')).not.toContain('Spend only');
   });
 });

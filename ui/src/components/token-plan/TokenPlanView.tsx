@@ -19,9 +19,10 @@ import { Skeleton } from '@src/components/ui/skeleton';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import { AllocateDialog } from './AllocateDialog';
+import { FundedThroughCard, useResetLabel } from './FundingChain';
 import { SourceSummary } from './SourceSummary';
 import { TokenSourcesTree } from './TokenSourcesTree';
-import { childrenOf, sourceRows } from './source-tree';
+import { childrenOf, costLeft, resetOf, sourceRows } from './source-tree';
 import { useInvalidateTokenPlan, useTokenPlan } from './use-token-plan';
 
 /** The selected row: an endpoint typeid pointer; anything else selects nothing (all sources). */
@@ -47,6 +48,17 @@ export function TokenPlanView({ pointer }: { pointer?: string }) {
   const selected = (treeId && endpoints.find((e) => e.id === treeId)) || null;
   const label = (e: LLMEndpoint) =>
     sources.find((r) => r.endpoint.id === e.id)?.flowpadAccount ? t`Flowpad account` : e.name || t`Unnamed`;
+
+  // The window the headline is judged over: the selected row's own, or the only source's.
+  const resetLabel = useResetLabel();
+  const headlineOf = selected ?? (sources.length === 1 ? sources[0].endpoint : null);
+  const headlineLeft = headlineOf ? costLeft(headlineOf) : null;
+  const headlineReset = resetOf(headlineLeft);
+  const subtitle = headlineLeft
+    ? [resetLabel(headlineLeft), headlineReset?.inHours != null ? t`resets in ${headlineReset.inHours}h` : null]
+        .filter(Boolean)
+        .join(' · ')
+    : null;
 
   const go = (next: string) => navigation.openPage(PageId.HUB, ViewType.TOKEN_PLAN, next || undefined);
   const open = (e: LLMEndpoint) => go(endpointTypeId(e.id));
@@ -87,6 +99,7 @@ export function TokenPlanView({ pointer }: { pointer?: string }) {
             onConfigure={(e) => openLlmEndpoint(navigation, e.id)}
             onAdd={() => setAdding(true)}
             onAllEndpoints={() => navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS)}
+            onRenamed={refresh}
           />
           <div className="w-full min-w-0 space-y-3">
             {selected && (
@@ -120,6 +133,19 @@ export function TokenPlanView({ pointer }: { pointer?: string }) {
               ).map((e) => ({ endpoint: e, label: label(e) }))}
               breakdownTitle={selected ? t`Allocated from this source` : t`Sources`}
               onOpen={open}
+              subtitle={subtitle}
+              afterBudget={
+                selected ? (
+                  <FundedThroughCard
+                    endpointId={selected.id}
+                    entryName={
+                      sources.find((r) => r.endpoint.id === selected.id)?.flowpadAccount
+                        ? t`Flowpad account`
+                        : selected.name
+                    }
+                  />
+                ) : null
+              }
             />
           </div>
         </div>

@@ -1,0 +1,19 @@
+{
+  "name": "dev-ok",
+  "title": "dev-ok",
+  "description": "Tier-1 stub: a proxied python dev server with a health path, a non-required port and an install step.",
+  "build": ".",
+  "mounts": [
+    {
+      "audience": "app",
+      "serving": {
+        "type": "proxy",
+        "start_cmd": "python3 serve.py {port}",
+        "health": "/health",
+        "ports": { "local": { "port": 48101, "required": false } },
+        "install_cmd": "python3 install.py",
+        "install_check": ".installed/marker.json"
+      }
+    }
+  ]
+}

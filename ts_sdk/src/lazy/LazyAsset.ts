@@ -7,6 +7,7 @@ export enum LazyAsset {
   AssetCatalog = 'asset-catalog',
   IndexStatus = 'index-status',
   AssetStats = 'asset-stats',
+  ProjectAssetMenu = 'project-asset-menu',
   Projects = 'projects',
   DiscoveredProjects = 'discovered-projects',
   Workspaces = 'workspaces',

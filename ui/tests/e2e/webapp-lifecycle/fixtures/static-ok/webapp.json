@@ -1,0 +1,1 @@
+{ "name": "static-ok", "title": "static-ok", "description": "Tier-1 stub: static files, no process.", "build": "build" }

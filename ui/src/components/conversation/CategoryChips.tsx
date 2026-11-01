@@ -1,6 +1,6 @@
 import { Badge } from '@src/components/ui/badge';
 import { cn } from '@src/lib/utils';
-import { chipsFor, type ConversationFacets } from './conversation-category';
+import { chipsFor, ticketChip, type ConversationFacets, type TicketFacet } from './conversation-category';
 
 // Compact override so the category chip reads as an inline tag, not the
 // default full-size Badge. Tone classes come from each ChipSpec.
@@ -26,5 +26,23 @@ export function CategoryChips({ facets, className }: { facets: ConversationFacet
         </Badge>
       ))}
     </>
+  );
+}
+
+/** Just a ticket's state chip (waiting / picked / closed) — for surfaces that already say "support". */
+export function TicketStateChip({ ticket, className }: { ticket: TicketFacet | null | undefined; className?: string }) {
+  if (!ticket) return null;
+  const c = ticketChip(ticket);
+  return (
+    <Badge
+      variant="outline"
+      className={cn(COMPACT, c.className, className)}
+      data-chip-type={c.key}
+      data-testid="ticket-state-chip"
+      title={c.label}
+    >
+      <c.icon className="h-2.5 w-2.5" />
+      {c.label}
+    </Badge>
   );
 }

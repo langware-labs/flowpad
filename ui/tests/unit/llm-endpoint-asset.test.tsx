@@ -71,7 +71,7 @@ function offer(over: Partial<LLMEndpointOffer> = {}): LLMEndpointOffer {
     invoke_path: '/api/v1/graph/llm_endpoint/ep-1/invoke',
     kind: 'hub',
     secret_name: '',
-    models: {},
+    tiers: {},
     invocable: true,
     base_url: '',
     is_mine: true,

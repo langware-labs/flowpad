@@ -187,12 +187,18 @@ def test_a_credential_never_says_where_its_values_live():
         ({"vars": {}}, "no variables"),
         ({"vars": {"9BAD": {"label": "x"}}}, "invalid env var name"),
         ({"name": "has space"}, "a name is a folder name"),
-        ({"unknown_key": 1}, "unknown key"),
     ],
 )
 def test_authoring_rules_are_load_errors(override, why):
     with pytest.raises(Exception):
         CredentialSpec.model_validate({**TWILIO, **override})
+
+
+def test_a_key_a_newer_version_wrote_still_loads():
+    """Every version that opens the project reads its credentials: a key added later is ignored, never a
+    load error — an older app must not break on a newer file."""
+    spec = CredentialSpec.model_validate({**TWILIO, "added_in_a_later_version": {"x": 1}})
+    assert spec.name == TWILIO["name"]
 
 
 SHIPPED_LM = {

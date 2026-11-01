@@ -81,12 +81,10 @@ def render_chart_document(spec, info) -> str:
 
 def scaffold_chart(path: Path, spec, typeid: TypeId) -> None:
     """Repair only the absent files; authored chart data always wins."""
-    from flow_sdk.assets.types.chart import BOARD_JSON, CHART_JSON, CHART_MD
+    from flow_sdk.assets.types.chart import CHART_MD, CHART_SOURCES
 
     directory = AssetDir(path)
     _missing_file(directory, CHART_MD, render_chart_document(spec, None))
-    fmt = spec.format
-    if fmt == "sequence":
-        _missing_file(directory, CHART_JSON, '{"participants": [], "messages": []}\n')
-    elif fmt == "excalidraw":
-        _missing_file(directory, BOARD_JSON, '{"kind": "excalidraw", "version": 1, "data": {"elements": []}}\n')
+    source = CHART_SOURCES.get(spec.format)
+    if source:
+        _missing_file(directory, *source)

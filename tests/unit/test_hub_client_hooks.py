@@ -83,6 +83,14 @@ async def test_pre_expired_credentials_short_circuit_without_network(memory_keyr
     assert any("auth_expired_msg" in message for message in capture_broadcast)
 
 
+_CORE = ("status_code", "method", "path", "message")
+
+
+def _core(report: dict) -> dict:
+    """The fields a report always had; the debug context (body, url, caller…) is checked on its own."""
+    return {k: report[k] for k in _CORE}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status_code", [401, 402, 424])
 async def test_auth_failure_status_keeps_credentials_and_reports_warning(
@@ -137,7 +145,7 @@ async def test_auth_failure_status_keeps_credentials_and_reports_warning(
     assert is_logged_in()
     assert not any("auth_expired_msg" in message for message in capture_broadcast)
     # Full detail forwarded to the warning surface.
-    assert reports == [
+    assert [_core(r) for r in reports] == [
         {
             "status_code": status_code,
             "method": "GET",
@@ -200,7 +208,7 @@ async def test_500_reports_error_without_clearing_credentials(monkeypatch, memor
 
     assert load_credentials().api_key == "token-1"
     assert is_logged_in()
-    assert reports == [
+    assert [_core(r) for r in reports] == [
         {
             "status_code": 500,
             "method": "GET",
@@ -292,3 +300,51 @@ async def test_a_hub_answer_clears_the_error_of_the_same_request_only(monkeypatc
 
     recovered = [m.path for m in messages if m.message_type == "hub_client_recovered_msg"]
     assert recovered == ["/api/v1/flaky"], "only the request the hub went on to answer is cleared"
+
+
+@pytest.mark.asyncio
+async def test_a_forwarded_small_json_error_reports_the_hubs_answer_and_still_relays_it(monkeypatch):
+    from flow_sdk.cloud_client import client_hooks as hooks
+    from flow_sdk.cloud_client.caller import as_caller
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+
+    reports = []
+
+    class Reporter:
+        async def report(self, **kwargs):
+            reports.append(kwargs)
+
+        async def recovered(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(hooks, "hub_error_reporter", Reporter())
+    body = {"status": "FAIL", "message": "filter.status: not a valid value", "data": {"error_code": "validation"}}
+
+    async def handler(request: httpx.Request):
+        return httpx.Response(422, json=body, headers={"x-request-id": "req-1"}, request=request)
+
+    # Secrets in the query never reach the report.
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), event_hooks={"response": [hooks._on_response]}
+    ) as c:
+        req = c.build_request(
+            "GET",
+            "https://hub.test/api/v1/graph/issue?filter=open&api_key=s3cr3tvalue",
+            extensions={hooks.PASSTHROUGH_EXTENSION: True},
+        )
+        with as_caller("help desk"):
+            resp = await c.send(req, stream=True)
+        relayed = HubProxy.relay(resp)
+
+    [r] = reports
+    assert r["message"] == "filter.status: not a valid value"
+    d = r["detail"]
+    assert (d["response"]["errorCode"], d["response"]["requestId"], d["request"]["caller"]) == (
+        "validation",
+        "req-1",
+        "help desk",
+    )
+    assert d["request"]["url"] == "https://hub.test/api/v1/graph/issue?filter=open&api_key=[redacted]"
+    assert r["path"] == "/api/v1/graph/issue?filter=open&api_key=[redacted]"
+    assert b"not a valid value" in relayed.body, "the caller still gets the hub's full answer"

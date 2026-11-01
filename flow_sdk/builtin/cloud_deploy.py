@@ -34,17 +34,10 @@ DEFAULT_CLOUD_PROVIDER = "e2b"
 #: the hub drops a request it has held for minutes while the hub goes on placing the machine: a dropped answer is
 #: not a failure.
 PLACED_WITHIN_S = 8 * 60
-#: How often the local row is looked at meanwhile: a read of this computer's own store.
-PLACED_LOCAL_POLL_S = 1
 
 
 async def deploy_entity_to_cloud(
-    entity: "Entity",
-    environment: str | None = None,
-    *,
-    provider: str | None = None,
-    require: list[str] | None = None,
-    deployment_id: str | None = None,
+    entity: "Entity", environment: str | None = None, *, provider: str | None = None, require: list[str] | None = None
 ) -> dict[str, Any]:
     """POST ``<entity>/deploy`` on the hub and adopt the placement it returns.
 
@@ -54,8 +47,7 @@ async def deploy_entity_to_cloud(
     ``provider`` (the hub's name; none: :data:`DEFAULT_CLOUD_PROVIDER`), and
     which credential ``environment`` the placement reads (``production`` by
     default) — a name, never a value. ``require`` names the variables the hub must already hold for
-    the placement; it refuses (``not_ready``) before paying for a machine otherwise. ``deployment_id`` names
-    the placement this deploy is for (the one a plan made); without it the hub makes a new one.
+    the placement; it refuses (``not_ready``) before paying for a machine otherwise.
     """
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
@@ -73,7 +65,6 @@ async def deploy_entity_to_cloud(
         "environment": environment,
         "provider": provider or DEFAULT_CLOUD_PROVIDER,
         **({"require": require} if require else {}),
-        **({"deployment_id": deployment_id} if deployment_id else {}),
     }
     data = await HubProxy.call(
         "POST", entity.type, entity.id, "deploy", payload=body, strict=True, timeout=DEPLOY_TIMEOUT
@@ -90,23 +81,31 @@ async def deploy_entity_to_cloud(
 
 async def wait_until_placed(deployment_id: str) -> None:
     """Wait for the placement's local row to have its machine — for a deploy whose answer never came back. The hub
-    pushes the placement as it gives it its machine and the bridge mirrors each push into that row, so this only
-    reads here, never asks the hub. Raises ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none."""
+    pushes the placement as it gives it its machine and the bridge mirrors each push into that row, which announces
+    itself on the bus once written: the row is read again on each announcement, never asked of the hub. Raises
+    ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none."""
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.tags import on_tag, target_of  # noqa: PLC0415
+
+    changed = asyncio.Event()
 
     async def placed() -> None:
         while True:
+            changed.clear()  # before the read: a write that lands during it wakes the next wait
             row = await Deployment.get_by_id(deployment_id)
             if row is not None and row.origin and row.origin.external_id and row.status.provider_state == "running":
                 return
-            await asyncio.sleep(PLACED_LOCAL_POLL_S)
+            await changed.wait()
 
+    unsubscribe = on_tag("entity.*", lambda _event: changed.set(), target=target_of("deployment", deployment_id))
     try:
         await asyncio.wait_for(placed(), PLACED_WITHIN_S)
     except TimeoutError:
         raise TimeoutError(
             f"the hub sent no machine for it within {PLACED_WITHIN_S // 60} minutes of losing its answer"
         ) from None
+    finally:
+        unsubscribe()
 
 
 __all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud", "wait_until_placed"]

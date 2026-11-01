@@ -2,9 +2,18 @@ import { useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { ICronEvent } from '@sdk';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+/** What the schedule form edits: the schedule fields of a Trigger. */
+export interface ScheduleFormValue {
+  name: string;
+  description?: string;
+  expr: string;
+  trigger_type?: string;
+  timezone?: string;
+  enabled?: boolean;
+}
 
 type Preset = 'once' | 'daily' | 'weekly' | 'monthly' | 'custom';
 
@@ -22,7 +31,7 @@ const DAY_VALUES = ['1', '2', '3', '4', '5', '6', '0'];
 
 // ── Cron builder ──────────────────────────────────────────────────────────────
 
-export function buildCron(preset: Preset, time: string, weekDay: string, monthDay: string, customExpr: string, runAt: string): Pick<ICronEvent, 'expr' | 'trigger_type'> {
+export function buildCron(preset: Preset, time: string, weekDay: string, monthDay: string, customExpr: string, runAt: string): Pick<ScheduleFormValue, 'expr' | 'trigger_type'> {
   const [h = '9', m = '0'] = time.split(':');
   const min = String(parseInt(m, 10));
   const hr  = String(parseInt(h, 10));
@@ -176,9 +185,9 @@ function TimeRow({ preset, time, onTimeChange, weekDay, onWeekDayChange, monthDa
 // ── Main form ─────────────────────────────────────────────────────────────────
 
 interface CronFormProps {
-  initial?: Partial<ICronEvent>;
+  initial?: Partial<ScheduleFormValue>;
   defaultName?: string;
-  onSubmit: (data: Partial<ICronEvent>) => Promise<void>;
+  onSubmit: (data: Partial<ScheduleFormValue>) => Promise<void>;
   onCancel: () => void;
   submitting?: boolean;
 }

@@ -1,0 +1,9 @@
+{
+  "name": "page-errors",
+  "title": "page-errors",
+  "description": "Tier-1 stub: throws a known (handled → ignore) or an unknown page error on demand.",
+  "build": ".",
+  "mounts": [
+    { "audience": "app", "serving": { "type": "proxy", "start_cmd": "python3 serve.py {port}", "health": "/health" } }
+  ]
+}

@@ -834,6 +834,9 @@ class HubWebSocketManager:
         self._last_error = None
         if self.is_connected:
             await self._set_state(HubConnectionStatus.VERIFIED, connected=True, verified=True, error=None)
+        # Signed in and verified: publish (or rotate, or withdraw) this install's secured-transfer key, so members
+        # can send it values. Detached and best effort — a hub that refuses it leaves receiving off, nothing else.
+        asyncio.create_task(_publish_device_key(), name="sealed-device-key-publish")
         return {
             "verified": True,
             "local_user_id": local_user_id,
@@ -875,3 +878,13 @@ class HubWebSocketManager:
 
 
 hub_ws_manager = HubWebSocketManager()
+
+
+async def _publish_device_key() -> None:
+    try:
+        from flow_sdk.secrets.sealed_transfer import answer_pending, publish_device_key  # noqa: PLC0415
+
+        await publish_device_key()
+        await answer_pending()  # values members asked for while this install was offline
+    except Exception as e:  # noqa: BLE001
+        logger.info("[sealed] device key not published: %s", type(e).__name__)

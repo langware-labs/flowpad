@@ -9,6 +9,8 @@
  */
 // AssetEditor + the editor↔type mapping live in the SDK (single source of truth,
 // reused by the SDK entity pointer getters); re-exported here for UI imports.
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { TypeId } from '@sdk';
 export {
   AssetEditor,
@@ -49,6 +51,9 @@ export enum AssetMode {
   // Project landing rendered inside the project-scoped Assets tab. It is a
   // browser surface, not a single asset entity, so the asset loader no-ops it.
   PROJECT_HOME = 'project-home',
+  // The project's setup page (Project Home ☰ → Project setup): every setup step, its state, Edit/Run/Rerun.
+  // A surface like the landing, so the asset loader no-ops it too.
+  PROJECT_SETUP = 'project-setup',
 }
 
 /** Default wiki space (the local compute node). */
@@ -81,8 +86,38 @@ export function isBrowseListPointer(pointer: string): boolean {
   return (
     pointer.startsWith(`${AssetMode.LIST}/`) ||
     pointer.startsWith(`${AssetMode.FOLDER}/`) ||
-    pointer === AssetMode.PROJECT_HOME
+    isProjectLandingPointer(pointer)
   );
+}
+
+/**
+ * The project's own pages, hosted by Project Home: no backing entity, the project's own tab, and the last
+ * breadcrumb says which page. A new Project Home page is a row here.
+ */
+export interface ProjectLandingPage {
+  /** The last breadcrumb on this page. */
+  label: MessageDescriptor;
+  /** Addressed under `/dock/project/<id>/<pointer>` too. The landing itself is not: the project dock
+   *  reaches it by addressing nothing, and `project-home` belongs to the `/dock/assets` grammar. */
+  underProjectDock: boolean;
+}
+
+export const PROJECT_LANDING_PAGES: Record<string, ProjectLandingPage> = {
+  [AssetMode.PROJECT_HOME]: { label: msg`Home`, underProjectDock: false },
+  [AssetMode.PROJECT_SETUP]: { label: msg`Project setup`, underProjectDock: true },
+};
+
+/** The Project Home page `pointer` addresses under the given dock, else null. */
+export function projectLandingPageOf(
+  pointer: string | null | undefined,
+  { underProjectDock = false }: { underProjectDock?: boolean } = {},
+): ProjectLandingPage | null {
+  const page = pointer && Object.hasOwn(PROJECT_LANDING_PAGES, pointer) ? PROJECT_LANDING_PAGES[pointer] : null;
+  return page && (!underProjectDock || page.underProjectDock) ? page : null;
+}
+
+export function isProjectLandingPointer(pointer: string | null | undefined): boolean {
+  return projectLandingPageOf(pointer) !== null;
 }
 
 /** Thrown by AssetDocPointer.parse/validate on a malformed pointer. */

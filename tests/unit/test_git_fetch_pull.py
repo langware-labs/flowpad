@@ -258,3 +258,70 @@ async def test_a_finished_rebase_is_not_stuck(clones):
     assert (await repo.get_status()).conflict is None
     pushed = await repo.push()
     assert pushed.ok and pushed.kind == "pushed", pushed.message
+
+
+# --- cherry-pick: bringing a shared commit into another branch ------------------
+
+
+def _shared_commit(theirs: Path, name: str, text: str) -> str:
+    """A commit on a side branch of ``theirs``, pushed — what a share pins."""
+    _git(theirs, "checkout", "-qb", "feature")
+    _commit(theirs, name, text)
+    _git(theirs, "push", "-qu", "origin", "feature")
+    out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=theirs, capture_output=True, text=True, check=True)
+    return out.stdout.strip()
+
+
+async def test_cherry_pick_brings_the_commit_and_names_where_it_came_from(clones):
+    mine, theirs = clones
+    sha = _shared_commit(theirs, "shared.md", "from a teammate\n")
+    _git(mine, "fetch", "-q", "origin")
+    (mine / "draft.md").write_text("mine, unsaved\n")
+    (mine / "README.md").write_text("seed\nlocal edit\n")
+
+    result = await GitRepo(str(mine), LocalNode()).cherry_pick([sha])
+
+    assert result.ok and result.kind == "picked" and result.branch == "main", result
+    assert (mine / "shared.md").read_text() == "from a teammate\n"
+    assert (mine / "README.md").read_text() == "seed\nlocal edit\n", "uncommitted work was lost"
+    assert (mine / "draft.md").exists()
+    body = subprocess.run(["git", "log", "-1", "--format=%B"], cwd=mine, capture_output=True, text=True).stdout
+    assert f"cherry picked from commit {sha}" in body
+
+
+async def test_cherry_pick_of_nothing_says_so(clones):
+    mine, _ = clones
+    result = await GitRepo(str(mine), LocalNode()).cherry_pick([])
+    assert result.ok and result.kind == "nothing"
+
+
+async def test_a_conflicting_cherry_pick_is_left_open_for_the_resolver(clones):
+    mine, theirs = clones
+    sha = _shared_commit(theirs, "README.md", "theirs\n")
+    _commit(mine, "README.md", "mine\n")
+    _git(mine, "fetch", "-q", "origin")
+    repo = GitRepo(str(mine), LocalNode())
+
+    result = await repo.cherry_pick([sha])
+
+    assert (result.ok, result.kind, result.conflicted) == (False, "conflict", ["README.md"]), result
+    status = await repo.get_status()
+    assert status.conflict is not None and status.conflict.operation == "cherry-pick"
+    again = await repo.cherry_pick([sha])
+    assert again.kind == "conflict" and "still waiting" in again.message, "a second pick ran over the open one"
+
+
+async def test_a_cherry_pick_marked_resolved_but_not_continued_blocks_the_next_sync(clones):
+    """Nothing unmerged is left, yet the pick is open: every sync verb probes the
+    operation first (status probes it only on a hint, so it is not asked here)."""
+    mine, theirs = clones
+    sha = _shared_commit(theirs, "README.md", "theirs\n")
+    _commit(mine, "README.md", "mine\n")
+    _git(mine, "fetch", "-q", "origin")
+    repo = GitRepo(str(mine), LocalNode())
+    await repo.cherry_pick([sha])
+    (mine / "README.md").write_text("merged\n")
+    _git(mine, "add", "README.md")
+
+    pulled = await repo.pull()
+    assert pulled.kind == "conflict" and "still waiting" in pulled.message, pulled

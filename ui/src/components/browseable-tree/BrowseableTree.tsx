@@ -1,5 +1,5 @@
 import { EntityCard } from '@src/components/entity-card/EntityCard';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, FolderSearch, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -20,6 +20,27 @@ import { subscribeRefresh } from './refresh-store';
 import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection';
 import { useOpenTabHashes } from '@src/tabs/use-tab-manager';
 import { RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
+
+/** Does this row show the item the URL has open? */
+function rowMatchesActive(
+  node: Browseable,
+  activePointer: DockPointer | null,
+  activeResourcePointer: DockPointer | null | undefined,
+  activeKey: string | null | undefined,
+): boolean {
+  return !!(
+    // Stable-id match: a typeid URL (activeKey) selects this row even though its
+    // `pointer` is the vfs form.
+    (
+      (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
+      // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
+      (node.pointer &&
+        activePointer &&
+        ((node.pointer.viewType === activePointer.viewType && node.pointer.pointer === activePointer.pointer) ||
+          node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
+    )
+  );
+}
 
 /** Walk a root's currently-visible (expanded) subtree in render order,
  *  collecting the selectable rows. Powers Shift-range + Cmd/Ctrl+A. */
@@ -100,6 +121,47 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roots, tree.state]);
+
+  // "Show in <root>" moves the highlight to that root until the open item changes.
+  const [revealRootId, setRevealRootId] = useState<string | null>(null);
+  useEffect(() => setRevealRootId(null), [activePointer, activeResourcePointer, activeKey]);
+
+  // The root that highlights the active item: the revealed one, else the first
+  // (in display order) whose loaded rows hold it.
+  const activeRootId = useMemo(() => {
+    const has = (node: Browseable): boolean =>
+      rowMatchesActive(node, activePointer, activeResourcePointer, activeKey) ||
+      tree.getChildren(node.id).some(has);
+    const reveal = roots.find((r) => r.id === revealRootId);
+    return (reveal && has(reveal) ? reveal : roots.find((r) => r !== reveal && has(r)))?.id ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, tree.state.loadStates, activePointer, activeResourcePointer, activeKey, revealRootId]);
+
+  const { t } = useLingui();
+  // "Show in <root>": a later root that also holds the active item. Expands
+  // it there and moves the highlight. Offered on the highlighted row only.
+  const revealAction = useMemo<ToolbarAction | null>(() => {
+    const p = activeResourcePointer ?? activePointer;
+    const from = roots.findIndex((r) => r.id === activeRootId);
+    const target = p && from >= 0 ? roots.slice(from + 1).find((r) => r.ownsPointer(p)) : undefined;
+    if (!target) return null;
+    return {
+      id: 'reveal',
+      icon: <FolderSearch className="h-3 w-3" />,
+      label: t`Show in ${target.label}`,
+      showBusyIndicator: false,
+      run: async () => {
+        await tree.expandParentsForPointer(p, target.id);
+        setRevealRootId(target.id);
+        requestAnimationFrame(() =>
+          treeElementRef.current
+            ?.querySelector('[role="treeitem"][aria-selected="true"]')
+            ?.scrollIntoView({ block: 'center' }),
+        );
+      },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, activeRootId, activePointer, activeResourcePointer, tree.expandParentsForPointer, t]);
 
   // Clear selection when the set of roots changes identity (scope/filter change
   // — root ids carry the filter signature — or the type list changes). Mirrors
@@ -216,6 +278,8 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             activePointer={activePointer}
             activeResourcePointer={activeResourcePointer}
             activeKey={activeKey}
+            activeRootId={activeRootId}
+            revealAction={revealAction}
             openTabHashes={openTabHashes}
             onNavigate={handleNavigate}
             dragData={dragData}
@@ -256,6 +320,10 @@ interface RowProps {
   activePointer: DockPointer | null;
   activeResourcePointer?: DockPointer | null;
   activeKey?: string | null;
+  /** Root that owns the highlight when the active item appears under several. */
+  activeRootId: string | null;
+  /** "Show in <later root>" — rendered on the highlighted row only. */
+  revealAction: ToolbarAction | null;
   /** Open-tab identities (`pointer.tabHash`) → un-dimmed rows. */
   openTabHashes: Set<string>;
   onNavigate: (p: DockPointer) => void;
@@ -281,6 +349,8 @@ function BrowseableRow({
   activePointer,
   activeResourcePointer,
   activeKey,
+  activeRootId,
+  revealAction,
   openTabHashes,
   onNavigate,
   dragData,
@@ -311,18 +381,11 @@ function BrowseableRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, loadState.status, node.id]);
 
-  const isSelected = !!(
-    // Stable-id match: a typeid URL (activeKey) selects this row even though its
-    // `pointer` is the vfs form.
-    (
-      (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
-      // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
-      (node.pointer &&
-        activePointer &&
-        ((node.pointer.viewType === activePointer.viewType && node.pointer.pointer === activePointer.pointer) ||
-          node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
-    )
-  );
+  // One highlight per tree: when the open item shows up under several roots
+  // (Documents and Files), only the first root that has it lights up.
+  const isSelected =
+    activeRootId === rootId &&
+    rowMatchesActive(node, activePointer, activeResourcePointer, activeKey);
 
   // Dim openable rows that aren't currently open as a tab (and aren't the active
   // row, which is open by definition). Hover restores full brightness. Rows
@@ -636,6 +699,7 @@ function BrowseableRow({
           was aiming at, and a content-sized menu doesn't resize under it. The
           slot is text-height (`h-4`) and the buttons overflow it, so reserving
           it never makes the row taller. */}
+      {isSelected && revealAction && <ToolbarButton action={revealAction} compact />}
       {node.toolbar && node.toolbar.length > 0 && (
         <div
           className="invisible flex h-4 flex-shrink-0 items-center gap-0.5 overflow-visible group-focus-within:visible group-hover:visible"
@@ -725,6 +789,8 @@ function BrowseableRow({
               activePointer={activePointer}
               activeResourcePointer={activeResourcePointer}
               activeKey={activeKey}
+              activeRootId={activeRootId}
+              revealAction={revealAction}
               openTabHashes={openTabHashes}
               onNavigate={onNavigate}
               dragData={dragData}

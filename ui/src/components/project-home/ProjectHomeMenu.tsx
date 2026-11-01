@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuPortal,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -17,12 +18,16 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { type Project, vfsToOsPath, type Workspace, workspaceDisplayName, workspaceForPath } from '@sdk';
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
-import { LayoutGrid, Loader2, Menu } from 'lucide-react';
+import { LayoutGrid, Loader2, Menu, Wrench } from 'lucide-react';
+import { useProjectSetupLeft } from '@sdk/react/hooks/use-project-readiness';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
- * The Project Home burger menu. Its one item today is **Switch workspace**: move this
+ * The Project Home burger menu. **Project setup** opens the project's setup page (every step, its state,
+ * Edit / Run / Rerun), with a "N left" chip while setup is owed. **Switch workspace**: move this
  * project into another workspace (`Project.switchWorkspace`). The backend closes
  * everything open in the project and moves its folder, so the dialog warns first.
  *
@@ -36,6 +41,7 @@ export function ProjectHomeMenu({ project }: { project: Project }) {
   const { navigation } = useDockNavigation();
   const [target, setTarget] = useState<Workspace | null>(null);
   const [isMoving, setIsMoving] = useState(false);
+  const setupLeft = useProjectSetupLeft(project.id);
 
   const current = workspaceForPath(project.fs_storage_mount_path, workspaces);
   const leaf = (project.fs_storage_mount_path ?? '').replace(/\/+$/, '').split('/').pop() || project.name || '';
@@ -84,6 +90,23 @@ export function ProjectHomeMenu({ project }: { project: Project }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
+          {!isHubOnly() && (
+            <DropdownMenuItem
+              data-testid="project-home-setup"
+              onSelect={() => navigation.openDock(DockPointer.forProjectSetup(String(project.id)))}
+            >
+              <Wrench className="me-2 h-4 w-4" />
+              <Trans>Project setup</Trans>
+              {setupLeft > 0 && (
+                <span
+                  className="ms-auto rounded-full border border-yellow-500/60 bg-yellow-500/15 px-2 text-xs text-yellow-600 dark:text-yellow-400"
+                  data-testid="project-home-setup-left"
+                >
+                  <Trans>{setupLeft} left</Trans>
+                </span>
+              )}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger data-testid="project-home-switch-workspace">
               <LayoutGrid className="me-2 h-4 w-4" />

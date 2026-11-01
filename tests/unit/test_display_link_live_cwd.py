@@ -31,3 +31,28 @@ def test_relative_link_resolves_under_the_first_base_that_has_it(tmp_path):
     assert _first_existing(Path("x.py"), [None, str(first), str(second)]) == second / "x.py"
     (first / "x.py").write_text("")
     assert _first_existing(Path("x.py"), [str(first), str(second)]) == first / "x.py"
+
+
+async def test_worker_terminal_link_resolves_under_the_workers_extra_folders(tmp_path):
+    """A worker reads files from its --add-dir folders and names them relative to there."""
+    import pytest
+
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.shell import Shell
+    from flow_sdk.core.display_link import resolve_display_link
+    from flow_sdk.core.display_target import DisplayTargetNotFound
+
+    workdir, extra = tmp_path / "project", tmp_path / "other-repo"
+    (extra / ".claude/skills/demo").mkdir(parents=True)
+    workdir.mkdir()
+    (extra / ".claude/skills/demo/SKILL.md").write_text("# demo\n")
+
+    process = AgenticProcess(name="worker", workdir=str(workdir), additional_dirs=[str(extra)])
+    await process.save()
+    shell = Shell(name="worker-terminal", workdir=str(workdir), agentic_process_id=str(process.id))
+    await shell.save()
+
+    target = await resolve_display_link(".claude/skills/demo/SKILL.md", source=shell, discover=False)
+    assert target["path"] == str((extra / ".claude/skills/demo/SKILL.md").resolve())
+    with pytest.raises(DisplayTargetNotFound):
+        await resolve_display_link("missing.md", source=shell, discover=False)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Download, Loader2, MessageSquarePlus, Send, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, Loader2, Lock, MessageSquarePlus, Send, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Conversation,
@@ -9,6 +9,7 @@ import {
   hasRemoteParticipant,
   hasSomethingToSend,
   mintInviteLink,
+  credentialsService,
   normalizeEmail,
   oauthService,
   OAUTH_PROVIDERS,
@@ -17,6 +18,7 @@ import {
   type Project,
   type ConversationParticipant,
   type ConversationSendPayload,
+  type SealedSealResult,
   type UnshippableReference,
   withoutReferences,
 } from '@sdk';
@@ -25,6 +27,8 @@ import { useShareOwnerProject } from '@src/hooks/use-share-owner-project';
 import { useLinkProjectToCloud } from '@src/hooks/use-link-project-to-cloud';
 import { NO_PROJECT_ROLE, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
+import { SecretVaultPicker } from '@src/components/credentials/SecretVaultPicker';
+import { usePreShare } from '@src/hooks/use-pre-share';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { errorMessage } from '@src/lib/error-message';
@@ -47,6 +51,8 @@ import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conver
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
+import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { Input } from '@src/components/ui/input';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { cn } from '@src/lib/utils';
@@ -168,7 +174,16 @@ export function ShareToConversationDialog({
   const owner = useShareOwnerProject(source.ownerRef, open);
   const [linkedProject, setLinkedProject] = useState<Project | null>(null);
   const owningProject = linkedProject ?? owner.project;
-  const [step, setStep] = useState<'loading' | 'changes' | 'link' | 'compose'>('loading');
+  const [step, setStep] = useState<'loading' | 'preshare' | 'secret-vault' | 'changes' | 'link' | 'compose'>('loading');
+  // The type's own pre-share step (a credential needs its project's secret manager) — shown first.
+  const preShare = usePreShare(source.preShareRef, open);
+  const [preShareDone, setPreShareDone] = useState(false);
+  const [preShareBusy, setPreShareBusy] = useState(false);
+  // A credential's values: off = only its description travels; on = by secured transfer or a secret manager.
+  const [shareValues, setShareValues] = useState(false);
+  const [valuesRoute, setValuesRoute] = useState<'secured' | 'manager'>('secured');
+  const secureValues = shareValues && valuesRoute === 'secured';
+  const [sealOutcome, setSealOutcome] = useState<SealedSealResult | null>(null);
   const [dontAsk, setDontAsk] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
   const [excludedRefs, setExcludedRefs] = useState<Set<string>>(new Set());
@@ -293,6 +308,7 @@ export function ShareToConversationDialog({
     setSkipMembership(false);
     setLinkedProject(null);
     setDontAsk(false);
+    setPreShareDone(false);
     setStep('loading');
     setAttachTranscript(true);
     setCreateBookmark(false);
@@ -373,10 +389,43 @@ export function ShareToConversationDialog({
   const carriesGit = gitCapable && preflight.available;
   useEffect(() => {
     if (!open || step !== 'loading' || owner.loading || !preferences.isLoaded) return;
+    if (!preShare.answered) return;
+    if (preShare.answer?.needed && !preShareDone) {
+      setStep('preshare');
+      return;
+    }
     if (gitCapable && !preflight.answered) return;
     if (gitCapable && preflight.fix) setStep('changes');
     else linkOrCompose();
-  }, [open, step, owner.loading, preferences.isLoaded, gitCapable, preflight.answered, preflight.fix, linkOrCompose]);
+  }, [open, step, owner.loading, preferences.isLoaded, preShare.answered, preShare.answer, preShareDone, gitCapable, preflight.answered, preflight.fix, linkOrCompose]);
+  const preShareFinished = useCallback(() => {
+    setPreShareDone(true);
+    // The credential/manifest changed: the project's Git state did too — ask again before composing.
+    preflight.refetch();
+    setStep('loading');
+  }, [preflight]);
+  const publishToVault = useCallback(
+    async (vault: string) => {
+      const answer = preShare.answer;
+      if (!answer?.project_id || !answer.name) return;
+      setPreShareBusy(true);
+      try {
+        await credentialsService.publish(answer.name, answer.project_id, vault);
+        preShareFinished();
+      } catch (err) {
+        setLocalError(errorMessage(err, t`Could not publish to vault ${vault}.`));
+      } finally {
+        setPreShareBusy(false);
+      }
+    },
+    [preShare.answer, preShareFinished, t],
+  );
+  const continuePreShare = useCallback(() => {
+    const answer = preShare.answer;
+    if (!shareValues || valuesRoute === 'secured') return preShareFinished();
+    if (answer?.vaults?.length) return void publishToVault(answer.vaults[0]);
+    setStep('secret-vault');
+  }, [preShare.answer, shareValues, valuesRoute, preShareFinished, publishToVault]);
   const [fixBusy, setFixBusy] = useState(false);
   const commitChanges = useCallback(async () => {
     const ref = source.gitPreflightRef;
@@ -575,6 +624,15 @@ export function ShareToConversationDialog({
         } else {
           convId = await send(target, payload);
         }
+        if (convId && secureValues && preShare.answer?.typeid) {
+          // Secured transfer: sealed on this computer for the conversation's other members, posted as an opaque
+          // envelope. A member with no device key gets the description only (their chip says so).
+          try {
+            setSealOutcome(await credentialsService.sealedSeal(preShare.answer.typeid, convId));
+          } catch (sealErr) {
+            setLocalError(errorMessage(sealErr, t`The credential was shared, but its values could not be sent securely.`));
+          }
+        }
         if (convId) {
           setSharedConversationId(convId);
           onShared?.(convId);
@@ -657,6 +715,77 @@ export function ShareToConversationDialog({
           <div className="flex justify-center p-6">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
+        ) : !shared && step === 'preshare' ? (
+          <div className="flex flex-col gap-5 text-sm" data-testid="share-preshare-step">
+            <div>
+              <h2 className="text-lg font-semibold">{preShare.answer?.title || source.label}</h2>
+              <p className="text-muted-foreground">{preShare.answer?.detail}</p>
+            </div>
+            {preShare.answer?.kind === 'credential_values' && (
+              <div className="flex flex-col gap-3" data-testid="share-preshare-values">
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={shareValues}
+                    onCheckedChange={(v) => setShareValues(v === true)}
+                    data-testid="share-values-checkbox"
+                  />
+                  <span>
+                    <span className="font-medium">
+                      <Trans>Share values</Trans>
+                    </span>
+                    <span className="block text-muted-foreground">
+                      <Trans>
+                        Also share the secret values, through a{' '}
+                        <WikiButton wikiword="Secret managers" linkText={t`secret manager`} /> or by{' '}
+                        <WikiButton wikiword="Secured transfer" linkText={t`secured transfer`} />.
+                      </Trans>
+                    </span>
+                  </span>
+                </label>
+                {shareValues && (
+                  <div className="flex flex-col gap-2 ps-6">
+                    <Tabs value={valuesRoute} onValueChange={(v) => setValuesRoute(v as 'secured' | 'manager')}>
+                      <TabsList>
+                        <TabsTrigger value="secured" className="gap-1.5" data-testid="share-values-secured">
+                          <Lock className="h-3.5 w-3.5" />
+                          <Trans>Secured transfer</Trans>
+                        </TabsTrigger>
+                        <TabsTrigger value="manager" data-testid="share-values-manager">
+                          <Trans>Secret manager</Trans>
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                    <p className="text-xs text-muted-foreground" data-testid="share-values-route-note">
+                      {valuesRoute === 'secured' ? (
+                        <Trans>Sealed on this computer for each recipient's Flowpad — only they can open them.</Trans>
+                      ) : preShare.answer?.vaults?.length ? (
+                        <Trans>Published to the project's secret manager; recipients fetch them from there.</Trans>
+                      ) : (
+                        <Trans>This project has no secret manager yet — Share secrets continues to set one up.</Trans>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+            {shownError && <p className="text-xs text-destructive">{shownError}</p>}
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <Button variant="outline" onClick={onClose} data-testid="share-preshare-cancel">
+                <Trans>Cancel</Trans>
+              </Button>
+              <Button onClick={continuePreShare} disabled={preShareBusy} data-testid="share-preshare-continue">
+                {shareValues ? <Trans>Share secrets</Trans> : <Trans>Continue</Trans>}
+              </Button>
+            </div>
+          </div>
+        ) : !shared && step === 'secret-vault' && preShare.answer?.project_id ? (
+          <SecretVaultPicker
+            projectId={preShare.answer.project_id}
+            credential={preShare.answer.name}
+            onCancel={() => setStep('preshare')}
+            onDone={preShareFinished}
+          />
         ) : !shared && step === 'changes' ? (
           <div className="flex flex-col gap-5 text-sm" data-testid="share-changes-step">
             <p>
@@ -736,6 +865,16 @@ export function ShareToConversationDialog({
             <p className="font-medium text-foreground">
               <Trans>Shared</Trans>
             </p>
+            {sealOutcome && (
+              <p className="text-xs text-muted-foreground" data-testid="share-sealed-outcome">
+                {sealOutcome.sealed_for.length ? (
+                  <Trans>Values sealed for {sealOutcome.sealed_for.length} recipient(s).</Trans>
+                ) : null}{' '}
+                {sealOutcome.later?.length ? (
+                  <Trans>{sealOutcome.later.length} will get them when they open the message in Flowpad.</Trans>
+                ) : null}
+              </p>
+            )}
             {shareLink && (
               <div className="flex w-full flex-col gap-1.5" data-testid="share-link">
                 <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
@@ -950,7 +1089,13 @@ export function ShareToConversationDialog({
                 <span className="truncate rounded-md border bg-muted/40 px-2 py-1 text-xs">{source.label}</span>
               )}
             </div>
-            {gitCapable && participants.length > 0 && (
+            {secureValues && (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="share-secured-line">
+                    <Lock className="h-3.5 w-3.5 text-green-600" />
+                    <Trans>Secured transfer — only the recipients can open the values.</Trans>
+                  </p>
+                )}
+                {gitCapable && participants.length > 0 && (
               <p
                 className="text-xs text-muted-foreground"
                 data-testid="share-transfer-mode"

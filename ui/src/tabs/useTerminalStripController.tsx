@@ -461,11 +461,14 @@ export function useTerminalStripController({
     </>
   );
 
+  // Every opener starts a terminal or a local session: none can run where terminals can't (the hub).
+  const canOpenTabs = dataContext.caps.terminals;
+
   return {
     tabsProjectId,
-    newTabMenuItems,
+    newTabMenuItems: canOpenTabs ? newTabMenuItems : [],
     closeShortcutLabel: `${modLabel}+W`,
-    trailing,
+    trailing: canOpenTabs ? trailing : null,
     openers,
     modals,
     isTabCreationPending,

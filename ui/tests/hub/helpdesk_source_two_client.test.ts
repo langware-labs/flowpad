@@ -20,8 +20,25 @@
  * The desk is created by staff for this run and deleted after, so nothing here
  * depends on HELPDESK_STAFF_EMAILS or the deployment's canonical desk.
  */
+// The state chips' labels go through Lingui: activate the source locale, as main.tsx does.
+import '@src/i18n-init';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createDesk, getAliceCreds, getBobCreds, hubAvailable, hubJson, hubLogin } from './_hub';
+import {
+  createDesk,
+  getAliceCreds,
+  getBobCreds,
+  hubAvailable,
+  hubDefaultDeskId,
+  hubJson,
+  hubLogin,
+  HELPDESK_DISPLAY_NAME,
+} from './_hub';
+import {
+  conversationFacets,
+  deskChipLabel,
+  ticketChip,
+  type CategoryInputs,
+} from '@src/components/conversation/conversation-category';
 import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as GUEST_INSTANCE,
@@ -31,6 +48,7 @@ import {
   postApi,
   queryConversationMessages,
   type ResolvedInstance,
+  heldDeskSourceId,
 } from './_instances';
 
 const DISPLAY_NAME = 'Source Test Support';
@@ -41,8 +59,10 @@ let staff: ResolvedInstance;
 let staffToken = '';
 let staffUserId = '';
 let guestToken = '';
+let guestUserId = '';
 let deskId = '';
 let disposeDesk: () => Promise<void> = async () => {};
+let defaultDeskId: string | null = null;
 
 beforeAll(async () => {
   const hub = await hubAvailable();
@@ -61,9 +81,12 @@ beforeAll(async () => {
   staffToken = staffAuth.token;
   staffUserId = staffAuth.user.id;
   guestToken = guestAuth.token;
+  guestUserId = guestAuth.user.id;
 
   // Staff's own desk for this run.
   ({ deskId, dispose: disposeDesk } = await createDesk(staffToken, DISPLAY_NAME));
+  // The deployment's own desk — its case runs only when this hub advertises one.
+  defaultDeskId = await hubDefaultDeskId();
 }, 30_000);
 
 afterAll(() => disposeDesk());
@@ -86,11 +109,17 @@ describe('help desk as a message source', () => {
       owner: `user-${staffUserId}`,
     });
     // Staff already hold their desk's source (ensure_sources): the create answers with that row.
-    source = (await source.save()) ?? source;
+    // A create for a desk staff already hold answers with THEIR row (ensure_sources made it):
+    // only a source this test made is this test's to delete.
+    const heldId = await heldDeskSourceId(staff.apiUrl, String(source.config?.desk_project_id ?? ''));
+    const ownSource = !heldId;
+    source = heldId ? ((await staff.sdk.DataSource.getById(heldId)) ?? source) : ((await source.save()) ?? source);
 
     try {
       // 2. The guest opens a ticket over the hub, as a requester's app does.
-      const ticket = await hubJson(guestToken, `/graph/project/${deskId}/start_guest_conversation`, { text: `my printer is broken ${ts}` });
+      const ticket = await hubJson(guestToken, `/graph/project/${deskId}/start_guest_conversation`, {
+        text: `my printer is broken ${ts}`,
+      });
       const convId: string = ticket.id;
       expect(convId).toBeTruthy();
 
@@ -142,7 +171,125 @@ describe('help desk as a message source', () => {
       );
       expect(rows.map((m) => m.id).sort()).toEqual([inbound.id, reply.id].sort());
     } finally {
-      await source.delete();
+      if (ownSource) await source.delete();
     }
   });
+});
+
+// ── State chips, both sides: waiting → picked → closed, and a reply after close (D6/D7) ──
+// The chips are derived by the SAME pure rules the rows render (`conversationFacets` →
+// `ticketChip`, `deskChipLabel` for the source chip), fed the real data each side holds.
+
+/** The pool row for one ticket — closed ones included, as the staff source reads it. */
+async function poolRow(desk: string, convId: string): Promise<any> {
+  const rows: any[] = await hubJson(staffToken, `/graph/project/${desk}/helpdesk_conversations?include_closed=true`);
+  return rows.find((r) => r.conversation_id === convId) ?? null;
+}
+
+function chipLabel(inp: CategoryInputs): string | null {
+  const f = conversationFacets(inp);
+  return f.ticket ? ticketChip(f.ticket).label : null;
+}
+
+describe.each([
+  { label: 'customer desk', deskName: DISPLAY_NAME, desk: () => deskId },
+  { label: 'default Flowpad desk', deskName: HELPDESK_DISPLAY_NAME, desk: () => defaultDeskId },
+])("help desk state chips — $label", ({ desk }) => {
+  it('staff: desk chip + Not picked up → Picked up by you → Closed; requester: Waiting → Picked up → Closed; a reply after close stays Closed and unread', async (context: any) => {
+    const theDesk = desk();
+    if (!theDesk) return context.skip();
+    const ts = Date.now();
+    const staffViewer = { email: staff.email, cloudUserId: staffUserId, localUserId: null };
+
+    // Staff already hold the desk's source, named after the desk (ensure_sources); a create under
+    // another name answers with that row, so its name is the desk's.
+    let source = new staff.sdk.DataSource({
+      name: `state chips ${ts}`,
+      provider: 'helpdesk',
+      config: { desk_project_id: theDesk },
+      status: 'new',
+      owner: `user-${staffUserId}`,
+    });
+    // A create for a desk staff already hold answers with THEIR row (ensure_sources made it):
+    // only a source this test made is this test's to delete.
+    const heldId = await heldDeskSourceId(staff.apiUrl, String(source.config?.desk_project_id ?? ''));
+    const ownSource = !heldId;
+    source = heldId ? ((await staff.sdk.DataSource.getById(heldId)) ?? source) : ((await source.save()) ?? source);
+    // The staff row's source chip names the desk — never the bare "Support".
+    const deskLabel = deskChipLabel(String(source.name ?? ''));
+    expect(deskLabel).toMatch(/ help desk$/);
+    expect(deskLabel).not.toBe('Support');
+
+    const ticket = await hubJson(guestToken, `/graph/project/${theDesk}/start_guest_conversation`, {
+      text: `state chips ${ts}`,
+    });
+    const convId: string = ticket.id;
+    try {
+      const guestConv = async () => (await hubJson(guestToken, `/graph/conversation/${convId}`));
+      const staffConv = async () => {
+        await postApi(staff.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
+        return pollUntil(() => staff.sdk.Conversation.getById(convId), 15_000, 'ticket on the staff side');
+      };
+      const staffLabel = async () => {
+        const row = await poolRow(theDesk, convId);
+        const conv: any = await staffConv();
+        return chipLabel({ conv, viewer: staffViewer, staffView: true, pickedUpBy: row?.picked_up_by ?? [] });
+      };
+      const guestLabel = async () =>
+        chipLabel({
+          conv: await guestConv(),
+          viewer: { email: guest.email, cloudUserId: guestUserId, localUserId: null },
+          staffView: false,
+        });
+
+      // 1. Unpicked.
+      expect(await staffLabel()).toBe('Not picked up');
+      expect(await guestLabel()).toBe('Waiting for pickup');
+
+      // 2. Staff pick it up.
+      await hubJson(staffToken, `/graph/conversation/${convId}/pickup`, {});
+      expect(
+        await pollUntil(
+          async () => ((await staffLabel()) === 'Picked up by you' ? true : null),
+          15_000,
+          'staff: Picked up by you',
+        ),
+      ).toBe(true);
+      expect(
+        await pollUntil(
+          async () => ((await guestLabel()) === 'Picked up' ? true : null),
+          10_000,
+          'requester: Picked up',
+        ),
+      ).toBe(true);
+
+      // 3. Closed — both sides say so, and the ticket is still listed (D7).
+      await hubJson(guestToken, `/graph/conversation/${convId}/close`, {});
+      expect(
+        await pollUntil(async () => ((await staffLabel()) === 'Closed' ? true : null), 15_000, 'staff: Closed'),
+      ).toBe(true);
+      expect(await guestLabel()).toBe('Closed');
+      expect(await poolRow(theDesk, convId)).not.toBeNull();
+
+      // 4. D6: the guest replies to the closed ticket — it stays closed, and the reply
+      //    arrives on the staff side as a new, unread message.
+      const replyText = `one more thing ${ts}`;
+      await hubJson(guestToken, `/graph/conversation/${convId}/add_message`, { text: replyText });
+      const latest: any = await pollUntil(
+        async () => {
+          await postApi(staff.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
+          return (await messagesOf(convId)).find((m) => m.text === replyText) ?? null;
+        },
+        15_000,
+        'the post-close reply reached the staff side',
+      );
+      const conv: any = await staffConv();
+      const f = conversationFacets({ conv, latestMessage: latest, viewer: staffViewer, staffView: true });
+      expect(f.isUnread).toBe(true);
+      expect(f.ticket && ticketChip(f.ticket).label).toBe('Closed');
+    } finally {
+      await hubJson(guestToken, `/graph/conversation/${convId}/close`, {}).catch(() => undefined);
+      if (ownSource) await source.delete();
+    }
+  }, 120_000);
 });

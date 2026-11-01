@@ -158,13 +158,14 @@ async def test_a_nonzero_exit_with_no_terminal_is_recorded_as_an_error(monkeypat
 # ── the real spawn seam (no patch): argv, install gate, declared-unsupported ──
 
 
-def _context(tmp_path, **kwargs) -> AgenticContext:
-    return AgenticContext(workdir=str(tmp_path), env_vars={"FLOWPAD_DEEPAGENTS_API_KEY": "k"}, session_id=SESSION, model="lg", **kwargs)
+def _context(tmp_path, model="z-ai/glm-5.3", **kwargs) -> AgenticContext:
+    # The slug a funding endpoint declared for the size; the worker passes it through as-is.
+    return AgenticContext(workdir=str(tmp_path), env_vars={"FLOWPAD_DEEPAGENTS_API_KEY": "k"}, session_id=SESSION, model=model, **kwargs)
 
 
 def test_argv_is_this_interpreter_running_our_runner(tmp_path):
     """The harness is a package beside FlowPad, so argv[0] is ``sys.executable`` — never a name
-    looked up on PATH — and the tier has already become a gateway slug."""
+    looked up on PATH — and the endpoint's slug rides ``--model``."""
     worker = DeepAgentsCLIStreamWorker(transcript_path=tmp_path / "tee.jsonl")
     argv, env, stdin = worker._build_spawn(_context(tmp_path), "install git")
 
@@ -176,6 +177,12 @@ def test_argv_is_this_interpreter_running_our_runner(tmp_path):
     assert stdin == "install git", "the prompt rides stdin, never argv"
     assert "install git" not in argv
     assert env["FLOWPAD_DEEPAGENTS_API_KEY"] == "k"
+
+
+def test_a_bare_size_with_no_endpoint_leaves_the_model_to_the_runner(tmp_path):
+    worker = DeepAgentsCLIStreamWorker(transcript_path=tmp_path / "tee.jsonl")
+    argv, _, _ = worker._build_spawn(_context(tmp_path, model="lg"), "hi")
+    assert "--model" not in argv
 
 
 def test_skills_mcp_and_agents_reach_the_runner(tmp_path):

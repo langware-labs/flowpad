@@ -513,9 +513,7 @@ class DBEntity(DBBaseRecord):
 
     async def delete(self):
         try:
-            await self.add_entity_op_notification(
-                DataOpMessage(data=None, op=OperationType.DELETE, to_entity=self.typeid)
-            )
+            await self.notify_deleted(self.typeid)
             deleted_ids = await self._db.delete(self.typeid)
             if not deleted_ids:
                 raise DeletionFailedException(self.typeid, message="Deletion failed for entity.")
@@ -939,12 +937,17 @@ class DBEntity(DBBaseRecord):
             source_entity,
         )
 
+    @staticmethod
+    async def notify_deleted(typeid: TypeId) -> None:
+        """Tell watching clients ``typeid`` is gone — the one DELETE op every delete path sends."""
+        await DBEntity.add_entity_op_notification(DataOpMessage(data=None, op=OperationType.DELETE, to_entity=typeid))
+
     @classmethod
     async def delete_by_id(cls, eid: str):
         e_type = cls.get_type()
         typeid = TypeId(type=e_type, id=eid)
 
-        await cls.add_entity_op_notification(DataOpMessage(data=None, op=OperationType.DELETE, to_entity=typeid))
+        await cls.notify_deleted(typeid)
         deleted = await cls._db.delete_by_id(eid, e_type)
         return deleted
 

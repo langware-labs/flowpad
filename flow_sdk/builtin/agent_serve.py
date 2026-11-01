@@ -54,6 +54,8 @@ def _line(text: str, width: int = 90) -> str:
 
 TURNS = "turns"
 STARTED, DONE, FAILED = "started", "done", "failed"
+#: A FAILED record's reason — the outcome's own words (a hub refusal, a worker that never came up).
+ERROR = "error"
 #: On a STARTED record: the OS process running the turn. Another process (the app, reading the
 #: row) tells a turn in flight from one abandoned by a dead loop by whether that pid is alive.
 OWNER_PID = "pid"
@@ -102,6 +104,53 @@ async def _write_turns(ap, turns: dict) -> None:
     data[TURNS] = turns
     ap.context_data = data
     await ap.save()
+
+
+# ── when turns fail: an honest health, one notice per outage, and no message lost ──
+
+#: How many finished turns in a row must have failed (none done since) before the channel reads ``failing``.
+FAILING_AFTER = 2
+#: What the person is told, once per conversation per outage, when their message could not be answered.
+#: A module constant, not an agent field: a field on ``Agent`` is a schema change (the hub mirrors it).
+UNAVAILABLE_REPLY = "I can't answer right now — the owner has been notified. I'll get back to you as soon as I can."
+#: On a FAILED turn record: the message it failed to answer — ``{"source": <data source id>, "row": <source item id>}``
+#: — answered when a turn on the deployment succeeds again.
+HELD = "held"
+#: On a process's ``context_data``: the outage notice was sent in this conversation; cleared by the next answered turn.
+NOTICE_SENT = "unavailable_notice_sent"
+
+
+def _ended(record: dict) -> str:
+    return str(record.get("ended_at") or record.get("at") or "")
+
+
+def turns_health(records, *, failing_after: int = FAILING_AFTER) -> tuple[str, str]:
+    """``("failing", reason)`` when the newest *failing_after* finished turns all FAILED, else ``("alive", "")``.
+
+    *records* are turn records (``done_record``) from any number of processes. The reason is the newest
+    failure's text on one line, then how many messages have gone unanswered since the last answered turn.
+    """
+    finished = sorted((r for r in records if r.get("status") in (DONE, FAILED)), key=_ended)
+    failed: list[dict] = []
+    for record in reversed(finished):
+        if record.get("status") == DONE:
+            break
+        failed.append(record)
+    if len(failed) < max(1, failing_after):
+        return "alive", ""
+    reason = _line(failed[0].get(ERROR) or failed[0].get("text") or "", 160) or "the agent's turns are failing"
+    first = failed[-1].get("at") or _ended(failed[-1])
+    try:
+        since = datetime.fromisoformat(first).astimezone(timezone.utc).strftime("%H:%M UTC")
+    except ValueError:
+        since = "?"
+    return "failing", f"{reason} · {len(failed)} messages unanswered since {since}"
+
+
+def held_of(records_by_key: dict) -> list[tuple[str, dict]]:
+    """``(turn key, record)`` of every FAILED turn still holding its message (``HELD``), oldest first."""
+    held = [(k, r) for k, r in records_by_key.items() if r.get("status") == FAILED and r.get(HELD)]
+    return sorted(held, key=lambda kr: str(kr[1].get("at") or _ended(kr[1])))
 
 
 # ── what a turn is asked with, and what it answers with ──────────────────────
@@ -342,7 +391,9 @@ class TurnEngine:
                 answer = answer.model_copy(update={"detail": "The turn was answered."})
                 await stamp_turn(ap, turn.key, done_record(started, text or ""))
             else:
-                await stamp_turn(ap, turn.key, done_record(started, text or "", FAILED))
+                # Why it failed (e.g. the hub's 429 "limit ... exceeded") is kept: the health check names it.
+                failed = {**done_record(started, text or "", FAILED), ERROR: _line(str(answer.detail or ""), 300)}
+                await stamp_turn(ap, turn.key, failed)
             yield done(answer)
 
 
@@ -821,6 +872,18 @@ async def _keep_attention(sources) -> None:
 
 
 async def answer(engine: TurnEngine, message, *, source=None, session: Optional[str] = None, process=None) -> bool:
+    """One channel message: :func:`answer_one`, and once a turn on the deployment is answered again, the
+    messages held while its turns failed (:func:`answer_held`)."""
+    answered = await answer_one(engine, message, source=source, session=session, process=process)
+    if answered and engine.deployment is not None:
+        try:
+            await answer_held(engine)
+        except Exception:  # noqa: BLE001 — a held message must not break the loop; it stays held
+            logger.exception("agent %s: answering held messages failed", getattr(engine.agent, "name", ""))
+    return answered
+
+
+async def answer_one(engine: TurnEngine, message, *, source=None, session: Optional[str] = None, process=None) -> bool:
     """One channel message: gate it, run it in its conversation, reply on its channel.
 
     Answers whether a reply went out. Every refusal — our own outgoing copy, a
@@ -889,7 +952,11 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     answer_files = outbox_files(outbox)
     if not outcome.ok or not (outcome.text or answer_files):
         console.info("✗ %s  %s — no reply: %s", channel, who, _line(outcome.detail))
+        if not outcome.ok and engine.deployment is not None and not getattr(outcome, "timed_out", False):
+            await _hold_failed(engine, message, source, session, turn_key(message), outcome, process)
         return False
+    if engine.deployment is not None:
+        await _outage_over(process or await engine.find_process(session))
     if getattr(driver_cls, "replies_explicitly", False):
         await skip_message(message)
         return True
@@ -897,6 +964,94 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
     console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
     return True
+
+
+async def _hold_failed(engine: TurnEngine, message, source, session: str, key: str, outcome, process=None) -> None:
+    """A turn that failed: its record says FAILED and holds the message (answered by :func:`answer_held` once a
+    turn succeeds again), and the person is told — once in this conversation until a turn there succeeds.
+
+    A timed-out turn is not held: it may still be running, and its STARTED stamp already settles a redelivery."""
+    ap = process or await engine.find_process(session)
+    row = getattr(message, "_row", None)
+    if ap is None:
+        return
+    data = dict(getattr(ap, "context_data", None) or {})
+    turns = dict(turns_of(ap))
+    record = dict(turns.get(key) or {})
+    if record.get("status") != FAILED:
+        record = done_record(record or None, str(getattr(outcome, "detail", "") or ""), FAILED)
+    if not record.get(ERROR):
+        record[ERROR] = _line(str(getattr(outcome, "detail", "") or ""), 300)
+    if row is not None:
+        record[HELD] = {"source": str(source.id), "row": str(row.id)}
+    turns[key] = record
+    data[TURNS] = turns
+    notify = not data.get(NOTICE_SENT)
+    if notify:
+        data[NOTICE_SENT] = True
+    ap.context_data = data
+    await ap.save()
+    if not notify:
+        return
+    try:
+        # Sent straight through the source, not ``message.reply``: that would record the message as replied
+        # to, and the held answer sent later would then be taken for a resend and never go out.
+        make = getattr(message, "reply_spec", None)
+        spec = await make(body=UNAVAILABLE_REPLY, quote=False) if callable(make) else source.reply_spec(
+            message, body=UNAVAILABLE_REPLY, quote=False
+        )
+        await source.send(spec)
+        console.info("→ %s  the person was told the agent cannot answer right now", source.channel or source.provider)
+    except Exception:  # noqa: BLE001 — the notice is a courtesy; the message is held either way
+        logger.exception("agent %s: the unavailable notice was not sent", getattr(engine.agent, "name", ""))
+
+
+async def _outage_over(ap) -> None:
+    """A turn in this conversation was answered: the next failure here may tell the person again."""
+    data = dict(getattr(ap, "context_data", None) or {}) if ap is not None else {}
+    if data.pop(NOTICE_SENT, None):
+        ap.context_data = data
+        await ap.save()
+
+
+async def answer_held(engine: TurnEngine) -> int:
+    """Answer the messages the deployment's failed turns hold, oldest first, until one fails again.
+
+    Each held turn's FAILED record is dropped first — it would refuse the turn as "ended in error before" —
+    and the message is handed to :func:`answer_one` as a redelivery from its own source row. A turn that fails
+    again is recorded and held again, and the rest wait for the next success. Answers how many went out."""
+    from flow_sdk.blocks.delivery import Delivered  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+    from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec  # noqa: PLC0415
+
+    processes = await AgenticProcess.local_rows({"match": {"deployment_id": engine.deployment.id}})
+    held = sorted(
+        ((ap, key, record) for ap in processes for key, record in held_of(turns_of(ap))),
+        key=lambda t: str(t[2].get("at") or _ended(t[2])),
+    )
+    answered = 0
+    for ap, key, record in held:
+        where = record[HELD]
+        await _forget_turn(ap, key)
+        source = await DataSource.get_by_id(str(where.get("source") or ""))
+        row = await SourceItem.get_by_id(str(where.get("row") or ""))
+        if source is None or row is None:
+            continue  # its channel or message is gone: nothing left to answer
+        message = Delivered(
+            SourceItemSpec.model_validate({k: getattr(row, k) for k in SourceItemSpec.model_fields}),
+            position=await ConsumerPosition.ensure_for(consumer_of(engine.deployment), str(source.id)),
+            row=row,
+            source_id=str(source.id),
+        )
+        if not await answer_one(engine, message, source=source):
+            break
+        answered += 1
+    if answered:
+        console.info("✓ %d held message(s) answered", answered)
+    return answered
 
 
 def reply_outbox(source, key: str):

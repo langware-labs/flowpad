@@ -136,7 +136,14 @@ async def conversation_reply(conversation_id: str, request: Request):
     if not text and not files:
         return ApiFailResponse(message="nothing to say")
     reply_to = str(body.get("reply_to_id") or "").strip() or None
-    return await dispatch_channel_reply(conversation_id, text=text, reply_to=reply_to, files=files)
+    response = await dispatch_channel_reply(conversation_id, text=text, reply_to=reply_to, files=files)
+    # The send runs in the background (no message id yet): only the conversation learns its session.
+    origin_process = str(body.get("origin_process") or "").strip()
+    if origin_process and isinstance(response, ApiSuccessResponse):
+        from flow_sdk.app.actions.notification_action import link_origin_session  # noqa: PLC0415
+
+        await link_origin_session(conversation_id, None, origin_process, None)
+    return response
 
 
 __all__ = ["VERBS", "router"]

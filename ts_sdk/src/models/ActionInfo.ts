@@ -51,6 +51,9 @@ export class ActionInfo {
   // write the UI has already shown as done (an optimistic tab close): an
   // ordinary fetch is aborted by a reload between its preflight and its POST.
   private _keepalive: boolean = false;
+  // Answer the whole `ApiResponse` envelope (`data` + `warnings`) instead of only `data`.
+  // Set by `DataManager.callActionWithWarnings`; read by the HTTP client's unwrap.
+  private _keepEnvelope: boolean = false;
 
   constructor(
     name: string,
@@ -177,6 +180,14 @@ export class ActionInfo {
 
   public set castResponse(value: boolean) {
     this._castResponse = value;
+  }
+
+  public get keepEnvelope(): boolean {
+    return this._keepEnvelope;
+  }
+
+  public set keepEnvelope(value: boolean) {
+    this._keepEnvelope = value;
   }
 
   public get hubReflect(): boolean {

@@ -143,9 +143,16 @@ async def sources_gone_under(root: str | Path) -> list[str]:
     """The ``asset_ref`` of every row stored under ``root`` whose source is gone.
 
     A walk of ``root`` sees only what is still there, so a deleted asset needs this
-    lookup to be reconciled (``reindex_paths(deleted_paths=...)``).
+    lookup to be reconciled (``reindex_paths(deleted_paths=...)``). Empty for the home
+    folder or above it — that would stat every row on the machine.
     """
     import asyncio  # noqa: PLC0415
+
+    from flow_sdk.fs_store.indexer.roots import is_home_or_ancestor  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    if is_home_or_ancestor(root, Path(get_instance_settings().user_home)):
+        return []
 
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415

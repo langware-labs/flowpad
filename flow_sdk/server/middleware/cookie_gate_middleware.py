@@ -134,3 +134,14 @@ def forbidden_html(message: Optional[str] = None) -> str:
     return _FORBIDDEN_HTML.replace(
         "{message}", message or "This link is not valid for this workspace. Open it again from Flowpad."
     )
+
+
+def from_flowpad_ui(request) -> bool:
+    """Whether a request comes from Flowpad's own UI — a person's click. Not from a worker or the CLI (they present the
+    gate secret as the ``HEADER_NAME`` header; the UI carries the cookie) and not from a web app Flowpad serves (its
+    page lives under a service endpoint, and a page cannot forge the browser's ``Referer``). For actions that must take
+    a person, such as handing a credential's values to someone else."""
+    if request.headers.get(HEADER_NAME):
+        return False
+    referer = str(request.headers.get("referer") or "")
+    return "/service_endpoint/" not in referer and "/service/" not in referer

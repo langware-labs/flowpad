@@ -15,7 +15,7 @@ local-privacy gate belong to whoever holds the login, so the source takes a ``Hu
 rather than a credential: the application passes the one it already has; a source host hands over
 its backend's. Without one, every call is ``SourceUnavailable``.
 
-**One cursor for the desk.** Each pool row carries a change token (``message_count:updated_at``);
+**One cursor for the desk.** Each pool row carries a change token (``message_count:updated_at:status``);
 the cursor remembers, per ticket, the token it was last read at and its own message resume point,
 plus the pool's watermark. A pass reads messages only of tickets whose token moved, and of tickets
 it has never seen — so an idle ticket costs no fetch.
@@ -51,7 +51,7 @@ _DESK = "desk:"
 class HubTransport(Protocol):
     """The Flowpad hub, as whoever holds the login reaches it. Raises the contract's errors."""
 
-    async def get(self, entity_type: str, entity_id: str, action: str) -> Any: ...
+    async def get(self, entity_type: str, entity_id: str, action: str, *, params: Optional[Mapping[str, Any]] = None) -> Any: ...
 
     async def post(self, entity_type: str, payload: dict, entity_id: str, action: str) -> Any: ...
 
@@ -298,13 +298,13 @@ class HelpdeskSource(MessageSource):
         """``(ticket, change token, updated_at)`` for every ticket in the pool, picked up or not,
         newest activity first."""
         self._desk_required()
-        rows = _rows_of(await self.hub.get("project", self.desk, "helpdesk_conversations"))
+        rows = _rows_of(await self.hub.get("project", self.desk, "helpdesk_conversations", params={"include_closed": "true"}))
         pool = []
         for row in rows:
             ticket = str(row.get("conversation_id") or "").strip()
             if ticket:
                 updated_at = str(row.get("updated_at") or "")
-                pool.append((ticket, f"{row.get('message_count') or 0}:{updated_at}", updated_at))
+                pool.append((ticket, f"{row.get('message_count') or 0}:{updated_at}:{row.get('status') or ''}", updated_at))
         return sorted(pool, key=lambda entry: (entry[2], entry[0]), reverse=True)
 
     def _item(self, ticket: str, fm: dict) -> MessageItem:

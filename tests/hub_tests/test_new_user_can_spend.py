@@ -127,7 +127,7 @@ async def test_a_brand_new_user_can_spend_by_saying_hi(hub_base_url):
     from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
 
     fallback = get_dialect(endpoint.provider).default_models.get("sm") if endpoint.provider else None
-    model = (endpoint.models or {}).get("sm") or (endpoint.models or {}).get("md") or fallback
+    model = (endpoint.tiers or {}).get("sm") or (endpoint.tiers or {}).get("md") or fallback
     assert model, f"{endpoint.name} advertises no model and its provider has no default"
     print(f"[model ] {model}")
 
