@@ -141,6 +141,7 @@ function load(opts = {}) {
     async stop() { uv.stopped = (uv.stopped || 0) + 1; }
     isInstalling() { return false; }
     setFailureSharer(fn) { this.sharer = fn; }
+    backfillEngineOwnership() { uv.ownershipBackfills = (uv.ownershipBackfills || 0) + 1; }
     openPackageDialogVersion() { return null; }
     async getLatestPypiVersion() { return null; }
     getInstalledFlowBinSync() { return '/fake/bin/flow'; }

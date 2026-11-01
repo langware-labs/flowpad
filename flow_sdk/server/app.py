@@ -103,6 +103,8 @@ async def _on_server_startup():
     from flow_sdk.db.drivers.sqlite.connection import get_database_path
     from flow_sdk.instance_settings import get_instance_settings
 
+    from .startup import server_launched_by
+
     settings = get_instance_settings()
     clear_backend_restart_request()
 
@@ -171,6 +173,7 @@ async def _on_server_startup():
             "server_pid": os.getpid(),
             "server_create_time": psutil.Process(os.getpid()).create_time(),
             "generation": os.environ.get("FLOWPAD_SERVICE_GENERATION"),
+            "launched_by": server_launched_by(),
         }
     )
     print(f"  server.json:   {settings.server_json_path}")

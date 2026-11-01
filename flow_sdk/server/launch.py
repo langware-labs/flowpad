@@ -592,6 +592,8 @@ def ensure_monitor_singleton(port: int) -> None:
         {
             "port": port,
             "monitor_pid": os.getpid(),
+            # With monitor_pid, identifies THIS monitor (a reused pid has a later create time).
+            "monitor_create_time": psutil.Process(os.getpid()).create_time(),
             "launch_iso_time": datetime.now(timezone.utc).isoformat(),
         }
     )

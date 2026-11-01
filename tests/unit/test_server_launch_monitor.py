@@ -3,6 +3,7 @@ import urllib.error
 import urllib.request
 from unittest.mock import patch
 
+import psutil
 import pytest
 from filelock import FileLock
 
@@ -542,8 +543,8 @@ def test_launch_monitor_kills_the_stale_server_pid_read_fresh_from_disk(monkeypa
 
 
 def test_ensure_monitor_singleton_writes_only_its_own_keys(monkeypatch, set_infos):
-    """The monitor merges port/monitor_pid/launch_iso_time and nothing else --
-    in particular never server_pid, which belongs to the backend."""
+    """The monitor merges port/monitor_pid/monitor_create_time/launch_iso_time and
+    nothing else -- in particular never server_pid, which belongs to the backend."""
     killed: list[int] = []
     written = set_infos
 
@@ -556,8 +557,10 @@ def test_ensure_monitor_singleton_writes_only_its_own_keys(monkeypatch, set_info
 
     assert killed == [111]
     assert len(written) == 1
-    assert set(written[0]) == {"port", "monitor_pid", "launch_iso_time"}
+    assert set(written[0]) == {"port", "monitor_pid", "monitor_create_time", "launch_iso_time"}
     assert written[0]["monitor_pid"] == os.getpid()
+    # With monitor_pid, identifies this monitor (the Windows uninstaller rejects a reused pid).
+    assert written[0]["monitor_create_time"] == psutil.Process(os.getpid()).create_time()
     assert written[0]["port"] == 9007
 
 

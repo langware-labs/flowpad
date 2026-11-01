@@ -39,6 +39,18 @@ def cleanup_legacy_sod_local() -> None:
             logger.debug("Could not remove legacy SOD file %s: %s", path, e)
 
 
+def server_launched_by() -> str | None:
+    """``"desktop"`` when the Electron app launched this server, else ``None``.
+
+    Written to ``server.json`` as ``launched_by``. The Windows uninstaller force-stops only a
+    server the desktop launched; ``None`` (never absent) marks any other one, so an absent key
+    still means "an engine older than this field".
+    """
+    from flow_sdk.instance_settings.base_settings import ENV_FLOWPAD_DESKTOP
+
+    return "desktop" if os.environ.get(ENV_FLOWPAD_DESKTOP) == "1" else None
+
+
 def mark_desktop_managed() -> None:
     """Record that the Electron app owns this instance, when it does. Never raises.
 

@@ -2203,6 +2203,7 @@ async function installAndStartBackend({ quiet = false } = {}) {
   // Install and start backend via uv + flow CLI
   uvManager = new UvManager(log, { stateDir: FLOW_HOME, appVersion: app.getVersion() });
   uvManager.setFailureSharer((text) => shareDiagnostics(text, 'could not finish updating'));
+  uvManager.backfillEngineOwnership();
 
   // Did the user just upgrade to a new desktop build? Logged for diagnostics.
   // The engine version saved for this desktop (if any) is installed below.

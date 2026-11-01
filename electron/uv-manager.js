@@ -12,6 +12,7 @@ const updateTest = require('./update-test');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
 const runtimeRepair = require('./runtime-repair');
+const engineOwnership = require('./engine-ownership');
 // The dependencies that ship native wheels (scripts/native_deps_from_lock.py): the only ones Windows
 // application control can refuse, so the only ones that get the reputation margin (see EXCLUDE_NEWER_MARGIN_DAYS).
 const NATIVE_DEPS = Object.freeze(require('./native-deps.json').packages);
@@ -489,6 +490,11 @@ class QuitInProgressError extends Error {
 const RANGE_FETCH_TIMEOUT_MS = 20 * 1000;
 const MAX_WHOLE_WHEEL_READS = 2;
 
+// Every `flow` the desktop runs carries this, as `flow start` does: the CLI-use stamp
+// (flow_sdk/cli/cli_use.py) must not count the desktop's own calls as someone else's use of
+// the engine, or the uninstaller would treat every desktop engine as shared.
+const DESKTOP_CLI_ENV = { FLOWPAD_DESKTOP: '1' };
+
 class UvManager {
   constructor(log, { stateDir = null, appVersion = null } = {}) {
     this.log = log;
@@ -591,7 +597,7 @@ class UvManager {
     // 'ok' | 'slow' (timed out: it runs) | 'blocked' | 'failed' (some other error)
     const attempt = async (launcher, cmd, args, shell) => {
       try {
-        await this._run(cmd, args, { timeout: 2000, ...(shell === undefined ? {} : { shell }) });
+        await this._run(cmd, args, { timeout: 2000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
         return 'ok';
       } catch (err) {
         if (isPolicyBlockError(err)) { tried.push({ launcher, path: cmd, detail: String(err.stderr || err.message).split('\n')[0] }); return 'blocked'; }
@@ -1625,8 +1631,11 @@ class UvManager {
     this._keepMarker = false;
     this._spawned = false;
     this._writeInstallMarker(installArgs);
+    const venvBefore = this._ownershipSnapshotBeforeInstall();
     try {
-      return await this._uvToolInstallForceAttempts(installArgs, { onProgress });
+      const result = await this._uvToolInstallForceAttempts(installArgs, { onProgress });
+      this._recordEngineOwnership(venvBefore);
+      return result;
     } catch (err) {
       // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
       // half-written tool dir: the venv may be half-replaced, so keep the marker.
@@ -1642,6 +1651,92 @@ class UvManager {
       // an abort during the drain, before the spawn, changed nothing.
       const keep = (this._installAborted || this._keepMarker) && this._spawned;
       if (!keep) this._clearInstallMarker();
+    }
+  }
+
+  // ── Engine ownership record (engine-ownership.js; read by the Windows uninstaller) ──────────
+
+  /** `%LOCALAPPDATA%\Flowpad\engine-ownership.json`; null off Windows and when state is disabled (tests, tools). */
+  _engineOwnershipPath() {
+    if (!IS_WIN || !this._stateDir) return null;
+    const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return engineOwnership.ownershipRecordPath(local);
+  }
+
+  _ownershipFs() {
+    return {
+      statBigint: (p) => fs.statSync(p, { bigint: true }),
+      readBytes: (p) => fs.readFileSync(p),
+      exists: (p) => fs.existsSync(p),
+    };
+  }
+
+  /**
+   * The venv as it is before an install. The runtime repair renames the live venv to
+   * `<venv>.pre-repair` before reinstalling, so that copy stands in for it: a rename keeps the
+   * directory's identity and receipt, so an adopted engine is not mistaken for one the desktop made.
+   */
+  _ownershipSnapshotBeforeInstall() {
+    if (!this._engineOwnershipPath()) return null;
+    const io = this._ownershipFs();
+    const venvDir = this._toolVenvDir();
+    const live = engineOwnership.snapshotVenv(io, venvDir);
+    if (live.exists) return live;
+    return engineOwnership.snapshotVenv(io, this._preRepairVenvDir());
+  }
+
+  /** After a successful install: record its origin. Never throws — a missing record only means "uncertain". */
+  _recordEngineOwnership(venvBefore) {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath || !venvBefore) return;
+    try {
+      const venvDir = this._toolVenvDir();
+      const prior = engineOwnership.readRecord((p) => fs.readFileSync(p, 'utf8'), recordPath);
+      const origin = engineOwnership.classifyEngineOrigin({ prior, before: venvBefore });
+      const snapshot = engineOwnership.snapshotVenv(this._ownershipFs(), venvDir);
+      if (!snapshot.exists) return;
+      const record = engineOwnership.buildRecord({
+        origin, venv: venvDir, snapshot, desktopVersion: this._appVersion, now: () => new Date().toISOString(),
+      });
+      this._writeOwnershipRecord(recordPath, record);
+      this.log.info(`[uv] engine ownership recorded: origin=${origin}`);
+    } catch (e) {
+      this.log.warn(`[uv] could not record engine ownership: ${e.message}`);
+    }
+  }
+
+  _writeOwnershipRecord(recordPath, record) {
+    engineOwnership.writeRecord({
+      mkdir: (d) => fs.mkdirSync(d, { recursive: true }),
+      writeText: (p, t) => fs.writeFileSync(p, t, 'utf8'),
+      rename: (a, b) => fs.renameSync(a, b),
+    }, recordPath, record);
+  }
+
+  /**
+   * Once, for an engine installed before ownership records existed: infer its origin from the
+   * receipt's desktop install signature plus the instance's `.desktop_managed` marker. Must run
+   * before this launch's first install, or that install would classify the venv as adopted.
+   */
+  backfillEngineOwnership() {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath) return;
+    try {
+      if (fs.existsSync(recordPath)) return;
+      const venvDir = this._toolVenvDir();
+      const snapshot = engineOwnership.snapshotVenv(this._ownershipFs(), venvDir);
+      if (!snapshot.exists) return;
+      let receiptText = null;
+      try { receiptText = fs.readFileSync(path.join(venvDir, engineOwnership.RECEIPT_FILE), 'utf8'); } catch { /* no receipt: adopted */ }
+      const instance = process.env.FLOW_INSTANCE || 'prod';
+      const desktopManaged = fs.existsSync(path.join(this._stateDir, 'instances', instance, '.desktop_managed'));
+      const origin = engineOwnership.inferLegacyOrigin({ receiptText, desktopManaged });
+      this._writeOwnershipRecord(recordPath, engineOwnership.buildRecord({
+        origin, venv: venvDir, snapshot, desktopVersion: this._appVersion, now: () => new Date().toISOString(),
+      }));
+      this.log.info(`[uv] engine ownership backfilled for an existing engine: origin=${origin}`);
+    } catch (e) {
+      this.log.warn(`[uv] engine ownership backfill failed: ${e.message}`);
     }
   }
 
@@ -2397,7 +2492,7 @@ class UvManager {
       ? this._flowCmd(['stop'])
       : { cmd: 'flow', args: ['stop'] };
     try {
-      await this._run(cmd, args, { timeout: 10000, ...(shell === undefined ? {} : { shell }) });
+      await this._run(cmd, args, { timeout: 10000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
       this.log.info('[uv] flow stop completed');
       return { busy: false };
     } catch (error) {
@@ -2517,7 +2612,7 @@ class UvManager {
   async _getUpgradeInfo() {
     try {
       const { cmd, args, shell } = this._flowCmd(['upgrade', '--info']);
-      const { stdout } = await this._run(cmd, args, { timeout: 15000, ...(shell === undefined ? {} : { shell }) });
+      const { stdout } = await this._run(cmd, args, { timeout: 15000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
       return JSON.parse(stdout);
     } catch (err) {
       this.log.warn(`[uv] _getUpgradeInfo failed: ${err.message}`);
@@ -3170,6 +3265,10 @@ class UvManager {
       startBackend: () => startBackend(),
       healthCheck: () => healthCheck(),
       remove: async (p) => this._removePath(p),
+      markOwned: async (dirs, token) => {
+        const text = runtimeRepair.ownershipSentinelText(token, new Date().toISOString());
+        for (const d of dirs) fs.writeFileSync(path.join(d, runtimeRepair.OWNERSHIP_SENTINEL), text, 'utf8');
+      },
     };
     return runtimeRepair.performRuntimeRepair({
       io,

@@ -118,6 +118,7 @@ function load(opts = {}) {
     async repairRuntime(args) { uv.repairs++; uv.lastRepair = args; if (opts.repairOk) return { ok: true, python: 'C:\\r\\python.exe' }; throw Object.assign(new Error('not in this test'), { step: 'download' }); }
     isInstalling() { return false; }
     setFailureSharer() {}
+    backfillEngineOwnership() {}
     openPackageDialogVersion() { return null; }
     async getLatestPypiVersion() { return null; }
     lastLaunch() { return null; }
