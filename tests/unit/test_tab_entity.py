@@ -252,8 +252,11 @@ async def test_missing_project_cleanup_deletes_tab_without_target_teardown() -> 
         f"dock/missing-project-probe#{uuid.uuid4()}",
         target_type=_TabTargetProbe.get_type(),
         target_id=probe.id,
-        project_id=dangling_project_id,
     )
+    # The resolver never stamps a projectless target with a client hint, so the
+    # stale owner the reaper must find is written onto the row directly.
+    tab.project_id = dangling_project_id
+    await tab.save()
 
     deleted = await delete_tabs_for_missing_project(dangling_project_id)
 
@@ -775,8 +778,10 @@ async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     await Project(id=pb, name=f"tab-list-b-{pb[:8]}").save()
     # Live Shell rows so the target reap keeps these terminal tabs (a shell tab
     # whose Shell is absent is now reaped as a dead session, same as agentic_process).
-    sa = Shell(id=str(uuid.uuid4()))
-    sb = Shell(id=str(uuid.uuid4()))
+    # Each shell names its own project: the tab's project is the target's (the
+    # client hint only fills in for a shell that has none).
+    sa = Shell(id=str(uuid.uuid4()), project_id=pa)
+    sb = Shell(id=str(uuid.uuid4()), project_id=pb)
     await sa.save()
     await sb.save()
     a = await ensure_tab(f"shell|a#{tag}", target_type="shell", target_id=sa.id, project_id=pa)
@@ -1380,8 +1385,11 @@ async def test_missing_project_cleanup_reaps_non_uuid_project_id() -> None:
         f"dock/non-uuid-project-probe#{uuid.uuid4()}",
         target_type=_TabTargetProbe.get_type(),
         target_id=probe.id,
-        project_id="proj-123",
     )
+    # The resolver never stamps a projectless target with a client hint, so the
+    # stale owner the reaper must find is written onto the row directly.
+    tab.project_id = "proj-123"
+    await tab.save()
 
     deleted = await delete_tabs_for_missing_project("proj-123")
 

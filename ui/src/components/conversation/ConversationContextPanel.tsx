@@ -13,7 +13,7 @@ import {
   TaskKind,
   TypeId,
 } from '@sdk';
-import { useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
+import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import { useSessionDisplayName } from '@src/hooks/use-session-display-name';
 import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import {
@@ -49,7 +49,6 @@ import {
   flowMessageIdSet as buildFlowMessageIdSet,
   orderMessagesByConversation,
   resolveAnchorMessage,
-  resolveAttachmentProjectId,
   resolveProjectTypeId,
   type AttachmentEntry,
   type PrivateProcessAgg,
@@ -104,13 +103,9 @@ function taskRole(
 /** Canonical dock pointer for an entity TypeId — delegates to the single
  *  EntityChip dispatch (``buildDockPointer``). Asset types navigate by TypeId
  *  (the loader resolves the entity). */
-function dockPointerFor(
-  typeId: TypeId,
-  inside?: { type: string; id: string },
-  projectId?: string | null,
-): DockPointer | null {
-  const ptr = buildDockPointer({ type: typeId.type, id: typeId.id }, inside);
-  return ptr ? DockPointer.rebaseAssetsOntoProject(ptr, projectId) : null;
+function dockPointerFor(typeId: TypeId, inside?: { type: string; id: string }): DockPointer | null {
+  // The plain dock: a click opens the entity in its own project (the loader places it).
+  return buildDockPointer({ type: typeId.type, id: typeId.id }, inside);
 }
 
 /**
@@ -249,8 +244,6 @@ export function ConversationContextPanel({
   }, [orderedMessages, conversation]);
 
   const projectTypeId = useMemo(() => resolveProjectTypeId(task, conversation), [task, conversation]);
-  const { project: currentProject } = useProject();
-  const effectiveProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
 
   const privateTypeIds = useMemo(
     () => buildPrivateTypeIds(projectTypeId, privateTasks, privateProcesses),
@@ -317,7 +310,6 @@ export function ConversationContextPanel({
         selectedEntityKey={entityKey}
         onSelectEntity={onSelectEntity}
         onDownloadEntity={handleDownloadEntity}
-        projectId={effectiveProjectId}
       />
 
       <PrivateContextSection
@@ -350,7 +342,6 @@ interface SharedContextSectionProps {
   onSelectEntity?: (entityKey: string, messageIds: string[]) => void;
   /** Pull the bundle for the message that contributed an entity. */
   onDownloadEntity?: (messageId: string) => void;
-  projectId?: string | null;
 }
 
 function SharedContextSection({
@@ -361,7 +352,6 @@ function SharedContextSection({
   selectedEntityKey,
   onSelectEntity,
   onDownloadEntity,
-  projectId,
 }: SharedContextSectionProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -407,7 +397,7 @@ function SharedContextSection({
                     : undefined
                 }
                 onOpen={() => {
-                  const ptr = dockPointerFor(entry.typeId, containerInside, projectId);
+                  const ptr = dockPointerFor(entry.typeId, containerInside);
                   if (ptr) navigation.openDock(ptr);
                 }}
               />

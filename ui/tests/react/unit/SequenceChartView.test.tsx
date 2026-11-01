@@ -129,15 +129,15 @@ describe('SequenceChartView', () => {
     expect(screen.getByTestId('chart-description').textContent).toBe('How Hue connects.');
   });
 
-  it('Open ↗ on a sub-flow opens the named chart on the project route, scoped to the project', async () => {
+  it('Open ↗ on a sub-flow opens the named chart (the loader places it in its project), scoped to the project', async () => {
     const target = { name: 'auth-check', asset_ref: '/w/p/agentic-assets/chart/auth-check' };
     chartQuery.mockResolvedValueOnce([target]);
     renderView();
     fireEvent.click(await screen.findByTestId('chart-subflow-open'));
     await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
     const pointer = (openDock.mock.calls[0] as unknown[])[0] as { viewType: string; pointer: string };
-    expect(pointer.viewType).toBe('project');
-    expect(pointer.pointer).toContain(`${PROJECT}/editor/chart/`);
+    expect(pointer.viewType).toBe('assets');
+    expect(pointer.pointer).toContain('editor/chart/');
     expect(pointer.pointer).toContain('w/p/agentic-assets/chart/auth-check');
     const request = (chartQuery.mock.calls[0] as unknown[])[0] as { query: unknown; scope?: { id: string }[] };
     expect(JSON.stringify(request.query)).toContain('auth-check');

@@ -3536,6 +3536,7 @@ msgstr "הכל"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -3731,6 +3732,11 @@ msgstr ""
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "אפשרו"
+
+#. placeholder {0}: entries.join(', ')
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Allow {0}"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
@@ -6628,6 +6634,7 @@ msgstr "ניקוי"
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Clear"
@@ -8952,6 +8959,8 @@ msgstr "לא ניתן לשמור את המשימה"
 msgid "Could not save the advanced settings"
 msgstr "לא ניתן לשמור את ההגדרות המתקדמות"
 
+#: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Could not save the allowed models"
 msgstr "לא ניתן היה לשמור את המודלים המותרים"
@@ -15953,8 +15962,8 @@ msgid "Inherits {0}"
 msgstr ""
 
 #: src/components/organization/budgets/EndpointControls.tsx
-msgid "inherits the budget above"
-msgstr "יורש את התקציב שלמעלה"
+#~ msgid "inherits the budget above"
+#~ msgstr "יורש את התקציב שלמעלה"
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "init"
@@ -20764,6 +20773,11 @@ msgstr "אין עדיין סשנים משותפים. הרצת פרומפט תת�
 msgid "No shell is linked to this process."
 msgstr "אין shell מקושר לתהליך זה."
 
+#. placeholder {0}: preset.label
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "No sizes are declared for {0}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No skill-attributed findings to improve."
 msgstr "אין ממצאים המיוחסים לכישוריות לשיפור."
@@ -25019,6 +25033,10 @@ msgstr "שימו את התיקייה תחת ~/.flow/skill_rules/ (או בקשו 
 msgid "Puts a real event on the bus. Every automation listening for it runs for real."
 msgstr "שולח אירוע אמיתי לאפיק. כל אוטומציה שמאזינה לו תרוץ בפועל."
 
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Puts everything that is available on OpenRouter"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "PyPI unavailable"
 msgstr "PyPI לא זמין"
@@ -25761,6 +25779,10 @@ msgstr ""
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove directory"
 msgstr "הסר תיקייה"
+
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Remove every model and every redirect from this list"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Remove failed"

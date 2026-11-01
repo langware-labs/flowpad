@@ -3565,6 +3565,7 @@ msgstr "all"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -3761,6 +3762,11 @@ msgstr "Allocation saved"
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "Allow"
+
+#. placeholder {0}: entries.join(', ')
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Allow {0}"
+msgstr "Allow {0}"
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
@@ -6667,6 +6673,7 @@ msgstr "clear"
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Clear"
@@ -9011,6 +9018,8 @@ msgstr "Could not save task"
 msgid "Could not save the advanced settings"
 msgstr "Could not save the advanced settings"
 
+#: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Could not save the allowed models"
 msgstr "Could not save the allowed models"
@@ -16065,8 +16074,8 @@ msgid "Inherits {0}"
 msgstr "Inherits {0}"
 
 #: src/components/organization/budgets/EndpointControls.tsx
-msgid "inherits the budget above"
-msgstr "inherits the budget above"
+#~ msgid "inherits the budget above"
+#~ msgstr "inherits the budget above"
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "init"
@@ -20922,6 +20931,11 @@ msgstr "No shared sessions yet. Executing a prompt starts one."
 msgid "No shell is linked to this process."
 msgstr "No shell is linked to this process."
 
+#. placeholder {0}: preset.label
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "No sizes are declared for {0}"
+msgstr "No sizes are declared for {0}"
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No skill-attributed findings to improve."
 msgstr "No skill-attributed findings to improve."
@@ -25213,6 +25227,10 @@ msgstr "Put the folder under ~/.flow/skill_rules/ (or ask the assistant to write
 msgid "Puts a real event on the bus. Every automation listening for it runs for real."
 msgstr "Puts a real event on the bus. Every automation listening for it runs for real."
 
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Puts everything that is available on OpenRouter"
+msgstr "Puts everything that is available on OpenRouter"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "PyPI unavailable"
 msgstr "PyPI unavailable"
@@ -25957,6 +25975,10 @@ msgstr "Remove change"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove directory"
 msgstr "Remove directory"
+
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Remove every model and every redirect from this list"
+msgstr "Remove every model and every redirect from this list"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Remove failed"

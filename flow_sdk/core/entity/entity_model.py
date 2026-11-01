@@ -99,6 +99,8 @@ def _one_write():
 
 
 _SUPPRESS_STORE: "ContextVar[bool]" = ContextVar("_suppress_store", default=False)
+#: ``from_record``'s "no prior row" marker (a fresh create has no tab to reconcile).
+_NO_PRIOR_PROJECT = object()
 
 # When set, the DB driver treats the write as a PURE REFLECTION of a hub-origin
 # row: ``apply_create_fields`` / ``apply_update_fields`` preserve ``created_by``,
@@ -1230,6 +1232,10 @@ class Entity(DBEntity):
                 except (OSError, ValueError, OverflowError):
                     pass
 
+        # The disk→DB adopt save below runs under ``_SUPPRESS_STORE``, which skips
+        # the save-time tab project-reconcile; capture the prior project so a
+        # re-stamp by the indexer still re-derives its tabs (after the save).
+        prior_project: "object" = _NO_PRIOR_PROJECT
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}
             create_kwargs.update({k: v for k, v in data.items() if k not in ("id", "type")})
@@ -1244,6 +1250,7 @@ class Entity(DBEntity):
             if _asset_mtime is not None:
                 entity.updated_date = _asset_mtime
         else:
+            prior_project = getattr(entity, "project_id", None)
             entity.type = record_type
             # Hub-owned fields (the LWW clock), captured before the setattr loop
             # can overwrite them with stale disk-mirrored values from meta_dict().
@@ -1316,6 +1323,16 @@ class Entity(DBEntity):
             await entity.save(notify=notify)
         finally:
             _SUPPRESS_STORE.reset(token)
+        new_project = getattr(entity, "project_id", None)
+        if prior_project is not _NO_PRIOR_PROJECT and prior_project != new_project and entity.type != "tab":
+            try:
+                from flow_sdk.builtin.tab import reconcile_tab_project  # noqa: PLC0415
+
+                await reconcile_tab_project(entity.type, str(entity.id), new_project)
+            except Exception as tab_exc:  # noqa: BLE001 — never block an index on a chip
+                logging.getLogger(__name__).warning(
+                    "Tab project-reconcile after re-stamp failed for %s:%s — %s", entity.type, entity.id, tab_exc
+                )
         return entity
 
     @classmethod
@@ -3517,16 +3534,31 @@ class Entity(DBEntity):
         the single, entity-agnostic "what project owns this thing" primitive —
         used by tab project derivation and ``Conversation.resolve_project_id``.
         """
+        target = await Entity.load_by_type(entity_type, entity_id)
+        if target is None:
+            return None
         try:
-            model = SchemaRegistry.get_entity_cls(entity_type)
-            if model is None:
-                return None
-            target = await model.get_by_id(str(entity_id))
-            return await target.effective_project_id() if target is not None else None
+            return await target.effective_project_id()
         except Exception:
             import logging  # noqa: PLC0415
 
             logging.getLogger(__name__).debug("project_id_of: failed for %s/%s", entity_type, entity_id, exc_info=True)
+            return None
+
+    @staticmethod
+    async def load_by_type(entity_type: "str | None", entity_id: "str | None") -> "Entity | None":
+        """Any entity by ``(type, id)`` through its type's ``get_by_id`` (which for
+        some types includes on-disk recovery for unindexed rows). ``None`` when
+        either is empty, the type is unknown, or the row is gone. Best-effort."""
+        if not (entity_type and entity_id):
+            return None
+        try:
+            model = SchemaRegistry.get_entity_cls(entity_type)
+            return await model.get_by_id(str(entity_id)) if model is not None else None
+        except Exception:
+            import logging  # noqa: PLC0415
+
+            logging.getLogger(__name__).debug("load_by_type: failed for %s/%s", entity_type, entity_id, exc_info=True)
             return None
 
     @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})

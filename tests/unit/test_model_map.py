@@ -100,7 +100,7 @@ async def test_unmapped_tier_falls_back_to_spec(env) -> None:
     await _set_harness("claude", model_map={"openrouter": {"sm": "z-ai/glm-4.6"}})
 
     auth = await resolve_worker_api_auth(_proc("claude", "md"))
-    assert auth.model_slug == "anthropic/claude-sonnet-4.5"
+    assert auth.model_slug == "anthropic/claude-sonnet-5.5"
 
 
 async def test_override_scoped_per_provider(env) -> None:

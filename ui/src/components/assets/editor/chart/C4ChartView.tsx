@@ -146,7 +146,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
   const tipRef = useRef<HTMLDivElement>(null);
   const tipPos = useRef({ x: 0, y: 0 });
   const openRef = useOpenChart(fsRef, projectId);
-  const { openLink, openSchema } = useOpenChartTarget(fsRef, projectId);
+  const { openLink, openSchema } = useOpenChartTarget(fsRef);
 
   const { folderName, dirPath } = useMemo(() => {
     const parts = (fsRef.path || '').split('/').filter(Boolean);

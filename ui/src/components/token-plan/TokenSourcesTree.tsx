@@ -105,7 +105,7 @@ export function TokenSourcesTree({
         <tr
           data-testid={`source-row-${e.id}`}
           className={cn(
-            'border-b last:border-0 hover:bg-accent/40',
+            'group border-b last:border-0 hover:bg-accent/40',
             selected && 'bg-accent/30',
             depth > 0 && 'bg-muted/20',
           )}
@@ -164,7 +164,13 @@ export function TokenSourcesTree({
             {o.source?.funded ? (
               <FundedByChip endpointId={e.id} entryName={e.name} fallback={o.chip} />
             ) : (
-              <span className={cn(CHIP, o.chip.tone)} data-testid={`source-type-${e.id}`}>
+              // A key's label carries its hint -- for a service account, the whole address -- which
+              // widens the table past its box. It is cut with "…"; the full text is the tooltip.
+              <span
+                className={cn(CHIP, o.chip.tone, 'inline-block max-w-[14rem] truncate align-middle')}
+                title={o.chip.label}
+                data-testid={`source-type-${e.id}`}
+              >
                 {o.chip.label}
               </span>
             )}
@@ -186,8 +192,17 @@ export function TokenSourcesTree({
               </span>
             )}
           </td>
-          <td className="whitespace-nowrap px-2 py-2">
-            <div className="flex items-center justify-end gap-2">
+          {/* Pinned to the table's end edge: a long "Funded by" chip widens the table past its box, and
+              the row's actions (Allocate, Configure) must not be the part that scrolls out of reach. The
+              cell is opaque; the row's tint is repeated on the inner box so it still reads as one row. */}
+          <td className="sticky end-0 bg-background p-0">
+            <div
+              className={cn(
+                'flex items-center justify-end gap-2 px-2 py-2 group-hover:bg-accent/40',
+                selected && 'bg-accent/30',
+                depth > 0 && 'bg-muted/20',
+              )}
+            >
               {o.canAllocate && (
                 <button
                   type="button"
@@ -255,7 +270,7 @@ export function TokenSourcesTree({
               <th className="whitespace-nowrap px-2 py-2 text-right font-medium">
                 <Trans>Left / limit</Trans>
               </th>
-              <th className="px-2 py-2" />
+              <th className="sticky end-0 bg-background px-2 py-2" />
             </tr>
           </thead>
           <tbody>

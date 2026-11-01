@@ -146,8 +146,17 @@ async function materializeTab(
   // row belongs to the project it is opened in (`resolveDockTarget`), and a row
   // stamped elsewhere is likewise missing from the strip on screen. No target
   // means no fetch.
+  //
+  // Every content document is the same case again: its row's project is
+  // `resolveTabProject` (the URL's presenting project, else the asset's own),
+  // and an asset re-homed on disk drifts from a row stamped before. The target
+  // read must be cache-first so a warm visit still asks the backend for nothing
+  // (I4): `getByTypeId` is, the path lookup (`getEntityByPath`) is not — so only a
+  // typeid-addressed document is re-checked here.
   const derivedProjectStale =
-    (dock.viewType === ViewType.LENS || dock.viewType === ViewType.WEB_APP) &&
+    (dock.viewType === ViewType.LENS ||
+      dock.viewType === ViewType.WEB_APP ||
+      (isContentAssetDock(dock) && !!dock.targetTypeId)) &&
     !!existingTab &&
     (await perfTime('materializeTab.resolveDockTarget(project)', () => tabManager.resolveDockTarget(dock)))
       .projectId !== (existingTab.project_id ?? null);
