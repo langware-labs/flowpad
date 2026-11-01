@@ -42,6 +42,7 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
+import { adjusted } from '../adjustableTimeout';
 
 let skipReason: string | null = null;
 let alice: ResolvedInstance;
@@ -68,7 +69,7 @@ const getApi = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then
  *  it the default-on checkbox would silently downgrade to "not attached", and
  *  the test would pass while proving nothing about the transcript. */
 function seedTranscript(): void {
-  const dir = path.join(os.homedir(), '.claude', 'projects', workdir.replace(/\//g, '-'));
+  const dir = path.join(process.env.FLOWPAD_CLAUDE_HOME || path.join(os.homedir(), '.claude'), 'projects', workdir.replace(/\//g, '-'));
   mkdirSync(dir, { recursive: true });
   const lines = [
     { type: 'user', timestamp: new Date(0).toISOString(), message: { role: 'user', content: `vibe session ${token}` } },
@@ -87,7 +88,7 @@ beforeAll(async () => {
   bob = await getInstance(INST_2);
   browser = await launchBrowser();
   alicePage = await openInstancePage(browser, INST_1);
-}, 60_000);
+}, adjusted(60_000));
 
 afterAll(async () => {
   await browser?.close().catch(() => undefined);
@@ -128,7 +129,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
       `/graph/compute_node/@local/session-transcript-raw?session_id=${SESSION_ID}&project=${encodeURIComponent(workdir)}`,
     );
     expect(raw?.data?.content, 'the backend can read the seeded transcript').toContain(token);
-  }, 30_000);
+  }, adjusted(30_000));
 
   it('alice asks bob for help from the vibe workspace — one button, one dialog', async () => {
     const { page } = alicePage;
@@ -141,7 +142,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     // Exactly ONE get-help affordance in the workspace toolbar — the collaborate
     // twin is gone, and its absence is part of the contract.
     const ask = page.getByTestId('vibe-assign-task');
-    await ask.waitFor({ state: 'visible', timeout: 25_000 });
+    await ask.waitFor({ state: 'visible', timeout: adjusted(25_000) });
     expect(await page.getByTestId('vibe-collaborate').count()).toBe(0);
     expect(await page.getByTestId('vibe-collaborate-open').count()).toBe(0);
     await ask.click();
@@ -149,7 +150,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     // The Radix dialog's open animation + focus trap swallow the first
     // keystrokes; click, settle, type, verify (same shape as driveShareDialog).
     const person = page.getByTestId('vibe-assign-person');
-    await person.waitFor({ state: 'visible', timeout: 10_000 });
+    await person.waitFor({ state: 'visible', timeout: adjusted(10_000) });
     await person.click();
     await page.waitForTimeout(500);
     await person.pressSequentially(bob.email, { delay: 15 });
@@ -161,7 +162,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
 
     // Default ON — asserted, not set. The user never ticks this box.
     const transcript = page.locator('input[type="checkbox"]').first();
-    await expect.poll(() => transcript.isChecked(), { timeout: 5_000 }).toBe(true);
+    await expect.poll(() => transcript.isChecked(), { timeout: adjusted(5_000) }).toBe(true);
 
     // A disabled Assign is the reported bug — fail on it by name, not on a click timeout.
     const submit = page.getByTestId('vibe-assign-submit');
@@ -169,8 +170,8 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     await submit.click();
     // The dialog closes itself on success; a dialog still showing the form is
     // the failure signal.
-    await submit.waitFor({ state: 'detached', timeout: 25_000 });
-  }, 60_000);
+    await submit.waitFor({ state: 'detached', timeout: adjusted(25_000) });
+  }, adjusted(60_000));
 
   it('the task exists on alice, assigned to bob', async () => {
     const task = await pollUntil(
@@ -191,7 +192,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     expect(task.kind).toBe('vibe');
     expect(task.group_name ?? null).toBeNull();
     expect(task.description, 'the notes become the task body').toContain(token);
-  }, 30_000);
+  }, adjusted(30_000));
 
   it('the task lands on bob — one row, no accept, no install', async () => {
     const bobTasks = async () =>
@@ -213,7 +214,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     // Exactly ONE row for this ask, on either side.
     const mine = (await bobTasks()).filter((t) => t.title === TITLE);
     expect(mine, 'one ask, one task row').toHaveLength(1);
-  }, 30_000);
+  }, adjusted(30_000));
 
   it('a message went out to bob carrying the issue, the task, and the transcript', async () => {
     // The notification conversation is titled after the task (Task.assign).
@@ -250,7 +251,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     const text = String(msg.message ?? msg.text ?? '');
     expect(text, 'the title leads — the issue is legible without the notes').toContain(TITLE);
     expect(text, 'the notes ride along').toContain(NOTES);
-  }, 30_000);
+  }, adjusted(30_000));
 
   it('bob receives the issue and the task chip; the diagnosis follows as its own message', async () => {
     await syncAssignedConversation(bob, conversationId);
@@ -298,5 +299,5 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
       25_000,
       'the diagnosis message following the request on alice',
     );
-  }, 60_000);
+  }, adjusted(60_000));
 });

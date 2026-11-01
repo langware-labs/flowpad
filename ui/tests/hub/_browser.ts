@@ -16,6 +16,7 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import { syncAssignedConversationAt } from './_hub';
 import { readEnvFile } from './_instances';
+import { adjusted } from '../adjustableTimeout';
 
 export interface InstancePage {
   name: string;
@@ -64,7 +65,7 @@ export async function openInstancePage(browser: Browser, name: string): Promise<
         typeof (window as unknown as { navigation?: { openShellProcess?: unknown } }).navigation?.openShellProcess ===
         'function',
       undefined,
-      { timeout: 30_000 },
+      { timeout: adjusted(30_000) },
     )
     .catch(() => {
       /* leave the race visible to the caller's own assertions if the app never mounts */
@@ -109,7 +110,7 @@ export interface ShareDialogOptions {
  */
 export async function driveShareDialog(page: Page, opts: ShareDialogOptions): Promise<void> {
   const dialog = page.getByTestId('share-to-conversation-dialog');
-  await dialog.waitFor({ state: 'visible', timeout: 10_000 });
+  await dialog.waitFor({ state: 'visible', timeout: adjusted(10_000) });
 
   // The testid sits on the <input> itself (ContactPicker forwards it). The
   // Radix dialog's open animation + focus trap swallow keystrokes for a beat
@@ -138,7 +139,7 @@ export async function driveShareDialog(page: Page, opts: ShareDialogOptions): Pr
   if (!(await recent.evaluate((el) => (el as HTMLDetailsElement).open))) {
     await recent.locator('summary').click();
   }
-  await dialog.getByTestId('share-conversation-list').waitFor({ timeout: 10_000 });
+  await dialog.getByTestId('share-conversation-list').waitFor({ timeout: adjusted(10_000) });
   if (opts.existingConversationId) {
     await dialog.getByTestId(`share-conv-row-${opts.existingConversationId}`).click();
   } else {
@@ -226,7 +227,7 @@ export async function mapConversationToProject(inst: InstancePage, conversationI
  *  Send-button selector when a draft composer is also mounted. */
 export async function replyInComposer(inst: InstancePage, text: string): Promise<void> {
   const composer = inst.page.getByPlaceholder('Reply to sender…');
-  await composer.waitFor({ state: 'visible', timeout: 15_000 });
+  await composer.waitFor({ state: 'visible', timeout: adjusted(15_000) });
   await composer.fill(text);
   await composer.press('Enter');
 }
