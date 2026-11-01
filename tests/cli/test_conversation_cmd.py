@@ -42,12 +42,13 @@ def conv_server():
     default test port. Daemon thread — torn down with the process.
     """
     from flow_sdk.server.app import start_server
+    from tests.adjustable_timeout import adjusted
 
     port = _free_port()
     threading.Thread(target=start_server, args=(port,), daemon=True).start()
     base = f"http://127.0.0.1:{port}"
     # Readiness: poll the bootstrap endpoint until the server answers.
-    deadline = time.time() + 15
+    deadline = time.time() + adjusted(15)
     while time.time() < deadline:
         try:
             if requests.get(f"{base}/api/v1/graph/bootstrap", timeout=2).status_code == 200:

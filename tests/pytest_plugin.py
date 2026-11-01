@@ -294,7 +294,25 @@ def pytest_addoption(parser):
     )
 
 
+def _apply_adjustable_timeout(config, items) -> None:
+    """Add ADJUSTABLE_TIMEOUT to every test's timeout: its own ``@pytest.mark.timeout`` if it has one, else the global
+    ``--timeout``. Public API only - the adjusted value goes on as a closer marker, the committed values stay untouched."""
+    from tests.adjustable_timeout import ADJUSTABLE_TIMEOUT, adjusted
+
+    if not ADJUSTABLE_TIMEOUT:
+        return
+    global_timeout = config.getoption("timeout", default=None)
+    for item in items:
+        marker = item.get_closest_marker("timeout")
+        base = marker.args[0] if marker is not None and marker.args else (marker.kwargs.get("timeout") if marker else global_timeout)
+        if not base:  # 0 / None: the test has no limit, leave it so
+            continue
+        kwargs = {k: v for k, v in (marker.kwargs if marker else {}).items() if k != "timeout"}
+        item.add_marker(pytest.mark.timeout(adjusted(float(base)), **kwargs), append=False)
+
+
 def pytest_collection_modifyitems(config, items):
+    _apply_adjustable_timeout(config, items)
     pytest_asyncio_tests = (item for item in items if is_async_test(item))
     session_scope_marker = pytest.mark.asyncio(loop_scope="session")
     for async_test in pytest_asyncio_tests:
