@@ -7,7 +7,7 @@ import { CopyButton } from '@src/components/ui/copy-button';
 import type { AppDisplay } from '@src/hooks/flow-hooks/useAppDisplay';
 import type { AppLifecycle } from './useAppLifecycle';
 import type { WebApp } from '@sdk';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
+import { dataContext } from '@sdk';
 import { CommitInput } from '@src/components/assets/editor/app-profile/AppServingFields';
 import { WebAppIconPicker } from './WebAppIconPicker';
 import { AppOpenInToggle, appOpenIn, openInPatch } from './AppOpenInToggle';
@@ -56,7 +56,7 @@ export function appInfoRows({ display, lifecycle }: AppInfo): [ReactNode, string
 function AppIdentity({ app }: { app: WebApp }) {
   const { t } = useLingui();
   const { content, save } = useWebAppManifest(app);
-  const readOnly = isHubOnly() || content.isLoading || !content.typedFields;
+  const readOnly = !dataContext.caps.localFiles || content.isLoading || !content.typedFields;
   return (
     <div className="mb-3 flex items-center gap-2 border-b pb-3" data-testid="webapp-info-identity">
       <WebAppIconPicker
