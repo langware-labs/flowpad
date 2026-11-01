@@ -60,6 +60,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   applyDesktopUpdate: () => ipcRenderer.invoke('update:apply-desktop'),
   updateBoth: (engineVersion) => ipcRenderer.invoke('update:both', engineVersion),
   takeResumedUpdate: () => ipcRenderer.invoke('update:take-resumed'),
+  // The running desktop/engine pair's compatibility warning, or null (pulled once at panel mount).
+  getPairWarning: () => ipcRenderer.invoke('update:pair-warning'),
+  // After a late install failure: quit gracefully and start again (a fresh process applies the update).
+  restartApp: () => ipcRenderer.invoke('update:restart-app'),
+  cancelDesktopDownload: () => ipcRenderer.invoke('update:cancel-desktop'),
+  // Loading screen: set up with the current desktop instead of waiting for the desktop-first download.
+  skipDesktopUpdate: () => ipcRenderer.send('skip-desktop-update'),
   onDesktopUpdateState: (callback) => subscribe('desktop-update-state', callback),
   onEngineUpdateResumed: (callback) => subscribe('engine-update-resumed', callback),
 

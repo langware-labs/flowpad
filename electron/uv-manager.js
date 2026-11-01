@@ -1461,6 +1461,11 @@ class UvManager {
    * cache is asked first (`--offline`), the network second.
    */
   async _restoreEngine(previousVersion, { onProgress } = {}) {
+    // The version comes from a local file (pending-engine.json) and reaches a command line that runs
+    // through cmd.exe on Windows: the same anchored gate every other install path uses.
+    if (!engineCompat.isInstallableVersion(previousVersion)) {
+      throw new Error(`refusing to restore "${previousVersion}": not an installable version`);
+    }
     const pin = await this._pythonPinForUpgrade();
     const args = ['tool', 'install', `${PYPI_PACKAGE}==${previousVersion}`, '--python', pin, '--force'];
     let lastErr = null;

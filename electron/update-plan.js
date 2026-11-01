@@ -88,6 +88,9 @@ function planAfterDesktopUpdate({ state, appVersion, installedEngine, isNewer })
   // spends it (healthy → clear, never healthy → restore). A re-run of the startup (Retry after an
   // unrelated failure, or a relaunch after a kill) must not erase the one way back.
   if (state.phase === 'installed') return { action: 'none', clear: false, source };
+  // A rolled-back install: the record is now the veto on offering that version again (main.js
+  // honorFailedEngineVersion) — it must not be cleared as an unanswered offer.
+  if (state.phase === 'failed-unhealthy') return { action: 'none', clear: false, source };
   if (!state.consented) return { action: 'dialog', clear: true, source };
   if (installedEngine && !isNewer(installedEngine, state.engineVersion)) return { action: 'none', clear: true, source };
   return { action: 'install', version: state.engineVersion, clear: true, source };

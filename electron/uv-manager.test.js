@@ -1474,6 +1474,18 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       eq(res2, true, 'post-boot upgrade: healthy backend reports success');
       eq(loads.length, 1, 'post-boot upgrade: backend URL loaded once');
 
+      // A restore version read back from pending-engine.json is gated like every install: a value that
+      // is not a version never reaches uv's command line (which runs through cmd.exe on Windows).
+      {
+        const mr = new UvManager(silentLog);
+        const runs = [];
+        mr._pythonPinForUpgrade = async () => '3.11';
+        mr._uvToolInstallForce = async (args) => { runs.push(args); };
+        let refused = null;
+        try { await mr._restoreEngine('0.2.237 & calc'); } catch (e) { refused = e.message; }
+        eq([/not an installable version/.test(String(refused)), runs.length], [true, 0], 'a malformed restore version is refused before uv runs');
+      }
+
       // The upgrade INSTALLED the new engine and failed only at the health gate: recovery reinstalls
       // the release that ran before, instead of restarting the same unhealthy one and waiting the
       // whole health window again just to fail.

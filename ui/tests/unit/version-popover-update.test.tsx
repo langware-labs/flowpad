@@ -10,7 +10,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), notifySuccess: vi.fn(), notifyError: vi.fn() }));
+const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), notifySuccess: vi.fn(), notifyError: vi.fn(), notifyWarning: vi.fn() }));
 vi.mock('@sdk/client', () => ({ default: { get: h.get, post: h.post } }));
 vi.mock('@sdk/websocket', () => ({ connectionManager: { id: 'conn-test' } }));
 vi.mock('@src/components/markdown-view', () => ({ MarkdownView: () => null }));
@@ -22,7 +22,7 @@ vi.mock('@src/components/view-mode', () => ({ useIsDev: () => false }));
 vi.mock('@src/hooks/use-preference', () => ({ usePreference: () => [undefined] }));
 vi.mock('@sdk/react/hooks', () => ({ useContext: () => null }));
 vi.mock('@src/notifications/notify', () => ({
-  notify: Object.assign(vi.fn(), { success: h.notifySuccess, error: h.notifyError, dismiss: vi.fn() }),
+  notify: Object.assign(vi.fn(), { success: h.notifySuccess, error: h.notifyError, warning: h.notifyWarning, dismiss: vi.fn() }),
 }));
 
 import { VersionPopover } from '@src/components/version-popover/version-popover';
@@ -112,7 +112,11 @@ describe('Upgrade pre-flight (desktop app)', () => {
     expect(api.upgradeFlowpad).not.toHaveBeenCalled();
     expect(modal.textContent).toContain('0.2.60'); // the floor the release demands
     expect(screen.getByTestId('update-both-button')).toBeTruthy();
-    expect(screen.queryByTestId('update-desktop-only-button')).toBeNull(); // panel rule: both update together
+    // Panel rule: both update together — the popup's update actions are exactly Update Both and Cancel.
+    const actions = Array.from(
+      screen.getByTestId('desktop-update-required-modal').querySelectorAll('[data-testid^="update-"]'),
+    ).map((el) => el.getAttribute('data-testid'));
+    expect(actions).toEqual(['update-both-button', 'update-cancel-button']);
     expect(screen.getByTestId('update-cancel-button')).toBeTruthy();
   });
 
@@ -415,6 +419,59 @@ describe('the Desktop section row', () => {
     fireEvent.click(await screen.findByTestId('desktop-update-now-button'));
     await waitFor(() => expect(api.applyDesktopUpdate).toHaveBeenCalledTimes(1));
     expect(screen.queryByText(/could not be started/)).toBeNull();
+  });
+});
+
+describe('round 11: restart, cancel, alerts the closed popover used to swallow', () => {
+  const READY = {
+    ...INCOMPATIBLE_INFO,
+    desktop: { installed: '0.2.50', state: 'available', available: '0.2.62', downloadState: 'ready' },
+  };
+
+  it('a late install failure offers Restart FlowPad — not an Update Now that would do nothing', async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({ ...READY, desktop: { ...READY.desktop, restartRequired: true } }),
+      restartApp: vi.fn().mockResolvedValue({ started: true }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(await screen.findByTestId('desktop-restart-app-button'));
+    await waitFor(() => expect(api.restartApp).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('desktop-update-now-button')).toBeNull();
+  });
+
+  it('a download in progress can be cancelled', async () => {
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue({ ...READY, desktop: { ...READY.desktop, downloadState: 'downloading' } }),
+      cancelDesktopDownload: vi.fn().mockResolvedValue({ cancelled: true }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(await screen.findByTestId('desktop-download-cancel-button'));
+    await waitFor(() => expect(api.cancelDesktopDownload).toHaveBeenCalledTimes(1));
+  });
+
+  it('a desktop update error while the popover is CLOSED is toasted (it used to surface nowhere)', async () => {
+    let push: ((s: unknown) => void) | null = null;
+    (window as { electronAPI?: unknown }).electronAPI = electronApi({
+      onDesktopUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        push = cb;
+        return () => {};
+      }),
+    });
+    render(<VersionPopover currentVersion="0.2.230" />);
+    push?.({ state: 'error', error: 'net::ERR_CONNECTION_RESET\nstack…' });
+    await waitFor(() => expect(h.notifyError).toHaveBeenCalledTimes(1));
+    const { message, forceToast } = h.notifyError.mock.calls[0][0] as { message: string; forceToast: boolean };
+    expect([message, forceToast]).toEqual(['net::ERR_CONNECTION_RESET', true]);
+  });
+
+  it('an incompatible running pair is toasted at mount, not only inside the popover', async () => {
+    (window as { electronAPI?: unknown }).electronAPI = electronApi({
+      getPairWarning: vi.fn().mockResolvedValue('engine 0.2.100 is older than this desktop needs'),
+    });
+    render(<VersionPopover currentVersion="0.2.230" />);
+    await waitFor(() => expect(h.notifyWarning).toHaveBeenCalledTimes(1));
   });
 });
 

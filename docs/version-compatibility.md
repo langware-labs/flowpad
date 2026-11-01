@@ -172,6 +172,27 @@ FlowPad to X … closes for a moment and reopens by itself"), stays on screen un
 A build older than the published release therefore replaces itself on first run — test a dry-run
 build with a version above the feed's.
 
+**When an apply or a download goes wrong:**
+
+- An install failure that arrives *after* `quitAndInstall` returned (Windows: the NSIS spawn fails
+  asynchronously) leaves electron-updater's "already installing" flag set — the next
+  `quitAndInstall` in that process is skipped silently. `apply()` then answers `restart-required`,
+  the panel offers **Restart FlowPad** (graceful quit + relaunch), and the `app.quit()` the library
+  had queued for the failed install is swallowed once. A *synchronous* failure leaves the updater
+  usable, so the row's Retry re-applies.
+- A desktop download can be cancelled from the panel, and the loading screen's desktop-first and
+  recovery downloads offer **Skip** / **Cancel the update**. Cancel settles at once — the library has
+  no timeout on Electron's net stack and a stalled differential download ignores `cancel()` — and
+  the next download starts only after the cancelled transfer has ended. (No stall watchdog: a wait
+  budget is an owner decision.)
+- Every engine the startup installs (the coordinated resume, the pre-start dialog, the pair repair)
+  writes the rollback record, so the health gate restores the previous engine on any path; a version
+  rolled back that way is not offered again until a newer one exists (`failedVersion`). The generic
+  "backend didn't respond" screen has a Retry.
+- deb/rpm do not install on quit (`autoInstallOnAppQuit` off — every quit asked for the system
+  password); a downloaded update installs from Update Now / Restart now, and the panel says so.
+- An incompatible pair that could not be repaired at launch is toasted when the UI mounts.
+
 **Manual verification on each OS** (the CI runs the update flow against stubs only — nothing in the
 repo performs a real `quitAndInstall`). Before a release that changes the update flow, run once per
 row against a real GitHub feed with a packaged build one version behind:

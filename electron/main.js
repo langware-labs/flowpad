@@ -176,7 +176,8 @@ const restartApplier = createRestartApplier({
       new Notification({ title: 'FlowPad is updating', body, silent: true }).show();
     }
   },
-  onFailure: (err) => {
+  lateFailurePoisons: () => !squirrelStages,
+  onFailure: (err, { late = false } = {}) => {
     // The desktop could not be applied (for example an app running from a temporary macOS location). It stays
     // pending: the engine changes only after the NEW desktop is installed and running.
     // Elsewhere the artifact is still on disk, so the row offers "Retry the update" (apply) and quitting installs
@@ -184,7 +185,10 @@ const restartApplier = createRestartApplier({
     // and install-on-quit fails the same way — the row offers the download again instead.
     const squirrelFailed = squirrelStages;
     if (squirrelFailed) { desktopDownloadedVersion = null; squirrelStaged = false; }
-    sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err), apply: !squirrelFailed });
+    // `late` (Windows/Linux): the installer failed after the updater had handed over — the updater cannot
+    // apply again in THIS process, and install-on-quit is skipped too. The row offers "Restart FlowPad",
+    // which retries the update from a fresh process.
+    sendDesktopUpdateState({ state: 'error', error: (err && err.message) || String(err), apply: !squirrelFailed && !late, restart: late });
     showFailureDialog({
       dialog,
       parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
@@ -193,7 +197,11 @@ const restartApplier = createRestartApplier({
       message: 'FlowPad could not restart to finish the update.',
       detail: `${squirrelFailed
         ? 'macOS could not install the update. Download it again from the version panel, or check that FlowPad runs from the Applications folder.'
-        : 'The update is downloaded: retry it from the version panel, or it is applied the next time FlowPad is closed.'}\n\n${err && err.message ? err.message : err}`,
+        : late
+          ? 'Restart FlowPad (from the version panel, or by quitting and starting it again) to try the update again.'
+          : INSTALLS_ON_QUIT
+            ? 'The update is downloaded: retry it from the version panel, or it is applied the next time FlowPad is closed.'
+            : 'The update is downloaded: retry it from the version panel.'}\n\n${err && err.message ? err.message : err}`,
       share: (text) => shareDiagnostics(text, 'could not restart to apply an update'),
       log,
     });
@@ -211,6 +219,9 @@ const restartApplier = createRestartApplier({
 });
 
 let updaterInitialized = false;
+// Does a downloaded update install when FlowPad quits? Everywhere but deb/rpm (see setupElectronAutoUpdater).
+// A seam like squirrelStages: the harness pins it, whatever OS the tests run on.
+let INSTALLS_ON_QUIT = !(process.platform === 'linux' && !process.env.APPIMAGE);
 
 function setupElectronAutoUpdater() {
   if (!app.isPackaged) {
@@ -239,9 +250,11 @@ function setupElectronAutoUpdater() {
     // once the user opts in. Download is triggered explicitly via downloadUpdate().
     autoUpdater.autoDownload = false;
     // A deferred ("Later") desktop download still applies on the next quit/restart
-    // without nagging — that's exactly autoInstallOnAppQuit (default true; set
-    // explicitly so the intent is clear).
-    autoUpdater.autoInstallOnAppQuit = true;
+    // without nagging — that's exactly autoInstallOnAppQuit. Not on deb/rpm: there the install runs
+    // through pkexec, so EVERY ordinary quit with an update pending asked for the system password (and a
+    // cancel went unreported); they install through Update Now / Restart now only. (macOS needs it on:
+    // it is what makes Squirrel stage the download.)
+    autoUpdater.autoInstallOnAppQuit = INSTALLS_ON_QUIT;
 
     autoUpdater.on('checking-for-update', () => {
       log.info('[electron-updater] checking for update...');
@@ -274,7 +287,7 @@ function setupElectronAutoUpdater() {
         log.info('[electron-updater] waiting for macOS (Squirrel) to prepare the update');
         return;
       }
-      return onDesktopUpdateReady(info);
+      onDesktopUpdateReady(info).catch((err) => log.warn(`[electron-updater] ready handling failed: ${err.message}`));
     });
 
     if (squirrelStages) {
@@ -422,8 +435,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
       if (desktopDownloadInFlight && desktopDownloadVersion && isNewer(desktopDownloadVersion, desktopLatest)) {
         log.info(`[electron-updater] ${desktopLatest} supersedes the download of ${desktopDownloadVersion}`);
         supersededPanelDownload = panelDesktopVersion === desktopDownloadVersion;
-        desktopDownloadToken.cancel();
-        await desktopDownloadDone;
+        // Settles at once, even for a stalled transfer: awaiting the transfer itself left
+        // autoCheckInFlight set — and the scheduler off — for the rest of the session.
+        cancelDesktopDownload('superseded');
       }
       if (offerVersion && isNewer(offerVersion, desktopLatest)) {
         log.info(`[electron-updater] ${desktopLatest} supersedes the open offer for ${offerVersion}`);
@@ -596,6 +610,10 @@ let desktopDownloadInFlight = false;
 let desktopDownloadVersion = null;        // version being downloaded
 let desktopDownloadToken = null;          // CancellationToken of that download
 let desktopDownloadDone = Promise.resolve();
+let desktopDownloadGen = 0;               // bumps per download and per cancel: a stale callback is ignored
+let endDesktopDownloadWait = () => {};    // releases desktopDownloadDone on cancel
+let desktopTransfer = Promise.resolve();  // the current download's own promise (not raced)
+let desktopTransferEnded = Promise.resolve(); // a cancelled transfer's end: the next download starts after it
 // The restart prompt on screen: which version, how to close it, when it closed.
 let desktopPromptVersion = null;
 let desktopPromptAbort = null;
@@ -871,7 +889,8 @@ async function showDesktopReadyPrompt(version) {
     markPendingEngineConsented(pendingEngineStore); // agreeing to restart = agreeing to the saved engine version
     // Stops the backend first, then quitAndInstall(silent, relaunch): the NSIS build is not one-click
     // (oneClick:false), so the default would open the Setup wizard and wait.
-    await restartApplier.apply();
+    // A late failure earlier in this session poisoned the updater: "Restart now" means exactly that.
+    if ((await restartApplier.apply()) === 'restart-required') relaunchToRetryUpdate();
   } else if (desktopPromptAbort.signal.aborted) {
     log.info(`[electron-updater] prompt for ${version} closed: superseded by a newer release`);
   } else {
@@ -1065,20 +1084,31 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
     log.info('[electron-updater] download already in progress; not restarting it');
     return;
   }
+  const gen = ++desktopDownloadGen; // a cancelled download's late callbacks must not touch a newer one's state
   desktopDownloadInFlight = true;
   desktopDownloadVersion = version;
-  desktopDownloadToken = new CancellationToken();
+  const token = new CancellationToken();
+  desktopDownloadToken = token;
   suppressDesktopRestartPrompt = !promptOnReady;
-  // A fresh download needs a fresh Squirrel staging (macOS): an earlier staged build is not this one.
+  // A fresh download needs a fresh Squirrel staging (macOS): an earlier staged build is not this one —
+  // and whoever still waits on the previous staging is released, not left waiting for ever.
   squirrelStaged = false;
   squirrelPendingInfo = null;
+  settleSquirrelStaging(false);
   squirrelStaging = new Promise((r) => { settleSquirrelStaging = r; });
-  desktopDownloadDone = autoUpdater
-    .downloadUpdate(desktopDownloadToken)
-    .then(() => { if (onDownloaded) onDownloaded(); })
+  // After a cancel, the library hands a new downloadUpdate() the CANCELLED transfer's promise until it
+  // ends: start only once it has (milliseconds normally; a stalled one holds just this download, which
+  // Cancel can release again — never the scheduler).
+  const transfer = desktopTransferEnded
+    .then(() => {
+      if (token.cancelled) throw new Error('cancelled before it started');
+      return autoUpdater.downloadUpdate(token);
+    })
+    .then(() => { if (gen === desktopDownloadGen && onDownloaded) onDownloaded(); })
     .catch((err) => {
+      if (gen !== desktopDownloadGen) return; // cancelled: already reported and reset by cancelDesktopDownload
       if (squirrelPendingInfo) { squirrelPendingInfo = null; settleSquirrelStaging(false); }
-      if (desktopDownloadToken && desktopDownloadToken.cancelled) {
+      if (token.cancelled) {
         log.info(`[electron-updater] download of ${version || 'update'} cancelled (superseded)`);
       } else {
         log.error('[electron-updater] download failed:', err);
@@ -1088,10 +1118,37 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
       }
     })
     .finally(() => {
+      if (gen !== desktopDownloadGen) return;
       desktopDownloadInFlight = false;
       desktopDownloadVersion = null;
       desktopDownloadToken = null;
     });
+  desktopTransfer = transfer;
+  // Settles with the transfer — or at once when the download is cancelled (cancelDesktopDownload): a
+  // stalled request is not something a caller may wait on.
+  desktopDownloadDone = Promise.race([transfer, new Promise((r) => { endDesktopDownloadWait = r; })]);
+}
+
+/**
+ * Cancel the download in progress and release everyone waiting on it NOW — not when the transfer
+ * notices: electron-updater has no timeout on Electron's net stack, and a stalled differential download
+ * ignores cancel() entirely. Until that cancelled transfer really ends, the library hands every new
+ * downloadUpdate() the SAME promise, so the next download starts once it has (desktopTransferEnded).
+ */
+function cancelDesktopDownload(why) {
+  if (!desktopDownloadPending()) return false;
+  log.info(`[electron-updater] download of ${pendingDownloadVersion() || 'update'} cancelled (${why})`);
+  const token = desktopDownloadToken;
+  const transfer = desktopTransfer; // chained on the library's own promise: settles when it does
+  desktopDownloadGen++;
+  desktopDownloadInFlight = false;
+  desktopDownloadVersion = null;
+  desktopDownloadToken = null;
+  if (squirrelPendingInfo) { squirrelPendingInfo = null; settleSquirrelStaging(false); }
+  try { if (token) token.cancel(); } catch (err) { log.warn(`[electron-updater] cancel failed: ${err.message}`); }
+  desktopTransferEnded = transfer.then(() => {}, () => {});
+  endDesktopDownloadWait();
+  return true;
 }
 
 /**
@@ -1132,7 +1189,10 @@ async function updateDesktopBeforeEngineInstall(reason) {
     title: `Updating FlowPad to ${version}`,
     detail: 'A newer FlowPad is available, so it is installed before the first setup. When the download ' +
       'finishes, FlowPad closes for a moment to install it and then reopens by itself — nothing is wrong.',
+    // A stalled download has no end of its own: the user can go on with this version instead.
+    skipLabel: 'Skip — set up with this version',
   });
+  skippableDesktopDownload = true;
   // We restart ourselves: a download that finishes meanwhile must not open the "Restart now?" prompt.
   // The loading screen shows the download's progress — an unbounded silent "Updating Flowpad" read
   // as frozen. (No watchdog here: a wait budget is a CLAUDE.md decision for the owner.)
@@ -1143,6 +1203,7 @@ async function updateDesktopBeforeEngineInstall(reason) {
   try {
     await desktopDownloadSettled();
   } finally {
+    skippableDesktopDownload = false;
     autoUpdater.removeListener('download-progress', onDesktopDlProgress);
   }
   if (isQuitting) return true;
@@ -1172,6 +1233,38 @@ async function updateDesktopBeforeEngineInstall(reason) {
   suppressDesktopRestartPrompt = false;
   log.warn(`[update] ${reason}: the desktop update could not be applied — installing the engine with this desktop`);
   return false;
+}
+
+// A loading-screen download the user may skip (desktop-first, the recovery update): Skip applies only then.
+let skippableDesktopDownload = false;
+
+/**
+ * An engine the STARTUP just installed (the pre-start dialog, the pair repair) gets the same rollback
+ * record the coordinated update writes: until the backend answers, the health gate can put
+ * `previousEngine` back (engineRecordAtHealthGate). Before this only Update Both could roll back — any
+ * other unhealthy install ended on a Quit-only screen that the next launch reached again.
+ */
+function noteStartupEngineInstall(previousEngine, engineVersion) {
+  if (!previousEngine || !engineVersion || previousEngine === engineVersion) return;
+  pendingEngineStore.write({ engineVersion, previousEngine, consented: false, phase: 'installed', source: 'startup' });
+}
+
+/**
+ * An engine version that installed but never became healthy (and was rolled back) is not offered again
+ * until a NEWER release exists: Retry used to clear the record and the next dialog proposed the same
+ * broken version straight away. The veto ends once the installed engine moves past it.
+ */
+function honorFailedEngineVersion() {
+  const rec = pendingEngineStore.read();
+  if (!rec || rec.phase !== 'failed-unhealthy' || !rec.failedVersion || !uvManager) return;
+  const installed = uvManager.getInstalledVersionSync() || null;
+  if (installed && !isNewer(installed, rec.failedVersion)) {
+    log.info(`[update] engine ${rec.failedVersion} failed its health check: no longer vetoed (installed ${installed})`);
+    pendingEngineStore.clear();
+    return;
+  }
+  log.info(`[update] engine ${rec.failedVersion} failed its health check before — not offered again until a newer release`);
+  uvManager.deferPackageVersion(rec.failedVersion);
 }
 
 /** The desktop update a pre-start flow restarted into (desktop-first): read once by the next launch. */
@@ -2368,8 +2461,21 @@ async function runRecoveryUpdate({ version, fingerprint }) {
   try {
     if (!app.isPackaged || process.windowsStore) throw new Error('desktop updates are not available for this build');
     downloadDesktopUpdateInBackground({ promptOnReady: false, version });
-    await desktopDownloadSettled();
-    if (desktopDownloadedVersion !== version) throw new Error('the download did not complete (see the updater lines in the log)');
+    sendStartupNotice({
+      title: `Downloading FlowPad ${version}`,
+      detail: 'When the download finishes, FlowPad closes to install it and reopens by itself.',
+      skipLabel: 'Cancel the update',
+    });
+    skippableDesktopDownload = true;
+    try {
+      await desktopDownloadSettled();
+    } finally {
+      skippableDesktopDownload = false;
+    }
+    if (desktopDownloadedVersion !== version) {
+      sendStartupNotice(null);
+      throw new Error('the download did not complete (see the updater lines in the log)');
+    }
     log.info(`[update-recovery] ${version} downloaded and verified by the updater; installing and relaunching`);
     sendStatus(`Installing FlowPad ${version}`);
     sendStartupNotice({
@@ -2526,6 +2632,7 @@ async function installAndStartBackend({ quiet = false } = {}) {
       // by choosing "Restart now". Install exactly X now, with THIS desktop (its Python pin, its start
       // contract). No agreement (the app was closed after "Later")? Then the normal engine dialog below
       // asks. See update-plan.js. A failure keeps the current engine; the normal dialog offers it again.
+      honorFailedEngineVersion();
       const enginePlan = planAfterDesktopUpdate({
         state: pendingEngineStore.read(),
         appVersion: app.getVersion(),
@@ -2595,6 +2702,7 @@ async function installAndStartBackend({ quiet = false } = {}) {
         // when the install is broken or the cloud is unreachable. `beforeBackendStart` makes the call return
         // right after the upgrade — the normal start path below boots the upgraded backend, avoiding a
         // double start.
+        const engineBeforePrompt = uvManager.getInstalledVersionSync(activeBin) || null;
         const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
           sendStatus,
           waitForBackend,
@@ -2605,6 +2713,7 @@ async function installAndStartBackend({ quiet = false } = {}) {
         if (upgradedPreStart) {
           activeBin = uvManager.getInstalledFlowBin() || activeBin;
           backendJustUpgraded = true;
+          noteStartupEngineInstall(engineBeforePrompt, uvManager.getInstalledVersionSync(activeBin));
         }
       }
 
@@ -2637,9 +2746,11 @@ async function installAndStartBackend({ quiet = false } = {}) {
               if (isQuitting) return { ok: false };
               if (go) {
                 sendStatus('Installing a compatible FlowPad engine');
+                const engineBeforeRepair = uvManager.getInstalledVersionSync(activeBin) || null;
                 await uvManager.upgrade({ version: picked.version, onProgress: installProgress('Installing a compatible FlowPad engine') });
                 activeBin = uvManager.getInstalledFlowBin() || activeBin;
                 backendJustUpgraded = true;
+                noteStartupEngineInstall(engineBeforeRepair, picked.version);
               } else {
                 log.warn(`[compat] the user kept engine ${pairIssue.engineVersion}, which needs a newer desktop than ${app.getVersion()}`);
               }
@@ -3017,11 +3128,20 @@ async function startApp() {
         log.warn(`[update] could not restore ${unhealthyInstall.previousEngine}: ${restoreErr.message} — showing the normal panel`);
       }
     }
-    await showStartupErrorPanel(
+    // Retry, not Quit only: a backend that timed out on a busy machine often starts on a second try, and
+    // the next launch would only reach this same screen.
+    if (await showStartupErrorPanel(
       `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ${why}` +
         'This usually means the installed Flowpad package is out of date or broken.' +
         launcherOutput,
-    );
+      { retryable: true },
+    )) {
+      await waitForRetryRequest();
+      if (!isQuitting) {
+        startupFailed = false;
+        return startApp();
+      }
+    }
     return;
   }
 
@@ -3150,6 +3270,9 @@ app.on('activate', () => {
 // exit) or when the startup already failed (the backend is stopped; the panel
 // has its own Quit button).
 app.on('before-quit', (event) => {
+  // The quit electron-updater scheduled for an install that then failed (a late NSIS spawn error):
+  // the app is staying — without this the user got the failure dialog AND "Quit FlowPad?".
+  if (restartApplier.consumeScheduledQuit()) { event.preventDefault(); return; }
   restartApplier.quitStarted(); // an apply in flight: its quitAndInstall really is quitting the app
   if (isQuitting) return;
   const askFirst = !quitGate.isConfirmed() && !startupFailed && mainWindow && !mainWindow.isDestroyed();
@@ -3653,13 +3776,15 @@ async function desktopUpdateInfo() {
     // and the panel showed a hopeless "Could not check / Check again" row in dev and Store builds.
     await getDesktopUpdateVersion();
   }
+  // restartRequired: the updater cannot apply in this process any more — the row offers "Restart FlowPad".
+  const restartRequired = restartApplier.restartRequired;
   const downloadState = restartApplier.busy ? 'installing'
     : desktopDownloadedVersion ? 'ready'
       : desktopDownloadPending() ? 'downloading' // on macOS this includes Squirrel preparing it
         : 'idle';
   const available = effectiveDesktopVersion();
   const state = available ? 'available' : desktopStatus.state;
-  return { installed: app.getVersion(), state, available, downloadState };
+  return { installed: app.getVersion(), state, available, downloadState, restartRequired, installsOnQuit: INSTALLS_ON_QUIT };
 }
 
 ipcMain.handle('update:get-info', async (event, opts) => {
@@ -3692,6 +3817,14 @@ ipcMain.handle('update:take-resumed', (event) => {
   const resumed = resumedPanelUpdate;
   resumedPanelUpdate = null;
   return resumed;
+});
+
+// A pair the contract forbids that is RUNNING (repair offline/held/declined at launch): the panel pulls
+// this once at mount and toasts it — reading it only inside the popover warned nobody who never opened it.
+ipcMain.handle('update:pair-warning', (event) => {
+  assertTrustedSender(event, 'update:pair-warning');
+  const issue = uvManager && uvManager.getInstalledFlowBin() ? uvManager.installedPairIssue() : null;
+  return issue ? issue.message : null;
 });
 
 ipcMain.handle('update:download-desktop', async (event) => {
@@ -3740,10 +3873,42 @@ ipcMain.handle('update:apply-desktop', async (event) => {
   sendDesktopUpdateState({ state: 'installing', version });
   // The REAL outcome: when the updater fails (even after quitAndInstall returned), onFailure has
   // already pushed the error row and brought the backend back — the answer must not say "started".
-  const outcome = await restartApplier.apply();
+  // keepWindow: the panel's "Restarting to install…" stays on screen until the quit takes the window —
+  // a hidden window with nothing happening is the worst state to leave a user in.
+  const outcome = await restartApplier.apply({ keepWindow: true });
   if (outcome === 'quitting') return { started: true, version };
+  if (outcome === 'restart-required') return { started: false, reason: 'restart-required' };
   return { started: false, reason: outcome === 'busy' ? 'busy' : 'apply-failed' };
 });
+
+// The panel's "Cancel download": a stalled download never ends by itself (no timeout on Electron's net stack).
+ipcMain.handle('update:cancel-desktop', (event) => {
+  assertTrustedSender(event, 'update:cancel-desktop');
+  return { cancelled: cancelDesktopDownload('cancelled from the version panel') };
+});
+
+// The loading screen's "Skip" during the desktop-first update (loading.html is a file:// page, so the
+// check is the window, not the backend origin): set up with THIS desktop instead of waiting.
+function ipcSkipDesktopUpdate(event) {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents || !skippableDesktopDownload) return;
+  cancelDesktopDownload('skipped from the loading screen');
+}
+ipcMain.on('skip-desktop-update', ipcSkipDesktopUpdate);
+
+// "Restart FlowPad" after a late install failure: a fresh process installs the downloaded update cleanly.
+ipcMain.handle('update:restart-app', (event) => {
+  assertTrustedSender(event, 'update:restart-app');
+  relaunchToRetryUpdate();
+  return { started: true };
+});
+
+/** Quit (the normal graceful shutdown) and start again — the one way out once the updater is poisoned. */
+function relaunchToRetryUpdate() {
+  log.info('[update] relaunching so a fresh process can apply the update');
+  quitGate.allow('restarting to retry the update');
+  app.relaunch();
+  app.quit();
+}
 
 ipcMain.handle('update:both', async (event, requestedEngineVersion) => {
   assertTrustedSender(event, 'update:both');

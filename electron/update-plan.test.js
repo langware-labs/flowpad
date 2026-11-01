@@ -74,6 +74,8 @@ eq(plan({ state: { ...saved, source: 'panel', consented: false } }), { action: '
 const installed = { engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false, phase: 'installed', previousEngine: '0.2.168', source: 'panel' };
 eq(plan({ state: installed, installedEngine: '0.2.180' }), { action: 'none', clear: false, source: 'panel' }, 'an installed, unproven record survives a startup re-run');
 eq(plan({ state: { ...installed, phase: 'installing' } }), { action: 'dialog', clear: true, source: 'panel' }, 'a crash MID-install still asks next launch');
+eq(plan({ state: { ...installed, phase: 'failed-unhealthy', failedVersion: '0.2.180' } }), { action: 'none', clear: false, source: 'panel' },
+  'a rolled-back install is the veto on that version — never cleared as an unanswered offer');
 
 // ── the health gate: the only place the record is spent ─────────────────────
 eq(engineRecordAtHealthGate(installed, { healthy: true }), 'spend', 'installed and answering: the record is spent');

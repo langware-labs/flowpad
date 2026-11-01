@@ -13,7 +13,7 @@ const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); passed++; };
 
 const silentLog = { info() {}, warn() {} };
 
-function harness({ stop, quitAndInstall } = {}) {
+function harness({ stop, quitAndInstall, lateFailurePoisons } = {}) {
   const calls = [];
   const h = {
     calls,
@@ -27,8 +27,9 @@ function harness({ stop, quitAndInstall } = {}) {
     hideWindow: () => calls.push('hide'),
     showWindow: () => calls.push('show'),
     notifyInstalling: () => calls.push('notify'),
-    onFailure: (e) => { h.failures.push(e.message); calls.push('onFailure'); },
+    onFailure: (e, info) => { h.failures.push(e.message); h.late = info && info.late; calls.push('onFailure'); },
     log: silentLog,
+    ...(lateFailurePoisons ? { lateFailurePoisons } : {}),
   });
   return h;
 }
@@ -80,7 +81,47 @@ function harness({ stop, quitAndInstall } = {}) {
     eq(h.quitting, false, 'isQuitting is cleared, so later quits stop the backend gracefully again');
     eq(h.calls.slice(-3), ['quitting=false', 'show', 'onFailure'], 'flag cleared, window shown, user told');
     eq(h.failures, ['ERR_UPDATER_...'], 'the error reaches the user-facing handler');
-    eq(h.applier.busy, false, 'not busy any more — a new attempt is possible');
+    eq(h.applier.busy, false, 'not busy any more');
+    eq(h.late, true, 'onFailure is told the failure came AFTER quitAndInstall returned');
+    // electron-updater keeps its "already installing" flag after a late failure: another quitAndInstall
+    // in this process is skipped silently — an apply would wait for ever behind a hidden window.
+    eq(await h.applier.apply(), 'restart-required', 'a retry in the same process answers restart-required');
+    eq(h.calls.filter((c) => c.startsWith('quitAndInstall')).length, 1, '…and never calls quitAndInstall again');
+    eq(h.applier.restartRequired, true, 'restartRequired is reported');
+  }
+
+  // The library had queued app.quit() for the install that then failed late: that ONE quit is
+  // swallowed (no "Quit FlowPad?" right after the failure dialog) — and only that one.
+  {
+    const deferred = [];
+    const calls = [];
+    const a = createRestartApplier({
+      uvManager: null,
+      autoUpdater: { quitAndInstall: () => calls.push('qai') },
+      setQuitting() {}, hideWindow() {}, showWindow() {}, onFailure() {}, log: silentLog,
+      defer: (fn) => deferred.push(fn),
+    });
+    const outcome = a.apply();
+    await tick();
+    a.failed(new Error('spawn EPERM'));
+    eq(await outcome, 'failed', 'late failure: failed');
+    eq(a.consumeScheduledQuit(), true, "the library's scheduled quit is cancelled");
+    eq(a.consumeScheduledQuit(), false, 'once');
+    a.failed(new Error('noise'));
+    deferred.forEach((fn) => fn());
+    eq(a.consumeScheduledQuit(), false, 'a later quit (the next turn) is the user\'s own');
+  }
+
+  // macOS: MacUpdater keeps no such flag and queues no quit — a late Squirrel failure is handled by
+  // downloading again, and the applier stays usable.
+  {
+    const h = harness({ lateFailurePoisons: () => false });
+    const outcome = h.applier.apply();
+    await tick();
+    h.applier.failed(new Error('Squirrel could not install'));
+    eq(await outcome, 'failed', 'macOS late failure: failed');
+    eq(h.late, false, 'not reported as a poisoning failure');
+    eq(h.applier.consumeScheduledQuit(), false, 'no quit to swallow');
     const retry = h.applier.apply();
     await tick();
     eq(h.applier.quitStarted(), true, 'a retry after a failure runs again');

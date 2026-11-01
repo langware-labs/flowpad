@@ -5936,6 +5936,10 @@ msgstr "Can't update right now — showing the last synced list."
 msgid "Cancel"
 msgstr "Cancel"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Cancel download"
+msgstr "Cancel download"
+
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
 msgid "Cancel reply"
@@ -14180,6 +14184,10 @@ msgstr "Flowpad Cloud Results"
 msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad Desktop and the flow SDK do not match"
+msgstr "FlowPad Desktop and the flow SDK do not match"
+
 #. placeholder {0}: info.desktopAvailable
 #: src/components/version-popover/desktop-update-modal.tsx
 msgid "FlowPad Desktop v{0} is available, but the flow SDK version could not be determined — check your connection and try again."
@@ -14252,6 +14260,10 @@ msgstr "FlowPad isn't installed on this computer"
 #: src/components/version-popover/version-popover.tsx
 msgid "FlowPad restarts to apply the update. Not now? It installs on the next quit."
 msgstr "FlowPad restarts to apply the update. Not now? It installs on the next quit."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad restarts to apply the update. Not now? It stays ready here."
+msgstr "FlowPad restarts to apply the update. Not now? It stays ready here."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -23168,6 +23180,10 @@ msgstr "Open the spec/plan in the Milkdown editor"
 msgid "Open the transcript analysis session"
 msgstr "Open the transcript analysis session"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Open the version panel to try again."
+msgstr "Open the version panel to try again."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Open the watched file"
 msgstr "Open the watched file"
@@ -26805,6 +26821,14 @@ msgstr "REST API"
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
 msgstr "Restart"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Restart FlowPad"
+msgstr "Restart FlowPad"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Restart FlowPad to finish installing the update."
+msgstr "Restart FlowPad to finish installing the update."
 
 #. placeholder {0}: changedCount === 1 ? 'field' : 'fields'
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -32200,6 +32224,10 @@ msgid "The default workspace. Every project outside another workspace's folder b
 msgstr "The default workspace. Every project outside another workspace's folder belongs here."
 
 #: src/components/version-popover/version-popover.tsx
+msgid "The desktop update failed"
+msgstr "The desktop update failed"
+
+#: src/components/version-popover/version-popover.tsx
 msgid "The desktop update failed."
 msgstr "The desktop update failed."
 
@@ -32724,6 +32752,10 @@ msgstr "the token acts as {0}"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The update could not be installed from this session. Restart FlowPad to install it — FlowPad quits and starts again."
+msgstr "The update could not be installed from this session. Restart FlowPad to install it — FlowPad quits and starts again."
 
 #. placeholder {0}: reason ? ` (${reason})` : ''
 #: src/components/version-popover/version-popover.tsx

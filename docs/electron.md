@@ -134,6 +134,12 @@ MAX_HEALTH_CHECKS = 240       // 120 seconds max wait
 | `update:download-desktop` | `{started, ready?, version?, reason?}` | Download the desktop update without a native prompt |
 | `update:apply-desktop` | `{started, version?, reason?}` | Install the downloaded desktop now; `started:false, reason:'apply-failed'` when the updater fails |
 | `update:both` | `{started, version?, engineVersion?, reason?}` | Desktop first, then the named engine after the restart (`pending-engine.json`) |
+| `update:cancel-desktop` | `{cancelled}` | Cancel the desktop download in progress (settles at once, even for a stalled transfer) |
+| `update:restart-app` | `{started}` | Graceful quit + relaunch — the way forward after a late install failure (`restart-required`) |
+| `update:pair-warning` | `string \| null` | The running desktop/engine pair's incompatibility, pulled once at panel mount and toasted |
+
+`skip-desktop-update` (send, loading screen only): set up with the current desktop instead of waiting
+for the desktop-first or recovery download.
 
 Push channels (main → renderer): `desktop-update-state` (`downloading`/`ready`/`installing`/`error`), `engine-update-resumed`.
 

@@ -24,6 +24,16 @@ if (window.electronAPI && window.electronAPI.onStartupNotice) {
     if (!notice) { box.hidden = true; return; }
     document.getElementById('update-notice-title').textContent = notice.title || '';
     document.getElementById('update-notice-detail').textContent = notice.detail || '';
+    const skip = document.getElementById('update-notice-skip');
+    if (skip) {
+      skip.hidden = !notice.skipLabel || !window.electronAPI.skipDesktopUpdate;
+      skip.textContent = notice.skipLabel || '';
+      skip.disabled = false;
+      skip.onclick = () => {
+        skip.disabled = true;
+        window.electronAPI.skipDesktopUpdate();
+      };
+    }
     box.hidden = false;
   });
 }

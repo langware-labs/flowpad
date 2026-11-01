@@ -81,6 +81,10 @@ interface DesktopUpdateInfo {
   downloadState: 'idle' | 'downloading' | 'ready' | 'installing';
   /** Does the build on the feed satisfy the latest engine's min-desktop floor? null = no floor/unknown. */
   meetsEngineFloor?: boolean | null;
+  /** An install failed after the updater handed over: only a restart of FlowPad can apply it now. */
+  restartRequired?: boolean;
+  /** Does a downloaded update install when FlowPad quits? (Not on deb/rpm — absent means yes.) */
+  installsOnQuit?: boolean;
 }
 
 /** Engine (PyPI) compat pre-flight, computed by the shell from the candidate wheel's metadata. */
@@ -123,6 +127,8 @@ interface DesktopUpdatePush {
   error?: string;
   /** The APPLY failed (quitAndInstall), not the download: Retry re-applies the landed artifact. */
   apply?: boolean;
+  /** The install failed after the updater handed over: the way forward is restarting FlowPad. */
+  restart?: boolean;
 }
 
 interface UpdateActionResult {
@@ -144,6 +150,9 @@ interface ElectronAPI {
   takeResumedUpdate?: () => Promise<ResumedUpdate | null>;
   downloadDesktopUpdate?: () => Promise<UpdateActionResult>;
   applyDesktopUpdate?: () => Promise<UpdateActionResult>;
+  restartApp?: () => Promise<{ started: boolean }>;
+  getPairWarning?: () => Promise<string | null>;
+  cancelDesktopDownload?: () => Promise<{ cancelled: boolean }>;
   updateBoth?: (engineVersion: string) => Promise<UpdateActionResult>;
   onDesktopUpdateState?: (callback: (state: DesktopUpdatePush) => void) => () => void;
   onEngineUpdateResumed?: (callback: (result: ResumedUpdate) => void) => () => void;
@@ -348,6 +357,12 @@ export function CopyableCommand({ command }: { command: string }) {
   );
 }
 
+/** A shell error can carry uv's whole output: a toast shows its first line (the log keeps the rest). */
+function firstLine(text: string): string {
+  const line = text.split('\n').find((l) => l.trim()) ?? text;
+  return line.length > 200 ? `${line.slice(0, 200)}…` : line;
+}
+
 interface VersionPopoverProps {
   currentVersion: string;
 }
@@ -356,6 +371,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
+  // Read by the shell's push listener (mounted once): is anyone looking at the panel right now?
+  const openRef = useRef(false);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   // Closing the popover genie-minimizes it into the version button.
   const { sourceRef, targetRef, handleOpenChange } = useMinimizeOnClose(setOpen);
   const [data, setData] = useState<VersionCheckResponse | null>(null);
@@ -465,6 +485,8 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           return t`Desktop updates are not available for this build.`;
         case 'no-update':
           return t`No desktop update is available.`;
+        case 'restart-required':
+          return t`Restart FlowPad to finish installing the update.`;
         case 'not-downloaded':
           return t`The update has not finished downloading yet.`;
         default:
@@ -484,7 +506,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       if (resumedShownRef.current === key) return;
       resumedShownRef.current = key;
       const engineOnly = r.kind === 'engine';
-      const reason = r.error ? `: ${r.error}.` : '.';
+      const reason = r.error ? `: ${firstLine(r.error)}.` : '.';
       if (r.success) {
         notify.success({
           id: 'engine-update-resumed',
@@ -545,9 +567,19 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       setDesktopPush(s);
       if (s.state === 'ready') setJustReady(true);
       if (s.state !== 'error') setDesktopActionError(null);
+      // A failure while the popover is CLOSED would otherwise surface nowhere — and a later open reads
+      // an idle snapshot and clears it — while the pending desktop keeps holding flow SDK updates.
+      if (s.state === 'error' && !openRef.current) {
+        notify.error({
+          id: 'desktop-update-failed',
+          title: t`The desktop update failed`,
+          message: s.error ? firstLine(s.error) : t`Open the version panel to try again.`,
+          forceToast: true,
+        });
+      }
     });
     return dispose;
-  }, [electronApi]);
+  }, [electronApi, t]);
 
   // A panel-initiated coordinated update resumed by this launch: report its outcome.
   useEffect(() => {
@@ -568,6 +600,27 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       cancelled = true;
     };
   }, [electronApi, showResumed]);
+
+  // An incompatible desktop/engine pair is RUNNING (the repair could not run at launch): say so at mount,
+  // not only inside the popover — the app starts anyway, so nothing else tells the user.
+  useEffect(() => {
+    let cancelled = false;
+    void electronApi?.getPairWarning?.()
+      .then((message) => {
+        if (message && !cancelled) {
+          notify.warning({
+            id: 'engine-pair-warning',
+            title: t`FlowPad Desktop and the flow SDK do not match`,
+            message: firstLine(message),
+            forceToast: true,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [electronApi, t]);
 
   /** The "Desktop Update Required" popup's facts — identical for both ways in (the pre-flight
    *  verdict and the shell's desktop-first refusal). A feed build below the engine's floor is
@@ -659,6 +712,22 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   }, [electronApi, updateInfo, updateRefusalText, notePanelStart, t]);
 
   /** Install the downloaded desktop build now (the app restarts to apply it). */
+  /** After a late install failure: FlowPad quits gracefully and starts again to apply the update. */
+  const handleRestartApp = useCallback(async () => {
+    if (!electronApi?.restartApp) return;
+    await electronApi.restartApp();
+  }, [electronApi]);
+
+  /** Stop the download in progress (a stalled one never ends by itself); the row returns to Download. */
+  const handleCancelDownload = useCallback(async () => {
+    if (!electronApi?.cancelDesktopDownload) return;
+    const r = await electronApi.cancelDesktopDownload();
+    if (r.cancelled) {
+      setDesktopPush(null);
+      void refreshUpdateInfo();
+    }
+  }, [electronApi, refreshUpdateInfo]);
+
   const handleDesktopApply = useCallback(async () => {
     if (!electronApi?.applyDesktopUpdate) return;
     setDesktopActionError(null);
@@ -786,6 +855,8 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       version: desktopPush?.version ?? snap?.available ?? null,
       error: desktopPush?.error ?? null,
       applyFailed: desktopPush?.state === 'error' && desktopPush.apply === true,
+      // Only a restart can apply it now (a late install failure): Retry / Update Now would do nothing.
+      restartRequired: Boolean(snap?.restartRequired || (desktopPush?.state === 'error' && desktopPush.restart)),
     };
   }, [electronApi, updateInfo, desktopPush]);
 
@@ -1135,9 +1206,40 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                         style={{ width: `${Math.min(100, Math.max(2, Math.round(desktopView.percent ?? 0)))}%` }}
                       />
                     </div>
+                    {electronApi?.cancelDesktopDownload && (
+                      <button
+                        type="button"
+                        onClick={() => void runDesktopAction(handleCancelDownload)}
+                        disabled={desktopActionBusy}
+                        data-testid="desktop-download-cancel-button"
+                        className="rounded-sm border px-2 py-0.5 text-[10px] font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Trans>Cancel download</Trans>
+                      </button>
+                    )}
                   </div>
                 )}
-                {desktopView.phase === 'ready' && (
+                {desktopView.restartRequired && desktopView.phase !== 'installing' && (
+                  <div className="space-y-1">
+                    {desktopView.error && <p className="text-[10px] text-destructive">{desktopView.error}</p>}
+                    <p className="text-[10px] text-muted-foreground">
+                      <Trans>
+                        The update could not be installed from this session. Restart FlowPad to install it — FlowPad
+                        quits and starts again.
+                      </Trans>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void runDesktopAction(handleRestartApp)}
+                      disabled={desktopActionBusy}
+                      data-testid="desktop-restart-app-button"
+                      className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Trans>Restart FlowPad</Trans>
+                    </button>
+                  </div>
+                )}
+                {desktopView.phase === 'ready' && !desktopView.restartRequired && (
                   <div className="space-y-1">
                     {justReady && (
                       <p className="text-[10px] text-muted-foreground">
@@ -1154,7 +1256,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                       {desktopView.version ? t`Update Now to v${desktopView.version}` : t`Update Now`}
                     </button>
                     <p className="text-[10px] text-muted-foreground">
-                      <Trans>FlowPad restarts to apply the update. Not now? It installs on the next quit.</Trans>
+                      {updateInfo?.desktop.installsOnQuit === false ? (
+                        <Trans>FlowPad restarts to apply the update. Not now? It stays ready here.</Trans>
+                      ) : (
+                        <Trans>FlowPad restarts to apply the update. Not now? It installs on the next quit.</Trans>
+                      )}
                     </p>
                   </div>
                 )}
@@ -1166,7 +1272,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                     </span>
                   </div>
                 )}
-                {desktopView.phase === 'error' && (
+                {desktopView.phase === 'error' && !desktopView.restartRequired && (
                   <div className="space-y-1">
                     <p className="text-[10px] text-destructive">
                       {desktopView.error ?? t`The desktop update failed.`}
