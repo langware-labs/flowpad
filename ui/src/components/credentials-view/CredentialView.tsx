@@ -3,7 +3,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertTriangle, Check, CircleDashed, ExternalLink, Pencil, Trash2 } from 'lucide-react';
 import { credentialsService, CredentialRequirement, dataContext, groupSatisfied, holdsValue, isRequired, TypeId } from '@sdk';
 import { credentialIcon, useCredentialState } from '@src/components/agent-resources/AgentCredentialsSection';
-import { buildCredentialRows } from './credential-rows';
+import { buildCredentialRows, currentDeployment } from './credential-rows';
 import { RequirementChip } from './RequirementChip';
 import { SecretVaultPanel } from './SecretVaultPanel';
 import { CredentialDialog } from '@src/components/credentials/CredentialDialog';
@@ -13,7 +13,7 @@ import { useCredentials } from '@src/components/credentials/use-credentials';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { CopyableCommand } from '@src/components/version-popover/version-popover';
+import { SignInCommand } from '@src/components/credentials/SignInCommand';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
@@ -204,7 +204,10 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
                   {/* Nothing is stored for a cli variable: what there is to show is how to sign in. */}
                   {v.kind === 'cli' && v.login && (
                     <div className="mt-1" data-testid={`credential-var-login-${v.env_var}`}>
-                      <CopyableCommand command={v.login} />
+                      <SignInCommand
+                        command={v.login}
+                        thisComputer={!status || currentDeployment(status).isThisComputer}
+                      />
                     </div>
                   )}
                 </div>

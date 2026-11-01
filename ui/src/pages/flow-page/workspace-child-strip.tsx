@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { tabKey, tabManager, Tab } from '@sdk';
 import { Monitor } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
@@ -11,6 +12,9 @@ import { useTabLifecycles, useWorkspaceChildren } from '@src/tabs/use-tab-manage
 import { useLingui } from '@lingui/react/macro';
 
 interface WorkspaceChildStripProps {
+  /** Rendered at the row's right end — the session's anchor ([Fork] | [modes] [menu]),
+   *  so Vibe keeps it in the same top-right corner as Terminal and Chat. */
+  trailing?: ReactNode;
   /** The workspace's fixed tab (the vibe display / process tab). Children are the
    *  tabs whose `parent_tab_id` is this tab's id. */
   processTab: Tab | null;
@@ -31,7 +35,7 @@ interface WorkspaceChildStripProps {
  * component stays dumb. The workspace itself closes from its chip in the global
  * strip, and the backend closes its children with it (`Tab.close`).
  */
-export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildStripProps) {
+export function WorkspaceChildStrip({ processTab, processDock, trailing }: WorkspaceChildStripProps) {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
 
@@ -113,6 +117,7 @@ export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildS
           testId="workspace-child-strip"
         />
       </div>
+      {trailing && <div className="flex shrink-0 items-center px-2">{trailing}</div>}
     </div>
   );
 }

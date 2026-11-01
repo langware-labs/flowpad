@@ -231,6 +231,20 @@ msgstr "\"{0}\" will be removed. Chains that source it will lose that source; it
 msgid "\"{0}\" will be removed. This cannot be undone."
 msgstr "\"{0}\" will be removed. This cannot be undone."
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" already exists"
+msgstr "\"{name}\" already exists"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" already exists there"
+msgstr "\"{name}\" already exists there"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" can't go inside itself"
+msgstr "\"{name}\" can't go inside itself"
+
 #: src/components/lens-viewer/CliLogViewer.tsx
 msgid "({keyCount} keys)"
 msgstr "({keyCount} keys)"
@@ -1756,6 +1770,10 @@ msgstr "{selectedCount} selected"
 msgid "{selectedWithFilesCount} of them contain files. The folders go to your Trash and their Flowpad projects are removed; you can restore them from Finder."
 msgstr "{selectedWithFilesCount} of them contain files. The folders go to your Trash and their Flowpad projects are removed; you can restore them from Finder."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "{sender} sent you the key"
+msgstr "{sender} sent you the key"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "{senderName} has shared {sharedThing}"
 msgstr "{senderName} has shared {sharedThing}"
@@ -2446,6 +2464,7 @@ msgid "A machine"
 msgstr "A machine"
 
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "A member"
 msgstr "A member"
 
@@ -2684,6 +2703,10 @@ msgstr "Access requested"
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Access to {projectName} vault {vault}"
 msgstr "Access to {projectName} vault {vault}"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Access to the {vaultLabel} vault requested."
+msgstr "Access to the {vaultLabel} vault requested."
 
 #: src/components/conversation/ShareReplyCard.tsx
 msgid "Access to vault {vault} is granted. Fetch again."
@@ -3238,6 +3261,11 @@ msgstr "Add variable"
 msgid "Add…"
 msgstr "Add…"
 
+#. placeholder {0}: entries[0].relPath
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Added \"{0}\""
+msgstr "Added \"{0}\""
+
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: source.name
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -3249,6 +3277,11 @@ msgstr "Added {0}"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Added {0} and stored its key"
 msgstr "Added {0} and stored its key"
+
+#. placeholder {0}: entries.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Added {0} files"
+msgstr "Added {0} files"
 
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -3293,6 +3326,7 @@ msgstr "Additional plugin marketplace URLs"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Address"
 msgstr "Address"
 
@@ -4306,9 +4340,17 @@ msgstr "API URL"
 msgid "App"
 msgstr "App"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "App id"
+msgstr "App id"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "App ID"
 msgstr "App ID"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "App name"
+msgstr "App name"
 
 #: src/navigation/record-type-nav.ts
 msgid "App not found"
@@ -4505,6 +4547,10 @@ msgstr "Artifact created"
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Artifact deleted"
 msgstr "Artifact deleted"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Artifact id"
+msgstr "Artifact id"
 
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifacts"
@@ -5437,6 +5483,7 @@ msgid "Browse…"
 msgstr "Browse…"
 
 #: src/components/links/LinkMenu.tsx
+#: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
 msgstr "Browser"
 
@@ -5543,6 +5590,7 @@ msgid "Build command"
 msgstr "Build command"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Build folder"
 msgstr "Build folder"
 
@@ -5712,6 +5760,10 @@ msgstr "calls"
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Calls"
 msgstr "Calls"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Can decrypt"
+msgstr "Can decrypt"
 
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
@@ -6012,6 +6064,10 @@ msgstr "Change chart"
 msgid "Change destination"
 msgstr "Change destination"
 
+#: src/components/webapp-display/WebAppIconPicker.tsx
+msgid "Change icon"
+msgstr "Change icon"
+
 #: src/components/footer/LanguageSelector.tsx
 #: src/components/footer/LanguageSelector.tsx
 msgid "Change language"
@@ -6261,6 +6317,10 @@ msgstr "Check the address, or try opening it in your browser."
 #: src/lib/publish-state.ts
 msgid "Check your connection and try again."
 msgstr "Check your connection and try again."
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Checked"
+msgstr "Checked"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Checked for new messages"
@@ -6577,6 +6637,10 @@ msgstr "Clean up ({0})"
 msgid "Cleaned invalid sessions"
 msgstr "Cleaned invalid sessions"
 
+#: src/components/footer/activity-words.ts
+msgid "Cleaning up"
+msgstr "Cleaning up"
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Cleaning…"
 msgstr "Cleaning…"
@@ -6808,6 +6872,10 @@ msgstr "Click to rename room"
 #: src/components/wizard/WizardButton.tsx
 msgid "Click to run · double-click to open the wizard"
 msgstr "Click to run · double-click to open the wizard"
+
+#: src/components/credentials/SignInCommand.tsx
+msgid "Click to run · right-click for more"
+msgstr "Click to run · right-click for more"
 
 #. placeholder {0}: row.orphan_count
 #. placeholder {1}: row.type
@@ -7875,11 +7943,30 @@ msgstr "Converted to an Excalidraw board"
 msgid "Copied"
 msgstr "Copied"
 
+#. placeholder {0}: items[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied \"{0}\""
+msgstr "Copied \"{0}\""
+
+#. placeholder {0}: items.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied {0} items"
+msgstr "Copied {0} items"
+
 #. placeholder {0}: urls.length
 #. placeholder {1}: urls.length > 1 ? 's' : ''
 #: src/components/assets/useAssetsModel.tsx
 msgid "Copied {0} link{1}"
 msgstr "Copied {0} link{1}"
+
+#. placeholder {0}: paths.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied {0} paths"
+msgstr "Copied {0} paths"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied path"
+msgstr "Copied path"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Copied to Clipboard"
@@ -7910,6 +7997,7 @@ msgstr "Copilot tab"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/hooks/event-utils.tsx
@@ -8040,6 +8128,7 @@ msgstr "Copy members' clone URL"
 msgid "Copy name"
 msgstr "Copy name"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy path"
 msgstr "Copy path"
@@ -8079,6 +8168,10 @@ msgstr "Copy prompt"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "Copy Provider ID"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copy relative path"
+msgstr "Copy relative path"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy remote URL"
@@ -8349,6 +8442,10 @@ msgstr "Could not create the workspace"
 msgid "Could not decide"
 msgstr "Could not decide"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not decline {name}"
+msgstr "Could not decline {name}"
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
@@ -8418,6 +8515,10 @@ msgstr "Could not end room"
 msgid "could not fetch — showing local copy"
 msgstr "could not fetch — showing local copy"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not fetch {name}"
+msgstr "Could not fetch {name}"
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Could not fetch {title}"
 msgstr "Could not fetch {title}"
@@ -8433,6 +8534,10 @@ msgstr "Could not fetch the packages"
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Could not fetch the values"
 msgstr "Could not fetch the values"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not fill in {name}"
+msgstr "Could not fill in {name}"
 
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
@@ -8807,6 +8912,10 @@ msgstr "Could not replay {0}."
 msgid "Could not report diagnosis"
 msgstr "Could not report diagnosis"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not request access"
+msgstr "Could not request access"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not reset auto-launch"
 msgstr "Could not reset auto-launch"
@@ -9110,6 +9219,10 @@ msgstr "Could not test {title}"
 msgid "Could not test it"
 msgstr "Could not test it"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Could not test it on this machine."
+msgstr "Could not test it on this machine."
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "Could not try"
 msgstr "Could not try"
@@ -9361,6 +9474,10 @@ msgstr "Couldn't start the GitHub connection."
 msgid "Couldn't terminate {0}"
 msgstr "Couldn't terminate {0}"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Couldn't test on their machine"
+msgstr "Couldn't test on their machine"
+
 #: src/lib/publish-state.ts
 msgid "Couldn't update"
 msgstr "Couldn't update"
@@ -9403,7 +9520,6 @@ msgid "CPU:"
 msgstr "CPU:"
 
 #: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
@@ -9444,10 +9560,9 @@ msgstr "Create a contacts group — add its members to any conversation in one c
 msgid "Create a dashboard"
 msgstr "Create a dashboard"
 
-#. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
 #: src/components/assets/AssetsNavigator.tsx
-msgid "Create a folder in {0}."
-msgstr "Create a folder in {0}."
+#~ msgid "Create a folder in {0}."
+#~ msgstr "Create a folder in {0}."
 
 #: src/components/login-required-dialog.tsx
 msgid "Create a free account to continue your conversation and save your progress."
@@ -9755,10 +9870,21 @@ msgstr "Customize"
 msgid "Customize response"
 msgstr "Customize response"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Cut"
 msgstr "Cut"
+
+#. placeholder {0}: items[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Cut \"{0}\""
+msgstr "Cut \"{0}\""
+
+#. placeholder {0}: items.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Cut {0} items"
+msgstr "Cut {0} items"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Daily at {time}"
@@ -9960,6 +10086,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "Declared on the agent's card. Not yet applied to the worker."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
@@ -9986,6 +10113,7 @@ msgstr "Decline failed"
 msgid "declined"
 msgstr "declined"
 
+#: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Declined"
 msgstr "Declined"
@@ -10132,6 +10260,7 @@ msgstr "delete"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -10173,6 +10302,11 @@ msgstr "Delete — removes permanently"
 msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
 msgstr "Delete \"{0}\" from the OS keychain? This cannot be undone."
 
+#. placeholder {0}: targets[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Delete \"{0}\"?"
+msgstr "Delete \"{0}\"?"
+
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Delete ({n})"
 msgstr "Delete ({n})"
@@ -10199,6 +10333,11 @@ msgstr "Delete {0} contexts?"
 #: src/components/connections-manager.tsx
 msgid "Delete {0} credential?"
 msgstr "Delete {0} credential?"
+
+#. placeholder {0}: targets.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Delete {0} items?"
+msgstr "Delete {0} items?"
 
 #. placeholder {0}: deleting?.title ?? ''
 #. placeholder {0}: org.name
@@ -10519,6 +10658,7 @@ msgstr "Deleting…"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "Delivered"
 msgstr "Delivered"
 
@@ -10690,6 +10830,7 @@ msgstr "Describe who this agent is, what it does, and what it must never do…"
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "Description"
 
@@ -10730,8 +10871,8 @@ msgid "Desktop version"
 msgstr "Desktop version"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Destination already has an item with that name"
-msgstr "Destination already has an item with that name"
+#~ msgid "Destination already has an item with that name"
+#~ msgstr "Destination already has an item with that name"
 
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Detail"
@@ -11297,6 +11438,7 @@ msgid "Dot-separated; * matches one part, a trailing * matches the rest (task.*)
 msgstr "Dot-separated; * matches one part, a trailing * matches the rest (task.*)."
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -11348,6 +11490,10 @@ msgstr "Download anyway"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Download as a file instead of sending"
 msgstr "Download as a file instead of sending"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Download as zip"
+msgstr "Download as zip"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download attachments"
@@ -11483,6 +11629,10 @@ msgstr "Drops this source's records and clears its sync position, so the next po
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Due"
 msgstr "Due"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Duplicate"
+msgstr "Duplicate"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicate assets"
@@ -11933,6 +12083,10 @@ msgstr "End time"
 msgid "End users open it at {0}."
 msgstr "End users open it at {0}."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "End-to-end encrypted transfer"
+msgstr "End-to-end encrypted transfer"
+
 #: src/components/conversation/SessionCard.tsx
 msgid "ended"
 msgstr "ended"
@@ -11950,6 +12104,7 @@ msgid "Endpoint"
 msgstr "Endpoint"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Endpoint id"
 msgstr "Endpoint id"
 
@@ -12665,8 +12820,16 @@ msgid "Expired — ask {0} to share again."
 msgstr "Expired — ask {0} to share again."
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Expired before everyone filled them in."
-msgstr "Expired before everyone filled them in."
+#~ msgid "Expired before everyone filled them in."
+#~ msgstr "Expired before everyone filled them in."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Expired before it was opened"
+msgstr "Expired before it was opened"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Expires"
+msgstr "Expires"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Expires after"
@@ -12822,6 +12985,10 @@ msgstr "Failed to clone repository"
 msgid "Failed to copy links"
 msgstr "Failed to copy links"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#~ msgid "Failed to copy path"
+#~ msgstr "Failed to copy path"
+
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
 msgstr "Failed to copy path to clipboard"
@@ -12840,7 +13007,11 @@ msgstr "Failed to create artifact"
 msgid "Failed to create contacts group"
 msgstr "Failed to create contacts group"
 
-#: src/components/assets/useAssetsModel.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to create file"
+msgstr "Failed to create file"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Failed to create folder"
 msgstr "Failed to create folder"
 
@@ -12889,6 +13060,10 @@ msgstr "Failed to delete secret"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Failed to discard draft"
 msgstr "Failed to discard draft"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to download"
+msgstr "Failed to download"
 
 #: src/components/account/secrets-section.tsx
 msgid "Failed to enable secrets"
@@ -13012,8 +13187,8 @@ msgid "Failed to look up project."
 msgstr "Failed to look up project."
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to move item"
-msgstr "Failed to move item"
+#~ msgid "Failed to move item"
+#~ msgstr "Failed to move item"
 
 #: src/components/account/database-section.tsx
 msgid "Failed to open {folderType} folder"
@@ -13043,6 +13218,10 @@ msgstr "Failed to open logs folder"
 msgid "Failed to open project"
 msgstr "Failed to open project"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to open terminal"
+msgstr "Failed to open terminal"
+
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Failed to remove dependency"
 #~ msgstr "Failed to remove dependency"
@@ -13059,6 +13238,10 @@ msgstr "Failed to remove package"
 msgid "Failed to remove vibe agent"
 msgstr "Failed to remove vibe agent"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to rename"
+msgstr "Failed to rename"
+
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Failed to resolve [[{name}]]: {errorText}"
 msgstr "Failed to resolve [[{name}]]: {errorText}"
@@ -13066,6 +13249,10 @@ msgstr "Failed to resolve [[{name}]]: {errorText}"
 #: src/routes/loaders/load-next-process.ts
 msgid "Failed to restore this session."
 msgstr "Failed to restore this session."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to reveal"
+msgstr "Failed to reveal"
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Failed to Save"
@@ -13176,6 +13363,10 @@ msgstr "Failed to update hook"
 msgid "Failed to update trigger"
 msgstr "Failed to update trigger"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to upload"
+msgstr "Failed to upload"
+
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to upload image"
 msgstr "Failed to upload image"
@@ -13187,6 +13378,10 @@ msgstr "Failed:"
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
 msgstr "Failed."
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Failure"
+msgstr "Failure"
 
 #: src/components/inbound/InboundView.tsx
 msgid "fallback"
@@ -13271,6 +13466,7 @@ msgstr "Feed Entry"
 #~ msgid "Feeds"
 #~ msgstr "Feeds"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
@@ -13408,17 +13604,34 @@ msgstr "Files on disk not yet in the DB"
 msgid "Files: {files}"
 msgstr "Files: {files}"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Fill in"
 msgstr "Fill in"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Fill it in and {name} is ready on this machine."
+msgstr "Fill it in and {name} is ready on this machine."
 
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Filled in"
 msgstr "Filled in"
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Filled in by {filled} · the sealed copy was deleted from the hub"
-msgstr "Filled in by {filled} · the sealed copy was deleted from the hub"
+#~ msgid "Filled in · could not test it on this machine"
+#~ msgstr "Filled in · could not test it on this machine"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in · tested, the provider accepts it"
+#~ msgstr "Filled in · tested, the provider accepts it"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in · the provider refused it — ask {0} for a new one"
+#~ msgstr "Filled in · the provider refused it — ask {0} for a new one"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in by {filled} · the sealed copy was deleted from the hub"
+#~ msgstr "Filled in by {filled} · the sealed copy was deleted from the hub"
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -13948,6 +14161,10 @@ msgstr "FlowPad stops, upgrades and starts again on each. Anyone working in them
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 
+#: src/components/webapp-display/AppOpenInToggle.tsx
+msgid "Flowpad tab"
+msgstr "Flowpad tab"
+
 #: src/components/version-popover/version-chip.tsx
 msgid "Flowpad version"
 msgstr "Flowpad version"
@@ -13996,6 +14213,7 @@ msgstr "folder"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "Folder"
@@ -14005,14 +14223,14 @@ msgid "Folder (optional)"
 msgstr "Folder (optional)"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Folder already exists"
-msgstr "Folder already exists"
+#~ msgid "Folder already exists"
+#~ msgstr "Folder already exists"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Folder created"
-msgstr "Folder created"
+#~ msgid "Folder created"
+#~ msgstr "Folder created"
 
-#: src/components/assets/AssetsNavigator.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
@@ -14085,11 +14303,11 @@ msgstr "Fork"
 msgid "Fork Session"
 msgstr "Fork Session"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Fork session — new tab, same conversation history"
 msgstr "Fork session — new tab, same conversation history"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Forking…"
 msgstr "Forking…"
 
@@ -14391,6 +14609,10 @@ msgstr "Get FlowPad at flowpad.ai →"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get it at flowpad.ai"
 msgstr "Get it at flowpad.ai"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Get it from the {vaultLabel} vault."
+msgstr "Get it from the {vaultLabel} vault."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #~ msgid "Get my link code"
@@ -15419,6 +15641,10 @@ msgstr "Hub errors suppressed"
 msgid "hub repository"
 msgstr "hub repository"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Hub sees"
+msgstr "Hub sees"
+
 #: src/components/account/user-info.tsx
 msgid "Hub WebSocket connected."
 msgstr "Hub WebSocket connected."
@@ -16140,7 +16366,11 @@ msgstr "Invalid asset comparison."
 msgid "Invalid asset pointer"
 msgstr "Invalid asset pointer"
 
-#: src/components/assets/useAssetsModel.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Invalid file name"
+msgstr "Invalid file name"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Invalid folder name"
 msgstr "Invalid folder name"
 
@@ -16163,6 +16393,10 @@ msgstr "Invalid JSON — not saved"
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Invalid Lens URL"
 msgstr "Invalid Lens URL"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Invalid name"
+msgstr "Invalid name"
 
 #: src/components/show-view/ShowView.tsx
 msgid "Invalid Show Path"
@@ -16561,11 +16795,28 @@ msgstr "Key"
 msgid "Key ending {0} — only the owner can change it."
 msgstr "Key ending {0} — only the owner can change it."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key filled in"
+msgstr "Key filled in"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key is in {manager}"
+msgstr "Key is in {manager}"
+
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key not available"
+msgstr "Key not available"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Key not set"
 #~ msgstr "Key not set"
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Key refused by the provider"
+msgstr "Key refused by the provider"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Key rejected"
@@ -16637,6 +16888,7 @@ msgstr "kind"
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Kind"
 msgstr "Kind"
 
@@ -16896,7 +17148,7 @@ msgstr "Launch {name}"
 #~ msgid "Launch a new sandbox running this agent"
 #~ msgstr "Launch a new sandbox running this agent"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Launch a session first"
 msgstr "Launch a session first"
 
@@ -18352,6 +18604,10 @@ msgstr "Members assigned, but some messages failed"
 msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
 msgstr "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Members of the vault"
+msgstr "Members of the vault"
+
 #: src/components/conversation/ConversationMembersLine.tsx
 msgid "Members:"
 msgstr "Members:"
@@ -18492,6 +18748,10 @@ msgstr "messages on"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta official Cloud API"
 msgstr "Meta official Cloud API"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Method"
+msgstr "Method"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
@@ -18800,6 +19060,10 @@ msgstr "More…"
 msgid "Morning briefing"
 msgstr "Morning briefing"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Mount"
+msgstr "Mount"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Mount Flowpad Assistant"
 msgstr "Mount Flowpad Assistant"
@@ -18828,12 +19092,12 @@ msgid "Move to Trash"
 msgstr "Move to Trash"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Moved"
-msgstr "Moved"
+#~ msgid "Moved"
+#~ msgstr "Moved"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Moved, but reindex failed"
-msgstr "Moved, but reindex failed"
+#~ msgid "Moved, but reindex failed"
+#~ msgstr "Moved, but reindex failed"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "msgs"
@@ -18904,6 +19168,7 @@ msgstr "name"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/token-plan/RenameButton.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
@@ -18979,6 +19244,10 @@ msgstr "name@example.com"
 #~ msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
 #~ msgstr "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Names only, never values"
+msgstr "Names only, never values"
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Needed for"
 msgstr "Needed for"
@@ -19021,6 +19290,11 @@ msgstr "needs setup"
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Needs setup"
 msgstr "Needs setup"
+
+#. placeholder {0}: record.setup_owed
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Needs setup: {0}"
+msgstr "Needs setup: {0}"
 
 #: src/components/project-setup/ProjectLoadGate.tsx
 msgid "Needs setup: {owed}"
@@ -19216,6 +19490,8 @@ msgstr "New doc"
 msgid "New endpoint"
 msgstr "New endpoint"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New file"
@@ -19228,6 +19504,8 @@ msgstr "New File"
 #~ msgid "New Files ({0})"
 #~ msgstr "New Files ({0})"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -19236,15 +19514,13 @@ msgstr "New File"
 msgid "New folder"
 msgstr "New folder"
 
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New Folder"
 msgstr "New Folder"
 
-#. placeholder {0}: target.label
 #: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
-msgid "New folder in {0}"
-msgstr "New folder in {0}"
+#~ msgid "New folder in {0}"
+#~ msgstr "New folder in {0}"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "New folder name"
@@ -19699,6 +19975,10 @@ msgstr "No compute node available"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "No compute node available in this workspace."
 msgstr "No compute node available in this workspace."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "No computer to open a terminal on"
+msgstr "No computer to open a terminal on"
 
 #: src/components/connections-manager.tsx
 msgid "No connection test is defined for this provider."
@@ -20762,6 +21042,10 @@ msgstr "No terminal or chat is attached to this process. Restart it to spawn a f
 msgid "No terminal process was found for session {0}."
 msgstr "No terminal process was found for session {0}."
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "No test for this credential"
+msgstr "No test for this credential"
+
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "No test runs yet"
 msgstr "No test runs yet"
@@ -21011,6 +21295,10 @@ msgstr "Not connected"
 msgid "Not connected — press Connect"
 msgstr "Not connected — press Connect"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not copied"
+msgstr "Not copied"
+
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Not copied into context folder"
 #~ msgstr "Not copied into context folder"
@@ -21023,6 +21311,10 @@ msgstr "Not connected — press Connect"
 msgid "Not copied into package folder"
 msgstr "Not copied into package folder"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not deleted"
+msgstr "Not deleted"
+
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Not deployed yet — it runs nowhere until you launch it."
 msgstr "Not deployed yet — it runs nowhere until you launch it."
@@ -21034,6 +21326,10 @@ msgstr "Not deployed yet — it runs nowhere until you launch it."
 msgid "Not done."
 msgstr "Not done."
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not duplicated"
+msgstr "Not duplicated"
+
 #: src/components/data-sources/source-attention.ts
 msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
 msgstr "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
@@ -21041,6 +21337,10 @@ msgstr "Not evaluated yet — nothing has decided how this source starts, so it 
 #: src/components/data-sources/source-parts.tsx
 msgid "Not fetched"
 msgstr "Not fetched"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not fetched yet"
+msgstr "Not fetched yet"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
@@ -21105,6 +21405,10 @@ msgstr "Not logged in"
 msgid "Not logged in · Please run /login"
 msgstr "Not logged in · Please run /login"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not moved"
+msgstr "Not moved"
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #~ msgid "Not needed here: mark its values optional"
 #~ msgstr "Not needed here: mark its values optional"
@@ -21129,6 +21433,10 @@ msgstr "Not Now"
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Not on this computer either — {0}"
 msgstr "Not on this computer either — {0}"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not opened yet"
+msgstr "Not opened yet"
 
 #: src/components/conversation/conversation-category.ts
 msgid "Not picked up"
@@ -21158,6 +21466,10 @@ msgstr "Not ready to save"
 #: src/components/data-sources/use-source-verify.ts
 msgid "Not ready yet"
 msgstr "Not ready yet"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not reported"
+msgstr "Not reported"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "not respected"
@@ -21289,6 +21601,7 @@ msgid "not visible"
 msgstr "not visible"
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 msgid "Not yet"
 msgstr "Not yet"
 
@@ -21775,6 +22088,10 @@ msgstr "On the machine run <0>flow connect</0>. If it is not signed in it shows 
 msgid "On the schedule {expr}"
 msgstr "On the schedule {expr}"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "On this machine"
+msgstr "On this machine"
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr "On this machine only — undo any time"
@@ -21933,6 +22250,10 @@ msgstr "Only people you share with can view this agent."
 msgid "Only the steps below"
 msgstr "Only the steps below"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Only this device"
+msgstr "Only this device"
+
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "Only this port"
@@ -21943,6 +22264,7 @@ msgid "Oops! Page not found"
 msgstr "Oops! Page not found"
 
 #: src/components/assets/editor/WikiResolveView.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
@@ -22161,6 +22483,10 @@ msgstr "Open Context"
 msgid "Open conversation"
 msgstr "Open conversation"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Open credential"
+msgstr "Open credential"
+
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Open data_driver.json"
 msgstr "Open data_driver.json"
@@ -22288,6 +22614,7 @@ msgstr "Open in a new tab"
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
+#: src/pages/flow-page/app-display-viewer.tsx
 msgid "Open in browser"
 msgstr "Open in browser"
 
@@ -22360,6 +22687,7 @@ msgstr "Open in Runs"
 msgid "Open in Skills tab"
 msgstr "Open in Skills tab"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/tabs/doc-tab-card.tsx
@@ -22875,6 +23203,11 @@ msgstr "OpenRouter"
 msgid "OpenRouter hosts to avoid (one per line)"
 msgstr "OpenRouter hosts to avoid (one per line)"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppOpenInToggle.tsx
+msgid "Opens in"
+msgstr "Opens in"
+
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
 msgstr "Operation failed"
@@ -23333,6 +23666,7 @@ msgstr "Past runs stay in the history."
 msgid "Past test runs"
 msgstr "Past test runs"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Paste"
 msgstr "Paste"
@@ -23996,6 +24330,10 @@ msgstr "Port for HTTP proxy in sandbox"
 msgid "Port for SOCKS proxy in sandbox"
 msgstr "Port for SOCKS proxy in sandbox"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Ports"
+msgstr "Ports"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -24207,6 +24545,10 @@ msgstr "Process unavailable"
 msgid "Processes ({processCount})"
 msgstr "Processes ({processCount})"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Processes (pid)"
+msgstr "Processes (pid)"
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr "Profile"
@@ -24323,6 +24665,7 @@ msgid "Project home"
 msgstr "Project home"
 
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Project id"
 msgstr "Project id"
 
@@ -25081,6 +25424,15 @@ msgstr "Ready"
 msgid "ready · Open"
 msgstr "ready · Open"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Ready on this machine — this credential has no test."
+msgstr "Ready on this machine — this credential has no test."
+
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Ready on this machine."
+msgstr "Ready on this machine."
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Ready to share"
 msgstr "Ready to share"
@@ -25833,6 +26185,7 @@ msgstr "Removes: {removes}"
 #~ msgid "Removing & re-checking…"
 #~ msgstr "Removing & re-checking…"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -26084,6 +26437,7 @@ msgid "Request"
 msgstr "Request"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Request access"
 msgstr "Request access"
@@ -26522,6 +26876,7 @@ msgstr "Reveal {0} in Finder/Explorer"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 #: src/pages/flow-page/display-history-button.tsx
 #: src/pages/flow-page/display-history-button.tsx
@@ -27194,6 +27549,7 @@ msgid "runtime"
 msgstr "runtime"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Runtime"
 msgstr "Runtime"
 
@@ -27659,8 +28015,8 @@ msgid "Sealed on this computer for each recipient's Flowpad — only they can op
 msgstr "Sealed on this computer for each recipient's Flowpad — only they can open them."
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Sealed values"
-msgstr "Sealed values"
+#~ msgid "Sealed values"
+#~ msgstr "Sealed values"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -27917,6 +28273,7 @@ msgstr "Secret deleted"
 msgid "secret manager"
 msgstr "secret manager"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secret manager"
@@ -27958,6 +28315,10 @@ msgstr "Secured transfer"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secured transfer — only the recipients can open the values."
 msgstr "Secured transfer — only the recipients can open the values."
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Security details"
+msgstr "Security details"
 
 #. placeholder {0}: results.length
 #: src/pages/home-landing/InlineSearchResults.tsx
@@ -28208,7 +28569,7 @@ msgstr "Send"
 msgid "Send a message below and the agent will get to work."
 msgstr "Send a message below and the agent will get to work."
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Send a message first — fork requires conversation history"
 msgstr "Send a message first — fork requires conversation history"
 
@@ -28357,6 +28718,7 @@ msgstr "Sends your question to a help desk — a person picks it up."
 
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "Sent"
 msgstr "Sent"
 
@@ -28424,6 +28786,10 @@ msgstr "Serve a folder"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Served"
 msgstr "Served"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Served by"
+msgstr "Served by"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
@@ -28543,10 +28909,10 @@ msgstr "Session ID"
 msgid "Session info"
 msgstr "Session info"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Session is not running"
 msgstr "Session is not running"
 
@@ -28673,6 +29039,7 @@ msgstr "Set public"
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "Set up"
@@ -29083,6 +29450,14 @@ msgstr "Shared Task: {taskTitle}"
 msgid "Shared through the project's vaults: <0>{0}</0>"
 msgstr "Shared through the project's vaults: <0>{0}</0>"
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Shared values · secret manager"
+msgstr "Shared values · secret manager"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Shared values · secured transfer"
+msgstr "Shared values · secured transfer"
+
 #: src/components/conversation/task-it.tsx
 msgid "Shared via cloud"
 msgstr "Shared via cloud"
@@ -29229,8 +29604,8 @@ msgid "Show Annotations"
 msgstr "Show Annotations"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-msgid "Show as"
-msgstr "Show as"
+#~ msgid "Show as"
+#~ msgstr "Show as"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Show changes"
@@ -29760,6 +30135,7 @@ msgid "Simple actions — click to show all git operations"
 msgstr "Simple actions — click to show all git operations"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Since"
 msgstr "Since"
 
@@ -30059,6 +30435,7 @@ msgstr "Some things need attention."
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/pages/entry/MessageLanding.tsx
@@ -30530,6 +30907,10 @@ msgstr "Starting your sandbox…"
 msgid "Starting…"
 msgstr "Starting…"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "State"
+msgstr "State"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "Stats"
 #~ msgstr "Stats"
@@ -30956,8 +31337,8 @@ msgid "Sweep action"
 msgstr "Sweep action"
 
 #: src/components/footer/activity-words.ts
-msgid "sweeping"
-msgstr "sweeping"
+#~ msgid "sweeping"
+#~ msgstr "sweeping"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweeping…"
@@ -31401,6 +31782,18 @@ msgstr "Test with a recent event"
 #: src/components/automations/AutomationPage.tsx
 msgid "Tested"
 msgstr "Tested"
+
+#: src/components/conversation/CredentialValueLock.tsx
+#~ msgid "Tested here: the provider accepts the key."
+#~ msgstr "Tested here: the provider accepts the key."
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Tested here: the provider refused the key — ask the sender for a new one."
+msgstr "Tested here: the provider refused the key — ask the sender for a new one."
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Tested here: the provider takes the key."
+msgstr "Tested here: the provider takes the key."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "text"
@@ -32176,9 +32569,17 @@ msgstr "The value is stored in your operating system keychain and never readable
 #~ msgid "The value is written to this project's .env.local and stays on this machine."
 #~ msgstr "The value is written to this project's .env.local and stays on this machine."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "The value was shared too — click for details"
+msgstr "The value was shared too — click for details"
+
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "The values could not be filled in."
 msgstr "The values could not be filled in."
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "The values could not be requested."
+msgstr "The values could not be requested."
 
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "The values go straight into your credential — they are not shown here."
@@ -32512,6 +32913,10 @@ msgstr "This conversation no longer exists or is unavailable."
 msgid "This conversation's project is not a checkout of the shared repo"
 msgstr "This conversation's project is not a checkout of the shared repo"
 
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "This could not be opened"
+msgstr "This could not be opened"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This could not be prepared for download."
 msgstr "This could not be prepared for download."
@@ -32783,6 +33188,10 @@ msgstr "This organization's budgets could not be read."
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "This organization's budgets could not be read. The server answered with nothing to show."
 #~ msgstr "This organization's budgets could not be read. The server answered with nothing to show."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "This permanently deletes it from disk. This cannot be undone."
+msgstr "This permanently deletes it from disk. This cannot be undone."
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
@@ -34293,6 +34702,10 @@ msgstr "Upload failed."
 msgid "Upload files"
 msgstr "Upload files"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Upload files here…"
+msgstr "Upload files here…"
+
 #: src/components/ui/agent-avatar-picker.tsx
 msgid "Upload image"
 msgstr "Upload image"
@@ -34570,6 +34983,10 @@ msgstr "Valid ({0} models)"
 msgid "validated"
 msgstr "validated"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Validated"
+msgstr "Validated"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "validation"
 msgstr "validation"
@@ -34601,6 +35018,10 @@ msgstr "Value for {key}"
 #~ msgid "value name"
 #~ msgstr "value name"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Value shared"
+msgstr "Value shared"
+
 #~ msgid "Value stays in .env.local"
 #~ msgstr "Value stays in .env.local"
 
@@ -34611,6 +35032,11 @@ msgstr "Value stays in {envFileName}"
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr "Value:"
+
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Values"
+msgstr "Values"
 
 #~ msgid "Values are kept in .env.local in your home folder"
 #~ msgstr "Values are kept in .env.local in your home folder"
@@ -34668,8 +35094,9 @@ msgstr "Variable name"
 msgid "Variables"
 msgstr "Variables"
 
-#~ msgid "Vault"
-#~ msgstr "Vault"
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Vault"
+msgstr "Vault"
 
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
@@ -34951,8 +35378,8 @@ msgid "Waiting for {hostName} to approve the live session…"
 msgstr "Waiting for {hostName} to approve the live session…"
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Waiting for {waiting} recipient(s) · only they can open them"
-msgstr "Waiting for {waiting} recipient(s) · only they can open them"
+#~ msgid "Waiting for {waiting} recipient(s) · only they can open them"
+#~ msgstr "Waiting for {waiting} recipient(s) · only they can open them"
 
 #: src/components/connections-manager.tsx
 msgid "Waiting for approval…"
@@ -35589,6 +36016,10 @@ msgstr "Whiteboard (Excalidraw)"
 msgid "who calls whom, step by step — with sub-flows and feedback"
 msgstr "who calls whom, step by step — with sub-flows and feedback"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Who can read"
+msgstr "Who can read"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
 msgstr "Who may log in to this sandbox"
@@ -35916,6 +36347,7 @@ msgstr "yanked"
 msgid "yes"
 msgstr "yes"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Yes"
 msgstr "Yes"
@@ -36045,6 +36477,10 @@ msgstr "You can't invite people here — ask {ownerName}."
 msgid "You can't invite people here."
 msgstr "You can't invite people here."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "You declined it."
+msgstr "You declined it."
+
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
@@ -36089,6 +36525,10 @@ msgstr "You have this repo in more than one project. Open it in:"
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
 msgstr "You must be logged in"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "You need access to the {vaultLabel} vault."
+msgstr "You need access to the {vaultLabel} vault."
 
 #: src/lib/publish-state.ts
 msgid "You now have the latest changes from the cloud."
@@ -36339,6 +36779,10 @@ msgstr "Your request could not be saved."
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready."
 msgstr "Your sandbox is ready."
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "your secret manager"
+msgstr "your secret manager"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Your session has expired. Sign in again to launch."

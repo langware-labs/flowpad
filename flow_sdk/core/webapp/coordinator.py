@@ -47,6 +47,8 @@ Reason = Literal["open", "page", "probe", "restart", "fix", "cli"]
 
 #: The run going for each app (by bare id). One at a time; a second caller joins it.
 _TASKS: dict[str, asyncio.Task] = {}
+#: The background recheck of an up app's owed note (by bare id); one at a time.
+_OWED_CHECKS: dict[str, asyncio.Task] = {}
 
 #: A handling that ran this many times for one fingerprint without holding is not run again: the ladder moves on.
 HANDLING_TRIES = 2
@@ -63,6 +65,10 @@ _DETERMINISTIC: dict[FailureCode, HandlingAction] = {
     FailureCode.OUT_OF_MEMORY: HandlingAction.NEEDS_PERSON,
     FailureCode.FOLDER_GONE: HandlingAction.NEEDS_PERSON,
     FailureCode.PORT_CONFLICT: HandlingAction.NEEDS_PERSON,
+    # A required port another program holds (another checkout's server, a container): only the person may stop it.
+    FailureCode.PORT_HELD: HandlingAction.NEEDS_PERSON,
+    # A credential, a sign-in: only the person has it — never an agent's to invent or work around.
+    FailureCode.CREDENTIAL_MISSING: HandlingAction.NEEDS_PERSON,
 }
 
 
@@ -98,6 +104,14 @@ async def bring_up(app: Any, *, display: str = "", reason: Reason = "open", wait
         from flow_sdk.core.webapp import readiness  # noqa: PLC0415
 
         if await readiness.quick(app, rec):
+            if rec.setup_owed and key not in _OWED_CHECKS:
+                # Up, with a note of what it owed: that note goes stale the moment the person signs in or a
+                # dependency comes up, so it is checked again — in the background; the warm open stays instant.
+                from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+                task = _OWED_CHECKS[key] = create_detached_task(_recheck_owed(app, display=display),
+                                                                name=f"webapp-owed:{key}")
+                task.add_done_callback(lambda _t: _OWED_CHECKS.pop(key, None))
             return rec
     from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
 
@@ -163,9 +177,9 @@ async def _up(app, *, display: str = "") -> Optional[WebappFailureSpec]:
         FailurePhase.SETUP, FailureCode.UNKNOWN, answer.detail, folder=app.asset_ref)
 
 
-async def _setup_owed(app, *, display: str) -> Optional[WebappFailureSpec]:
-    """Run what the app stands on when its check finds it owed. None when nothing is (or the run made it so)."""
-    from flow_sdk.builtin.project_setup import _RUNS, setup_run_address, start_setup  # noqa: PLC0415
+async def _owed_now(app, *, display: str):
+    """The app's setup, checked (never run): ``(tree, project, checked, owed)`` — ``owed`` "" when nothing is.
+    ``None`` when the app declares nothing under it."""
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
     from flow_sdk.core.setup.execute import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.load import _leaf_failure, _unmet  # noqa: PLC0415
@@ -177,24 +191,84 @@ async def _setup_owed(app, *, display: str) -> Optional[WebappFailureSpec]:
     tree = await ProjectTree(project, display=display, connect_here=False).load()
     node = await tree.resolve_node(target)
     if node is None or not node.children:
-        return None  # nothing declared under the app: no setup walk at all
+        return None
     checked = await execute_setup(target, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
                                   subject_entity=f"project-{project.id}", check_only=True, approved=True,
                                   cwd=getattr(project, "fs_storage_mount_path", None))
-    if checked.ok or not _unmet(checked, target):
+    owed = "" if checked.ok or not _unmet(checked, target) else (
+        _leaf_failure(checked.root, owed=True) or "its setup is not done")
+    return tree, project, checked, owed
+
+
+async def _note_owed(key: str, owed: str) -> None:
+    if record.read(key).setup_owed != owed:
+        await record.change(key, setup_owed=owed)
+
+
+async def _recheck_owed(app, *, display: str) -> None:
+    """An up app's owed note, checked again: cleared when nothing is owed any more, else rewritten as it is now."""
+    try:
+        found = await _owed_now(app, display=display)
+        await _note_owed(_bare(app.id), found[3] if found else "")
+    except Exception:  # noqa: BLE001 — a recheck that broke leaves the note as it was
+        logger.exception("web app %s: owed recheck failed", app.id)
+
+
+async def _setup_owed(app, *, display: str) -> Optional[WebappFailureSpec]:
+    """Run what the app stands on when its check finds it owed. None when nothing is (or the run made it so)."""
+    from flow_sdk.builtin.project_setup import _RUNS, start_setup  # noqa: PLC0415
+    from flow_sdk.core.setup.load import _unmet  # noqa: PLC0415
+
+    found = await _owed_now(app, display=display)
+    if found is None:
+        return None  # nothing declared under the app: no setup walk at all
+    tree, project, checked, owed = found
+    target = str(app.typeid)
+    if not owed:
+        await _note_owed(str(app.id), "")
         return None
     run = await start_setup(project, root=target, tree=tree, load_after=False, connect_here=False)
-    await record.set_state(str(app.id), LifecycleState.STARTING,
-                           f"setting up what it needs: {_leaf_failure(checked.root, owed=True) or 'its setup'}",
-                           setup_owed=_leaf_failure(checked.root, owed=True) or "", )
+    await record.set_state(str(app.id), LifecycleState.STARTING, f"setting up what it needs: {owed}", setup_owed=owed)
     task = _RUNS.get((str(project.id), target))
     result = await asyncio.shield(task) if task is not None else None
     if result is not None and result.ok and not _unmet(result, target):
         await record.change(str(app.id), setup_owed="")
         return None
-    why = (_unmet(result, target) if result is not None else "") or _leaf_failure(checked.root, owed=True)
+    why = (_unmet(result, target) if result is not None else "") or owed
     logger.info("web app %s: setup still owes %s (%s)", app.name, why, run)
+    # The failing step's own typed failure (a dependency's start that found its port held) keeps its code: the
+    # ladder decides on what went wrong, not on "setup is owed".
+    typed = _typed_leaf(result.root if result is not None else None)
+    if typed is not None:
+        return typed
+    if _owed_by_person(result.root if result is not None else checked.root):
+        return make(FailurePhase.DEPENDENCY, FailureCode.CREDENTIAL_MISSING, why or "a credential is not set up",
+                    folder=app.asset_ref)
     return make(FailurePhase.DEPENDENCY, FailureCode.SETUP_OWED, why or "its setup is not done", folder=app.asset_ref)
+
+
+def _owed_by_person(node) -> bool:
+    """Whether what holds the setup up is a credential or a connection — a value or a sign-in only the person gives."""
+    if node is None or node.state.value in ("done", "skipped"):
+        return False
+    stuck = [child for child in getattr(node, "children", None) or [] if child.state.value not in ("done", "skipped")]
+    if stuck:
+        return any(_owed_by_person(child) for child in stuck)
+    return str(node.id).startswith(("credential:", "connection:"))
+
+
+def _typed_leaf(node) -> Optional[WebappFailureSpec]:
+    """The first typed ``webapp.failure`` a failed step of the setup tree answered with, depth first."""
+    if node is None:
+        return None
+    for child in getattr(node, "children", None) or []:
+        if (found := _typed_leaf(child)) is not None:
+            return found
+    for wizard in (getattr(node, "prepare", None), getattr(node, "run", None)):
+        for answer in (getattr(wizard, "steps", None) or {}).values() if wizard is not None and not wizard.ok else ():
+            if not answer.ok and (found := of_step(answer.value)) is not None:
+                return found
+    return None
 
 
 # ── the ladder ────────────────────────────────────────────────────────────────

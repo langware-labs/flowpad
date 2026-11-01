@@ -2,7 +2,8 @@
  * The app's segmented control look — one definition, so every segmented control
  * stays in step when a themed ring or height changes. Consumers today: the
  * session `SessionSurfaceSwitch` (mode selection) and `WebappDisplayToolbar`. Class strings
- * only — the controls have different semantics and keep their own markup.
+ * only — the controls have different semantics and keep their own markup; a plain labelled choice
+ * uses `SegmentedControl` (`segmented-control.tsx`).
  */
 
 /** Container: `role="radiogroup"` row that frames the segments. */

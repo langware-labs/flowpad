@@ -1027,16 +1027,22 @@ async def test_credential(name: str, project_id: str = "") -> dict[str, Any]:
     the working folder, record the answer on the row (``Credential.test_result``, this machine only) and
     return ``{name, has_test, state, detail, at}`` — ``state`` ``ok`` / ``invalid`` / ``error``, or
     ``untested`` when the credential declares no test. Values never leave: the detail is scrubbed."""
+    project = await get_project(project_id) if project_id else None
+    spec = await credential_named(name, project)
+    if spec is None:
+        raise CredentialError(f"no credential named {name!r} in this project or the user scope")
+    return await test_credential_spec(spec, project)
+
+
+async def test_credential_spec(spec: "Credential", project: Optional["Project"]) -> dict[str, Any]:
+    """:func:`test_credential` for a credential already in hand — what a secured transfer or a vault fetch runs
+    right after the values land, so the sender learns they work there."""
     from datetime import datetime, timezone  # noqa: PLC0415
 
     from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
     from flow_sdk.builtin.credential_status import run_check  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_status_spec import CredentialTestResultSpec  # noqa: PLC0415
 
-    project = await get_project(project_id) if project_id else None
-    spec = await credential_named(name, project)
-    if spec is None:
-        raise CredentialError(f"no credential named {name!r} in this project or the user scope")
     test = spec.declared_test()
     if test is None:
         return {"name": spec.name, "has_test": False, "state": "untested", "detail": "", "at": ""}

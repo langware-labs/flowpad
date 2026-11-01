@@ -129,10 +129,10 @@ export function useChannelAttribution() {
 
 // Same compact treatment as CategoryChips — one visual language, no new pill.
 // The source chip is the one a row is recognised BY, so its glyph is bigger than
-// a category's and keeps its brand colour — the text stays quiet.
+// a category's and keeps its brand colour; a soft violet tint makes it catch the eye.
 const SOURCE_CHIP = cn(
   COMPACT,
-  'gap-1 border-border bg-muted ps-1 pe-1.5 py-px text-[10px] font-semibold text-muted-foreground',
+  'gap-1 border-violet-500/40 bg-violet-500/10 ps-1 pe-1.5 py-px text-[10px] font-semibold text-violet-700 dark:text-violet-300',
 );
 
 /** The per-row source chip: icon + channel, for channels whose spec wears one.

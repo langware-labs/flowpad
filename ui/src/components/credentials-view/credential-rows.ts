@@ -19,6 +19,12 @@ import {
   type DetectedEnvKey,
 } from '@sdk';
 
+/** The deployment the status was read at, and whether it is this computer (a status naming none is). */
+export function currentDeployment(status: CredentialsStatus) {
+  const deployment = (status.deployments ?? []).find((row) => row.id === status.deployment_id);
+  return { deployment, isThisComputer: deployment?.this_computer ?? true };
+}
+
 const { MUST } = CredentialRequirement;
 
 export type CredentialRowState = 'connected' | 'needs-values';

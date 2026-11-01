@@ -7,6 +7,7 @@ import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/compo
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
+import { SessionAnchor } from '@src/components/terminal/interactive-terminal/SessionAnchor';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath } from '@src/navigation/asset-doc-types';
 import { DisplayHistoryButton } from './display-history-button';
@@ -382,7 +383,11 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
         {/* Tagged so a journey can point at the half of the workspace that
             disappears the moment Vibe is left — the display and its tab strip. */}
         <div className="flex h-full flex-col" {...tagAttrs('VibeDisplay', 'label')}>
-          <WorkspaceChildStrip processTab={session.processTab} processDock={session.processDock} />
+          <WorkspaceChildStrip
+            processTab={session.processTab}
+            processDock={session.processDock}
+            trailing={activeProcess && <SessionAnchor process={activeProcess} />}
+          />
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the
                 child's ContentPanel (chrome-less). */}

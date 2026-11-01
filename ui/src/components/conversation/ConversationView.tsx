@@ -1188,7 +1188,11 @@ export function ConversationView({
         </p>
       )}
       <ConversationEndedLine endedAt={conversation?.ended_at} />
-      <SealedValuesPanel conversationId={conversationId} version={conversation?.updated_date ? String(conversation.updated_date) : null} />
+      <SealedValuesPanel
+        conversationId={conversationId}
+        version={conversation?.updated_date ? String(conversation.updated_date) : null}
+        members={memberRoster}
+      />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
         <MessageComposer

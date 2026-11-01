@@ -46,6 +46,9 @@ class MessageAttachment(Entity):
     # Display snapshot taken from the bundle at unpack time.
     name: Optional[str] = APIField(default=None)
     description: Optional[str] = APIField(default=None)
+    # The kind a ``*.value.json`` file carries (its ``spec_kind``), read once at stage time,
+    # so a chip names the value's kind without reading the file.
+    value_kind: Optional[str] = APIField(default=None)
 
     # Staging location, RELATIVE to the FlowMessage data dir
     # (e.g. "unpacked/attachment/skill-@<id>").

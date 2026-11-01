@@ -17,10 +17,9 @@ import { Label } from '@src/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
-import { CopyableCommand } from '@src/components/version-popover/version-popover';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { describeApiError } from '@src/lib/error-message';
-import { takenInScope } from '@src/components/credentials-view/credential-rows';
+import { currentDeployment, takenInScope } from '@src/components/credentials-view/credential-rows';
 import {
   asksDefinition,
   asksValues,
@@ -41,6 +40,7 @@ import {
 import { EnvLocalBlockedNotice } from './EnvLocalBlockedNotice';
 import { FileValueInput } from './FileValueInput';
 import { SecretValueInput } from './SecretValueInput';
+import { SignInCommand } from './SignInCommand';
 
 /** The wiki page the scope and storage info icons open, one section each. */
 const CREDENTIALS_WIKI = 'Credentials';
@@ -89,8 +89,7 @@ export function CredentialDialog({
   const statusRow = status.credentials.find((c) => c.typeid === d.typeid);
   const problems = validateDraft(d, taken);
   const envFileName = credentialEnvFileName(status.environment);
-  const deployment = (status.deployments ?? []).find((row) => row.id === status.deployment_id);
-  const isThisComputer = deployment?.this_computer ?? true;
+  const { deployment, isThisComputer } = currentDeployment(status);
   const file = status.files.find((f) => f.scope === d.scope);
   const writesToFile = d.store === 'env' && asksValues(d) && Object.keys(draftValues(d)).length > 0;
   const fileBlocked = writesToFile && !!file?.blocked;
@@ -236,7 +235,7 @@ export function CredentialDialog({
                       // Nothing is stored for it: the command-line tool holds the sign-in.
                       <div className="flex min-w-0 flex-1 flex-col gap-1" data-testid={`credential-var-login-${index}`}>
                         {loginCommands(v, statusRow).map((command) => (
-                          <CopyableCommand key={command} command={command} />
+                          <SignInCommand key={command} command={command} thisComputer={isThisComputer} />
                         ))}
                       </div>
                     ) : asksValues(d) && v.base.kind === 'file' ? (

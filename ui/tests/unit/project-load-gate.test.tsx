@@ -229,3 +229,33 @@ it('Cancel stops the setup run the fix is', async () => {
   expect(stop).toHaveBeenCalledWith(projectId, '');
   expect(screen.queryByTestId('setup-fix-line')).not.toBeInTheDocument();
 });
+
+it('a refused load from a display session says why once and waits for Try again', async () => {
+  const display = 'agentic_process-11111111-1111-4111-8111-111111111111';
+  vi.spyOn(Project, 'loadState').mockResolvedValue(ready);
+  vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: '', running: false, tree: null });
+  const load = vi
+    .spyOn(Project, 'load')
+    // As on the page: the load answers after the state read has come back ready.
+    .mockImplementation(async (_id, options) => {
+      await new Promise((r) => setTimeout(r, 20));
+      if (options?.display) throw new Error('Display session gone was not found');
+      return ready;
+    });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/dock/app/service']}>
+        <ProjectLoadGate projectId={projectId} display={display}>
+          <p>Service home</p>
+        </ProjectLoadGate>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findAllByText('Display session gone was not found')).not.toHaveLength(0);
+  await new Promise((r) => setTimeout(r, 50));
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId('project-load-status')).toHaveTextContent('This could not be opened');
+  await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+});

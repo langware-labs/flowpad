@@ -2,13 +2,13 @@ import { t } from '@lingui/core/macro';
 import { sectionRecordTypes } from './section-record-types';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId, VFSPath } from '@sdk';
+import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -54,13 +54,13 @@ import {
 } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import { useExplorerComputeNode } from '@src/components/explorer-view/useExplorerComputeNode';
 import {
-  markdownFolderNodeId,
   markdownFolderRoot,
-  type MarkdownDragItem,
-  type MarkdownFolderTarget,
 } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
 import type { Browseable, BrowseableRoot, DroppedFileEntry } from '@src/components/browseable-tree/types';
 import type { MultiSelectAction } from '@src/components/navigator-panel/types';
+import type { FsOpsHost } from '@src/components/browseable-tree/adapters/fsFileOps';
+import { useMenuDialogs } from '@src/components/ui/browseable-menu';
+import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 
@@ -70,42 +70,10 @@ const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT,
 function normalizeTreePath(path: string): string {
   return path.replace(/^\/+/, '').replace(/\/+$/, '');
 }
-function basenamePath(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const idx = trimmed.lastIndexOf('/');
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-function dirnamePath(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const idx = trimmed.lastIndexOf('/');
-  if (idx < 0) return '';
-  if (idx === 0) return '/';
-  return trimmed.slice(0, idx);
-}
-function parseAssetEditorPointer(pointer: string | undefined): { typeName: string; absPath: string } | null {
-  if (!pointer?.startsWith('editor/')) return null;
-  let ptr: AssetDocPointer;
-  try {
-    ptr = AssetDocPointer.parse(pointer);
-  } catch {
-    return null;
-  }
-  if (ptr.mode !== AssetMode.EDITOR || ptr.method !== AssetRoutingMethod.VFS || !ptr.editor) return null;
-  const vfs = VFSPath.parse(ptr.value);
-  return { typeName: ptr.editor, absPath: `/${vfs.entitySubPath.replace(/^\/+/, '')}` };
-}
 function joinRelPath(parent: string, name: string): string {
   const base = normalizeTreePath(parent);
   const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
   return base ? `${base}/${cleanName}` : cleanName;
-}
-function joinAbsPath(parent: string, name: string): string {
-  const base = parent.replace(/\/+$/, '');
-  const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
-  return base && base !== '/' ? `${base}/${cleanName}` : `/${cleanName}`;
-}
-function isValidFolderName(name: string): boolean {
-  return !!name && name !== '.' && name !== '..' && !/[\\/]/.test(name);
 }
 
 /**
@@ -126,8 +94,6 @@ export function useAssetsModel() {
   const { indexType } = useSystemTools();
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
-  const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
-  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
 
   const currentProjectId = dataContext.project?.id ?? null;
   const currentProjectName = dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null;
@@ -577,43 +543,35 @@ export function useAssetsModel() {
     return DockPointer.forAssetEditor(openAssetTypeId.type, openAssetFields.asset_ref);
   }, [openAssetTypeId, openAssetFields?.asset_ref]);
 
+  // File-manager actions on the Files and Documents trees: their name prompts
+  // and confirms render once, from the navigator (`fileOpsDialogs`).
+  const fileDialogs = useMenuDialogs();
+  const { requestName, confirm } = fileDialogs;
+  // Read through a ref: rows keep the host they were built with, so the host
+  // must stay one object while the open dock changes underneath it.
+  const openDockRef = useRef(currentDock);
+  openDockRef.current = currentDock;
+  const fileOpsHost = useMemo<FsOpsHost>(
+    () => ({
+      requestName,
+      confirm,
+      navigate: navigateAsset,
+      // A renamed / moved file that is open follows to its new path, so the
+      // editor doesn't sit on a path that no longer exists.
+      onPathMoved: (from, to) => {
+        const open = openDockRef.current?.resourceVfsPath?.machinePath;
+        if (!open) return;
+        if (open === from) navigateAsset(dockPointerForFile(to));
+        else if (open.startsWith(`${from}/`)) navigateAsset(dockPointerForFile(`${to}${open.slice(from.length)}`));
+      },
+    }),
+    [requestName, confirm, navigateAsset],
+  );
+
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
     setNewTypeDialogOpen(true);
   }, []);
-
-  const handleCreateFolder = useCallback((target: MarkdownFolderTarget) => {
-    setNewFolderTarget(target);
-    setNewFolderDialogOpen(true);
-  }, []);
-
-  const handleNewFolderConfirm = useCallback(
-    async (rawName: string) => {
-      const name = rawName.trim();
-      if (!newFolderTarget || !isValidFolderName(name)) {
-        notify.error({ title: t`Invalid folder name` });
-        return;
-      }
-      const typeId = new TypeId(newFolderTarget.typeid);
-      const folderRelPath = joinRelPath(newFolderTarget.relPath, name);
-      try {
-        if (await fsManager.exists(typeId, folderRelPath)) {
-          notify.error({ title: t`Folder already exists` });
-          return;
-        }
-        await fsManager.mkdir(typeId, folderRelPath);
-        fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
-        refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
-        notify.success({ title: t`Folder created` });
-      } catch (err) {
-        console.error('[AssetsNavigator] Failed to create folder:', err);
-        notify.error({ title: t`Failed to create folder` });
-      } finally {
-        setNewFolderTarget(null);
-      }
-    },
-    [newFolderTarget],
-  );
 
   const handleNewConfirm = useCallback(
     async (name: string) => {
@@ -652,73 +610,6 @@ export function useAssetsModel() {
     [newTypeTarget, navigateAsset, effectiveFilter.scope],
   );
 
-  const handleMoveMarkdownItem = useCallback(
-    async (item: MarkdownDragItem, target: MarkdownFolderTarget) => {
-      const name = basenamePath(item.relPath) || item.label;
-      if (!name) return;
-      const typeId = new TypeId(item.typeid);
-      const sourceRel = normalizeTreePath(item.relPath);
-      const destRel = joinRelPath(target.relPath, name);
-      const destAbs = joinAbsPath(target.absPath, name);
-      const sourceParentRel = dirnamePath(sourceRel);
-      const sourceParentAbs = dirnamePath(item.absPath);
-      if (sourceRel === destRel) return;
-      try {
-        if (await fsManager.exists(typeId, destRel)) {
-          notify.error({ title: t`Destination already has an item with that name` });
-          return;
-        }
-        await fsManager.move(typeId, sourceRel, destRel);
-        const store = fsStore.getState();
-        store.invalidate(typeId, sourceRel, 'all');
-        store.invalidate(typeId, destRel, 'all');
-        store.invalidate(typeId, sourceParentRel || '/', 'browse');
-        store.invalidate(typeId, target.relPath || '/', 'browse');
-        refreshNode(markdownFolderNodeId(item.typeid, sourceParentAbs));
-        refreshNode(markdownFolderNodeId(item.typeid, target.absPath));
-
-        const activeEditor = parseAssetEditorPointer(effectivePointer);
-        const sourceAbs = item.absPath.replace(/\/+$/, '');
-        const activeEditorInMovedFolder = !!(
-          activeEditor &&
-          item.kind === 'markdown-folder' &&
-          activeEditor.typeName === item.typeName &&
-          activeEditor.absPath.startsWith(`${sourceAbs}/`)
-        );
-        if (activeEditor?.typeName === item.typeName && activeEditor.absPath === sourceAbs) {
-          navigateAsset(DockPointer.forAssetEditor(item.typeName, destAbs));
-        } else if (activeEditorInMovedFolder && activeEditor) {
-          const suffix = activeEditor.absPath.slice(sourceAbs.length).replace(/^\/+/, '');
-          const nextAbs = suffix ? `${destAbs}/${suffix}` : destAbs;
-          navigateAsset(DockPointer.forAssetEditor(item.typeName, nextAbs));
-        } else if (item.kind === 'markdown-folder' && effectivePointer) {
-          const folder = DockPointer.parseAssetFolderPointer(effectivePointer);
-          if (folder && folder.typeName === item.typeName && folder.typeid === item.typeid) {
-            const currentRel = normalizeTreePath(folder.relPath);
-            if (currentRel === sourceRel || currentRel.startsWith(`${sourceRel}/`)) {
-              const suffix = currentRel.slice(sourceRel.length).replace(/^\/+/, '');
-              const nextRel = suffix ? `${destRel}/${suffix}` : destRel;
-              navigateAsset(DockPointer.forAssetFolder(item.typeName, item.typeid, nextRel));
-            }
-          }
-        }
-
-        try {
-          await indexType('markdown', effectiveFilter.scope, { force: true });
-        } catch (err) {
-          console.error('[AssetsNavigator] Markdown reindex after move failed:', err);
-          notify.error({ title: t`Moved, but reindex failed` });
-          return;
-        }
-        notify.success({ title: t`Moved` });
-      } catch (err) {
-        console.error('[AssetsNavigator] Failed to move markdown item:', err);
-        notify.error({ title: t`Failed to move item` });
-      }
-    },
-    [effectiveFilter.scope, effectivePointer, indexType, navigateAsset],
-  );
-
   const roots = useMemo<BrowseableRoot[]>(() => {
     const list: BrowseableRoot[] = [];
     // Special top entry: jump back to the selected project's home. In a project
@@ -745,8 +636,7 @@ export function useAssetsModel() {
         return markdownFolderRoot(t, {
           indexType,
           onNew: handleNew,
-          onCreateFolder: handleCreateFolder,
-          onMoveItem: handleMoveMarkdownItem,
+          fileOps: fileOpsHost,
           filter: effectiveFilter,
           onOpenKnowledgeBrowser: (absPath) => navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
@@ -776,6 +666,7 @@ export function useAssetsModel() {
         pointerForVfs: (path) => DockPointer.forAssetFs(path),
         filePointerForVfs: fsFileViewerPointerForVfs,
         draggable: true,
+        fileOps: fileOpsHost,
       });
       const taskIdx = displayTypes.findIndex((t) => t.type_name === (RecordType.TASK as string));
       typeRoots.splice(taskIdx >= 0 ? taskIdx + 1 : typeRoots.length, 0, filesRoot);
@@ -810,8 +701,7 @@ export function useAssetsModel() {
     displayTypes,
     indexType,
     handleNew,
-    handleCreateFolder,
-    handleMoveMarkdownItem,
+    fileOpsHost,
     creatableTypes,
     effectiveFilter,
     navigation,
@@ -854,11 +744,8 @@ export function useAssetsModel() {
     newTypeDialogOpen,
     setNewTypeDialogOpen,
     handleNewConfirm,
-    newFolderTarget,
-    newFolderDialogOpen,
-    setNewFolderDialogOpen,
-    handleNewFolderConfirm,
     // dependencies — the add flow's dialogs, rendered by the view
     dependencyDialogs: ctxFolder.dialogs,
+    fileOpsDialogs: fileDialogs.dialogs,
   } as const;
 }

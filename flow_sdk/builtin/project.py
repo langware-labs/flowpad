@@ -897,8 +897,9 @@ class Project(SetupSkippable, Entity):
                 )
             except (ValueError, TypeError, IndexError):
                 process = None
-            if process is None or process.project_id != self.id:
-                return ApiFailResponse(message="The display session does not belong to this project", status_code=400)
+            # Any session may show any app (a mock lives in its own project); it only has to exist.
+            if process is None:
+                return ApiFailResponse(message=f"Display session {display} was not found", status_code=400)
         result = await load_project(self, approved=approved, asset=target, display=display)
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 

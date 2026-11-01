@@ -536,3 +536,95 @@ async def test_a_promise_made_during_an_answer_pass_is_kept(world, monkeypatch):
         await st.seal_credential(str(inst["alice"].credential.typeid), "conv-2", ["bob"])
         await st.answer_requests(CONV)  # nothing asked yet in CONV: both records stay
         assert sorted(p["conversation_id"] for p in st._read_json("pending.json").values()) == [CONV, "conv-2"]
+
+
+# ── sent → delivered → validated: the receiver's Flowpad tests the values and tells the sender ──
+
+
+def _write_test(inst, command: str) -> None:
+    folder = inst.credential.folder
+    (folder / "test.json").write_text(json.dumps({"commands": {"darwin": command, "linux": command, "win32": command}}))
+
+
+async def _bob_fills(world, monkeypatch) -> dict:
+    hub, inst = world
+    await set_credential_values(str(inst["alice"].credential.typeid), {"ACME_KEY_FILE": "key-file"})  # every var held
+    for who in ("alice", "bob"):
+        await publish(inst[who], monkeypatch)
+    await share(world, monkeypatch)
+    with inst["bob"].acting(monkeypatch):
+        card = (await st.incoming(CONV))[0]
+        return await st.fill(CONV, card["message_id"], project_id=inst["bob"].project.id)
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ('test "$ACME_GMAIL_APP_PASSWORD" = "abcd efgh SUPERSECRET"', "ok"),
+        ('echo "refused $ACME_GMAIL_APP_PASSWORD" >&2; exit 1', "invalid"),
+        (None, "untested"),
+    ],
+)
+async def test_a_fill_runs_the_test_and_the_sender_sees_its_state(world, monkeypatch, command, expected):
+    hub, inst = world
+    if command:
+        _write_test(inst["bob"], command)
+    done = await _bob_fills(world, monkeypatch)
+    assert done["test"] == expected
+
+    with inst["alice"].acting(monkeypatch):
+        row = (await st.sent_status(CONV))[0]
+    assert row["recipients"] == {"bob": "filled"}
+    assert row["tests"]["bob"]["state"] == expected and row["tests"]["bob"]["at"]
+    acks =[m["metadata"] for m in hub.messages[CONV] if m["kind"] == st.ACK_KIND]
+    assert [a["outcome"] for a in acks] == [st.FILLED, st.VALIDATED]
+    # only the state crossed — never the value, the provider's words or a name
+    for leak in (SECRET, "refused", "ACME_GMAIL", "acme-gmail"):
+        assert not any(leak in body for body in hub.wire), leak
+
+
+async def test_a_test_that_cannot_run_reports_error_and_keeps_the_values(world, monkeypatch):
+    hub, inst = world
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("no shell")
+
+    monkeypatch.setattr("flow_sdk.builtin.credential_service.test_credential_spec", boom)
+    done = await _bob_fills(world, monkeypatch)
+    assert done["test"] == "error"
+    assert env_of(inst["bob"])["ACME_GMAIL_APP_PASSWORD"] == SECRET
+
+
+async def test_an_ack_from_before_tests_reads_as_delivered_and_decline_is_final():
+    acks = st._acks([
+        {"kind": st.ACK_KIND, "sender_id": "bob", "metadata": {"transfer_id": "t", "outcome": "filled"}},
+        {"kind": st.ACK_KIND, "sender_id": "carol", "metadata": {"transfer_id": "t", "outcome": "declined"}},
+        {"kind": st.ACK_KIND, "sender_id": "carol", "metadata": {"transfer_id": "t", "outcome": "validated", "test": "ok"}},
+        {"kind": st.ACK_KIND, "sender_id": "dan", "metadata": {"transfer_id": "t", "outcome": "validated", "test": "weird"}},
+    ])
+    assert acks["t"]["bob"]["stage"] == "filled" and "test" not in acks["t"]["bob"]
+    assert acks["t"]["carol"]["stage"] == "declined"
+    assert acks["t"]["dan"] == {"stage": "validated", "test": "error", "at": ""}
+
+
+async def test_a_vault_share_reports_delivered_and_validated_per_receiver(world, monkeypatch):
+    hub, inst = world
+    _write_test(inst["bob"], 'test -n "$ACME_GMAIL_APP_PASSWORD"')
+    with inst["alice"].acting(monkeypatch):
+        tracked = await st.track_vault_share(str(inst["alice"].credential.typeid), CONV)
+        assert tracked["recipients"] == ["bob", "carol"]
+        row = (await st.sent_status(CONV))[0]
+        assert row["route"] == "vault" and row["recipients"] == {"bob": "pending", "carol": "pending"}
+
+    # bob's Fetch put the values in; his Flowpad tells alice
+    await set_credential_values(str(inst["bob"].credential.typeid), {"ACME_GMAIL_ADDRESS": "sales@acme.test",
+                                                                     "ACME_GMAIL_APP_PASSWORD": SECRET,
+                                                                     "ACME_KEY_FILE": "key-file"})
+    with inst["bob"].acting(monkeypatch):
+        assert await st.report_fetched(CONV, inst["bob"].credential, inst["bob"].project) == "ok"
+
+    with inst["alice"].acting(monkeypatch):
+        row = (await st.sent_status(CONV))[0]
+    assert row["recipients"] == {"bob": "filled", "carol": "pending"}
+    assert row["tests"]["bob"]["state"] == "ok" and row["expired"] is False
+    assert not any("acme-gmail" in body or SECRET in body for body in hub.wire)

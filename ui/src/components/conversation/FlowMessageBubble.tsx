@@ -44,12 +44,14 @@ import {
   isAttachmentMissing,
 } from '@sdk/entities/flow-message';
 import { Download, File, Loader2, Play, X } from 'lucide-react';
+import { valueKindMeta } from '@src/components/value-viewer/useValueKind';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
 import { MessageSessionChip } from './MessageSessionChip';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { CredentialValueLock } from './CredentialValueLock';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
@@ -76,6 +78,7 @@ import { ShareReplyCard } from './ShareReplyCard';
 import type { WorkerType } from './conversation-session-constants';
 import { PromptCallCard } from './PromptCallCard';
 import type { ProcessCall, ReturnedValue } from '@sdk';
+import { messageDirection } from './message-direction';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -412,7 +415,7 @@ export function FlowMessageBubble({
     fm.sender_id &&
     rosterReady &&
     !participantLabelByUserId(participants, fm.sender_id) &&
-    !(localUser?.id && fm.sender_id === localUser.id) &&
+    messageDirection(fm, localUser?.id) !== 'sent' &&
     !fm.sender_name?.trim() &&
     (creatorIsLocalArtifact || !(creator?.name?.trim() || creator?.email?.trim()))
       ? fm.sender_id
@@ -612,6 +615,7 @@ export function FlowMessageBubble({
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
+            localPath={item.localPath}
             onOpenInEditor={
               item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
             }
@@ -670,6 +674,7 @@ export function FlowMessageBubble({
             url={item.url ?? ''}
             filename={item.filename}
             state={item.state}
+            localPath={item.localPath}
             onOpenInEditor={
               item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
             }
@@ -915,6 +920,8 @@ function MessageFileChip({
 }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
+  // A value of a kind (`*.value.json`) is named by its kind, not shown as a bare file.
+  const value = attachment.value_kind ? valueKindMeta(attachment.value_kind) : null;
   return (
     <>
       <EntityChip
@@ -922,8 +929,8 @@ function MessageFileChip({
           typeId,
           type: 'file',
           id: String(attachment.asset_id ?? ''),
-          name: attachment.name ?? 'file',
-          icon: File,
+          name: value?.label ?? attachment.name ?? 'file',
+          icon: value?.Icon ?? File,
         }}
         staged={!attachment.installed}
         onClick={() => setReviewOpen(true)}
@@ -1137,6 +1144,11 @@ export function MessageEntityChip({
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
   const runnable = !!attachment && TESTABLE_TYPES.has(typeId.type);
+  // A shared credential whose value travelled too (secured transfer or a project vault) carries a lock.
+  const valueLock =
+    typeId.type === 'credential' ? (
+      <CredentialValueLock typeId={typeId} name={attachment?.name} conversationId={conversationId} />
+    ) : null;
   const runButton = runnable ? (
     <button
       type="button"
@@ -1193,6 +1205,7 @@ export function MessageEntityChip({
             onClick={() => void onStagedClick()}
           />
           {runButton}
+          {valueLock}
         </span>
         {dialog}
         {runPicker}
@@ -1236,6 +1249,7 @@ export function MessageEntityChip({
           projectId={projectId}
         />
         {runButton}
+        {valueLock}
       </span>
       {dialog}
       {runPicker}

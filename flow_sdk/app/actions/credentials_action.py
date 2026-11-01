@@ -153,7 +153,12 @@ async def credentials_action() -> ApiResponse:
                 if sub_path == "publish":
                     return ApiSuccessResponse(data=await svc.publish(payload.get("name") or "", pid, vault))
                 if sub_path == "fetch":
-                    return ApiSuccessResponse(data=await svc.fetch(payload.get("name") or "", pid))
+                    name, conv = payload.get("name") or "", payload.get("conversation_id") or ""
+                    if conv:  # fetched from a share: the sender learns it landed and how its test went
+                        from flow_sdk.secrets.sealed_transfer import fetch_shared  # noqa: PLC0415
+
+                        return ApiSuccessResponse(data=await fetch_shared(conv, name, pid))
+                    return ApiSuccessResponse(data=await svc.fetch(name, pid))
                 if sub_path == "vault-check":
                     return ApiSuccessResponse(data=await svc.vault_check(pid, vault))
                 if sub_path == "grant":
@@ -194,6 +199,7 @@ async def credentials_action() -> ApiResponse:
 #   POST /credentials/sealed/decline  {conversation_id, message_id}
 #   POST /credentials/sealed/get      {conversation_id, transfer_id}  — "Get the secret" (Flowpad's own UI only)
 #   POST /credentials/sealed/publish  {rotate?}           → publish / rotate / withdraw this device's key
+#   POST /credentials/sealed/track    {typeid, conversation_id}  — the sender's record of a vault share (per-receiver status)
 
 _SEALED_GET = {"state": "state", "receivers": "receivers", "incoming": "incoming", "sent": "sent_status"}
 #: Sharing or filling in values is a person's click — never a worker, the CLI or a served app.
@@ -227,6 +233,7 @@ async def _sealed(method: str, verb: str, request) -> ApiResponse:
             "fill": lambda: st.fill(conv, msg, project_id=body.get("project_id")),
             "decline": lambda: st.decline(conv, msg),
             "get": lambda: st.get_secret(conv, body.get("transfer_id") or ""),
+            "track": lambda: st.track_vault_share(body.get("typeid") or "", conv),
         }
         if verb in post:
             return ApiSuccessResponse(data=await post[verb]())

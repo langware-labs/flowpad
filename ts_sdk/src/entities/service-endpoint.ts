@@ -229,6 +229,15 @@ export class ServedApp {
     return backend.type === 'routed' ? (this.route?.backend ?? null) : backend;
   }
 
+  /** What produces the app's bytes, in words: `proxy → localhost:3300`, `static → <root>`, else the type. */
+  get backendLabel(): string {
+    const backend = this.backend;
+    if (!backend) return '';
+    if (backend.type === 'proxy') return `proxy → localhost:${backend.port}`;
+    if (backend.type === 'static') return `static → ${backend.root}`;
+    return backend.type;
+  }
+
   get webapp_id(): string | null {
     return (this.mount === null ? this.endpoint.webapp_id : this.route?.webapp_id) ?? null;
   }

@@ -1715,6 +1715,11 @@ async def _stage_attachment(
     ma.name = name
     ma.description = description
     ma.unpacked_path = unpacked_path
+    if name:
+        from flow_sdk.fs_store.operations.flow_message import default_data_dir  # noqa: PLC0415
+        from flow_sdk.values import kind_of_value_file  # noqa: PLC0415
+
+        ma.value_kind = kind_of_value_file(default_data_dir(top_fm_id) / unpacked_path / name)
     ma.transfer_mode = transfer_mode
     ma.origin = origin
     ma.git_transfer = git_transfer

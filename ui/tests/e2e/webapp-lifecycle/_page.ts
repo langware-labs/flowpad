@@ -59,8 +59,9 @@ export function countBackendCalls(page: Page): CallCounter {
 /** What the visible app area shows when the frame never got ready — for the report, not an assertion. */
 export async function visibleState(page: Page): Promise<string> {
   for (const id of ['webapp-setup-gate', 'app-not-installed', 'project-load-gate', 'app-opens-in-tab', 'webapp-header']) {
-    if (await page.getByTestId(id).first().isVisible().catch(() => false)) return id;
+    if (await page.getByTestId(id).first().isVisible({ timeout: 500 }).catch(() => false)) return id;
   }
-  if (await page.locator(FRAME).first().isVisible().catch(() => false)) return 'frame (not ready)';
-  return (await page.locator('main').first().innerText().catch(() => '')).slice(0, 160) || 'blank';
+  if (await page.locator(FRAME).first().isVisible({ timeout: 500 }).catch(() => false)) return 'frame (not ready)';
+  // A read for the report, never a wait: whatever is on screen now.
+  return (await page.locator('main').first().innerText({ timeout: 2000 }).catch(() => '')).slice(0, 160) || 'blank';
 }

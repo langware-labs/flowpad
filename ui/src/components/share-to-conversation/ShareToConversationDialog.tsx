@@ -633,6 +633,11 @@ export function ShareToConversationDialog({
             setLocalError(errorMessage(sealErr, t`The credential was shared, but its values could not be sent securely.`));
           }
         }
+        if (convId && shareValues && valuesRoute === 'manager' && preShare.answer?.typeid) {
+          // Secret manager: the vault carries the values; record the share so each receiver's Fetch reports back
+          // (delivered, then the credential's test on their machine). A failure only loses that status.
+          await credentialsService.sealedTrack(preShare.answer.typeid, convId).catch(() => undefined);
+        }
         if (convId) {
           setSharedConversationId(convId);
           onShared?.(convId);
