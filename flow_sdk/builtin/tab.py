@@ -980,7 +980,7 @@ async def ensure_tab_created(
         pointer,
         target_type,
         target_id,
-        hint=None if project_id is _UNSET else project_id,
+        opened_in=None if project_id is _UNSET else project_id,
     )
     # No client hint and nothing resolved: keep the row's stamp (``_UNSET``) rather
     # than clearing it — only an explicit hint or a resolved answer overwrites.
@@ -1273,7 +1273,7 @@ async def show_placement(process_id: str) -> dict[str, Any]:
         tab.pointer if tab is not None else None,
         "agentic_process",
         process_id,
-        hint=tab.project_id if tab is not None else None,
+        opened_in=tab.project_id if tab is not None else None,
     )
     if tab is None:
         return {"tab_id": None, "host": False, "project_id": project_id}
@@ -1318,12 +1318,11 @@ async def reconcile_tab_project(target_type: str, target_id: str, project_id: st
     """
     changed = 0
     tabs = await _tabs_for_target(target_type, target_id)
-    target = await _load_target_row(target_type, target_id) if tabs else None
     for tab in tabs:
         # The one rule order: a scope-keyed / dependency-home / presenting row keeps
-        # the project its pointer names; others follow the target's EFFECTIVE project.
+        # the project its pointer names; others follow the target's new project.
         resolved_project = await resolve_tab_project(
-            tab.pointer, target_type, target_id, hint=project_id, target=target
+            tab.pointer, target_type, target_id, opened_in=tab.project_id, known_target_project=project_id
         )
         if tab.project_id != resolved_project:
             tab.project_id = resolved_project
@@ -1460,9 +1459,10 @@ async def _populate_tab_target_fields(
 ) -> None:
     """Populate the API-only target fields (cloud state, content project) without persisting Tab rows.
 
-    ``target_project_id`` is the content's OWN project (``resolve_tab_project``
-    with ``for_target``) — the target's, else the project dir holding its path, so
-    an unminted file presented elsewhere is still marked a guest."""
+    ``target_project_id`` is the content's OWN project (``tab_owner_project``,
+    computed once per row by ``_resolve_tab_projects``) — the target's, else the
+    project dir holding its path, so an unminted file presented elsewhere is still
+    marked a guest. Live-session targets carry none."""
     for tab in tabs:
         target = (
             target_map.get((tab.target_type, str(tab.target_id)))
@@ -1470,16 +1470,11 @@ async def _populate_tab_target_fields(
             else None
         )
         tab.target_remote = bool(getattr(target, "remote", False))
-        tab.target_project_id = (
-            await resolve_tab_project(
-                tab.pointer, tab.target_type, tab.target_id, for_target=True, target=target
-            )
-            if tab.target_type not in _DB_BACKED_TARGET_TYPES
-            else None
-        )
+        if tab.target_type in _DB_BACKED_TARGET_TYPES:
+            tab.target_project_id = None
 
 
-async def _project_from_pointer(pointer: str | None) -> str | None:
+async def _project_from_pointer(pointer: str | None, existing: "set[str] | None" = None) -> str | None:
     """The owning project NAMED by a project-scoped dock pointer
     (``viewType:"project"`` → ``<project_id>/...``). A tab opened under
     ``/dock/project/<id>/...`` belongs to that project even when its target row is
@@ -1494,7 +1489,7 @@ async def _project_from_pointer(pointer: str | None) -> str | None:
 
     if not is_valid_entity_id(candidate):
         return None
-    return candidate if await _project_exists(candidate) else None
+    return candidate if await _project_known(candidate, existing) else None
 
 
 def _pointer_scope_project(pointer: str | None) -> "tuple[bool, str | None]":
@@ -1536,9 +1531,19 @@ def _pointer_scope_project(pointer: str | None) -> "tuple[bool, str | None]":
     return (False, None)
 
 
-#: Targets whose project is the one they were opened IN when nothing else names
-#: one: a plain terminal carries no reliable project of its own.
-_HINTED_TARGET_TYPES = frozenset({EntityType.SHELL.value})
+def _takes_opened_in(target_type: str | None, target: Any) -> bool:
+    """May this tab take the project it was OPENED IN (step 7)? Only when nothing
+    else can name one: a target-less dock (a web page, a settings screen), a target
+    that no longer resolves, and a plain terminal (no reliable project of its own).
+    An existing projectless target is Global. Mirrors the frontend's
+    ``takesOpenedIn``."""
+    return not target_type or target is None or target_type == EntityType.SHELL.value
+
+
+def _is_content_sub_pointer(sub: str) -> bool:
+    """A content sub-pointer (an editor or wiki page) names ONE document, never a
+    browse scope. Mirrors the frontend's ``isContentSubPointer``."""
+    return sub.startswith(('editor/', 'wiki/'))
 
 
 def _pointer_consumer_project(pointer: str | None) -> str | None:
@@ -1556,14 +1561,13 @@ def _pointer_consumer_project(pointer: str | None) -> str | None:
     return str(options.get('consumerProject') or '') or None
 
 
-def _pointer_machine_path(pointer: str | None) -> str | None:
-    """The local machine path a content pointer addresses, if any: an assets
-    ``…/vfs/compute_node-<id>/<sub>`` sub-pointer (plain or project-rebased) or a
-    raw ``editor`` file path. ``None`` for every other shape — a scope-keyed row
-    stores no sub-pointer, a typeid-addressed editor names no path."""
-    vt, sub = _pointer_target(pointer, fold=False)
+def _pointer_machine_path(view_type: str, sub: str) -> str | None:
+    """The local machine path a content pointer (``_pointer_target``) addresses, if
+    any: an assets ``…/vfs/compute_node-<id>/<sub>`` sub-pointer (plain or
+    project-rebased) or a raw ``editor`` file path. ``None`` for every other shape —
+    a scope-keyed row stores no sub-pointer, a typeid-addressed editor names no path."""
     sub = sub.split('?', 1)[0]
-    if vt == ViewType.EDITOR.value and sub.startswith('/'):
+    if view_type == ViewType.EDITOR.value and sub.startswith('/'):
         return sub
     parts = sub.split('/')
     if 'vfs' not in parts:
@@ -1575,21 +1579,79 @@ def _pointer_machine_path(pointer: str | None) -> str | None:
     return '/' + vfs.entity_subpath
 
 
-async def _project_for_path(path: str | None) -> str | None:
-    """The DEEPEST project whose mount is ``path`` or holds it — an unminted file in a
-    project folder still belongs to that folder's project (nested mounts: nearest wins)."""
-    if not path:
-        return None
-    try:
-        from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+async def _project_known(project_id: str | None, existing: "set[str] | None") -> bool:
+    """Does ``project_id`` name a live Project? ``existing`` is a list read's one
+    batched answer (``_existing_projects``); ``None`` looks it up here."""
+    if not project_id:
+        return False
+    if existing is not None:
+        return project_id in existing
+    return await _project_exists(project_id)
 
-        canonical = canonical_posix_path(path)
-        owners = await Project._mount_owners(canonical) or await Project._enclosing_owners(canonical)
+
+async def _existing_projects(ids: "set[str]") -> "set[str] | None":
+    """Which of ``ids`` are live Projects — ONE ``id IN (…)`` query. ``None`` when
+    the lookup failed (callers then check one by one, failing open)."""
+    if not ids:
+        return set()
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    try:
+        rows = await Project.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", sorted(ids)]))
+        )
     except Exception:
-        logger.debug("tab project: path lookup failed for %s", path, exc_info=True)
+        logger.debug("tab project: batch project lookup failed", exc_info=True)
         return None
-    return str(owners[0].id) if owners else None
+    return {str(r.id) for r in rows}
+
+
+async def tab_owner_project(
+    pointer: str | None,
+    target_type: str | None,
+    target_id: str | None,
+    *,
+    target: Any = _UNSET,
+    known_target_project: "str | None" = _UNSET,  # type: ignore[assignment]
+) -> str | None:
+    """The content's OWN project (the tab's ``target_project_id``; steps 2, 5, 6 of
+    ``resolve_tab_project``): a Project target is its own; else the target's
+    project (its stamp, else its ``effective_project_id`` ancestor walk); else the
+    deepest project mount holding its path (pointer vfs, then the target's
+    cwd/workdir) — so an unminted file in a project folder still has an owner.
+
+    ``known_target_project`` is a caller that already knows the target's project
+    (skips the target load); ``target`` an already-loaded row (``None`` = known
+    missing); ``_UNSET`` loads it here.
+    """
+    if target_type == EntityType.PROJECT.value and target_id:
+        return str(target_id)
+    if known_target_project is not _UNSET:
+        if known_target_project:
+            return str(known_target_project)
+        target = None if target is _UNSET else target
+    elif target is _UNSET:
+        target = await Entity.load_by_type(target_type, target_id)
+    if target is not None:
+        own = getattr(target, 'project_id', None)
+        if not own:
+            try:
+                own = await target.effective_project_id()
+            except Exception:
+                own = None
+        if own:
+            return str(own)
+    from flow_sdk.fs_store.indexer.roots import owning_project_id  # noqa: PLC0415
+
+    view_type, sub = _pointer_target(pointer, fold=False)
+    for path in (
+        _pointer_machine_path(view_type, sub),
+        getattr(target, 'cwd', None) or getattr(target, 'workdir', None),
+    ):
+        if path and (by_path := await owning_project_id(path)):
+            return by_path
+    return None
 
 
 async def resolve_tab_project(
@@ -1597,9 +1659,11 @@ async def resolve_tab_project(
     target_type: str | None,
     target_id: str | None,
     *,
-    for_target: bool = False,
-    hint: str | None = None,
+    opened_in: str | None = None,
+    known_target_project: "str | None" = _UNSET,  # type: ignore[assignment]
     target: Any = _UNSET,
+    owner: "str | None" = _UNSET,  # type: ignore[assignment]
+    existing_projects: "set[str] | None" = None,
 ) -> str | None:
     """THE project a tab belongs to — one rule order, mirrored by the frontend's
     ``resolveTabProject`` (ts_sdk/src/entities/tab.ts; docs/tab-management.md):
@@ -1608,68 +1672,42 @@ async def resolve_tab_project(
       2. Project target / landing     → that project
       3. presenting project in URL    → ``/dock/project/<P>/…`` (``flow show``; a
                                         guest tab when ≠ the target's own project)
-      4. scope-keyed BROWSE row       → its scope's project (``all`` → Global)
+      4. scope-keyed BROWSE row       → its scope's project (``all`` → Global); an
+                                        editor/wiki sub-pointer is content, not browse
       5. target entity                → its effective project
       6. path (pointer vfs, then the target's cwd/workdir) → deepest project mount
-      7. else ``hint`` (the client's active project) — only for a target-less dock
-         (a web page), a plain shell, or a target that no longer resolves; any
-         other existing projectless target is Global.
+      7. ``opened_in`` (the client's active project) — only for a tab that may take
+         the project it was opened in (``_takes_opened_in``: target-less, target
+         gone, or a plain shell); an existing projectless target is Global.
 
-    ``for_target=True`` answers ``target_project_id`` — the content's OWN project:
-    steps 1, 3, 4 and 7 are skipped, so an unminted file in a project dir is still
-    a guest when presented elsewhere.
-
-    ``target`` may carry the already-loaded row (``None`` = known missing) so a
-    list read never pays a per-row lookup; ``_UNSET`` loads it here.
+    Steps 2, 5, 6 are ``tab_owner_project`` (the content's own project, the tab's
+    ``target_project_id``); pass ``owner`` when it is already computed, else
+    ``known_target_project`` / ``target`` feed it. ``existing_projects`` is a list
+    read's batched project-existence answer. ``target`` is the loaded row
+    (``None`` = known missing); left ``_UNSET`` with ``owner`` given, the target is
+    taken to exist.
     """
-    if not for_target:
-        consumer = _pointer_consumer_project(pointer)
-        if consumer and await _project_exists(consumer):
-            return consumer
+    _view_type, sub = _pointer_target(pointer, fold=False)
+    consumer = _pointer_consumer_project(pointer)
+    if consumer and await _project_known(consumer, existing_projects):
+        return consumer
     if target_type == EntityType.PROJECT.value and target_id:
         return str(target_id)
-    if not for_target:
-        presenting = await _project_from_pointer(pointer)
-        if presenting:
-            return presenting
-        scope_keyed, scope_project = _pointer_scope_project(pointer)
-        if scope_keyed:
-            return scope_project
-    if target is _UNSET:
-        target = await _load_target_row(target_type, target_id)
-    if target is not None:
-        try:
-            own = await target.effective_project_id()
-        except Exception:
-            own = getattr(target, 'project_id', None)
-        if own:
-            return str(own)
-    for path in (
-        _pointer_machine_path(pointer),
-        getattr(target, 'cwd', None) or getattr(target, 'workdir', None),
-    ):
-        by_path = await _project_for_path(path)
-        if by_path:
-            return by_path
-    if for_target or (target is not None and target_type not in _HINTED_TARGET_TYPES):
-        return None
-    return hint or None
-
-
-async def _load_target_row(target_type: str | None, target_id: str | None):
-    """The target row via its type's ``get_by_id`` (which includes on-disk recovery
-    for unindexed rows — the same read ``Entity.project_id_of`` makes). ``None``
-    when target-less, unknown or gone."""
-    if not (target_type and target_id):
-        return None
-    try:
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-        model = SchemaRegistry.get_entity_cls(target_type)
-        return await model.get_by_id(str(target_id)) if model is not None else None
-    except Exception:
-        logger.debug("tab project: target load failed for %s/%s", target_type, target_id, exc_info=True)
-        return None
+    presenting = await _project_from_pointer(pointer, existing_projects)
+    if presenting:
+        return presenting
+    scope_keyed, scope_project = _pointer_scope_project(pointer)
+    if scope_keyed and not _is_content_sub_pointer(sub):
+        return scope_project
+    if owner is _UNSET:
+        if target is _UNSET and known_target_project is _UNSET:
+            target = await Entity.load_by_type(target_type, target_id)
+        owner = await tab_owner_project(
+            pointer, target_type, target_id, target=target, known_target_project=known_target_project
+        )
+    if owner:
+        return owner
+    return (opened_in or None) if _takes_opened_in(target_type, target) else None
 
 
 async def _resolve_tab_projects(
@@ -1692,18 +1730,38 @@ async def _resolve_tab_projects(
     durable persistence of the heal moves to the next ``ensure_tab``/open of the
     same pointer.
 
-    Every row goes through ``resolve_tab_project`` (the one rule order). A
-    pre-loaded ``target_map`` row is used as-is; a row it lacks is looked up only
-    when the stamp is empty (a stamped row's stamp is the fallback, as before).
+    Every row goes through ``resolve_tab_project`` (the one rule order) on the
+    batched ``target_map``: a target it lacks is known missing and the row keeps
+    its persisted stamp (resolved at ``ensure_tab`` with on-disk recovery); only
+    an UNSTAMPED missing content target pays one recovering lookup. The owner is computed once per row and
+    kept on ``tab.target_project_id`` for ``_populate_tab_target_fields``;
+    pointer-named projects are checked in ONE query.
     """
     target_map = target_map or {}
+    candidates = {
+        pid
+        for tab in tabs
+        for pid in (_pointer_consumer_project(tab.pointer), _pointer_project_id(tab.pointer))
+        if pid
+    }
+    existing = await _existing_projects(candidates)
     for tab in tabs:
         key = (tab.target_type, str(tab.target_id)) if tab.target_type and tab.target_id else None
-        target: Any = target_map.get(key, _UNSET) if key else None
-        if target is _UNSET and tab.project_id:
-            target = None
+        target = target_map.get(key) if key else None
+        if target is None and key and not tab.project_id and tab.target_type not in _DB_BACKED_TARGET_TYPES:
+            # Unstamped and absent from the batch: maybe merely unindexed — one
+            # lookup with on-disk recovery (a stamped row keeps its stamp instead).
+            target = await Entity.load_by_type(tab.target_type, tab.target_id)
+        owner = await tab_owner_project(tab.pointer, tab.target_type, tab.target_id, target=target)
+        tab.target_project_id = owner
         resolved = await resolve_tab_project(
-            tab.pointer, tab.target_type, tab.target_id, hint=tab.project_id, target=target
+            tab.pointer,
+            tab.target_type,
+            tab.target_id,
+            opened_in=tab.project_id,
+            target=target,
+            owner=owner,
+            existing_projects=existing,
         )
         tab.project_id = resolved
 

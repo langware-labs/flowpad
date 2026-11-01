@@ -1,7 +1,7 @@
 """``resolve_tab_project`` — the ONE rule order a tab's project is decided by.
 
 One row per scenario, real entities (session SQLite fixture), run through the
-function itself and through ``target_project_id`` (``for_target=True``). The
+function itself and through ``target_project_id`` (``tab_owner_project``). The
 frontend's ``resolveTabProject`` (ts_sdk/src/entities/tab.ts) mirrors this order.
 Lens tabs are covered by test_lens_tab_project.py (needs on-disk recovery).
 """
@@ -18,7 +18,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.tab import Tab, ensure_tab, reconcile_tab_project, resolve_tab_project
+from flow_sdk.builtin.tab import Tab, ensure_tab, reconcile_tab_project, resolve_tab_project, tab_owner_project
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -61,7 +61,7 @@ async def world(tmp_path: Path) -> World:
     return World(a=a, b=b, inner=inner, doc_a=doc_a, a_dir=a_dir, inner_dir=inner_dir)
 
 
-# (name, build(world) -> (pointer, target_type, target_id, hint), expected, expected_for_target)
+# (name, build(world) -> (pointer, target_type, target_id, opened_in), expected, expected_owner)
 # ``expected*`` are attribute names on World ("a", "b", "inner"), "hint", or None.
 SCENARIOS = [
     (
@@ -115,6 +115,14 @@ SCENARIOS = [
         "b", "a",
     ),
     (
+        "scoped Assets EDITOR is content: its asset wins, not the scope",
+        lambda w: (
+            _ptr("assets", f"editor/markdown/typeid/markdown-{w.doc_a.id}", tabHash=f"assets|project:{w.b.id}"),
+            "markdown", w.doc_a.id, None,
+        ),
+        "a", "a",
+    ),
+    (
         "project home (Project target) → that project",
         lambda w: (_ptr("project", w.a.id), "project", w.a.id, w.b.id),
         "a", "a",
@@ -141,7 +149,7 @@ SCENARIOS = [
     ),
     (
         "web page (target-less) → the client's active project",
-        lambda w: (_ptr("web_app", "https://example.com"), None, None, w.b.id),
+        lambda w: (_ptr("web-app", "https://example.com"), None, None, w.b.id),
         "hint", None,
     ),
     (
@@ -165,8 +173,8 @@ async def test_rule_order(world: World, name, build, expected, expected_for_targ
     def want(key):
         return hint if key == "hint" else (getattr(world, key).id if key else None)
 
-    got = await resolve_tab_project(pointer, target_type, target_id, hint=hint)
-    got_target = await resolve_tab_project(pointer, target_type, target_id, for_target=True)
+    got = await resolve_tab_project(pointer, target_type, target_id, opened_in=hint)
+    got_target = await tab_owner_project(pointer, target_type, target_id)
     assert (got, got_target) == (want(expected), want(expected_for_target)), name
 
 
@@ -179,7 +187,7 @@ async def test_a_process_tab_follows_its_project_then_its_workdir(world: World) 
     for proc, expected in ((stamped, world.a.id), (by_dir, world.inner.id)):
         sub = f"agentic_process-{proc.id}"
         pointer = _ptr("shell", sub, tabHash=f"shell|{sub}")
-        assert await resolve_tab_project(pointer, "agentic_process", proc.id, hint=world.b.id) == expected
+        assert await resolve_tab_project(pointer, "agentic_process", proc.id, opened_in=world.b.id) == expected
 
 
 @pytest.mark.asyncio

@@ -1330,8 +1330,6 @@ class Entity(DBEntity):
 
                 await reconcile_tab_project(entity.type, str(entity.id), new_project)
             except Exception as tab_exc:  # noqa: BLE001 — never block an index on a chip
-                import logging  # noqa: PLC0415
-
                 logging.getLogger(__name__).warning(
                     "Tab project-reconcile after re-stamp failed for %s:%s — %s", entity.type, entity.id, tab_exc
                 )
@@ -3536,16 +3534,31 @@ class Entity(DBEntity):
         the single, entity-agnostic "what project owns this thing" primitive —
         used by tab project derivation and ``Conversation.resolve_project_id``.
         """
+        target = await Entity.load_by_type(entity_type, entity_id)
+        if target is None:
+            return None
         try:
-            model = SchemaRegistry.get_entity_cls(entity_type)
-            if model is None:
-                return None
-            target = await model.get_by_id(str(entity_id))
-            return await target.effective_project_id() if target is not None else None
+            return await target.effective_project_id()
         except Exception:
             import logging  # noqa: PLC0415
 
             logging.getLogger(__name__).debug("project_id_of: failed for %s/%s", entity_type, entity_id, exc_info=True)
+            return None
+
+    @staticmethod
+    async def load_by_type(entity_type: "str | None", entity_id: "str | None") -> "Entity | None":
+        """Any entity by ``(type, id)`` through its type's ``get_by_id`` (which for
+        some types includes on-disk recovery for unindexed rows). ``None`` when
+        either is empty, the type is unknown, or the row is gone. Best-effort."""
+        if not (entity_type and entity_id):
+            return None
+        try:
+            model = SchemaRegistry.get_entity_cls(entity_type)
+            return await model.get_by_id(str(entity_id)) if model is not None else None
+        except Exception:
+            import logging  # noqa: PLC0415
+
+            logging.getLogger(__name__).debug("load_by_type: failed for %s/%s", entity_type, entity_id, exc_info=True)
             return None
 
     @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})
