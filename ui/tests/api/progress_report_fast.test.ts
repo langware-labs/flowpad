@@ -9,6 +9,7 @@
 
 import { apiClient, ComputeNode, ConnectionManager, GRAPH_API_PREFIX } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { adjusted } from '../adjustableTimeout';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 const CN_FS_BASE = `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records`;
@@ -286,6 +287,6 @@ describe('progress_report fast tests', () => {
       // Measured after gating flow_home out of project discovery: endpoint 4.0-4.2s,
       // test body 4.6s. NEVER RAISE THIS. A regression here means the index is
       // walking roots it should not; fix the roots, not the number.
-    }, 5000);
+    }, adjusted(5000));
   });
 });
