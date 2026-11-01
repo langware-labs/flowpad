@@ -3327,6 +3327,7 @@ msgstr "Additional plugin marketplace URLs"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Address"
 msgstr "Address"
 
@@ -4340,6 +4341,10 @@ msgstr "API URL"
 msgid "App"
 msgstr "App"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "App id"
+msgstr "App id"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "App ID"
 msgstr "App ID"
@@ -4539,6 +4544,10 @@ msgstr "Artifact created"
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Artifact deleted"
 msgstr "Artifact deleted"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Artifact id"
+msgstr "Artifact id"
 
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifacts"
@@ -5576,6 +5585,7 @@ msgid "Build command"
 msgstr "Build command"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Build folder"
 msgstr "Build folder"
 
@@ -6299,6 +6309,10 @@ msgstr "Check the address, or try opening it in your browser."
 msgid "Check your connection and try again."
 msgstr "Check your connection and try again."
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Checked"
+msgstr "Checked"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Checked for new messages"
 msgstr "Checked for new messages"
@@ -6849,6 +6863,10 @@ msgstr "Click to rename room"
 #: src/components/wizard/WizardButton.tsx
 msgid "Click to run · double-click to open the wizard"
 msgstr "Click to run · double-click to open the wizard"
+
+#: src/components/credentials/SignInCommand.tsx
+msgid "Click to run · right-click for more"
+msgstr "Click to run · right-click for more"
 
 #. placeholder {0}: row.orphan_count
 #. placeholder {1}: row.type
@@ -10783,6 +10801,7 @@ msgstr "Describe who this agent is, what it does, and what it must never do…"
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "Description"
 
@@ -12056,6 +12075,7 @@ msgid "Endpoint"
 msgstr "Endpoint"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Endpoint id"
 msgstr "Endpoint id"
 
@@ -13166,6 +13186,10 @@ msgstr "Failed to open logs folder"
 msgid "Failed to open project"
 msgstr "Failed to open project"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to open terminal"
+msgstr "Failed to open terminal"
+
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Failed to remove dependency"
 #~ msgstr "Failed to remove dependency"
@@ -13322,6 +13346,10 @@ msgstr "Failed:"
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
 msgstr "Failed."
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Failure"
+msgstr "Failure"
 
 #: src/components/inbound/InboundView.tsx
 msgid "fallback"
@@ -14136,6 +14164,7 @@ msgstr "folder"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "Folder"
@@ -14226,11 +14255,11 @@ msgstr "Fork"
 msgid "Fork Session"
 msgstr "Fork Session"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Fork session — new tab, same conversation history"
 msgstr "Fork session — new tab, same conversation history"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Forking…"
 msgstr "Forking…"
 
@@ -16808,6 +16837,7 @@ msgstr "kind"
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Kind"
 msgstr "Kind"
 
@@ -17067,7 +17097,7 @@ msgstr "Launch {name}"
 #~ msgid "Launch a new sandbox running this agent"
 #~ msgstr "Launch a new sandbox running this agent"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Launch a session first"
 msgstr "Launch a session first"
 
@@ -18970,6 +19000,10 @@ msgstr "More…"
 msgid "Morning briefing"
 msgstr "Morning briefing"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Mount"
+msgstr "Mount"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Mount Flowpad Assistant"
 msgstr "Mount Flowpad Assistant"
@@ -19074,6 +19108,7 @@ msgstr "name"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/token-plan/RenameButton.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
@@ -19882,6 +19917,10 @@ msgstr "No compute node available"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "No compute node available in this workspace."
 msgstr "No compute node available in this workspace."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "No computer to open a terminal on"
+msgstr "No computer to open a terminal on"
 
 #: src/components/connections-manager.tsx
 msgid "No connection test is defined for this provider."
@@ -24212,6 +24251,10 @@ msgstr "Port for HTTP proxy in sandbox"
 msgid "Port for SOCKS proxy in sandbox"
 msgstr "Port for SOCKS proxy in sandbox"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Ports"
+msgstr "Ports"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -24423,6 +24466,10 @@ msgstr "Process unavailable"
 msgid "Processes ({processCount})"
 msgstr "Processes ({processCount})"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Processes (pid)"
+msgstr "Processes (pid)"
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr "Profile"
@@ -24539,6 +24586,7 @@ msgid "Project home"
 msgstr "Project home"
 
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Project id"
 msgstr "Project id"
 
@@ -27414,6 +27462,7 @@ msgid "runtime"
 msgstr "runtime"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Runtime"
 msgstr "Runtime"
 
@@ -28433,7 +28482,7 @@ msgstr "Send"
 msgid "Send a message below and the agent will get to work."
 msgstr "Send a message below and the agent will get to work."
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Send a message first — fork requires conversation history"
 msgstr "Send a message first — fork requires conversation history"
 
@@ -28650,6 +28699,10 @@ msgstr "Serve a folder"
 msgid "Served"
 msgstr "Served"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Served by"
+msgstr "Served by"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
 msgstr "Server did not come back. Restart Flowpad manually."
@@ -28768,10 +28821,10 @@ msgstr "Session ID"
 msgid "Session info"
 msgstr "Session info"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Session is not running"
 msgstr "Session is not running"
 
@@ -29455,8 +29508,8 @@ msgid "Show Annotations"
 msgstr "Show Annotations"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-msgid "Show as"
-msgstr "Show as"
+#~ msgid "Show as"
+#~ msgstr "Show as"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Show changes"
@@ -29986,6 +30039,7 @@ msgid "Simple actions — click to show all git operations"
 msgstr "Simple actions — click to show all git operations"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Since"
 msgstr "Since"
 
@@ -30756,6 +30810,10 @@ msgstr "Starting your sandbox…"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "Starting…"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "State"
+msgstr "State"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "Stats"

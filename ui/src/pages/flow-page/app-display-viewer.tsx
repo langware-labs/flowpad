@@ -18,6 +18,8 @@ import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
 import { Pencil } from 'lucide-react';
+import { AppInfoPopover } from '@src/components/webapp-display/AppInfoPopover';
+import { CopyButton } from '@src/components/ui/copy-button';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -235,21 +237,26 @@ export function AppDisplayViewer({
 
   const display = (
     <div className="flex h-full flex-col">
-      {/* The website view is the app: one header button to edit it, nothing else. */}
-      {definition ? (
-        <div className="flex items-center justify-end border-b px-3 py-1" data-testid="webapp-header">
+      {/* The app's address and what is known about it, then the button to edit it. */}
+      <div className="flex items-center gap-2 border-b px-3 py-1" data-testid="webapp-header">
+        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" data-testid="webapp-address" title={appDisplay.src}>
+          {appDisplay.src}
+        </span>
+        <CopyButton value={appDisplay.src} testId="webapp-address-copy" />
+        <AppInfoPopover display={appDisplay} lifecycle={lifecycle} />
+        {definition ? (
           <Button
             size="sm"
             variant="outline"
-            className="h-7"
+            className="ms-auto h-7 shrink-0"
             data-testid="webapp-edit"
             onClick={() => navigation.openDock(DockPointer.forAssetEditorByTypeId(WebApp.type, definition.typeId))}
           >
             <Pencil className="size-3.5" />
             <Trans>Edit app</Trans>
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
       {relayed ? (
         <div
           data-testid="app-opens-in-tab"

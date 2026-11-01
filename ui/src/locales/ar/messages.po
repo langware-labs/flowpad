@@ -3299,8 +3299,9 @@ msgstr "روابط إضافية لأسواق الملحقات"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Address"
-msgstr ""
+msgstr "العنوان"
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Address book"
@@ -4308,6 +4309,10 @@ msgstr ""
 msgid "App"
 msgstr "التطبيق"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "App id"
+msgstr "معرّف التطبيق"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "App ID"
 msgstr ""
@@ -4507,6 +4512,10 @@ msgstr "تم إنشاء العنصر"
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Artifact deleted"
 msgstr "تم حذف الملف"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Artifact id"
+msgstr "معرّف الأداة"
 
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifacts"
@@ -5538,8 +5547,9 @@ msgid "Build command"
 msgstr ""
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Build folder"
-msgstr ""
+msgstr "مجلد البناء"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Build folder — the subfolder that is served"
@@ -6261,6 +6271,10 @@ msgstr "يُرجى التحقق من العنوان، أو محاولة فتحه
 msgid "Check your connection and try again."
 msgstr "يرجى التحقق من الاتصال والمحاولة مرة أخرى"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Checked"
+msgstr "آخر فحص"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Checked for new messages"
 msgstr "تم التحقق من الرسائل الجديدة"
@@ -6808,6 +6822,10 @@ msgstr "يمكن النقر لإعادة تسمية الغرفة"
 #: src/components/wizard/WizardButton.tsx
 msgid "Click to run · double-click to open the wizard"
 msgstr "انقر للتشغيل · انقر نقرًا مزدوجًا لفتح المعالج"
+
+#: src/components/credentials/SignInCommand.tsx
+msgid "Click to run · right-click for more"
+msgstr ""
 
 #. placeholder {0}: row.orphan_count
 #. placeholder {1}: row.type
@@ -10720,6 +10738,7 @@ msgstr "صِفوا هوية هذا الوكيل وما يقوم به وما يج
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "الوصف"
 
@@ -11980,6 +11999,7 @@ msgid "Endpoint"
 msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Endpoint id"
 msgstr "معرّف نقطة النهاية"
 
@@ -13083,6 +13103,10 @@ msgstr "تعذر فتح مجلد السجلات"
 msgid "Failed to open project"
 msgstr "تعذر فتح المشروع"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to open terminal"
+msgstr ""
+
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Failed to remove dependency"
 #~ msgstr ""
@@ -13239,6 +13263,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
 msgstr "فشل."
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Failure"
+msgstr "الفشل"
 
 #: src/components/inbound/InboundView.tsx
 msgid "fallback"
@@ -14041,6 +14069,7 @@ msgstr "مجلد"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "مجلد"
@@ -14130,11 +14159,11 @@ msgstr "تفريع"
 msgid "Fork Session"
 msgstr "تفريع الجلسة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Fork session — new tab, same conversation history"
 msgstr "تفريع الجلسة — تبويب جديد، نفس سجل المحادثة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Forking…"
 msgstr "جاري التفريع…"
 
@@ -16687,6 +16716,7 @@ msgstr "النوع"
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Kind"
 msgstr "النوع"
 
@@ -16941,7 +16971,7 @@ msgstr "تشغيل {name}"
 #~ msgid "Launch a new sandbox running this agent"
 #~ msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Launch a session first"
 msgstr "يجب بدء جلسة أولاً"
 
@@ -18828,6 +18858,10 @@ msgstr "المزيد…"
 msgid "Morning briefing"
 msgstr "موجز الصباح"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Mount"
+msgstr "نقطة التركيب"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Mount Flowpad Assistant"
 msgstr "ربط مساعد Flowpad"
@@ -18930,6 +18964,7 @@ msgstr "الاسم"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/token-plan/RenameButton.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
@@ -19731,6 +19766,10 @@ msgstr "لا توجد عقدة حوسبة متاحة"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "No compute node available in this workspace."
 msgstr "لا توجد عقدة حساب متاحة في مساحة العمل هذه."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "No computer to open a terminal on"
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "No connection test is defined for this provider."
@@ -24026,6 +24065,10 @@ msgstr "منفذ وسيط HTTP في الحاوية الرملية"
 msgid "Port for SOCKS proxy in sandbox"
 msgstr "منفذ وسيط SOCKS في الحاوية الرملية"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Ports"
+msgstr "المنافذ"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -24237,6 +24280,10 @@ msgstr "العملية غير متاحة"
 msgid "Processes ({processCount})"
 msgstr "العمليات ({processCount})"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Processes (pid)"
+msgstr "العمليات (pid)"
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr "الملف الشخصي"
@@ -24353,6 +24400,7 @@ msgid "Project home"
 msgstr "الصفحة الرئيسية للمشروع"
 
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Project id"
 msgstr "معرّف المشروع"
 
@@ -27206,6 +27254,7 @@ msgid "runtime"
 msgstr "وقت التشغيل"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Runtime"
 msgstr "بيئة التشغيل"
 
@@ -28219,7 +28268,7 @@ msgstr "إرسال"
 msgid "Send a message below and the agent will get to work."
 msgstr "يمكنكم إرسال رسالة أدناه وسيبدأ الوكيل بالعمل."
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Send a message first — fork requires conversation history"
 msgstr "يجب إرسال رسالة أولاً — يتطلب التفرع سجل المحادثة"
 
@@ -28435,6 +28484,10 @@ msgstr ""
 msgid "Served"
 msgstr "قيد الخدمة"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Served by"
+msgstr "يُقدَّم عبر"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
 msgstr "لم يستجب الخادم. يُرجى إعادة تشغيل Flowpad يدوياً."
@@ -28553,10 +28606,10 @@ msgstr "معرّف الجلسة"
 msgid "Session info"
 msgstr "معلومات الجلسة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Session is not running"
 msgstr "الجلسة ليست قيد التشغيل"
 
@@ -29234,8 +29287,8 @@ msgid "Show Annotations"
 msgstr "إظهار الملاحظات"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-msgid "Show as"
-msgstr "عرض كـ"
+#~ msgid "Show as"
+#~ msgstr "عرض كـ"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Show changes"
@@ -29761,8 +29814,9 @@ msgid "Simple actions — click to show all git operations"
 msgstr "إجراءات بسيطة — انقروا لعرض جميع عمليات Git"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Since"
-msgstr ""
+msgstr "منذ"
 
 #: src/components/data-sources/ReplayDialog.tsx
 msgid "Since (optional)"
@@ -30530,6 +30584,10 @@ msgstr "جارٍ بدء تشغيل بيئتكم المعزولة…"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "جاري البدء…"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "State"
+msgstr "الحالة"
 
 #~ msgid "Stats"
 #~ msgstr "الإحصائيات"

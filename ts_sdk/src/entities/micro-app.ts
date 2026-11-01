@@ -202,6 +202,11 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
     return this.title?.trim() || null;
   }
 
+  /** The app's folder on disk: its primary occurrence, else the path it was indexed at; '' when unknown. */
+  get folder(): string {
+    return this.asset_occurrences?.[0]?.path ?? this.root_vfs_path ?? '';
+  }
+
   /** The app's setup folder: error rules, recovery.md and the error log. */
   async setupState(): Promise<WebAppSetupState | null> {
     const info = new ActionInfo('setup-state', WebApp.type, this.typeId.id, 'GET');

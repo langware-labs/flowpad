@@ -3298,8 +3298,9 @@ msgstr "כתובות URL נוספות לשוק התוספים"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Address"
-msgstr ""
+msgstr "כתובת"
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Address book"
@@ -4308,6 +4309,10 @@ msgstr ""
 msgid "App"
 msgstr "אפליקציה"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "App id"
+msgstr "מזהה אפליקציה"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "App ID"
 msgstr ""
@@ -4507,6 +4512,10 @@ msgstr "ארטיפקט נוצר"
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Artifact deleted"
 msgstr "הקובץ נמחק"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Artifact id"
+msgstr "מזהה ארטיפקט"
 
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifacts"
@@ -5538,8 +5547,9 @@ msgid "Build command"
 msgstr ""
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Build folder"
-msgstr ""
+msgstr "תיקיית בנייה"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Build folder — the subfolder that is served"
@@ -6261,6 +6271,10 @@ msgstr "בדקו את הכתובת, או נסו לפתוח אותה בדפדפן
 msgid "Check your connection and try again."
 msgstr "יש לבדוק את החיבור ולנסות שוב."
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Checked"
+msgstr "נבדק"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Checked for new messages"
 msgstr "נבדקו הודעות חדשות"
@@ -6808,6 +6822,10 @@ msgstr "לחצו כדי לשנות שם של החדר"
 #: src/components/wizard/WizardButton.tsx
 msgid "Click to run · double-click to open the wizard"
 msgstr "לחצו להרצה · לחיצה כפולה לפתיחת האשף"
+
+#: src/components/credentials/SignInCommand.tsx
+msgid "Click to run · right-click for more"
+msgstr ""
 
 #. placeholder {0}: row.orphan_count
 #. placeholder {1}: row.type
@@ -10720,6 +10738,7 @@ msgstr "תארו מי הסוכן, מה הוא עושה ומה אסור לו לע
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "תיאור"
 
@@ -11980,6 +11999,7 @@ msgid "Endpoint"
 msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Endpoint id"
 msgstr "מזהה נקודת הקצה"
 
@@ -13083,6 +13103,10 @@ msgstr "נכשל בפתיחת תיקיית הרישומים"
 msgid "Failed to open project"
 msgstr "נכשל בפתיחת הפרויקט"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to open terminal"
+msgstr ""
+
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Failed to remove dependency"
 #~ msgstr ""
@@ -13239,6 +13263,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
 msgstr "נכשל."
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Failure"
+msgstr "כשל"
 
 #: src/components/inbound/InboundView.tsx
 msgid "fallback"
@@ -14041,6 +14069,7 @@ msgstr "מתיקייה"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "תיקייה"
@@ -14130,11 +14159,11 @@ msgstr "Fork"
 msgid "Fork Session"
 msgstr "צרו fork"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Fork session — new tab, same conversation history"
 msgstr "פיצול סשן — כרטיסייה חדשה, אותה היסטוריית שיחה"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Forking…"
 msgstr "יצירת ענף בתהליך..."
 
@@ -16687,6 +16716,7 @@ msgstr "סוג"
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Kind"
 msgstr "סוג"
 
@@ -16941,7 +16971,7 @@ msgstr "הפעילו את {name}"
 #~ msgid "Launch a new sandbox running this agent"
 #~ msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Launch a session first"
 msgstr "יש להפעיל סשן תחילה"
 
@@ -18828,6 +18858,10 @@ msgstr "עוד…"
 msgid "Morning briefing"
 msgstr "סיכום בוקר"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Mount"
+msgstr "נקודת עיגון"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Mount Flowpad Assistant"
 msgstr "חברו את Flowpad Assistant"
@@ -18930,6 +18964,7 @@ msgstr "שם"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/token-plan/RenameButton.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
@@ -19731,6 +19766,10 @@ msgstr "אין צומת חישוב זמין"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "No compute node available in this workspace."
 msgstr "אין צומת חישוב זמין בסביבת העבודה הזו."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "No computer to open a terminal on"
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "No connection test is defined for this provider."
@@ -24022,6 +24061,10 @@ msgstr "פורט ל-HTTP proxy ב-sandbox"
 msgid "Port for SOCKS proxy in sandbox"
 msgstr "פורט ל-SOCKS proxy ב-sandbox"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Ports"
+msgstr "פורטים"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -24233,6 +24276,10 @@ msgstr "התהליך אינו זמין"
 msgid "Processes ({processCount})"
 msgstr "תהליכים ({processCount})"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Processes (pid)"
+msgstr "תהליכים (pid)"
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr "פרופיל"
@@ -24349,6 +24396,7 @@ msgid "Project home"
 msgstr "דף הבית של הפרויקט"
 
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Project id"
 msgstr "מזהה פרויקט"
 
@@ -27202,6 +27250,7 @@ msgid "runtime"
 msgstr "זמן ריצה"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Runtime"
 msgstr "סביבת ריצה"
 
@@ -28215,7 +28264,7 @@ msgstr "שלחו"
 msgid "Send a message below and the agent will get to work."
 msgstr "שלחו הודעה למטה והסוכן יתחיל לעבוד."
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Send a message first — fork requires conversation history"
 msgstr "שלחו הודעה תחילה — יצירת ענף דורשת היסטוריה שיחה"
 
@@ -28431,6 +28480,10 @@ msgstr ""
 msgid "Served"
 msgstr "פעיל"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Served by"
+msgstr "מוגש על ידי"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
 msgstr "השרת לא חזר. הפעילו את Flowpad מחדש באופן ידני."
@@ -28549,10 +28602,10 @@ msgstr "מזהה תאימה"
 msgid "Session info"
 msgstr "מידע על הסשן"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Session is not running"
 msgstr "הסשן אינו פעיל"
 
@@ -29230,8 +29283,8 @@ msgid "Show Annotations"
 msgstr "הצגת הערות"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-msgid "Show as"
-msgstr "הצגה כ-"
+#~ msgid "Show as"
+#~ msgstr "הצגה כ-"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Show changes"
@@ -29757,8 +29810,9 @@ msgid "Simple actions — click to show all git operations"
 msgstr "פעולות פשוטות — לחצו להצגת כל פעולות ה-git"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Since"
-msgstr ""
+msgstr "מאז"
 
 #: src/components/data-sources/ReplayDialog.tsx
 msgid "Since (optional)"
@@ -30526,6 +30580,10 @@ msgstr "ה-Sandbox שלכם מופעל…"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "מתחיל…"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "State"
+msgstr "מצב"
 
 #~ msgid "Stats"
 #~ msgstr "סטטיסטיקות"

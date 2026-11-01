@@ -1,0 +1,73 @@
+import type { ReactNode } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { Info } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
+import type { AppDisplay } from '@src/hooks/flow-hooks/useAppDisplay';
+import type { AppLifecycle } from './useAppLifecycle';
+
+export interface AppInfo {
+  display: Pick<AppDisplay, 'src' | 'runtime' | 'available' | 'endpoint'>;
+  lifecycle: Pick<AppLifecycle, 'app' | 'record'>;
+}
+
+function pairs(map: Record<string, number> | undefined): string {
+  return Object.entries(map ?? {})
+    .map(([name, value]) => `${name}: ${value}`)
+    .join(', ');
+}
+
+/** Every row is [label, value]; an empty value is not shown. */
+export function appInfoRows({ display, lifecycle }: AppInfo): [ReactNode, string][] {
+  const { src, runtime, available, endpoint } = display;
+  const { app, record } = lifecycle;
+  const rows: [ReactNode, string][] = [
+    [<Trans>Name</Trans>, app?.getDisplayName() ?? app?.name ?? ''],
+    [<Trans>Description</Trans>, app?.description ?? ''],
+    [<Trans>Kind</Trans>, app?.kind ?? ''],
+    [<Trans>Address</Trans>, src],
+    [<Trans>Folder</Trans>, app?.folder ?? ''],
+    [<Trans>Runtime</Trans>, runtime ? [runtime, ...available.filter((r) => r !== runtime)].join(' · ') : ''],
+    [<Trans>Served by</Trans>, endpoint?.backendLabel ?? ''],
+    [<Trans>Mount</Trans>, endpoint?.mount ?? ''],
+    [<Trans>Build folder</Trans>, app?.build ?? ''],
+    [<Trans>State</Trans>, record ? [record.state, record.detail].filter(Boolean).join(' — ') : ''],
+    [<Trans>Ports</Trans>, pairs(record?.ports)],
+    [<Trans>Processes (pid)</Trans>, pairs(record?.pids)],
+    [<Trans>Since</Trans>, record?.since ?? ''],
+    [<Trans>Checked</Trans>, record?.checked_at ?? ''],
+    [<Trans>Failure</Trans>, record?.failure ? JSON.stringify(record.failure) : ''],
+    [<Trans>Project id</Trans>, app?.project_id ?? endpoint?.project_id ?? ''],
+    [<Trans>App id</Trans>, app?.id ?? endpoint?.webapp_id ?? ''],
+    [<Trans>Artifact id</Trans>, endpoint?.artifact_id ?? ''],
+    [<Trans>Endpoint id</Trans>, endpoint?.id ?? ''],
+  ];
+  return rows.filter(([, value]) => value !== '');
+}
+
+/** An (i) button showing everything known about the displayed app. */
+export function AppInfoPopover(info: AppInfo) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button size="icon" variant="ghost" className="size-7 shrink-0" data-testid="webapp-info">
+          <Info className="size-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[32rem] max-w-[90vw] p-3" data-testid="webapp-info-panel">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+          {appInfoRows(info).map(([label, value], index) => (
+            <div key={index} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="flex min-w-0 items-start gap-1.5">
+                <span className="break-all font-mono">{value}</span>
+                <CopyButton value={value} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </PopoverContent>
+    </Popover>
+  );
+}
