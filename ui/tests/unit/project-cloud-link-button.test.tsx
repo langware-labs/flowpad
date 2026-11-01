@@ -27,8 +27,7 @@ const mocks = vi.hoisted(() => ({
     remote: false,
     // A folder with no git at all — linking must not care.
     fs_storage_mount_path: '/workspace/demo-project',
-    publishFiles: vi.fn(),
-    reload: vi.fn(),
+    share: vi.fn(),
   },
   cloudLogin: vi.fn(),
   launchWizard: vi.fn(),
@@ -77,9 +76,7 @@ beforeEach(() => {
   mocks.hubMode = false;
   mocks.cloudLogin.mockResolvedValue({ ok: true });
   mocks.hubPageUrl.mockReturnValue('https://app.flowpad.test/projects/004f3ab7-d33b-48c0-ae0e-6e61e181a343');
-  mocks.project.publishFiles.mockResolvedValue(undefined);
-  // The server confirms the link: the reloaded row comes back remote.
-  mocks.project.reload.mockImplementation(() => {
+  mocks.project.share.mockImplementation(() => {
     mocks.project.remote = true;
     return Promise.resolve(mocks.project);
   });
@@ -90,17 +87,14 @@ afterEach(cleanup);
 describe('ProjectCloudLinkButton', () => {
   const project = mocks.project as unknown as Project;
 
-  it('cloud-logs in and links by sending its files to the cloud repository — no git, no GitHub', async () => {
+  it('cloud-logs in and links through the canonical Project share action — no git, no GitHub', async () => {
     render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
-    await waitFor(() => expect(mocks.project.publishFiles).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.project.share).toHaveBeenCalledTimes(1));
     expect(mocks.cloudLogin).toHaveBeenCalledTimes(1);
-    expect(mocks.cloudLogin.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.project.publishFiles.mock.invocationCallOrder[0],
-    );
-    expect(mocks.project.reload).toHaveBeenCalledTimes(1);
+    expect(mocks.cloudLogin.mock.invocationCallOrder[0]).toBeLessThan(mocks.project.share.mock.invocationCallOrder[0]);
     // None of the retired git remediations run.
     expect(mocks.launchWizard).not.toHaveBeenCalled();
     expect(mocks.oauthConnect).not.toHaveBeenCalled();
@@ -121,12 +115,12 @@ describe('ProjectCloudLinkButton', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     await waitFor(() => expect(mocks.error).toHaveBeenCalled());
-    expect(mocks.project.publishFiles).not.toHaveBeenCalled();
+    expect(mocks.project.share).not.toHaveBeenCalled();
     expect(screen.getByTestId('project-publish')).toHaveAttribute('data-state', 'local');
   });
 
   it('reports a backend refusal in its own words and stays local', async () => {
-    mocks.project.publishFiles.mockRejectedValue(new Error('Cloud login required before linking a Project to the cloud'));
+    mocks.project.share.mockRejectedValue(new Error('Cloud login required before linking a Project to the cloud'));
     render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
@@ -140,7 +134,7 @@ describe('ProjectCloudLinkButton', () => {
   });
 
   it('refuses a share the server did not confirm', async () => {
-    mocks.project.reload.mockResolvedValue(mocks.project); // still remote: false
+    mocks.project.share.mockResolvedValue({ ...mocks.project, remote: false });
     render(<ProjectCloudLinkButton project={project} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));

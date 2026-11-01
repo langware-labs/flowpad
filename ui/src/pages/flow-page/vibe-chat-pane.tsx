@@ -13,7 +13,8 @@ import { chatTargetForProject } from '@src/lib/chat-target';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
-import { VIBE_MODEL_DEFAULT, VibeModelSelect, useVibeModelTier, type VibeModelChoice } from './vibe-model-select';
+import { VIBE_MODEL_DEFAULT, useVibeModelTier, type VibeModelChoice } from './vibe-model-select';
+import { SessionModelSelect } from './session-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
 import { VibeDocChip } from './vibe-doc-chip';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
@@ -303,14 +304,16 @@ export function VibeChatPane({
         defaultWorkdir={project?.fs_storage_mount_path ?? null}
         defaultModel={vibeModelTier}
         defaultWorkerType={defaultWorkerType}
-        modelSelectSlot={({ value, disabled, onChange }) => (
-          <VibeModelSelect
+        modelSelectSlot={({ value, disabled, onChange, activeProcess }) => (
+          <SessionModelSelect
             value={value}
             onChange={(next) => {
               setVibeModelTier(next);
               return onChange(next);
             }}
             disabled={disabled}
+            activeProcess={activeProcess}
+            workerType={defaultWorkerType}
           />
         )}
         workerSelectSlot={({ value, disabled, onChange }) => (
