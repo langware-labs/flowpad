@@ -1,4 +1,4 @@
-"""A process in the instance that is not the app hands its client-facing tags to the app.
+"""A process in the instance that is not the app hands its tags to the app.
 
 The tag bus is per process, and only the app has clients: its WebSocket forwards the tags in
 ``FORWARDED_TAG_PATTERNS``. A local agent deployment runs its turns in its own process
@@ -7,6 +7,11 @@ reached anyone. Here that process subscribes to what its watchers need (``RELAYE
 all of them forwarded to clients by the app) and posts each tag to the app
 (``POST /api/v1/tags/relay``), which emits it on its own bus: every client-facing subscriber there,
 the WebSocket included, then sees it exactly as if the app had emitted it.
+
+The same route is the way in for any other process of the instance, outside Flowpad's own code — a
+project's server, a trigger's ``run_script``. It posts its own events as ``user_app.*``, and a TAG
+trigger or any other subscriber on the app's bus acts on them. The app takes only the patterns
+listed here (``emit_relayed``).
 
 Best-effort like the bus itself: a tag the app cannot take (not up, restarting) is dropped. The
 durable record of what happened is the rows; a tag only says "look again now".
@@ -27,6 +32,8 @@ MESSAGE_PROJECTED_PATTERN = "stream_inbox.*.message.projected"
 #: What such a process emits that the app's clients watch: a deployment's timeline, a message placed
 #: (its reply landing), a task's news, a live call. Not its channels' per-poll ``ingest.*.sync.*``
 #: pair — a polled channel runs that every second, and nothing watching a deployment reads it.
+#: ``user_app.*`` is the one family Flowpad never emits: the events of a process outside its code
+#: (a project's server, a trigger's ``run_script``), posted to the route by name.
 RELAYED_TAG_PATTERNS: list[str] = [
     "deployment.timeline",
     MESSAGE_PROJECTED_PATTERN,
