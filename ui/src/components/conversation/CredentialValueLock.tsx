@@ -2,8 +2,9 @@ import { useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Info, Lock } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Credential, credentialsService, dataContext, type SealedCard, TypeId } from '@sdk';
+import { Credential, type CredentialTestState, credentialsService, dataContext, type SealedCard, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { useTestVerdict } from '@src/components/credentials/credential-test-verdict';
 import { useCredentialsStatus, useRefreshCredentials } from '@src/components/credentials/use-credentials';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -163,10 +164,11 @@ function SealedBody({ card, name, conversationId }: { card: SealedCard; name: st
   const qc = useQueryClient();
   const refresh = useRefreshCredentials();
   const { busy, act } = useAct();
+  const verdict = useTestVerdict();
   const sender = card.sender_name || t`Someone`;
   const [title, line] = {
     pending: [t`${sender} sent you the key`, t`Fill it in and ${name} is ready on this machine.`],
-    filled: [t`Key filled in`, t`Ready on this machine.`],
+    filled: [t`Key filled in`, card.test ? verdict(card.test, 'self').text : t`Ready on this machine.`],
     declined: [t`Key not available`, t`You declined it.`],
   }[card.state] ?? [t`Key not available`, card.error || card.state];
   const after = async (what: Promise<unknown>) => {
@@ -239,6 +241,8 @@ function VaultBody({
   const refresh = useRefreshCredentials();
   const { busy, act } = useAct();
   const [access, setAccess] = useState<'ok' | 'denied' | 'requested'>('ok');
+  const [tested, setTested] = useState<CredentialTestState | null>(null);
+  const verdict = useTestVerdict();
   // Read on open only: whether the values are here, and which manager holds the vault.
   const { data: status } = useCredentialsStatus(projectId);
   const { data: where } = useQuery({
@@ -265,8 +269,9 @@ function VaultBody({
     act(
       async () => {
         try {
-          const res = await credentialsService.fetch(name, projectId);
+          const res = await credentialsService.fetch(name, projectId, conversationId);
           if (res.denied.length) setAccess('denied');
+          setTested(res.test ?? null);
         } catch (error) {
           if (describeApiError(error, '').code !== 'denied') throw error;
           setAccess('denied');
@@ -296,9 +301,11 @@ function VaultBody({
       ? t`Access to the ${vaultLabel} vault requested.`
       : access === 'denied'
         ? t`You need access to the ${vaultLabel} vault.`
-        : here
-          ? t`Ready on this machine.`
-          : t`Get it from the ${vaultLabel} vault.`;
+        : tested
+          ? verdict(tested, 'self').text
+          : here
+            ? t`Ready on this machine.`
+            : t`Get it from the ${vaultLabel} vault.`;
   return (
     <LockBody
       title={t`Key is in ${manager}`}

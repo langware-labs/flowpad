@@ -105,6 +105,22 @@ describe('CredentialValueLock — a lock only when the value travelled too', () 
     expect(screen.getByText('You need access to the GTM Studio vault.')).toBeTruthy();
   });
 
+  it('secret manager: Fetch reports to the share it came from and shows the test run here', async () => {
+    stub({ vars: { BRIGHT_DATA_API: REF } });
+    const fetch = vi.spyOn(credentialsService, 'fetch').mockResolvedValue({
+      fetched: ['BRIGHT_DATA_API'],
+      missing: [],
+      denied: [],
+      vaults: ['team'],
+      test: 'ok',
+    });
+    mount();
+    fireEvent.click(await screen.findByTestId('credential-lock'));
+    fireEvent.click(await screen.findByTestId('credential-lock-fetch'));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith('bright_data', 'p-1', 'c-1'));
+    expect(await screen.findByText('Tested here: the provider takes the key.')).toBeTruthy();
+  });
+
   it('secret manager, value already here: Open credential', async () => {
     stub({ vars: { BRIGHT_DATA_API: REF }, present: true });
     mount();

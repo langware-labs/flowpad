@@ -2452,6 +2452,7 @@ msgid "A machine"
 msgstr "מכונה"
 
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "A member"
 msgstr ""
 
@@ -4317,6 +4318,10 @@ msgstr "מזהה אפליקציה"
 msgid "App ID"
 msgstr ""
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "App name"
+msgstr "שם האפליקציה"
+
 #: src/navigation/record-type-nav.ts
 msgid "App not found"
 msgstr "האפליקציה לא נמצאה"
@@ -6020,6 +6025,11 @@ msgstr ""
 #: src/components/inbound/RouteCheck.tsx
 msgid "Change destination"
 msgstr "שינוי יעד"
+
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Change icon"
+msgstr "שינוי סמל"
 
 #: src/components/footer/LanguageSelector.tsx
 #: src/components/footer/LanguageSelector.tsx
@@ -9149,6 +9159,10 @@ msgstr ""
 msgid "Could not test it"
 msgstr "לא ניתן לבדוק"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Could not test it on this machine."
+msgstr "לא ניתן היה לבדוק במחשב הזה."
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "Could not try"
 msgstr "הניסיון לא הצליח"
@@ -9398,6 +9412,10 @@ msgstr "לא ניתן היה להתחיל את החיבור ל-GitHub."
 msgid "Couldn't terminate {0}"
 msgstr "לא ניתן היה לעצור את {0}"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Couldn't test on their machine"
+msgstr "לא ניתן היה לבדוק במחשב שלהם"
+
 #: src/lib/publish-state.ts
 msgid "Couldn't update"
 msgstr "העדכון נכשל"
@@ -9440,7 +9458,6 @@ msgid "CPU:"
 msgstr "מעבד:"
 
 #: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
@@ -9481,10 +9498,9 @@ msgstr "יצירת קבוצת אנשי קשר — הוספת חבריה לכל �
 msgid "Create a dashboard"
 msgstr "צרו דשבורד"
 
-#. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
 #: src/components/assets/AssetsNavigator.tsx
-msgid "Create a folder in {0}."
-msgstr "צרו תיקייה ב-{0}."
+#~ msgid "Create a folder in {0}."
+#~ msgstr "צרו תיקייה ב-{0}."
 
 #: src/components/login-required-dialog.tsx
 msgid "Create a free account to continue your conversation and save your progress."
@@ -10035,6 +10051,7 @@ msgid "declined"
 msgstr "נדחה"
 
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "Declined"
 msgstr ""
 
@@ -10578,6 +10595,7 @@ msgstr "מחיקה…"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "Delivered"
 msgstr "סופק"
 
@@ -10779,8 +10797,8 @@ msgid "Desktop version"
 msgstr "גרסת שולחן עבודה"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Destination already has an item with that name"
-msgstr "בתיקיית היעד כבר קיים פריט בשם זה"
+#~ msgid "Destination already has an item with that name"
+#~ msgstr "בתיקיית היעד כבר קיים פריט בשם זה"
 
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Detail"
@@ -12712,8 +12730,12 @@ msgid "Expired — ask {0} to share again."
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Expired before everyone filled them in."
-msgstr ""
+#~ msgid "Expired before everyone filled them in."
+#~ msgstr ""
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Expired before it was opened"
+msgstr "פג תוקף לפני שנפתח"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Expires"
@@ -12871,8 +12893,8 @@ msgid "Failed to copy links"
 msgstr "העתקת קישורים נכשלה"
 
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
-msgid "Failed to copy path"
-msgstr ""
+#~ msgid "Failed to copy path"
+#~ msgstr ""
 
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
@@ -12896,7 +12918,6 @@ msgstr "יצירת קבוצת אנשי קשר נכשלה"
 msgid "Failed to create file"
 msgstr ""
 
-#: src/components/assets/useAssetsModel.tsx
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Failed to create folder"
 msgstr "יצירת תיקייה נכשלה"
@@ -13072,8 +13093,8 @@ msgid "Failed to look up project."
 msgstr "כשל בחיפוש הפרויקט."
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to move item"
-msgstr "העברת הפריט נכשלה"
+#~ msgid "Failed to move item"
+#~ msgstr "העברת הפריט נכשלה"
 
 #: src/components/account/database-section.tsx
 msgid "Failed to open {folderType} folder"
@@ -13502,8 +13523,20 @@ msgid "Filled in"
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Filled in by {filled} · the sealed copy was deleted from the hub"
-msgstr ""
+#~ msgid "Filled in · could not test it on this machine"
+#~ msgstr "מולא · לא ניתן היה לבדוק במחשב הזה"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in · tested, the provider accepts it"
+#~ msgstr "מולא · נבדק, הספק מקבל אותו"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in · the provider refused it — ask {0} for a new one"
+#~ msgstr "מולא · הספק דחה אותו — בקשו מ-{0} מפתח חדש"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in by {filled} · the sealed copy was deleted from the hub"
+#~ msgstr ""
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -14079,14 +14112,13 @@ msgid "Folder (optional)"
 msgstr "תיקייה (אופציונלי)"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Folder already exists"
-msgstr "תיקייה בשם זה כבר קיימת"
+#~ msgid "Folder already exists"
+#~ msgstr "תיקייה בשם זה כבר קיימת"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Folder created"
-msgstr "תיקייה נוצרה"
+#~ msgid "Folder created"
+#~ msgstr "תיקייה נוצרה"
 
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -16209,7 +16241,6 @@ msgstr "מצביע נכס לא תקין"
 msgid "Invalid file name"
 msgstr ""
 
-#: src/components/assets/useAssetsModel.tsx
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Invalid folder name"
 msgstr "שם התיקייה אינו תקין"
@@ -16648,6 +16679,10 @@ msgstr ""
 
 #~ msgid "Key not set"
 #~ msgstr "המפתח לא הוגדר"
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Key refused by the provider"
+msgstr "הספק דחה את המפתח"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Key rejected"
@@ -18888,12 +18923,12 @@ msgid "Move to Trash"
 msgstr "העברה לאשפה"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Moved"
-msgstr "הועבר"
+#~ msgid "Moved"
+#~ msgstr "הועבר"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Moved, but reindex failed"
-msgstr "הועבר, אך עדכון האינדקס נכשל"
+#~ msgid "Moved, but reindex failed"
+#~ msgstr "הועבר, אך עדכון האינדקס נכשל"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "msgs"
@@ -19309,15 +19344,13 @@ msgstr "קובץ חדש"
 msgid "New folder"
 msgstr "תיקייה חדשה"
 
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New Folder"
 msgstr "תיקייה חדשה"
 
-#. placeholder {0}: target.label
 #: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
-msgid "New folder in {0}"
-msgstr "תיקייה חדשה ב־{0}"
+#~ msgid "New folder in {0}"
+#~ msgstr "תיקייה חדשה ב־{0}"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "New folder name"
@@ -20825,6 +20858,10 @@ msgstr "לתהליך הזה לא מחובר טרמינל או צ׳אט. הפעי
 msgid "No terminal process was found for session {0}."
 msgstr "לא נמצא תהליך סוף עבור הסשן {0}."
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "No test for this credential"
+msgstr "אין בדיקה לאישור זה"
+
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "No test runs yet"
 msgstr ""
@@ -21115,6 +21152,10 @@ msgstr "עדיין לא הוערך — שום דבר לא קבע איך המקו
 msgid "Not fetched"
 msgstr "לא נמשך"
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not fetched yet"
+msgstr "עוד לא נמשך"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
 msgstr "עדיין לא הופעל"
@@ -21204,6 +21245,10 @@ msgstr "לא עכשיו"
 msgid "Not on this computer either — {0}"
 msgstr "גם לא במחשב הזה — {0}"
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not opened yet"
+msgstr "עוד לא נפתח"
+
 #: src/components/conversation/conversation-category.ts
 msgid "Not picked up"
 msgstr ""
@@ -21232,6 +21277,10 @@ msgstr "לא מוכן לשמירה"
 #: src/components/data-sources/use-source-verify.ts
 msgid "Not ready yet"
 msgstr "עדיין לא מוכן"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not reported"
+msgstr "לא דווח"
 
 #~ msgid "not respected"
 #~ msgstr "לא מוערך"
@@ -25152,6 +25201,10 @@ msgstr "מוכן"
 msgid "ready · Open"
 msgstr "מוכן · פתיחה"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Ready on this machine — this credential has no test."
+msgstr "מוכן במחשב הזה — לאישור זה אין בדיקה."
+
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Ready on this machine."
@@ -27715,8 +27768,8 @@ msgid "Sealed on this computer for each recipient's Flowpad — only they can op
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Sealed values"
-msgstr ""
+#~ msgid "Sealed values"
+#~ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -28413,6 +28466,7 @@ msgstr "השאלה נשלחת לדסק עזרה, וגורם אנושי יטפל 
 
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "Sent"
 msgstr "נשלח"
 
@@ -29137,6 +29191,14 @@ msgstr ""
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Shared through the project's vaults: <0>{0}</0>"
 msgstr ""
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Shared values · secret manager"
+msgstr "ערכים ששותפו · מנהל סודות"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Shared values · secured transfer"
+msgstr "ערכים ששותפו · העברה מאובטחת"
 
 #: src/components/conversation/task-it.tsx
 msgid "Shared via cloud"
@@ -31445,6 +31507,18 @@ msgstr "בדקו עם אירוע אחרון"
 #: src/components/automations/AutomationPage.tsx
 msgid "Tested"
 msgstr "נבדק"
+
+#: src/components/conversation/CredentialValueLock.tsx
+#~ msgid "Tested here: the provider accepts the key."
+#~ msgstr "נבדק כאן: הספק מקבל את המפתח."
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Tested here: the provider refused the key — ask the sender for a new one."
+msgstr "נבדק כאן: הספק דחה את המפתח — בקשו מהשולח מפתח חדש."
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Tested here: the provider takes the key."
+msgstr "נבדק כאן: הספק מקבל את המפתח."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "text"
@@ -34610,6 +34684,10 @@ msgstr "תקין ({0} מודלים)"
 msgid "validated"
 msgstr "אומת"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Validated"
+msgstr "אומת"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "validation"
 msgstr "אימות"
@@ -34998,8 +35076,8 @@ msgid "Waiting for {hostName} to approve the live session…"
 msgstr "ממתין לאישור של {hostName} לסשן זמן האמת…"
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Waiting for {waiting} recipient(s) · only they can open them"
-msgstr ""
+#~ msgid "Waiting for {waiting} recipient(s) · only they can open them"
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Waiting for approval…"
