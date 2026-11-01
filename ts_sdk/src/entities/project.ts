@@ -242,6 +242,9 @@ export interface ProjectSetupRequirement {
   why_not_always: string;
   /** Its node in the project's setup tree — the `root` that runs this step alone. */
   node?: string;
+  /** pack: the credential declares a test, and its last result on this machine. */
+  has_test?: boolean;
+  test_result?: { state: 'ok' | 'invalid' | 'error'; detail: string; at: string } | null;
 }
 
 /** An installed asset of the project a requirement exists for. Drivers and shipped templates never are one. */
@@ -264,6 +267,8 @@ export interface ProjectReadiness {
   skipped?: ProjectSetupRequirement[];
   /** What no credential declares: shown, never runnable. */
   gaps: ProjectSetupRequirement[];
+  /** Dependencies Flowpad cloned that are behind their remote. Never part of `ready`. */
+  updates?: number;
   /** What is set up already (not skipped): the Project setup page lists it as Ready. */
   set_up?: ProjectSetupRequirement[];
 }
@@ -1110,6 +1115,22 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */
+  /** Fetch the remotes of the clones Flowpad made, so each dependency's `behind` is current, then
+   *  tell every dependency listener. Git does the work off the backend's event loop; callers fire it
+   *  and go on (`void`). Never throws. */
+  static async checkDependencyUpdates(projectId: string): Promise<DependencyState[]> {
+    try {
+      const actionInfo = new ActionInfo('check-dependency-updates', Project.type, projectId, 'POST');
+      const response = await dataManager.callAction<void, { dependencies: DependencyState[] }>(actionInfo);
+      return response?.dependencies ?? [];
+    } catch (err) {
+      console.warn('[project] dependency update check failed', err);
+      return [];
+    } finally {
+      notifyDependenciesChanged(projectId);
+    }
+  }
+
   static async setupRequirements(
     projectId: string,
     { includeReady = false }: { includeReady?: boolean } = {},

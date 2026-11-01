@@ -329,3 +329,77 @@ async def test_a_bad_url_is_unreachable_without_linking_anything(tmp_path: Path)
     refreshed = await Project.get_by_id(project.id)
     assert refreshed.include_dirs == []
     assert [w.name for w in await refreshed.dependency_warnings()] == [state.name]
+
+
+def _commit_upstream(vendor_repo: str, name: str, text: str) -> None:
+    """A vendor-side change: a new commit on the repo the clone was made from."""
+    root = Path(vendor_repo.removeprefix("git+file://"))
+    (root / name).write_text(text, encoding="utf-8")
+    for args in (["add", name], ["-c", "user.email=v@x", "-c", "user.name=v", "commit", "-qm", f"add {name}"]):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, timeout=20)
+
+
+async def test_an_update_check_counts_commits_behind_and_pull_brings_them_in(tmp_path: Path, vendor_repo: str) -> None:
+    """Behind is read from the refs the last fetch left, so a listing never touches the network;
+    ``check_updates`` is the one call that fetches. Pulling to latest leaves nothing behind."""
+    project = await _project(tmp_path, "customer-a")
+    state = await project.add_dependency(vendor_repo)
+    assert state.state == "ready" and state.behind == 0, state
+
+    _commit_upstream(vendor_repo, "NEWS.md", "new\n")
+    listed = {s.name: s for s in await project.dependencies()}
+    assert listed["vendor"].behind == 0, "a listing reads cached refs: it does not know before a fetch"
+
+    checked = {s.name: s for s in await project.check_dependency_updates()}
+    assert checked["vendor"].behind == 1, checked["vendor"]
+
+    pulled = {s.name: s for s in await project.resolve_dependencies(update=True)}
+    assert pulled["vendor"].behind == 0 and pulled["vendor"].pull_error is None, pulled["vendor"]
+    assert (Path(state.local_path) / "NEWS.md").is_file()
+
+
+async def test_a_pull_that_would_lose_local_changes_says_so(tmp_path: Path, vendor_repo: str) -> None:
+    """A conflicting local edit is kept, and the row says why the checkout stayed behind —
+    before this, a failed pull was only logged and the row read plain "ready"."""
+    project = await _project(tmp_path, "customer-a")
+    state = await project.add_dependency(vendor_repo)
+    tracked = "agentic-assets/agent/globex-support/system_prompt.md"
+    readme = Path(state.local_path) / tracked
+    _commit_upstream(vendor_repo, tracked, "vendor side\n")
+    readme.write_text("local side\n", encoding="utf-8")
+
+    await project.check_dependency_updates()
+    pulled = {s.name: s for s in await project.resolve_dependencies(update=True)}
+    assert pulled["vendor"].pull_error == "Has local changes — can't pull without losing them", pulled["vendor"]
+    assert readme.read_text(encoding="utf-8") == "local side\n"
+    listed = {s.name: s for s in await project.dependencies()}
+    assert listed["vendor"].pull_error == pulled["vendor"].pull_error, "the dialog re-reads the listing: it must still say why"
+
+
+async def test_a_checkout_the_person_made_is_never_counted_behind(tmp_path: Path, vendor_repo: str) -> None:
+    """Only a clone Flowpad made is Flowpad's to keep current: a folder dependency on the
+    person's own checkout is never flagged, however far behind it is."""
+    mine = tmp_path / "mine"
+    subprocess.run(["git", "clone", "-q", vendor_repo.removeprefix("git+"), str(mine)], check=True, capture_output=True, timeout=20)
+    _commit_upstream(vendor_repo, "NEWS.md", "new\n")
+    subprocess.run(["git", "fetch", "-q"], cwd=mine, check=True, capture_output=True, timeout=20)
+
+    project = await _project(tmp_path, "customer-a")
+    state = await project.add_dependency(f"file:{mine}")
+    assert state.state == "ready", state
+    checked = {s.name: s for s in await project.check_dependency_updates()}
+    assert all(s.behind == 0 for s in checked.values()), checked
+
+
+async def test_readiness_counts_updates_without_blocking(tmp_path: Path, vendor_repo: str) -> None:
+    """Updates waiting never make a project "not ready": they are a count beside ``to_do``."""
+    from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+
+    project = await _project(tmp_path, "customer-a")
+    await project.add_dependency(vendor_repo)
+    _commit_upstream(vendor_repo, "NEWS.md", "new\n")
+    await project.check_dependency_updates()
+
+    readiness = await readiness_of(project)
+    assert readiness.updates == 1
+    assert readiness.ready and readiness.to_do == []

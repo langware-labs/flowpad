@@ -382,6 +382,15 @@ msgstr ""
 msgid "{0, plural, one {# backlink} other {# backlinks}}"
 msgstr "{0, plural, zero {لا روابط خلفية} one {رابط خلفي واحد} two {رابطان خلفيان} few {# روابط خلفية} many {# رابطًا خلفيًا} other {# رابط خلفي}}"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#~ msgid "{0, plural, one {# dependency couldn't be pulled} other {# dependencies couldn't be pulled}}"
+#~ msgstr ""
+
+#. placeholder {0}: rows.length
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "{0, plural, one {# dependency is behind} other {# dependencies are behind}}"
+msgstr ""
+
 #. placeholder {0}: rows.length
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "{0, plural, one {# entity in this context} other {# entities in this context}}"
@@ -1205,6 +1214,10 @@ msgstr "{baseTitle} · {0}"
 #~ msgid "{baseTitle} · {environment}"
 #~ msgstr ""
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#~ msgid "{behind, plural, one {# dependency is behind} other {# dependencies are behind}}"
+#~ msgstr ""
+
 #: src/components/status-bar/GitPullButton.tsx
 msgid "{behind} new changes in the cloud — pull them"
 msgstr "{behind} تغييرات جديدة في السحابة — يمكن سحبها"
@@ -1216,6 +1229,10 @@ msgstr "{changedCount} معدّل"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "{completedCount}/{totalCount} completed"
 msgstr "{completedCount}/{totalCount} مكتملة"
+
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "{count, plural, one {# commit behind} other {# commits behind}}"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "{count, plural, one {# issue} other {# issues}}"
@@ -1930,6 +1947,10 @@ msgstr "{unpushedCount} غير مدفوعة — يعمل Improve فقط على �
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "{until} (closed)"
 msgstr "{until} (مغلق)"
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "{updates, plural, one {# dependency has updates} other {# dependencies have updates}}"
+msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{used} of {limit} {windowText}"
@@ -5830,6 +5851,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/project-home/ProjectHomeMenu.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
@@ -6087,11 +6109,11 @@ msgstr "معدّل"
 msgid "Changed since publish"
 msgstr "تغيّر منذ النشر"
 
-#: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Changed since use"
 msgstr "تغيّر منذ الاستخدام"
 
+#: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
@@ -6103,6 +6125,10 @@ msgstr "التغييرات"
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Changes apply to new sessions."
 msgstr "تُطبَّق التغييرات على الجلسات الجديدة."
+
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Changes are written to the project's flow.json."
+msgstr ""
 
 #~ msgid "Changes committed and pushed"
 #~ msgstr "تم تثبيت التغييرات ودفعها"
@@ -6917,6 +6943,7 @@ msgid "Cloning…"
 msgstr "جارِ الاستنساخ…"
 
 #: src/components/assets/editor/chart/chartControls.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -8994,6 +9021,10 @@ msgstr "تعذّر حفظ المفتاح"
 msgid "Could not save the override"
 msgstr "تعذّر حفظ التجاوز"
 
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Could not save the package"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not save the rule code"
 msgstr "تعذّر حفظ كود القاعدة"
@@ -9029,6 +9060,11 @@ msgstr "تعذّر إرسال التشخيص"
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
 msgstr "تعذّر إرسال طلب التثبيت"
+
+#. placeholder {0}: v.envVar
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Could not set {0}"
+msgstr "تعذّر تعيين {0}"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Could not set the token allocation"
@@ -10653,6 +10689,10 @@ msgstr "تبعية"
 #~ msgid "Dependency removed"
 #~ msgstr ""
 
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Dependency updates available"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
 msgstr "نشر"
@@ -10780,6 +10820,7 @@ msgstr "صِفوا هوية هذا الوكيل وما يقوم به وما يج
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "الوصف"
@@ -11693,6 +11734,7 @@ msgstr "الحواف حسب النوع"
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/credentials-view/CredentialView.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -11704,6 +11746,7 @@ msgstr "تعديل"
 #. placeholder {0}: d.title
 #. placeholder {0}: entry.app.displayName
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
@@ -11761,6 +11804,16 @@ msgstr "تعديل الرابط"
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "تعديل الاسم"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Edit package"
+msgstr ""
+
+#. placeholder {0}: dependency.name
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Edit package {0}"
+msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
@@ -13413,6 +13466,10 @@ msgstr "جلب الحزم الناقصة"
 #: src/components/assets/dependency-sources.tsx
 msgid "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
 msgstr "يُجلب تلقائياً أينما فُتح هذا المشروع — وينبّه Flowpad عند تعذّر ذلك."
+
+#: src/components/project-home/EditDependencyDialog.tsx
+#~ msgid "Fetched only when you press Install, never on its own."
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Fetching"
@@ -16209,6 +16266,7 @@ msgstr "تعليمات (مطالبة الوكيل)"
 msgid "instruction ref"
 msgstr "مرجع التعليمات"
 
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Instructions"
@@ -16744,6 +16802,10 @@ msgstr "يلزم الوصول إلى Keychain لإنهاء عملية تسجيل
 msgid "Keychain approval was not granted"
 msgstr "لم يتم منح موافقة Keychain"
 
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Keys"
+msgstr "المفاتيح"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Keys & endpoints"
 msgstr "المفاتيح ونقاط النهاية"
@@ -16819,6 +16881,7 @@ msgstr "التسمية"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 msgid "Label"
 msgstr "التسمية"
 
@@ -20768,6 +20831,10 @@ msgstr "لم يتم تحميل أي إعدادات."
 msgid "No settings match your search."
 msgstr "لا توجد إعدادات تطابق بحثكم."
 
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "No setup instructions yet."
+msgstr "لا توجد تعليمات إعداد بعد."
+
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "No shared sessions yet. Executing a prompt starts one."
 msgstr "لا توجد جلسات مشتركة بعد. سيؤدي تنفيذ مطالبة إلى بدء جلسة جديدة."
@@ -21213,6 +21280,10 @@ msgstr "غير موجودة"
 msgid "Not found"
 msgstr "غير موجود"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Not found on disk"
+msgstr "غير موجود على القرص"
+
 #~ msgid "Not funded"
 #~ msgstr "بدون تمويل"
 
@@ -21238,10 +21309,6 @@ msgstr "غير مثبّت"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
-#: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Not found on disk"
-msgstr "غير موجود على القرص"
-
 msgstr "لم يُشغَّل بعد في هذا المشروع"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -21365,6 +21432,10 @@ msgstr "غير محفوظ"
 #~ msgid "Not saved: {0}"
 #~ msgstr "لم يُحفظ: {0}"
 
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Not saved."
+msgstr "لم يُحفظ."
+
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -21379,8 +21450,9 @@ msgstr "لم تُرسَل بعد"
 msgid "not set"
 msgstr "غير معدّ"
 
-#~ msgid "Not set"
-#~ msgstr "غير مضبوط"
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Not set"
+msgstr "غير مضبوط"
 
 #: src/lib/publish-state.ts
 msgid "Not set up for publishing"
@@ -24968,6 +25040,10 @@ msgstr "سحب التغييرات الآن"
 msgid "Pull changes now from {0}"
 msgstr "سحب التغييرات الآن من {0}"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "Pull dependencies to latest"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
 msgstr "فشل السحب."
@@ -24983,6 +25059,8 @@ msgstr "للسحب فقط: لا تُرسَل التعديلات على النس�
 msgid "pulled, but arrived short"
 msgstr "تم سحبه، لكنه وصل ناقصًا"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pulling…"
 msgstr "جاري السحب…"
@@ -25654,6 +25732,7 @@ msgstr "المراقبون المسجَّلون: <0>{registeredCount}</0>"
 msgid "Reject"
 msgstr "رفض"
 
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/harness-login/funding-pill.ts
 msgid "Rejected"
 msgstr "مرفوض"
@@ -27467,6 +27546,7 @@ msgstr "تمت ترقية البيئة المعزولة"
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -27521,6 +27601,10 @@ msgstr "فشل الحفظ"
 
 #~ msgid "Save failed."
 #~ msgstr "فشل الحفظ."
+
+#: src/components/project-home/EditDependencyDialog.tsx
+#~ msgid "Save package"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -28815,6 +28899,11 @@ msgstr "الجلسات: {sessions}"
 msgid "set"
 msgstr "مضبوط"
 
+#: src/components/credentials/CredentialEditDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Set"
+msgstr "تعيين"
+
 #. placeholder {0}: v.env_var
 #: src/components/credentials-view/CredentialView.tsx
 msgid "Set {0}"
@@ -29087,6 +29176,10 @@ msgstr "الإعداد مطلوب"
 msgid "Several contacts match — pick one from the list"
 msgstr "تطابق عدة جهات اتصال — يُرجى الاختيار من القائمة"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Several matches"
+msgstr "عدة تطابقات"
+
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
@@ -29118,10 +29211,6 @@ msgstr "مشاركة {0} عبر Git"
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 msgid "Share {agentName}"
 msgstr "مشاركة {agentName}"
-#: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Several matches"
-msgstr "عدة تطابقات"
-
 
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "Share {orgName}"
@@ -30324,6 +30413,7 @@ msgstr "الصوت"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Source"
@@ -31528,6 +31618,7 @@ msgstr "تجريبي"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/TestPanel.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/credentials/CredentialTestButton.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
@@ -31545,6 +31636,7 @@ msgstr ""
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/llm-sources/LlmKeysSection.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Test failed"
 msgstr "فشل الاختبار"
 
@@ -31576,8 +31668,15 @@ msgid "Test with a recent event"
 msgstr "تجربة بحدث حديث"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Tested"
 msgstr "تم الاختبار"
+
+#. placeholder {0}: req.test_result.at
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Tested {0}"
+msgstr "تم الاختبار {0}"
 
 #: src/components/conversation/CredentialValueLock.tsx
 #~ msgid "Tested here: the provider accepts the key."
@@ -34171,6 +34270,11 @@ msgstr "غير معروف"
 msgid "Unknown · {unknown}"
 msgstr "غير معروف · {unknown}"
 
+#. placeholder {0}: unknownUsage.length
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unknown assets ({0})"
+msgstr "أصول غير معروفة ({0})"
+
 #: src/components/git/BranchPicker.tsx
 msgid "unknown error"
 msgstr "خطأ غير معروف"
@@ -34203,11 +34307,10 @@ msgstr "نوع Lens غير معروف"
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Unknown list"
 msgstr "قائمة غير معروفة"
-#. placeholder {0}: unknownUsage.length
-#: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Unknown assets ({0})"
-msgstr "أصول غير معروفة ({0})"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unknown name"
+msgstr "اسم غير معروف"
 
 #. placeholder {0}: draft.provider
 #: src/components/data-sources/source-form.ts
@@ -34241,10 +34344,6 @@ msgstr "إلغاء التثبيت"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Unpin — remove from prompt library"
-#: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Unknown name"
-msgstr "اسم غير معروف"
-
 msgstr "إلغاء التثبيت — الإزالة من مكتبة الموجهات"
 
 #. placeholder {0}: opener.label
@@ -34349,6 +34448,7 @@ msgid "Up, with problems: {0}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Update"
 msgstr "تحديث"
@@ -34783,13 +34883,16 @@ msgstr "نمط التحقق"
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Value"
 msgstr "القيمة"
 
+#. placeholder {0}: v.envVar
 #. placeholder {0}: v.envVar || 'variable'
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 msgid "Value for {0}"
 msgstr "قيمة {0}"
 
@@ -36006,6 +36109,10 @@ msgstr "يعمل…"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Working…"
 msgstr "قيد المعالجة…"
+
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Works"
+msgstr "يعمل"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/workspace/workspace-switcher.tsx

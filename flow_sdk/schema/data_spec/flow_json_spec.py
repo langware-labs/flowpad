@@ -408,6 +408,11 @@ class DependencyState(DataSpec):
     lifecycle: Optional[LoadResult] = None
     #: A required, not-ready dependency whose warning was dismissed until the next restart.
     dismissed: bool = False
+    #: A git checkout Flowpad cloned: how many commits its branch is behind its remote, as of
+    #: the last fetch (cached refs; ``check-dependency-updates`` refreshes them in the background).
+    behind: int = 0
+    #: Why the last "pull to latest" left this checkout where it was (local changes, no remote…).
+    pull_error: Optional[str] = None
 
 
 class DeclaredDependency(DataSpec):

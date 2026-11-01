@@ -101,6 +101,18 @@ describe('ProjectSetupPage', () => {
     await waitFor(() => expect(start).toHaveBeenCalledWith(PID, ''));
   });
 
+  it('a credential that declares a test gets Test on its row, and a passed test reads Tested', async () => {
+    vi.spyOn(Project, 'setupRequirements').mockResolvedValue({
+      ...READINESS,
+      to_do: [req({ has_test: true, test_result: { state: 'ok', detail: '', at: 'x' } })],
+    });
+    render(<ProjectSetupPage projectId={PID} projectName="owed-demo" />);
+    expect(await screen.findByTestId('project-setup-step-test-demo-cloud')).toBeTruthy();
+    expect(screen.getByTestId('project-setup-step-tested-demo-cloud').textContent).toBe('Tested');
+    // A step without a declared test has neither.
+    expect(screen.queryByTestId('project-setup-step-test-webapp-Demo App')).toBeNull();
+  });
+
   it('Back goes to Project home by URL', async () => {
     render(<ProjectSetupPage projectId={PID} projectName="owed-demo" />);
     await userEvent.setup().click(screen.getByTestId('project-setup-back'));

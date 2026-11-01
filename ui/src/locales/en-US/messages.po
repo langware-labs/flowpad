@@ -383,6 +383,15 @@ msgstr "{0, plural, one {# allocation} other {# allocations}}"
 msgid "{0, plural, one {# backlink} other {# backlinks}}"
 msgstr "{0, plural, one {# backlink} other {# backlinks}}"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#~ msgid "{0, plural, one {# dependency couldn't be pulled} other {# dependencies couldn't be pulled}}"
+#~ msgstr "{0, plural, one {# dependency couldn't be pulled} other {# dependencies couldn't be pulled}}"
+
+#. placeholder {0}: rows.length
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "{0, plural, one {# dependency is behind} other {# dependencies are behind}}"
+msgstr "{0, plural, one {# dependency is behind} other {# dependencies are behind}}"
+
 #. placeholder {0}: rows.length
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "{0, plural, one {# entity in this context} other {# entities in this context}}"
@@ -1208,6 +1217,10 @@ msgstr "{baseTitle} · {0}"
 #~ msgid "{baseTitle} · {environment}"
 #~ msgstr "{baseTitle} · {environment}"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#~ msgid "{behind, plural, one {# dependency is behind} other {# dependencies are behind}}"
+#~ msgstr "{behind, plural, one {# dependency is behind} other {# dependencies are behind}}"
+
 #: src/components/status-bar/GitPullButton.tsx
 msgid "{behind} new changes in the cloud — pull them"
 msgstr "{behind} new changes in the cloud — pull them"
@@ -1219,6 +1232,10 @@ msgstr "{changedCount} changed"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "{completedCount}/{totalCount} completed"
 msgstr "{completedCount}/{totalCount} completed"
+
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "{count, plural, one {# commit behind} other {# commits behind}}"
+msgstr "{count, plural, one {# commit behind} other {# commits behind}}"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "{count, plural, one {# issue} other {# issues}}"
@@ -1942,6 +1959,10 @@ msgstr "{unpushedCount} unpushed — Improve runs only on a clean-git asset."
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "{until} (closed)"
 msgstr "{until} (closed)"
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "{updates, plural, one {# dependency has updates} other {# dependencies have updates}}"
+msgstr "{updates, plural, one {# dependency has updates} other {# dependencies have updates}}"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{used} of {limit} {windowText}"
@@ -5868,6 +5889,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/project-home/ProjectHomeMenu.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
@@ -6125,11 +6147,11 @@ msgstr "Changed"
 msgid "Changed since publish"
 msgstr "Changed since publish"
 
-#: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Changed since use"
 msgstr "Changed since use"
 
+#: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Changes"
@@ -6141,6 +6163,10 @@ msgstr "Changes"
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Changes apply to new sessions."
 msgstr "Changes apply to new sessions."
+
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Changes are written to the project's flow.json."
+msgstr "Changes are written to the project's flow.json."
 
 #~ msgid "Changes committed and pushed"
 #~ msgstr "Changes committed and pushed"
@@ -6959,6 +6985,7 @@ msgid "Cloning…"
 msgstr "Cloning…"
 
 #: src/components/assets/editor/chart/chartControls.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -9053,6 +9080,10 @@ msgstr "Could not save the key"
 msgid "Could not save the override"
 msgstr "Could not save the override"
 
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Could not save the package"
+msgstr "Could not save the package"
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not save the rule code"
 msgstr "Could not save the rule code"
@@ -9088,6 +9119,11 @@ msgstr "Could not send the diagnosis"
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
 msgstr "Could not send the install"
+
+#. placeholder {0}: v.envVar
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Could not set {0}"
+msgstr "Could not set {0}"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Could not set the token allocation"
@@ -10715,6 +10751,10 @@ msgstr "Dependency"
 #~ msgid "Dependency removed"
 #~ msgstr "Dependency removed"
 
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Dependency updates available"
+msgstr "Dependency updates available"
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
 msgstr "Deploy"
@@ -10843,6 +10883,7 @@ msgstr "Describe who this agent is, what it does, and what it must never do…"
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "Description"
@@ -11763,6 +11804,7 @@ msgstr "Edges by kind"
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/credentials-view/CredentialView.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -11774,6 +11816,7 @@ msgstr "Edit"
 #. placeholder {0}: d.title
 #. placeholder {0}: entry.app.displayName
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
@@ -11833,6 +11876,16 @@ msgstr "Edit link"
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "Edit name"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Edit package"
+msgstr "Edit package"
+
+#. placeholder {0}: dependency.name
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Edit package {0}"
+msgstr "Edit package {0}"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
@@ -13496,6 +13549,10 @@ msgstr "Fetch missing"
 #: src/components/assets/dependency-sources.tsx
 msgid "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
 msgstr "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
+
+#: src/components/project-home/EditDependencyDialog.tsx
+#~ msgid "Fetched only when you press Install, never on its own."
+#~ msgstr "Fetched only when you press Install, never on its own."
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Fetching"
@@ -16322,6 +16379,7 @@ msgstr "instruction (agent prompt)"
 msgid "instruction ref"
 msgstr "instruction ref"
 
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Instructions"
@@ -16865,6 +16923,10 @@ msgstr "Keychain access is required to finish signing in to Flowpad."
 msgid "Keychain approval was not granted"
 msgstr "Keychain approval was not granted"
 
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Keys"
+msgstr "Keys"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Keys & endpoints"
 msgstr "Keys & endpoints"
@@ -16940,6 +17002,7 @@ msgstr "label"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 msgid "Label"
 msgstr "Label"
 
@@ -20926,6 +20989,10 @@ msgstr "No settings loaded."
 msgid "No settings match your search."
 msgstr "No settings match your search."
 
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "No setup instructions yet."
+msgstr "No setup instructions yet."
+
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "No shared sessions yet. Executing a prompt starts one."
 msgstr "No shared sessions yet. Executing a prompt starts one."
@@ -21375,6 +21442,10 @@ msgstr "not found"
 msgid "Not found"
 msgstr "Not found"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Not found on disk"
+msgstr "Not found on disk"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Not funded"
 #~ msgstr "Not funded"
@@ -21400,10 +21471,6 @@ msgid "Not installed"
 msgstr "Not installed"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Not found on disk"
-msgstr "Not found on disk"
-
 msgid "Not launched yet in this project"
 msgstr "Not launched yet in this project"
 
@@ -21531,6 +21598,10 @@ msgstr "Not saved"
 #~ msgid "Not saved: {0}"
 #~ msgstr "Not saved: {0}"
 
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Not saved."
+msgstr "Not saved."
+
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -21545,8 +21616,9 @@ msgstr "Not sent yet"
 msgid "not set"
 msgstr "not set"
 
-#~ msgid "Not set"
-#~ msgstr "Not set"
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Not set"
+msgstr "Not set"
 
 #: src/lib/publish-state.ts
 msgid "Not set up for publishing"
@@ -25156,6 +25228,10 @@ msgstr "Pull changes now"
 msgid "Pull changes now from {0}"
 msgstr "Pull changes now from {0}"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "Pull dependencies to latest"
+msgstr "Pull dependencies to latest"
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
 msgstr "Pull failed."
@@ -25172,6 +25248,8 @@ msgstr "Pull only: edits to the local copy are never written back."
 msgid "pulled, but arrived short"
 msgstr "pulled, but arrived short"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pulling…"
 msgstr "Pulling…"
@@ -25845,6 +25923,7 @@ msgstr "registered watchers: <0>{registeredCount}</0>"
 msgid "Reject"
 msgstr "Reject"
 
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/harness-login/funding-pill.ts
 msgid "Rejected"
 msgstr "Rejected"
@@ -27675,6 +27754,7 @@ msgstr "Sandbox upgraded"
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -27729,6 +27809,10 @@ msgstr "Save failed"
 
 #~ msgid "Save failed."
 #~ msgstr "Save failed."
+
+#: src/components/project-home/EditDependencyDialog.tsx
+#~ msgid "Save package"
+#~ msgstr "Save package"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -29032,6 +29116,11 @@ msgstr "sessions: {sessions}"
 msgid "set"
 msgstr "set"
 
+#: src/components/credentials/CredentialEditDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Set"
+msgstr "Set"
+
 #. placeholder {0}: v.env_var
 #: src/components/credentials-view/CredentialView.tsx
 msgid "Set {0}"
@@ -29307,6 +29396,10 @@ msgstr "Setup required"
 msgid "Several contacts match — pick one from the list"
 msgstr "Several contacts match — pick one from the list"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Several matches"
+msgstr "Several matches"
+
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
@@ -29338,10 +29431,6 @@ msgstr "Share {0} over Git"
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 msgid "Share {agentName}"
 msgstr "Share {agentName}"
-#: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Several matches"
-msgstr "Several matches"
-
 
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "Share {orgName}"
@@ -30550,6 +30639,7 @@ msgstr "Sound"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Source"
@@ -31765,6 +31855,7 @@ msgstr "test"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/TestPanel.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/credentials/CredentialTestButton.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
@@ -31782,6 +31873,7 @@ msgstr "Test {0}"
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/llm-sources/LlmKeysSection.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Test failed"
 msgstr "Test failed"
 
@@ -31814,8 +31906,15 @@ msgid "Test with a recent event"
 msgstr "Test with a recent event"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Tested"
 msgstr "Tested"
+
+#. placeholder {0}: req.test_result.at
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Tested {0}"
+msgstr "Tested {0}"
 
 #: src/components/conversation/CredentialValueLock.tsx
 #~ msgid "Tested here: the provider accepts the key."
@@ -34426,6 +34525,11 @@ msgstr "Unknown"
 msgid "Unknown · {unknown}"
 msgstr "Unknown · {unknown}"
 
+#. placeholder {0}: unknownUsage.length
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unknown assets ({0})"
+msgstr "Unknown assets ({0})"
+
 #: src/components/git/BranchPicker.tsx
 msgid "unknown error"
 msgstr "unknown error"
@@ -34458,11 +34562,10 @@ msgstr "Unknown Lens Type"
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Unknown list"
 msgstr "Unknown list"
-#. placeholder {0}: unknownUsage.length
-#: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Unknown assets ({0})"
-msgstr "Unknown assets ({0})"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unknown name"
+msgstr "Unknown name"
 
 #. placeholder {0}: draft.provider
 #: src/components/data-sources/source-form.ts
@@ -34496,10 +34599,6 @@ msgstr "Unpin"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Unpin — remove from prompt library"
-#: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Unknown name"
-msgstr "Unknown name"
-
 msgstr "Unpin — remove from prompt library"
 
 #. placeholder {0}: opener.label
@@ -34604,6 +34703,7 @@ msgid "Up, with problems: {0}"
 msgstr "Up, with problems: {0}"
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Update"
 msgstr "Update"
@@ -35041,13 +35141,16 @@ msgstr "Validation pattern"
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Value"
 msgstr "Value"
 
+#. placeholder {0}: v.envVar
 #. placeholder {0}: v.envVar || 'variable'
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 msgid "Value for {0}"
 msgstr "Value for {0}"
 
@@ -36276,6 +36379,10 @@ msgstr "working…"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Working…"
 msgstr "Working…"
+
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Works"
+msgstr "Works"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/workspace/workspace-switcher.tsx

@@ -18,7 +18,7 @@ import { cloudManager, type HubClientErrorInfo } from '../../services/cloud_logi
 import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
 import { useCleanupSummary } from './use-cleanup-summary';
 import { useProjectSetupLeft } from './use-project-readiness';
-import { refreshProjectReadiness } from '../../stores/project-readiness-store';
+import { checkProjectUpdatesOnce, refreshProjectReadiness } from '../../stores/project-readiness-store';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useContext } from './useContext';
 import { useLazyAsset } from './useLazyAsset';
@@ -79,6 +79,8 @@ export function useWarnings() {
   const projectName = context.project?.name ?? '';
   useEffect(() => {
     void refreshProjectReadiness(projectId);
+    // Fetching dependency remotes is network work: in the background, after the readiness read.
+    void checkProjectUpdatesOnce(projectId);
   }, [projectId]);
   const setupLeft = useProjectSetupLeft(projectId);
 

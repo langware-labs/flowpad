@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AskForm } from '@src/components/ask/AskForm';
 import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
+import { DependencyUpdatesStrip } from './DependencyUpdatesStrip';
 import { useProjectSetupStore } from './project-setup-store';
 import { ROOT_KIND, rowId as rowIdOf, rowKey } from './setup-labels';
 import { countDrawn, SetupTreeView } from './SetupTreeView';
@@ -265,6 +266,8 @@ export function ProjectSetupDialog({
             <Trans>Needed to run {projectName} on this computer.</Trans>
           </DialogDescription>
         </DialogHeader>
+
+        <DependencyUpdatesStrip projectId={projectId} />
 
         {selecting && (
           <div

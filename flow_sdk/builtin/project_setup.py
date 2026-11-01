@@ -169,6 +169,8 @@ class _Needs:
     oauth: dict[str, _Connection] = field(default_factory=dict)
     gaps: list[SetupRequirementSpec] = field(default_factory=list)
     sources: list[Any] = field(default_factory=list)
+    #: Dependencies Flowpad cloned that are behind their remote — updates waiting, never a to-do.
+    updates: int = 0
 
     def needs_credential(self, spec: Any) -> bool:
         """Whether a root still needs the credential row ``spec`` — what keeps a derived row alive."""
@@ -250,7 +252,7 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
             kind=REQUIREMENT_PACK, credential_kind="oauth", name=row.name, title=row.title, typeid=row.typeid,
             provider=row.provider, scopes=list(row.scopes), help_url=row.help_url, **_why(row),
             satisfied=row.state == "connected", used_by=_names(roots), note=note.get(row.state, ""),
-            skipped=row.setup_skipped, **always,
+            skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
         )
     # Required when any value is MUST or ONE_OF, and then only those are asked (a ONE_OF group as one choice);
     # a credential of OPTIONAL values alone is listed as optional, with those.
@@ -262,7 +264,7 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
         setup_choice=row.setup_choice, ways=dict(row.ways),
         satisfied=row.state == "connected", used_by=_names(roots), required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
-        skipped=row.setup_skipped, **always,
+        skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
     )
 
 
@@ -391,6 +393,7 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
     mount = str(getattr(project, "fs_storage_mount_path", "") or "")
     dependencies = []
     for dep in await project.dependencies():
+        needs.updates += dep.behind > 0
         if dep.state not in ("missing", "unreachable", "not_found"):
             continue
         key = project_dependencies.requirement_key(dep)
@@ -607,7 +610,7 @@ async def readiness_of(project: "Project", deployment_id: str = "", *,
                         for r in requirements]
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
-        project_id=str(project.id), ready=not left, to_do=left,
+        project_id=str(project.id), ready=not left, to_do=left, updates=needs.updates,
         optional=[r for r in requirements if not r.required and r.skipped is None and unsatisfied(r)],
         skipped=[r for r in requirements if r.skipped is not None and r.kind != REQUIREMENT_GAP],
         gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],

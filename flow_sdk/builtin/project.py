@@ -2953,6 +2953,12 @@ class Project(SetupSkippable, Entity):
 
         return await project_dependencies.resolve(self, fetch=True, update=update)
 
+    async def check_dependency_updates(self) -> "list[DependencyState]":
+        """Fetch the remotes of the clones Flowpad made, so their ``behind`` counts are current."""
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        return await project_dependencies.check_updates(self)
+
     async def add_dependency(
         self,
         source: str,
@@ -3236,6 +3242,11 @@ class Project(SetupSkippable, Entity):
     @action.post(action_name="resolve-dependencies")
     async def resolve_dependencies_action(self, update: bool = False) -> "ApiResponse":
         states = await self.resolve_dependencies(update=update)
+        return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
+
+    @action.post(action_name="check-dependency-updates")
+    async def check_dependency_updates_action(self) -> "ApiResponse":
+        states = await self.check_dependency_updates()
         return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
 
     @action.post(action_name="install-dependency")
