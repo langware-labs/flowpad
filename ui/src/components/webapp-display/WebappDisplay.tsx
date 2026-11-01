@@ -1,218 +1,90 @@
-import type { ServedApp } from '@sdk';
-import { webappAsset } from '@src/components/project-setup/use-project-load';
+import type { PageError, ServedApp } from '@sdk';
 import PersistentIframe, { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Trans } from '@lingui/react/macro';
-import type { WebappVerdict } from './classify';
-import { WebDebugComponent } from './WebDebugComponent';
-import { useWebappDiagnostics } from './useWebappDiagnostics';
-import { useWebappFix } from './useWebappFix';
-import { usePageCheck } from './usePageCheck';
-import { PageCheckPanel } from './PageCheckPanel';
-import type { PageReportVerdict } from '@sdk';
-import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
+import { AppLifecyclePanel } from './AppLifecyclePanel';
+import type { AppLifecycle } from './useAppLifecycle';
+
+/** The message the page-error reporter posts to its parent (`flow_sdk/server/reporter_relay.py`). */
+export const PAGE_REPORT = 'flowpad:page-report';
+/** Asks the frame's reporter to send its report again (a frame cached from an earlier mount). */
+export const PAGE_REPORT_REQUEST = 'flowpad:page-report-request';
 
 export interface WebappDisplayProps {
-  /** The endpoint serving what the frame shows — the probe asks it what is wrong,
-   *  and the repair run is pointed at it. */
+  /** The endpoint serving what the frame shows — the page's reports are forwarded to it. */
   endpoint: ServedApp | null;
   /** The URL the frame loads: the endpoint's direct address or its service path. */
   src: string;
   testId?: string;
   /** Bumped by the caller to force a reload (re-show, agent turn end). */
   cacheKey?: number;
-  /** App directory, handed to the repair agent when known. */
-  workdir?: string | null;
-  /** Subject the repair run attaches to, so it survives a refresh. */
-  targetTypeId?: string | null;
+  /** The app's lifecycle record, when the app is a webapp asset. Absent (a bare port, files served as they
+   *  are): nothing to wait for, the frame shows at once. */
+  lifecycle?: AppLifecycle | null;
 }
 
 /**
- * The one way to put a web app on screen.
- *
- * Everything about a web app that is not "render an iframe" lives here: is it
- * actually up, what is wrong with it, what do we tell the user, and how do they
- * get it fixed. `PersistentIframe` underneath is left as a pure mechanism, which
- * is the point — it has no way to know whether the thing it loaded worked. A
- * cross-origin navigation to a refused port still fires `onload`, so the frame's
- * own events can never be the source of truth. `useWebappDiagnostics` is.
- *
- * Three outcomes, chosen by one question — can the user see and use the app?
- *   fatal    → replace the frame with the debug panel; there is nothing to look at
- *   degraded → keep the app, add a banner; it works, but something is wrong
- *   ok       → get out of the way
- *
- * An app that is simply not running yet is not broken: a project's web app is a node of the project's
- * setup tree. A display that finds it down invokes the same Load gate as Open: operational work runs,
- * missing installation asks for approval, and failures remain actionable in the gate.
+ * The one way to put a web app on screen: the frame is shown iff the app's record is showable (`up` or
+ * `degraded`); otherwise `AppLifecyclePanel` says what the backend is doing about it. The backend decides and
+ * recovers — this only forwards what the page reports (every post, settled or not, with its `load_id`
+ * verbatim) and says what the record says.
  */
 export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayProps>(function WebappDisplay(
-  { endpoint, src, testId, cacheKey = 0, workdir, targetTypeId },
+  { endpoint, src, testId, cacheKey = 0, lifecycle = null },
   ref,
 ) {
   const frameRef = useRef<PersistentIframeHandle>(null);
-
-  const diagnostics = useWebappDiagnostics({ endpoint, host: src });
-
-  // A page-report failure handed to the fixer: its errors, and what the agent keeps up to date.
-  const [agentFor, setAgentFor] = useState<PageReportVerdict | null>(null);
-  const pageVerdict: WebappVerdict | null = agentFor
-    ? {
-        severity: 'fatal',
-        code: 'crashed',
-        detail: [
-          ...agentFor.decisions
-            .filter((d) => d.action === 'recover')
-            .map(
-              (d) =>
-                `${d.source}: ${d.text}${d.rule ? ` (known as ${d.rule}${d.fix ? `, fix: ${d.fix}` : ''})` : ' (unknown)'}`,
-            ),
-          `App folder: ${agentFor.app_folder} — its setup/recovery.md (read it first) and setup/webapp_errors.json (error rules).`,
-        ],
-      }
-    : null;
-  const fix = useWebappFix({
-    verdict: pageVerdict ?? diagnostics,
-    endpoint,
-    url: src,
-    workdir: workdir ?? agentFor?.app_folder ?? null,
-    targetTypeId,
-    onFinished: () => {
-      diagnostics.refresh();
-      frameRef.current?.refresh();
-    },
-  });
-
-  // Hold the verdict steady for the duration of a repair. The agent typically
-  // restarts the dev server, which makes the app flicker through healthy and
-  // back; without latching, the panel would swap out from under the user
-  // mid-repair. Render-phase setState (not a ref write) so this stays safe
-  // under StrictMode and concurrent rendering.
-  const [latched, setLatched] = useState<WebappVerdict | null>(null);
-  if (fix.running && !latched) setLatched(diagnostics);
-  if (!fix.running && latched) setLatched(null);
-  const verdict = latched ?? diagnostics;
-
-  const isGuest = useCallback((source: MessageEventSource | null) => frameRef.current?.isGuest(source) ?? false, []);
-  const postToGuest = useCallback((message: unknown) => frameRef.current?.postToGuest(message), []);
-  const page = usePageCheck({
-    endpoint,
-    isGuest,
-    postToGuest,
-    src,
-    agentRunning: fix.running,
-    startAgent: setAgentFor,
-  });
-  useEffect(() => {
-    if (agentFor && !fix.running) fix.start();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentFor]);
-  useEffect(() => {
-    if (!fix.running && page.state !== 'recovering') setAgentFor(null);
-  }, [fix.running, page.state]);
-
-  const refreshAll = useCallback(() => {
-    diagnostics.refresh();
-    frameRef.current?.refresh();
-  }, [diagnostics.refresh]);
-
-  // The app's own node of its project's setup tree — run once when the display finds the app down.
-  const setupRoot = webappAsset(endpoint?.webapp_id);
-  const setupProject = setupRoot ? (endpoint?.project_id ?? '') : '';
-  const needsSetup = !!setupProject && verdict.severity === 'fatal' && verdict.code === 'not_running';
+  const showFrame = !lifecycle || lifecycle.showable;
+  const degraded = lifecycle?.record?.state === 'degraded';
 
   useImperativeHandle(
     ref,
     () => ({
-      refresh: refreshAll,
+      refresh: () => frameRef.current?.refresh(),
       postToGuest: (message: unknown) => frameRef.current?.postToGuest(message),
       isGuest: (source: MessageEventSource | null) => frameRef.current?.isGuest(source) ?? false,
     }),
-    [refreshAll],
+    [],
   );
 
-  // A fatal failure repairs itself once, unprompted. Soft errors never do: the
-  // app still works, so spending tokens without being asked would be presumptuous
-  // (and noisy on apps that log a benign console error every load).
+  // A frame hidden while the app was not showable parked whatever it last showed (the broken page): coming
+  // back to showable loads the app again.
+  const [returns, setReturns] = useState(0);
+  const wasHidden = useRef(!showFrame);
   useEffect(() => {
-    if (verdict.severity !== 'fatal') return;
-    if (needsSetup || fix.running || fix.autoAttempted) return;
-    fix.start();
-  }, [verdict.severity, needsSetup, fix.running, fix.autoAttempted, fix.start]);
-
-  // Every fatal branch unmounts the frame, so what it parked is the broken page. Coming back from one
-  // must load the app again even when the port never went away (a 500, a crash on start, a repair) —
-  // unless the port did go away and come back, which `reloadNonce` has already counted.
-  const [recoveries, setRecoveries] = useState(0);
-  const fatalAt = useRef<number | null>(null);
-  useEffect(() => {
-    if (verdict.severity === 'fatal') {
-      fatalAt.current ??= diagnostics.reloadNonce;
-      return;
+    if (!showFrame) wasHidden.current = true;
+    else if (wasHidden.current) {
+      wasHidden.current = false;
+      setReturns((n) => n + 1);
     }
-    if (fatalAt.current === diagnostics.reloadNonce) setRecoveries((n) => n + 1);
-    fatalAt.current = null;
-  }, [verdict.severity, diagnostics.reloadNonce]);
+  }, [showFrame]);
 
-  if (needsSetup) {
-    return (
-      <ProjectLoadGate projectId={setupProject} asset={setupRoot}>
-        <RefreshLoadedApp refresh={refreshAll} />
-      </ProjectLoadGate>
-    );
-  }
+  // The reporter's posts, forwarded as they come — only from this display's own frame.
+  const reportPage = lifecycle?.reportPage;
+  const forward = useCallback(
+    (event: MessageEvent) => {
+      const data = event.data as { type?: string; errors?: PageError[]; settled?: boolean; load_id?: string } | null;
+      if (!data || data.type !== PAGE_REPORT || !endpoint || !reportPage) return;
+      if (!frameRef.current?.isGuest(event.source)) return;
+      void reportPage(endpoint, data.errors ?? [], !!data.settled, data.load_id ?? '');
+    },
+    [endpoint, reportPage],
+  );
+  useEffect(() => {
+    if (!showFrame || !reportPage) return;
+    window.addEventListener('message', forward);
+    // A frame this mount did not load reports only when asked.
+    frameRef.current?.postToGuest({ type: PAGE_REPORT_REQUEST });
+    return () => window.removeEventListener('message', forward);
+  }, [showFrame, forward, reportPage]);
 
-  if (verdict.severity === 'fatal') {
-    return (
-      <WebDebugComponent
-        verdict={verdict}
-        fixRunning={fix.running}
-        toolCount={fix.toolCount}
-        onFix={fix.start}
-        onRetry={refreshAll}
-      />
-    );
-  }
+  if (!showFrame && lifecycle) return <AppLifecyclePanel lifecycle={lifecycle} />;
 
   return (
     <div className="flex h-full w-full flex-col" data-testid="webapp-display">
+      {degraded && lifecycle ? <AppLifecyclePanel lifecycle={lifecycle} /> : null}
       <div className="relative min-h-0 flex-1">
-        {page.state !== 'ok' && verdict.severity !== 'unknown' && (
-          <PageCheckPanel page={page} toolCount={fix.toolCount} />
-        )}
-        {verdict.severity === 'unknown' && !diagnostics.probe && (
-          <div
-            className="absolute inset-0 z-10 flex items-center justify-center bg-background"
-            data-testid="webapp-starting"
-          >
-            <div className="flex flex-col items-center gap-3">
-              <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-foreground" />
-              <p className="text-sm text-muted-foreground">
-                <Trans>Starting your app…</Trans>
-              </p>
-            </div>
-          </div>
-        )}
-        <PersistentIframe
-          ref={frameRef}
-          src={src}
-          testId={testId}
-          // The registry parks a dead frame rather than destroying it, so an app
-          // that recovers would otherwise re-reveal Chrome's error page. The
-          // reload nonce advances on every down→up edge to force a real reload.
-          cacheKey={cacheKey + diagnostics.reloadNonce + recoveries + page.reloads}
-        />
+        <PersistentIframe ref={frameRef} src={src} testId={testId} cacheKey={cacheKey + returns} />
       </div>
     </div>
   );
 });
-
-/** Refresh diagnostics once the provider Load has completed, without starting installation behind approval. */
-function RefreshLoadedApp({ refresh }: { refresh: () => void }) {
-  useEffect(refresh, [refresh]);
-  return (
-    <p role="status" className="p-8 text-sm text-muted-foreground">
-      <Trans>Checking the app…</Trans>
-    </p>
-  );
-}

@@ -183,11 +183,22 @@ export interface PageError {
 /** The backend's decision on a page report (`service_endpoint/<id>/page-report`). */
 export interface PageReportVerdict {
   usable: boolean;
+  /** The report was for a document other than the one the record is about (`load_id`): ignored. */
+  stale?: boolean;
+  /** The backend started recovering the app from this report. */
+  recovering?: boolean;
   settled: boolean;
   webapp_id: string;
   /** The app's folder on this machine (its `setup/` lives there). */
   app_folder: string;
-  decisions: { source: string; text: string; action: 'ignore' | 'recover'; rule: string | null; fix: string }[];
+  decisions: {
+    source: string;
+    text: string;
+    fingerprint?: string;
+    action: string;
+    rule: string | null;
+    fix: string;
+  }[];
 }
 
 /**
@@ -254,8 +265,8 @@ export class ServedApp {
   }
 
   /** Hand the page's reported errors to the backend; answers whether the app is usable. */
-  pageReport(errors: PageError[], settled = true): Promise<PageReportVerdict | null> {
-    return this.endpoint.pageReport(errors, settled, this.mount);
+  pageReport(errors: PageError[], settled = true, loadId = ''): Promise<PageReportVerdict | null> {
+    return this.endpoint.pageReport(errors, settled, this.mount, loadId);
   }
 }
 
@@ -337,9 +348,21 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
   }
 
   /** `POST page-report` — the page's errors, decided by the app's `setup/webapp_errors.json`. */
-  async pageReport(errors: PageError[], settled = true, route?: string | null): Promise<PageReportVerdict | null> {
+  /** Forward one report of the page's reporter. `loadId` is the served document's id, verbatim: the backend
+   *  ignores a report about any other document than the one its record is about. */
+  async pageReport(
+    errors: PageError[],
+    settled = true,
+    route?: string | null,
+    loadId = '',
+  ): Promise<PageReportVerdict | null> {
     const info = new ActionInfo('page-report', this.getType(), this.id, 'POST' as HttpMethod);
-    info.bodyParameters = { errors, settled, ...(route !== null && route !== undefined ? { route } : {}) };
+    info.bodyParameters = {
+      errors,
+      settled,
+      load_id: loadId,
+      ...(route !== null && route !== undefined ? { route } : {}),
+    };
     return (await dataManager.callAction<unknown, PageReportVerdict>(info)) ?? null;
   }
 

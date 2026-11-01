@@ -238,6 +238,11 @@ function fromRow(row: CredentialStatusRow, mode: 'edit' | 'values'): CredentialD
 
 export const editDraft = (row: CredentialStatusRow) => fromRow(row, 'edit');
 export const valuesDraft = (row: CredentialStatusRow) => fromRow(row, 'values');
+/** Set ONE variable's value — the values form, holding only `envVar` (the others are kept as they are). */
+export const oneVarDraft = (row: CredentialStatusRow, envVar: string): CredentialDraft => {
+  const draft = valuesDraft(row);
+  return { ...draft, vars: draft.vars.filter((v) => v.envVar === envVar) };
+};
 
 /** The variable names are fixed by a template, a pack, or a values-only edit. */
 export const namesLocked = (d: CredentialDraft) => d.mode === 'template' || d.mode === 'pack' || d.mode === 'values';

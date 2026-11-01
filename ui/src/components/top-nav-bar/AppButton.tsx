@@ -140,10 +140,27 @@ export function AppButton({ project }: { project?: Project | null }) {
               key={agent.typeId.toString()}
               data-testid={`top-nav-agent-${agent.name}`}
               onSelect={() => void launch(agent, projectId)}
-              className="gap-2"
+              className="group gap-2"
             >
               <Icon className="size-4 shrink-0" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{agent.displayName}</span>
+              <button
+                type="button"
+                aria-label={t`Edit ${agent.displayName}`}
+                title={t`Edit agent`}
+                data-testid={`top-nav-agent-edit-${agent.name}`}
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-data-[highlighted]:opacity-100"
+                // The row launches the agent; the pencil opens its editor instead.
+                onPointerDown={(e) => e.stopPropagation()}
+                onPointerUp={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  navigation.openDock(DockPointer.forAssetEditorByTypeId(agent.typeId.type, agent.typeId));
+                }}
+              >
+                <Pencil className="size-3.5" aria-hidden />
+              </button>
             </DropdownMenuItem>
           );
         })}

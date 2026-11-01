@@ -516,6 +516,9 @@ class ScanActionsMixin:
             # is what makes launch-via-queue deterministic; a post-start enqueue
             # would race the boot and fall back to the stdin path.
             launch_prompt = body.get("launch_prompt")
+            # Optional tab title chosen by the launcher (e.g. a conversation's
+            # title). Pinned like a user rename so auto-naming never replaces it.
+            launch_title = str(body.get("title") or "").strip()
             result_data = body.get("result")
 
             context_data = dict(context_raw)
@@ -820,6 +823,11 @@ class ScanActionsMixin:
                 if tids:
                     process.add_shared_context_entities(*tids)
             await process.save(owner)
+            if launch_title:
+                try:
+                    await process.rename(launch_title)
+                except Exception:
+                    logging.exception(f"createProcess: failed to set title for {process.id}")
             toplog.log(
                 "agentic_process.load",
                 "createProcess row saved process=%s ms=%.0f",

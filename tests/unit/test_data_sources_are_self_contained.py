@@ -161,3 +161,51 @@ def test_a_credential_one_driver_owns_lives_in_that_drivers_folder():
         if len(drivers) == 1 and not (ASSETS / drivers[0] / "agentic-assets" / "credential" / name / "credential.json").is_file()
     }
     assert not missing, f"a driver names a credential its folder does not carry: {missing}"
+
+
+# ── secret managers: the same rule, for ``agentic-assets/secret_manager/<name>/`` ─────────────────
+SECRET_MANAGERS_REL = "flow_sdk/system_projects/flowpad_assistant/agentic-assets/secret_manager"
+SECRET_MANAGERS = REPO / SECRET_MANAGERS_REL
+
+
+@lru_cache(maxsize=1)
+def secret_manager_names() -> tuple[str, ...]:
+    return tuple(sorted(p.name for p in SECRET_MANAGERS.iterdir() if (p / "secret_manager.json").is_file()))
+
+
+@lru_cache(maxsize=1)
+def secret_manager_offenders() -> dict[str, str]:
+    """A manager without its own ``store.py``; an import of a manager's package or a reference to
+    one of its classes outside its folder. No module-NAME trace: a manager is named for a vendor
+    (``gcp``), and the SDK has its own vendor clients (``sod/gcp_sod.py``) —
+    what may not escape is the manager's code."""
+    names = secret_manager_names()
+    found: dict[str, str] = {
+        f"{SECRET_MANAGERS_REL}/{n}": f"{SECRET_MANAGERS_REL}/{n} has no store.py of its own"
+        for n in names if not (SECRET_MANAGERS / n / "store.py").is_file()
+    }
+    classes: set[str] = set()
+    for path in SECRET_MANAGERS.glob("*/*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        classes |= {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+    pathspecs = [f"{tier}/*{suffix}" for tier in SCANNED for suffix in SUFFIXES] + [f":!{p}" for p in IGNORED]
+    listed = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", *pathspecs],
+                            cwd=REPO, capture_output=True, text=True).stdout.splitlines()
+    pattern = re.compile(rf"flowpad_secret_manager_|\b(?:{'|'.join(map(re.escape, sorted(classes))) or '(?!)'})\b")
+    for rel in listed:
+        if rel in found or not (REPO / rel).is_file():
+            continue
+        text = (REPO / rel).read_text(encoding="utf-8", errors="replace")
+        if (match := pattern.search(text)) and not rel.endswith("flow_sdk/secrets/managers.py"):
+            line = text.count("\n", 0, match.start()) + 1
+            found[rel] = f"{rel}:{line} names a secret manager's code: {text.splitlines()[line - 1].strip()[:120]}"
+    return found
+
+
+def test_no_secret_manager_knowledge_outside_its_asset_folder():
+    unexpected = {path: trace for path, trace in secret_manager_offenders().items() if path not in EXCEPTIONS}
+    assert not unexpected, (
+        "secret manager knowledge escaped its asset folder — move it into the manager's folder "
+        "(secret_manager.json or its store.py), or ask the user for an exception:\n  "
+        + "\n  ".join(sorted(unexpected.values()))
+    )

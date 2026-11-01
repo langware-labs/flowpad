@@ -24,6 +24,7 @@ from . import (  # noqa: F401
     message_attachment_action,
     notification_action,
     open_action,
+    pre_share_action,
     process_call_action,
     project_git_share_action,
     prompt_pin_action,

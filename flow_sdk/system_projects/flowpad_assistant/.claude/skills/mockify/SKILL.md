@@ -79,7 +79,14 @@ DM ds-put <mock project>/agentic-assets/dataset/mocks <slug> '{"input": {"title"
     "decisions": [{"id": "D1", "question": "…", "shown": "…"}]}, …]}}'
 ```
 
-- **Start where the user really starts** (often the screen they already live in). If unsure, ask once.
+- **Start where the user really starts — and find it in the code first.** Before writing a step, trace how the
+  product does this action TODAY: the control that starts it, the dialog or page it opens, the components on
+  the way (grep the UI for the action and the entity type). Plan the change as deltas ON that path, reusing its
+  components. A new entry point, dialog or picker only when nothing exists — and say so in the reply. A mock that
+  invents its own path beside an existing one gets thrown away.
+- **Shortest path, plain words.** A choice the product can default is a default, not a screen; a technical
+  detail (keys, devices, protocols) goes in a tooltip or a settings/expert view, never in the main flow. One
+  warning icon with its reason on hover beats a panel of explanations.
 - One step per screen — a screen that looks different (a dialog open, a menu dropped, a toast shown) is its
   own step, never a patch on another step's screen.
 - A branch (failure, cancel, "finish later") has `branch_of: <step id>` and `when`, right after the step it
@@ -147,21 +154,26 @@ On every screen, both modes:
    It checks every screen against its plan — above all that no step is **the same screen as another**, and
    that every planned control goes where the plan says (the full list is in the script's docstring). Fix and
    rebuild until it prints **PASS**. Never present a FAIL.
-2. **Look at every screenshot** in `--shots` — the validator proves structure, not that it looks right.
+2. **Look at every screenshot** in `--shots` — the validator proves structure, not that it looks right. Check
+   each against its `scenario`: what it names (the selected record, the open dialog, the filled state) is ON the
+   screen. An empty pane, "not found" or an error captured where the scenario expects content is a blocker — reach
+   the real state, or build that pane from its component and mark the step `built` — never ship it as the screen.
 3. **Serve it through Flowpad** so feedback saves:
    ```bash
    flow app serve "Mock — <title>"      # from the mock folder; endpoint URL = app_url
    DM ds-put <mocks dataset> <slug> '{"input": {…, "app_url": "<url>", "status": "in_review"}}'
    ```
    The app is at `/api/v1/graph/service_endpoint/<endpoint id>/service/<route>/` (`#<step id>` opens a
-   screen). From outside your session pass `--process <id> --no-show`. In the browser (your own tab): walk
+   screen). The mock folder holds `webapp.json`, so it is served as a webapp ASSET: after a backend restart the
+   display sets it up again instead of showing a dead end. A `DM` put refused with "names a kind nobody
+   registered" means the backend restarted — run `mock_project.py ensure` again. From outside your session pass `--process <id> --no-show`. In the browser (your own tab): walk
    the main path once, Restart once, save one comment with an image and delete it (`DM ds-rows`).
 4. **Real mode: the side-by-side is required.** The first screen beside the live app, both screenshotted,
    the pair attached to your reply (`reference/real-capture.md` §6).
 
 ## Present
 
-`flow show webapp` with the served app, then reply with: the mode in the first line (and `fast_reason` if
+`flow show entity <shown.typeid>` (the typeid `flow app serve` printed), then reply with: the mode in the first line (and `fast_reason` if
 fast), the validator's PASS line, the side-by-side pair, the step list (one line each), what is captured vs
 built, the open decisions (D1…), and: "Walk it, use 🎯 or ☰ → 💬 Feedback to leave a comment or an image,
 then **▶ Execute** sends me what you have so far (☰ → Review shows exactly what I receive)." Mention

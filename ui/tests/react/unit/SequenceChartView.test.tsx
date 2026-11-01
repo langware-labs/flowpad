@@ -5,7 +5,7 @@
  *   2. A sub-flow's "Open ↗" resolves the chart named by `ref` and navigates to it — URL-first,
  *      through navigation.openDock only — without picking the block for a comment.
  *   3. The Table view lists every message with its sender and receiver names.
- *   4. Without a chartit.feedback dataset the toolbar shows the one-line reason and is disabled.
+ *   4. There is no comment bar on the chart.
  *   5. sequenceToMermaid matches the backend rules.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -142,8 +142,6 @@ describe('SequenceChartView', () => {
     const request = (chartQuery.mock.calls[0] as unknown[])[0] as { query: unknown; scope?: { id: string }[] };
     expect(JSON.stringify(request.query)).toContain('auth-check');
     expect(request.scope?.map((s) => s.id)).toEqual([PROJECT]);
-    // The open button never picks the block for a comment.
-    expect(screen.queryByTestId('chart-feedback-panel')).toBeNull();
   });
 
   it('Open ↗ prefers the chart in the same folder when a name repeats', async () => {
@@ -176,12 +174,48 @@ describe('SequenceChartView', () => {
     expect(screen.queryByTestId('chart-sequence-svg')).toBeNull();
   });
 
-  it('turns feedback off with a one-line reason when the project has no chartit.feedback dataset', async () => {
+  it('has no comment bar', async () => {
     renderView();
-    const reason = await screen.findByTestId('chart-feedback-reason');
-    expect(reason.textContent).toMatch(/no chart-feedback dataset/);
-    expect(forKind).toHaveBeenCalledWith('chartit.feedback', PROJECT);
-    expect(screen.getByTestId('chart-feedback-open')).toBeDisabled();
+    await screen.findByTestId('chart-sequence-svg');
+    expect(screen.queryByTestId('chart-feedback-open')).toBeNull();
+    expect(screen.queryByTestId('chart-feedback-reason')).toBeNull();
+  });
+});
+
+describe('SequenceChartView — calls and changes', () => {
+  beforeEach(() => {
+    openDock.mockClear();
+    chartQuery.mockClear();
+  });
+
+  it('a participant with ref opens the chart it names', async () => {
+    chartQuery.mockResolvedValueOnce([{ name: 'shop-containers', asset_ref: '/w/p/agentic-assets/chart/shop-containers' }]);
+    const value = { participants: [{ id: 'api', label: 'API', ref: 'shop-containers' }, { id: 'db', label: 'DB' }], messages: [] };
+    render(
+      <MemoryRouter>
+        <SequenceChartView fsRef={makeFsRef({ 'chart.json': JSON.stringify(value) })} chart={chart} projectId={PROJECT} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByTestId('chart-participant-open'));
+    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+  });
+
+  it('clicking a message asks for a change on it', async () => {
+    const request = vi.fn();
+    render(
+      <MemoryRouter>
+        <SequenceChartView
+          fsRef={makeFsRef({ 'chart.json': JSON.stringify(SEQUENCE) })}
+          chart={chart}
+          projectId={PROJECT}
+          changes={{ request, marks: new Map() }}
+        />
+      </MemoryRouter>,
+    );
+    fireEvent.click((await screen.findAllByTestId('chart-message'))[0]);
+    fireEvent.change(await screen.findByTestId('chart-change-text'), { target: { value: 'Use PUT' } });
+    fireEvent.click(screen.getByTestId('chart-change-add'));
+    expect(request).toHaveBeenCalledWith({ quote: 'm1 · POST /login', instruction: 'Use PUT', runNow: false });
   });
 });
 

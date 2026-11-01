@@ -1,5 +1,7 @@
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { sdkConfig } from '@sdk/config/index';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { VersionChip } from '@src/components/version-popover/version-chip';
 
 interface HubReleaseLabelProps {
   /** The hub's own release, from `bootstrap.env.version`. Null until the hub ships it. */
@@ -7,30 +9,43 @@ interface HubReleaseLabelProps {
 }
 
 /**
- * The hub footer's release label — the read-only stand-in for `VersionPopover`,
- * whose every action (version/check, pip upgrade, restart) is desk-only.
+ * The hub footer's version chip — the same chip as the desktop's `VersionPopover`,
+ * but its popover is read-only: every desktop action (version/check, pip upgrade,
+ * restart) is desk-only.
  *
- * Two numbers, because they are two different releases and showing only one
- * would be a lie about the other: `hub` is the package serving this page, `ui`
- * is the flow_sdk release THIS bundle was built from — which the hub cannot
- * know, since the frontend is deployed independently of it. On the desktop the
- * two are the same number, which is why the desk footer shows a single version.
+ * The popover lists two numbers, because they are two different releases: `hub`
+ * is the package serving this page, `ui` is the flow_sdk release THIS bundle was
+ * built from — which the hub cannot know, since the frontend is deployed
+ * independently of it.
  */
 export function HubReleaseLabel({ hubVersion }: HubReleaseLabelProps) {
   const { t } = useLingui();
+  const chipVersion = sdkConfig.ui_version || hubVersion;
+  if (!chipVersion) return null;
 
-  const label = [hubVersion && `hub ${hubVersion}`, sdkConfig.ui_version && `ui ${sdkConfig.ui_version}`]
-    .filter(Boolean)
-    .join(' · ');
-  if (!label) return null;
+  const rows = [
+    [t`Hub`, hubVersion],
+    [t`UI`, sdkConfig.ui_version],
+  ].filter(([, value]) => value);
 
   return (
-    <span
-      data-testid="hub-release-label"
-      title={t`Hub release, and the UI build serving it`}
-      className="shrink-0 whitespace-nowrap px-1 text-[10px] text-muted-foreground"
-    >
-      {label}
-    </span>
+    <Popover>
+      <PopoverTrigger asChild>
+        <VersionChip version={chipVersion} data-testid="hub-release-label" />
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" className="w-64 p-3">
+        <h3 className="mb-2 text-sm font-semibold">
+          <Trans>Flowpad</Trans>
+        </h3>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs" data-testid="hub-release-details">
+          {rows.map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-mono">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </PopoverContent>
+    </Popover>
   );
 }

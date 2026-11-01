@@ -1,26 +1,29 @@
 import { t } from '@lingui/core/macro';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AgenticProcess, Conversation, FlowMessage, ProcessKind, TypeId } from '@sdk';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AgenticProcess, Conversation, FlowMessage, ProcessKind, TypeId, isProcessFailed } from '@sdk';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { resolveWorkdir } from './apply-project-choice';
 import type { WorkerType } from './conversation-session-constants';
+import { SESSION_ROLE, hasSessionRole, isConversationSession } from './conversation-session-role';
 
 /**
  * The single launch/open lifecycle for a conversation's owning worker session.
  *
- * A conversation has at most one "conversationProcess" — an AgenticProcess
- * stamped with `process_type === ProcessKind.Conversation`, linked onto the
- * conversation's `sharedContextEntities` at launch time. This hook is the one
+ * A conversation has at most one "conversationProcess" — the newest AgenticProcess
+ * linked onto the conversation's `sharedContextEntities` as its session
+ * (`isConversationSession`): launched from it, or a session that wrote into it
+ * through `flow conversation send/new` (the backend links those). This hook is the one
  * source of truth shared by the conversation header and the Context drawer so
  * the two never disagree: a conversationProcess is present (⇒ Open) or absent
  * (⇒ launch toolbar) — never neither.
  *
- *  - `launch(worker)` starts a session in the conversation's project. It is
- *    wrapped in `ensureMapped`, so an unmapped conversation opens the project
- *    picker first and the launch continues automatically once a project is
- *    chosen.
+ *  - `launch(worker)` sends the prompt to the conversationProcess when one of
+ *    that worker type exists and has not failed (queued if it is busy), and
+ *    opens it. Only otherwise does it start a new session in the conversation's
+ *    project — wrapped in `ensureMapped`, so an unmapped conversation opens the
+ *    project picker first and the launch continues once a project is chosen.
  *  - `open()` navigates to the live shell of the existing conversationProcess.
  */
 export function useConversationSession(opts: {
@@ -45,8 +48,7 @@ export function useConversationSession(opts: {
   const [starting, setStarting] = useState(false);
 
   // The conversationProcess is whatever AgenticProcess is linked directly on the
-  // conversation (startSession links it there) and carries the Conversation
-  // kind. On a cold load the linked process isn't necessarily in the entity
+  // conversation as its session (startSession links it there, with the role). On a cold load the linked process isn't necessarily in the entity
   // cache yet — so we FETCH each linked agentic_process by id (cache-first,
   // network fallback) into local state rather than reading cache-only, which
   // would render the launch toolbar until something else happened to fetch it.
@@ -55,7 +57,10 @@ export function useConversationSession(opts: {
   // mutates the conversation in place (same object identity), so a ref-only dep
   // would miss the new link after a launch.
   const processTids = conversation?.contextOfType(AgenticProcess.type, 'shared') ?? [];
-  const sharedKey = processTids.map((t) => t.toString()).join(',');
+  // The role marker can land on an entry already linked, so it is part of the key.
+  const sharedKey = processTids
+    .map((t) => `${t.toString()}${conversation && hasSessionRole(conversation, t.id) ? ':s' : ''}`)
+    .join(',');
   const [linkedProcesses, setLinkedProcesses] = useState<AgenticProcess[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -76,8 +81,11 @@ export function useConversationSession(opts: {
   }, [sharedKey]);
 
   const conversationProcess = useMemo<AgenticProcess | null>(
-    () => mostRecentProcess(linkedProcesses.filter((p) => p.process_type === ProcessKind.Conversation)),
-    [linkedProcesses],
+    () =>
+      conversation ? mostRecentProcess(linkedProcesses.filter((p) => isConversationSession(conversation, p))) : null,
+    // sharedKey carries the role markers: the conversation is mutated in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [linkedProcesses, sharedKey, conversation],
   );
 
   const startSession = useCallback(
@@ -98,7 +106,8 @@ export function useConversationSession(opts: {
         const convTypeIdString = conversation.id
           ? new TypeId(Conversation.type, conversation.id).toString()
           : undefined;
-        // A message launch stamps the message on the process and keys it to the conversation —
+        // Every launch keys the process to the conversation (the chip query matches on it); a
+        // message launch also stamps the message —
         // `useMessageSessions` reads that back as the chip on the message.
         const messageTypeIdString = messageId ? new TypeId(FlowMessage.type, messageId).toString() : undefined;
         const shared = [convTypeIdString, messageTypeIdString].filter((x): x is string => !!x);
@@ -112,16 +121,17 @@ export function useConversationSession(opts: {
           projectId: scratch ? undefined : (conversation.project_id ?? undefined),
           scratch,
           launchPrompt: instruction,
+          title: conversation.title?.trim() || undefined,
           enableAssistant: true,
           processType: ProcessKind.Conversation,
           sharedContextEntities: shared.length ? shared : undefined,
-          ...(messageTypeIdString && convTypeIdString ? { target: convTypeIdString } : {}),
+          ...(convTypeIdString ? { target: convTypeIdString } : {}),
         });
         // Save the worker into the conversation's context so it surfaces as the
         // conversationProcess and is the target for per-message append.
         if (proc.id) {
           try {
-            await conversation.shareContextEntities(new TypeId(AgenticProcess.type, proc.id));
+            await conversation.shareContextEntities(new TypeId(AgenticProcess.type, proc.id), { data: SESSION_ROLE });
           } catch (linkErr) {
             console.error('[useConversationSession] failed to link process to conversation', linkErr);
           }
@@ -136,13 +146,39 @@ export function useConversationSession(opts: {
     [conversation, starting, buildPrompt],
   );
 
+  // `launch` reads the process through a ref so status churn doesn't change its identity.
+  const processRef = useRef(conversationProcess);
+  processRef.current = conversationProcess;
+
+  const sendToSession = useCallback(
+    (target: AgenticProcess, prompt: () => string = buildPrompt, messageId?: string) => {
+      // A message launch stamps the message on the session: its chip shows on the message.
+      const stamped = messageId ? target.shareContextEntities(new TypeId(FlowMessage.type, messageId)) : Promise.resolve();
+      void navigation.openShellProcess(target.id);
+      // Idle: runs now (resolves when the turn ends). Busy: queued.
+      stamped
+        .then(() => target.promptOrEnqueue(prompt()))
+        .catch((err) => {
+          console.error('[useConversationSession] send to session failed', err);
+          notify.error({ title: t`Failed to send to the session` });
+        });
+    },
+    [buildPrompt, navigation],
+  );
+
   const launch = useCallback(
     (worker: WorkerType, prompt?: () => string, messageId?: string) => {
+      // Reuse the conversation's own session: same worker type, not failed.
+      const existing = processRef.current;
+      if (existing && existing.worker_type === worker && !isProcessFailed(existing.status)) {
+        sendToSession(existing, prompt, messageId);
+        return;
+      }
       const run = () => startSession(worker, prompt, messageId);
       if (ensureMapped) ensureMapped(run, { onSkip: () => startSession(worker, prompt, messageId, true) });
       else void run();
     },
-    [startSession, ensureMapped],
+    [startSession, sendToSession, ensureMapped],
   );
 
   const open = useCallback(() => {

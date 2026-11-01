@@ -153,8 +153,12 @@ def _handler(state: FakeSecretManager, lock: threading.Lock):
 @contextmanager
 def serving_gcp_store(monkeypatch, **kwargs) -> Iterator[FakeSecretManager]:
     """A :class:`FakeSecretManager` on an ephemeral loopback port (``api_root`` is its ``/v1``), with
-    the ``gcp_secret_manager`` store pointed at it."""
-    from flow_sdk.secrets import gcp_secret_manager
+    the ``gcp`` secret manager's store pointed at it."""
+    import sys
+
+    from flow_sdk.secrets.managers import store_class
+
+    gcp_secret_manager = sys.modules[store_class("gcp").__module__]
 
     state = FakeSecretManager(**kwargs)
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(state, threading.Lock()))
@@ -165,6 +169,11 @@ def serving_gcp_store(monkeypatch, **kwargs) -> Iterator[FakeSecretManager]:
     state.api_root = f"http://127.0.0.1:{server.server_address[1]}/v1"
     try:
         monkeypatch.setattr(gcp_secret_manager, "API_ROOT", state.api_root)
+
+        async def no_gcloud():  # never this machine's real gcloud sign-in
+            return None
+
+        monkeypatch.setattr(gcp_secret_manager, "gcloud_token", no_gcloud)
         yield state
     finally:
         server.shutdown()

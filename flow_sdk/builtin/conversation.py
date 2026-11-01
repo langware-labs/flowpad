@@ -11,6 +11,7 @@ from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
+from flow_sdk.sources.values.items import MessageMarkSpec
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.core.urls.service_urls import build_hub_url
@@ -206,6 +207,8 @@ class Conversation(ProjectedFields, Entity):
     address: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     started_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     ended_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
+    #: Chips the source puts on the whole conversation (``MessageData.conversation_marks``).
+    marks: List[MessageMarkSpec] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     # A conversation written here FOR the hub, not there yet — an ask for help captured before

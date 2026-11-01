@@ -28,6 +28,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     is_valid_env_var,
 )
 from flow_sdk.schema.data_spec.io.native import Text
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretRefSpec
 from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec, unique_stages
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -82,6 +83,14 @@ class CredentialVarSpec(DataSpec):
     #: ONE_OF: the way this variable belongs to. ONE_OF variables sharing a ``way`` are given together
     #: (an address and its app password); empty — the variable is a way of its own, named after itself.
     way: str = ""
+    #: The secret ref: the project vault (``secret_vaults`` in ``project_manifest.json``) and key
+    #: where a teammate's copy of the value is fetched from. None: not published to any vault.
+    #: A name, never a value; meaningful only for a variable that holds one.
+    secret_ref: Optional[SecretRefSpec] = None
+
+    def store_key(self, env_var: str) -> str:
+        """The key this variable's value has in its vault: the ref's key, else its own name."""
+        return self.secret_ref.key if self.secret_ref is not None else env_var
 
     @property
     def is_must(self) -> bool:
@@ -135,8 +144,13 @@ class CredentialSpec(DataSpec):
     """``credential.json`` — the shape, with every authoring rule as a validator."""
 
     main_file: ClassVar[str | None] = "credential.json"
+    #: The read-only check that the values work lives beside it, in its own file (``Credential.declared_test``):
+    #: a Flowpad that predates tests never reads it, so adding one never breaks an older app.
+    TEST_FILE: ClassVar[str] = "test.json"
 
-    model_config = ConfigDict(populate_by_name=True)  # extra="forbid" is DataSpec's
+    #: ``extra="ignore"``: a key a NEWER Flowpad wrote must not stop this one loading the credential — an asset
+    #: document is read by every version that opens the project (``AssetDocumentSpec``'s rule).
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     #: The folder name.
     name: str

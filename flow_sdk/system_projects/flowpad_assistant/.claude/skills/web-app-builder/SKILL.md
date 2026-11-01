@@ -225,8 +225,9 @@ as its home page. Nothing else registers an app; `flow app serve` / `flow app op
   for it is a route there. `path` is where under that proxy: `""` makes this app the audience's
   root, unsaid it mounts at its own name. **No `mounts` means one: the `build` folder, served by
   Flowpad as a static site to the `app` audience.** A dev server is a `proxy` serving: `start_cmd`
-  with `{port}` where the server takes its port, `health` (a path that answers below 500 once the
-  server is up), and only when the defaults are wrong `install_cmd` (default: `npm ci` when there is a
+  with `{port}` where the server takes its port, `health` (a path of the app's own that answers below 400
+  once the server is up — declare it: `/` answering 404 still counts as a server, a declared `/api/health`
+  answering 404 does not), and only when the defaults are wrong `install_cmd` (default: `npm ci` when there is a
   `package.json`; give a declared one an `install_check`, a path that exists once it ran) and
   `build_cmd` (default: no build). An API the app brings along is not a mount: declare it under
   `services` (`name`, `protocol`, a `proxy` serving) — it is started before the page, and the page
@@ -247,11 +248,24 @@ as its home page. Nothing else registers an app; `flow app serve` / `flow app op
 
 **What Flowpad derives from that — do not write a wizard for it.** A web app in a project is a node of
 the project's setup tree (`docs/glossary.md` → *setup tree*): install → build → start, each step with its
-own check (`node_modules` present, `build` non-empty, the server answering `health`). The same chain is
-the app's **load**: it runs the first time the app is shown on a machine, and again whenever a later show
-finds the server down (it died with the machine). So an app the project opens on — its home page — is up
-by the time its view mounts, and the view shows "Setting things up" with the live steps until it is. A
-show never waits on it: `flow show` and the Home click answer at once.
+own check (a cut-short install or a changed lockfile reinstalls, changed sources rebuild, the server
+answering `health`). The same chain is the app's **load**: it runs the first time the app is shown on a
+machine, and again whenever a later show finds the server down. Its state lives in the app's lifecycle
+record on this machine (`flow app status <app>`; contract: `docs/webapp-lifecycle.md`), and when it fails,
+recovery runs by itself: the app's learned handlings (`setup/webapp_handlings.json`, committed with the
+app), one fix by code, then the fixer agent once per failure. A show never waits on it: `flow show` and
+the Home click answer at once.
+
+**Another app's service the app needs** (an API, a tenant the page bootstraps from) is a setup node too,
+declared inside the app that needs it — never a step the person remembers:
+
+```json
+{ "name": "admin-api", "label": "Admin's API", "run": "webapp-service-up",
+  "inputs": { "webapp": "admin", "service": "api" } }
+```
+
+at `<app folder>/agentic-assets/asset_setup/admin-api/asset_setup.json`: opening the app starts that
+service (and the services declared before it) first.
 
 **When to add `asset_setup.json`.** Only for what install/build/start cannot say — a container the app
 talks to, a one-time seed, a value the person must provide. Put it beside the app at

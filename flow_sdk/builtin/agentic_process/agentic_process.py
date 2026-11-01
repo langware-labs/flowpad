@@ -2735,10 +2735,15 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="prompt is required")
         if self.hub_route:
             return await self._relay_json("enqueue", body=body)
-        self.queue.enqueue(prompt, source=str(body.get("source") or "ui"))
+        await self._enqueue(prompt, source=str(body.get("source") or "ui"))
+        return ApiSuccessResponse(data=self.queue.read())
+
+    async def _enqueue(self, prompt: str, *, source: str) -> dict:
+        """Queue *prompt* behind the running turn: persist it, tell watchers, and arm the drain."""
+        entry = self.queue.enqueue(prompt, source=source)
         await self.notify_updated()
         self._schedule_queue_drain("enqueue")
-        return ApiSuccessResponse(data=self.queue.read())
+        return entry
 
     @action.post(action_name="drain-queue")
     async def _drain_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -3145,6 +3150,14 @@ class AgenticProcess(Entity):
                     status_code=400,
                 )
 
+        if port is None and not body.get("dist"):
+            # A folder that IS a webapp asset (it holds webapp.json) is served as that asset, not as a bare
+            # artifact: the asset has a webapp id, so the display can set it up and recover it when its
+            # address goes away (a restart) instead of showing a dead end.
+            app = await webapp_placement.webapp_asset_at(artifact_path)
+            if app is not None:
+                return await self._serve_webapp_asset(app, show=bool(body.get("show", True)))
+
         project = await self._resolve_webapp_project()
         # Provenance is the URL scope's, never the body's — an artifact records
         # who actually ran, not who the payload claims.
@@ -3200,6 +3213,33 @@ class AgenticProcess(Entity):
                 "artifact": artifact.model_dump(mode="json"),
                 "deployment": deployment.model_dump(mode="json") if deployment is not None else None,
                 "endpoints": [endpoint.model_dump(mode="json") for endpoint in endpoints],
+                "shown": shown,
+            }
+        )
+
+    async def _serve_webapp_asset(self, app, *, show: bool) -> ApiSuccessResponse | ApiFailResponse:
+        """``register-webapp-artifact`` for a webapp asset: placed and loaded by the one display path, shown by its
+        typeid. The answer keeps the artifact answer's shape — its routes as ``endpoints`` — with ``webapp`` in
+        place of ``artifact``."""
+        from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
+
+        shown = None
+        if show:
+            try:
+                shown = await resolve_display_target(typeid=str(app.typeid))  # places + loads the asset
+            except InvalidDisplayTarget as e:
+                return ApiFailResponse(message=str(e), status_code=400)
+            await self.on_show(shown)
+        else:
+            await webapp_placement.show_webapp_locally(app)
+        routes = await webapp_placement.webapp_routes(str(app.id))
+        return ApiSuccessResponse(
+            data={
+                "artifact": None,
+                "webapp": app.model_dump(mode="json"),
+                "deployment": None,
+                "endpoints": [placed.model_dump(mode="json") for placed in routes],
                 "shown": shown,
             }
         )
@@ -3683,6 +3723,45 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="nothing to submit (no input staged)")
         self._schedule_queue_drain("submit")
         return ApiSuccessResponse(data={"status": "submitted"})
+
+    async def run_shell_command(self, command: str) -> ApiSuccessResponse | ApiFailResponse:
+        """Run *command* in this session's own shell mode — Claude Code's ``! cmd``.
+
+        Exactly what the person gets typing it: the command runs in the session's shell and its
+        output joins the conversation (Claude Code may answer it). Typed in three steps — the
+        escape key alone (the TUI switches to shell mode), the command as a bracketed paste, then
+        a discrete Enter, each once the terminal has gone quiet. Not ``prompt``: that path also
+        names the session after its first prompt and queues behind a running turn.
+        """
+        escape = self._shell_escape()
+        if not escape:
+            return ApiFailResponse(message=f"{self.driver.name} has no shell mode", status_code=409)
+        if not await self._is_live_pty():
+            return ApiFailResponse(message="the session has no live terminal to type into", status_code=409)
+        if is_turn_busy(self):
+            # Keys typed while the agent answers are lost; the queue delivers it once the turn ends.
+            entry = await self._enqueue(f"{escape} {command}", source="shell-command")
+            return ApiSuccessResponse(data={"status": "queued", "entry_id": entry.get("id")})
+        shell = await self.shell()
+        typed = await self.input(escape)
+        if isinstance(typed, ApiFailResponse):
+            return typed
+        await shell.wait_for_input_ready()
+        await self.send(f"\x1b[200~{command}\x1b[201~".encode())
+        await shell.wait_for_input_ready()
+        await self.send(b"\r")
+        return ApiSuccessResponse(data={"status": "ran"})
+
+    @action.post(action_name="run-shell-command")
+    async def _http_run_shell_command(self) -> ApiSuccessResponse | ApiFailResponse:
+        """POST body ``{"command": "..."}`` — see :meth:`run_shell_command`."""
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        command = str(body.get("command", "")).strip()
+        if not command:
+            return ApiFailResponse(message="command is required")
+        return await self.run_shell_command(command)
 
     async def send(self, data: str | bytes) -> None:
         """Write text or raw bytes to the live PTY stdin.
@@ -6744,6 +6823,10 @@ class AgenticProcess(Entity):
             except OSError as e:
                 logger.warning("delete of %s failed: %s", victim, e)
 
+    def _shell_escape(self) -> str | None:
+        """The driver's shell-mode key (``pty_shell_escape``); a driver predating the trait has none."""
+        return getattr(self.driver, "pty_shell_escape", None)
+
     def _supports_plan_mode(self) -> bool:
         """Driver capability flag surfaced on the entity for the chat plan
         toggle. Defensive: a driver predating the capability resolves False
@@ -6852,6 +6935,7 @@ class AgenticProcess(Entity):
             data.setdefault(key, None)
         data["queue"] = data.get("queue") or {"enabled": True, "entries": []}
         data["supports_plan_mode"] = False
+        data["supports_shell_command"] = False
         return data
 
     def _remote_refusal(self, verb: str) -> ApiFailResponse:
@@ -6968,6 +7052,8 @@ class AgenticProcess(Entity):
         )
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
+        # A command link can run in this session's own shell mode (``run_shell_command``).
+        data["supports_shell_command"] = bool(self._shell_escape() and self.pty_mode)
         data["additional_dirs"] = [
             path
             for path in (data.get("additional_dirs") or [])

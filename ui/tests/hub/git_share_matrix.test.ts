@@ -4,12 +4,16 @@
  * The asset lives in a git repo whose remote both machines reach (a bare
  * `file://` repo on this host). Alice shares it in GIT mode: the `.flowmsg`
  * carries a pointer (remote + commit + path), never the bytes; the hub carries
- * the message. Bob installs it and must:
- *   - see exactly the shared commit's bytes, even after Alice pushed more;
- *   - keep his own checkout untouched (other branch, uncommitted edits);
- *   - have the asset on his live data layer AND findable by free-text search.
+ * the message. The share comes into Bob's OWN checkout of the repo:
+ *   - nothing is written until Bob says yes to the plan (a cherry-pick of the
+ *     asset's commits onto his branch, or a pull on the shared branch);
+ *   - then the shared version is in his project folder — even after Alice
+ *     pushed more — his branch and his uncommitted edits are kept, and no
+ *     `.shared` copy exists;
+ *   - the asset is on his live data layer AND findable by free-text search.
  * Plus the sender's one-click fix (commit just this file), the receiver's
- * "N newer commits → update", and sending the receiver's edits back.
+ * "N newer commits → update", and a shared credential landing in Bob's project
+ * setup.
  *
  * Per-step timings are written to $GIT_SHARE_HUB_REPORT (JSON) when set.
  *
@@ -18,7 +22,7 @@
  *      npx vitest run --project hub git_share_matrix)
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -210,8 +214,9 @@ async function shareByGit(ref: string): Promise<{ convId: string; fmId: string }
   return { convId: conv.id, fmId };
 }
 
-/** Bob receives the message over the hub, downloads (stages) and installs it. */
-async function receive(convId: string, fmId: string, assetId: string, project?: { id: string }) {
+/** Bob receives the message over the hub, downloads (stages) and installs it into his
+ *  project: first without consent (the plan comes back, nothing is written), then with it. */
+async function receive(convId: string, fmId: string, assetId: string, project: { id: string; dir: string }) {
   const sync = await post(bob.apiUrl, '/graph/conversation-message-sync', { conversation_id: convId });
   expect(sync.status, 'conversation sync').toBeLessThan(400);
   await pollUntil(
@@ -234,9 +239,21 @@ async function receive(convId: string, fmId: string, assetId: string, project?: 
   // The pointer IS the attachment: the message must not read "arrived short".
   const fm = await get(bob.apiUrl, `/graph/flow_message/${fmId}`);
   expect(fm.body?.data?.body_missing_attachments ?? [], 'no missing attachments after download').toEqual([]);
-  return post(bob.apiUrl, `/graph/message_attachment/${staged.id}/install`, project
-    ? { scope: 'project', project_id: project.id }
-    : { scope: 'user' });
+  const before = checkoutState(project.dir);
+  const install = (apply: boolean) =>
+    post(bob.apiUrl, `/graph/message_attachment/${staged.id}/install`, { scope: 'project', project_id: project.id, apply });
+  const asked = await install(false);
+  expect(asked.status, `plan (got ${JSON.stringify(asked.body?.message)})`).toBeLessThan(400);
+  expect(asked.body?.data?.needs, 'Bob is asked before his checkout is written').toBe('apply');
+  expect(checkoutState(project.dir), 'the plan step wrote nothing').toBe(before);
+  const done = await install(true);
+  return { ...done, plan: asked.body.data.plan as { action: string; commits: string[]; branch: string } };
+}
+
+/** No `.shared` copy anywhere under the share's temp root or Bob's workspace. */
+function noSharedCopies(root: string): void {
+  const found = execFileSync('find', [root, '-type', 'd', '-name', '.shared'], { encoding: 'utf8' }).trim();
+  expect(found, 'a .shared copy was made').toBe('');
 }
 
 /** Bob's own clone of the repo — on `main`, with uncommitted edits of his own. */
@@ -283,7 +300,7 @@ function mainOf(fam: Family, assetRef: string): string {
 
 describe('git share over the real hub (Alice → Bob)', () => {
   for (const fam of FAMILIES) {
-    it(`${fam.type}: Bob opens the pinned commit; his own checkout (other branch, own edits) is untouched; searchable`, async () => {
+    it(`${fam.type}: Bob says yes, the shared commit is cherry-picked into his checkout (branch + own edits kept); live; searchable`, async () => {
       const t = new Timer();
       const w = await t.step('seed', () => seed(fam));
       const pinned = git(w.sender, 'rev-parse', 'HEAD');
@@ -294,14 +311,19 @@ describe('git share over the real hub (Alice → Bob)', () => {
       // the live check below proves install ANNOUNCES the row (no reload).
       const tid = new bob.sdk.TypeId(fam.type, w.id);
       expect(await bob.sdk.dataManager.getByTypeId(tid).catch(() => null), 'not on Bob before install').toBeNull();
-      const install = await t.step('receive_install', () => receive(convId, fmId, w.id, { id: mine.id }));
+      const install = await t.step('receive_install', () => receive(convId, fmId, w.id, mine));
       expect(install.status, `install (got ${JSON.stringify(install.body?.message)})`).toBeLessThan(400);
+      expect(install.plan.action).toBe('cherry_pick');
+      expect(install.plan.commits, 'only the asset commit that was shared').toEqual([pinned]);
 
       const row = await t.step('row', () => bobRow(fam.type, w.id));
+      expect(realpathSync(row.asset_ref), 'in Bob\'s project folder').toBe(realpathSync(path.join(mine.dir, fam.rel)));
       const file = mainOf(fam, row.asset_ref);
       expect(readFileSync(file, 'utf8')).toContain(w.token);
-      expect(git(path.dirname(file), 'rev-parse', 'HEAD'), 'Bob is at the shared commit').toBe(pinned);
-      expect(checkoutState(mine.dir), "Bob's own checkout untouched").toBe(mine.before);
+      expect(git(mine.dir, 'rev-parse', '--abbrev-ref', 'HEAD'), "Bob's branch kept").toBe('main');
+      expect(git(mine.dir, 'log', '-1', '--format=%B')).toContain(`cherry picked from commit ${pinned}`);
+      expect(readFileSync(path.join(mine.dir, 'README.md'), 'utf8'), "Bob's own edit kept").toBe("bob's own uncommitted edit\n");
+      noSharedCopies(w.root);
       const live = await t.step('live', () =>
         pollUntil(async () => (await bob.sdk.dataManager.getByTypeId(tid).catch(() => null)) ?? null, 10_000, 'live (CREATE data_op)'),
       );
@@ -316,39 +338,54 @@ describe('git share over the real hub (Alice → Bob)', () => {
     const t = new Timer();
     const fam = FAMILIES[1];
     const w = await t.step('seed', () => seed(fam));
+    const mine = await t.step('receiver_checkout', () => bobsOwnCheckout(w));
     const { convId, fmId } = await t.step('share', () => shareByGit(`${fam.type}-${w.id}`));
-    const install = await t.step('receive_install', () => receive(convId, fmId, w.id));
+    const install = await t.step('receive_install', () => receive(convId, fmId, w.id, mine));
     expect(install.status).toBeLessThan(400);
-    const received = await bobRow(fam.type, w.id);
-    // Installed with no project: the share's hidden slot is no project of its own.
-    const projects = ((await get(bob.apiUrl, '/graph/project')).body?.data ?? []) as any[];
-    const slot = path.dirname(path.dirname(path.dirname(received.asset_ref)));
-    expect(projects.filter((p) => (p.fs_storage_mount_path ?? '').startsWith(slot)), 'no project minted for the share slot').toEqual([]);
     senderCommit(w, 'gshnewversiontok');
     const st = await t.step('status', () => get(bob.apiUrl, `/graph/${fam.type}/${w.id}/git_share_status`));
     expect(st.body?.data?.behind, JSON.stringify(st.body)).toBe(1);
-    const up = await t.step('update', () => post(bob.apiUrl, `/graph/${fam.type}/${w.id}/git_share_update`, {}));
+    const asked = await t.step('plan', () => post(bob.apiUrl, `/graph/${fam.type}/${w.id}/git_share_update`, {}));
+    expect(asked.body?.data?.needs, JSON.stringify(asked.body)).toBe('apply');
+    const up = await t.step('update', () => post(bob.apiUrl, `/graph/${fam.type}/${w.id}/git_share_update`, { apply: true }));
     expect(up.body?.data?.updated, JSON.stringify(up.body)).toBe(true);
+    expect(readFileSync(mainFile(fam, mine.dir), 'utf8')).toContain('gshnewversiontok');
     expect(await t.step('search', () => bobFinds('gshnewversiontok', w.id, fam.type))).toBe(true);
     created.push({ apiUrl: bob.apiUrl, path: `/graph/${fam.type}/${w.id}` });
     t.done('markdown:update');
   }, 60_000); // do not increase timeout without approval
 
-  it("skill: Bob's edits go back on a share/ branch; Alice's branch is never written", async () => {
+  it("credential: Bob brings a shared credential into his project and its setup asks for it", async () => {
     const t = new Timer();
-    const fam = FAMILIES[0];
-    const w = await t.step('seed', () => seed(fam));
-    const { convId, fmId } = await t.step('share', () => shareByGit(`${fam.type}-${w.id}`));
-    expect((await t.step('receive_install', () => receive(convId, fmId, w.id))).status).toBeLessThan(400);
-    const row = await bobRow(fam.type, w.id);
-    writeFileSync(mainOf(fam, row.asset_ref), 'improved by bob\n');
-    const aliceTip = git(w.remote, 'rev-parse', BRANCH);
-    const sent = await t.step('send_back', () => post(bob.apiUrl, `/graph/${fam.type}/${w.id}/git_share_send_back`, { sender: 'bob' }));
-    expect(sent.body?.data?.sent, JSON.stringify(sent.body)).toBe(true);
-    expect(git(w.remote, 'rev-parse', BRANCH), "Alice's branch untouched").toBe(aliceTip);
-    expect(git(w.remote, 'show', `${sent.body.data.branch}:${fam.rel}/${fam.main}`)).toBe('improved by bob');
-    created.push({ apiUrl: bob.apiUrl, path: `/graph/${fam.type}/${w.id}` });
-    t.done('skill:send_back');
+    const w = await t.step('seed', () => seed(FAMILIES[1]));
+    const dir = path.join(w.sender, 'agentic-assets/credential/bright_data');
+    const credId = randomUUID();
+    mkdirSync(path.join(dir, '.flow/capsules'), { recursive: true });
+    writeFileSync(path.join(dir, '.flow/capsules/identity.json'), JSON.stringify({ data: { id: credId }, version: 1 }));
+    writeFileSync(
+      path.join(dir, 'credential.json'),
+      JSON.stringify({ name: 'bright_data', title: 'Bright Data', schema: 2, vars: { BRIGHT_DATA_API_KEY: {} } }, null, 2),
+    );
+    git(w.sender, 'add', '-A');
+    git(w.sender, 'commit', '-qm', 'bright data credential');
+    git(w.sender, 'push', '-q', 'origin', BRANCH);
+    await post(alice.apiUrl, '/graph/compute_node/@local/fs-records/invalidate', { paths: [path.join(dir, 'credential.json')] });
+    await pollUntil(
+      async () => ((await get(alice.apiUrl, `/graph/credential/${credId}`)).body?.data?.id === credId ? true : null),
+      15_000,
+      'credential indexed on Alice',
+    );
+    const mine = await t.step('receiver_checkout', () => bobsOwnCheckout(w));
+    const { convId, fmId } = await t.step('share', () => shareByGit(`credential-${credId}`));
+    expect((await t.step('receive_install', () => receive(convId, fmId, credId, mine))).status).toBeLessThan(400);
+    const row = await bobRow('credential', credId);
+    expect(realpathSync(row.asset_ref)).toBe(realpathSync(path.join(mine.dir, 'agentic-assets/credential/bright_data')));
+    const ready = await t.step('setup', () => get(bob.apiUrl, `/graph/project/${mine.id}/setup-requirements`));
+    const todo = ((ready.body?.data?.to_do ?? []) as any[]).map((r) => r.name);
+    expect(todo, JSON.stringify(ready.body?.data)).toContain('bright_data');
+    noSharedCopies(w.root);
+    created.push({ apiUrl: bob.apiUrl, path: `/graph/credential/${credId}` });
+    t.done('credential:setup');
   }, 60_000); // do not increase timeout without approval
 
   it('markdown: an uncommitted edit is committed (only it) by the one-click fix, then shared', async () => {
@@ -362,14 +399,15 @@ describe('git share over the real hub (Alice → Bob)', () => {
     const fix = await t.step('fix', () => post(alice.apiUrl, `/graph/${fam.type}/${w.id}/git_share_fix`, { fix: 'commit' }));
     expect(fix.body?.data?.preflight?.available, JSON.stringify(fix.body)).toBe(true);
     expect(git(w.sender, 'status', '--porcelain'), "Alice's other work stays uncommitted").toBe('?? alice-wip.txt');
+    const mine = await t.step('receiver_checkout', () => bobsOwnCheckout(w));
     const { convId, fmId } = await t.step('share', () => shareByGit(`${fam.type}-${w.id}`));
-    expect((await t.step('receive_install', () => receive(convId, fmId, w.id))).status).toBeLessThan(400);
+    expect((await t.step('receive_install', () => receive(convId, fmId, w.id, mine))).status).toBeLessThan(400);
     expect(await t.step('search', () => bobFinds('gshuncommittedtok', w.id, fam.type))).toBe(true);
     created.push({ apiUrl: bob.apiUrl, path: `/graph/${fam.type}/${w.id}` });
     t.done('markdown:fix_commit');
   }, 60_000); // do not increase timeout without approval
 
-  it('html page: travels as a pinned git pointer and Bob finds it by name', async () => {
+  it('html page: travels as a git pointer into Bob\'s checkout and Bob finds it by name', async () => {
     const t = new Timer();
     const w = await t.step('seed', () => seed(FAMILIES[1]));
     const page = path.join(w.sender, 'platform/docs/nudge_backoffice_mock.html');
@@ -384,12 +422,14 @@ describe('git share over the real hub (Alice → Bob)', () => {
     expect(ref, JSON.stringify(art.body)).toMatch(/^artifact-/);
     const id = ref.slice('artifact-'.length);
     created.push({ apiUrl: alice.apiUrl, path: `/graph/artifact/${id}` });
+    const mine = await t.step('receiver_checkout', () => bobsOwnCheckout(w));
     const { convId, fmId } = await t.step('share', () => shareByGit(ref));
     senderCommit(w, 'later-doc-change');
-    expect((await t.step('receive_install', () => receive(convId, fmId, id))).status).toBeLessThan(400);
+    expect((await t.step('receive_install', () => receive(convId, fmId, id, mine))).status).toBeLessThan(400);
     const row = await bobRow('artifact', id);
+    expect(realpathSync(row.asset_ref)).toBe(realpathSync(path.join(mine.dir, 'platform/docs/nudge_backoffice_mock.html')));
     expect(readFileSync(row.asset_ref, 'utf8')).toContain(w.token);
-    expect(git(path.dirname(row.asset_ref), 'rev-parse', 'HEAD')).toBe(pinned);
+    expect(git(mine.dir, 'log', '-1', '--format=%B')).toContain(`cherry picked from commit ${pinned}`);
     expect(await t.step('search', () => bobFinds('nudge_backoffice_mock', id, 'artifact'))).toBe(true);
     created.push({ apiUrl: bob.apiUrl, path: `/graph/artifact/${id}` });
     t.done('html:artifact');

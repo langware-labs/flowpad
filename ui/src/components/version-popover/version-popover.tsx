@@ -5,6 +5,7 @@ import { Button } from '@src/components/ui/button';
 import { useCopied } from '@src/components/ui/copy-button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
+import { VersionChip } from '@src/components/version-popover/version-chip';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
@@ -439,19 +440,12 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <button
+        <VersionChip
           ref={targetRef}
-          type="button"
-          className="flex items-center gap-1 rounded-sm px-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          title={t`Flowpad version`}
-          aria-label={t`Flowpad version`}
+          version={currentVersion}
+          updateAvailable={Boolean(pypi?.update_available || githubUpdateAvailable)}
           data-testid="version-popover-trigger"
-        >
-          <span>v{currentVersion}</span>
-          {(pypi?.update_available || githubUpdateAvailable) && (
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label={t`Update available`} />
-          )}
-        </button>
+        />
       </PopoverTrigger>
       <PopoverContent ref={sourceRef} side="top" align="end" className="w-96 p-3">
         <div className="space-y-3">

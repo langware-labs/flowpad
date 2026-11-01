@@ -103,6 +103,7 @@
     "date-fns": "^4.1.0",
     "diff": "^5.2.2",
     "dompurify": "^3.4.17",
+    "elkjs": "0.9.3",
     "embla-carousel-react": "^8.6.0",
     "events": "^3.3.0",
     "eventsource-parser": "^1.1.2",

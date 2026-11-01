@@ -12,6 +12,7 @@ import {
   ConversationItemKind,
   buildConversationItems,
   groupThreadItems,
+  partitionThreaded,
   type ThreadGroupItem,
 } from '@src/components/conversation/conversation-items';
 
@@ -98,5 +99,15 @@ describe('groupThreadItems', () => {
     // The note keeps its own row and its place; the thread sorts to its newest.
     expect(out[0].kind).toBe(ConversationItemKind.POINTER);
     expect(out[1].kind).toBe(ConversationItemKind.THREAD_GROUP);
+  });
+});
+
+describe('partitionThreaded', () => {
+  it("keeps a channel conversation's own thread flat and still stacks a native sub-thread", () => {
+    const items = buildConversationItems([ptr('pr1', 0), ptr('pr2', 1), ptr('n1', 2), ptr('n2', 3)], []);
+    const fm = table({ pr1: 'pr-thread', pr2: 'pr-thread', n1: 'native', n2: 'native' });
+    const { threaded, plain } = partitionThreaded(items, fm, new Set(['pr-thread']));
+    expect(plain.map((i) => i.key)).toEqual(['pr1', 'pr2']);
+    expect(groupThreadItems(threaded, fm)).toHaveLength(1);
   });
 });

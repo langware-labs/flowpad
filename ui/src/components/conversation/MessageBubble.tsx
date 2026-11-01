@@ -289,9 +289,9 @@ export function MessageBubble({
     [flowMessageId, conversationId, message.content],
   );
   linkSource.current = flowMessage ?? null;
-  const links = useLinks(linkSource, run);
-
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
+  // A command someone else wrote never runs on a click: it opens the menu.
+  const links = useLinks(linkSource, run, { trusted: !isFromOther });
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
   const showReceipt = isOutgoing && !flowMessage?.is_draft;
 

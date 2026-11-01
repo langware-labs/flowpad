@@ -1,5 +1,5 @@
 import { EntityCard } from '@src/components/entity-card/EntityCard';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, FolderSearch, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -122,14 +122,46 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roots, tree.state]);
 
-  // The first root (in display order) whose loaded rows hold the active item.
+  // "Show in <root>" moves the highlight to that root until the open item changes.
+  const [revealRootId, setRevealRootId] = useState<string | null>(null);
+  useEffect(() => setRevealRootId(null), [activePointer, activeResourcePointer, activeKey]);
+
+  // The root that highlights the active item: the revealed one, else the first
+  // (in display order) whose loaded rows hold it.
   const activeRootId = useMemo(() => {
     const has = (node: Browseable): boolean =>
       rowMatchesActive(node, activePointer, activeResourcePointer, activeKey) ||
       tree.getChildren(node.id).some(has);
-    return roots.find(has)?.id ?? null;
+    const reveal = roots.find((r) => r.id === revealRootId);
+    return (reveal && has(reveal) ? reveal : roots.find((r) => r !== reveal && has(r)))?.id ?? null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roots, tree.state.loadStates, activePointer, activeResourcePointer, activeKey]);
+  }, [roots, tree.state.loadStates, activePointer, activeResourcePointer, activeKey, revealRootId]);
+
+  const { t } = useLingui();
+  // "Show in <root>": a later root that also holds the active item. Expands
+  // it there and moves the highlight. Offered on the highlighted row only.
+  const revealAction = useMemo<ToolbarAction | null>(() => {
+    const p = activeResourcePointer ?? activePointer;
+    const from = roots.findIndex((r) => r.id === activeRootId);
+    const target = p && from >= 0 ? roots.slice(from + 1).find((r) => r.ownsPointer(p)) : undefined;
+    if (!target) return null;
+    return {
+      id: 'reveal',
+      icon: <FolderSearch className="h-3 w-3" />,
+      label: t`Show in ${target.label}`,
+      showBusyIndicator: false,
+      run: async () => {
+        await tree.expandParentsForPointer(p, target.id);
+        setRevealRootId(target.id);
+        requestAnimationFrame(() =>
+          treeElementRef.current
+            ?.querySelector('[role="treeitem"][aria-selected="true"]')
+            ?.scrollIntoView({ block: 'center' }),
+        );
+      },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, activeRootId, activePointer, activeResourcePointer, tree.expandParentsForPointer, t]);
 
   // Clear selection when the set of roots changes identity (scope/filter change
   // — root ids carry the filter signature — or the type list changes). Mirrors
@@ -247,6 +279,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             activeResourcePointer={activeResourcePointer}
             activeKey={activeKey}
             activeRootId={activeRootId}
+            revealAction={revealAction}
             openTabHashes={openTabHashes}
             onNavigate={handleNavigate}
             dragData={dragData}
@@ -289,6 +322,8 @@ interface RowProps {
   activeKey?: string | null;
   /** Root that owns the highlight when the active item appears under several. */
   activeRootId: string | null;
+  /** "Show in <later root>" — rendered on the highlighted row only. */
+  revealAction: ToolbarAction | null;
   /** Open-tab identities (`pointer.tabHash`) → un-dimmed rows. */
   openTabHashes: Set<string>;
   onNavigate: (p: DockPointer) => void;
@@ -315,6 +350,7 @@ function BrowseableRow({
   activeResourcePointer,
   activeKey,
   activeRootId,
+  revealAction,
   openTabHashes,
   onNavigate,
   dragData,
@@ -663,6 +699,7 @@ function BrowseableRow({
           was aiming at, and a content-sized menu doesn't resize under it. The
           slot is text-height (`h-4`) and the buttons overflow it, so reserving
           it never makes the row taller. */}
+      {isSelected && revealAction && <ToolbarButton action={revealAction} compact />}
       {node.toolbar && node.toolbar.length > 0 && (
         <div
           className="invisible flex h-4 flex-shrink-0 items-center gap-0.5 overflow-visible group-focus-within:visible group-hover:visible"
@@ -753,6 +790,7 @@ function BrowseableRow({
               activeResourcePointer={activeResourcePointer}
               activeKey={activeKey}
               activeRootId={activeRootId}
+              revealAction={revealAction}
               openTabHashes={openTabHashes}
               onNavigate={onNavigate}
               dragData={dragData}

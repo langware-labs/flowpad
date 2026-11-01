@@ -15,4 +15,13 @@ describe('gitResolvePrompt — push and pull finish differently', () => {
     expect(p).toContain('Do NOT push');
     expect(p).not.toContain('git push origin');
   });
+
+  it('cherry-pick: continues the pick, puts the stashed edits back, never pushes', () => {
+    const p = gitResolvePrompt('main', 'cherry-pick');
+    expect(p).toContain('cherry-pick');
+    expect(p).toContain('git cherry-pick --continue');
+    expect(p).toContain('git stash pop');
+    expect(p).toContain('Do NOT push');
+    expect(p).not.toContain('git rebase --continue');
+  });
 });

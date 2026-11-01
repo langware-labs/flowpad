@@ -21,6 +21,7 @@ from flow_sdk.schema.data_spec.project_manifest_spec import (
     split_typeid,
 )
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,10 @@ class ProjectManifest(Entity):
     env_files: list[str] = APIField(
         default_factory=list,
         description="Project-relative env files credentials also read, after the root .env.local.",
+    )
+    secret_vaults: dict[str, SecretVaultSpec] = APIField(
+        default_factory=dict,
+        description="The project's named secret vaults {name: {manager, config}} — where its shared values live. Empty = none.",
     )
     subkind: ProjectSubkind = APIField(
         default=ProjectSubkind.STANDARD,

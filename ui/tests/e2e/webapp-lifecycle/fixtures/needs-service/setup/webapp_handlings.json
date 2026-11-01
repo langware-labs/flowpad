@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "handlings": [
+    { "id": "tenant-down", "source": "page", "pattern": "tenant bootstrap refused", "action": "setup",
+      "arg": "asset_setup:needs-tenant", "note": "The page bootstraps from service-stub's tenant: start it." }
+  ]
+}

@@ -10,8 +10,7 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { SetupFailureActions } from './SetupFailureActions';
 import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
-import { Step } from '@src/components/webapp-display/PageCheckPanel';
-import { projectLoadKey, useProjectLoad, validLoad } from './use-project-load';
+import { useProjectLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
 
 /** The route has already selected identity. Operational work starts after the tab mounts. */
@@ -34,44 +33,15 @@ export function ProjectLoadGate({
   const { data: project } = useEntity<Project>(new TypeId(Project.type, projectId));
   const { load } = lifecycle;
   const [loadedLocation, setLoadedLocation] = useState<string | null>(null);
-  // Phase one, validate: an app this session already saw up and that still answers opens at once — no
-  // load, no spinner, nothing refetched under it. Held across opens, so a re-open shows the app on its
-  // first frame and checks behind it; only a failed check falls through to load (and setup).
-  const validKey = validLoad.key(projectId, asset, display);
-  // true: show the app; null: no verdict held, its check in flight — a blank frame for its few
-  // milliseconds, never a status that flashes; false: load. An app with no asset to validate (one shown
-  // on a bare port) is held on its last load instead: it shows at once while the load checks it.
-  const [valid, setValid] = useState<boolean | null>(() =>
-    asset ? validLoad.has(validKey) || null : validLoad.has(validKey),
-  );
   useEffect(() => {
     let live = true;
-    void (async () => {
-      if (asset) {
-        const verdict = await Project.validateLoad(projectId, asset, display).catch(() => null);
-        if (!live) return;
-        const up = verdict?.state === 'ready';
-        validLoad.set(validKey, up);
-        setValid(up);
-        if (up) {
-          // The app shows now; its setup is checked behind it, and the poll reads what it owes.
-          void client.invalidateQueries({ queryKey: projectLoadKey(projectId, display, asset) });
-          return;
-        }
-      }
-      const next = await load();
-      if (!live) return;
-      // Only a load that did not come back ready takes a held app off screen and brings the gate.
-      if (!asset && next?.state !== 'ready') {
-        validLoad.set(validKey, false);
-        setValid(false);
-      }
-      setLoadedLocation(location.key);
-    })();
+    void load().then(() => {
+      if (live) setLoadedLocation(location.key);
+    });
     return () => {
       live = false;
     };
-  }, [load, location.key, projectId, asset, display, validKey, client]);
+  }, [load, location.key]);
   const result = lifecycle.result;
   const fix = useSetupFix(projectId, result, lifecycle.error, (approved) => load(approved));
   const navigate = useNavigate();
@@ -115,15 +85,15 @@ export function ProjectLoadGate({
     result?.detail || <Trans>Preparing…</Trans>
   );
   useEffect(() => {
-    // A load that just brought the app up moved its address; a validated one moved nothing.
+    // A load that just brought something up moved its address.
     if (result?.state === 'ready' && loadedLocation === location.key) {
-      validLoad.set(validKey, true);
       void client.invalidateQueries({ queryKey: ['service_endpoint'] });
     }
-  }, [client, result, loadedLocation, location.key, validKey]);
+  }, [client, result, loadedLocation, location.key]);
   // Up, but its setup owes something (a sign-in that expired under it): the app stays, a bar says what is
   // needed, and Set up leaves the fast path for the setup flow the gate already runs.
-  const owed = valid && result?.state === 'ready' ? result.setup_owed : null;
+  const shown = result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key;
+  const owed = shown ? (result?.setup_owed ?? null) : null;
   if (owed)
     return (
       <div className="flex h-full flex-col">
@@ -138,12 +108,7 @@ export function ProjectLoadGate({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              validLoad.set(validKey, false);
-              setValid(false);
-              setLoadedLocation(location.key);
-              void load(true);
-            }}
+            onClick={() => void load(true)}
           >
             <Trans>Set up</Trans>
           </Button>
@@ -151,10 +116,7 @@ export function ProjectLoadGate({
         <div className="min-h-0 flex-1">{children}</div>
       </div>
     );
-  if (valid) return children;
-  if (valid === null) return null;
-  if (result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key)
-    return children;
+  if (shown) return children;
   if (lifecycle.missing)
     return (
       <div className="flex h-full justify-center overflow-auto p-8" data-testid="project-load-missing">
@@ -173,38 +135,6 @@ export function ProjectLoadGate({
           {busy ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : null}
           {status}
         </p>
-        {/* An app being opened: the lanes as steps — what happened, what runs now, what comes next. */}
-        {asset && !lifecycle.questionId && result?.phase !== 'setup' && result?.state !== 'setup_required' && (
-          <ul className="flex flex-col divide-y rounded-md border" data-testid="project-load-steps">
-            <Step
-              mark={valid === false ? 'failed' : 'running'}
-              title={
-                valid === false ? (
-                  <Trans>Check — the app is not ready to show</Trans>
-                ) : (
-                  <Trans>Check — is the app running and its page clean?</Trans>
-                )
-              }
-              detail={
-                valid === false ? (
-                  <Trans>It is not answering on its port, or its page failed the last time it opened.</Trans>
-                ) : undefined
-              }
-            />
-            {valid === false && (
-              <Step
-                mark={result?.state === 'failed' ? 'failed' : result?.state === 'ready' ? 'done' : 'running'}
-                title={<Trans>Start — starting the app's server</Trans>}
-                detail={result?.state === 'failed' ? result.detail : undefined}
-              />
-            )}
-            <Step
-              mark="next"
-              title={<Trans>Next: open the page and check it for errors</Trans>}
-              detail={<Trans>A known error is fixed on the spot; an unknown one goes to recovery.</Trans>}
-            />
-          </ul>
-        )}
         {lifecycle.error && (
           <p role="alert" className="text-destructive">
             {lifecycle.error}

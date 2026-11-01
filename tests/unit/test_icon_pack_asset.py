@@ -159,6 +159,17 @@ def test_chart_with_unresolved_icon_is_reported(tmp_path, registry):
     assert problems == ["participant p2: icon 'brands.nosuch' does not resolve to any icon pack"]
 
 
+def test_c4_chart_with_unresolved_icon_is_reported(tmp_path, registry):
+    chart = tmp_path / "proj" / "agentic-assets" / "chart" / "arch"
+    chart.mkdir(parents=True)
+    elements = [{"id": "api", "kind": "container", "label": "API", "icon": "lucide.server"},
+                {"id": "pay", "kind": "system", "label": "Pay", "icon": "brands.nosuch"}]
+    (chart / "c4.json").write_text(json.dumps({"level": "container", "elements": elements}))
+
+    assert chart_icon_problems(chart, "c4") == ["element pay: icon 'brands.nosuch' does not resolve to any icon pack"]
+    assert chart_icon_problems(chart, "mermaid") == []  # a format with no icon list has nothing to check
+
+
 def test_check_tags_answers_per_tag(registry):
     result = check_tags(["lucide.zap", "lucide.nonexistent-glyph"], registry)
     assert result["lucide.zap"] is None

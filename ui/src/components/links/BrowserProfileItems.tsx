@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react';
 import { DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@src/components/ui/dropdown-menu';
 import type { Browser, BrowserProfile } from '@src/lib/browser-profiles';
 
@@ -6,10 +7,13 @@ export function BrowserProfileItems({
   browsers,
   onSelect,
   testIdPrefix,
+  isSelected,
 }: {
   browsers: Browser[];
   onSelect: (browser: string, profile: string) => void;
   testIdPrefix: string;
+  /** Marks the chosen profile with a check (a setting, as opposed to a one-off open). */
+  isSelected?: (browser: string, profile: string) => boolean;
 }) {
   return (
     <>
@@ -24,6 +28,9 @@ export function BrowserProfileItems({
               data-testid={`${testIdPrefix}-${browser.id}-${profile.id}`}
               title={profile.email ?? profile.name}
             >
+              {isSelected && (
+                <Check className={`mr-2 h-4 w-4 ${isSelected(browser.id, profile.id) ? '' : 'invisible'}`} />
+              )}
               <ProfileLabel profile={profile} />
             </DropdownMenuItem>
           ))}

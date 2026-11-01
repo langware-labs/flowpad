@@ -28,6 +28,9 @@ import {
   dataManager,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { SealedNoteLine, SealedValuesPanel } from './SealedValuesPanel';
+
+const HUB_ONLY_KINDS = new Set(['sealed_value', 'sealed_ack', 'sealed_pending', 'sealed_request']);
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
@@ -53,6 +56,8 @@ import {
   buildConversationItems,
   groupThreadItems,
   itemThreadId,
+  partitionThreaded,
+  flatThreadIdsOf,
   ConversationItemKind,
   anchorSessionItems,
   shouldShowSoloSendNotice,
@@ -557,6 +562,7 @@ export function ConversationView({
       ),
     [agentId, agentScope?.thread_ids, threads],
   );
+  const flatThreadIds = useMemo(() => flatThreadIdsOf(threads), [threads]);
 
   // Two views of one feed, chosen by the URL:
   //   ?thread=<id> → only that thread's messages, unpacked
@@ -598,16 +604,12 @@ export function ConversationView({
       const inThread = feed.filter((it) => itemThreadId(it, getFm) === threadId);
       return anchorSessionItems(inThread, getFm, sessionAnchors);
     }
-    const threaded: ConversationItem[] = [];
-    const plain: ConversationItem[] = [];
-    for (const item of feed) {
-      (itemThreadId(item, getFm) ? threaded : plain).push(item);
-    }
+    const { threaded, plain } = partitionThreaded(feed, getFm, flatThreadIds);
     return [
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors, calls]);
+  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls]);
 
   // A message right under one from the same sender, moments later, drops its avatar and name.
   const continuations = useMemo(() => {
@@ -615,7 +617,7 @@ export function ConversationView({
     let prev: { sender_id?: string | null; at: number } | null = null;
     for (const item of groupedItems) {
       const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : null;
-      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT) {
+      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT || fm.kind === FlowMessageKind.SEALED_NOTE) {
         prev = null;
         continue;
       }
@@ -680,6 +682,12 @@ export function ConversationView({
       if (!fm && !messagesLoaded && !messagesError) return null;
       if (fm?.kind === FlowMessageKind.SESSION_EVENT) {
         return <SessionEventLine key={item.key} text={fm.text ?? ''} />;
+      }
+      // Hub-only secured-transfer frames (a sealed value, its ack, a promise, a request) are never chat rows; one
+      // that arrived without its kind is removed on the next sync — never shown meanwhile.
+      if (fm && HUB_ONLY_KINDS.has(String(fm.kind))) return null;
+      if (fm?.kind === FlowMessageKind.SEALED_NOTE) {
+        return <SealedNoteLine key={item.key} text={fm.text ?? ''} />;
       }
       // One plan session per conversation. Once any session exists (or
       // is in-flight) every spec-bearing bubble shows the "Open" link
@@ -1180,6 +1188,7 @@ export function ConversationView({
         </p>
       )}
       <ConversationEndedLine endedAt={conversation?.ended_at} />
+      <SealedValuesPanel conversationId={conversationId} version={conversation?.updated_date ? String(conversation.updated_date) : null} />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
         <MessageComposer

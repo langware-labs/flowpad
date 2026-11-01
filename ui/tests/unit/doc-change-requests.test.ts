@@ -142,6 +142,17 @@ describe('settleVerdict — the server read decides', () => {
 });
 
 describe('buildChangesPrompt', () => {
+  it('for a chart, names the source file and the element each request is on', () => {
+    const prompt = buildChangesPrompt('chart-11111111-1111-4111-8111-111111111111', 'shop', '/p/agentic-assets/chart/shop/c4.json', [
+      { id: 'a', quote: 'api · Order API', from: 0, to: 0, instruction: 'Split it' },
+    ], 'chart');
+    expect(prompt).toContain('to the chart shop');
+    expect(prompt).toContain('/p/agentic-assets/chart/shop/c4.json');
+    expect(prompt).toContain('1. On > api · Order API');
+    expect(prompt).toContain('Change: Split it');
+    expect(prompt).not.toContain('Where it says');
+  });
+
   it('quotes each change and its instruction, in order, with the doc as context', () => {
     const prompt = buildChangesPrompt(DOC, 'guide', '/proj/docs/guide.md', [
       { id: '1', ...change('Our team is a group', 'Make it shorter') },

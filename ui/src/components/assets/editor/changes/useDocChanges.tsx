@@ -150,9 +150,11 @@ export function useDocChanges(
   docFile: string,
   /** The worker finished a run — the host re-reads the file it edited. */
   onRunFinished?: () => void,
+  /** What the changes are on: a doc's text, or a chart's elements. */
+  subject: 'document' | 'chart' = 'document',
 ) {
   const { open: openSideWindow } = useSideWindows();
-  const worker = useDocChangesWorker(doc, docName, docFile, onRunFinished);
+  const worker = useDocChangesWorker(doc, docName, docFile, onRunFinished, subject);
   const { list, starting, execute, open, hasSession } = worker;
 
   const onRequestChange = useCallback(

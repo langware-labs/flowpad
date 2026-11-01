@@ -70,7 +70,7 @@ registerCommand('terminal.terminate', (args) => {
 // context folder is not); absent → the current project.
 registerCommand('git.resolve-conflict', (args) => {
   const branch = String(args.branch ?? '');
-  const origin = args.origin === 'pull' ? 'pull' : 'push';
+  const origin = args.origin === 'pull' || args.origin === 'cherry-pick' ? args.origin : 'push';
   const workdir = typeof args.workdir === 'string' && args.workdir ? args.workdir : null;
   const where =
     workdir && workdir !== dataContext.project?.fs_storage_mount_path ? { fs_storage_mount_path: workdir } : undefined;

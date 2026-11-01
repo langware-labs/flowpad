@@ -204,6 +204,8 @@ def main() -> None:
 <style>[data-decision]{{outline:2px dashed #bf8700;outline-offset:3px}}</style>
 {a.head}
 {page_head}
+<style>/* A capture is a still: an open dialog's enter animation would replay from opacity 0 and stall there. */
+section[data-step] *,section[data-step] *::before,section[data-step] *::after{{animation:none!important;transition:none!important}}</style>
 </head>
 <body>
 {page_body}

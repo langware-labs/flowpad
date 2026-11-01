@@ -456,13 +456,16 @@ def _way_choice(way: str, members: list[SetupVarSpec], offer: Optional[Credentia
 
 def compile_setup(
     project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = "",
-    connect_here: bool = True,
+    connect_here: bool = True, vaults: tuple[str, ...] = (),
 ) -> tuple[WizardSpec, dict[str, ComputeOpSpec]]:
     """The wizard for ``requirements``, and the ops it calls by name. Every step continues on failure:
     one credential nobody can provide must not stop the next one. ``deployment_id``: store and check
     each value where that deployment keeps it (default: this computer). ``connect_here=False``: a
     connection step only CHECKS — the screen that started the run signs the person in itself (its own
-    Connect button, in their browser), so the run never opens a second one on the backend's machine."""
+    Connect button, in their browser), so the run never opens a second one on the backend's machine.
+    ``vaults``: the project vaults the credential's variables point into — its values are FETCHED from them
+    first (``flow secrets fetch``), and a question is asked only for what they could not give (this computer
+    only). A fetch a vault refuses ends with code ``denied``: the screen offers Request access."""
     target = ("--deployment", deployment_id) if deployment_id else ()
     where = f"deployment {deployment_id}" if deployment_id else "development"
     ops: dict[str, ComputeOpSpec] = {}
@@ -500,6 +503,14 @@ def compile_setup(
             assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
             # The ONE_OF ways, asked FIRST as one choice; a way of several values is one choice with a field each.
+            if vaults and not deployment_id and any(v.kind is not CredentialVarKind.CLI for v in req.missing):
+                # The team's copy first: a full fetch satisfies the check, so every question below skips.
+                add({
+                    "name": f"fetch-{req.name}", "label": f"{req.title or req.name}: fetch from {', '.join(vaults)}",
+                    "description": f"{req.name}'s values are fetched from vault {', '.join(vaults)} into {where}.",
+                    "subkind": "cli", "exe_data": _cli("secrets", "fetch", req.name, "--project", project_id),
+                    "completion_check": check,
+                })
             one_of = {v.env_var: v for v in req.missing if v.is_one_of}
             # A sign-in with no command for this OS is not a way here.
             offered = {way: [one_of[m] for m in members] for way, members in ways(one_of).items()
@@ -624,8 +635,6 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
     "Setup required" button stays as cheap as the credential check it sits beside."""
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_setup import step  # noqa: PLC0415
-
     out = [
         SetupRequirementSpec(kind=REQUIREMENT_SOURCE, name=str(source.name or source.provider),
                              satisfied=source.status != SourceStatus.SETUP.value,
@@ -637,13 +646,36 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
         for source in (sources if sources is not None else await project_sources(project))
         if include_ready or source.status == SourceStatus.SETUP.value
     ]
+    from flow_sdk.core.webapp import readiness, record  # noqa: PLC0415
+
     apps = [app for app in await WebApp.get_all({"match": {"project_id": str(project.id)}}) if app.asset_ref]
-    answers = await asyncio.gather(*(step(str(app.id), "start", check=True) for app in apps))
+    # The app's record says whether it is up here (``core/webapp/readiness.quick``: its pids and health, no
+    # process table) — the one rule, as cheap as the credential check beside it.
+    records = [record.read(str(app.id), str(project.id)) for app in apps]
+    answers = list(await asyncio.gather(*(readiness.quick(app, rec) for app, rec in zip(apps, records))))
+    # Not up by its record (never brought up here, or its server died): one full check each, side by side, and an
+    # app found up — started by hand, or before this backend — is adopted into its record, so the next poll is the
+    # cheap one again.
+    unsure = [i for i, ok in enumerate(answers) if not ok]
+    verdicts = await asyncio.gather(*(readiness.ready(apps[i]) for i in unsure))
+    for i, verdict in zip(unsure, verdicts):
+        app = apps[i]
+        if not verdict.ok:
+            records[i] = records[i].model_copy(update={"detail": verdict.detail or records[i].detail})
+            continue
+        from flow_sdk.builtin.webapp_setup import _record_up  # noqa: PLC0415
+
+        try:
+            await _record_up(str(app.id), app, str(project.id), verdict)
+        except Exception as exc:  # noqa: BLE001 — adopting is a convenience; the verdict stands
+            logger.debug("adopting %s into its record failed: %s", app.name, exc)
+        records[i], answers[i] = record.read(str(app.id)), True
     out += [
-        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=bool(answer.ok), used_by=[PROJECT],
-                             note=answer.detail, typeid=str(app.typeid), skipped=app.setup_skipped,
+        SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=bool(ok), used_by=[PROJECT],
+                             note=(rec.detail or f"{app.name} is not running") if not ok else "up",
+                             typeid=str(app.typeid), skipped=app.setup_skipped,
                              **skip_always_of(project, [_root(app, ROOT_WEBAPP)]))
-        for app, answer in zip(apps, answers) if include_ready or not answer.ok
+        for app, rec, ok in zip(apps, records, answers) if include_ready or not ok
     ]
     return out
 
@@ -719,8 +751,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     # The setup's own verdict stays the answer when it fell short.
                     from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
 
-                    # The load a setup run ends with keeps the fixer: this run is the person's "make it work".
-                    operational = LoadTree(tree, fix=True)
+                    operational = LoadTree(tree)
                     loaded = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
                         subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,

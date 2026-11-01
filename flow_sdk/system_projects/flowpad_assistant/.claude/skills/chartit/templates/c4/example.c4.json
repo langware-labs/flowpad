@@ -1,0 +1,22 @@
+{
+  "title": "Food delivery — containers",
+  "level": "container",
+  "elements": [
+    {"id": "customer", "kind": "person", "label": "Customer", "description": "Orders food from nearby restaurants."},
+    {"id": "spa", "kind": "container", "label": "Web app", "tech": "React", "boundary": "platform", "description": "Menus, cart and order tracking in the browser."},
+    {"id": "api", "kind": "container", "label": "Order API", "tech": "FastAPI", "boundary": "platform", "description": "Takes orders and assigns couriers.", "ref": "food-delivery-order-api"},
+    {"id": "db", "kind": "database", "label": "Orders", "tech": "Postgres", "boundary": "platform", "description": "Orders, menus and couriers."},
+    {"id": "events", "kind": "queue", "label": "Order events", "tech": "Kafka", "boundary": "platform"},
+    {"id": "stripe", "kind": "system", "label": "Stripe", "external": true, "description": "Card payments."}
+  ],
+  "boundaries": [
+    {"id": "platform", "label": "Delivery platform", "kind": "system"}
+  ],
+  "relations": [
+    {"id": "r1", "from": "customer", "to": "spa", "label": "Places orders", "tech": "HTTPS"},
+    {"id": "r2", "from": "spa", "to": "api", "label": "Calls", "tech": "JSON/HTTPS"},
+    {"id": "r3", "from": "api", "to": "db", "label": "Reads and writes", "tech": "SQL"},
+    {"id": "r4", "from": "api", "to": "events", "label": "Publishes OrderPlaced", "style": "async"},
+    {"id": "r5", "from": "api", "to": "stripe", "label": "Charges the card", "tech": "HTTPS"}
+  ]
+}

@@ -19,7 +19,11 @@
     },
     "icon": {
       "shape": "?string",
-      "description": "An icon tag from the IconSpec registry (brands.sonos, lucide.database); drawn on the card. Must resolve \u2014 check with GET /api/v1/icons or the pack's icon_pack.json."
+      "description": "An icon tag from the IconSpec registry (brands.sonos, lucide.database); drawn on the card. Must resolve — check with GET /api/v1/icons or the pack's icon_pack.json."
+    },
+    "ref": {
+      "shape": "?string",
+      "description": "Another chart (by name, any format — e.g. this system's C4 chart); drawn as Open ↗ under the card."
     }
   }
 }
