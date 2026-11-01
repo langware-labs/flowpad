@@ -4,7 +4,6 @@ import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DataSource, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
@@ -44,7 +43,8 @@ interface EntityChipProps {
   inside?: { type: string; id: string };
   /** Optional click override — bypass the standard A-inside-B navigation. */
   onClick?: () => void;
-  /** Project shell to use when the chip opens an asset editor pointer. */
+  /** Ignored for navigation: a click opens the entity in ITS OWN project (the loader
+   *  places it). Kept so call sites need not change. */
   projectId?: string | null;
   /** Tooltip text. Defaults to "Open <name>". */
   title?: string;
@@ -168,7 +168,6 @@ export function EntityChip({
   entity,
   inside,
   onClick,
-  projectId,
   title,
   size = 'chip',
   muted = false,
@@ -203,9 +202,10 @@ export function EntityChip({
       if (staged) return;
       if (!resolved || !resolved.id) return;
       const pointer = buildDockPointer({ ...row, ...resolved }, inside);
-      if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
+      // The plain dock: the loader places the entity in ITS OWN project, not the chat's.
+      if (pointer) navigation.openDock(pointer);
     };
-  }, [muted, staged, onClick, resolved, inside, navigation, projectId, row]);
+  }, [muted, staged, onClick, resolved, inside, navigation, row]);
 
   const baseLayout = collapsed
     ? COLLAPSED_CHIP_LAYOUT

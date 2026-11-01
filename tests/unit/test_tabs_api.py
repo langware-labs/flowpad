@@ -94,7 +94,7 @@ async def test_tab_target_remote_batches_once_per_type():
             ),
         ):
             targets = await _load_remote_targets(tabs)
-        _populate_tab_target_fields(tabs, targets)
+        await _populate_tab_target_fields(tabs, targets)
 
         assert get_all.await_count == 1
         assert [tab.target_remote for tab in tabs] == [True, False, False]
@@ -108,7 +108,8 @@ async def test_tab_target_remote_batches_once_per_type():
         await local.delete()
 
 
-def test_tab_target_project_marks_a_guest_content_tab():
+@pytest.mark.asyncio
+async def test_tab_target_project_marks_a_guest_content_tab():
     """The content target's own project rides the response (never saved), so the
     chip can mark a guest tab; shell/process targets never carry one."""
     own, other = str(uuid.uuid4()), str(uuid.uuid4())
@@ -119,7 +120,7 @@ def test_tab_target_project_marks_a_guest_content_tab():
         ("markdown", doc_id): SimpleNamespace(project_id=other, remote=False),
         ("shell", shell_id): SimpleNamespace(project_id=other, remote=False),
     }
-    _populate_tab_target_fields([guest, shell], targets)
+    await _populate_tab_target_fields([guest, shell], targets)
     assert guest.target_project_id == other
     assert shell.target_project_id is None
     assert _serialize_row(guest)["target_project_id"] == other

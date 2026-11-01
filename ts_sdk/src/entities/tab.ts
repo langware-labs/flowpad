@@ -213,6 +213,73 @@ export interface TabRow extends ITab {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Tab extends EntityMerge<ITab> {}
 
+/** The fields `resolveTabProject` reads off a dock's resolved target entity. */
+export type TabProjectTarget = {
+  typeId?: TypeId | null;
+  project_id?: string | null;
+  effective_project_id?: string | null;
+  cwd?: string | null;
+  workdir?: string | null;
+} | null;
+
+/** A content sub-pointer (an editor or wiki page) names ONE document, never a browse scope. */
+const CONTENT_SUB_POINTER = /^(editor|wiki)\//;
+
+/**
+ * The project a dock's tab belongs to — THE rule order, mirrored by the backend's
+ * `resolve_tab_project` (docs/tab-management.md §tab project):
+ *
+ *   1. dependency home              → its consumer project
+ *   2. Project target / landing     → that project
+ *   3. presenting project in URL    → `/dock/project/<P>/…` (set only by `flow show`
+ *                                     / presentation; a guest tab when ≠ the asset's)
+ *   4. scope-keyed BROWSE view      → its pinned scope (list/folder, never an editor)
+ *   5. target entity                → its (effective) project
+ *   6. path (vfs, then cwd/workdir) → the deepest project mount holding it
+ *   7. web page                     → the active project; else null (global)
+ *
+ * `opts.ownerOnly` skips 1–4: the asset's OWN project (the loader's redirect target,
+ * the tab's `target_project_id`). Cache-first: `getProjectByPath` reads the cached
+ * project list, `target` is passed in already resolved.
+ */
+export async function resolveTabProject(
+  dock: IDockPointer,
+  target: TabProjectTarget,
+  opts: { ownerOnly?: boolean } = {},
+): Promise<string | null> {
+  const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
+  const scope = dockOptionsToScopeFilter(dock.options);
+  if (!opts.ownerOnly) {
+    // 1
+    if (dock.options?.providerProject && dock.options?.consumerProject) return dock.options.consumerProject;
+    // 2
+    if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
+    // 3
+    if (dock.viewType === ViewType.PROJECT && dock.pointer) {
+      const slash = dock.pointer.indexOf('/');
+      if (slash > 0) return dock.pointer.slice(0, slash);
+    }
+    // 4 — a target-less browse surface; an editor/wiki sub-pointer is content.
+    const browse = !targetTypeId && !target && !CONTENT_SUB_POINTER.test(dock.pointer ?? '');
+    if (browse && scope?.mode === 'project' && scope.activeProjectId) return scope.activeProjectId;
+  }
+  // 5
+  const own = target?.effective_project_id ?? target?.project_id ?? null;
+  if (own) return own;
+  if (opts.ownerOnly && targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
+  // 6 — an unminted file still sits inside a project folder.
+  for (const path of [dock.vfsPath?.machinePath, target?.cwd ?? target?.workdir]) {
+    if (!path) continue;
+    const byPath = await Project.getProjectByPath(path);
+    if (byPath) return byPath.id;
+  }
+  // 7 — a bare web page belongs to the project it is opened in.
+  if (!opts.ownerOnly && !target && !scope && dock.viewType === ViewType.WEB_APP) {
+    return dataContext.project?.id ?? null;
+  }
+  return null;
+}
+
 @registerEntity
 export class Tab extends APIEntity<Tab> implements ITab {
   static type: string = 'tab';
@@ -332,43 +399,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       | null;
     if (!targetTypeId && target) targetTypeId = target.typeId;
 
-    // A target-less dock (assets list/folder) has no entity to inherit a project
-    // from — but if its scope is pinned to a single project (`mode: 'project'`),
-    // the tab belongs to THAT project. This is what makes a project-scoped assets
-    // tab attach to its project (and render project-colored) instead of global.
-    const scope = dockOptionsToScopeFilter(dock.options);
-    const scopeProjectId = scope?.mode === 'project' ? (scope.activeProjectId ?? null) : null;
-    // Project resolution precedence: a project IS its own; else the target's
-    // denormalized project_id; else — for a cwd-bearing target whose entity was
-    // never stamped (codex/copilot session, received transcript, shell) — the
-    // project that OWNS its cwd/workdir, via the same getProjectByPath the
-    // loaders use; else a project-pinned scope; else null. Without the cwd
-    // fallback the tab renders project-less even though the loader resolves the
-    // active project from the same cwd.
-    let projectId: string | null;
-    if (dock.options?.providerProject && dock.options?.consumerProject) {
-      // A dependency home executes in its provider, but the tab belongs to the
-      // explicitly named consumer. This context survives URL/storage reloads.
-      projectId = dock.options.consumerProject;
-    } else if (targetTypeId?.type === EntityTypes.Project) {
-      projectId = targetTypeId.id;
-    } else if (target?.project_id) {
-      projectId = target.project_id;
-    } else {
-      const cwd = target?.cwd ?? target?.workdir ?? null;
-      const byPath = cwd ? await Project.getProjectByPath(cwd) : null;
-      // An existing target that resolves to no project is GLOBAL. Never let an
-      // ambient project scope in the URL adopt it while the target loader is
-      // concurrently clearing context to Global. Scope is a valid ownership
-      // hint only for target-less surfaces (assets/project home).
-      projectId = byPath?.id ?? (target ? null : scopeProjectId) ?? null;
-      // A web page is target-less and usually opened by a bare URL (`flow show`,
-      // a link, a paste) that names no scope. It belongs to the project it is
-      // opened IN: left Global, that project's strip has no chip to light.
-      if (!projectId && !scope && dock.viewType === ViewType.WEB_APP) {
-        projectId = dataContext.project?.id ?? null;
-      }
-    }
+    const projectId = await resolveTabProject(dock, target);
 
     return { targetTypeId, target, projectId };
   }

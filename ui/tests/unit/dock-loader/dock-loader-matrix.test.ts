@@ -43,6 +43,10 @@ const PROC_SHELL = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 /** A webapp asset, and the audience proxy that serves it at a route. */
 const WEBAPP = 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0';
 const PROXY = 'abababab-abab-4bab-8bab-abababababab';
+/** A second project, and a webapp asset it owns — the cross-project case. */
+const Q = '12121212-1212-4212-8212-121212121212';
+const Q_WEBAPP = '34343434-3434-4434-8434-343434343434';
+const Q_ROW = { id: Q, name: 'q', fs_storage_mount_path: '/w/q' };
 /** The world's one project — seeded into the cache and served as the project list. */
 const PROJECT_ROW = { id: P, name: 'p', fs_storage_mount_path: '/w/p' };
 
@@ -98,6 +102,15 @@ const worldRows: Row[] = [
     url: `/dock/shell/agentic_process-${PROC}?viewMode=vibe&scope-mode=project&scope-activeProjectId=${P}`,
   },
   {
+    // The 2026-11-01 "no selected tab": a typeid asset URL stayed on `assets|all`.
+    name: "assets: a typeid asset URL redirects to its own project's document tab",
+    url: `/dock/assets/editor/app/typeid/micro_app-${WEBAPP}`,
+  },
+  {
+    name: "assets: a typeid asset of ANOTHER project redirects to that project's document tab",
+    url: `/dock/assets/editor/app/typeid/micro_app-${Q_WEBAPP}`,
+  },
+  {
     // The entity's asset_ref is the REAL path; the URL spells it through a symlink
     // (macOS tmp: /var → /private/var). Warm must still ask nothing.
     name: 'project: an indexed document whose URL path is a symlink of its asset_ref',
@@ -119,7 +132,9 @@ const ROWS: Row[] = [...fixtureRows, ...worldRows, ...bareRows];
 function seedWorld(): void {
   seedBootstrap({ default_compute_node: { type: ComputeNode.type, id: CN } });
   new Project({ ...PROJECT_ROW } as never).markAsExpanded();
+  new Project({ ...Q_ROW } as never).markAsExpanded();
   new ComputeNode({ id: CN, name: 'local' } as never).markAsExpanded();
+  new WebApp({ id: Q_WEBAPP, name: 'q-app', project_id: Q, lifecycle: { webapp_id: Q_WEBAPP, state: 'up' } } as never).markAsExpanded();
   new Shell({ id: SHELL, project_id: P, workdir: '/w/p' } as never).markAsExpanded();
   new Shell({ id: PROC_SHELL, project_id: P, agentic_process_id: PROC } as never).markAsExpanded();
   new AgenticProcess({
@@ -168,7 +183,7 @@ const projectWiki = (req: RecordedRequest) => {
  *  reads it, so a cold row fetches it once and a warm visit hits the cache. */
 const projectList = (req: RecordedRequest) =>
   req.method === 'GET' && req.path === '/graph/project'
-    ? [{ type: 'project', ...PROJECT_ROW }]
+    ? [{ type: 'project', ...PROJECT_ROW }, { type: 'project', ...Q_ROW }]
     : undefined;
 
 /** The backend's answer for a project with no auto-launch agent. */
@@ -229,5 +244,19 @@ describe.each(ROWS)('dock loader — $name', ({ url }) => {
     const warm = await runDockLoader(target);
     expect(warm).toEqual({ outcome: 'ok' });
     expect(show(blockingRequests(log.slice(before))), 'a warm visit waited on the backend').toEqual([]);
+  });
+});
+
+describe('dock loader — an Assets document URL is rebased onto its OWN project (rule 2)', () => {
+  it.each([
+    [WEBAPP, P],
+    [Q_WEBAPP, Q],
+  ])('micro_app-%s → /dock/project/%s/…', async (app, owner) => {
+    recordRequests([fakeTabStore(), noAgentToLaunch, indexedDocument, projectWiki, projectList]);
+    const cold = await runDockLoader(`/dock/assets/editor/app/typeid/micro_app-${app}`);
+    expect(cold).toMatchObject({ outcome: 'redirect' });
+    expect(cold.outcome === 'redirect' && new URL(cold.location, 'http://x').pathname).toBe(
+      `/dock/project/${owner}/editor/app/typeid/micro_app-${app}`,
+    );
   });
 });

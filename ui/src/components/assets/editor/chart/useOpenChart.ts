@@ -28,14 +28,14 @@ export function useOpenChart(fsRef: FSRef, projectId?: string) {
           notify.error({ title: t`No chart named “${ref}” in this project` });
           return;
         }
-        // The same editor pointer a Charts tree row opens, kept on the project route so the
-        // project tree (the chart viewer) stays and its selection follows.
+        // The same editor pointer a Charts tree row opens; the loader rebases it onto the
+        // chart's own project, so the project tree (the chart viewer) stays and follows.
         if (!next.asset_ref) {
           navigation.openDock(next.dockPointer);
           return;
         }
         const editor = DockPointer.forAssetEditor(Chart.type, next.asset_ref);
-        navigation.openDock(projectId ? DockPointer.rebaseAssetsOntoProject(editor, projectId) : editor);
+        navigation.openDock(editor);
       } catch (err) {
         notify.error({
           title: t`Could not open the sub-flow`,
@@ -60,12 +60,12 @@ export function chartProjectRoot(chartPath: string): string {
  * Open what a chart's chips point at, URL-first: a project file (`src/x.kt:42`, `docs/a.md`), an asset
  * by TypeId, a web URL, or a data schema kind (the `data_schema` asset named by it).
  */
-export function useOpenChartTarget(fsRef: FSRef, projectId?: string) {
+export function useOpenChartTarget(fsRef: FSRef) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const openPointer = useCallback(
-    (pointer: DockPointer) => navigation.openDock(projectId ? DockPointer.rebaseAssetsOntoProject(pointer, projectId) : pointer),
-    [navigation, projectId],
+    (pointer: DockPointer) => navigation.openDock(pointer),
+    [navigation],
   );
 
   const openLink = useCallback(

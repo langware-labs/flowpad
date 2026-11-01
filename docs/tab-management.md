@@ -214,29 +214,55 @@ styling/tooltip. The redirect-only `/dock/shell/new_terminal` route is explicitl
 not materialized as a persistent tab; it creates a shell and redirects to the
 concrete shell dock.
 
-## A tab's project follows its target or explicit project URL, never ambient context
+## A tab's project: one rule order, never ambient context
 
-`Tab.project_id` is the project of the tab's **target entity**, with one explicit
-fallback: a `/dock/project/<project-id>/…` URL names the project when its content
-target is not indexed yet. It is never whatever project happened to be active in
-the client. Ambient context is the wrong source: on a cross-project open, deep
-link, or loader race it can be a _different_ project, and stamping it re-parents
-the tab so its chip vanishes from the real project's strip.
+`Tab.project_id` is decided by ONE rule order, implemented once per side —
+`resolveTabProject(dock, target)` (`ts_sdk/src/entities/tab.ts`) and the backend's
+`resolve_tab_project` — and the two must agree (`ui/tests/unit/resolve-tab-project.test.ts`
+is the frontend's table). It is never whatever project happened to be active in the
+client: on a cross-project open, deep link, or loader race that can be a _different_
+project, and stamping it re-parents the tab so its chip vanishes from the real
+project's strip.
+
+1. **dependency home** → its consumer project;
+2. **Project target / landing page** (`/dock/project/<P>`, `…/<P>/project-setup`) → P;
+3. **presenting project in the URL** (`/dock/project/<P>/<sub>`) → P. Only `flow show`
+   (and a Vibe host's own presentation) builds such a URL for someone else's asset, so
+   a tab there whose asset belongs elsewhere is a **guest tab** of P (green underline;
+   its card shows the asset's own project — the row's `target_project_id`);
+4. **scope-keyed BROWSE view** (Assets list/folder, Explorer) pinned to a project →
+   that project — never an editor/wiki sub-pointer, which is content;
+5. **target entity** → its project (`getByTypeId`, cache-first; a vfs dock via
+   `getEntityByPath`);
+6. **path** → the deepest project mount holding the dock's vfs path, then the
+   target's cwd/workdir — so a file inside a project folder belongs to it even
+   before it is indexed;
+7. **web page** with no scope → the active project; else null (global).
+
+Steps 5–6 alone (`{ ownerOnly: true }`) are the asset's OWN project. Three owner rules
+follow from the order: `flow show` from a session places the tab in the session's
+project (3); any user open or click lands in the asset's own project (5); a file in a
+project folder, minted or not, is that folder's (6).
+
+The URL states the project; nothing else does. The loader's RESOLVE redirect
+(`rebaseAssetDocumentOntoOwner` in `main-loader.ts`, via `assetDocumentAtOwner`)
+rebases an unscoped, unhosted Assets DOCUMENT URL — vfs or typeid — onto
+`/dock/project/<owner>/…` before any tab is written (I2), so it becomes its own
+per-document tab in its owner's strip instead of folding into the global
+`assets|all` browser tab (the 2026-11-01 "no selected tab" on a typeid app URL).
+User clicks (`openLink`, entity chips, turn files, review dialog, chart links,
+the conversation context panel) open the PLAIN dock and let that redirect place it;
+only `flow show` paths (`use-show-target-listener`, `presentDockTab` with a
+placement, the Vibe Display / `?host=` workspaces) rebase onto a caller's project.
+
+`materializeTab` re-checks a reused row against `resolveTabProject` for lens, web
+and typeid-addressed content docks (cache-first reads, so I4 holds); a vfs content
+row is not re-checked on reuse (its path lookup is a network GET).
 
 The frontend chokepoint is **`tabManager.ensureDock(dock)`** (SDK,
-`tabs/tab-manager.ts`), called by the UI content-lifecycle coordinator. The
-manager delegates to the low-level `Tab.getFromDockPointer(dock)` gateway in
-`entities/tab.ts`, which resolves the target cache-first with a network fallback
-and sends that project hint to `new_tab`:
-
-- a **project** tab (`targetTypeId.type === 'project'`) → its **own id** (a project
-  belongs to itself);
-- else an **entity** dock (`…/typeid/<type>-<id>`, `shell-<id>`, …) → the cached
-  entity's `project_id` (`getByTypeId` fallback on a cold miss);
-- else a **vfs** asset dock (`…/vfs/<path>`) → `dataManager.getEntityByPath(path)`
-  → that entity's `project_id`;
-- else a project-pinned scope → that scoped project;
-- else (target-less: settings/search/home/diff) → null.
+`tabs/tab-manager.ts`), called by the UI content-lifecycle coordinator. It
+delegates to `Tab.getFromDockPointer(dock)`, which resolves the target
+(`Tab.resolveDockTarget`) and sends `resolveTabProject`'s answer to `new_tab`.
 
 The backend is the second authority belt. `ensure_tab` retries project resolution
 from the target when the client hint is absent. Every `list` / `list_all` then

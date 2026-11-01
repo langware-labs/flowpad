@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Cloud, ExternalLink, File, FolderDown, GitBranch, Globe, Loader2, Package, Trash2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { notify } from '@src/notifications';
@@ -485,7 +484,8 @@ function AttachmentReviewDialog({
     // session. Fetching here costs one request on an explicit click.
     const entity = await dataManager.getByTypeId<AnyEntity & { type: string }>(tid).catch(() => null);
     const pointer = buildDockPointer(entity ?? { type: tid.type, id: tid.id }, undefined);
-    if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, attachmentProjectId));
+    // The plain dock: the loader opens the installed asset in its own project.
+    if (pointer) navigation.openDock(pointer);
     onClose();
   };
 

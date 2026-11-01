@@ -51,6 +51,7 @@ import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
+import { assetDocumentAtOwner } from './asset-document-owner';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
 import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
@@ -843,8 +844,10 @@ export class NavigationActions {
     try {
       const [dock, tabs] = await Promise.all([this.resolveLinkDock(link, source), tabManager.listAll()]);
       const anchor = tabForDockKey(tabs, origin.tabHash ?? '');
-      const placed = await presentDockTab(dock, {
-        projectId: source?.project_id ?? anchor?.project_id,
+      // A user click opens the target in ITS OWN project (rule 2), never the
+      // clicker's: a document is placed at its owner, anything else derives its
+      // project from its target when the tab is minted.
+      const placed = await presentDockTab((await assetDocumentAtOwner(dock)) ?? dock, {
         afterTabId: anchor?.id ?? null,
         parentTabId: anchor?.parent_tab_id ?? null,
       });
@@ -905,7 +908,8 @@ export class NavigationActions {
     const web = bareWebUrl(link);
     if (web?.sure) return web.url;
     try {
-      return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+      // The plain dock: the loader rebases a document onto its own project (rule 2).
+      return this.getDockUrl(await this.resolveLinkDock(link, source));
     } catch (error) {
       if (web) return web.url;
       throw error;
