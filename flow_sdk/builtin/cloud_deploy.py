@@ -34,8 +34,6 @@ DEFAULT_CLOUD_PROVIDER = "e2b"
 #: the hub drops a request it has held for minutes while the hub goes on placing the machine: a dropped answer is
 #: not a failure.
 PLACED_WITHIN_S = 8 * 60
-#: How often the local row is looked at meanwhile: a read of this computer's own store.
-PLACED_LOCAL_POLL_S = 1
 
 
 async def deploy_entity_to_cloud(
@@ -83,23 +81,31 @@ async def deploy_entity_to_cloud(
 
 async def wait_until_placed(deployment_id: str) -> None:
     """Wait for the placement's local row to have its machine — for a deploy whose answer never came back. The hub
-    pushes the placement as it gives it its machine and the bridge mirrors each push into that row, so this only
-    reads here, never asks the hub. Raises ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none."""
+    pushes the placement as it gives it its machine and the bridge mirrors each push into that row, which announces
+    itself on the bus once written: the row is read again on each announcement, never asked of the hub. Raises
+    ``TimeoutError`` after :data:`PLACED_WITHIN_S` with none."""
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.tags import on_tag, target_of  # noqa: PLC0415
+
+    changed = asyncio.Event()
 
     async def placed() -> None:
         while True:
+            changed.clear()  # before the read: a write that lands during it wakes the next wait
             row = await Deployment.get_by_id(deployment_id)
             if row is not None and row.origin and row.origin.external_id and row.status.provider_state == "running":
                 return
-            await asyncio.sleep(PLACED_LOCAL_POLL_S)
+            await changed.wait()
 
+    unsubscribe = on_tag("entity.*", lambda _event: changed.set(), target=target_of("deployment", deployment_id))
     try:
         await asyncio.wait_for(placed(), PLACED_WITHIN_S)
     except TimeoutError:
         raise TimeoutError(
             f"the hub sent no machine for it within {PLACED_WITHIN_S // 60} minutes of losing its answer"
         ) from None
+    finally:
+        unsubscribe()
 
 
 __all__ = ["DEFAULT_CLOUD_PROVIDER", "deploy_entity_to_cloud", "wait_until_placed"]

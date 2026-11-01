@@ -151,7 +151,6 @@ def _dropped_answer(monkeypatch, hub, agent, *, placed: bool) -> dict:
 
     later: list[asyncio.Task] = []
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", dropped)
-    monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.PLACED_LOCAL_POLL_S", 0)
     return planned
 
 
