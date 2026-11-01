@@ -7922,6 +7922,7 @@ msgstr "تعذّر الرفض"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Could not deploy"
 msgstr "تعذر النشر"
@@ -10026,6 +10027,7 @@ msgstr "نشر"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Deploy failed."
 msgstr "فشل النشر."
 
@@ -10055,7 +10057,7 @@ msgstr "الوكيل المنشور"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Deploying without model funding"
-msgstr ""
+msgstr "النشر بدون تمويل للنموذج"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Deployment"
@@ -10071,7 +10073,7 @@ msgstr "تفاصيل النشر"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment running in the background"
-msgstr ""
+msgstr "النشر قيد التشغيل في الخلفية"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Deployment type"

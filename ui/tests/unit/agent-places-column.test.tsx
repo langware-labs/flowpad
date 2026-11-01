@@ -50,10 +50,18 @@ function place(id: string, isLocal: boolean, extra: Partial<AgentPlace> = {}): A
   };
 }
 
+/** One node of the agent's `deploy` activity, as the app reports it. */
+const node = (id: string, name: string, state: ActivityState, message: string | null, children: ActivityProgressSpec[] = []) =>
+  ({
+    activity_id: id, subject_entity: 'agent-33333333-3333-4333-8333-333333333333', path: name === 'deploy' ? name : `deploy/${name}`,
+    name, label: name, state, message, done: 0, skipped: 0, errors_count: 0, errors: [], counters: {}, children, seq: 1,
+  }) as ActivityProgressSpec;
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.mocked(notify.warning).mockClear();
+  vi.mocked(notify.error).mockClear();
   __resetActivityStoreForTest();
   nav.openDock.mockReset();
   nav.hub = false;
@@ -113,12 +121,6 @@ describe('Deployments', () => {
   });
 
   it('says once, however often the column mounts, what a deploy goes ahead without — and not for a finished one', async () => {
-    const AGENT = 'agent-33333333-3333-4333-8333-333333333333';
-    const node = (id: string, name: string, state: ActivityState, message: string | null, children: ActivityProgressSpec[] = []) =>
-      ({
-        activity_id: id, subject_entity: AGENT, path: name === 'deploy' ? name : `deploy/${name}`, name, label: name, state,
-        message, done: 0, skipped: 0, errors_count: 0, errors: [], counters: {}, children, seq: 1,
-      }) as ActivityProgressSpec;
     const deploy = (id: string, state: ActivityState) =>
       node(id, 'deploy', state, null, [node(id, 'readiness', 'completed', 'No LLM funding for brief: limit exceeded')]);
 
@@ -135,6 +137,32 @@ describe('Deployments', () => {
     renderColumn([]);
     await screen.findByTestId('agent-places-empty');
     expect(notify.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it('a deploy seen running that then fails says so once — not one that completes, nor one already over', async () => {
+    // A later report of the same deploy carries a higher seq: the store keeps only the newest.
+    const machine = (id: string, state: ActivityState, message: string | null = null, seq = 1) =>
+      ({ ...node(id, 'deploy', state, message, [node(id, 'machine', state, message)]), seq });
+
+    act(() => handleActivitySnapshot(machine('failing-deploy', 'running')));
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    act(() => handleActivitySnapshot(machine('failing-deploy', 'failed', 'the provider is out of machines', 2)));
+    cleanup();
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    expect(notify.error).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Could not deploy', message: 'the provider is out of machines' }),
+    );
+
+    act(() => handleActivitySnapshot(machine('good-deploy', 'running')));
+    act(() => handleActivitySnapshot(machine('good-deploy', 'completed', null, 2)));
+    cleanup();
+    act(() => handleActivitySnapshot(machine('old-deploy', 'failed', 'long ago')));
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    expect(notify.error).toHaveBeenCalledTimes(1);
   });
 
   it('an agent deployed nowhere says so — nothing is created by looking at it', async () => {
