@@ -3,7 +3,7 @@
  * §tab project), one row per scenario. The backend's `resolve_tab_project` is the
  * same order; a row here and there must agree.
  */
-import { AgenticProcess, dataContext, Project, resolveTabProject, TypeId, type TabProjectTarget } from '@sdk';
+import { AgenticProcess, dataContext, Project, resolveTabProject, tabOwnerProject, TypeId, type TabProjectTarget } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { projectScope } from '@src/lib/scope-filter';
 import { ViewType } from '@src/types/ViewType';
@@ -118,6 +118,6 @@ const CASES: Case[] = [
 describe('resolveTabProject', () => {
   it.each(CASES)('$name', async ({ dock, target, want, owner }) => {
     expect(await resolveTabProject(dock, target)).toBe(want);
-    expect(await resolveTabProject(dock, target, { ownerOnly: true })).toBe(owner);
+    expect(await tabOwnerProject(dock, target)).toBe(owner);
   });
 });

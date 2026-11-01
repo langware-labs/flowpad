@@ -95,7 +95,7 @@ async def test_tab_target_remote_batches_once_per_type():
             ),
         ):
             targets = await _load_remote_targets(tabs)
-        await _populate_tab_target_fields(tabs, targets)
+        _populate_tab_target_fields(tabs, targets)
 
         assert get_all.await_count == 1
         assert [tab.target_remote for tab in tabs] == [True, False, False]
@@ -122,7 +122,7 @@ async def test_tab_target_project_marks_a_guest_content_tab():
         ("shell", shell_id): SimpleNamespace(project_id=other, remote=False),
     }
     await _resolve_tab_projects([guest, shell], targets)
-    await _populate_tab_target_fields([guest, shell], targets)
+    _populate_tab_target_fields([guest, shell], targets)
     assert guest.target_project_id == other
     assert shell.target_project_id is None
     assert _serialize_row(guest)["target_project_id"] == other

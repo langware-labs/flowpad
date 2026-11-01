@@ -8,7 +8,8 @@ import { notify } from '@src/notifications';
 
 /**
  * Open the chart a `ref` names (a sequence sub-flow, a C4 box that zooms in). URL-first: it
- * resolves the chart and calls navigation.openDock, nothing else.
+ * resolves the chart and calls navigation.openDock, nothing else. `projectId` only scopes the
+ * name query; the loader places the opened chart in its own project.
  */
 export function useOpenChart(fsRef: FSRef, projectId?: string) {
   const { t } = useLingui();

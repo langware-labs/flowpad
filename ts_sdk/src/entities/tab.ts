@@ -6,6 +6,7 @@ import { dataContext } from '../FlowSync/context';
 import { ViewType } from '../utils/ui/view-types';
 import { isValidEntityId, TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
+import { parseScopeFilterKey, pinnedProjectId } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { normalizeRetiredDockPointer } from '../utils/ui/retired-views';
 import { normalizeWorldViewDockPointer } from '../worldview/dock-pointer';
@@ -229,29 +230,40 @@ export function isContentSubPointer(pointer: string | null | undefined): boolean
 
 /**
  * `[scopeKeyed, project]` read off a tab hash — the backend's `_pointer_scope_project`:
- * a scope-keyed row (`assets|project:<id>`, `assets|all`, optionally `|@<host>`) belongs
- * to its scope's project; `all` / `user` / `filter:…` are Global.
+ * a scope-keyed row (`assets|<scopeFilterKey>`, optionally `|@<host>`) belongs to the
+ * project its scope pins; every other scope is Global.
  */
 function tabHashScopeProject(tabHash: string | null | undefined): [boolean, string | null] {
   const hash = (tabHash ?? '').split('|@', 1)[0];
   if (!hash.includes('|')) return [false, null];
-  const scope = hash.slice(hash.lastIndexOf('|') + 1);
-  if (scope === 'all' || scope === 'user' || scope.startsWith('filter:')) return [true, null];
-  if (scope.startsWith('project:')) return [true, validProjectId(scope.slice('project:'.length))];
-  return [false, null];
+  const scope = parseScopeFilterKey(hash.slice(hash.lastIndexOf('|') + 1));
+  if (!scope) return [false, null];
+  const pinned = pinnedProjectId(scope);
+  return [true, pinned && isValidEntityId(pinned) ? pinned : null];
 }
 
-/** A project id named by a URL/pointer, or null when it cannot be one (the backend
- *  also checks existence; the client only has the id's shape). */
-function validProjectId(id: string | null | undefined): string | null {
-  return id && isValidEntityId(id) ? id : null;
+/** The live project ids when the project list is already cached — no request; null
+ *  when it is not loaded yet. */
+async function cachedProjectIds(): Promise<Set<string> | null> {
+  const { lazyAssets, LazyAsset } = await import('../lazy');
+  const projects = lazyAssets.client.getQueryData<Project[]>(lazyAssets.key(LazyAsset.Projects));
+  return projects ? new Set(projects.map((p) => p.id)) : null;
+}
+
+/** A project id named by a URL/pointer (steps 1, 3), or null when it cannot be one:
+ *  checked against the cached project list like the backend's existence check, and
+ *  by shape alone while that list isn't loaded. */
+async function namedProject(id: string | null | undefined): Promise<string | null> {
+  if (!id || !isValidEntityId(id)) return null;
+  const live = await cachedProjectIds();
+  return !live || live.has(id) ? id : null;
 }
 
 /**
  * The asset's OWN project — `resolveTabProject`'s steps 2, 5, 6 (the loader's redirect
  * target, the tab's `target_project_id`); mirrors the backend's `tab_owner_project`.
  */
-async function tabOwnerProject(dock: IDockPointer, target: TabProjectTarget): Promise<string | null> {
+export async function tabOwnerProject(dock: IDockPointer, target: TabProjectTarget): Promise<string | null> {
   const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
   // 2
   if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
@@ -283,24 +295,19 @@ async function tabOwnerProject(dock: IDockPointer, target: TabProjectTarget): Pr
  *      dock, a target that no longer resolves, or a plain shell; an existing
  *      projectless target is Global.
  *
- * `opts.ownerOnly` answers steps 2, 5, 6 only (`tabOwnerProject`). Cache-first:
- * `getProjectByPath` reads the cached project list, `target` is passed in resolved.
+ * Steps 2, 5, 6 alone are `tabOwnerProject`. Cache-first: project checks read the
+ * cached project list, `target` is passed in resolved.
  */
-export async function resolveTabProject(
-  dock: IDockPointer,
-  target: TabProjectTarget,
-  opts: { ownerOnly?: boolean } = {},
-): Promise<string | null> {
-  if (opts.ownerOnly) return tabOwnerProject(dock, target);
+export async function resolveTabProject(dock: IDockPointer, target: TabProjectTarget): Promise<string | null> {
   const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
   // 1
-  const consumer = dock.options?.providerProject ? validProjectId(dock.options.consumerProject) : null;
+  const consumer = dock.options?.providerProject ? await namedProject(dock.options.consumerProject) : null;
   if (consumer) return consumer;
   // 2
   if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
   // 3
   if (dock.viewType === ViewType.PROJECT && dock.pointer) {
-    const presenting = validProjectId(dock.pointer.split('/', 1)[0]);
+    const presenting = await namedProject(dock.pointer.split('/', 1)[0]);
     if (presenting) return presenting;
   }
   // 4

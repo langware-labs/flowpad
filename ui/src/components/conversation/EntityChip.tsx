@@ -43,8 +43,6 @@ interface EntityChipProps {
   inside?: { type: string; id: string };
   /** Optional click override — bypass the standard A-inside-B navigation. */
   onClick?: () => void;
-  /** Ignored for navigation: a click opens the entity in ITS OWN project (the loader
-   *  places it). Kept so call sites need not change. */
   /** Tooltip text. Defaults to "Open <name>". */
   title?: string;
   /** Visual size — "chip" matches the conversation-toolbar buttons. Default "chip". */

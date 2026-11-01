@@ -231,6 +231,16 @@ export function scopeFilterKey(sf: ScopeFilter): string {
   }
 }
 
+/** Inverse of {@link scopeFilterKey}; `null` when `key` is not a scope key. */
+export function parseScopeFilterKey(key: string): ScopeFilter | null {
+  if (key === 'all') return allScope();
+  if (key === 'user') return userScope();
+  if (key.startsWith('project:')) return projectScope(key.slice('project:'.length));
+  const filter = /^filter:([01]):(.*)$/.exec(key);
+  if (filter) return filterScope(filter[1] === '1', filter[2] ? filter[2].split(',') : []);
+  return null;
+}
+
 /**
  * Serialize a ScopeFilter onto BACKEND-API URL search params: `?user=…&projects=…`.
  * Every mode projects down to its effective `(user, projects)` set here — this is
