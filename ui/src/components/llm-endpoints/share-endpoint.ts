@@ -37,8 +37,8 @@ import { endpointShareLandingPath } from './llm-endpoints-pointer';
 
 /** What a share confers: spend and watch, never configure. The hub's `llm_endpoint` policy is
  *  keyed on this exact string, so it comes from the shared `Role` enum rather than a literal —
- *  the same value `SHARE_ROLE` pins on the Python side (`HubRole.READER`). */
-export const ENDPOINT_SHARE_ROLE = Role.READER;
+ *  the same set `SHARE_ROLES` pins on the Python side. */
+export const ENDPOINT_SHARE_ROLES = [Role.READER, Role.RUNNER];
 
 export interface ShareEndpointFailure {
   email: string;
@@ -113,7 +113,7 @@ export async function shareEndpointByEmail(
   const callbackOverride = endpointShareLandingPath(endpoint.id);
   const results = await Promise.allSettled(
     emails.map((email) =>
-      endpoint.inviteMember(email, ENDPOINT_SHARE_ROLE, { callbackOverride, notifyByEmail: false }),
+      endpoint.inviteMember(email, ENDPOINT_SHARE_ROLES, { callbackOverride, notifyByEmail: false }),
     ),
   );
   const outcome: ShareEndpointOutcome = { granted: [], failed: [] };

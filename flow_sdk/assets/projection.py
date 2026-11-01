@@ -91,7 +91,7 @@ _LOCAL_OR_RUNTIME_FIELDS = frozenset(
         "last_active_at",
         "last_edited_at",
         "fetched_at",
-        "visitor_role",
+        "visitor_roles", "authenticated_roles", "public_roles",
         "members",
         "remote",
         "origin",

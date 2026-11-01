@@ -6,7 +6,7 @@
  * Built from the reads the page already has: `people` (the org's own, teamless) from the org read
  * and one `teamBudgets` per team, fetched only while this tab is open.
  */
-import { TypeId, budgetsService, type OrgBudgets, type TeamBudgets } from '@sdk';
+import { TypeId, budgetsService, canManageRoles, type OrgBudgets, type TeamBudgets } from '@sdk';
 import { useQueries } from '@tanstack/react-query';
 import { MoreHorizontal } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -47,7 +47,7 @@ export interface OrgMemberRow {
   teams: string[];
   /** Each team this person is on, and whether the caller may remove them from it (hub's per-row answer). */
   memberships: { teamId: string; teamName: string; canRemove: boolean }[];
-  role: string | null;
+  roles: string[];
   spent: number;
   pending: boolean;
 }
@@ -56,7 +56,7 @@ export interface OrgMemberRow {
 export function mergeOrgMembers(
   data: Pick<OrgBudgets, 'people' | 'teams'>,
   rosters: readonly (TeamBudgets | undefined)[],
-  orgRoles: ReadonlyMap<string, string>,
+  orgRoles: ReadonlyMap<string, string[]>,
 ): OrgMemberRow[] {
   const rows = new Map<string, OrgMemberRow>();
   rosters.forEach((roster, i) => {
@@ -71,7 +71,7 @@ export function mergeOrgMembers(
         email: m.email,
         teams: [],
         memberships: [],
-        role: m.user_id ? (orgRoles.get(m.user_id) ?? null) : null,
+        roles: m.user_id ? (orgRoles.get(m.user_id) ?? []) : [],
         spent: 0,
         pending: !m.user_id,
       };
@@ -91,7 +91,7 @@ export function mergeOrgMembers(
       email: p.email,
       teams: [],
       memberships: [],
-      role: p.role,
+      roles: p.roles,
       spent: 0,
       pending: false,
     });
@@ -109,6 +109,7 @@ export function MembersTab({ data }: { data: OrgBudgets }) {
   const { localUser } = useLocalUser();
   const orgTypeId = useMemo(() => new TypeId('organization', data.org.id), [data.org.id]);
   const { members: orgRoster, refresh, removeMember: removeFromOrg } = useMembers(orgTypeId);
+  const myRoles = orgRoster.find(member => member.user_id === localUser?.id)?.roles ?? [];
   const removeFromTeam = useRemoveTeamMember();
   const invalidateBudgets = useInvalidateBudgets();
   const [removing, setRemoving] = useState<Removal | null>(null);
@@ -126,8 +127,8 @@ export function MembersTab({ data }: { data: OrgBudgets }) {
   });
   const loading = rosterQueries.some((q) => q.isLoading);
   const orgRoles = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of orgRoster) if (!isGroupMember(m as never) && m.user_id && m.role) map.set(m.user_id, m.role);
+    const map = new Map<string, string[]>();
+    for (const m of orgRoster) if (!isGroupMember(m as never) && m.user_id && m.roles?.length) map.set(m.user_id, m.roles);
     return map;
   }, [orgRoster]);
   const me = orgRoster.find((m) => !!m.user_id && m.user_id === localUser?.id) ?? null;
@@ -279,9 +280,9 @@ export function MembersTab({ data }: { data: OrgBudgets }) {
                     <Badge variant="secondary" className="font-normal">
                       <Trans>Pending</Trans>
                     </Badge>
-                  ) : r.role ? (
+                  ) : r.roles.length ? (
                     <Badge variant="outline" className="font-normal capitalize">
-                      {r.role}
+                      {r.roles.join(', ')}
                     </Badge>
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>
@@ -291,7 +292,7 @@ export function MembersTab({ data }: { data: OrgBudgets }) {
                 <RowMenu
                   row={r}
                   canRemoveFromOrg={
-                    data.org.can_invite && !!r.user_id && r.user_id !== localUser?.id && r.role !== 'owner'
+                    data.org.can_invite && !!r.user_id && r.user_id !== localUser?.id && canManageRoles(myRoles, r.roles)
                   }
                   onRemove={setRemoving}
                 />

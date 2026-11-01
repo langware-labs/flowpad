@@ -114,11 +114,11 @@ describe('AgentVisibilitySection', () => {
     fireEvent.click(screen.getByTestId('agent-public-access'));
 
     await waitFor(() => expect(screen.getByTestId('agent-public-access')).toHaveTextContent('Remove public access'));
-    expect(hub.calls[1]).toEqual({ method: 'PUT', url: AUDIENCE_URL, body: { role: 'anonymous_viewer' } });
+    expect(hub.calls[1]).toEqual({ method: 'PUT', url: AUDIENCE_URL, body: { roles: ['reader'] } });
   });
 
   it('offers Remove public access for an already-public agent, and revokes it on click', async () => {
-    const hub = fakeHub('anonymous_viewer');
+    const hub = fakeHub(['reader']);
     render(tree(PUBLISHED));
     await waitFor(() => expect(screen.getByTestId('agent-public-access')).toHaveTextContent('Remove public access'));
 
@@ -170,8 +170,8 @@ function hubError(status: number, detail: string) {
  * The hub's `access/public/visitor` grant, in memory: GET reads it, PUT sets it, DELETE clears it.
  * Records each call's method, the audience path and its body.
  */
-function fakeHub(initialRole: string | null, { failWrites = false } = {}) {
-  let role = initialRole;
+function fakeHub(initialRole: string[] | null, { failWrites = false } = {}) {
+  let roles = initialRole ?? [];
   const hub = { calls: [] as { method: string; url: string; body: unknown }[], reflected: true };
   vi.spyOn(dataManager, 'callAction').mockImplementation((info) => {
     const url = info.fullActionUrl.slice(info.fullActionUrl.indexOf('agent/'));
@@ -180,9 +180,9 @@ function fakeHub(initialRole: string | null, { failWrites = false } = {}) {
     hub.reflected &&= info.hubReflect;
     if (info.method !== 'GET') {
       if (failWrites) return Promise.reject(hubError(400, 'refused'));
-      role = info.method === 'PUT' ? (info.bodyParameters as { role: string }).role : null;
+      roles = info.method === 'PUT' ? (info.bodyParameters as { roles: string[] }).roles : [];
     }
-    return Promise.resolve({ audience: 'visitor', role });
+    return Promise.resolve({ audience: 'visitor', roles });
   });
   return hub;
 }

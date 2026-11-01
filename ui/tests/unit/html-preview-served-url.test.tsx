@@ -17,7 +17,7 @@
  * and there is nothing left to intercept or inline. What is pinned here instead
  * is the small set of properties that whole class now depends on.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const FILE = '/home/user/Flowpad workspace/Course Project/clouds-site/index.html';
@@ -29,6 +29,8 @@ let shownBeside: string | null = null;
 vi.mock('@src/components/agent-layout/agent-layout', () => ({
   useAgentContext: () => ({ computeNode: { typeId: { toString: () => 'compute_node-@local' } }, flowId: shownBeside }),
 }));
+const opened: string[] = [];
+vi.mock('@src/lib/open-external', () => ({ openExternal: (url: string) => opened.push(url) }));
 vi.mock('@src/hooks/useFS', () => ({
   useFS: () => ({
     revision: () => revision,
@@ -46,6 +48,7 @@ describe('HtmlPreview', () => {
   afterEach(() => {
     revision = 0;
     shownBeside = null;
+    opened.length = 0;
     cleanup();
   });
 
@@ -155,5 +158,22 @@ describe('HtmlPreview', () => {
 
     expect(frame()).not.toBe(mine);
     expect(mine.isConnected).toBe(true);
+  });
+
+  it("opens a share link its own page asks for, and nothing else's", () => {
+    render(<HtmlPreview path={FILE} />);
+    const page = frame().contentWindow;
+    const send = (url: string, source: MessageEventSource | null) =>
+      act(() => {
+        window.dispatchEvent(new MessageEvent('message', { data: { type: 'flowpad:open-external', url }, source }));
+      });
+
+    send('https://wa.me/?text=hi', page);
+    send('https://example.com/', page);
+    send('https://api.whatsapp.com/send/?text=other', window);
+
+    // WhatsApp and Gmail refuse a window the sandboxed frame opens itself, so the host opens
+    // its own page's share link — and only a share link (`previewShareUrl`).
+    expect(opened).toEqual(['https://wa.me/?text=hi']);
   });
 });

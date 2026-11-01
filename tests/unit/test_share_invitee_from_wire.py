@@ -19,7 +19,7 @@ def test_bare_email_string_is_the_original_flat_shape():
     inv = ShareInvitee.from_wire("Grace@Example.com")
     assert inv.email == "grace@example.com"
     assert inv.user_id is None
-    assert inv.role is None
+    assert inv.roles is None
 
 
 def test_bare_uuid_string_is_classified_as_a_user_id_not_an_email():
@@ -36,15 +36,15 @@ def test_bare_user_typeid_string_is_classified_as_a_user_id():
 
 
 def test_object_shape_carries_a_role_for_an_email_recipient():
-    inv = ShareInvitee.from_wire({"idOrEmail": "grace@example.com", "role": "admin"})
+    inv = ShareInvitee.from_wire({"idOrEmail": "grace@example.com", "roles": ["admin"]})
     assert inv.email == "grace@example.com"
-    assert inv.role == "admin"
+    assert inv.roles == ["admin"]
 
 
 def test_object_shape_carries_a_role_for_a_user_id_recipient():
-    inv = ShareInvitee.from_wire({"idOrEmail": ALICE, "role": "admin"})
+    inv = ShareInvitee.from_wire({"idOrEmail": ALICE, "roles": ["admin"]})
     assert inv.user_id == ALICE
-    assert inv.role == "admin"
+    assert inv.roles == ["admin"]
 
 
 @pytest.mark.parametrize("bad", [{"idOrEmail": "x", "email": "y"}, {"user_id": "x"}, {}])

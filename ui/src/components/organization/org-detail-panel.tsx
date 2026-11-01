@@ -86,7 +86,7 @@ export function OrgDetailPanel({
               <Plural value={people.length} one="# person" other="# people" />
               {' · '}
               <Plural value={teams.length} one="# team" other="# teams" />
-              {me?.role ? <Trans> · you are {me.role}</Trans> : null}
+              {me?.roles?.length ? <Trans> · you are {me.roles.join(', ')}</Trans> : null}
             </p>
           </div>
           {updating && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
