@@ -230,22 +230,29 @@ project's strip.
    (and a Vibe host's own presentation) builds such a URL for someone else's asset, so
    a tab there whose asset belongs elsewhere is a **guest tab** of P (green underline;
    its card shows the asset's own project — the row's `target_project_id`);
-4. **scope-keyed BROWSE view** (Assets list/folder, Explorer) pinned to a project →
-   that project — never an editor/wiki sub-pointer, which is content;
+4. **scope-keyed BROWSE row** (Assets list/folder, Explorer; read off the tab hash) →
+   its scope's project (`all` / `user` / `filter:` → Global) — never an editor/wiki
+   sub-pointer (`isContentSubPointer`), which is content;
 5. **target entity** → its project (`getByTypeId`, cache-first; a vfs dock via
    `getEntityByPath`);
 6. **path** → the deepest project mount holding the dock's vfs path, then the
    target's cwd/workdir — so a file inside a project folder belongs to it even
    before it is indexed;
-7. **web page** with no scope → the active project; else null (global).
+7. **the project it was opened in** (the client's active project, sent as the
+   backend's `opened_in`) — only for a tab that may take it: a target-less dock (a
+   web page), a target that no longer resolves, or a plain shell. An existing
+   projectless target is Global.
 
-Steps 5–6 alone (`{ ownerOnly: true }`) are the asset's OWN project. Three owner rules
+Project ids named by a URL (steps 1, 3, 4) count only when they are entity ids (the
+backend also checks the project exists). Steps 2, 5, 6 alone (`{ ownerOnly: true }`,
+backend `tab_owner_project`) are the asset's OWN project — the row's `target_project_id`. Three owner rules
 follow from the order: `flow show` from a session places the tab in the session's
 project (3); any user open or click lands in the asset's own project (5); a file in a
 project folder, minted or not, is that folder's (6).
 
 The URL states the project; nothing else does. The loader's RESOLVE redirect
-(`rebaseAssetDocumentOntoOwner` in `main-loader.ts`, via `assetDocumentAtOwner`)
+(`assetDocumentAtOwner`, called from `main-loader.ts`; a path-addressed document asks
+the cached project list first and reads its entity only when no mount holds it)
 rebases an unscoped, unhosted Assets DOCUMENT URL — vfs or typeid — onto
 `/dock/project/<owner>/…` before any tab is written (I2), so it becomes its own
 per-document tab in its owner's strip instead of folding into the global
@@ -264,10 +271,11 @@ The frontend chokepoint is **`tabManager.ensureDock(dock)`** (SDK,
 delegates to `Tab.getFromDockPointer(dock)`, which resolves the target
 (`Tab.resolveDockTarget`) and sends `resolveTabProject`'s answer to `new_tab`.
 
-The backend is the second authority belt. `ensure_tab` retries project resolution
-from the target when the client hint is absent. Every `list` / `list_all` then
-backfills a still-null row in memory from the target, or from the leading project
-segment of a project-scoped pointer when that project exists. This keeps a
+The backend is the second authority belt. `ensure_tab` stamps `resolve_tab_project`
+(the client's value is only `opened_in`, step 7). Every `list` / `list_all` re-runs the
+rule in memory on the batched target map (owner computed once per row, pointer-named
+projects checked in one query); a target missing from the batch keeps the row's stamp,
+and only an unstamped one pays a recovering lookup. This keeps a
 not-yet-indexed Markdown tab project-colored on its first cold load without
 consulting ambient client context.
 
