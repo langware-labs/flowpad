@@ -256,6 +256,10 @@ function CopyableUrlField({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** A one-line command drawn as a button — shared by the copy-only and the runnable command. */
+export const COMMAND_BUTTON_CLASS =
+  'flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted';
+
 export function CopyableCommand({ command }: { command: string }) {
   const { t } = useLingui();
   const { copied, copy } = useCopied();
@@ -263,7 +267,7 @@ export function CopyableCommand({ command }: { command: string }) {
     <button
       type="button"
       onClick={() => void copy(command).catch(() => undefined)}
-      className="flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted"
+      className={COMMAND_BUTTON_CLASS}
       title={t`Copy to clipboard`}
     >
       <span className="break-all text-start">{command}</span>
