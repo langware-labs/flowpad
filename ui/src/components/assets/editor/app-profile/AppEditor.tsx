@@ -6,15 +6,14 @@ import { ChevronDown, ChevronRight, Loader2, Plus, RotateCw, Server, Trash2 } fr
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
 import { Input } from '@src/components/ui/input';
+import { WebAppIconPicker } from '@src/components/webapp-display/WebAppIconPicker';
+import { useWebAppManifest } from '@src/components/webapp-display/use-webapp-manifest';
+
 import { SEGMENTED_ACTIVE, SEGMENTED_GROUP, SEGMENTED_IDLE } from '@src/components/ui/segmented';
-import { useMarkdownContent } from '@src/hooks/use-markdown-content';
-import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
-import { entityReloadKey } from '@src/utils/entity-reload-key';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -95,14 +94,14 @@ export function AppEditor({ app, mainRef }: AppEditorProps) {
   appRef.current = app;
   const { navigation } = useDockNavigation();
   const nested = useNestedHost();
-  const content = useMarkdownContent(mainRef, { autoSave: false, reloadKey: entityReloadKey(app.updated_date) });
-  const contentRef = useRef(content);
-  contentRef.current = content;
-  const writeQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const [openService, setOpenService] = useState<number | null>(null);
   const [tab, setTab] = useState<'definition' | 'setup' | 'deployments'>('definition');
   const run = useAppRunState(app.project_id, app.name, !hub);
   const { reload, restart: restartApp } = run;
+  // Only how it runs can change what a restart would apply.
+  const { content, save } = useWebAppManifest(app, mainRef, (patch) => {
+    if ('mounts' in patch || 'services' in patch) reload();
+  });
 
   const fields = content.typedFields as Record<string, unknown>;
   const title = (fields.title as string | undefined) ?? '';
@@ -110,28 +109,6 @@ export function AppEditor({ app, mainRef }: AppEditorProps) {
   const services = (fields.services as Service[] | undefined) ?? [];
   const mounts = effectiveMounts(fields.mounts as Mount[] | undefined, services);
 
-  const save = useCallback(
-    (patch: Record<string, DocumentValue | undefined>): Promise<boolean> => {
-      const current = contentRef.current;
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined) current.dropField(key);
-        else current.setField(key, value);
-      }
-      const operation = writeQueueRef.current.then(async () => {
-        const saved = await contentRef.current.save();
-        if (saved) {
-          appRef.current.markEdit();
-          invalidateGitPreflight(appRef.current.typeId);
-          // Only how it runs can change what a restart would apply.
-          if ('mounts' in patch || 'services' in patch) reload();
-        }
-        return saved;
-      });
-      writeQueueRef.current = operation;
-      return operation;
-    },
-    [reload],
-  );
 
   // The two lists are typed here and plain JSON to the document: one cast each.
   const writeMount = (index: number, next: Mount) =>
@@ -181,7 +158,6 @@ export function AppEditor({ app, mainRef }: AppEditorProps) {
 
   if (content.isLoading) return <Loader2 className="m-4 h-5 w-5 animate-spin" />;
   const definitionError = content.loadError;
-  const AppIcon = iconForType(WebApp.type);
   const audienceLabel = (audience: Audience | undefined) => (audience === 'admin' ? t`Admins` : t`Users`);
   const first = mounts[0];
   const served = first ? `${audienceLabel(first.audience)} · ${addressOf(first, app.name)}` : null;
@@ -194,9 +170,14 @@ export function AppEditor({ app, mainRef }: AppEditorProps) {
       <DocumentSaveNotice {...content} />
       {/* ── header: identity + run state ─────────────────────────────── */}
       <div className="flex shrink-0 flex-wrap items-center gap-4 border-b border-border px-6 py-5">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground shadow-sm">
-          <AppIcon className="h-7 w-7" />
-        </div>
+        <WebAppIconPicker
+          app={app}
+          disabled={hub}
+          onChange={(icon) => void save({ icon })}
+          testId="app-icon"
+          className="h-14 w-14 rounded-xl bg-muted text-foreground shadow-sm"
+          iconClassName="h-7 w-7"
+        />
         <div className="min-w-[14rem] flex-1">
           <CommitInput
             mono={false}

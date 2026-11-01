@@ -34,6 +34,7 @@ class WebApp(SetupSkippable, Entity):
     #: Skipped in its project's setup on THIS machine (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE.
     setup_skipped: Optional[SetupSkipSpec] = APIField(default=None, sharing=Sharing.PRIVATE)
     description: Optional[str] = APIField(default=None, description="What the app is, for the asset browser")
+    icon: Optional[str] = APIField(default=None, description="Lucide icon name or emoji; unset = the type's icon")
     kind: KindStr = APIField(default="application.web", description="Dot-path ontology kind")
     #: What an editor edits beyond its parent: kinds and type names (``flow_sdk.builtin.faas.editors``).
     edits: List[str] = APIField(default_factory=list, description="Kinds and types this editor edits")

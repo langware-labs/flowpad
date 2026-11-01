@@ -22,7 +22,7 @@ const record = {
 
 describe('app info', () => {
   it('lists address, folder, ports and pids; hides empty fields', () => {
-    const app = new WebApp({ id: '0f66c578-d9cb-4058-9175-a1f37f814f33', name: 'spora-admin', root_vfs_path: '/ws/webapp/spora-admin' } as never);
+    const app = new WebApp({ id: '0f66c578-d9cb-4058-9175-a1f37f814f33', name: 'spora-admin', asset_ref: '/ws/webapp/spora-admin' } as never);
     const rows = appInfoRows({ display: { src: 'http://localhost:3300/', runtime: 'dev', available: ['dev'], endpoint: null }, lifecycle: { app, record } });
     render(
       <I18nProvider i18n={i18n}>
@@ -38,7 +38,7 @@ describe('app info', () => {
   });
 
   it('prefers the primary on-disk occurrence for the folder', () => {
-    const app = new WebApp({ id: '0f66c578-d9cb-4058-9175-a1f37f814f33', root_vfs_path: '/x', asset_occurrences: [{ path: '/primary', first_seen_at: '' }] } as never);
+    const app = new WebApp({ id: '0f66c578-d9cb-4058-9175-a1f37f814f33', asset_occurrences: [{ path: '/primary', first_seen_at: '' }] } as never);
     expect(app.folder).toBe('/primary');
   });
 });

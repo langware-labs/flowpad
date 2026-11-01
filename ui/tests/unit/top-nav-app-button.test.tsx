@@ -76,6 +76,20 @@ describe('the apps button', () => {
     expect(openDock).not.toHaveBeenCalled();
   });
 
+  it("draws an agent's own avatar and an app's own icon when they have one", async () => {
+    agents.current = [new Agent({ id: SHOP, name: 'helper', avatar: '🩺' })];
+    shop.app.icon = '🛒';
+    apps.current = [shop];
+    try {
+      mount();
+      await userEvent.setup().click(screen.getByTestId('top-nav-apps'));
+      expect(screen.getByTestId('top-nav-agent-helper').textContent).toContain('🩺');
+      expect(screen.getByTestId('top-nav-app-shop').textContent).toContain('🛒');
+    } finally {
+      shop.app.icon = null;
+    }
+  });
+
   describe('with one app', () => {
     beforeEach(() => {
       apps.current = [shop];

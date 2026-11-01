@@ -1,11 +1,16 @@
 import type { ReactNode } from 'react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Info } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import type { AppDisplay } from '@src/hooks/flow-hooks/useAppDisplay';
 import type { AppLifecycle } from './useAppLifecycle';
+import type { WebApp } from '@sdk';
+import { isHubOnly } from '@sdk/utils/hub-runtime';
+import { CommitInput } from '@src/components/assets/editor/app-profile/AppServingFields';
+import { WebAppIconPicker } from './WebAppIconPicker';
+import { useWebAppManifest } from './use-webapp-manifest';
 
 export interface AppInfo {
   display: Pick<AppDisplay, 'src' | 'runtime' | 'available' | 'endpoint'>;
@@ -46,6 +51,35 @@ export function appInfoRows({ display, lifecycle }: AppInfo): [ReactNode, string
   return rows.filter(([, value]) => value !== '');
 }
 
+/** The app's name and icon, edited in place — saved to its `webapp.json`. Mounted only while the panel is open. */
+function AppIdentity({ app }: { app: WebApp }) {
+  const { t } = useLingui();
+  const { content, save } = useWebAppManifest(app);
+  const readOnly = isHubOnly() || content.isLoading || !content.typedFields;
+  return (
+    <div className="mb-3 flex items-center gap-2 border-b pb-3" data-testid="webapp-info-identity">
+      <WebAppIconPicker
+        app={app}
+        disabled={readOnly}
+        onChange={(icon) => void save({ icon })}
+        testId="webapp-info-icon"
+        className="size-9 rounded-md border"
+        iconClassName="size-5"
+      />
+      <CommitInput
+        mono={false}
+        value={app.title ?? ''}
+        placeholder={app.name}
+        readOnly={readOnly}
+        onCommit={(title) => void save({ title: title || undefined })}
+        aria-label={t`App name`}
+        data-testid="webapp-info-name"
+        className="h-9 text-sm font-medium"
+      />
+    </div>
+  );
+}
+
 /** An (i) button showing everything known about the displayed app. */
 export function AppInfoPopover(info: AppInfo) {
   return (
@@ -56,6 +90,7 @@ export function AppInfoPopover(info: AppInfo) {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[32rem] max-w-[90vw] p-3" data-testid="webapp-info-panel">
+        {info.lifecycle.app && <AppIdentity app={info.lifecycle.app} />}
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
           {appInfoRows(info).map(([label, value], index) => (
             <div key={index} className="contents">

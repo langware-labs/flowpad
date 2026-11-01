@@ -136,6 +136,8 @@ class WebappManifestSpec(DataSpec):
     #: The app's name AND its folder name. One noun.
     name: str = ""
     title: str = ""
+    #: The app's icon: a lucide icon name or an emoji (what the icon picker stores). Empty = the type's icon.
+    icon: str = ""
     description: str = ""
     #: Dot-path ontology, same vocabulary as ``Artifact.kind``. What the app IS
     #: to whatever contains it: ``application.web.editor`` marks the app a
