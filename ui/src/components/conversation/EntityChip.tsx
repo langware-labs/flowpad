@@ -45,7 +45,6 @@ interface EntityChipProps {
   onClick?: () => void;
   /** Ignored for navigation: a click opens the entity in ITS OWN project (the loader
    *  places it). Kept so call sites need not change. */
-  projectId?: string | null;
   /** Tooltip text. Defaults to "Open <name>". */
   title?: string;
   /** Visual size — "chip" matches the conversation-toolbar buttons. Default "chip". */
@@ -241,7 +240,6 @@ interface ContextEntityChipProps {
   typeId: TypeId;
   inside?: { type: string; id: string };
   onClick?: () => void;
-  projectId?: string | null;
   title?: string;
   size?: 'chip' | 'inline';
   collapsed?: boolean;
@@ -261,7 +259,6 @@ export function ContextEntityChip({
   typeId,
   inside,
   onClick,
-  projectId,
   title,
   size,
   collapsed,
@@ -285,7 +282,6 @@ export function ContextEntityChip({
       row={data}
       inside={inside}
       onClick={onClick}
-      projectId={projectId}
       title={title}
       size={size}
       muted={notFound}

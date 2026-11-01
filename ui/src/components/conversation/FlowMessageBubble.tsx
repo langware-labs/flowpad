@@ -1037,7 +1037,6 @@ function ProjectMessageChip({
         <ContextEntityChip
           typeId={typeId}
           inside={{ type: 'conversation', id: conversationId }}
-          projectId={projectId}
           onClick={() => setReviewOpen(true)}
         />
       ) : (
@@ -1246,7 +1245,6 @@ export function MessageEntityChip({
                   ? () => setReviewOpen(true)
                   : undefined
           }
-          projectId={projectId}
         />
         {runButton}
         {valueLock}

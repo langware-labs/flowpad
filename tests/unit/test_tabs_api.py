@@ -20,6 +20,7 @@ from flow_sdk.builtin.tab import (
     Tab,
     _load_remote_targets,
     _populate_tab_target_fields,
+    _resolve_tab_projects,
     _serialize_row,
 )
 
@@ -120,6 +121,7 @@ async def test_tab_target_project_marks_a_guest_content_tab():
         ("markdown", doc_id): SimpleNamespace(project_id=other, remote=False),
         ("shell", shell_id): SimpleNamespace(project_id=other, remote=False),
     }
+    await _resolve_tab_projects([guest, shell], targets)
     await _populate_tab_target_fields([guest, shell], targets)
     assert guest.target_project_id == other
     assert shell.target_project_id is None

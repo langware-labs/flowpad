@@ -51,7 +51,6 @@ import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
-import { assetDocumentAtOwner } from './asset-document-owner';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
 import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
@@ -838,20 +837,15 @@ export class NavigationActions {
     return dock;
   }
 
-  /** Resolve on activation, then open using the same presentation as an agent show. */
+  /**
+   * Resolve on activation, then open the plain dock. A user click opens the target
+   * in ITS OWN project, never the clicker's: the loader owns placement (it rebases a
+   * document onto its owner before the tab is minted), and the backend places the
+   * new tab after the active one — the tab the link was clicked in.
+   */
   async openLink(link: string, source: LinkSource | null): Promise<void> {
-    const origin = this.here;
     try {
-      const [dock, tabs] = await Promise.all([this.resolveLinkDock(link, source), tabManager.listAll()]);
-      const anchor = tabForDockKey(tabs, origin.tabHash ?? '');
-      // A user click opens the target in ITS OWN project (rule 2), never the
-      // clicker's: a document is placed at its owner, anything else derives its
-      // project from its target when the tab is minted.
-      const placed = await presentDockTab((await assetDocumentAtOwner(dock)) ?? dock, {
-        afterTabId: anchor?.id ?? null,
-        parentTabId: anchor?.parent_tab_id ?? null,
-      });
-      this.openDock(placed);
+      this.openDock(await this.resolveLinkDock(link, source));
     } catch (error) {
       notifyLinkError(error);
     }

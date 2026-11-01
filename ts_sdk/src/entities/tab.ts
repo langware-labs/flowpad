@@ -4,9 +4,8 @@ import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
 import { dataContext } from '../FlowSync/context';
 import { ViewType } from '../utils/ui/view-types';
-import { TypeId } from '../models/TypeId';
+import { isValidEntityId, TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
-import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { normalizeRetiredDockPointer } from '../utils/ui/retired-views';
 import { normalizeWorldViewDockPointer } from '../worldview/dock-pointer';
@@ -222,8 +221,51 @@ export type TabProjectTarget = {
   workdir?: string | null;
 } | null;
 
-/** A content sub-pointer (an editor or wiki page) names ONE document, never a browse scope. */
-const CONTENT_SUB_POINTER = /^(editor|wiki)\//;
+/** A content sub-pointer (an editor or wiki page) names ONE document, never a browse
+ *  scope. Mirrors the backend's `_is_content_sub_pointer`. */
+export function isContentSubPointer(pointer: string | null | undefined): boolean {
+  return /^(editor|wiki)\//.test(pointer ?? '');
+}
+
+/**
+ * `[scopeKeyed, project]` read off a tab hash — the backend's `_pointer_scope_project`:
+ * a scope-keyed row (`assets|project:<id>`, `assets|all`, optionally `|@<host>`) belongs
+ * to its scope's project; `all` / `user` / `filter:…` are Global.
+ */
+function tabHashScopeProject(tabHash: string | null | undefined): [boolean, string | null] {
+  const hash = (tabHash ?? '').split('|@', 1)[0];
+  if (!hash.includes('|')) return [false, null];
+  const scope = hash.slice(hash.lastIndexOf('|') + 1);
+  if (scope === 'all' || scope === 'user' || scope.startsWith('filter:')) return [true, null];
+  if (scope.startsWith('project:')) return [true, validProjectId(scope.slice('project:'.length))];
+  return [false, null];
+}
+
+/** A project id named by a URL/pointer, or null when it cannot be one (the backend
+ *  also checks existence; the client only has the id's shape). */
+function validProjectId(id: string | null | undefined): string | null {
+  return id && isValidEntityId(id) ? id : null;
+}
+
+/**
+ * The asset's OWN project — `resolveTabProject`'s steps 2, 5, 6 (the loader's redirect
+ * target, the tab's `target_project_id`); mirrors the backend's `tab_owner_project`.
+ */
+async function tabOwnerProject(dock: IDockPointer, target: TabProjectTarget): Promise<string | null> {
+  const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
+  // 2
+  if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
+  // 5
+  const own = target?.project_id ?? target?.effective_project_id ?? null;
+  if (own) return own;
+  // 6 — an unminted file still sits inside a project folder.
+  for (const path of [dock.vfsPath?.machinePath, target?.cwd ?? target?.workdir]) {
+    if (!path) continue;
+    const byPath = await Project.getProjectByPath(path);
+    if (byPath) return byPath.id;
+  }
+  return null;
+}
 
 /**
  * The project a dock's tab belongs to — THE rule order, mirrored by the backend's
@@ -233,51 +275,43 @@ const CONTENT_SUB_POINTER = /^(editor|wiki)\//;
  *   2. Project target / landing     → that project
  *   3. presenting project in URL    → `/dock/project/<P>/…` (set only by `flow show`
  *                                     / presentation; a guest tab when ≠ the asset's)
- *   4. scope-keyed BROWSE view      → its pinned scope (list/folder, never an editor)
+ *   4. scope-keyed BROWSE row       → its scope's project (`all` → Global); an
+ *                                     editor/wiki sub-pointer is content, not browse
  *   5. target entity                → its (effective) project
  *   6. path (vfs, then cwd/workdir) → the deepest project mount holding it
- *   7. web page                     → the active project; else null (global)
+ *   7. the project it was opened in (the active project) — only for a target-less
+ *      dock, a target that no longer resolves, or a plain shell; an existing
+ *      projectless target is Global.
  *
- * `opts.ownerOnly` skips 1–4: the asset's OWN project (the loader's redirect target,
- * the tab's `target_project_id`). Cache-first: `getProjectByPath` reads the cached
- * project list, `target` is passed in already resolved.
+ * `opts.ownerOnly` answers steps 2, 5, 6 only (`tabOwnerProject`). Cache-first:
+ * `getProjectByPath` reads the cached project list, `target` is passed in resolved.
  */
 export async function resolveTabProject(
   dock: IDockPointer,
   target: TabProjectTarget,
   opts: { ownerOnly?: boolean } = {},
 ): Promise<string | null> {
+  if (opts.ownerOnly) return tabOwnerProject(dock, target);
   const targetTypeId = dock.targetTypeId ?? target?.typeId ?? null;
-  const scope = dockOptionsToScopeFilter(dock.options);
-  if (!opts.ownerOnly) {
-    // 1
-    if (dock.options?.providerProject && dock.options?.consumerProject) return dock.options.consumerProject;
-    // 2
-    if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
-    // 3
-    if (dock.viewType === ViewType.PROJECT && dock.pointer) {
-      const slash = dock.pointer.indexOf('/');
-      if (slash > 0) return dock.pointer.slice(0, slash);
-    }
-    // 4 — a target-less browse surface; an editor/wiki sub-pointer is content.
-    const browse = !targetTypeId && !target && !CONTENT_SUB_POINTER.test(dock.pointer ?? '');
-    if (browse && scope?.mode === 'project' && scope.activeProjectId) return scope.activeProjectId;
+  // 1
+  const consumer = dock.options?.providerProject ? validProjectId(dock.options.consumerProject) : null;
+  if (consumer) return consumer;
+  // 2
+  if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
+  // 3
+  if (dock.viewType === ViewType.PROJECT && dock.pointer) {
+    const presenting = validProjectId(dock.pointer.split('/', 1)[0]);
+    if (presenting) return presenting;
   }
-  // 5
-  const own = target?.effective_project_id ?? target?.project_id ?? null;
-  if (own) return own;
-  if (opts.ownerOnly && targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
-  // 6 — an unminted file still sits inside a project folder.
-  for (const path of [dock.vfsPath?.machinePath, target?.cwd ?? target?.workdir]) {
-    if (!path) continue;
-    const byPath = await Project.getProjectByPath(path);
-    if (byPath) return byPath.id;
-  }
-  // 7 — a bare web page belongs to the project it is opened in.
-  if (!opts.ownerOnly && !target && !scope && dock.viewType === ViewType.WEB_APP) {
-    return dataContext.project?.id ?? null;
-  }
-  return null;
+  // 4
+  const [scopeKeyed, scopeProject] = tabHashScopeProject(dock.tabHash);
+  if (scopeKeyed && !isContentSubPointer(dock.pointer)) return scopeProject;
+  // 5, 6
+  const owner = await tabOwnerProject(dock, target);
+  if (owner) return owner;
+  // 7
+  const takesOpenedIn = !targetTypeId || !target || targetTypeId.type === EntityTypes.Shell;
+  return takesOpenedIn ? (dataContext.project?.id ?? null) : null;
 }
 
 @registerEntity

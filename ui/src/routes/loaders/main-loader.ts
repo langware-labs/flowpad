@@ -78,29 +78,6 @@ async function repairUnsatisfiableScope(dock: DockPointer, requestPath: string):
 }
 
 /**
- * State an unscoped Assets DOCUMENT URL's project in the URL: redirect it to the
- * same document rebased onto its owner project (`/dock/project/<owner>/…`).
- *
- * Assets is scope-keyed: every sub-pointer of one scope folds into ONE tab, and an
- * unscoped one into the global `assets|all` tab, whose project is null — so the
- * project-filtered strip hides the very tab on screen ("no selected tab": a typeid
- * asset URL never got a scope, 2026-11-01; an `.html` file, 2026-10-02). Rebased,
- * the document is its own per-document tab in its owner's strip.
- *
- * The owner is `resolveTabProject`'s owner steps (5–6): the target entity's project,
- * else the deepest project mount holding its path (an unminted file too). Both reads
- * are cache-first. Runs before any tab write (I2). Browse sub-pointers (list/folder),
- * scoped, hosted and already-rebased URLs are left alone; a document no project
- * owns stays global.
- */
-async function rebaseAssetDocumentOntoOwner(dock: DockPointer, requestPath: string): Promise<void> {
-  const owned = await assetDocumentAtOwner(dock);
-  if (!owned) return;
-  // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw redirect(owned.toUrl(requestPath));
-}
-
-/**
  * Ensure compute node is loaded for the current project.
  * The route loader owns project selection; initSdk only caches the default.
  */
@@ -287,7 +264,12 @@ async function loadAgentAppBody(args: LoaderArgs) {
       // for a URL the loader is about to leave (I2) — an Assets file takes its
       // owner project's document tab; a shell URL its scope, a dead process's sibling, or the
       // owning process's scoped URL.
-      await rebaseAssetDocumentOntoOwner(dockForSetup, requestUrl.pathname);
+      // An unscoped Assets DOCUMENT URL states its owner project in the URL: Assets
+      // is scope-keyed, so unscoped it folds into the global `assets|all` tab, which
+      // the project-filtered strip hides ("no selected tab", 2026-11-01).
+      const ownedDocument = await assetDocumentAtOwner(dockForSetup);
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      if (ownedDocument) throw redirect(ownedDocument.toUrl(requestUrl.pathname));
       if (DockPointer.isSessionView(dockForSetup.viewType)) {
         await resolveShellRoute(dockForSetup.pointer, requestUrl.pathname, processRouteCarry(dockForSetup));
       }
