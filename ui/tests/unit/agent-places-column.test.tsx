@@ -4,9 +4,12 @@
  * deployment's own page nested in the agent by navigating.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent, type AgentPlace } from '@sdk';
+import type { ActivityProgressSpec, ActivityState } from '@sdk/activity';
+import { notify } from '@src/notifications';
+import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn(), hub: false }));
 const { AGENT_URL } = vi.hoisted(() => ({ AGENT_URL: '/dock/assets/editor/agent/typeid/agent-33333333-3333-4333-8333-333333333333' }));
@@ -19,6 +22,10 @@ vi.mock('@sdk/utils/hub-runtime', () => ({ isHubOnly: () => nav.hub }));
 vi.mock('@src/components/assets/editor/agent-profile/NewDeploymentDialog', () => ({
   NewDeploymentDialog: () => <div data-testid="mock-new-deployment" />,
 }));
+vi.mock('@src/notifications', () => ({ notify: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
+// Watching registers this connection with the backend; there is none here.
+const { useWatch } = vi.hoisted(() => ({ useWatch: vi.fn() }));
+vi.mock('@sdk/react/hooks', async (importOriginal) => ({ ...(await importOriginal<object>()), useWatch }));
 
 import { AgentPlacesColumn } from '@src/components/assets/editor/agent-profile/AgentPlacesColumn';
 
@@ -43,9 +50,19 @@ function place(id: string, isLocal: boolean, extra: Partial<AgentPlace> = {}): A
   };
 }
 
+/** One node of the agent's `deploy` activity, as the app reports it. */
+const node = (id: string, name: string, state: ActivityState, message: string | null, children: ActivityProgressSpec[] = []) =>
+  ({
+    activity_id: id, subject_entity: 'agent-33333333-3333-4333-8333-333333333333', path: name === 'deploy' ? name : `deploy/${name}`,
+    name, label: name, state, message, done: 0, skipped: 0, errors_count: 0, errors: [], counters: {}, children, seq: 1,
+  }) as ActivityProgressSpec;
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.mocked(notify.warning).mockClear();
+  vi.mocked(notify.error).mockClear();
+  __resetActivityStoreForTest();
   nav.openDock.mockReset();
   nav.hub = false;
 });
@@ -92,6 +109,60 @@ describe('Deployments', () => {
     expect(screen.queryByTestId(`agent-place-row-${CLOUD_ID}`)).toBeNull();
     expect(screen.queryByTestId(`agent-place-row-${LOCAL_ID}`)).toBeNull();
     expect(screen.queryByTestId('agent-new-deployment')).toBeNull();
+  });
+
+  it('watches the agent while open, so a deploy’s steps arrive after its dialog has closed', async () => {
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    expect(useWatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agent', id: '33333333-3333-4333-8333-333333333333' }),
+      true,
+    );
+  });
+
+  it('says once, however often the column mounts, what a deploy goes ahead without — and not for a finished one', async () => {
+    const deploy = (id: string, state: ActivityState) =>
+      node(id, 'deploy', state, null, [node(id, 'readiness', 'completed', 'No LLM funding for brief: limit exceeded')]);
+
+    act(() => handleActivitySnapshot(deploy('running-deploy', 'running')));
+    for (let mounts = 0; mounts < 3; mounts++) {
+      renderColumn([]);
+      await screen.findByTestId('agent-places-empty');
+      cleanup();
+    }
+    expect(notify.warning).toHaveBeenCalledTimes(1);
+    expect(notify.warning).toHaveBeenCalledWith(expect.objectContaining({ message: 'No LLM funding for brief: limit exceeded' }));
+
+    act(() => handleActivitySnapshot(deploy('finished-deploy', 'completed')));
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    expect(notify.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it('a deploy seen running that then fails says so once — not one that completes, nor one already over', async () => {
+    // A later report of the same deploy carries a higher seq: the store keeps only the newest.
+    const machine = (id: string, state: ActivityState, message: string | null = null, seq = 1) =>
+      ({ ...node(id, 'deploy', state, message, [node(id, 'machine', state, message)]), seq });
+
+    act(() => handleActivitySnapshot(machine('failing-deploy', 'running')));
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    act(() => handleActivitySnapshot(machine('failing-deploy', 'failed', 'the provider is out of machines', 2)));
+    cleanup();
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    expect(notify.error).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Could not deploy', message: 'the provider is out of machines' }),
+    );
+
+    act(() => handleActivitySnapshot(machine('good-deploy', 'running')));
+    act(() => handleActivitySnapshot(machine('good-deploy', 'completed', null, 2)));
+    cleanup();
+    act(() => handleActivitySnapshot(machine('old-deploy', 'failed', 'long ago')));
+    renderColumn([]);
+    await screen.findByTestId('agent-places-empty');
+    expect(notify.error).toHaveBeenCalledTimes(1);
   });
 
   it('an agent deployed nowhere says so — nothing is created by looking at it', async () => {

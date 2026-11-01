@@ -8,12 +8,14 @@ import json
 import pytest
 
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_cloud_deploy import funding_warnings, run_deployment_steps
 from flow_sdk.builtin.credential_service import CredentialError, delete_credential, save_credential, use_mine
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.readiness import NotReady, readiness
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.secrets import SecretStore
 from tests.utils import fake_hub_store
+from tests.utils.deploy_run import deploy_ended
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -66,17 +68,18 @@ async def test_the_deploy_is_refused_until_use_mine_fills_the_store(home, projec
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)  # publishing is the git path's; not under test here
 
     with pytest.raises(NotReady) as refused:
-        await agent.deploy_to_cloud("user-1", "production", provider="e2b")
+        await run_deployment_steps(agent, "user-1", "production", provider="e2b")
     assert [(i.requirement.name, i.remedy) for i in refused.value.readiness.items if i.status == "missing"] == [
         ("stripe", "use_mine")
     ]
     assert hub.deploys == [], "no machine is paid for"
 
     deployment = await agent.plan_deployment("production", provider="e2b")
+
     assert await use_mine(str(deployment.id)) == {"copied": ["STRIPE_KEY"], "not_here": [], "hub_funded": []}
     assert hub.values[str(deployment.id)] == {"STRIPE_KEY": VALUE}
 
-    await agent.deploy_to_cloud("user-1", "production", provider="e2b")
+    await deploy_ended(agent, "user-1", "production", provider="e2b")
     assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": ["STRIPE_KEY"]}]
 
 
@@ -208,7 +211,7 @@ async def test_use_mine_never_copies_an_llm_provider_key(home, project, hub):
     assert "OPENROUTER_API_KEY" not in hub.values.get(str(deployment.id), {})
 
 
-async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_not_ready_and_says_which_limit(home, project, hub):
+async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_still_ready_and_says_which_limit(home, project, hub):
     agent = await _agent(project)
     await _stripe_here(project)
     deployment = await agent.plan_deployment("production", provider="e2b")
@@ -224,7 +227,9 @@ async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_not_ready_and_sa
     (item,) = [i for i in funded.items if i.requirement.kind == "funding"]
     assert funded.ready and item.status == "verified" and item.where == "cloud-agent tokens (its token allocation)"
     (item,) = [i for i in spent.items if i.requirement.kind == "funding"]
-    assert not spent.ready and item.status == "missing" and "cost_usd_per_day" in item.fix
+    # Missing, and said — but funding never refuses a deploy: the placement runs, its turns wait for the limit.
+    assert spent.ready and item.status == "missing" and not item.blocks and "cost_usd_per_day" in item.fix
+    assert funding_warnings(agent, spent) == [f"No LLM funding for cloud-agent: {item.fix}"]
     assert "funding" not in {r.kind for r in agent.requirements or []}, "asked at readiness, never written to the agent"
 
 
@@ -233,6 +238,6 @@ async def test_a_deploy_naming_no_provider_leaves_the_choice_to_the_hub(home, pr
     await agent.save()
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)
 
-    await agent.deploy_to_cloud("user-1", "production")
-    await agent.deploy_to_cloud("user-1", "production", provider="gcp_vm")
+    await deploy_ended(agent, "user-1", "production")
+    await deploy_ended(agent, "user-1", "production", provider="gcp_vm")
     assert [d["provider"] for d in hub.deploys] == [None, "gcp_vm"]

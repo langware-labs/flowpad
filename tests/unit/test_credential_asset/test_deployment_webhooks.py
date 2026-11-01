@@ -10,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_cloud_deploy import run_deployment_steps
 from flow_sdk.builtin.credential_service import drop_folder, place_values, save_credential, use_mine
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
@@ -20,6 +21,7 @@ from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec,
 from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 from flow_sdk.sources.families import RecordSource
 from tests.utils import fake_hub_store
+from tests.utils.deploy_run import deploy_ended
 from tests.utils.deployments import make_deployment
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -93,10 +95,10 @@ async def test_the_hub_stores_the_url_so_use_mine_never_copies_this_computers(ho
     monkeypatch.setattr(Agent, "ensure_on_hub", _published)
 
     with pytest.raises(NotReady):
-        await agent.deploy_to_cloud("user-1", "production", provider="e2b")
+        await run_deployment_steps(agent, "user-1", "production", provider="e2b")
     deployment = await agent.plan_deployment("production", provider="e2b")
     copied = await use_mine(str(deployment.id))
-    await agent.deploy_to_cloud("user-1", "production", provider="e2b")
+    await deploy_ended(agent, "user-1", "production", provider="e2b")
 
     assert copied["copied"] == ["POLLED_KEY", "PUSHED_KEY"], "the store already holds the webhook URL"
     assert hub.values[str(deployment.id)]["PUSHED_WEBHOOK_URL"] == hub.webhook_url("hook-pushed")
