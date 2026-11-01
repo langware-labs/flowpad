@@ -70,15 +70,6 @@ export function AssetsNavigator() {
         confirmLabel={t`Create`}
         onConfirm={(name) => void m.handleNewConfirm(name)}
       />
-      <InputDialog
-        open={m.newFolderDialogOpen}
-        onOpenChange={m.setNewFolderDialogOpen}
-        title={t`New Folder`}
-        description={t`Create a folder in ${m.newFolderTarget?.label ?? 'this folder'}.`}
-        placeholder={t`Folder name`}
-        confirmLabel={t`Create`}
-        onConfirm={(name) => void m.handleNewFolderConfirm(name)}
-      />
       {m.dependencyDialogs}
       {m.fileOpsDialogs}
     </>

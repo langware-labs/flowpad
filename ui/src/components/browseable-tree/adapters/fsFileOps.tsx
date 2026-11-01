@@ -1,5 +1,16 @@
 import { t } from '@lingui/core/macro';
-import { fsManager, fsStore, TypeId, VFSPath } from '@sdk';
+import {
+  copyToClipboard,
+  dataContext,
+  downloadFile,
+  FSRef,
+  fsManager,
+  fsStore,
+  openTerminalFromComputeNode,
+  TypeId,
+  VFSPath,
+} from '@sdk';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import {
   ClipboardPaste,
   Copy,
@@ -15,7 +26,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { DockPointer, normalizeRel } from '@src/navigation/DockPointer';
+import { normalizeRel, type DockPointer } from '@src/navigation/DockPointer';
 import { notify } from '@src/notifications';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import type {
@@ -60,6 +71,10 @@ export interface FsOpsCtx {
   filePointerFor: (path: VFSPath) => DockPointer;
   /** Absolute machine path of `rel`. Defaults to the VFS mapping. */
   machinePathFor?: (rel: string) => string;
+  /** The inverse: `rel` of a machine path, or null when this tree can't
+   *  reach it. Defaults to stripping the leading slash when the entity maps
+   *  paths one-to-one onto the machine (the local computer). */
+  relForMachinePath?: (machinePath: string) => string | null;
   /** Runs after any change (e.g. drop a cached walk, reindex). */
   afterChange?: () => void | Promise<void>;
   host: FsOpsHost;
@@ -72,12 +87,19 @@ export interface FsItemRef {
   label: string;
 }
 
+/** A path as it travels between trees (clipboard, drag): by machine path,
+ *  because two trees can name the same disk through different entities. */
+interface FsMachineItem {
+  machine: string;
+  isDir: boolean;
+  label: string;
+}
+
 // ── shared clipboard ────────────────────────────────────────────────────────
 // One per app, like the OS's: cut in one folder, paste in another tree.
 interface FsClipboard {
   mode: 'copy' | 'cut';
-  typeId: string;
-  items: FsItemRef[];
+  items: FsMachineItem[];
 }
 let clipboard: FsClipboard | null = null;
 
@@ -133,13 +155,54 @@ function machinePath(ctx: FsOpsCtx, rel: string): string {
   return ctx.machinePathFor ? ctx.machinePathFor(rel) : VFSPath.fromTypeId(ctx.locatorTypeId, normalizeRel(rel)).machinePath;
 }
 
-/** Re-list the folders that changed, then run the ctx's own follow-up. */
+/** `rel` on this tree's entity of a machine path, or null if unreachable. */
+export function relFor(ctx: FsOpsCtx, machine: string): string | null {
+  if (ctx.relForMachinePath) return ctx.relForMachinePath(machine);
+  // One-to-one entity (the local computer): its rel is the path sans slash.
+  return machinePath(ctx, 'probe') === '/probe' ? normalizeRel(machine) : null;
+}
+
+const toMachine = (ctx: FsOpsCtx, i: FsItemRef): FsMachineItem => ({
+  machine: machinePath(ctx, i.rel),
+  isDir: i.isDir,
+  label: i.label,
+});
+
+/** Machine items → this tree's refs; null when any is out of reach. */
+function toRefs(ctx: FsOpsCtx, items: FsMachineItem[]): FsItemRef[] | null {
+  const out: FsItemRef[] = [];
+  for (const i of items) {
+    const rel = relFor(ctx, i.machine);
+    if (rel === null) return null;
+    out.push({ rel, isDir: i.isDir, label: i.label });
+  }
+  return out;
+}
+
+// ── change signal ───────────────────────────────────────────────────────────
+// The same folder can show in several trees (Files and Documents both list a
+// project's docs). A change made through one tree tells the others, by the
+// folders' machine paths, so every copy re-lists.
+type FsChangeListener = (machinePaths: string[]) => void;
+const changeListeners = new Set<FsChangeListener>();
+
+/** Hear about folders changed through any tree. Returns the unsubscribe. */
+export function onFsFoldersChanged(fn: FsChangeListener): () => void {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+/** Re-list the folders that changed — in this tree and in any other tree
+ *  showing them — then run the ctx's own follow-up. */
 async function changed(ctx: FsOpsCtx, dirs: string[]): Promise<void> {
   const store = fsStore.getState();
-  for (const d of new Set(dirs.map(normalizeRel))) {
+  const unique = [...new Set(dirs.map(normalizeRel))];
+  for (const d of unique) {
     store.invalidate(ctx.typeId, abs(d), 'browse');
     refreshNode(ctx.dirNodeId(d));
   }
+  const paths = unique.map((d) => machinePath(ctx, d));
+  changeListeners.forEach((fn) => fn(paths));
   await ctx.afterChange?.();
 }
 
@@ -198,13 +261,15 @@ export async function renameItem(ctx: FsOpsCtx, item: FsItemRef, rawName: string
   }
 }
 
-export async function deleteItems(ctx: FsOpsCtx, items: FsItemRef[]): Promise<void> {
+export async function deleteItems(ctx: FsOpsCtx, items: FsItemRef[], opts: { confirm?: boolean } = {}): Promise<void> {
   const targets = items.filter((i) => normalizeRel(i.rel) !== normalizeRel(ctx.anchor));
   if (!targets.length) return;
-  const ok = await ctx.host.confirm(
+  const ok =
+    opts.confirm === false ||
+    (await ctx.host.confirm(
     targets.length > 1 ? t`Delete ${targets.length} items?` : t`Delete "${targets[0].label}"?`,
-    t`This permanently deletes it from disk. This cannot be undone.`,
-  );
+      t`This permanently deletes it from disk. This cannot be undone.`,
+    ));
   if (!ok) return;
   const failed: string[] = [];
   for (const item of targets) {
@@ -289,7 +354,7 @@ export async function duplicateItems(ctx: FsOpsCtx, items: FsItemRef[]): Promise
 
 export function setClipboard(ctx: FsOpsCtx, mode: 'copy' | 'cut', items: FsItemRef[]): void {
   if (!items.length) return;
-  clipboard = { mode, typeId: ctx.typeId.toString(), items };
+  clipboard = { mode, items: items.map((i) => toMachine(ctx, i)) };
   notify.success({
     title:
       mode === 'cut'
@@ -302,14 +367,15 @@ export function setClipboard(ctx: FsOpsCtx, mode: 'copy' | 'cut', items: FsItemR
   });
 }
 
-/** Something on the clipboard this tree can paste (same VFS entity). */
+/** Something on the clipboard this tree can reach. */
 export function canPaste(ctx: FsOpsCtx): boolean {
-  return !!clipboard && clipboard.typeId === ctx.typeId.toString();
+  return !!clipboard && toRefs(ctx, clipboard.items) !== null;
 }
 
 export async function paste(ctx: FsOpsCtx, dir: string): Promise<void> {
-  if (!clipboard || !canPaste(ctx)) return;
-  const { mode, items } = clipboard;
+  const items = clipboard && toRefs(ctx, clipboard.items);
+  if (!clipboard || !items) return;
+  const { mode } = clipboard;
   const done = await transferItems(ctx, items, dir, mode === 'cut' ? 'move' : 'copy');
   // A cut is spent once pasted; a copy can be pasted again.
   if (mode === 'cut' && done) clipboard = null;
@@ -351,19 +417,10 @@ export function pickAndUpload(ctx: FsOpsCtx, dir: string): void {
   input.click();
 }
 
-function saveBlob(blob: Blob, name: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
 export async function downloadItem(ctx: FsOpsCtx, item: FsItemRef): Promise<void> {
   try {
-    if (item.isDir) saveBlob(await fsManager.downloadZip(ctx.typeId, abs(item.rel)), `${item.label}.zip`);
-    else saveBlob((await fsManager.download(ctx.typeId, abs(item.rel), { asBlob: true })) as Blob, item.label);
+    if (item.isDir) downloadFile({ name: `${item.label}.zip`, content: await fsManager.downloadZip(ctx.typeId, abs(item.rel)) });
+    else downloadFile({ name: item.label, content: (await fsManager.download(ctx.typeId, abs(item.rel), { asBlob: true })) as Blob });
   } catch (err) {
     fail(t`Failed to download`, err);
   }
@@ -376,24 +433,29 @@ export async function copyPaths(ctx: FsOpsCtx, items: FsItemRef[], relative: boo
     const r = normalizeRel(i.rel);
     return anchor && r.startsWith(`${anchor}/`) ? r.slice(anchor.length + 1) : r;
   });
-  try {
-    await navigator.clipboard.writeText(paths.join('\n'));
-    notify.success({ title: paths.length > 1 ? t`Copied ${paths.length} paths` : t`Copied path` });
-  } catch (err) {
-    fail(t`Failed to copy path`, err);
-  }
+  await copyToClipboard(paths.join('\n'));
+  notify.success({ title: paths.length > 1 ? t`Copied ${paths.length} paths` : t`Copied path` });
 }
 
+/** Show the item selected in Finder / Explorer (the machine's own file manager). */
 export async function revealItem(ctx: FsOpsCtx, item: FsItemRef): Promise<void> {
   try {
-    await fsManager.open(ctx.typeId, abs(item.rel), { reveal: true });
+    await new FSRef(machinePath(ctx, item.rel), LOCAL_COMPUTE_NODE).open({ select: true });
   } catch (err) {
     fail(t`Failed to reveal`, err);
   }
 }
 
-export function openInTerminal(ctx: FsOpsCtx, dir: string): void {
-  ctx.host.navigate(DockPointer.forShell(crypto.randomUUID(), { cwd: machinePath(ctx, dir) }));
+/** Open the machine's terminal app in `dir` — the same opener the document
+ *  tab's "Open in terminal" uses. */
+export async function openInTerminal(ctx: FsOpsCtx, dir: string): Promise<void> {
+  const computeNodeId = dataContext.computeNode?.id;
+  if (!computeNodeId) return void notify.error({ title: t`No computer to open a terminal on` });
+  try {
+    await openTerminalFromComputeNode(computeNodeId, '', machinePath(ctx, dir));
+  } catch (err) {
+    fail(t`Failed to open terminal`, err);
+  }
 }
 
 // ── row decoration ──────────────────────────────────────────────────────────
@@ -407,46 +469,43 @@ function refsOf(rows: Browseable[] | undefined, fallback: FsItemRef): FsItemRef[
   return out.length ? out : [fallback];
 }
 
-/** Drag payload carried by a decorated row. */
+/** Drag payload carried by a decorated row that had none of its own. */
 export interface FsOpsDragItem extends BrowseableDragData {
   kind: 'fs-ops-item';
-  typeId: string;
-  items: FsItemRef[];
+  items: FsMachineItem[];
 }
 
-/** The paths a drag carries, and the entity they live on when the payload
- *  says (an `fs-item` from the Files tree does not — it is always the tree's
- *  own compute node). Understands every filesystem payload in the app, so a
- *  row dragged from the Files table, the Files tree or the Documents tree can
- *  land on any decorated folder. */
-function dragItems(data: BrowseableDragData): { typeId?: string; items: FsItemRef[] } | null {
-  if (data.kind === 'fs-ops-item' && Array.isArray(data.items)) {
-    return { typeId: String(data.typeId), items: data.items as FsItemRef[] };
-  }
+/** The machine paths a drag carries. Understands every filesystem payload in
+ *  the app, so a row dragged from the Files table, the Files tree or the
+ *  Documents tree can land on any decorated folder. */
+function dragItems(data: BrowseableDragData): FsMachineItem[] | null {
+  if (data.kind === 'fs-ops-item' && Array.isArray(data.items)) return data.items as FsMachineItem[];
   if (data.kind === 'fs-item' && typeof data.relPath === 'string') {
-    // A multi-row drag lists every entry; a single-row drag is the row itself.
+    // Files-tree rows live on the local computer: rel is the path sans slash.
     const entries = (Array.isArray(data.items) && data.items.length ? data.items : [data]) as {
       relPath: string;
       isDir: boolean;
       label: string;
     }[];
-    return { items: entries.map((e) => ({ rel: e.relPath, isDir: !!e.isDir, label: e.label })) };
+    return entries.map((e) => ({ machine: `/${normalizeRel(e.relPath)}`, isDir: !!e.isDir, label: e.label }));
   }
-  if ((data.kind === 'markdown-file' || data.kind === 'markdown-folder') && typeof data.relPath === 'string') {
-    return {
-      typeId: typeof data.typeid === 'string' ? data.typeid : undefined,
-      items: [{ rel: data.relPath, isDir: data.kind === 'markdown-folder', label: data.label }],
-    };
+  if ((data.kind === 'markdown-file' || data.kind === 'markdown-folder') && typeof data.absPath === 'string') {
+    return [{ machine: data.absPath, isDir: data.kind === 'markdown-folder', label: data.label }];
   }
   return null;
 }
 
-/** Can a drop of `data` land in `dir`? Same entity, not into itself, not
+/** The drag as this tree's refs, or null when it can't take it. */
+function dropRefs(ctx: FsOpsCtx, data: BrowseableDragData): FsItemRef[] | null {
+  const items = dragItems(data);
+  return items ? toRefs(ctx, items) : null;
+}
+
+/** Can a drop of `data` land in `dir`? Reachable, not into itself, not
  *  where it already is. */
 export function canDropInto(ctx: FsOpsCtx, dir: string, data: BrowseableDragData): boolean {
-  const drag = dragItems(data);
-  if (!drag || (drag.typeId && drag.typeId !== ctx.typeId.toString())) return false;
-  return drag.items.every((i) => !(i.isDir && isWithin(dir, i.rel)) && parentRel(i.rel) !== normalizeRel(dir));
+  const refs = dropRefs(ctx, data);
+  return !!refs && refs.every((i) => !(i.isDir && isWithin(dir, i.rel)) && parentRel(i.rel) !== normalizeRel(dir));
 }
 
 type Decor = Pick<
@@ -476,7 +535,6 @@ export function fsRowDecor(ctx: FsOpsCtx, item: FsItemRef, opts: { isTop?: boole
   const top = !!opts.isTop;
   const dir = isDir ? rel : parentRel(rel);
   const key = `fs-ops:${ctx.typeId.toString()}:${normalizeRel(rel)}`;
-  const pasteDisabled = () => !canPaste(ctx);
   const many = (rows?: Browseable[]) => refsOf(rows, item);
 
   const rename: ToolbarAction = {
@@ -514,7 +572,7 @@ export function fsRowDecor(ctx: FsOpsCtx, item: FsItemRef, opts: { isTop?: boole
   // toolbar's delete arms on the first click, so it needs no dialog.
   const toolbar: ToolbarAction[] = [
     ...(isDir ? [newFileAction, newFolderAction] : []),
-    ...(top ? [] : [rename, { ...del, run: () => deleteNoConfirm(ctx, [item]) }]),
+    ...(top ? [] : [rename, { ...del, run: () => deleteItems(ctx, [item], { confirm: false }) }]),
   ];
 
   const contextMenu = (): ToolbarAction[] => {
@@ -542,7 +600,7 @@ export function fsRowDecor(ctx: FsOpsCtx, item: FsItemRef, opts: { isTop?: boole
         label: t`Paste`,
         shortcut: '⌘V',
         separatorBefore: top,
-        disabled: pasteDisabled,
+        disabled: () => !canPaste(ctx),
         run: () => paste(ctx, dir),
       });
     }
@@ -600,24 +658,18 @@ export function fsRowDecor(ctx: FsOpsCtx, item: FsItemRef, opts: { isTop?: boole
         },
     dragData: top
       ? undefined
-      : ({ kind: 'fs-ops-item', id: key, label: item.label, typeId: ctx.typeId.toString(), items: [item] } satisfies FsOpsDragItem),
+      : ({ kind: 'fs-ops-item', id: key, label: item.label, items: [toMachine(ctx, item)] } satisfies FsOpsDragItem),
     ...(isDir
       ? {
           canDrop: (data: BrowseableDragData) => canDropInto(ctx, rel, data),
           onDrop: async (data: BrowseableDragData, o?: { copy: boolean }) => {
-            const drag = dragItems(data);
-            if (drag) await transferItems(ctx, drag.items, rel, o?.copy ? 'copy' : 'move');
+            const refs = dropRefs(ctx, data);
+            if (refs) await transferItems(ctx, refs, rel, o?.copy ? 'copy' : 'move');
           },
           onExternalFilesDrop: (entries: DroppedFileEntry[]) => uploadInto(ctx, rel, entries),
         }
       : { downloadUrl: absoluteUrl(fsManager.getDownloadUrl(ctx.typeId, abs(rel))) }),
   };
-}
-
-/** The toolbar's delete is already confirmed by its two-click arm. */
-async function deleteNoConfirm(ctx: FsOpsCtx, items: FsItemRef[]): Promise<void> {
-  const host: FsOpsHost = { ...ctx.host, confirm: () => Promise.resolve(true) };
-  await deleteItems({ ...ctx, host }, items);
 }
 
 function absoluteUrl(url: string): string {

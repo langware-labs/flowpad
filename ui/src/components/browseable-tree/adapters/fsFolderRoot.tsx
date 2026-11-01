@@ -9,7 +9,32 @@ import type { ScopeFilter } from '@src/lib/scope-filter';
 import type { Browseable, BrowseableDragData, BrowseableRoot } from '@src/components/browseable-tree/types';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
-import { withFsOps, type FsOpsCtx, type FsOpsHost } from './fsFileOps';
+import {
+  onFsFoldersChanged,
+  relFor,
+  withFsOps,
+  type FsOpsCtx,
+  type FsOpsHost,
+} from './fsFileOps';
+import { refreshNode } from '@src/components/browseable-tree/refresh-store';
+
+/** Entities whose Files-tree folders already re-list on a change made in
+ *  another tree (one listener per entity, for the app's lifetime). */
+const _listening = new Set<string>();
+function refreshOnForeignChanges(ctx: FsOpsCtx): void {
+  const key = ctx.typeId.toString();
+  if (_listening.has(key)) return;
+  _listening.add(key);
+  onFsFoldersChanged((paths) => {
+    for (const p of paths) {
+      const rel = relFor(ctx, p);
+      if (rel === null) continue;
+      fsStore.getState().invalidate(ctx.typeId, `/${rel}`, 'browse');
+      refreshNode(fsFolderNodeId(ctx.typeId, rel));
+      refreshNode(fsRootNodeId(ctx.typeId, rel));
+    }
+  });
+}
 
 /**
  * fsFolderRoot — a real-filesystem browseable root.
@@ -361,6 +386,7 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
       filePointerFor: ctx.filePointerFor ?? ctx.pointerFor,
       host: deps.fileOps,
     };
+    refreshOnForeignChanges(ctx.ops);
   }
 
   const root: BrowseableRoot = {

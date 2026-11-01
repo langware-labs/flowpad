@@ -29,6 +29,16 @@ import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection'
 import { useOpenTabHashes } from '@src/tabs/use-tab-manager';
 import { RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
 
+/** The row that last had keyboard focus in this tree. A refresh can
+ *  re-create that row (a list re-loads, a section appears above it), which
+ *  drops focus to the page; the re-created row takes it back so F2 / Delete /
+ *  ⌘C still reach it. Only on re-creation — a row that merely re-renders never
+ *  takes focus from wherever the user moved it. */
+const KeyRowContext = React.createContext<{ current: { id: string; at: number } | null }>({ current: null });
+/** Only a re-creation soon after the row was focused takes focus back; later,
+ *  a blurred page must not hand Delete to a row the user has moved away from. */
+const KEY_ROW_REFOCUS_MS = 2000;
+
 /** Does this row show the item the URL has open? */
 function rowMatchesActive(
   node: Browseable,
@@ -104,6 +114,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   // Set of open-tab identities → rows backed by an open tab stay bright, the rest
   // dim (see BrowseableRow). Subscribed once here, passed down through the tree.
   const openTabHashes = useOpenTabHashes();
+  const keyRowRef = useRef<{ id: string; at: number } | null>(null);
   const treeElementRef = useRef<HTMLDivElement | null>(null);
   const lastResolvedRef = useRef<string | null>(null);
   const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
@@ -270,6 +281,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
         </div>
       )}
       <div className="flex-1 space-y-0.5 overflow-auto p-1">
+        <KeyRowContext.Provider value={keyRowRef}>
         {levelFooter?.('', mirrored)}
         {roots.map((root) => (
           <BrowseableRow
@@ -295,6 +307,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             onDragEnd={() => setDragData(null)}
           />
         ))}
+        </KeyRowContext.Provider>
       </div>
     </div>
   );
@@ -378,6 +391,22 @@ function BrowseableRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const canRename = !!node.onRename && !node.content;
+  const keyRow = useContext(KeyRowContext);
+  const takesKeys = !!(node.keyActions || canRename);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const k = keyRow.current;
+    if (
+      takesKeys &&
+      k?.id === node.id &&
+      Date.now() - k.at < KEY_ROW_REFOCUS_MS &&
+      document.activeElement === document.body
+    ) {
+      rowRef.current?.focus({ preventScroll: true });
+    }
+    // Mount only: this is the re-created row taking back its own focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startRename = useCallback(() => {
     if (!canRename) return;
@@ -493,9 +522,12 @@ function BrowseableRow({
       if (!run) return;
       e.preventDefault();
       e.stopPropagation();
-      void run(rowsForAction());
+      // Deleted rows can't stay selected (the selection bar would count ghosts).
+      void Promise.resolve(run(rowsForAction())).then(() => {
+        if (action === 'delete') selection?.clear();
+      });
     },
-    [editing, canRename, startRename, node, onNavigate, hasChildrenHint, tree, rowsForAction],
+    [editing, canRename, startRename, node, onNavigate, hasChildrenHint, tree, rowsForAction, selection],
   );
 
   const commitRename = useCallback(async () => {
@@ -680,8 +712,12 @@ function BrowseableRow({
       data-multi-selected={multiSelected || undefined}
       aria-expanded={hasChildrenHint ? expanded : undefined}
       draggable={!!node.dragData}
-      tabIndex={node.keyActions || canRename ? -1 : undefined}
+      ref={rowRef}
+      tabIndex={takesKeys ? -1 : undefined}
       onKeyDown={handleRowKeyDown}
+      onFocus={(e) => {
+        if (takesKeys && e.target === e.currentTarget) keyRow.current = { id: node.id, at: Date.now() };
+      }}
       onPointerEnter={handleRowPointerEnter}
       onPointerLeave={handleRowPointerLeave}
       onDragStart={handleDragStart}
@@ -789,7 +825,15 @@ function BrowseableRow({
       }}
     >
       <ContextMenuTrigger asChild>{rowEl}</ContextMenuTrigger>
-      <ContextMenuContent className="min-w-[13rem]" data-testid={`browseable-context-menu-${node.id}`}>
+      <ContextMenuContent
+        className="min-w-[13rem]"
+        data-testid={`browseable-context-menu-${node.id}`}
+        // A closing menu hands focus back to the row it opened on — but never
+        // out of a text field the user is typing in by then (a rename box).
+        onCloseAutoFocus={(e) => {
+          if (document.activeElement instanceof HTMLInputElement) e.preventDefault();
+        }}
+      >
         {menuItems.map((a, i) => {
           const disabled = typeof a.disabled === 'function' ? a.disabled() : !!a.disabled;
           return (
@@ -802,7 +846,10 @@ function BrowseableRow({
                 onSelect={() => {
                   // Let the menu close (and give focus back) before the rename input mounts.
                   if (a.startsRename) setTimeout(startRename, 0);
-                  else void a.run(rowsForAction());
+                  else
+                    void Promise.resolve(a.run(rowsForAction())).then(() => {
+                      if (a.destructive) selection?.clear();
+                    });
                 }}
               >
                 <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{a.icon}</span>

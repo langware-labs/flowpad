@@ -657,10 +657,8 @@ export class FSManager {
    * @returns Success message
    * @throws Error if the open fails or environment doesn't support it
    */
-  async open(typeid: TypeId, path: string, options?: { reveal?: boolean }): Promise<string> {
+  async open(typeid: TypeId, path: string): Promise<string> {
     const actionInfo = this.createFSAction(typeid, 'open', path, 'GET');
-    // `reveal`: show the item selected in Finder / Explorer instead of opening it.
-    if (options?.reveal) actionInfo.queryParameters = { reveal: 'true' };
     return await dataManager.callAction<undefined, string>(actionInfo);
   }
 
