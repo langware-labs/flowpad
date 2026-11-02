@@ -19,3 +19,17 @@ def test_a_fresh_copilot_composer_frame_counts_as_ready():
     assert CopilotDriver.pty_composer_ready_pattern.search(FRESH_COMPOSER_FRAME), (
         "the composer is on screen but the ready pattern does not match it"
     )
+
+
+#: the same status line on an 80-column PTY: the CLI cuts it after "/ commands"
+NARROW_COMPOSER_FRAME = " ● Loading: 2 skills\n ← open sidebar · Interactive · Allow All · / commands\n"
+
+TRUST_SCREEN = " Confirm folder trust\n Do you trust the files in this folder?\n ❯ 1. Yes\n ↑/↓ to navigate · enter to select · esc to cancel\n"
+
+
+def test_a_narrow_copilot_composer_frame_counts_as_ready():
+    assert CopilotDriver.pty_composer_ready_pattern.search(NARROW_COMPOSER_FRAME)
+
+
+def test_the_folder_trust_screen_is_not_a_ready_composer():
+    assert not CopilotDriver.pty_composer_ready_pattern.search(TRUST_SCREEN)

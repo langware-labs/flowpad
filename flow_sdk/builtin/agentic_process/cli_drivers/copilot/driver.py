@@ -134,10 +134,11 @@ class CopilotDriver:
     # stronger readiness signal than the generic prompt glyph (the trust
     # choice list has its own glyph).
     # CLI 1.0.103 draws no ``Session:`` text on a fresh composer, only its status line
-    # (``… · / commands · ? help · …``), which the trust screen does not have.
+    # (``… · / commands · ? help · …``; an 80-column PTY cuts it after ``/ commands``), which the trust screen
+    # does not have.
     pty_composer_ready_pattern = re.compile(
         r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used"
-        r"|/[ \t\u00a0]+commands[ \t\u00a0]*·[ \t\u00a0]*\?[ \t\u00a0]+help"
+        r"|·[ \t\u00a0]*/[ \t\u00a0]+commands"
     )
     # A PTY launch drops the prompt (copilot reads it from stdin); prompt() types it.
     pty_launch_drops_prompt = True
