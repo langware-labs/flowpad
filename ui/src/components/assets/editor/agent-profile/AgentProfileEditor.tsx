@@ -2,7 +2,8 @@ import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, TypeId, type AgentVe
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Loader2, Trash2 } from 'lucide-react';
+import { ChevronRight, Loader2, MessageCircle, Trash2 } from 'lucide-react';
+import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -60,10 +61,11 @@ interface AgentProfileEditorProps {
 export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) {
   const { t } = useLingui();
   const hub = isHubOnly();
+  const { launch, busyId } = useAgentLauncher();
 
   const agentRef = useRef(agent);
   agentRef.current = agent;
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const nested = useNestedHost();
   const onDelete = useCallback(() => {
     showDeleteAssetModal({
@@ -290,6 +292,19 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               >
                 {pending === 1 ? t`1 change not published` : t`${pending} changes not published`}
               </span>
+            )}
+            {!hub && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void launch(agent, currentDock?.scopeProjectId ?? null)}
+                disabled={busyId === agent.id || agent.enabled === false}
+                data-testid="agent-chat"
+                className="h-6 shrink-0 gap-1 px-2 text-xs"
+              >
+                {busyId === agent.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />}
+                <Trans>Chat</Trans>
+              </Button>
             )}
           </div>
           {!hub && (

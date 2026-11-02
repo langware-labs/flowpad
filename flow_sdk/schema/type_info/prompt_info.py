@@ -10,6 +10,7 @@ from flow_sdk.schema.view_mode import ViewMode
 
 PROMPT = TypeInfo(
     type_name=EntityType.PROMPT,
+    template={"text": "<what you want done>"},
     editor="markdown",
     fts_content=("text",),
     identity_carrier=frontmatter_identity(),

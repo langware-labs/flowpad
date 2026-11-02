@@ -1614,6 +1614,14 @@ class Entity(DBEntity):
         await entity._fts_upsert(type_name, record)
         return record
 
+    def _apply_template(self, info) -> None:
+        """Fill the fields a new thing was created without from its type's ``template``."""
+        template = getattr(info, "template", None) or {}
+        name = getattr(self, "title", None) or getattr(self, "name", None) or ""
+        for field_name, text in template.items():
+            if not getattr(self, field_name, None):
+                setattr(self, field_name, text.replace("{name}", name))
+
     def _storage_origin(self, record) -> "Any":
         """The ``LocalOrigin`` this entity's asset is stored at — its asset ROOT
         (the folder for a folder type, even when ``asset_ref`` names the inner
@@ -2925,6 +2933,8 @@ class Entity(DBEntity):
         suppress_store = _SUPPRESS_STORE.get()
 
         type_info = SchemaRegistry.get(self.get_type())
+        if create_target is not None:
+            self._apply_template(type_info)
 
         async def persist_prepared_entity() -> None:
             await self._save_blobs()
@@ -4243,6 +4253,16 @@ async def _definition_travels_by_repo(entity) -> bool:
     return await asyncio.to_thread(published_origin, entity) is not None
 
 
+def _git_tracks(path: str) -> bool:
+    """Is ``path`` a file its enclosing git checkout tracks?"""
+    from flow_sdk.utils.git import _run_git  # noqa: PLC0415
+
+    p = Path(path)
+    if not p.parent.is_dir():  # a file in a folder that does not exist yet is nobody's
+        return False
+    return _run_git(["git", "ls-files", "--error-unmatch", "--", p.name], str(p.parent)).returncode == 0
+
+
 async def _asset_ref_is_borrowed(record) -> bool:
     """Does this record's ``asset_ref`` live inside somebody else's checkout?
 
@@ -4261,10 +4281,14 @@ async def _asset_ref_is_borrowed(record) -> bool:
     ar = getattr(record, "asset_ref", None)
     if ar is None or ar.read_only:
         return False
+    import asyncio  # noqa: PLC0415
+
     try:
         from flow_sdk.builtin.folder import Folder  # noqa: PLC0415 — circular at module level
 
-        return await Folder.is_borrowed_path(ar.path)
+        # Only the vendor's own files are off limits: a file their git does not track (a thing
+        # created here) never dirties their tree, so it is written like any other.
+        return await Folder.is_borrowed_path(ar.path) and await asyncio.to_thread(_git_tracks, ar.path)
     except Exception:
         # Fail OPEN deliberately: a Folder-table hiccup must not turn every save
         # of a file-backed entity into a failure. Logged at warning, not debug,
