@@ -165,6 +165,20 @@ describe('terminal links', () => {
     }
   });
 
+  it('keeps a printed path its own link when the shell prompt below it no longer fits after the terminal narrows', async () => {
+    const path = '/private/var/folders/t7/2q_q73bj7y740q9rd1j62tm40000gn/T/flowpad-links-UkDPIf/abs.txt';
+    const terminal = new HeadlessTerminal({ cols: 111, rows: 6, allowProposedApi: true });
+    try {
+      // zsh: the output line, its end-of-line mark row (`%` + spaces, then CR), and the prompt drawn over it.
+      const mark = '\x1b[1m\x1b[7m%\x1b[27m\x1b[1m\x1b[0m' + ' '.repeat(110) + '\r \r';
+      await new Promise<void>((resolve) => terminal.write(`${path}\r\n${mark}\rshlom@MacBook-Pro-2 flowpad-links-UkDPIf % `, resolve));
+      terminal.resize(100, 6);
+      expect(linkAtCell(terminal as unknown as Terminal, 10, 1)).toBe(path);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   it('does not join a row that ends before the last column', async () => {
     const terminal = new HeadlessTerminal({ cols: 40, rows: 4, allowProposedApi: true });
     try {
