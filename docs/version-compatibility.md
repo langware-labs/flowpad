@@ -188,8 +188,12 @@ stop-then-download path — expect less on native hardware. Anything that keeps 
 applying falls back to the full download, and the post-install pair check stays the authority. The swap
 writes its rollback record before the destructive step (installing → installed → spent once healthy;
 never healthy → `failed-unhealthy` vetoes that version). One prepare runs at a time, each in its own
-staging dir beside uv's cache; the panel can cancel it, and after a failure offers "Update directly". When everything is staged the app asks once, in the app: **Restart now** (engine-only: a swap
-of a few seconds; with a desktop: FlowPad restarts) or **Later**. Later is never "never": the prepared
+staging dir beside uv's cache; the panel can cancel it, and after a failure offers "Update directly". Before it can become the candidate the staged engine must import and report exactly the target version
+(`_validateStaged`). Nobody is asked while any of this runs — an automatic check starts it as well as a
+panel click. When everything is staged the app asks once, in the app: "A new version of FlowPad is
+available" — **Update now** (engine-only: a swap of a few seconds; with a desktop: FlowPad restarts) or
+**Later**. There is no reminder; a newer release that appears meanwhile is staged the same way and replaces
+the pending one, and only the newest is asked about. Later is never "never": the prepared
 release is saved as an agreed pending-engine record (`prepared` field), which the next start installs
 offline before the engine boots; a downloaded desktop installs on quit (Windows/AppImage: explicitly at
 the end of the normal shutdown — `app.exit()` is not relied on to emit `quit`; macOS: Squirrel) or, on
@@ -198,9 +202,10 @@ deb/rpm, at the next launch with one password prompt (`postponed-desktop-update.
 **No engine question blocks the launch.** The old pre-start dialog ("Update Available — Upgrade/Later",
 native, before the backend even started) is gone: when no desktop update is pending, the app starts with
 the installed engine, and once its UI is up a newer compatible engine is prepared in the background and
-asked about in the app (`offerEngineUpdateAfterLaunch`). The UI ships with the engine, so an older
-engine's UI does not show that dialog: the panel announces it does (`update:panel-ready`), and without
-that announcement the shell asks with a native "ready" dialog after launch instead — never blocking it.
+asked about in the app (the post-boot check). A newer desktop found at launch is downloaded once the UI
+is up, too. The UI ships with the engine, so an older engine's UI does not show that dialog: the panel
+announces it does (`update:panel-ready`), and without that announcement the shell asks with the same
+short native question on the next scheduler tick instead — never blocking the launch.
 What cannot wait still happens before the start: a missing or broken engine, and an incompatible pair.
 
 **When an apply or a download goes wrong:**
@@ -216,12 +221,12 @@ What cannot wait still happens before the start: a missing or broken engine, and
   no timeout on Electron's net stack and a stalled differential download ignores `cancel()` — and
   the next download starts only after the cancelled transfer has ended. (No stall watchdog: a wait
   budget is an owner decision.)
-- Every engine the startup installs (the coordinated resume, the pre-start dialog, the pair repair)
+- Every engine the startup installs (the coordinated resume, the pair repair)
   writes the rollback record, so the health gate restores the previous engine on any path; a version
-  rolled back that way is not offered again until a newer one exists (`failedVersion`). The generic
+  rolled back that way is not staged again until a newer one exists (`failedVersion`). The generic
   "backend didn't respond" screen has a Retry.
 - deb/rpm do not install on quit (`autoInstallOnAppQuit` off — every quit asked for the system
-  password); a downloaded update installs from Update Now / Restart now, and the panel says so.
+  password); a downloaded update installs from "Update now" (or at the next launch), and the panel says so.
 - An incompatible pair that could not be repaired at launch is toasted when the UI mounts.
 
 **Manual verification on each OS** (the CI runs the update flow against stubs only — nothing in the

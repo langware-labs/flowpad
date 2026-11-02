@@ -304,25 +304,26 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       'preflight: already at the latest → no update, compat still reported');
   }
 
-  // ── checkForUpdatesInBackground source selection ───────────────────────────
-  // Pre-start decides with the standalone PyPI check (backend down, maybe
-  // broken); post-boot uses the cloud `/check-update` policy verdict.
+  // ── findEngineUpdate: what the automatic check stages ──────────────────────
+  // The plain PyPI comparison by default; the cloud `/check-update` policy verdict on request. Nothing is
+  // shown or installed: it only names the release to stage.
   {
-    const make = () => {
+    const make = (status) => {
       const m = new UvManager(silentLog);
       let pypi = false, cloud = false;
-      m._pypiUpdateStatus = async () => { pypi = true; return null; };
-      m.getUpdateStatus = async () => { cloud = true; return null; };
+      m._pypiUpdateStatus = async () => { pypi = true; return status; };
+      m.getUpdateStatus = async () => { cloud = true; return status; };
       return { m, pypi: () => pypi, cloud: () => cloud };
     };
-
-    const a = make();
-    await a.m.checkForUpdatesInBackground(null, { beforeBackendStart: true });
-    ok(a.pypi() && !a.cloud(), 'pre-start → standalone PyPI check, not the cloud policy');
-
-    const b = make();
-    await b.m.checkForUpdatesInBackground(null, { beforeBackendStart: false });
-    ok(b.cloud() && !b.pypi(), 'post-boot → cloud policy, not the standalone PyPI check');
+    const a = make(null);
+    eq(await a.m.findEngineUpdate(), null, 'findEngineUpdate: no newer release → null');
+    ok(a.pypi() && !a.cloud(), 'findEngineUpdate: the PyPI comparison by default');
+    const b = make({ currentVersion: '0.2.1', latestVersion: '0.2.2', required: true });
+    eq(await b.m.findEngineUpdate({ compareWithPypi: false, cloudUrl: 'https://x' }), { currentVersion: '0.2.1', latestVersion: '0.2.2' },
+      'findEngineUpdate: the cloud verdict on request, naming the release to stage');
+    ok(b.cloud() && !b.pypi(), 'findEngineUpdate: compareWithPypi false → cloud policy only');
+    eq(await make({ currentVersion: '0.2.1', latestVersion: '0.2.2', required: false }).m.findEngineUpdate(), null,
+      'findEngineUpdate: not required → null');
   }
 
   // ── _uvToolInstallForce (lock-aware install retry) ──────────────────────────
@@ -1405,182 +1406,48 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   }
 
   {
-    // deferPackageVersion: the periodic check must not re-offer a version the
-    // user already answered "Later" to (from any dialog).
-    const m = new UvManager(silentLog);
-    m.deferPackageVersion('0.2.99');
-    eq(m._deferredPackageVersion, '0.2.99', 'deferPackageVersion: stored');
-    m.deferPackageVersion(null);
-    eq(m._deferredPackageVersion, '0.2.99', 'deferPackageVersion: falsy input ignored');
+  // A restore version read back from pending-engine.json is gated like every install: a value that
+  // is not a version never reaches uv's command line (which runs through cmd.exe on Windows).
+  {
+    const mr = new UvManager(silentLog);
+    const runs = [];
+    mr._pythonPinForUpgrade = async () => '3.11';
+    mr._uvToolInstallForce = async (args) => { runs.push(args); };
+    let refused = null;
+    try { await mr._restoreEngine('0.2.237 & calc'); } catch (e) { refused = e.message; }
+    eq([/not an installable version/.test(String(refused)), runs.length], [true, 0], 'a malformed restore version is refused before uv runs');
   }
 
+  // The upgrade INSTALLED the new engine and failed only at the health gate: recovery reinstalls
+  // the release that ran before, instead of restarting the same unhealthy one and waiting the
+  // whole health window again just to fail.
   {
-    // Post-boot upgrade: a backend that never becomes healthy after the upgrade
-    // is a FAILED upgrade → recovery runs (instead of loading a dead URL and
-    // reporting success). Uses a fake `electron` module for the dialog.
-    const electronId = require.resolve('electron');
-    const savedElectron = require.cache[electronId];
-    require.cache[electronId] = { id: electronId, filename: electronId, loaded: true,
-      exports: { dialog: { showMessageBox: async () => ({ response: 0 }) } } };
-    try {
-      const m = new UvManager(silentLog);
-      const calls = [];
-      m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.1', latestVersion: '0.2.2', required: true });
-      m.stop = async () => { calls.push('stop'); };
-      m.upgrade = async () => { calls.push('upgrade'); };
-      m.start = async () => { calls.push('start'); };
-      m._recoverRunningBackendAfterFailedUpgrade = async () => { calls.push('recover'); return true; };
-      const loads = [];
-      const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: (u) => loads.push(u) };
-      const res = await m.checkForUpdatesInBackground(mainWindow, {
-        sendStatus: () => {}, waitForBackend: async () => ({ ready: false, reason: 'unhealthy' }), backendUrl: 'http://localhost:9007',
-        cloudUrl: 'https://x', compareWithPypi: true,
-      });
-      eq(res, false, 'post-boot upgrade: unhealthy backend after upgrade reports failure');
-      ok(calls.includes('recover'), 'post-boot upgrade: recovery path ran');
-      eq(loads.length, 0, 'post-boot upgrade: dead backend URL was NOT loaded');
-
-      // Recovery ALSO failed: the "Update failed" dialog offers Share, then the in-app panel replaces the stuck
-      // "Upgrading Flowpad…" splash (onUnrecovered) — the user is never left on a splash that cannot finish.
-      {
-        const shown = [];
-        require.cache[electronId].exports.dialog.showMessageBox = async (_w, opts) => { shown.push(opts); return { response: 0 }; };
-        const mu = new UvManager(silentLog);
-        mu._pypiUpdateStatus = m._pypiUpdateStatus; mu.stop = m.stop; mu.start = m.start;
-        mu.upgrade = async () => { throw new Error('uv failed: locked'); };
-        mu._recoverRunningBackendAfterFailedUpgrade = async () => false;
-        mu.setFailureSharer(async () => ({ ok: true }));
-        const unrecovered = [];
-        // First dialog is "Update Available" (Upgrade = 0), the next is the failure dialog.
-        const resU = await mu.checkForUpdatesInBackground(mainWindow, {
-          sendStatus: () => {}, waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007',
-          cloudUrl: 'https://x', compareWithPypi: true, onUnrecovered: async (e) => { unrecovered.push(e.message); },
-        });
-        eq(resU, false, 'unrecovered upgrade reports failure');
-        const failure = shown.find((o) => o.title === 'Update failed');
-        ok(failure && failure.buttons.includes('Send Report'), 'the Update failed dialog offers Send Report');
-        ok(/uv failed: locked/.test(failure.detail), 'and names the cause');
-        eq(unrecovered, ['uv failed: locked'], 'onUnrecovered is called so the splash is replaced');
-      }
-
-      // Healthy backend → success and the URL is loaded.
-      calls.length = 0;
-      const m2 = new UvManager(silentLog);
-      m2._pypiUpdateStatus = m._pypiUpdateStatus; m2.stop = m.stop; m2.upgrade = m.upgrade; m2.start = m.start;
-      const res2 = await m2.checkForUpdatesInBackground(mainWindow, {
-        sendStatus: () => {}, waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007',
-        cloudUrl: 'https://x', compareWithPypi: true,
-      });
-      eq(res2, true, 'post-boot upgrade: healthy backend reports success');
-      eq(loads.length, 1, 'post-boot upgrade: backend URL loaded once');
-
-      // A restore version read back from pending-engine.json is gated like every install: a value that
-      // is not a version never reaches uv's command line (which runs through cmd.exe on Windows).
-      {
-        const mr = new UvManager(silentLog);
-        const runs = [];
-        mr._pythonPinForUpgrade = async () => '3.11';
-        mr._uvToolInstallForce = async (args) => { runs.push(args); };
-        let refused = null;
-        try { await mr._restoreEngine('0.2.237 & calc'); } catch (e) { refused = e.message; }
-        eq([/not an installable version/.test(String(refused)), runs.length], [true, 0], 'a malformed restore version is refused before uv runs');
-      }
-
-      // The upgrade INSTALLED the new engine and failed only at the health gate: recovery reinstalls
-      // the release that ran before, instead of restarting the same unhealthy one and waiting the
-      // whole health window again just to fail.
-      {
-        const mr = new UvManager(silentLog);
-        const restores = [];
-        mr.getInstalledVersionSync = () => '0.2.238'; // what the failed upgrade left on disk
-        mr.getInstalledFlowBin = () => '/fake/bin/flow';
-        mr._restoreEngine = async (v) => { restores.push(v); };
-        mr.start = async () => {};
-        const okRes = await mr._recoverRunningBackendAfterFailedUpgrade(
-          { isDestroyed: () => false, loadURL: () => {} },
-          { waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007', sendStatus: () => {}, restoreVersion: '0.2.237' },
-        );
-        eq([okRes, restores], [true, ['0.2.237']], 'recovery reinstalls the previous release when the upgrade already replaced it');
-      }
-      {
-        // Same engine still installed (the upgrade failed BEFORE replacing it): nothing to reinstall.
-        const mr = new UvManager(silentLog);
-        const restores = [];
-        mr.getInstalledVersionSync = () => '0.2.237';
-        mr.getInstalledFlowBin = () => '/fake/bin/flow';
-        mr._restoreEngine = async (v) => { restores.push(v); };
-        mr.start = async () => {};
-        await mr._recoverRunningBackendAfterFailedUpgrade(
-          { isDestroyed: () => false, loadURL: () => {} },
-          { waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007', sendStatus: () => {}, restoreVersion: '0.2.237' },
-        );
-        eq(restores, [], 'no needless reinstall when the previous release is still the one on disk');
-      }
-      {
-        // A failure BEFORE this attempt's capture (stop() throwing) restores NOTHING — restoreVersion
-        // is a local of the attempt, never an instance leftover from an earlier upgrade.
-        const ms = new UvManager(silentLog);
-        ms._pypiUpdateStatus = async () => ({ currentVersion: '0.2.1', latestVersion: '0.2.2', required: true });
-        ms.stop = async () => { throw new Error('stop failed'); };
-        ms.upgrade = async () => {};
-        const seen = [];
-        ms._recoverRunningBackendAfterFailedUpgrade = async (_w, opts) => { seen.push(opts.restoreVersion); return true; };
-        const mw = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
-        await ms.checkForUpdatesInBackground(mw, {
-          sendStatus: () => {}, waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007',
-          cloudUrl: 'https://x', compareWithPypi: true,
-        });
-        eq(seen, [null], 'a failure before the capture restores nothing (no stale restoreVersion)');
-      }
-
-      // "Later" (and Esc, which maps to the same index via cancelId) defers the version.
-      require.cache[electronId].exports.dialog.showMessageBox = async (_w, opts) => {
-        ok(opts.cancelId === 1, 'package dialog: cancelId is Later (Esc never upgrades)');
-        return { response: opts.cancelId };
-      };
-      const m3 = new UvManager(silentLog);
-      m3._pypiUpdateStatus = m._pypiUpdateStatus;
-      let upgraded = false; m3.upgrade = async () => { upgraded = true; };
-      eq(await m3.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true }), false, 'package dialog: Later returns false');
-      ok(!upgraded, 'package dialog: Later does not upgrade');
-      eq(m3._deferredPackageVersion, '0.2.2', 'package dialog: Later remembers the version');
-      eq(await m3.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true }), false, 'package dialog: deferred version is not re-offered');
-    } finally {
-      if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
-    }
+    const mr = new UvManager(silentLog);
+    const restores = [];
+    mr.getInstalledVersionSync = () => '0.2.238'; // what the failed upgrade left on disk
+    mr.getInstalledFlowBin = () => '/fake/bin/flow';
+    mr._restoreEngine = async (v) => { restores.push(v); };
+    mr.start = async () => {};
+    const okRes = await mr._recoverRunningBackendAfterFailedUpgrade(
+      { isDestroyed: () => false, loadURL: () => {} },
+      { waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007', sendStatus: () => {}, restoreVersion: '0.2.237' },
+    );
+    eq([okRes, restores], [true, ['0.2.237']], 'recovery reinstalls the previous release when the upgrade already replaced it');
   }
-
   {
-    // Package dialog supersession: while the "Update Available" dialog for X is open,
-    // supersedePackageDialog() closes it as "Later" (X deferred), and a fresh check
-    // offers the newer version.
-    const electronId = require.resolve('electron');
-    const savedElectron = require.cache[electronId];
-    require.cache[electronId] = { id: electronId, filename: electronId, loaded: true,
-      exports: { dialog: { showMessageBox: (_w, opts) => new Promise((resolve) => {
-        opts.signal.addEventListener('abort', () => resolve({ response: opts.cancelId }));
-      }) } } };
-    try {
-      const m = new UvManager(silentLog);
-      let latest = '0.2.160';
-      m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.150', latestVersion: latest, required: true });
-      const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
-      eq(m.openPackageDialogVersion(), null, 'no package dialog open initially');
-      const first = m.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true });
-      await new Promise((r) => setTimeout(r, 0));
-      eq(m.openPackageDialogVersion(), '0.2.160', 'dialog for 0.2.160 is open');
-      latest = '0.2.161';
-      m.supersedePackageDialog();
-      eq(await first, false, 'superseded dialog resolves as Later');
-      eq(m.openPackageDialogVersion(), null, 'dialog closed');
-      eq(m._deferredPackageVersion, '0.2.160', 'old version recorded as deferred');
-      const second = m.checkForUpdatesInBackground(mainWindow, { compareWithPypi: true });
-      await new Promise((r) => setTimeout(r, 0));
-      eq(m.openPackageDialogVersion(), '0.2.161', 'fresh check offers the newer version');
-      m.supersedePackageDialog(); await second;
-    } finally {
-      if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
-    }
+    // Same engine still installed (the upgrade failed BEFORE replacing it): nothing to reinstall.
+    const mr = new UvManager(silentLog);
+    const restores = [];
+    mr.getInstalledVersionSync = () => '0.2.237';
+    mr.getInstalledFlowBin = () => '/fake/bin/flow';
+    mr._restoreEngine = async (v) => { restores.push(v); };
+    mr.start = async () => {};
+    await mr._recoverRunningBackendAfterFailedUpgrade(
+      { isDestroyed: () => false, loadURL: () => {} },
+      { waitForBackend: async () => ({ ready: true, reason: 'healthy' }), backendUrl: 'http://localhost:9007', sendStatus: () => {}, restoreVersion: '0.2.237' },
+    );
+    eq(restores, [], 'no needless reinstall when the previous release is still the one on disk');
+  }
   }
 
   // ── close(): a quit refuses every later start/install ────────────────────
@@ -2508,14 +2375,22 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m._assertCandidateCompatible = async () => {};
     m._pythonPinForUpgrade = async () => '3.11';
     m._excludeNewerStrategies = async () => [{ label: 'release date', flags: ['--exclude-newer', '2026-10-30T00:00:00Z'] }, { label: 'none', flags: [] }];
-    m._runStreaming = async (cmd, args, opts) => { runs.push({ cmd, args, env: opts.env, installingNow: m.isInstalling() }); };
+    const all = [];
+    m._runStreaming = async (cmd, args, opts) => { all.push({ cmd, args, env: opts.env, cwd: opts.cwd, installingNow: m.isInstalling() }); };
     m._uvToolInstallForce = async () => { throw new Error('the live install path must not run'); };
     const cacheBase = fs.mkdtempSync(path.join(require('os').tmpdir(), 'uvhome-'));
     m._uvDirs = async () => ({ cache: path.join(cacheBase, 'cache') });
     const prepared = await m.prepareEngine({ version: '0.2.247' });
+    runs.push(...all.filter((r) => r.cmd === 'uv'));
     eq([prepared.version, prepared.spec, prepared.pin, prepared.previousVersion], ['0.2.247', 'flowpad==0.2.247', '3.11', '0.2.240'], 'prepare: the target and what it replaces');
     eq(prepared.flags, ['--exclude-newer', '2026-10-30T00:00:00Z'], 'prepare: the cut-off that won is recorded');
     eq(runs.map((r) => r.args[2]), ['flowpad==0.2.247', 'flowpad==0.2.240'], 'prepare: the target AND the current version are staged (offline rollback)');
+    // Validated before the rollback staging overwrites the staged venv: the staged python imports the
+    // engine and reports exactly the target version.
+    eq(all.map((r) => (r.cmd === 'uv' ? 'stage' : 'check')), ['stage', 'check', 'stage'], 'prepare: the staged target is checked right after it is staged');
+    const check = all[1];
+    ok(check.cmd.startsWith(path.join(cacheBase, 'flowpad-staging-')) && /flowpad/.test(check.cmd), 'prepare: the check runs the STAGED interpreter, not the live one');
+    ok(check.args[0] === '-I' && /import .*flow_sdk/.test(check.args[2]) && /"0\.2\.247"/.test(check.args[2]), 'prepare: the check imports the engine and compares its version (isolated)');
     ok(runs.every((r) => r.env && r.env.UV_TOOL_DIR.startsWith(path.join(cacheBase, 'flowpad-staging-')) && r.env.UV_TOOL_BIN_DIR.startsWith(path.join(cacheBase, 'flowpad-staging-'))),
       'prepare: only a staging tool dir is written — next to uv\'s cache, not in %TEMP%');
     ok(runs.every((r) => !r.installingNow), 'prepare: isInstalling() stays false — nothing live is being replaced');
@@ -2537,6 +2412,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m._excludeNewerStrategies = async () => [{ label: 'none', flags: [] }];
     let active = 0, maxActive = 0; const dirs = [];
     m._runStreaming = async (cmd, args, opts) => {
+      if (cmd !== 'uv') return; // the staged engine's check
       active++; maxActive = Math.max(maxActive, active); dirs.push(opts.env.UV_TOOL_DIR);
       await new Promise((r) => setTimeout(r, 5));
       ok(fs.existsSync(opts.env.UV_TOOL_DIR), 'its staging dir exists for the whole run');
@@ -2545,6 +2421,30 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     const [a, b] = await Promise.all([m.prepareEngine({ version: '0.2.246' }), m.prepareEngine({ version: '0.2.247' })]);
     eq([a.version, b.version, maxActive], ['0.2.246', '0.2.247', 1], 'both prepared, never at the same time');
     eq(new Set(dirs).size, 2, 'each in its own staging dir');
+    fs.rmSync(cacheBase, { recursive: true, force: true });
+  }
+  {
+    // A staged engine that does not pass its check (a broken wheel, a missing dependency, another version)
+    // never becomes the candidate: the prepare fails, nothing live was touched, the staging dir is gone.
+    const fs = require('fs'); const path = require('path');
+    const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+    const cacheBase = fs.mkdtempSync(path.join(require('os').tmpdir(), 'uvhome-'));
+    m._uvDirs = async () => ({ cache: path.join(cacheBase, 'cache') });
+    m.getInstalledVersionSync = () => '0.2.240';
+    m._resolveEngineTarget = async (v) => ({ version: v, info: {} });
+    m._assertCandidateCompatible = async () => {};
+    m._pythonPinForUpgrade = async () => '3.11';
+    m._excludeNewerStrategies = async () => [{ label: 'none', flags: [] }];
+    m._uvToolInstallForce = async () => { throw new Error('the live install path must not run'); };
+    const stages = [];
+    m._runStreaming = async (cmd, args, opts) => {
+      if (cmd === 'uv') { stages.push(opts.env.UV_TOOL_DIR); return; }
+      throw new Error("ModuleNotFoundError: No module named 'uvicorn'");
+    };
+    await assert.rejects(() => m.prepareEngine({ version: '0.2.247' }), /did not pass its check: ModuleNotFoundError/); passed++;
+    eq(stages.length, 1, 'a failed check stops the prepare: the rollback is not staged for a candidate that will not be used');
+    ok(!fs.existsSync(path.dirname(stages[0])), 'the staging dir of the failed candidate is removed');
+    eq(m._prepared || null, null, 'nothing is recorded as prepared');
     fs.rmSync(cacheBase, { recursive: true, force: true });
   }
   {

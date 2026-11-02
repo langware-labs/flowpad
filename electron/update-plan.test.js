@@ -1,26 +1,18 @@
 'use strict';
 
 /*
- * Tests for ./update-plan.js — desktop + engine updates: decisions, the saved engine version, the 90 minute reminder.
+ * Tests for ./update-plan.js — desktop + engine updates: the engine-change policy, the saved engine version, the health gate.
  * Run: `node electron/update-plan.test.js` (exits non-zero on failure).
  */
 
 const assert = require('assert');
 const { isNewer } = require('./semver');
 const {
-  READY_REMINDER_MS, decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, engineRecordAtHealthGate, createReadyReminder,
+  engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, engineRecordAtHealthGate,
 } = require('./update-plan');
 
 let passed = 0;
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); passed++; };
-
-eq(READY_REMINDER_MS, 90 * 60 * 1000, 'the reminder interval is the agreed 90 minutes');
-
-// ── what is on offer ────────────────────────────────────────────────────────
-eq(decideOffer({ desktopLatest: '0.2.48', engineStatus: { latestVersion: '0.2.180' } }), 'both', 'desktop + engine → the combined screen');
-eq(decideOffer({ desktopLatest: '0.2.48', engineStatus: null }), 'desktop', 'desktop only');
-eq(decideOffer({ desktopLatest: null, engineStatus: { latestVersion: '0.2.180' } }), 'engine', "engine only → today's dialog");
-eq(decideOffer({ desktopLatest: null, engineStatus: null }), 'none', 'nothing');
 
 // ── may the running desktop change the engine? ──────────────────────────────
 const policy = (state, mustInstall) => engineChangePolicy({ desktop: state === undefined ? undefined : { state }, mustInstall });
@@ -84,63 +76,5 @@ eq(engineRecordAtHealthGate({ ...installed, previousEngine: null }, { healthy: f
 eq(engineRecordAtHealthGate({ ...installed, phase: 'installing' }, { healthy: true }), 'keep', 'an unfinished install is not spent by a healthy OLD engine');
 eq(engineRecordAtHealthGate(saved, { healthy: true }), 'keep', 'a record nothing installed yet is kept');
 eq(engineRecordAtHealthGate(null, { healthy: true }), 'keep', 'no record: nothing to do');
-
-// ── the reminder ────────────────────────────────────────────────────────────
-function fakeTimers() {
-  let now = 0; const jobs = [];
-  return {
-    setInterval(fn, ms) { const j = { fn, ms, next: now + ms, dead: false, unref() {} }; jobs.push(j); return j; },
-    clearInterval(j) { if (j) j.dead = true; },
-    advance(ms) {
-      const end = now + ms;
-      for (;;) { const due = jobs.filter((j) => !j.dead && j.next <= end).sort((a, b) => a.next - b.next)[0]; if (!due) break; now = due.next; due.next += due.ms; due.fn(); }
-      now = end;
-    },
-    live: () => jobs.filter((j) => !j.dead).length,
-  };
-}
-const MIN = 60 * 1000;
-function makeReminder(ready) {
-  const timers = fakeTimers(); const shown = [];
-  const r = createReadyReminder({ isReady: () => ready.value, show: () => shown.push(1), timers });
-  return { r, timers, shown };
-}
-{
-  const ready = { value: true };
-  const { r, timers, shown } = makeReminder(ready);
-  r.start();
-  timers.advance(89 * MIN); eq(shown.length, 0, 'nothing before 90 minutes');
-  timers.advance(1 * MIN); eq(shown.length, 1, 'first reminder at 90 minutes');
-  timers.advance(90 * MIN); eq(shown.length, 2, 'and again every 90 minutes');
-  timers.advance(180 * MIN); eq(shown.length, 4, '…for as long as the user keeps saying Later');
-  r.start(); r.start(); eq(timers.live(), 1, 'start() is idempotent (one timer)');
-  r.stop(); timers.advance(1000 * MIN); eq([shown.length, timers.live()], [4, 0], 'stop() ends it');
-}
-{
-  // Not ready at reminder time (still downloading): due → shown as soon as the download finishes.
-  const ready = { value: false };
-  const { r, timers, shown } = makeReminder(ready);
-  r.start();
-  timers.advance(90 * MIN);
-  eq([shown.length, r.due], [0, true], 'reminder came due while the download is unfinished: not shown, remembered');
-  ready.value = true; r.notifyReady();
-  eq([shown.length, r.due], [1, false], 'shown the moment the update is ready');
-  r.notifyReady(); eq(shown.length, 1, 'and only once');
-  timers.advance(90 * MIN); eq(shown.length, 2, 'the periodic reminder continues after that');
-}
-{
-  // notifyReady with nothing due does nothing (the "Update now" path shows its prompt through the normal handler).
-  const ready = { value: true };
-  const { r, shown } = makeReminder(ready);
-  r.notifyReady(); eq(shown.length, 0, 'notifyReady() without a due reminder shows nothing');
-}
-{
-  // Another dialog is open at the tick: due, then shown on the next tick when it is free.
-  const ready = { value: false };
-  const { r, timers, shown } = makeReminder(ready);
-  r.start(); timers.advance(90 * MIN);
-  ready.value = true; timers.advance(90 * MIN);
-  eq(shown.length, 1, 'shown on the next tick once nothing else is in the way');
-}
 
 console.log(`update-plan.test.js: ${passed} assertions passed`);

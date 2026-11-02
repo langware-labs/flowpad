@@ -300,6 +300,11 @@ describe('the Desktop section row', () => {
     await openPopover();
 
     const btn = await screen.findByTestId('desktop-update-now-button');
+    // In the badge row, beside "Ready to install", naming the downloaded build.
+    expect(btn.textContent).toBe('Update now');
+    expect(btn.parentElement?.textContent).toContain('Ready to install');
+    expect(btn.parentElement?.textContent).toContain('v0.2.62');
+    expect(screen.getByTestId('version-popover-trigger').querySelector('[aria-label="Update available"]')).not.toBeNull();
     fireEvent.click(btn);
     await waitFor(() => expect(api.applyDesktopUpdate).toHaveBeenCalledTimes(1));
   });
@@ -466,6 +471,28 @@ describe('round 11: restart, cancel, alerts the closed popover used to swallow',
     expect([message, forceToast]).toEqual(['net::ERR_CONNECTION_RESET', true]);
   });
 
+  it('an update nobody asked for (background) is never toasted — its failure neither', async () => {
+    let desktop: ((s: unknown) => void) | null = null;
+    let engine: ((s: unknown) => void) | null = null;
+    (window as { electronAPI?: unknown }).electronAPI = electronApi({
+      onDesktopUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        desktop = cb;
+        return () => {};
+      }),
+      onEngineUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        engine = cb;
+        return () => {};
+      }),
+    });
+    render(<VersionPopover currentVersion="0.2.230" />);
+    act(() => engine?.({ state: 'preparing', version: '0.2.240', background: true }));
+    act(() => engine?.({ state: 'error', version: '0.2.240', error: 'PyPI unreachable', background: true }));
+    act(() => desktop?.({ state: 'error', error: 'net::ERR_CONNECTION_RESET', background: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.notifyInfo).not.toHaveBeenCalled();
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
   it('an incompatible running pair is toasted at mount, not only inside the popover', async () => {
     (window as { electronAPI?: unknown }).electronAPI = electronApi({
       getPairWarning: vi.fn().mockResolvedValue('engine 0.2.100 is older than this desktop needs'),
@@ -516,9 +543,11 @@ describe('after Update Both the popup is gone: the user still sees what happens'
     // The shell staged both: the in-app question.
     act(() => ready?.({ kind: 'both', desktopVersion: '0.2.62', engineVersion: '0.2.240', enginePrepared: true }));
     const modal = await screen.findByTestId('update-ready-modal');
-    expect(modal.textContent).toContain('0.2.62');
-    expect(modal.textContent).toContain('0.2.240');
-    expect(modal.textContent).toContain('next time FlowPad starts');
+    // Short and standard: what is available, and Update now / Later.
+    expect(modal.textContent).toContain('A new version of FlowPad is available.');
+    expect(screen.getByTestId('update-ready-versions').textContent).toBe('FlowPad 0.2.62, flow SDK 0.2.240');
+    expect(screen.getByTestId('update-ready-now-button').textContent).toBe('Update now');
+    expect(screen.getByTestId('update-ready-later-button').textContent).toBe('Later');
     fireEvent.click(screen.getByTestId('update-ready-now-button'));
     await waitFor(() => expect(api.applyDesktopUpdate).toHaveBeenCalledTimes(1));
   });
@@ -565,13 +594,37 @@ describe('engine updates are prepared in the background, then swapped in seconds
     expect(screen.queryByTestId('version-upgrade-button')).toBeNull();
 
     act(() => engineState?.({ state: 'ready', version: '0.2.240' }));
-    expect((await screen.findByTestId('engine-restart-now-button')).textContent).toContain('0.2.240');
+    // Ready: the badge row itself says so and carries "Update now".
+    const now = await screen.findByTestId('engine-restart-now-button');
+    expect([now.textContent, now.getAttribute('title')]).toEqual(['Update now', 'Switch to flow SDK v0.2.240 — FlowPad stays open']);
+    expect(now.parentElement?.textContent).toContain('v0.2.240');
+    expect(now.parentElement?.textContent).toContain('Ready to install');
+    expect(screen.queryByTestId('engine-update-row')).toBeNull();
 
     act(() => ready?.({ kind: 'engine', desktopVersion: null, engineVersion: '0.2.240', enginePrepared: true }));
-    const modal = await screen.findByTestId('update-ready-modal');
-    expect(modal.textContent).toContain('under a minute'); // measured: tens of seconds on a slow machine, not "a few seconds"
+    await screen.findByTestId('update-ready-modal');
+    expect(screen.getByTestId('update-ready-versions').textContent).toBe('flow SDK 0.2.240');
     fireEvent.click(screen.getByTestId('update-ready-now-button'));
     await waitFor(() => expect(api.applyEngineUpdate).toHaveBeenCalledTimes(1));
+  });
+
+  it('"Later" keeps a staged flow SDK one click away: Update now in the badge row swaps it, no second question', async () => {
+    const api = electronApi({
+      applyEngineUpdate: vi.fn().mockResolvedValue({ started: false, reason: 'busy' }),
+      getUpdateInfo: vi.fn().mockResolvedValue({
+        ...INCOMPATIBLE_INFO,
+        engine: { ...INCOMPATIBLE_INFO.engine, latestCompatible: true },
+        engineUpdate: { state: 'ready', version: '0.2.240', coordinated: false },
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    render(<VersionPopover currentVersion="0.2.230" />);
+    fireEvent.click(screen.getByTestId('version-popover-trigger'));
+    expect(screen.queryByTestId('version-upgrade-button')).toBeNull(); // the staged release replaces the Upgrade button
+    fireEvent.click(await screen.findByTestId('engine-restart-now-button'));
+    await waitFor(() => expect(api.applyEngineUpdate).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('update-ready-modal')).toBeNull();
+    expect((await screen.findByTestId('engine-apply-error')).textContent).not.toBe('');
   });
 
   it('on mount the panel tells the shell it shows the in-app ready dialog (else the shell asks natively)', async () => {

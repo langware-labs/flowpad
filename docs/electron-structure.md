@@ -30,7 +30,7 @@ Electron (main.js)
 | File | Role |
 | --- | --- |
 | `main.js` | Entry point (no exports). Window, menu, deep links, IPC, desktop updates, the startup/install flow (`startApp`, `installAndStartBackend`), the error panel. |
-| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. |
+| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `findEngineUpdate`, and `prepareEngine` (stage + validate an update while the engine keeps serving). |
 | `preload.js` | `contextBridge` bridge to the renderer. |
 | `loading.html`, `loading-renderer.js` | Loading screen, progress, and the error panel (including "Send Report"). |
 
@@ -45,9 +45,9 @@ Electron (main.js)
 | `backend-wait.js` | Waiting for the server to come up. |
 | `flow-rs-keychain.js` | Reading keys from the keychain. |
 | `progress-watchdog.js` | Progress guard: 30 s windows, 3 quiet windows in a row = stalled. Gated by `canStall`, async sampling, overlap-safe. |
-| `update-restart.js` | `createRestartApplier` — "Restart now": stops the backend, installs, and recovers if the restart fails. |
-| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
-| `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
+| `update-restart.js` | `createRestartApplier` — "Update now" for a desktop update: stops the backend, installs, and recovers if the restart fails. |
+| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise), failure backoff, launch-check planning. Pure decisions; `main.js` owns the timers and the fs. |
+| `update-plan.js` | The coordinated update's decisions: `engineChangePolicy`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `engineRecordAtHealthGate`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
 | `support-bundle.js` | "Send Report" zip: `collectLogs`, `buildSupportZip`, `redact`. |
 | `support-upload.js` | "Send Report" upload: `uploadSupportBundle` — the zip to the hub's anonymous `/diagnosis-report/bundle` intake (GCS). |
@@ -92,34 +92,43 @@ Electron (main.js)
 `requires_python` of the PyPI release (`pythonFloor`, `maxPythonVersion`, `_pythonPinForUpgrade`). This prevents the
 "engine ≥0.2.173 needs 3.11 but an old desktop pins 3.10" failure for new desktops.
 
-### 3.2 Updates (new flow)
+### 3.2 Updates: staged in the background, asked once
 - Both channels are checked on a per-account schedule (`update-schedule.js`, FLOWPAD-2308): hourly for an
   `@langware.ai` login (the hub-validated email the backend writes to the instance's `config.json`), daily
-  otherwise — including logged out. The last check, its answer, the failure streak and the last version
-  announced persist in `update-schedule.json` (userData), so a restart neither resets the cadence nor
-  re-announces the same version; failed checks retry on a growing backoff (10 min → 4 h). A 5-minute tick
-  only asks whether a check is due; login/logout/account switch re-evaluate at once (a directory watch on
-  the instance dir, re-armed by the tick if it dies). The launch check is skipped while a recent answer said
-  "current" (the status is seeded, so engine updates are not held), but a relaunch inside a failure backoff
-  retries for real; recovery panels and the update-cycle harness bypass the schedule. A feed answer that
-  cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —
-  downloaded deferred, installed on the next quit, surfaced by the reminder (`decideDesktopAction`).
-  Each channel keeps its own failure streak: a PyPI outage retries engine-only on its backoff without
-  re-hitting the GitHub feed, and vice versa. There is never more than ONE update window (`startOffer` is
-  the only entry point, and launching it does not block the scheduler); a newer release found while the
-  "Updates available" screen waits supersedes it — the old window closes unanswered (nothing recorded,
-  its saved engine state withdrawn) and one window for the newest version replaces it. Work blocked by an
-  open dialog or running download is a per-half follow-up debt, finished from the cached answer on a near
-  tick and capped at 3 consecutive failed retries per interval.
-- **Desktop and engine both new:** one screen, "Update now / Later". The engine version X is saved to `pending-engine.json`.
-  After a consented "Restart now", the new desktop installs exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`).
-- **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine
-  dialog appears — no silent install.
-- **A newer desktop** refreshes X. Engine dialogs are **held back** while a desktop update is pending.
-- **A yanked X** is replaced by the latest release (`_resolveEngineTarget`).
-- Engine-only update: the regular dialog. Desktop-only update: background download and the "ready" prompt.
-- electron-updater: `autoDownload=false`, `autoInstallOnAppQuit=true`, NSIS with `oneClick:false`
-  (`quitAndInstall` is handled in `update-restart.js`); setup is idempotent (`updaterInitialized`).
+  otherwise — including logged out. The last check, its answer and the failure streak persist in
+  `update-schedule.json` (userData), so a restart does not reset the cadence; failed checks retry on a growing
+  backoff (10 min → 4 h). A 5-minute tick only asks whether a check is due; login/logout/account switch
+  re-evaluate at once (a directory watch on the instance dir, re-armed by the tick if it dies). The launch
+  check is skipped while a recent answer said "current" (the status is seeded, so engine updates are not
+  held), but a relaunch inside a failure backoff retries for real; recovery panels and the update-cycle
+  harness bypass the schedule. Each channel keeps its own failure streak: a PyPI outage retries engine-only
+  on its backoff without re-hitting the GitHub feed, and vice versa.
+- **Nothing is asked until everything is ready.** A newer desktop (found at launch — once the app's UI is up —
+  or by a periodic pass) is downloaded together with the newest engine that runs on THAT desktop
+  (`beginBackgroundUpdate` → `startCoordinatedUpdate`); a newer engine alone is staged and checked
+  (`prepareEngineInBackground` → `uv-manager.prepareEngine`). The running versions keep serving throughout, and a
+  failure only shows in the panel's row (pushes carry `background: true`, so no toast).
+- **Validated before it can be applied:** electron-updater checks the download against the feed's sha512 (and,
+  on Windows, the installer's signature), Squirrel.Mac verifies and stages it on macOS; a staged engine must
+  import (`uvicorn`, `flow_sdk`) and report exactly the target version from the staging venv
+  (`uv-manager._validateStaged`), or it never becomes the candidate.
+- **Asked once:** `maybeAnnounceUpdateReady` asks "A new version of FlowPad is available" — **Update now / Later** —
+  in the app (`update-ready`) when the loaded UI says it can (`update:panel-ready`), otherwise natively on the
+  next scheduler tick (an older engine's UI). No reminder: "Later" keeps the update ready — the version panel's
+  "Latest" row shows **Ready to install** with an **Update now** button beside it (engine: swapped in seconds, the
+  app stays open; desktop: installed with a restart), and the next quit/start runs it either way (the pair was saved and agreed in `pending-engine.json`
+  when the update started; the new desktop installs exactly `flowpad==X` via `planAfterDesktopUpdate`).
+- **Only the latest candidate is kept:** a newer release replaces the pending one — its download is cancelled
+  (electron-updater keeps one file), its record overwritten, and the user is asked about the newest only. An
+  engine-only release that is already ready stays the candidate until the newer one is staged (a failed or
+  cancelled newer prepare falls back to it, without asking again). Staging dirs are removed after each prepare;
+  the wheels stay in uv's shared cache, which is not pruned (other installs use it).
+- Engine updates are **held back** while a desktop update is pending; a version that failed its health check is not
+  staged again until a newer one exists (`failed-unhealthy`). **A yanked X** is replaced by the latest release
+  (`_resolveEngineTarget`).
+- electron-updater: `autoDownload=false` (the flow downloads explicitly, with a plan for the engine),
+  `autoInstallOnAppQuit=true` except deb/rpm, NSIS with `oneClick:false` (`quitAndInstall` is handled in
+  `update-restart.js`); setup is idempotent (`updaterInitialized`).
 
 ### 3.3 Recovery from an interrupted install
 `~/.flow/desktop-install-in-progress.json` is written before an install and removed on success.

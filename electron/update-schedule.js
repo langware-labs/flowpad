@@ -7,9 +7,9 @@
  *
  * The cadence is per account: an @langware.ai login (the hub-validated email the backend writes to
  * the instance's config.json) checks every hour for early validation; everyone else — including a
- * logged-out app — once a day. The last answer, the failure streak and the last version offered are
- * persisted (update-schedule.json in userData), so a restart neither resets the cadence nor repeats
- * a notification, and a failing feed is retried on a growing backoff instead of hammered.
+ * logged-out app — once a day. The last answer and the failure streak are persisted
+ * (update-schedule.json in userData), so a restart does not reset the cadence, and a failing feed is
+ * retried on a growing backoff instead of hammered.
  *
  * main.js owns the timers and the fs; everything here is a decision on plain values. Manual checks,
  * recovery-mode checks and the update-cycle harness bypass the schedule at the call site — this
@@ -104,8 +104,8 @@ function shouldAutoCheck({ state, intervalMs, now }) {
  * Run the launch-time check, or reuse the persisted answer? A restart must not reset the interval,
  * but engineChangePolicy (update-plan.js) holds the engine while the desktop status is 'unknown' —
  * so a skip SEEDS the status from the last successful answer instead of leaving it unanswered.
- * Skipped only for a recent 'current': a persisted 'available' re-checks (an update is pending and
- * the offer dedupe already prevents re-announcing it), 'unsupported' answers without the network,
+ * Skipped only for a recent 'current': a persisted 'available' re-checks (an update is pending: its
+ * background download picks up where it is), 'unsupported' answers without the network,
  * and inside a failure backoff a RELAUNCH retries for real — leaving the status 'unknown' would
  * hold every engine update with no visible way out. The backoff keeps pacing the in-session ticks;
  * only a relaunch breaks it.
@@ -168,49 +168,6 @@ function engineRetryDue({ state, now }) {
   return attempted === null || now >= attempted + backoffDelayMs(failures);
 }
 
-/** The version whose update screen was shown — never announced twice, even across restarts. */
-function recordOffered(state, { version }) {
-  return { ...state, lastOfferedDesktopVersion: version };
-}
-
-/**
- * A version adopted silently (downloaded with no announcement — already offered before a restart,
- * or a feed regression). Kept apart from the offer watermark: writing it to lastOffered would
- * LOWER that watermark and re-announce the higher release if the feed brings it back.
- */
-function recordAdopted(state, { version }) {
-  return { ...state, lastAdoptedDesktopVersion: version };
-}
-
-/**
- * Announce `version`? Only strictly newer than the last one offered: the same build is never
- * re-announced after a restart, and a feed regression never resurfaces an old one.
- * `isNewer(current, latest)` is the shared semver comparison.
- */
-function shouldNotify({ state, version, isNewer }) {
-  const offered = state.lastOfferedDesktopVersion;
-  return !offered || isNewer(offered, version);
-}
-
-/**
- * The one decision ladder for a feed answer, shared by the periodic tick and the launch path
- * (each applies only its own local blockers — an open dialog, a running download):
- *   'announce'   — never announced, strictly newer than the watermark: show the update screen.
- *   'ignore'     — the user deferred exactly this version this session: the reminder owns it.
- *   'resume'     — announced IN THIS SESSION (e.g. the user said "Update now" and the download was
- *                  interrupted): just continue the download — no deferral, no reminder, nothing adopted.
- *   'redownload' — adopted before (recorded): resume its download from the cache, nothing new to say.
- *   'adopt'      — known but not announceable (offered before a restart, or a feed regression):
- *                  take it quietly — download deferred, reminder offers the restart.
- */
-function decideDesktopAction({ state, version, isNewer, deferredVersion, offeredThisSession }) {
-  if (shouldNotify({ state, version, isNewer })) return 'announce';
-  if (version === deferredVersion) return 'ignore';
-  if (version === offeredThisSession) return 'resume';
-  if (version === state.lastAdoptedDesktopVersion) return 'redownload';
-  return 'adopt';
-}
-
 module.exports = {
   REGULAR_INTERVAL_MS,
   INTERNAL_INTERVAL_MS,
@@ -232,8 +189,4 @@ module.exports = {
   recordEngineSuccess,
   recordEngineAttempt,
   engineRetryDue,
-  recordOffered,
-  recordAdopted,
-  shouldNotify,
-  decideDesktopAction,
 };

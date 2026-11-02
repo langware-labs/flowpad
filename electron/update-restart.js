@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * "Restart now" after a desktop update: stop the backend, THEN hand over to the installer.
+ * "Update now" for a desktop update: stop the backend, THEN hand over to the installer.
  *
  * quitAndInstall() spawns the installer and quits. Two things went wrong with calling it bare:
  *

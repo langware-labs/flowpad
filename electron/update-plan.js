@@ -1,30 +1,16 @@
 'use strict';
 
 /*
- * The shape of an update when the desktop app AND the engine both have a new version — kept out of main.js,
- * which cannot be unit-tested, as pure decisions plus two tiny stateful helpers.
+ * The decisions of a coordinated update (desktop + engine) — kept out of main.js, which cannot be unit-tested,
+ * as pure decisions plus two tiny stateful helpers.
  *
- *   engine only        → today's "Update available" dialog (Upgrade / Later), unchanged.
- *   desktop only       → download in the background, ask to restart when ready (unchanged).
- *   desktop + engine   → ONE screen (Update now / Later). The engine version on offer (X) is SAVED; the desktop is
- *                        downloaded in the background and the engine is NOT touched by the old desktop. After the
- *                        restart, the NEW desktop installs exactly X — but only if the user agreed to restart.
- *
- * "Update now" asks for the restart as soon as the download is done; "Later" waits and asks every 90 minutes.
+ * A newer desktop is downloaded together with the engine version chosen for it (X); the engine is NOT touched by
+ * the old desktop. The pair is saved and agreed when the update starts (the user is asked only once, when both
+ * are ready — "now or later" — and either way the next start runs them), so after the restart the NEW desktop
+ * installs exactly X.
  * Why the engine waits for the new desktop: a new engine can need things only the new desktop knows (a newer Python
  * pin, a changed start contract), and an old desktop upgrading the engine first is what left users stuck.
  */
-
-// How often "the update is ready — restart now?" is offered again to a user who said Later (user-decided: 90 min).
-const READY_REMINDER_MS = 90 * 60 * 1000;
-
-/** @returns {'none'|'engine'|'desktop'|'both'} */
-function decideOffer({ desktopLatest, engineStatus }) {
-  if (desktopLatest && engineStatus) return 'both';
-  if (desktopLatest) return 'desktop';
-  if (engineStatus) return 'engine';
-  return 'none';
-}
 
 // ── may the RUNNING desktop change the engine? ──────────────────────────────
 
@@ -54,9 +40,9 @@ function engineChangePolicy({ desktop, mustInstall = false }) {
 
 // ── the engine version saved for the new desktop to install ─────────────────
 
-/** Remember which engine version was offered alongside `desktopVersion`. Consent comes later (see markConsented).
- *  `source: 'panel'` marks a coordinated update started from the UI's version panel (its popup click is the
- *  consent), so the new desktop can report the resumed engine install back to that panel. */
+/** Remember which engine version rides along with `desktopVersion`. Consent is marked separately (markConsented).
+ *  `source: 'panel'` marks a coordinated update of the in-app flow (an automatic check or a panel click), so the
+ *  new desktop reports the resumed engine install back to the app. */
 function savePendingEngine(store, { engineVersion, desktopVersion, source = null, now = new Date() }) {
   store.write({ engineVersion, desktopVersion, source, savedAt: now.toISOString(), consented: false });
 }
@@ -107,54 +93,10 @@ function engineRecordAtHealthGate(state, { healthy }) {
   return state.previousEngine ? 'restore' : 'keep';
 }
 
-// ── the periodic "update ready" reminder ────────────────────────────────────
-
-/**
- * Re-offers the ready prompt every `intervalMs`. A tick that finds the update not ready yet (still downloading, or
- * another dialog open) marks the reminder DUE, and notifyReady() shows it the moment the update is ready.
- *
- * @param {object} o
- * @param {() => boolean} o.isReady   a downloaded update exists and nothing else is in the way
- * @param {() => void} o.show         put the ready prompt on screen
- * @param {number} [o.intervalMs]
- * @param {{setInterval: Function, clearInterval: Function}} [o.timers]  injectable for tests
- */
-function createReadyReminder({ isReady, show, intervalMs = READY_REMINDER_MS, timers }) {
-  const t = timers || { setInterval, clearInterval };
-  let handle = null;
-  let due = false;
-
-  function tick() {
-    if (isReady()) { due = false; show(); } else { due = true; }
-  }
-
-  return {
-    /** Start the periodic reminder (idempotent). The first reminder comes after `intervalMs`. */
-    start() {
-      if (handle !== null) return;
-      handle = t.setInterval(tick, intervalMs);
-      if (handle && typeof handle.unref === 'function') handle.unref(); // never keeps the app alive
-    },
-    stop() {
-      if (handle !== null) { t.clearInterval(handle); handle = null; }
-      due = false;
-    },
-    /** Call when the download finished: shows the prompt now if a reminder came due while it was not ready. */
-    notifyReady() {
-      if (due && isReady()) { due = false; show(); }
-    },
-    get running() { return handle !== null; },
-    get due() { return due; },
-  };
-}
-
 module.exports = {
-  READY_REMINDER_MS,
   engineRecordAtHealthGate,
-  decideOffer,
   engineChangePolicy,
   savePendingEngine,
   markPendingEngineConsented,
   planAfterDesktopUpdate,
-  createReadyReminder,
 };

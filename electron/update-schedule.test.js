@@ -148,32 +148,4 @@ eq(s.planLaunchCheck({ state: {}, intervalMs: HOUR, now: T0 }).run, true, 'first
   eq(s.planLaunchCheck({ state: neverAnswered, intervalMs: 24 * HOUR, now: T0 + 1 }).reason, 'launch-retry', 'relaunch with no answer ever: the real check runs');
 }
 
-// ── one announcement per version, across restarts, never a regression ───────
-{
-  let state = s.recordOffered({}, { version: '0.2.48' });
-  eq(s.shouldNotify({ state: {}, version: '0.2.48', isNewer }), true, 'never offered: announce');
-  eq(s.shouldNotify({ state, version: '0.2.48', isNewer }), false, 'the same version (e.g. after a restart): never twice');
-  eq(s.shouldNotify({ state, version: '0.2.49', isNewer }), true, 'a strictly newer version: announce');
-  eq(s.shouldNotify({ state, version: '0.2.47', isNewer }), false, 'a feed regression: never re-announce an older build');
-  state = s.readScheduleState(() => JSON.stringify(state), '/u/f');
-  eq(s.shouldNotify({ state, version: '0.2.48', isNewer }), false, 'the offer survives a restart');
-}
-
-// ── the one decision ladder for a feed answer ───────────────────────────────
-{
-  const d = (state, version, deferredVersion = null, offeredThisSession = null) => s.decideDesktopAction({ state, version, isNewer, deferredVersion, offeredThisSession });
-  const offered49 = s.recordOffered({}, { version: '0.2.49' });
-  eq(d({}, '0.2.48'), 'announce', 'never announced: announce');
-  eq(d(offered49, '0.2.50'), 'announce', 'strictly newer than the watermark: announce');
-  eq(d(offered49, '0.2.49', '0.2.49'), 'ignore', 'deferred this session: the reminder owns it');
-  eq(d(offered49, '0.2.49', null, '0.2.49'), 'resume', 'announced this session (e.g. "Update now"): only the download continues');
-  eq(d(offered49, '0.2.49'), 'adopt', 'offered before a restart: adopt quietly');
-  eq(d(offered49, '0.2.48'), 'adopt', 'a feed regression: adopt quietly');
-  const adopted48 = s.recordAdopted(offered49, { version: '0.2.48' });
-  eq(d(adopted48, '0.2.48'), 'redownload', 'already adopted: just resume the download');
-  eq(adopted48.lastOfferedDesktopVersion, '0.2.49', 'adoption never lowers the announce watermark');
-  eq(d(adopted48, '0.2.49'), 'adopt', 'the pulled release coming back is still not re-announced');
-  eq(d(adopted48, '0.2.50'), 'announce', 'but a genuinely newer one is');
-}
-
 console.log(`update-schedule.test.js: ${passed} assertions passed`);

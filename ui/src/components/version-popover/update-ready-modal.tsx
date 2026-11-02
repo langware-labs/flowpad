@@ -22,12 +22,18 @@ interface UpdateReadyModalProps {
 }
 
 /**
- * "The update is ready — restart now or later?" Everything was downloaded and staged while the app kept
- * working; this is the one question. "Later" is never "never": the next start of FlowPad runs the new
- * versions either way.
+ * "An update is available — update now or later?" Everything was downloaded, staged and checked while the
+ * app kept working; this is the one question. "Later" is never "never": the next start of FlowPad runs the
+ * new versions either way.
  */
 export function UpdateReadyModal({ info, busy, error, onRestartNow, onLater }: UpdateReadyModalProps) {
   if (!info) return null;
+  const versions = [
+    info.desktopVersion ? `FlowPad ${info.desktopVersion}` : null,
+    info.engineVersion ? `flow SDK ${info.engineVersion}` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
   return (
     <Dialog
       open
@@ -35,53 +41,28 @@ export function UpdateReadyModal({ info, busy, error, onRestartNow, onLater }: U
         if (!o && !busy) onLater();
       }}
     >
-      <DialogContent className="max-w-md" data-testid="update-ready-modal">
+      <DialogContent className="max-w-sm" data-testid="update-ready-modal">
         <DialogHeader>
           <DialogTitle>
-            {info.kind === 'engine' ? (
-              <Trans>flow SDK v{info.engineVersion} is ready</Trans>
-            ) : info.kind === 'both' ? (
-              <Trans>FlowPad is ready to update</Trans>
-            ) : (
-              <Trans>FlowPad Desktop v{info.desktopVersion} is ready</Trans>
-            )}
+            <Trans>Update available</Trans>
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-2 text-sm">
+        <div className="space-y-1 text-sm">
           <p>
-            {info.kind === 'engine' ? (
-              <Trans>
-                It was downloaded in the background. The engine restarts — this usually takes under a minute; FlowPad
-                stays open.
-              </Trans>
-            ) : info.kind === 'both' ? (
-              info.enginePrepared ? (
-                <Trans>
-                  FlowPad Desktop v{info.desktopVersion} and flow SDK v{info.engineVersion} are downloaded. FlowPad
-                  restarts to install them.
-                </Trans>
-              ) : (
-                <Trans>
-                  FlowPad Desktop v{info.desktopVersion} is downloaded. FlowPad restarts to install it, and flow SDK v
-                  {info.engineVersion} is installed right after.
-                </Trans>
-              )
-            ) : (
-              <Trans>It was downloaded in the background. FlowPad restarts to install it.</Trans>
-            )}
+            <Trans>A new version of FlowPad is available.</Trans>
           </p>
-          <p className="text-muted-foreground">
-            <Trans>Not now? The update is installed the next time FlowPad starts.</Trans>
+          <p className="text-muted-foreground" data-testid="update-ready-versions">
+            {versions}
           </p>
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
-        <div className="flex flex-col gap-2">
-          <Button type="button" onClick={onRestartNow} disabled={busy} data-testid="update-ready-now-button">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {info.kind === 'engine' ? <Trans>Restart the engine now</Trans> : <Trans>Restart now</Trans>}
-          </Button>
+        <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onLater} disabled={busy} data-testid="update-ready-later-button">
             <Trans>Later</Trans>
+          </Button>
+          <Button type="button" onClick={onRestartNow} disabled={busy} data-testid="update-ready-now-button">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            <Trans>Update now</Trans>
           </Button>
         </div>
       </DialogContent>

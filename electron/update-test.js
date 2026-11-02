@@ -11,12 +11,11 @@
  * In test mode:
  *
  *   FLOWPAD_UPDATE_TEST_ANSWERS scripts the update dialogs, e.g.
- *     FLOWPAD_UPDATE_TEST_ANSWERS="both=later,restart=later,engine=upgrade"
+ *     FLOWPAD_UPDATE_TEST_ANSWERS="ready=later,move=accept"
  *   Prompt ids (button 0 always accepts, 1 defers):
  *     move    — macOS: the app runs from a transient place     ("Move to Applications" / "Not now")
- *     both    — desktop + engine both have a new version   ("Update now" / "Later")
- *     restart — the desktop update is downloaded           ("Restart now" / "Later")
- *     engine  — an engine-only update                      ("Upgrade" / "Later")
+ *     ready   — an update (desktop, engine or both) is downloaded, staged and checked, asked natively
+ *               because the loaded UI cannot ask in the app      ("Update now" / "Later")
  *   Accepted values: accept|update|upgrade|restart|yes|0 → button 0; anything else → button 1. An UNSCRIPTED
  *   prompt answers button 1 (defer), so a harness run can never hang on an unexpected native dialog.
  *
@@ -32,7 +31,7 @@
  *                                    watch a held engine at a later tick without waiting (main.js)
  *   FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS  how long the launch-time desktop update check may take before the app
  *                                    gives up on it (default 20 s). A CI runner can need longer; a check that
- *                                    gave up means no "Updates available" screen at that launch (main.js)
+ *                                    gave up means the update is found by the next periodic check instead (main.js)
  *
  * forceRunAfter(): "Restart now" and the desktop-first install end in quitAndInstall(silent, relaunch). The
  * relaunched process is spawned with its output discarded, so in test mode the relaunch is skipped and the

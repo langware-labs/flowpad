@@ -129,6 +129,8 @@ interface EngineUpdateState {
   /** Staged for a coordinated update: the NEW desktop installs it (the desktop row owns that flow). */
   coordinated?: boolean;
   error?: string | null;
+  /** Started by an automatic check, not a click: the row shows it, but nothing is toasted. */
+  background?: boolean;
 }
 
 /** Live desktop-update progress pushed by the shell ('desktop-update-state'). */
@@ -137,6 +139,8 @@ interface DesktopUpdatePush {
   percent?: number;
   version?: string;
   error?: string;
+  /** Started by an automatic check, not a click: the row shows it, but a failure is not toasted. */
+  background?: boolean;
   /** The APPLY failed (quitAndInstall), not the download: Retry re-applies the landed artifact. */
   apply?: boolean;
   /** The install failed after the updater handed over: the way forward is restarting FlowPad. */
@@ -261,15 +265,25 @@ function findPypiRelease(releases: PypiRelease[] | undefined, version: string | 
   return (releases ?? []).find((r) => r.version === norm) ?? null;
 }
 
+interface VersionRowAction {
+  label: string;
+  title?: string;
+  onClick: () => void;
+  disabled?: boolean;
+  testId: string;
+}
+
 interface VersionRowProps {
   label: string;
   version: string | null;
   date?: string | null;
   badge?: string | null;
   muted?: boolean;
+  /** Next to the badge: an update that is downloaded and checked installs from here, any time. */
+  action?: VersionRowAction | null;
 }
 
-function VersionRow({ label, version, date, badge, muted }: VersionRowProps) {
+function VersionRow({ label, version, date, badge, muted, action }: VersionRowProps) {
   return (
     <div className="flex items-baseline justify-between gap-2 text-xs">
       <span className="text-muted-foreground">{label}</span>
@@ -282,6 +296,18 @@ function VersionRow({ label, version, date, badge, muted }: VersionRowProps) {
           <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
             {badge}
           </span>
+        )}
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            disabled={action.disabled}
+            title={action.title}
+            data-testid={action.testId}
+            className="rounded-full bg-primary px-2 py-0.5 font-sans text-[10px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {action.label}
+          </button>
         )}
       </span>
     </div>
@@ -433,7 +459,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       setDesktopActionBusy(false);
     }
   }, []);
-  const [justReady, setJustReady] = useState(false); // a download finished while the user watched: ask to install now
   const [compatInfo, setCompatInfo] = useState<DesktopUpdateRequiredInfo | null>(null);
   const [modalBusy, setModalBusy] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -595,12 +620,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   useEffect(() => {
     const dispose = electronApi?.onDesktopUpdateState?.((s) => {
       setDesktopPush(s);
-      if (s.state === 'ready') setJustReady(true);
       if (s.state !== 'error') setDesktopActionError(null);
       if (s.state === 'ready' || s.state === 'installing' || s.state === 'error') notify.dismiss('desktop-update-download');
       // A failure while the popover is CLOSED would otherwise surface nowhere — and a later open reads
       // an idle snapshot and clears it — while the pending desktop keeps holding flow SDK updates.
-      if (s.state === 'error' && !openRef.current) {
+      if (s.state === 'error' && !s.background && !openRef.current) {
         notify.error({
           id: 'desktop-update-failed',
           title: t`The desktop update failed`,
@@ -617,7 +641,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   useEffect(() => {
     const dispose = electronApi?.onEngineUpdateState?.((s) => {
       setEnginePush(s);
-      if (s.state === 'preparing' && !s.coordinated && !openRef.current) {
+      if (s.state === 'preparing' && !s.coordinated && !s.background && !openRef.current) {
         notify.info({
           id: 'engine-update-prepare',
           title: s.version ? t`Downloading flow SDK v${s.version}` : t`Downloading the flow SDK update`,
@@ -625,7 +649,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         });
       }
       if (s.state !== 'preparing') notify.dismiss('engine-update-prepare');
-      if (s.state === 'error' && !s.coordinated && !openRef.current) {
+      if (s.state === 'error' && !s.coordinated && !s.background && !openRef.current) {
         notify.error({
           id: 'engine-update-prepare-failed',
           title: t`The flow SDK update could not be downloaded`,
@@ -733,9 +757,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       // Prepared in the background: the engine keeps serving while it downloads; the shell then asks
       // (update-ready) and the swap takes seconds. Older shells: the direct stop-and-upgrade.
       const r = electronApi.prepareEngine
-        ? await electronApi.prepareEngine().then((p) => ({ success: p.started, desktopUpdatePending: p.desktopUpdatePending, error: p.started ? undefined : updateRefusalText(p.reason) }))
+        ? await electronApi.prepareEngine().then((p) => ({ success: p.started, ready: !!p.ready, desktopUpdatePending: p.desktopUpdatePending, error: p.started ? undefined : updateRefusalText(p.reason) }))
         : await electronApi.upgradeFlowpad();
-      if (r.success && electronApi.prepareEngine) setEnginePush({ state: 'preparing', version: engine?.latest ?? null });
+      // `ready`: it was already staged in the background — the shell asks right away instead.
+      if (r.success && electronApi.prepareEngine && !('ready' in r && r.ready)) setEnginePush({ state: 'preparing', version: engine?.latest ?? null });
       if (!r.success) {
         if (r.desktopUpdatePending) {
           // The shell holds engine changes while a desktop update is pending — same popup, same way out.
@@ -757,10 +782,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       setDesktopPush(
         r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
       );
-      if (r.ready) {
-        setJustReady(true); // the shell asks (update-ready) once anything still staging is done
-        return;
-      }
+      if (r.ready) return; // the shell asks (update-ready) once anything still staging is done
       // Started from the popup (the panel is closed under it): without this, Update Both closed the popup
       // and nothing visible happened — the progress lives in a panel nobody has open.
       if (!openRef.current) {
@@ -830,7 +852,17 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     // started → the shell pushes {state:'installing'} and restarts the app.
   }, [electronApi, updateRefusalText]);
 
-  /** The ready dialog's "Restart now": the engine swap (seconds) or the desktop install (a restart). */
+  /** "Update now" next to a staged flow SDK: the swap (seconds, FlowPad stays open) — no second question. */
+  const [engineApplyError, setEngineApplyError] = useState<string | null>(null);
+  const handleEngineApply = useCallback(async () => {
+    if (!electronApi?.applyEngineUpdate) return;
+    setEngineApplyError(null);
+    const r = await electronApi.applyEngineUpdate();
+    // Success swaps the window to the loading screen and back: this page is replaced.
+    if (r && !r.started) setEngineApplyError(r.error ? firstLine(r.error) : updateRefusalText(r.reason));
+  }, [electronApi, updateRefusalText]);
+
+  /** The ready dialog's "Update now": the engine swap (seconds) or the desktop install (a restart). */
   const handleReadyNow = useCallback(async () => {
     if (!readyAsk) return;
     setReadyBusy(true);
@@ -1000,6 +1032,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       restartRequired: Boolean(snap?.restartRequired || (desktopPush?.state === 'error' && desktopPush.restart)),
     };
   }, [electronApi, updateInfo, desktopPush]);
+  // Downloaded and checked, and not taken yet ("Later"): installable from the badge row, any time.
+  const engineReady = !!(engineView && engineView.state === 'ready' && !engineView.coordinated && electronApi?.applyEngineUpdate);
+  const desktopReady = !!(desktopView && desktopView.phase === 'ready' && !desktopView.restartRequired);
 
   const { pypiCurrentPublished, pypiLatestPublished, electronCurrentRelease, githubUpdateAvailable } = useMemo(() => {
     // Generically named on the wire, but GitHub Releases carry DESKTOP tags
@@ -1023,7 +1058,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         <VersionChip
           ref={targetRef}
           version={currentVersion}
-          updateAvailable={Boolean(pypi?.update_available || githubUpdateAvailable)}
+          updateAvailable={Boolean(pypi?.update_available || githubUpdateAvailable || engineReady || desktopReady)}
           data-testid="version-popover-trigger"
         />
       </PopoverTrigger>
@@ -1154,17 +1189,28 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             />
             <VersionRow
               label={t`Latest on PyPI`}
-              version={pypi?.latest ?? null}
+              version={engineReady ? (engineView?.version ?? pypi?.latest ?? null) : (pypi?.latest ?? null)}
               date={formatDateWithAge(pypiLatestPublished?.published_at)}
-              badge={pypi?.update_available ? t`Update available` : null}
-              muted={!pypi?.update_available}
+              badge={engineReady ? t`Ready to install` : pypi?.update_available ? t`Update available` : null}
+              muted={!engineReady && !pypi?.update_available}
+              action={
+                engineReady
+                  ? {
+                      label: t`Update now`,
+                      title: engineView?.version ? t`Switch to flow SDK v${engineView.version} — FlowPad stays open` : undefined,
+                      onClick: () => void runDesktopAction(handleEngineApply),
+                      disabled: desktopActionBusy,
+                      testId: 'engine-restart-now-button',
+                    }
+                  : null
+              }
             />
             {data?.installed_at && <TimestampRow label={t`Installed on`} timestamp={data.installed_at} />}
             {/* No release notes here: PyPI carries no notes body (``PypiRelease``
                 is version/date/yanked only), and GitHub Releases are desktop
                 tags, so an SDK version never resolves there. The rows that used
                 to try rendered nothing, every time. */}
-            {engineView && engineView.state !== 'idle' && !engineView.coordinated && (
+            {engineView && engineView.state !== 'idle' && !engineView.coordinated && (engineView.state !== 'ready' || engineApplyError) && (
               <div className="space-y-1.5 pt-1" data-testid="engine-update-row">
                 {engineView.state === 'preparing' && (
                   <div className="space-y-1">
@@ -1188,23 +1234,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                     )}
                   </div>
                 )}
-                {engineView.state === 'ready' && (
-                  <div className="space-y-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setReadyError(null);
-                        setReadyAsk({ kind: 'engine', desktopVersion: null, engineVersion: engineView.version ?? null, enginePrepared: true });
-                      }}
-                      data-testid="engine-restart-now-button"
-                      className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      {engineView.version ? t`Switch to flow SDK v${engineView.version}` : t`Switch to the new flow SDK`}
-                    </button>
-                    <p className="text-[10px] text-muted-foreground">
-                      <Trans>Downloaded and ready — the switch usually takes under a minute. Not now? It is used the next time FlowPad starts.</Trans>
-                    </p>
-                  </div>
+                {engineView.state === 'ready' && engineApplyError && (
+                  <p className="text-[10px] text-destructive" data-testid="engine-apply-error">
+                    {engineApplyError}
+                  </p>
                 )}
                 {engineView.state === 'error' && (
                   <div className="space-y-1">
@@ -1373,10 +1406,21 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             />
             <VersionRow
               label={t`Latest on GitHub`}
-              version={githubLatest?.tag ?? null}
+              version={desktopReady ? (desktopView?.version ?? githubLatest?.tag ?? null) : (githubLatest?.tag ?? null)}
               date={formatDateWithAge(githubLatest?.published_at)}
-              badge={githubUpdateAvailable ? t`Update available` : null}
-              muted={!githubUpdateAvailable}
+              badge={desktopReady ? t`Ready to install` : githubUpdateAvailable ? t`Update available` : null}
+              muted={!desktopReady && !githubUpdateAvailable}
+              action={
+                desktopReady
+                  ? {
+                      label: t`Update now`,
+                      title: desktopView?.version ? t`Install FlowPad Desktop v${desktopView.version} — FlowPad restarts` : undefined,
+                      onClick: () => void runDesktopAction(handleDesktopApply),
+                      disabled: desktopActionBusy,
+                      testId: 'desktop-update-now-button',
+                    }
+                  : null
+              }
             />
             {electronCurrentRelease && electronCurrentRelease.tag !== githubLatest?.tag && (
               <ReleaseNotes title={`Notes for v${electronVersion}`} release={electronCurrentRelease} />
@@ -1445,31 +1489,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                     >
                       <Trans>Restart FlowPad</Trans>
                     </button>
-                  </div>
-                )}
-                {desktopView.phase === 'ready' && !desktopView.restartRequired && (
-                  <div className="space-y-1">
-                    {justReady && (
-                      <p className="text-[10px] text-muted-foreground">
-                        <Trans>Update downloaded — install it now?</Trans>
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => void runDesktopAction(handleDesktopApply)}
-                      disabled={desktopActionBusy}
-                      data-testid="desktop-update-now-button"
-                      className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {desktopView.version ? t`Update Now to v${desktopView.version}` : t`Update Now`}
-                    </button>
-                    <p className="text-[10px] text-muted-foreground">
-                      {updateInfo?.desktop.installsOnQuit === false ? (
-                        <Trans>FlowPad restarts to apply the update. Not now? It stays ready here.</Trans>
-                      ) : (
-                        <Trans>FlowPad restarts to apply the update. Not now? It installs on the next quit.</Trans>
-                      )}
-                    </p>
                   </div>
                 )}
                 {desktopView.phase === 'installing' && (

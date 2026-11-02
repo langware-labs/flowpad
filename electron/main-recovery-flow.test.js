@@ -109,7 +109,7 @@ function load(opts = {}) {
     async _pypiUpdateStatus() { return null; }
     deferPackageVersion() {}
     async upgrade() {}
-    async checkForUpdatesInBackground() { return false; }
+    async findEngineUpdate() { return null; }
     async startWithBin(bin) { if (opts.startFails) throw opts.startFails(); this._flowBin = bin; uv.starts++; }
     useFlowBin(bin) { this._flowBin = bin; }
     async start() { if (!this._flowBin) throw new Error('flow binary not set — call startWithBin() or installLatest() first'); uv.starts++; }
@@ -117,7 +117,6 @@ function load(opts = {}) {
     async codeIntegrityEvents() { return opts.ciEvents || ''; }
     async repairRuntime(args) { uv.repairs++; uv.lastRepair = args; if (opts.repairOk) return { ok: true, python: 'C:\\r\\python.exe' }; throw Object.assign(new Error('not in this test'), { step: 'download' }); }
     isInstalling() { return false; }
-    setFailureSharer() {}
     openPackageDialogVersion() { return null; }
     async getLatestPypiVersion() { return null; }
     lastLaunch() { return null; }

@@ -10,7 +10,6 @@ const engineCompat = require('./engine-compat');
 const { readWheelMember } = require('./wheel-compat');
 const updateTest = require('./update-test');
 const { createProgressWatchdog } = require('./progress-watchdog');
-const { showFailureDialog } = require('./failure-dialog');
 const runtimeRepair = require('./runtime-repair');
 // The dependencies that ship native wheels (scripts/native_deps_from_lock.py): the only ones Windows
 // application control can refuse, so the only ones that get the reputation margin (see EXCLUDE_NEWER_MARGIN_DAYS).
@@ -519,7 +518,6 @@ class UvManager {
     this._wholeWheelReadsLeft = MAX_WHOLE_WHEEL_READS;
     this._rangeIgnored = false; // a server answered a Range request with the whole file: stop asking it
     // Lets native failure dialogs offer "Send Report" (set by main.js; null in tests → "OK" only).
-    this._failureSharer = null;
     this._installing = false;
     this._installChild = null;
     this._installAborted = false;
@@ -2845,8 +2843,8 @@ class UvManager {
       }
     }
     this.log.info(
-      `[uv] Pre-start update check: installed=${currentVersion || 'unknown'}, ` +
-      `latest=${latestVersion}${offered !== latestVersion ? `, newest compatible=${offered}` : ''} → offering upgrade`
+      `[uv] engine update check: installed=${currentVersion || 'unknown'}, ` +
+      `latest=${latestVersion}${offered !== latestVersion ? `, newest compatible=${offered}` : ''} → an update is available`
     );
     return { currentVersion, latestVersion: offered, required: true };
   }
@@ -2913,183 +2911,14 @@ class UvManager {
   }
 
   /**
-   * Remember that the user answered "Later" to `version` (from any dialog), so
-   * the periodic check does not re-offer it this session.
+   * Is there a newer engine to stage? { currentVersion, latestVersion } — the newest release that runs on
+   * THIS desktop — or null. Nothing is shown or installed. `compareWithPypi: false` defers to the cloud
+   * policy verdict instead of the plain PyPI comparison.
    */
-  deferPackageVersion(version) {
-    if (version) this._deferredPackageVersion = version;
-  }
-
-  /** Undo deferPackageVersion for a version whose offer was withdrawn (superseded, never answered). */
-  undeferPackageVersion(version) {
-    if (version && this._deferredPackageVersion === version) this._deferredPackageVersion = null;
-  }
-
-  /** @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} fn */
-  setFailureSharer(fn) {
-    this._failureSharer = typeof fn === 'function' ? fn : null;
-  }
-
-  /** Version offered by the package dialog currently on screen, or null. */
-  openPackageDialogVersion() {
-    return this._packageDialog ? this._packageDialog.version : null;
-  }
-
-  /** Close the open package dialog as if the user chose "Later" (a newer release supersedes it). */
-  supersedePackageDialog() {
-    if (this._packageDialog) this._packageDialog.abort.abort();
-  }
-
-  /**
-   * Run a background update check after the UI is loaded.
-   * Non-blocking — failures are logged and silently ignored.
-   * Shows a native OS dialog if an update is required.
-   */
-  async checkForUpdatesInBackground(
-    mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null, onUpgradeAccepted = null }
-  ) {
-    // Scoped to THIS attempt: a failure BEFORE the capture below (stop() throwing) must restore
-    // nothing — an instance field would hand recovery a leftover from an EARLIER upgrade and
-    // force-downgrade a healthy newer engine.
-    let versionBeforeUpgrade = null;
-    try {
-      // Pre-start: the backend is down and the install may even be broken, so
-      // decide with the standalone PyPI-vs-installed check — no cloud, no CLI,
-      // so it behaves the same for healthy, broken, and offline-from-cloud
-      // installs (offer the upgrade whenever PyPI is newer). Post-boot: the
-      // running backend can answer the cloud `/check-update` policy, so defer
-      // to that verdict — unless the caller asks for the plain PyPI comparison
-      // (`compareWithPypi`, used by the hourly check so a newer release is
-      // offered even when the cloud policy would not *require* it).
-      const status = compareWithPypi
-        ? await this._pypiUpdateStatus()
-        : await this.getUpdateStatus(cloudUrl);
-      if (!status || !status.required || !status.latestVersion) return false;
-
-      const latest = status.latestVersion;
-      // The user already answered "Later" for this exact version in this
-      // session — don't ask again every hour. A new release, or the next launch
-      // (fresh process), asks again.
-      if (latest === this._deferredPackageVersion) {
-        this.log.info(`[uv] Update ${latest} available but deferred by the user earlier this session`);
-        return false;
-      }
-      this.log.info(`[uv] Update available: ${status.currentVersion || 'unknown'} → ${latest}`);
-
-      if (!mainWindow || mainWindow.isDestroyed()) return false;
-
-      // Abortable: a newer release found while this is on screen closes it (as
-      // "Later") via supersedePackageDialog(), so only one dialog, for the latest
-      // version, is ever shown.
-      this._packageDialog = { version: latest, abort: new AbortController() };
-      let response;
-      try {
-        response = updateTest.answerFor('engine', { engine: status.currentVersion || null, engineLatest: latest });
-        if (response === null) ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
-          type: 'info',
-          title: 'Update Available',
-          message: `A new version of FlowPad is available (${latest}).`,
-          detail: status.currentVersion
-            ? `You are running version ${status.currentVersion}.`
-            : 'Your current installation could not be verified and may be incomplete.',
-          buttons: ['Upgrade', 'Later'],
-          defaultId: 0,
-          cancelId: 1, // Esc / close = Later, never an implicit Upgrade
-          signal: this._packageDialog.abort.signal,
-        }));
-      } finally {
-        this._packageDialog = null;
-      }
-      if (response !== 0) this._deferredPackageVersion = latest;
-      if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
-      // Post-boot with a prepare-and-swap owner (main.js): the running engine keeps serving while the
-      // update downloads and is staged; the user is asked to restart once it is ready — instead of
-      // stopping the backend now and waiting on the whole download with the app down.
-      if (!beforeBackendStart && onUpgradeAccepted) {
-        await onUpgradeAccepted(latest);
-        return true;
-      }
-      // User chose Upgrade — show loading screen and wait for its IPC listener.
-      const loadingPath = require('path').join(__dirname, 'loading.html');
-      await mainWindow.loadFile(loadingPath);
-      await new Promise(r => setTimeout(r, 200));
-
-      // Pre-start: nothing is running yet, so skip the stop. Post-boot: stop the
-      // live backend before reinstalling over it.
-      if (!beforeBackendStart) {
-        if (sendStatus) sendStatus('Stopping server');
-        await this.stop();
-        this.isShuttingDown = false;
-      }
-
-      if (sendStatus) sendStatus('Upgrading Flowpad');
-      // Captured before the install: the recovery below must know what to put BACK when the new
-      // engine installs fine but never becomes healthy (uv --force already replaced the old one).
-      versionBeforeUpgrade = this.getInstalledVersionSync() || null;
-      await this.upgrade();
-
-      // Pre-start: hand back to startApp's normal start path to boot the
-      // upgraded backend — calling start()/loadURL here would double-start the
-      // backend and load the main UI prematurely.
-      if (beforeBackendStart) return true;
-
-      if (sendStatus) sendStatus('Starting server');
-      await this.start();
-
-      if (sendStatus) sendStatus('Waiting for server');
-      // 120s window — matches the upgrade() subprocess ceiling and gives
-      // the freshly-installed backend room to boot before the user sees
-      // a false "failed to start" error. A backend that never gets healthy is
-      // a failed upgrade: fall into the recovery path below instead of loading
-      // a dead URL.
-      if (waitForBackend) {
-        // waitForBackend answers with an OBJECT ({ ready, reason, … } — backend-wait.js), and an
-        // object is always truthy: testing the answer itself never caught a dead backend here.
-        const { ready } = (await waitForBackend({ maxChecks: 240 })) || {};
-        if (!ready) throw new Error('upgraded backend did not become healthy');
-      }
-
-      if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
-        mainWindow.loadURL(backendUrl);
-      }
-      return true;
-    } catch (err) {
-      this.log.warn(`[uv] Background update/upgrade failed: ${err.message}`);
-      // Pre-start failures fall through to startApp's own start path (which
-      // handles broken installs), so there's nothing to restore here. Post-boot
-      // we have ALREADY stopped the backend and swapped the window to the
-      // loading splash, so returning here would strand the user on "Upgrading
-      // Flowpad…" forever with a dead backend (no timeout screen — that only
-      // exists in the startup path). Restore the running app instead.
-      if (!beforeBackendStart) {
-        const restored = await this._recoverRunningBackendAfterFailedUpgrade(
-          mainWindow, { waitForBackend, backendUrl, sendStatus, restoreVersion: versionBeforeUpgrade }
-        );
-        if (!restored && mainWindow && !mainWindow.isDestroyed()) {
-          await showFailureDialog({
-            dialog: require('electron').dialog,
-            parent: mainWindow,
-            type: 'error',
-            title: 'Update failed',
-            message: 'FlowPad couldn’t finish updating and couldn’t restart automatically.',
-            detail:
-              `${err && err.message ? `Cause: ${err.message}\n\n` : ''}` +
-              'Please quit and reopen FlowPad. If it keeps happening, run:\n\n' +
-              `${upgradeCommand()}\n\n` +
-              'then reopen FlowPad, or run "flow diagnose".',
-            share: this._failureSharer,
-            log: this.log,
-          });
-          // The window still shows "Upgrading Flowpad…" over a dead backend: replace it with the in-app panel
-          // (Share, Copy, Open logs, Quit) so the user is not left on a splash that will never finish.
-          if (onUnrecovered && mainWindow && !mainWindow.isDestroyed()) {
-            try { await onUnrecovered(err, { restoreVersion: versionBeforeUpgrade }); } catch (e) { this.log.warn(`[uv] onUnrecovered failed: ${e && e.message}`); }
-          }
-        }
-      }
-      return false;
-    }
+  async findEngineUpdate({ compareWithPypi = true, cloudUrl = null } = {}) {
+    const status = compareWithPypi ? await this._pypiUpdateStatus() : await this.getUpdateStatus(cloudUrl);
+    if (!status || !status.required || !status.latestVersion) return null;
+    return { currentVersion: status.currentVersion || null, latestVersion: status.latestVersion };
   }
 
   /**
@@ -3280,6 +3109,8 @@ class UvManager {
       try {
         this.log.info(`[uv] preparing flowpad ${target.version} in the background (the running engine keeps serving)`);
         const flags = await this._stageInstall(target.spec, target.pin, stageRoot, { onProgress });
+        // Validated before it may become the candidate: the staged engine must import and BE the release.
+        await this._validateStaged(stageRoot, target.version);
         let rollbackFlags = null;
         if (previousVersion && engineCompat.isInstallableVersion(previousVersion) && !this._prepareCancelled) {
           try {
@@ -3381,6 +3212,29 @@ class UvManager {
       throw installFailure('Could not determine which FlowPad engine release to prepare (PyPI did not answer). Your existing installation has been preserved.');
     }
     return { version: latest.version, spec: `${PYPI_PACKAGE}==${latest.version}`, pin: await this._pythonPinForUpgrade(latest) };
+  }
+
+  /**
+   * The staged engine imports — its server stack and the SDK — and is exactly `version`: a broken
+   * wheel, a missing dependency or a wrong resolution fails HERE, with the running engine untouched,
+   * instead of at the swap. Cancellable like the staging itself.
+   */
+  async _validateStaged(stageRoot, version) {
+    const venv = path.join(stageRoot, 'tools', PYPI_PACKAGE);
+    const python = process.platform === 'win32' ? path.join(venv, 'Scripts', 'python.exe') : path.join(venv, 'bin', 'python');
+    const check = 'import sys, uvicorn, multiprocessing.connection, flow_sdk; from importlib.metadata import version; '
+      + `v = version(${JSON.stringify(PYPI_PACKAGE)}); sys.exit(0 if v == ${JSON.stringify(version)} else 'staged ' + v + ' instead of ${version}')`;
+    try {
+      if (this._prepareCancelled) throw Object.assign(new Error('the update download was cancelled'), { cancelled: true });
+      // -I: isolated, so nothing from the current directory or the user's site-packages answers for the venv.
+      await this._runStreaming(python, ['-I', '-c', check], { shell: false, cwd: venv, onChild: (child) => { this._prepareChild = child; } });
+    } catch (err) {
+      if (this._prepareCancelled) throw Object.assign(new Error('the update download was cancelled'), { cancelled: true });
+      throw new Error(`the staged engine ${version} did not pass its check: ${String((err && err.message) || err).split('\n')[0]}`);
+    } finally {
+      this._prepareChild = null;
+    }
+    this.log.info(`[uv] staged flowpad ${version} passed its check (imports, version)`);
   }
 
   /**
