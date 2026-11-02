@@ -9,8 +9,9 @@
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { commandFor } from '@src/notifications/command-registry';
 
-const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), notifySuccess: vi.fn(), notifyError: vi.fn(), notifyWarning: vi.fn() }));
+const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), notifySuccess: vi.fn(), notifyError: vi.fn(), notifyWarning: vi.fn(), notifyInfo: vi.fn() }));
 vi.mock('@sdk/client', () => ({ default: { get: h.get, post: h.post } }));
 vi.mock('@sdk/websocket', () => ({ connectionManager: { id: 'conn-test' } }));
 vi.mock('@src/components/markdown-view', () => ({ MarkdownView: () => null }));
@@ -22,7 +23,7 @@ vi.mock('@src/components/view-mode', () => ({ useIsDev: () => false }));
 vi.mock('@src/hooks/use-preference', () => ({ usePreference: () => [undefined] }));
 vi.mock('@sdk/react/hooks', () => ({ useContext: () => null }));
 vi.mock('@src/notifications/notify', () => ({
-  notify: Object.assign(vi.fn(), { success: h.notifySuccess, error: h.notifyError, warning: h.notifyWarning, dismiss: vi.fn() }),
+  notify: Object.assign(vi.fn(), { success: h.notifySuccess, error: h.notifyError, warning: h.notifyWarning, info: h.notifyInfo, dismiss: vi.fn() }),
 }));
 
 import { VersionPopover } from '@src/components/version-popover/version-popover';
@@ -472,6 +473,72 @@ describe('round 11: restart, cancel, alerts the closed popover used to swallow',
     });
     render(<VersionPopover currentVersion="0.2.230" />);
     await waitFor(() => expect(h.notifyWarning).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('after Update Both the popup is gone: the user still sees what happens', () => {
+  it('the pre-flight says Checking…, not Upgrading…', async () => {
+    let answer: (v: unknown) => void = () => {};
+    (window as { electronAPI?: unknown }).electronAPI = electronApi({
+      getUpdateInfo: vi.fn(() => new Promise((r) => { answer = r; })),
+    });
+    render(<VersionPopover currentVersion="0.2.230" />);
+    fireEvent.click(screen.getByTestId('version-popover-trigger'));
+    const btn = await screen.findByTestId('version-upgrade-button');
+    fireEvent.click(btn);
+    await waitFor(() => expect(btn.textContent).toContain('Checking'));
+    answer(INCOMPATIBLE_INFO);
+    await screen.findByTestId('desktop-update-required-modal');
+  });
+
+  it('Update Both: a toast says the download started; when it lands, a toast offers Update Now', async () => {
+    let push: ((s: unknown) => void) | null = null;
+    const api = electronApi({
+      getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO),
+      updateBoth: vi.fn().mockResolvedValue({ started: true, version: '0.2.62', engineVersion: '0.2.240' }),
+      onDesktopUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        push = cb;
+        return () => {};
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(screen.getByTestId('version-upgrade-button'));
+    fireEvent.click(await screen.findByTestId('update-both-button'));
+    await waitFor(() => expect(screen.queryByTestId('desktop-update-required-modal')).toBeNull());
+    await waitFor(() =>
+      expect(h.notifyInfo).toHaveBeenCalledWith(expect.objectContaining({ id: 'desktop-update-download' })),
+    );
+    const started = h.notifyInfo.mock.calls.find(([d]) => d.id === 'desktop-update-download')![0] as { title: string; message: string };
+    expect(started.title).toContain('v0.2.62');
+    expect(started.message).toContain('v0.2.240');
+
+    push?.({ state: 'ready', version: '0.2.62' });
+    await waitFor(() =>
+      expect(h.notifyInfo).toHaveBeenCalledWith(expect.objectContaining({ id: 'desktop-update-ready' })),
+    );
+    const ready = h.notifyInfo.mock.calls.find(([d]) => d.id === 'desktop-update-ready')![0] as {
+      durationMs: number | null; actions: { command: string }[];
+    };
+    expect(ready.durationMs).toBeNull(); // it waits for the user
+    // Its Update Now installs (and opens the panel, which shows the restart).
+    commandFor(ready.actions[0].command)!({}, { id: 'desktop-update-ready' });
+    await waitFor(() => expect(api.applyDesktopUpdate).toHaveBeenCalledTimes(1));
+    await screen.findByTestId('version-upgrade-button');
+  });
+
+  it('a download the user postponed in the native dialog ("Later") gets no ready toast', async () => {
+    let push: ((s: unknown) => void) | null = null;
+    (window as { electronAPI?: unknown }).electronAPI = electronApi({
+      onDesktopUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        push = cb;
+        return () => {};
+      }),
+    });
+    render(<VersionPopover currentVersion="0.2.230" />);
+    push?.({ state: 'ready', version: '0.2.62' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.notifyInfo).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'desktop-update-ready' }));
   });
 });
 

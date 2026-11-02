@@ -6434,6 +6434,7 @@ msgid "checking…"
 msgstr "checking…"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "Checking…"
@@ -11598,10 +11599,19 @@ msgstr "Download v{0}"
 msgid "Downloaded"
 msgstr "Downloaded"
 
+#. placeholder {0}: r.version
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading FlowPad Desktop v{0}"
+msgstr "Downloading FlowPad Desktop v{0}"
+
 #. placeholder {0}: desktopView.version
 #: src/components/version-popover/version-popover.tsx
 msgid "Downloading FlowPad Desktop v{0}…"
 msgstr "Downloading FlowPad Desktop v{0}…"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading the desktop update"
+msgstr "Downloading the desktop update"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Downloading the desktop update…"
@@ -14087,6 +14097,11 @@ msgstr "flow SDK update failed"
 
 #. placeholder {0}: r.engineVersion
 #: src/components/version-popover/version-popover.tsx
+msgid "flow SDK v{0} is installed right after the restart. FlowPad asks before installing."
+msgstr "flow SDK v{0} is installed right after the restart. FlowPad asks before installing."
+
+#. placeholder {0}: r.engineVersion
+#: src/components/version-popover/version-popover.tsx
 msgid "flow SDK v{0} is installed."
 msgstr "flow SDK v{0} is installed."
 
@@ -14128,6 +14143,10 @@ msgstr "Flowpad agent"
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "FlowPad API Key"
 msgstr "FlowPad API Key"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad asks before installing it."
+msgstr "FlowPad asks before installing it."
 
 #: src/components/floating-chat/AssistantPopoutView.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
@@ -14198,6 +14217,10 @@ msgstr "FlowPad Desktop v{0} is available, but the flow SDK version could not be
 msgid "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
 msgstr "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad Desktop v{version} is ready to install"
+msgstr "FlowPad Desktop v{version} is ready to install"
+
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
 msgstr "Flowpad Diagnosis"
@@ -14256,6 +14279,10 @@ msgstr "FlowPad isn't connected — Open starts it if it's installed"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad isn't installed on this computer"
 msgstr "FlowPad isn't installed on this computer"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "FlowPad restarts to apply it."
+msgstr "FlowPad restarts to apply it."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "FlowPad restarts to apply the update. Not now? It installs on the next quit."
@@ -32235,6 +32262,10 @@ msgstr "The desktop update failed."
 msgid "The desktop update feed could not be checked, so this flow SDK version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
 msgstr "The desktop update feed could not be checked, so this flow SDK version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The desktop update is ready to install"
+msgstr "The desktop update is ready to install"
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -34819,6 +34850,7 @@ msgstr "Update failed"
 msgid "Update flow SDK to v{0} (works with this desktop)"
 msgstr "Update flow SDK to v{0} (works with this desktop)"
 
+#: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Update Now"
 msgstr "Update Now"

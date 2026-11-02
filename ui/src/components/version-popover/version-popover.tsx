@@ -8,6 +8,7 @@ import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { VersionChip } from '@src/components/version-popover/version-chip';
 import { notify } from '@src/notifications/notify';
+import { registerCommand } from '@src/notifications/command-registry';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
@@ -383,6 +384,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [error, setError] = useState<string | null>(null);
   const [electronVersion, setElectronVersion] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  // The Upgrade click's pre-flight (nothing is installed yet): the button says "Checking…", not "Upgrading…".
+  const [upgradeChecking, setUpgradeChecking] = useState(false);
+  // The desktop version whose download THIS panel started: only that one gets the "ready" toast — a
+  // download the user postponed in the native dialog ("Later") must not pop one.
+  const panelFlowVersionRef = useRef<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [installResult, setInstallResult] = useState<InstallVersionResponse | null>(null);
@@ -560,6 +566,21 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     void refreshUpdateInfo();
   }, [open, refreshUpdateInfo]);
 
+  /** The panel's own download landed while nobody has the panel open: say so, with Update Now. */
+  const showReadyToast = useCallback(
+    (version: string | null) => {
+      notify.dismiss('desktop-update-download');
+      notify.info({
+        id: 'desktop-update-ready',
+        title: version ? t`FlowPad Desktop v${version} is ready to install` : t`The desktop update is ready to install`,
+        message: t`FlowPad restarts to apply it.`,
+        durationMs: null, // actionable: it waits for the user, like the native "Restart now" prompt
+        actions: [{ label: t`Update Now`, command: 'desktop-update.install-now' }],
+      });
+    },
+    [t],
+  );
+
   // Live progress while a desktop update downloads/installs. Mounted once (the popover component
   // lives in the footer), so a download finishing while the popover is closed still lands here.
   useEffect(() => {
@@ -567,6 +588,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       setDesktopPush(s);
       if (s.state === 'ready') setJustReady(true);
       if (s.state !== 'error') setDesktopActionError(null);
+      if (s.state === 'ready' && !openRef.current && s.version && s.version === panelFlowVersionRef.current) {
+        showReadyToast(s.version);
+      }
+      if (s.state === 'installing' || s.state === 'error') notify.dismiss('desktop-update-download');
+      if (s.state === 'installing') notify.dismiss('desktop-update-ready');
       // A failure while the popover is CLOSED would otherwise surface nowhere — and a later open reads
       // an idle snapshot and clears it — while the pending desktop keeps holding flow SDK updates.
       if (s.state === 'error' && !openRef.current) {
@@ -579,7 +605,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       }
     });
     return dispose;
-  }, [electronApi, t]);
+  }, [electronApi, showReadyToast, t]);
 
   // A panel-initiated coordinated update resumed by this launch: report its outcome.
   useEffect(() => {
@@ -653,7 +679,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       // Pre-flight: does the latest release run on THIS desktop? When it does not, the popup offers the
       // coordinated update instead of starting an upgrade the shell would refuse (or roll back) anyway.
       // fresh: a release published a minute ago must shape the popup (display rides the CDN; this does not).
+      setUpgradeChecking(true);
       const info = await refreshUpdateInfo({ fresh: true });
+      setUpgradeChecking(false);
       const engine = info?.engine ?? null;
       if (engine && engine.latestCompatible === false) {
         setModalError(null);
@@ -671,17 +699,37 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         }
       }
     } finally {
+      setUpgradeChecking(false);
       setUpgrading(false);
     }
   }, [electronApi, refreshUpdateInfo, buildCompatInfo, t]);
 
   /** The panel started (or resumed) a desktop download: reflect the shell's answer in the row. */
-  const notePanelStart = useCallback((r: UpdateActionResult) => {
-    setDesktopPush(
-      r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
-    );
-    if (r.ready) setJustReady(true);
-  }, []);
+  const notePanelStart = useCallback(
+    (r: UpdateActionResult) => {
+      setDesktopPush(
+        r.ready ? { state: 'ready', version: r.version } : { state: 'downloading', percent: 0, version: r.version },
+      );
+      panelFlowVersionRef.current = r.version ?? null;
+      if (r.ready) {
+        setJustReady(true);
+        if (!openRef.current) showReadyToast(r.version ?? null);
+        return;
+      }
+      // Started from the popup (the panel is closed under it): without this, Update Both closed the popup
+      // and nothing visible happened — the progress lives in a panel nobody has open.
+      if (!openRef.current) {
+        notify.info({
+          id: 'desktop-update-download',
+          title: r.version ? t`Downloading FlowPad Desktop v${r.version}` : t`Downloading the desktop update`,
+          message: r.engineVersion
+            ? t`flow SDK v${r.engineVersion} is installed right after the restart. FlowPad asks before installing.`
+            : t`FlowPad asks before installing it.`,
+        });
+      }
+    },
+    [showReadyToast, t],
+  );
 
   /** Start downloading the available desktop build (also the Retry after a failed download).
    *  A desktop update never leaves the engine behind: when a newer flow SDK exists too, the download
@@ -736,6 +784,16 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     if (!r.started && r.reason !== 'apply-failed') setDesktopActionError(updateRefusalText(r.reason));
     // started → the shell pushes {state:'installing'} and restarts the app.
   }, [electronApi, updateRefusalText]);
+
+  // The "ready" toast's Update Now: open the panel (it shows "Restarting to install…" and any refusal)
+  // and run the same install as the row's button.
+  useEffect(() => {
+    registerCommand('desktop-update.install-now', () => {
+      notify.dismiss('desktop-update-ready');
+      setOpen(true);
+      void runDesktopAction(handleDesktopApply);
+    });
+  }, [runDesktopAction, handleDesktopApply]);
 
   /** The popup's fallback: no suitable desktop build yet, but a newer flow SDK that runs on THIS
    *  desktop exists — install it through the normal shell upgrade, which resolves exactly that
@@ -1037,7 +1095,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                   className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                 >
                   {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  {upgrading ? t`Upgrading…` : t`Upgrade to v${(mode === 'Desktop' && updateInfo?.engine?.latest) || pypi.latest}`}
+                  {upgrading ? (upgradeChecking ? t`Checking…` : t`Upgrading…`) : t`Upgrade to v${(mode === 'Desktop' && updateInfo?.engine?.latest) || pypi.latest}`}
                 </button>
                 {upgradeError && (
                   <div
