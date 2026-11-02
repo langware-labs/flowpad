@@ -27,7 +27,7 @@ uv run pytest tests/api/test_run_session_turn.py::test_name
 - Run from the repo root. `pytest.ini` (not pyproject) wins: `asyncio_mode=auto`, `--timeout=30` per test, `pythonpath=.`. Env: pytest-env (>=1.2) reads pyproject's `[tool.pytest_env]` (SQLITE_DATABASE_PATH, TESTING, FLOWPAD_HUB_URL=http://127.0.0.1:9) and then IGNORES the `env =` block in pytest.ini.
 - Fixtures come from `tests/pytest_plugin.py` (registered by the root conftest): throwaway `HOME`, DB and records root per run, keyring stub, cookie gate off.
 - `long`-marked tests are deselected unless you pass `--long` (or any `-m`).
-- Never raise a committed timeout to get a green. If your branch has an ADJUSTABLE_TIMEOUT helper (`tests/adjustable_timeout.py`), it ADDS seconds / scales caps on slow hosts: a pass under a scaled budget is not a default-budget pass, say so when reporting.
+- Never raise a committed timeout. On a slower host set `ADJUSTABLE_TIMEOUT=<seconds>` (`tests/adjustable_timeout.py`): it ADDS that many seconds to every test's timeout (the `--timeout=30` default and each `@pytest.mark.timeout`, applied in `tests/pytest_plugin.py`) and to budgets wrapped in `adjusted()`. Default 0 = the committed values. A pass under a non-zero value is not a default-budget pass: say so when reporting.
 - `/tmp` may be small (about 1 GB): `export TMPDIR=<bigger volume>/tmp` (or set `FLOWPAD_TEMP_DIR`) before big runs.
 - Never `pkill -f run_hub` (or similar broad patterns) from the shell that runs the tests.
 

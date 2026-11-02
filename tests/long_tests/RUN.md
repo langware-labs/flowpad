@@ -33,7 +33,7 @@ DEEP_TESTING=1 ANTHROPIC_API_KEY=... uv run pytest tests/long_tests/stress_matri
 
 - Run from the repo root. `pytest.ini` wins over pyproject: `asyncio_mode=auto`, `--timeout=30` per test, and an `env =` block applied by pytest-env.
 - Fixtures come from `tests/pytest_plugin.py`: throwaway `HOME`, DB and records root per run (the real home is kept in `FLOWPAD_PRE_SANDBOX_HOME`).
-- Never raise a committed timeout. If your branch has an ADJUSTABLE_TIMEOUT helper (`tests/adjustable_timeout.py`), it ADDS seconds / scales caps on slow hosts: a pass under a scaled budget is not a default-budget pass; say so.
+- Never raise a committed timeout. On a slower host set `ADJUSTABLE_TIMEOUT=<seconds>` (`tests/adjustable_timeout.py`): it ADDS that many seconds to every test's timeout (the `--timeout=30` default and each `@pytest.mark.timeout`, applied in `tests/pytest_plugin.py`) and to budgets wrapped in `adjusted()`. Default 0 = the committed values. A pass under a non-zero value is not a default-budget pass: say so when reporting.
 - `/tmp` may be small (about 1 GB): `export TMPDIR=<bigger volume>/tmp` first.
 - Never `pkill -f run_hub` (or other broad patterns) from the shell running the tests.
 
