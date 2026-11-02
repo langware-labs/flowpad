@@ -7,13 +7,13 @@
 
 ## Commands (repo root)
 ```bash
-DEEP_TESTING=1 uv run pytest tests/long_tests/test_ask_browser_matrix.py
-DEEP_TESTING=1 uv run pytest tests/long_tests/test_ask_browser_matrix.py::test_name
+uv run pytest tests/long_tests/test_ask_browser_matrix.py
+uv run pytest tests/long_tests/test_ask_browser_matrix.py::test_name
 node ui/tests/ask_browser/drive_ask.mjs "<ask page url>" answer "<value>"      # manual driver
 ```
 
 ## Env vars
-`DEEP_TESTING=1` (if the file is gated), plus the usual pytest sandbox vars.
+None specific (the file is not DEEP_TESTING-gated); the usual pytest sandbox vars. It skips when `ui/node_modules` is missing.
 
 ## Pitfalls
 - The pytest test is 300 s-capped (`pytest.mark.timeout(300)`, "do not increase without approval"); vite startup on a slow host eats into it.

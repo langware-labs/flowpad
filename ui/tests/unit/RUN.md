@@ -1,6 +1,6 @@
 # ui/tests/unit - how to run
 
-**What**: ~1000 unit tests of UI/SDK logic and components (jsdom). Tier: mock; the config defines `__API_URL__` as an unreachable `.invalid` host, so there is no backend, hub, or LLM.
+**What**: ~980 test files of UI/SDK logic and components (jsdom). Tier: mock; the config defines `__API_URL__` as an unreachable `.invalid` host, so there is no backend, hub, or LLM.
 
 ## Prerequisites
 `cd ui && npm ci`. No credentials.
