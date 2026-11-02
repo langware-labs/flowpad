@@ -42,7 +42,9 @@ def hub_response(monkeypatch):
 
     async def fake_send(method, url, **kwargs):
         r = holder["resp"]
-        return httpx.Response(r.status_code, text=r.text, request=httpx.Request(method, str(url)))
+        return httpx.Response(
+            r.status_code, text=r.text, headers={"content-type": "application/json"}, request=httpx.Request(method, str(url))
+        )
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",

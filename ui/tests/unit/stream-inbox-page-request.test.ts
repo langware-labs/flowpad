@@ -36,7 +36,7 @@ describe('conversationsPageRequest', () => {
     // The newer-page boundary is asked of the same narrowed rows, so Newer pages agree.
     const above = newerBoundaryRequest(narrowed, 'all', '2026-10-01T00:00:00.000Z').query!;
     expect(above.validate(row({ channel_source_id: 'src-mail' }))).toBe(false);
-    // No pick is the whole inbox.
+    // No pick is the whole stream inbox.
     expect(conversationsPageRequest(scope, 'all', null).query!.validate(row({ channel_source_id: 'src-mail' }))).toBe(true);
   });
 

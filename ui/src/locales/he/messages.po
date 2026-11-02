@@ -7435,6 +7435,7 @@ msgstr "תגובות"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Commit"
 msgstr "commit"
 
@@ -7449,6 +7450,14 @@ msgstr "אישור ומיזוג"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Commit & share"
 msgstr "בצעו commit ושתפו"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit all"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit all changes (no push)"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
@@ -7470,6 +7479,10 @@ msgstr "ייחוס הקומיט"
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Commit failed"
 msgstr "commit נכשל"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit just this file (no push)"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "Commit or discard first"
@@ -14759,8 +14772,8 @@ msgid "Git is set up."
 msgstr "Git מוגדר."
 
 #: src/components/status-bar/GitPushButton.tsx
-msgid "git push"
-msgstr "דחף git"
+#~ msgid "git push"
+#~ msgstr "דחף git"
 
 #: src/components/status-bar/GitPushButton.tsx
 msgid "git push — {ahead} commits to push"

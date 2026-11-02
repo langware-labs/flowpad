@@ -17,7 +17,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { apiContext } from '../_shared/api';
 
 const PER_SOURCE = 60;
-/** The inbox lists one page of conversations at a time (STREAM_INBOX_PAGE_SIZE); 120 fill it. */
+/** The stream inbox lists one page of conversations at a time (STREAM_INBOX_PAGE_SIZE); 120 fill it. */
 const PAGE = 100;
 const PER_CALL = 20;
 const stamp = Date.now().toString(36);

@@ -11,6 +11,7 @@ import {
   FileMinus,
   FilePen,
   FilePlus,
+  GitCommitHorizontal,
   GitBranch,
   type LucideIcon,
   PlusSquare,
@@ -81,13 +82,13 @@ function dirname(p: string): string {
 type GitMode = 'standard' | 'advanced';
 
 interface GitAction {
-  key: 'diff' | 'discard' | 'stage' | 'unstage' | 'copyPath';
+  key: 'diff' | 'discard' | 'stage' | 'unstage' | 'commit' | 'copyPath';
   label: string;
   tooltip: string;
   icon: LucideIcon;
   destructive?: boolean;
   // POST sub-path for backend mutations; absent for client-only actions.
-  subpath?: 'discard-file' | 'stage-file' | 'unstage-file';
+  subpath?: 'discard-file' | 'stage-file' | 'unstage-file' | 'commit-file';
 }
 
 // Per-status copy/icon for the state-aware discard action. `default` covers
@@ -162,8 +163,16 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
     subpath: 'discard-file',
   };
 
+  const commit: GitAction = {
+    key: 'commit',
+    label: t`Commit`,
+    tooltip: t`Commit just this file (no push)`,
+    icon: GitCommitHorizontal,
+    subpath: 'commit-file',
+  };
+
   if (mode === 'standard') {
-    return [view, undo];
+    return [view, commit, undo];
   }
 
   // Advanced — add stage/unstage and copy-path. Staged-ness is computed by the
@@ -191,8 +200,11 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
     tooltip: t`Copy path: ${file.path}`,
     icon: Copy,
   };
-  return [view, stageAction, undo, copyPath];
+  return [view, stageAction, commit, undo, copyPath];
 }
+
+/** Busy/error key for the panel-wide "Commit all" (never a real row path). */
+const ALL_FILES = '\0all';
 
 /** Path the backend operates on — renames display as "old → new"; act on new. */
 function rawPath(path: string): string {
@@ -425,32 +437,43 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
     onPushed?.();
   });
 
-  // Run a per-file mutation (discard / stage / unstage), then refresh the list.
-  const runFileOp = useCallback(
-    async (file: GitStatusFile, subpath: NonNullable<GitAction['subpath']>) => {
+  // Run one repo mutation keyed by a row path (or ALL_FILES), then refresh the
+  // list and the outer status — a commit or discard moves the footer counts too.
+  const runOp = useCallback(
+    async (key: string, op: () => Promise<{ ok?: boolean; message?: string } | undefined>) => {
       setConfirmingKey(null);
-      setBusyPath(file.path);
+      setBusyPath(key);
       setRowError(null);
       try {
-        const ops = {
-          'discard-file': () => git.discardFile(rawPath(file.path), file.status),
-          'stage-file': () => git.stageFile(rawPath(file.path)),
-          'unstage-file': () => git.unstageFile(rawPath(file.path)),
-        } as const;
-        const result = await ops[subpath]();
+        const result = await op();
         if (!mountedRef.current) return;
         if (result && result.ok === false) {
-          setRowError({ path: file.path, message: result.message || 'Operation failed' });
+          setRowError({ path: key, message: result.message || 'Operation failed' });
         } else {
           void fetchStatus();
+          onPushed?.();
         }
       } catch (e) {
-        if (mountedRef.current) setRowError({ path: file.path, message: String(e) });
+        if (mountedRef.current) setRowError({ path: key, message: String(e) });
       } finally {
         if (mountedRef.current) setBusyPath(null);
       }
     },
-    [git, fetchStatus],
+    [fetchStatus, onPushed],
+  );
+
+  const runFileOp = useCallback(
+    (file: GitStatusFile, subpath: NonNullable<GitAction['subpath']>) => {
+      const path = rawPath(file.path);
+      const ops = {
+        'discard-file': () => git.discardFile(path, file.status),
+        'stage-file': () => git.stageFile(path),
+        'unstage-file': () => git.unstageFile(path),
+        'commit-file': () => git.commitFile(path),
+      } as const;
+      return runOp(file.path, ops[subpath]);
+    },
+    [git, runOp],
   );
 
   const handleAction = useCallback(
@@ -834,6 +857,25 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                   <Trans>net</Trans>
                 </span>
               </span>
+              {!revision && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto h-6 gap-1 px-2 text-[11px]"
+                  onClick={() => void runOp(ALL_FILES, () => git.commitAll())}
+                  disabled={busyPath === ALL_FILES}
+                  title={t`Commit all changes (no push)`}
+                  data-testid="git-panel-commit-all"
+                >
+                  <GitCommitHorizontal className="h-3.5 w-3.5" />
+                  <Trans>Commit all</Trans>
+                </Button>
+              )}
+              {rowError?.path === ALL_FILES && (
+                <span role="alert" className="text-destructive">
+                  {rowError.message}
+                </span>
+              )}
             </div>
           )}
 

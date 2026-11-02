@@ -7483,6 +7483,7 @@ msgstr "Comments"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Commit"
 msgstr "Commit"
 
@@ -7497,6 +7498,14 @@ msgstr "Commit & Merge"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Commit & share"
 msgstr "Commit & share"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit all"
+msgstr "Commit all"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit all changes (no push)"
+msgstr "Commit all changes (no push)"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
@@ -7518,6 +7527,10 @@ msgstr "Commit Attribution"
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Commit failed"
 msgstr "Commit failed"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit just this file (no push)"
+msgstr "Commit just this file (no push)"
 
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "Commit or discard first"
@@ -14862,8 +14875,8 @@ msgid "Git is set up."
 msgstr "Git is set up."
 
 #: src/components/status-bar/GitPushButton.tsx
-msgid "git push"
-msgstr "git push"
+#~ msgid "git push"
+#~ msgstr "git push"
 
 #: src/components/status-bar/GitPushButton.tsx
 msgid "git push — {ahead} commits to push"

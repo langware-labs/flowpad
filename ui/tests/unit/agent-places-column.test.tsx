@@ -5,8 +5,8 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Agent, type AgentPlace } from '@sdk';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Agent, type AgentPlace, dataContext } from '@sdk';
 import type { ActivityProgressSpec, ActivityState } from '@sdk/activity';
 import { notify } from '@src/notifications';
 import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
@@ -57,6 +57,11 @@ const node = (id: string, name: string, state: ActivityState, message: string | 
     name, label: name, state, message, done: 0, skipped: 0, errors_count: 0, errors: [], counters: {}, children, seq: 1,
   }) as ActivityProgressSpec;
 
+// The hub is a backend with no disk of its own: it has no places.
+beforeEach(() => {
+  vi.spyOn(dataContext, 'caps', 'get').mockImplementation(() => ({ localFiles: !nav.hub }) as never);
+});
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -101,9 +106,9 @@ describe('Deployments', () => {
     expect(pointer.toUrl()).toContain(`${AGENT_URL}/child/deployment/deployment-${CLOUD_ID}`);
   });
 
-  it('a row’s inbox icon opens the agent’s stream inbox, not the deployment page', async () => {
+  it('a row’s icon opens the agent’s stream inbox, not the deployment page', async () => {
     renderColumn([place(LOCAL_ID, true), place(CLOUD_ID, false)]);
-    fireEvent.click(await screen.findByTestId(`agent-place-inbox-${LOCAL_ID}`));
+    fireEvent.click(await screen.findByTestId(`agent-place-stream-inbox-${LOCAL_ID}`));
     expect(nav.openDock).toHaveBeenCalledTimes(1);
     const pointer = nav.openDock.mock.calls[0][0] as { toUrl(): string };
     expect(pointer.toUrl()).toBe('/dock/agent/33333333-3333-4333-8333-333333333333/stream_inbox');

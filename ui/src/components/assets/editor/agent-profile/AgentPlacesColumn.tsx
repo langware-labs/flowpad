@@ -148,7 +148,7 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
                     {formatTimeAgo(place.last_active) ?? t`never`}
                   </span>
                 </button>
-                {/* What this place answers is read in the agent's stream inbox: one inbox per agent, so every
+                {/* What this place answers is read in the agent's stream inbox: one StreamInbox per agent, so every
                     row opens the same place — a sibling of the row button, never nested in it. */}
                 <Button
                   variant="ghost"
@@ -157,7 +157,7 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
                   onClick={() => navigation.openDock(DockPointer.forAgentStreamInbox(agent.id))}
                   aria-label={t`Open stream inbox`}
                   title={t`Open stream inbox`}
-                  data-testid={`agent-place-inbox-${place.deployment.id}`}
+                  data-testid={`agent-place-stream-inbox-${place.deployment.id}`}
                 >
                   <Mail className="h-4 w-4" />
                 </Button>

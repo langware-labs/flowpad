@@ -620,7 +620,7 @@ export function StreamInboxView({
   /** Inside another page: no stream-inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
    *  membership invitations — those belong to an owner's stream inbox, not to one source. */
   embedded?: boolean;
-  /** The channel mark (`channelKeyOf` key) the list opens narrowed to — an agent's inbox opens on its email.
+  /** The channel mark (`channelKeyOf` key) the list opens narrowed to — an agent's stream inbox opens on its email.
    *  The mark's × clears it like any filter; remount (key the view) to open on another. */
   initialChannel?: string;
   /** What the empty list says instead of offering channels to connect (an agent whose mailbox admits nobody yet). */

@@ -208,7 +208,7 @@ export function AgentStreamInboxView() {
             initialChannel={initialChannel}
             emptyHint={
               activeState?.mailbox && (activeState.mailbox.allowed_senders ?? []).length === 0 ? (
-                <span data-testid="agent-inbox-no-senders">
+                <span data-testid="agent-stream-inbox-no-senders">
                   <Trans>Nobody may write to this agent yet — add their address under Allowed senders.</Trans>
                 </span>
               ) : undefined
