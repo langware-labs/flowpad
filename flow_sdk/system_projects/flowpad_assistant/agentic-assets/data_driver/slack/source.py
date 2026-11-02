@@ -103,7 +103,7 @@ EVERYTHING_PAGE = 100
 #: the live ones within a pass or two, a quiet workspace is swept in one.
 CHANNELS_PER_PASS = 20
 #: How often everything-mode re-lists the person's conversations (a new DM, a joined channel).
-SWEEP_SECONDS = 600
+SWEEP_SECONDS = 60
 #: Every conversation kind a person can be in.
 CONVERSATION_TYPES = "public_channel,private_channel,im,mpim"
 #: The everything cursor stays under ``MAX_CURSOR_LENGTH`` (4096): past this, the conversations whose
@@ -356,8 +356,9 @@ class SlackSource(MessageSource):
 
     # ── everything the person is in ─────────────────────────────────────────
     async def _fetch_all(self, cursor: Optional[str], query: MessageQuery) -> ChangePage:
-        """One pass over every conversation the person is in: the list (re-swept every ``SWEEP_SECONDS``),
-        then up to ``CHANNELS_PER_PASS`` of them — never read first, else most recently active — each from
+        """One pass over every conversation the person is in: the list (re-swept at most every
+        ``SWEEP_SECONDS``), then up to ``CHANNELS_PER_PASS`` of them — ones mid-page, then ones the sweep says
+        changed since they were read, then never read, then the rest in turn (``_AllCursor.due``) — each from
         its own high-water mark (or the window floor). A conversation with more new messages than one page
         keeps Slack's page cursor and its pending high-water mark until the pages run out, so nothing in
         between is skipped. A step back in time (``before``) names no conversation here: nothing to read."""
@@ -371,6 +372,8 @@ class SlackSource(MessageSource):
                 state.newest.setdefault(conversation["id"], "")
             state.swept = now
             state.recent = [c["id"] for c in sorted(listed, key=lambda c: -_ts_key(str(c.get("updated") or 0)))]
+            # Slack's ``updated`` is milliseconds: a conversation that moved since its last read is read first.
+            state.active = [c for c in state.recent if state.newest.get(c) and _ts_key(str(_updated_s(listed, c))) > _ts_key(state.newest[c])]
         floor = f"{query.since.timestamp():.6f}" if query.since else ""
         items: list = []
         for channel in state.due(CHANNELS_PER_PASS):
@@ -615,10 +618,7 @@ class SlackSource(MessageSource):
         return Verdict(ready=True, detail=f"Reading #{label}.")
 
     async def _verify_everything(self) -> Verdict:
-        me, listed = await asyncio.gather(
-            self._api("auth.test", {}),
-            self._api("users.conversations", {"types": CONVERSATION_TYPES, "exclude_archived": "true", "limit": "1"}),
-        )
+        me = await self._api("auth.test", {})
         error = str(me.get("error") or "")
         if error in REFUSED_CREDENTIAL:
             return Verdict(ready=False, detail=f"Slack refused the credential ({error}). Paste the User OAuth Token of your own Slack app, installed in your workspace.")
@@ -626,6 +626,7 @@ class SlackSource(MessageSource):
             return Verdict(ready=False, detail=f"Slack refused the request: {error}")
         if not str(me.get("user_id") or ""):
             return Verdict(ready=False, detail="This token is a bot's, not a person's. Everything you are in needs your own app's User OAuth Token (xoxp-…).")
+        listed = await self._api("users.conversations", {"types": CONVERSATION_TYPES, "exclude_archived": "true", "limit": "1"})
         error = str(listed.get("error") or "")
         if error == "missing_scope":
             return Verdict(ready=False, detail=f"Your Slack app is missing permissions. Its user scopes must include {', '.join(USER_SCOPES)}; add them and reinstall the app.")
@@ -807,15 +808,15 @@ class SlackSource(MessageSource):
         return ReturnedValue.satisfied(f"Create {name} in Slack from this link", ran=not check, value=SourceUpdateSpec(shown=shown))
 
     @setup_step("app")
-    async def _app_step(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
+    async def _app_step(self, *, check: bool, values: Mapping[str, str], probe: bool = False) -> ReturnedValue:
         """The person's app: its User OAuth Token acts as them (``auth.test`` names the workspace and who
         they are there). Kept: the token in the credential (the ``app`` way), the workspace and user in
-        config, the person as the row's one allowed sender. A ``check`` WITH a typed token is a probe — the
-        question's Verify button: Slack judges that token, nothing is kept."""
+        config, the person as the row's one allowed sender. ``check`` asks whether the KEPT token holds;
+        ``probe`` judges the TYPED token and keeps nothing (the question's Verify button)."""
         if not self.everything:
             return ReturnedValue.not_applicable("one channel as a bot: no app to connect")
         typed = str(values.get("user_token") or values.get("value") or "").strip()  # the wizard's bind, or the form's probe
-        token = typed or str(self._secret("SLACK_USER_TOKEN") or "").strip()
+        token = typed if (probe or not check) and typed else str(self._secret("SLACK_USER_TOKEN") or "").strip()
         if not token:
             return ReturnedValue.not_yet("Paste the User OAuth Token (OAuth & Permissions).")
         if not token.startswith("xoxp-"):
@@ -828,10 +829,10 @@ class SlackSource(MessageSource):
         if not (team and user):
             return ReturnedValue.not_yet("Slack did not say which workspace that token acts in.")
         named = f"Connected as @{handle or user} in {me.get('team') or team}"
+        if probe:
+            return ReturnedValue.satisfied(named, ran=False)
         if check:
-            if typed:
-                return ReturnedValue.satisfied(named, ran=False)  # a probe: the token works, nothing kept yet
-            kept = self.config.get("team_id") == team and self._secret("SLACK_USER_TOKEN") == token
+            kept = self.config.get("team_id") == team
             return ReturnedValue.satisfied(named, ran=False) if kept else ReturnedValue.not_yet("not kept yet")
         update = SourceUpdateSpec(
             config={"team_id": team, "user_id": user},
@@ -948,6 +949,14 @@ def manifest_link(request_url: str, name: str = DEFAULT_APP_NAME) -> str:
     return "https://api.slack.com/apps?new_app=1&manifest_json=" + quote(json.dumps(manifest(request_url, name), separators=(",", ":")), safe="")
 
 
+def _updated_s(listed: list[dict], channel: str) -> float:
+    """When Slack last saw activity in ``channel`` (``users.conversations``' ``updated``, milliseconds), in seconds."""
+    for c in listed:
+        if c.get("id") == channel:
+            return float(c.get("updated") or 0) / 1000.0
+    return 0.0
+
+
 def _channel_key(config: Mapping[str, Any]) -> str:
     entry = config.get("channel") or ""
     return str((entry.get("id") if isinstance(entry, Mapping) else entry) or "").strip()
@@ -965,6 +974,10 @@ class _AllCursor:
         self.pending: dict[str, list[str]] = {}
         #: Most recently active first, from the sweep that just ran (not kept across passes).
         self.recent: list[str] = []
+        #: Read before and changed since, per the sweep that just ran (not kept across passes).
+        self.active: list[str] = []
+        #: Where the rotation over the quiet conversations stands, so every one gets its turn.
+        self.offset = 0
 
     @classmethod
     def decode(cls, cursor: Optional[str]) -> "_AllCursor":
@@ -982,6 +995,7 @@ class _AllCursor:
         if not isinstance(raw, dict) or not isinstance(raw.get("c"), dict):
             raise InvalidCursor("malformed Slack cursor")
         state.swept = float(raw.get("s") or 0)
+        state.offset = int(raw.get("o") or 0)
         state.newest = {str(k): str(v or "") for k, v in raw["c"].items()}
         pending = raw.get("p") if isinstance(raw.get("p"), dict) else {}
         state.pending = {str(k): [str(v[0]), str(v[1])] for k, v in pending.items() if isinstance(v, list) and len(v) == 2 and v[1]}
@@ -992,19 +1006,26 @@ class _AllCursor:
         (read again from the window's start next time), then any other."""
         victims = sorted((c for c, ts in self.newest.items() if ts and c not in self.pending), key=lambda c: _ts_key(self.newest[c]))
         while True:
-            body = {"s": int(self.swept), "c": self.newest, **({"p": self.pending} if self.pending else {})}
+            body = {"s": int(self.swept), "o": self.offset, "c": self.newest, **({"p": self.pending} if self.pending else {})}
             text = _ALL + json.dumps(body, separators=(",", ":"), sort_keys=True)
             if len(text) <= CURSOR_BUDGET or not self.newest:
                 return text
             self.forget(victims.pop(0) if victims else next(iter(self.newest)))
 
     def due(self, count: int) -> list[str]:
-        """The conversations this pass reads: ones mid-page first, then never read (most recently active
-        first), then the longest unread."""
+        """The conversations this pass reads: ones mid-page first, then ones that changed since they were read
+        (the sweep's word), then never read (most recently active first), then the rest in turn — a rotation
+        that advances each pass, so a quiet conversation is never starved by busier ones."""
         order = {c: i for i, c in enumerate(self.recent)}
+        active = [c for c in self.active if c in self.newest and c not in self.pending]
         never = sorted((c for c, ts in self.newest.items() if not ts and c not in self.pending), key=lambda c: order.get(c, len(order)))
-        read = sorted((c for c, ts in self.newest.items() if ts and c not in self.pending), key=lambda c: _ts_key(self.newest[c]))
-        return [*self.pending, *never, *read][:count]
+        ahead = set(self.pending) | set(active) | set(never)
+        rest = sorted(c for c in self.newest if c not in ahead)
+        start = self.offset % len(rest) if rest else 0
+        turn = rest[start:] + rest[:start]
+        chosen = [*self.pending, *active, *never, *turn][:count]
+        self.offset = (start + max(0, count - len(self.pending) - len(active) - len(never))) % len(rest) if rest else 0
+        return chosen
 
     def forget(self, channel: str) -> None:
         self.newest.pop(channel, None)

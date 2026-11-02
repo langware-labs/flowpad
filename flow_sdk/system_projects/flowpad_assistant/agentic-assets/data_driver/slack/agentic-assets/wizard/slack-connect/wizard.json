@@ -49,21 +49,6 @@
       "label": "Ready",
       "kind": "compute",
       "ref": "slack-verify"
-    },
-    {
-      "id": "ask-say-hi",
-      "label": "Say hi",
-      "kind": "compute",
-      "ref": "slack-ask-say-hi"
-    },
-    {
-      "id": "heard",
-      "label": "First message",
-      "kind": "compute",
-      "ref": "slack-heard",
-      "args": {
-        "wait": "120"
-      }
     }
   ]
 }

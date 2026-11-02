@@ -16,6 +16,7 @@ aspirational, and is exactly the phase-1 (credential-free) path.
 """
 from __future__ import annotations
 
+import inspect
 import logging
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
@@ -1891,17 +1892,19 @@ class DataSource(SetupSkippable, Entity):
 
     @core_action.post(action_name="step")
     async def step_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_source/{id}/step ``{"step", "check"?, "values"?}`` — :meth:`step`. The
-        answer is the ``ReturnedValue`` with a 200 either way: its exit code is the answer."""
+        """POST /api/v1/graph/data_source/{id}/step ``{"step", "check"?, "probe"?, "values"?}`` — :meth:`step`.
+        The answer is the ``ReturnedValue`` with a 200 either way: its exit code is the answer."""
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else None) or {}
         values = body.get("values") if isinstance(body.get("values"), dict) else {}
-        answer = await self.step(str(body.get("step") or ""), check=bool(body.get("check")), values=values)
+        answer = await self.step(str(body.get("step") or ""), check=bool(body.get("check")), probe=bool(body.get("probe")), values=values)
         return ApiSuccessResponse(data=answer.model_dump(mode="json"))
 
-    async def step(self, name: str, *, check: bool = False, values: Optional[dict] = None):
+    async def step(self, name: str, *, check: bool = False, probe: bool = False, values: Optional[dict] = None):
         """Run the setup step ``name`` this source's driver declares (``flow_sdk/sources/setup_steps.py``),
-        or the generic ``public-webhook``. ``check`` only asks whether it already holds. What the step
+        or the generic ``public-webhook``. ``check`` only asks whether it already holds. ``probe`` judges
+        ``values`` without keeping anything (a question's Verify button) — only a driver step that takes a
+        ``probe`` argument can; the generic steps cannot. What the step
         learned (a ``SourceUpdateSpec``) is stored here — config, allowed senders, credential values — and
         the answer goes back without the secrets. Never raises for an outcome."""
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
@@ -1913,6 +1916,8 @@ class DataSource(SetupSkippable, Entity):
         if driver is None:
             return ReturnedValue.not_found(f"no data driver {self.provider!r}")
         try:
+            if probe and name in steps.GENERIC_STEPS:
+                return ReturnedValue.not_applicable(f"{name} judges no typed value")
             if name == steps.PUBLIC_WEBHOOK:
                 answer = await self._public_webhook(driver, check=check, delivery=(values or {}).get("delivery", self.webhook_delivery))
             elif name == steps.VERIFY:
@@ -1934,7 +1939,13 @@ class DataSource(SetupSkippable, Entity):
                 if method is None:
                     return ReturnedValue.not_found(f"{self.provider} has no setup step {name!r}")
                 live = await self._open_for_setup(driver)
-                answer = await getattr(live, method)(check=check, values={k: str(v) for k, v in (values or {}).items()})
+                typed = {k: str(v) for k, v in (values or {}).items()}
+                if probe:
+                    if "probe" not in inspect.signature(getattr(driver.cls, method)).parameters:
+                        return ReturnedValue.not_applicable(f"{name} judges no typed value")
+                    answer = await getattr(live, method)(check=True, values=typed, probe=True)
+                else:
+                    answer = await getattr(live, method)(check=check, values=typed)
         except Exception as exc:  # noqa: BLE001 — a step that raises is a sentence for the person, not a 500
             logger.warning("setup step %s of %s failed: %s", name, self.id, exc, exc_info=True)
             return ReturnedValue.not_yet(f"{name}: {exc}")

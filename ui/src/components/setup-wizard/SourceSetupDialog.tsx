@@ -199,7 +199,7 @@ export function SourceSetupPanel({
             questionId={setup.questionId}
             showOp={false}
             onSettled={setup.settleQuestion}
-            verifyWith={(step, values) => source.step(step, { check: true, values })}
+            verifyWith={(step, values) => source.step(step, { probe: true, values })}
           />
         </div>
       )}

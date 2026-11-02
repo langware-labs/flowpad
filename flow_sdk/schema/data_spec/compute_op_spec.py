@@ -431,8 +431,8 @@ class AskStageSpec(DataSpec):
 
 class AskVerifySpec(DataSpec):
     """A check the person can run on what they typed BEFORE sending it: the surface that runs a source's wizard
-    posts the typed values to that source's setup step ``source_step`` with ``check`` (a probe: the step judges
-    the values and stores nothing), and shows its verdict under the field. Run once by itself when a value is
+    posts the typed values to that source's setup step ``source_step`` as a ``probe`` (the step judges the
+    values and stores nothing), and shows its verdict under the field. Run once by itself when a value is
     pasted, then on the button."""
 
     label: str = "Verify"

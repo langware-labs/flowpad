@@ -8,7 +8,7 @@
   "output_spec_kind": "string",
   "exe_data": {
     "prompt": "Paste the token",
-    "detail": "In {{manifest.name}}: **OAuth & Permissions** → *User OAuth Token* (`xoxp-…`). It acts as you in Slack.",
+    "detail": "Right after **Create and Install**, Slack shows **Your app credentials**: copy the *User OAuth Token* (`xoxp-…`). Later it is under {{manifest.name}} → **OAuth & Permissions**. It acts as you in Slack.",
     "secret": true,
     "timeout_seconds": 1800,
     "stage": {
@@ -19,7 +19,8 @@
     "verify": {
       "label": "Verify",
       "source_step": "app"
-    }
+    },
+    "submit_label": "Continue"
   },
   "completion_check": {
     "commands": {

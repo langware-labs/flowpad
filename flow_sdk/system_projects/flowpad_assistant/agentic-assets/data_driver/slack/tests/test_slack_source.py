@@ -900,7 +900,26 @@ def test_the_everything_cursor_round_trips_refuses_garbage_and_stays_under_budge
     kept = slack_source._AllCursor.decode(text)
     assert "C000000399" in kept.newest and "C000000398" in kept.newest, "the busiest conversations stay"
     assert "C000000000" not in kept.newest, "the quietest are forgotten first (re-floored at the window next time)"
-    assert kept.due(3) == ["C000000399", *sorted(kept.newest, key=lambda c: float(kept.newest[c]))[:2]], "mid-page first, then the longest unread"
+    rest = sorted(c for c in kept.newest if c != "C000000399")
+    assert kept.due(3) == ["C000000399", *rest[:2]], "mid-page first, then the rotation from where it stands"
+    assert kept.due(3) == ["C000000399", *rest[2:4]], "the rotation advanced: the next quiet ones get their turn"
+    assert slack_source._AllCursor.decode(kept.encode()).offset == kept.offset, "the rotation survives the cursor"
+
+
+def test_a_pass_reads_changed_conversations_first_and_rotates_through_the_rest():
+    """A conversation the sweep says moved since it was read is read first; never-read ones next; the rest in
+    turn, so every one is reached — a self-DM cannot be starved by a set of busier channels."""
+    state = slack_source._AllCursor()
+    state.newest = {"C1": "100.0", "C2": "100.0", "C3": "100.0", "D1": "100.0", "N1": ""}
+    state.pending = {"P1": ["150.0", "pg"]}
+    state.recent = ["D1", "N1", "C1", "C2", "C3"]
+    state.active = ["D1"]
+    assert state.due(3) == ["P1", "D1", "N1"], "mid-page, changed, never read"
+    assert state.due(5) == ["P1", "D1", "N1", "C1", "C2"]
+    state.active, state.newest["N1"] = [], "100.0"  # read now: it joins the rotation
+    assert state.due(2) == ["P1", "C3"], "the rotation goes on from where it stood"
+    assert state.due(3) == ["P1", "D1", "N1"]
+    assert state.due(3) == ["P1", "C1", "C2"], "and wraps around"
 
 
 async def test_everything_reads_every_conversation_from_the_window_then_only_what_is_new(fake_slack):
@@ -1132,20 +1151,27 @@ async def test_the_app_step_asks_slack_who_the_token_is_and_keeps_it(fake_slack)
         shape=AuthShape.SECRETS, values={"SLACK_USER_TOKEN": SecretStr("xoxp-mine")})))
     checked = await held._app_step(check=True, values={})
     assert checked.ok and not checked.ran
-    # The form's probe posts a scalar answer under `value`.
-    probed = await source._app_step(check=True, values={"value": "xoxp-mine"})
-    assert probed.ok and probed.value is None
 
 
-async def test_a_check_with_a_typed_token_is_a_probe_that_keeps_nothing(fake_slack):
-    """The question's Verify button: the typed token is judged by Slack (``auth.test``) and the verdict named,
-    whether or not anything is stored yet — and a refused token is refused in words."""
+async def test_a_probe_judges_the_typed_token_and_keeps_nothing(fake_slack):
+    """The question's Verify button: ``probe`` judges the typed token by Slack (``auth.test``), names the
+    verdict, keeps nothing — and a refused token is refused in words."""
     source = SlackSource(SourceBinding(account_key="", config={"base_url": fake_slack.base}, credentials=ResolvedSecrets()))
-    probe = await source._app_step(check=True, values={"user_token": "xoxp-mine"})
+    probe = await source._app_step(check=True, values={"user_token": "xoxp-mine"}, probe=True)
     assert probe.ok and not probe.ran and probe.detail == "Connected as @flowpad in T1" and probe.value is None
     fake_slack.slack.refuse = "invalid_auth"
-    bad = await source._app_step(check=True, values={"user_token": "xoxp-stale"})
+    bad = await source._app_step(check=True, values={"value": "xoxp-stale"}, probe=True)
     assert not bad.ok and "invalid_auth" in bad.detail
+
+
+async def test_a_check_ignores_a_typed_token_so_the_wizard_still_runs_the_step(fake_slack):
+    """The wizard's completion check runs with the run's env — the typed token included. A check judges only
+    what is KEPT: with nothing kept it is not satisfied, so the step runs and keeps the token."""
+    source = SlackSource(SourceBinding(account_key="", config={"base_url": fake_slack.base}, credentials=ResolvedSecrets()))
+    before = await source._app_step(check=True, values={"user_token": "xoxp-mine"})
+    assert not before.ok, "typed is not kept"
+    kept = await source._app_step(check=False, values={"user_token": "xoxp-mine"})
+    assert kept.ok and kept.value.secrets == {"SLACK_USER_TOKEN": "xoxp-mine"}
 
 
 async def test_the_card_names_a_new_source_the_way_the_app_is_named(monkeypatch):
@@ -1173,9 +1199,9 @@ def test_the_connect_wizard_is_declared_and_every_step_it_names_exists():
         op_file = folder / "compute_op" / step["ref"] / "compute_op.json"
         assert op_file.exists(), step["ref"]
         ops[step["id"]] = json.loads(op_file.read_text())
-    assert [s["id"] for s in wizard["steps"]] == ["public-url", "manifest", "ask-create-app", "ask-user-token", "app", "prove", "verify", "ask-say-hi", "heard"]
+    assert [s["id"] for s in wizard["steps"]] == ["public-url", "manifest", "ask-create-app", "ask-user-token", "app", "prove", "verify"]
     asks = [i for i, op in ops.items() if op["subkind"] == "ask"]
-    assert asks == ["ask-create-app", "ask-user-token", "ask-say-hi"], "three things the person does"
+    assert asks == ["ask-create-app", "ask-user-token"], "two things the person does; the first message is proven by the poll"
     # Two sub-steps the person walks: set up on Slack (a Continue, nothing typed), then the token, verified in place.
     assert ops["ask-create-app"]["output_spec_kind"] == "confirm" and ops["ask-create-app"]["exe_data"]["submit_label"] == "Continue"
     assert ops["ask-create-app"]["exe_data"]["stage"] == {"label": "Set up on Slack", "index": 1, "total": 2}

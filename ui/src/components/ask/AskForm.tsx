@@ -156,7 +156,7 @@ export function AskForm({
         {question.stage ? (
           <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground" data-testid="ask-stage">
             {question.stage.index} of {question.stage.total}
-            {question.stage.label ? ` · ${question.stage.label}` : ''}
+            {question.stage.label && question.stage.label !== question.prompt ? ` · ${question.stage.label}` : ''}
           </p>
         ) : null}
         <h1 className="whitespace-pre-line text-base font-medium" data-testid="ask-prompt">
@@ -216,7 +216,13 @@ export function AskForm({
 
       {canVerify ? (
         <div className="flex items-center gap-3" data-testid="ask-verify">
-          <Button variant="outline" size="sm" data-testid="ask-verify-button" disabled={busy || verifying} onClick={() => void verify(values)}>
+          <Button
+            variant={verdict?.ok ? 'outline' : 'default'}
+            size="sm"
+            data-testid="ask-verify-button"
+            disabled={busy || verifying}
+            onClick={() => void verify(values)}
+          >
             {verifying ? <Loader2 className="size-4 animate-spin" /> : null}
             {question.verify?.label ? bt(question.verify.label) : <Trans>Verify</Trans>}
           </Button>
@@ -248,7 +254,8 @@ export function AskForm({
               <Loader2 className="size-4 animate-spin" />
               <Trans>Waiting…</Trans>
             </span>
-          ) : (
+          ) : canVerify && !verdict?.ok ? null : (
+            // A question with a verify sends only once the verdict passed: Verify is the action until then.
             <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
               {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
             </Button>

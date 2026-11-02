@@ -66,27 +66,6 @@ def _declared_vaults(project: Any) -> dict[str, Any]:
     return vaults_of(project)
 
 
-def _on_path(binary: str, platform: str) -> str:
-    return f"where {binary} >nul 2>&1" if platform == "win32" else f"command -v {binary} >/dev/null 2>&1"
-
-
-def _vault_commands(name: str, vault: Any) -> Optional[dict[str, dict[str, str]]]:
-    """Per OS, the manager's ``install`` / ``login`` / ``check`` for this vault, its ``{vault}`` and config keys
-    filled in (``{vault}`` = the config's ``vault``, else the project's name for it). None: unknown manager."""
-    from flow_sdk.secrets.managers import OSES, cli_command, get_manager  # noqa: PLC0415  (lazy: managers load assets)
-
-    try:
-        manager = get_manager(vault.manager)
-    except Exception:  # noqa: BLE001 — UnknownSecretManager: the vault node reports it, never a broken tree
-        return None
-    fill = {"vault": name, **{k: str(v) for k, v in (vault.config or {}).items()}}
-
-    def render(op: str, platform: str) -> str:
-        return cli_command(manager, op, platform, **fill) or ""
-
-    return {op: {p: render(op, p) for p in OSES} for op in ("install", "login", "check")}
-
-
 class ProjectTree:
     """One project's derived setup tree. ``load()`` once, then hand ``resolve_node`` / ``resolve_op`` to
     ``execute_setup``. Built in memory per run, like the setup wizard it replaces — nothing is written."""
@@ -231,42 +210,16 @@ class ProjectTree:
             return node_id
         vault = self.vaults[name]
         label = f"{name} vault"
-        commands = _vault_commands(name, vault)
-        if commands is None:
+        from flow_sdk.secrets.setup_wizard import vault_setup_wizard  # noqa: PLC0415
+
+        built = vault_setup_wizard(self.pid, name, vault)
+        if built is None:
             self.nodes[node_id] = SetupNode(id=node_id, label=label,
                                             problem=f"vault {name!r} names an unknown secret manager {vault.manager!r}")
             return node_id
-        from flow_sdk.builtin.project_setup import _cli  # noqa: PLC0415
-        from flow_sdk.secrets.managers import OSES  # noqa: PLC0415
-
-        binary = {p: (commands["check"][p].split() or [""])[0] for p in OSES}
-        manager_check = {"commands": commands["check"]}
-        specs = []
-        if any(commands["install"].values()):
-            specs.append({
-                "name": f"{node_id}:install", "label": f"Install {vault.manager}",
-                "description": f"{vault.manager}'s command line is on this machine.", "subkind": "cli",
-                "exe_data": {"commands": commands["install"]},
-                "completion_check": {"commands": {p: _on_path(binary[p], p) for p in OSES if binary[p]}},
-            })
-        if any(commands["login"].values()):
-            specs.append({
-                "name": f"{node_id}:login", "label": f"Sign in to {vault.manager}",
-                "description": f"This machine is signed in to {vault.manager} and can read vault {name}.",
-                "subkind": "cli", "exe_data": {"commands": commands["login"]}, "completion_check": manager_check,
-            })
-        specs.append({
-            "name": f"{node_id}:check", "label": f"Check vault {name}",
-            "description": f"Vault {name} is readable from this machine.", "subkind": "cli",
-            "exe_data": _cli("secrets", "check", name, "--project", self.pid), "completion_check": manager_check,
-        })
-        steps = []
-        for spec in specs:
-            op = ComputeOpSpec.model_validate(spec)
-            self.ops[op.name] = op
-            steps.append({"id": op.name.rsplit(":", 1)[1], "label": op.label, "kind": "compute", "ref": op.name})
-        run = WizardSpec.model_validate({"name": node_id, "label": label, "steps": steps})
-        self.nodes[node_id] = SetupNode(id=node_id, label=label, run=run)
+        wizard, ops = built
+        self.ops.update(ops)
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, run=wizard.model_copy(update={"label": label}))
         return node_id
 
     def _connection_needs(self, req) -> tuple[str, ...]:

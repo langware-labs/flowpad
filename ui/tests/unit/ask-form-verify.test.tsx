@@ -53,8 +53,20 @@ it('verifies the typed value through the source step and shows its verdict', asy
   expect(verdict.textContent).toBe('Connected as @eran in Langware');
   expect(verdict.getAttribute('data-ok')).toBe('true');
   expect(verifyWith).toHaveBeenCalledWith('app', { user_token: 'xoxp-good' });
-  // The question is still open: nothing was sent.
+  // The question is still open: nothing was sent — and only now is there a Send to press.
   expect(h.post.mock.calls.some(([path]) => String(path).endsWith('/answer'))).toBe(false);
+  expect(screen.getByTestId('ask-submit')).toBeInTheDocument();
+});
+
+it('offers no Send until the verify passed', async () => {
+  render(<AskForm questionId="q2" verifyWith={verifyWith} />);
+  const input = await screen.findByTestId('ask-input-user_token');
+  expect(screen.queryByTestId('ask-submit')).toBeNull();
+  fireEvent.change(input, { target: { value: 'xoxp-bad' } });
+  fireEvent.click(screen.getByTestId('ask-verify-button'));
+  await screen.findByTestId('ask-verify-verdict');
+  expect(screen.queryByTestId('ask-submit')).toBeNull();
+  expect(screen.getByTestId('ask-cancel')).toBeInTheDocument();
 });
 
 it('says in words when the step refuses the value', async () => {
