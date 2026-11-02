@@ -117,8 +117,22 @@ async def _get_or_create_flow(name: str) -> tuple[GraphWorkflow | None, bool]:
     existing = await _find_flow(name)
     if existing is not None:
         return existing, False
+    from flow_sdk.assets.creation import AssetPathCollisionError  # noqa: PLC0415
+    from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+
     flow = GraphWorkflow(name=name, scope="system")
-    await flow.save()  # scaffolds folder + capsule id
+    try:
+        await flow.save()  # scaffolds folder + capsule id
+    except AssetPathCollisionError as collision:
+        # Its folder is on disk but not in the index (a lost row, e.g. after a DB reset): index that
+        # folder and use it — creating over it would collide on every start (cos._adopt_unindexed).
+        if collision.path is None:
+            raise
+        await reindex_paths([str(collision.path)])
+        found = await _find_flow(name)
+        if found is None:
+            raise
+        return found, False
     return flow, True
 
 
