@@ -146,6 +146,19 @@ RECEIVED_SETUP_DETAIL = "Received — connect your own account, then press Verif
 NO_SETUP_PROJECT = "This source belongs to no project, so there is no setup to run for it — press Verify."
 
 
+def channel_from_driver(source) -> str:
+    """The channel *source*'s loaded driver gives it, ``""`` when its driver is not loaded (yet)."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded(getattr(source, "provider", "") or "")
+    if driver is None:
+        return ""
+    try:
+        return str(driver.channel_for(source) or "").strip()
+    except Exception:  # noqa: BLE001 -- reading a row never fails over its channel
+        return ""
+
+
 class DataSource(SetupSkippable, Entity):
     type: str = APIField(default=EntityType.DATA_SOURCE.value)
 
@@ -320,6 +333,16 @@ class DataSource(SetupSkippable, Entity):
         if isinstance(data.get("allowed_senders"), (list, tuple)):
             data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
         return data
+
+    @model_validator(mode="after")
+    def _channel_from_driver(self):
+        """``channel`` is not stored, so a row read back from the database has none until a save or a poll
+        stamps it. Two processes on one machine (the app, an agent's loop) then named one source's channel
+        differently -- ``email`` against the provider fallback ``cloud_email`` -- and each minted its own
+        thread for the same email. Every row in memory carries its driver's answer instead."""
+        if not (self.channel or "").strip() and self.provider:
+            self.channel = channel_from_driver(self)
+        return self
 
     @field_validator("owner", mode="before")
     @classmethod

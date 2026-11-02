@@ -166,3 +166,30 @@ async def test_deleting_the_agent_releases_its_mailbox_and_drops_its_source(monk
 
 async def _done():
     return None
+
+
+async def test_a_mailbox_source_wired_before_its_driver_loaded_names_the_same_channel(monkeypatch):
+    """A process that wires the mailbox before the ``cloud_email`` driver is loaded saves the source with no
+    channel; projecting an email there named the thread ``cloud_email`` (the provider) while the app named it
+    ``email`` -- one email, two threads on the agent's machine (2026-11-02, clown-five)."""
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.core.cache.entity_cache import entity_cache
+    from flow_sdk.stream_inbox.projection import channel_of
+
+    hub = _HubMailboxes()
+    monkeypatch.setattr("flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: hub)
+    for other in await Agent.get_all({"name": "twin"}):
+        await other.delete()
+    agent = Agent(name="twin", system_prompt="answer")
+    await agent.save()
+    mailbox = AgentMailbox._adopt_onto(agent, await hub.enable_mailbox(agent.id))
+    loaded = DataDriver.loaded("cloud_email")
+    source = await mailbox.ensure_source()  # wired while the driver is loaded: the app's view
+    with monkeypatch.context() as unloaded:
+        unloaded.setattr(DataDriver, "loaded", classmethod(lambda cls, name: None if name == "cloud_email" else loaded))
+        source.channel = ""
+        await source.save()  # the same row, saved by a process that has not loaded the driver
+    entity_cache.invalidate_entity_cache(source.typeid)
+    fresh = await DataSource.get_by_id(source.id)
+    assert channel_of(fresh) == "email", "every process names one source's channel the same"
