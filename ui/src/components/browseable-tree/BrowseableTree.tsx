@@ -816,6 +816,12 @@ function BrowseableRow({
   // clipboard to paste) is current. Right-clicking a row outside the
   // multi-selection drops the selection, like every file manager.
   const [menuItems, setMenuItems] = useState<ToolbarAction[]>([]);
+  // The tooltip trigger wraps the ROW, and the context-menu trigger wraps that:
+  // both are ref-forwarding slots, so the row gets both behaviours. Wrapping the
+  // ContextMenu ROOT in TooltipTrigger instead hands a ref to a function
+  // component (React warns "Function components cannot be given refs").
+  const hasTip = !!(node.tooltip || node.entity);
+  const tipTarget = hasTip ? <TooltipTrigger asChild>{rowEl}</TooltipTrigger> : rowEl;
   const triggerEl = node.contextMenu ? (
     <ContextMenu
       onOpenChange={(open) => {
@@ -824,7 +830,7 @@ function BrowseableRow({
         setMenuItems(typeof node.contextMenu === 'function' ? node.contextMenu() : (node.contextMenu ?? []));
       }}
     >
-      <ContextMenuTrigger asChild>{rowEl}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild>{tipTarget}</ContextMenuTrigger>
       <ContextMenuContent
         className="min-w-[13rem]"
         data-testid={`browseable-context-menu-${node.id}`}
@@ -862,7 +868,7 @@ function BrowseableRow({
       </ContextMenuContent>
     </ContextMenu>
   ) : (
-    rowEl
+    tipTarget
   );
 
   return (
@@ -871,9 +877,9 @@ function BrowseableRow({
       data-selection-key={node.selectionKey}
       data-resource-vfs={node.pointer?.resourceVfsPath?.uri}
     >
-      {node.tooltip || node.entity ? (
+      {hasTip ? (
         <Tooltip>
-          <TooltipTrigger asChild>{triggerEl}</TooltipTrigger>
+          {triggerEl}
           {/* Sideways, never below: rows stack vertically, so a bottom tooltip
               would cover the next row and sit in the pointer's downward travel
               path. WHICH side depends on the host — away from the panel, into

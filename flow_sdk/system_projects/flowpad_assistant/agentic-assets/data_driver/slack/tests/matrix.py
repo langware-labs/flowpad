@@ -33,7 +33,9 @@ class Double:
         self.slack.channels = {channel: []}
         self.config: dict = {"channel": channel}
         self.fields: dict = {"account_key": TEAM}
-        self.secrets: dict = {"token": "xoxb-test"}
+        # Keyed as the manifest's `auth.vars` (the `slack_channel` credential): what a planted
+        # credential carries, and what the driver reads as the bot token.
+        self.secrets: dict = {"SLACK_BOT_TOKEN": "xoxb-test"}
         self._server = None
 
     def __enter__(self) -> "Double":
@@ -47,8 +49,8 @@ class Double:
             server.__exit__(*exc)
 
     async def credentials(self, _row) -> ResolvedSecrets:
-        """The in-process stand-in for ``DataDriver.credentials_for``: the connector token."""
-        return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(self.secrets["token"]))
+        """The in-process stand-in for ``DataDriver.credentials_for``: the bot token, as the credential holds it."""
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
 
     def deliver(self, text: str, *, sender: str, thread: str | None = None, files=(), reactions: dict | None = None) -> dict:
         """A message ``sender`` writes into the channel now (its ts is the wall clock, later than any

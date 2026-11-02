@@ -136,7 +136,7 @@ async def test_two_client_loop(hub_base_url):
             json={
                 "recipient_email": bob_email,
                 "invitation_targets": [
-                    {"typeid": f"conversation-{conv_id}", "role": "member"},
+                    {"typeid": f"conversation-{conv_id}", "roles": ["reader", "runner"]},
                 ],
             },
         )

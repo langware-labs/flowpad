@@ -133,7 +133,14 @@ class CopilotDriver:
     # status only on the main composer screen, never on folder trust. It is a
     # stronger readiness signal than the generic prompt glyph (the trust
     # choice list has its own glyph).
-    pty_composer_ready_pattern = re.compile(r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used")
+    # Copilot CLI 1.0.105 no longer shows that status on an idle composer (it
+    # appears only once a turn runs); its composer footer reads
+    # "Interactive \u00b7 Allow All \u00b7 / commands \u00b7 ? help" instead (cut after
+    # "/ commands" at 80 columns), and the trust dialog's footer
+    # ("\u2191/\u2193 to navigate \u00b7 enter to select") matches neither.
+    pty_composer_ready_pattern = re.compile(
+        r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used|\u00b7[ \t\u00a0]*/ commands"
+    )
     # A PTY launch drops the prompt (copilot reads it from stdin); prompt() types it.
     pty_launch_drops_prompt = True
     pins_resume_cwd = False  # no transcript-cwd pinning, no fork

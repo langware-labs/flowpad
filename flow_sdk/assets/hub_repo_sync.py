@@ -272,6 +272,54 @@ def _replace(source: Path, target: Path, *, is_file: bool) -> None:
     shutil.copytree(source, target, ignore=_ignore)
 
 
+def _update_in_place(source: Path, target: Path, *, is_file: bool) -> None:
+    """Bring ``source`` (the hub's version) into the person's own ``target`` folder.
+
+    Unlike :func:`_replace` this never removes ``target`` first: each file is written
+    to a temp sibling and renamed over the old one, so the asset is never missing on
+    disk (a watcher or the indexer would read a gap as a delete), and a file git
+    ignores here — a local secret, a build output — is left alone, as git leaves it.
+    """
+    import os  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    def _put(src: Path, dst: Path) -> None:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=dst.parent, prefix=f".{dst.name}.")
+        os.close(fd)
+        try:
+            shutil.copy2(src, tmp)
+            os.replace(tmp, dst)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+
+    if is_file:
+        _put(source, target)
+        return
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+
+    skip = {".git", KEEP_FILE}
+    incoming = {
+        p.relative_to(source)
+        for p in source.rglob("*")
+        if (p.is_file() or p.is_symlink()) and not (set(p.relative_to(source).parts) & skip)
+    }
+    for rel in sorted(incoming):
+        _put(source / rel, target / rel)
+    if not target.exists():
+        return
+    kept = ignored_under(target)
+    for p in sorted(target.rglob("*"), reverse=True):
+        rel = p.relative_to(target)
+        if set(rel.parts) & skip or is_under(p, kept):
+            continue
+        if (p.is_file() or p.is_symlink()) and rel not in incoming:
+            p.unlink()
+        elif p.is_dir() and not p.is_symlink() and not any(p.iterdir()):
+            p.rmdir()
+
+
 @dataclass(frozen=True)
 class HubRepoSync:
     """What a publish did: the asset's new version and whether the hub's edits were pulled back."""
@@ -314,7 +362,7 @@ async def sync_asset_with_hub(
                 )
             # Only the hub changed it: bring the hub's version home, nothing to push.
             await mirror.discard(rel)
-            await asyncio.to_thread(_replace, target, asset_root, is_file=is_file)
+            await asyncio.to_thread(_update_in_place, target, asset_root, is_file=is_file)
             _, head = await mirror.git("rev-parse", "HEAD")
             return HubRepoSync(head_commit=head, tree=upstream, pushed=False, pulled_back=True)
 
