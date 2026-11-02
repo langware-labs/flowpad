@@ -42,6 +42,14 @@
         "mockify.step"
       ],
       "description": "The screens, in journey order; a branch follows the step it branches from."
+    },
+    "test_md": {
+      "shape": "?string",
+      "description": "Test mode (`mockify test`): the regression scenario this mock defines, repo-relative, e.g. ui/tests/manual_regression/chat/close_chat.md. Present = the mock is a test scenario of the CURRENT UI."
+    },
+    "setup": {
+      "shape": "?string",
+      "description": "Test mode: the state the test starts from (seed data, signed-in hub, a second instance), in a sentence."
     }
   }
 }

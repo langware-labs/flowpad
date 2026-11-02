@@ -20,7 +20,7 @@
     html.mk-picking,html.mk-picking *{cursor:crosshair!important}`;
   document.head.append(docStyle);
 
-  let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, branch_of?, when?, decisions?[]}
+  let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, expect?[], branch_of?, when?, decisions?[]}
   let cur = 0;
   const data = { sdk: null, mock: null, mocksDs: null, fbDs: null, rows: [], error: '' };
   const openRows = () => data.rows.filter((r) => r.input.status === 'open');
@@ -350,6 +350,7 @@
     const decisions = s.decisions || [];
     let html = head() + `<h4>Feedback · ${esc(s.title || '')}</h4>`;
     if (s.note) html += `<div class="note">${esc(s.note)}</div>`;
+    if (s.expect && s.expect.length) html += `<div class="note"><b>Test checks</b>\n${s.expect.map((e) => '✓ ' + esc(e)).join('\n')}</div>`;
     if (!data.fbDs) {
       html += `<div class="msg">${esc(data.error || 'Loading…')}</div>`;
       panel.innerHTML = html; return;

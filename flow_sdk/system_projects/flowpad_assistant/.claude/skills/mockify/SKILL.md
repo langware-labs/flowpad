@@ -11,7 +11,8 @@ description: 'Turns a product idea into a clickable HTML mock of the user journe
   product''s tokens, minutes — only for a product that does not run here, or when
   the user asks for a rough sketch). Use for "mock this flow", "show me the UX", "prototype the journey", "how
   would the user do X — show me", "make a clickable mock", or a design discussion that
-  needs screens before code; also when feedback on a mock arrives. Plans every screen, builds one HTML
+  needs screens before code; also when feedback on a mock arrives. `mockify test`: define a regression
+  test on the current UI and write it as a manual_regression .md. Plans every screen, builds one HTML
   file, script-validates it before showing. NOT for a working
   app (web-app-builder), a one-page report or chart (html-builder), or slides (decker).'
 ---
@@ -200,6 +201,33 @@ Each row: `step`, `text`, `decision` (a D-id it answers), `screenshot` (an image
 3. Set each comment you acted on to `addressed` (`DM ds-put-many` with their versions); set the mock to
    `revised`, then `in_review` again once re-shown.
 4. Rebuild, validate again (Phase 3) and re-show.
+
+## `mockify test` — define a regression test on the current UI
+
+The same three phases, but the mock is a **test scenario of the app as it is today**: the person walks it,
+agrees what each screen must show, and the approved mock becomes `ui/tests/manual_regression/<area>/<name>.md`.
+The `.md.ts` is written afterwards the usual way (`ui/tests/manual_regression/run_test_instructions.md`) — not here.
+
+- **Look for an existing scenario first** (`grep -ril "<words of the flow>" ui/tests/manual_regression`, skip
+  `_results/`). One that covers the flow → show it and offer to extend it instead of a new file.
+- **Current UI only.** Real mode, every step `source: capture`; never fast, never `built`. When the request
+  differs from the app today — a screen, control or state it does not have — do not draw it. Say so in the
+  plan reply: "<X> is not in the app today, so a test cannot check it — build it first, or use plain mockify
+  to design it." A bug is not a different UI: for a test that pins a bug, the screen shows the app as it is,
+  `expect` says the correct outcome, and the reply says the test fails today.
+- **Plan fields** (on top of Phase 1): the mock's `test_md` (repo-relative path) and `setup` (the state the test
+  starts from); per step `expect`, and `url` where the test navigates (always the first). Write each `expect` from the captured screen:
+  exact label, `data-testid`, state — stable things, never LLM text, times or ids. A check no screen shows
+  (no 401, no console error, still there after refresh) is an `expect` on the step where it is checked.
+  Phase 3's validator fails a test mock with a drawn step, no first `url` or no `expect`.
+- **Branches become tests**: the main path is test 1; each branch (`branch_of` + `when`) is another test.
+- **When the person approves** (in words, or an Execute that says so) — write the `.md`:
+  ```bash
+  DM ds-rows <mocks dataset> --match '{"key": "<slug>"}' > <scratch>/row.json
+  "$FLOWPAD_PYTHON" -I <skill>/scripts/test_md.py <scratch>/row.json <repo root> [--replace]
+  ```
+  An existing file needs `--replace` (it keeps the id). Show the file, list `steps_without_expect`, and stop: the mock stays in the mock project (no Save to
+  repo), the `.md` is the scenario from now on, and nothing is committed unless asked.
 
 ## Save to repo (only when the person asks)
 

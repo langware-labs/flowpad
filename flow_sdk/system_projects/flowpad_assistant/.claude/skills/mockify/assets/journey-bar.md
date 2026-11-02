@@ -15,7 +15,7 @@ window.MOCK_BAR_AT = 'bottom';            // real mode: start bottom-right (buil
 ```
 
 Everything else comes from the **mock row** (`mockify.mock`, `schema/`): `journey` — the steps in order —
-and on each step `id`, `app`, `title`, `note`, `branch_of` + `when` for a branch, `next`, `decisions` (`id`, `question`,
+and on each step `id`, `app`, `title`, `note`, `expect` (test checks, shown under the note), `branch_of` + `when` for a branch, `next`, `decisions` (`id`, `question`,
 `shown`). Screens are `<section data-step="<id>">`, one per step, in both modes; the bar shows one and hides the
 rest (no reloads). A decision shown on a screen is `data-decision="D2"`.
 
