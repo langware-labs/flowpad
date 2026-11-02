@@ -204,7 +204,13 @@ class Deployment(Entity):
     )
     #: A local agent deployment that RUNS: a subprocess on this machine running its loop
     #: (``builtin/agent_loop``). A placement processes are only spawned through does not.
-    serving: bool = APIField(default=False, description="A local deployment that runs its own agent loop process")
+    #: PRIVATE: this machine's own flag. The hub never holds it, so a hub refresh used to reset it to
+    #: False and the box stopped its agent on the next resume.
+    serving: bool = APIField(
+        default=False,
+        sharing=Sharing.PRIVATE,
+        description="A local deployment that runs its own agent loop process",
+    )
     #: The Python file that process runs instead of the stock loop; ``None`` runs the stock loop.
     snippet: str | None = APIField(default=None, description="The loop this deployment runs, when not the stock one")
 
