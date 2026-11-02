@@ -94,10 +94,12 @@ def row_of(spec: Any, input: Any, answer: Any, context: Any, latency_ms: float) 
         extra = dict(row.get("data") or {})
         dropped: list[str] = []
         # Too big to keep whole: leave out its largest extras (a model's full transcript) before the decision itself.
-        while not _fits({**row, "data": extra}, limit) and extra:
-            key = max(extra, key=lambda k: len(json.dumps(extra[k], default=str)))
-            extra.pop(key)
-            dropped.append(key)
+        if not _fits({**row, "data": extra}, limit):
+            for key in sorted(extra, key=lambda k: len(json.dumps(extra[k], default=str)), reverse=True):
+                extra.pop(key)
+                dropped.append(key)
+                if _fits({**row, "data": extra}, limit):
+                    break
         if not _fits({**row, "data": extra}, limit):
             return None
         return {**row, "data": {**data, **extra, **({"truncated": dropped} if dropped else {})}}

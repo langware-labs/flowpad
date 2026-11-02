@@ -1749,16 +1749,7 @@ class AgenticProcess(Entity):
             process_assets = await self.prepare_process_assets()
             cmd = self._finalized_restart_cli_options()
             self._apply_process_assets(cmd, process_assets, str(self.id))
-            # Claude exits on --worktree in a folder whose workspace trust it has not been given; launch it plainly
-            # there so its own trust prompt shows (accepting it is the person's step), then Open in Worktree works.
-            from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions  # noqa: PLC0415
-
-            if isinstance(cmd, ClaudeAgentOptions) and cmd.worktree:
-                from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts  # noqa: PLC0415
-
-                if not claude_trusts(cmd.workdir or self.workdir):
-                    logger.info("claude: %s is not trusted yet, launching without --worktree", cmd.workdir or self.workdir)
-                    cmd.worktree = False
+            cmd.prepare_launch(cmd.workdir or self.workdir)
 
             # Fork & CLAUDE_PROJECT_DIR resume-cwd pinning are Claude-only —
             # Codex/Copilot mint their own session and use ``-C <cwd>``, not

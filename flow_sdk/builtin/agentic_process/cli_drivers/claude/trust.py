@@ -5,20 +5,34 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from flow_sdk.instance_settings import get_instance_settings
+
+#: ``~/.claude.json``'s projects map, kept until the file changes (it is megabytes, and read per worktree launch).
+_cached: tuple[tuple[float, int], dict] | None = None
+
+
+def _projects() -> dict:
+    global _cached
+    path = get_instance_settings().user_home / ".claude.json"
+    try:
+        stat = path.stat()
+    except OSError:
+        return {}
+    key = (stat.st_mtime, stat.st_size)
+    if _cached is None or _cached[0] != key:
+        try:
+            settings = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        projects = settings.get("projects") if isinstance(settings, dict) else None
+        _cached = (key, projects if isinstance(projects, dict) else {})
+    return _cached[1]
+
 
 def claude_trusts(workdir: str | None) -> bool:
-    """Whether Claude has its workspace trust accepted for ``workdir`` itself (``~/.claude.json``). A trusted folder
-    above it does not count: Claude refuses --worktree there even with ``/`` trusted."""
+    """Whether Claude has its workspace trust accepted for ``workdir`` itself. A trusted folder above it does not
+    count: Claude refuses --worktree there even with ``/`` trusted."""
     if not workdir:
         return False
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-
-    try:
-        settings = json.loads((get_instance_settings().user_home / ".claude.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    projects = settings.get("projects") if isinstance(settings, dict) else None
-    if not isinstance(projects, dict):
-        return False
-    here = Path(workdir).expanduser().resolve()
-    return bool((projects.get(str(here)) or {}).get("hasTrustDialogAccepted"))
+    entry = _projects().get(str(Path(workdir).expanduser().resolve())) or {}
+    return bool(entry.get("hasTrustDialogAccepted"))
