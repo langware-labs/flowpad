@@ -20472,8 +20472,8 @@ msgid "No machine yet"
 msgstr ""
 
 #: src/pages/hub-home/HubItemsSection.tsx
-msgid "No machines yet. Connect this computer or start a sandbox to run agents and terminals."
-msgstr ""
+#~ msgid "No machines yet. Connect this computer or start a sandbox to run agents and terminals."
+#~ msgstr ""
 
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
