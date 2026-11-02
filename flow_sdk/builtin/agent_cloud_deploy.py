@@ -172,8 +172,9 @@ async def _start_machine(ctx: DeployContext) -> None:
 
 
 DEPLOYMENT_STEPS = [
-    # A deploy names an agent the hub has to already know.
-    DeployStep("publish", "Publish the agent", lambda ctx: ctx.agent.ensure_on_hub(ctx.actor), inline=True),
+    # A deploy names an agent the hub has to already know, at the version being deployed: published every time
+    # (a git-backed project pushes its HEAD — a no-op when the hub has it — or refuses uncommitted/unpushed work).
+    DeployStep("publish", "Publish the agent", lambda ctx: ctx.agent.ensure_on_hub(ctx.actor, force=True), inline=True),
     DeployStep("dependencies", "Share its dependencies", _share_dependencies, inline=True),
     DeployStep("plan", "Plan the deployment", _plan, inline=True),
     # The gate: a missing value refuses the deploy before a machine is paid for, as the request's answer.

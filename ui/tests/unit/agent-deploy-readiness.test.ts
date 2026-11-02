@@ -78,6 +78,14 @@ describe('the published-version row', () => {
     expect(states.version).toBe('done');
   });
 
+  it('is todo for a git checkout with uncommitted or unpushed work, even before a first publish', () => {
+    const dirty = deployReadiness({ ...ALL_GOOD, version: { published: false, pending_changes: 1, git_native: true } });
+    const clean = deployReadiness({ ...ALL_GOOD, version: { published: false, pending_changes: 0, git_native: true } });
+
+    expect(dirty.version).toBe('todo');
+    expect(clean.version).toBe('done');
+  });
+
   it('is checking while the version is unknown, without holding Deploy back', () => {
     const states = deployReadiness({ ...ALL_GOOD, version: null });
 

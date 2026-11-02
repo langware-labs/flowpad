@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from flow_sdk.assets.git_publish import GitAuthor
+from flow_sdk.assets.git_publish import AssetPublishError, GitAuthor
 from flow_sdk.assets.hub_repo_sync import HubRepoCheckout, HubRepoMirror, sync_project_with_hub
 from flow_sdk.fs_store.origin.field import as_project_origin
 from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
@@ -66,10 +66,15 @@ async def test_a_machine_without_git_is_told_so(tmp_path, monkeypatch):
         await HubRepoCheckout(root=tmp_path / "x", clone_url="http://h/r", branch="main", token="t").checkout()
 
 
-async def test_a_project_folder_is_published_as_git_sees_it_and_again_after_the_hub_moved(tmp_path, upstream):
-    """What travels is the folder's tracked and new files at their working content, never an
-    ignored one — and a second publish lands on top of whatever reached the hub in between."""
-    bare, author = upstream
+def _out(cwd, *args) -> str:
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+
+async def test_a_git_project_is_published_as_its_own_commits_and_again_after_the_hub_moved(tmp_path):
+    """A checkout publishes its HEAD — never an ignored file, never uncommitted work — and a second
+    publish replaces the snapshot commit an asset publish left on the hub in between."""
+    bare, author = tmp_path / "hub.git", tmp_path / "author"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     project = tmp_path / "project"
     project.mkdir()
     _git(project, "init", "-q", "-b", "main")
@@ -78,28 +83,30 @@ async def test_a_project_folder_is_published_as_git_sees_it_and_again_after_the_
     (project / "secret.env").write_text("KEY=1")
     _git(project, "add", "-A")
     _git(project, "commit", "-qm", "first")
-    (project / "new.md").write_text("not committed yet")
     mirror = HubRepoMirror(root=tmp_path / "mirror", clone_url=bare.as_uri(), branch="main", token="t")
     who = GitAuthor(name="t", email="t@t")
 
     first = await sync_project_with_hub(mirror=mirror, checkout=project, author=who, project_typeid="project-1")
-    # The hub moves on: someone publishes an asset into the same repository.
-    _git(author, "pull", "-q", "origin", "main")
+    # The hub moves on: an asset publish lands a snapshot commit on the repository.
+    _git(tmp_path, "clone", "-q", str(bare), str(author))
     (author / "asset.md").write_text("an asset")
     _git(author, "add", "-A")
-    _git(author, "commit", "-qm", "asset")
+    _git(author, "commit", "-qm", "Publish FlowPad asset a\n\nFlowPad-Asset: skill-1")
     _git(author, "push", "-q", "origin", "HEAD:main")
     (project / "app.py").write_text("v2")
+    with pytest.raises(AssetPublishError, match="1 change not committed"):
+        await sync_project_with_hub(mirror=mirror, checkout=project, author=who, project_typeid="project-1")
+    _git(project, "commit", "-qam", "v2")
     second = await sync_project_with_hub(mirror=mirror, checkout=project, author=who, project_typeid="project-1")
     again = await sync_project_with_hub(mirror=mirror, checkout=project, author=who, project_typeid="project-1")
 
-    _git(author, "pull", "-q", "origin", "main")
-    assert first != second == again
+    _git(author, "fetch", "-q", "origin")
+    _git(author, "reset", "-q", "--hard", "origin/main")
+    assert first == _out(project, "rev-parse", "HEAD~1")
+    assert second == again == _out(project, "rev-parse", "HEAD") == _out(author, "rev-parse", "HEAD")
     assert (author / "app.py").read_text() == "v2"
-    assert (author / "new.md").read_text() == "not committed yet"
     assert not (author / "secret.env").exists()
-    # The project's own files replaced the repository's: what it does not hold is gone.
-    assert not (author / "report.html").exists()
+    assert not (author / "asset.md").exists()
 
 
 async def test_non_git_project_publish_carries_agent_context_not_secrets(tmp_path, upstream):

@@ -822,4 +822,10 @@ export interface AgentVersionState {
   published_commit: string;
   has_repo: boolean;
   pending_changes: number;
+  /** The project is a git checkout: its commits are what deploys, so `uncommitted`/`unpushed` block a deploy. */
+  git_native?: boolean;
+  /** That checkout has a remote of its own (then `unpushed` counts commits no remote holds). */
+  has_remote?: boolean;
+  uncommitted?: number;
+  unpushed?: number;
 }

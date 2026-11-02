@@ -17,6 +17,9 @@ class AssetPublishCode(StrEnum):
     BRANCH_AHEAD = "branch_ahead"
     HUB_PUBLISH_FAILED = "hub_publish_failed"
     ASSET_CONFLICT = "asset_conflict"
+    # The project is a git checkout and its history is what deploys: commit (and push) first.
+    NOT_COMMITTED = "not_committed"
+    NOT_PUSHED = "not_pushed"
 
 
 class PublishFailure(DataSpec):
@@ -48,6 +51,12 @@ _PUBLISH_FAILURE: dict[AssetPublishCode, PublishFailure] = {
     AssetPublishCode.ASSET_CONFLICT: PublishFailure(
         status=409,
         remedy="It was also edited on the hub. Keep one version: discard your local change, or re-apply it on the hub.",
+    ),
+    AssetPublishCode.NOT_COMMITTED: PublishFailure(
+        status=409, remedy="Commit the project's changes (and push them to its remote), then deploy again."
+    ),
+    AssetPublishCode.NOT_PUSHED: PublishFailure(
+        status=409, remedy="Push the project's commits to its remote, then deploy again."
     ),
 }
 

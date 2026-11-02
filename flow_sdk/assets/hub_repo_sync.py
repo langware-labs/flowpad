@@ -11,8 +11,10 @@ the instance directory) and moves one asset through it:
    project folder; if both sides changed it, refuse (``ASSET_CONFLICT``);
 3. otherwise copy the local asset in, commit, and push.
 
-The user's own folder is never a git repo requirement and is never pushed: the
-mirror is the only checkout, and the hub is the only remote. Git authenticates
+The user's own folder is never a git repo requirement. When it IS a git checkout,
+its own commits are what the project publish pushes (``sync_project_with_hub``):
+the hub repo is then just another remote of that history, read from the folder
+and never written into it. Git authenticates
 with the user's hub token as a Bearer header passed through the environment
 (never argv, never a remote URL).
 """
@@ -216,7 +218,11 @@ class HubRepoMirror:
             await self.git("checkout", "-q", "-B", self.branch, f"origin/{self.branch}")
             await self.git("reset", "-q", "--hard", f"origin/{self.branch}")
         else:
-            await self.git("checkout", "-q", "--orphan", self.branch, check=False)
+            # The hub has no branch (a new repo, or one re-created after its storage was wiped):
+            # start unborn. ``checkout --orphan`` refuses when the local branch still exists, which
+            # would leave a stale HEAD that the next push leases against and is refused for.
+            await self.git("symbolic-ref", "HEAD", f"refs/heads/{self.branch}")
+            await self.git("update-ref", "-d", f"refs/heads/{self.branch}", check=False)
             await self.git("rm", "-rq", "--cached", "--ignore-unmatch", ".", check=False)
         await self.git("clean", "-qfdx")
 
@@ -248,20 +254,20 @@ class HubRepoMirror:
         return head
 
 
-def _replace(source: Path, target: Path, *, is_file: bool) -> None:
-    """Make ``target`` hold exactly ``source`` (a file, or a folder's files)."""
+def _replace(source: Path, target: Path, *, is_file: bool, ignored: set[Path] | None = None) -> None:
+    """Make ``target`` hold exactly ``source`` (a file, or a folder's files), minus ``ignored``
+    (absolute paths: what the project's git ignore rules keep home — :func:`_ignored_inside`;
+    asked of ``source``'s own work tree when not given)."""
     if is_file:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         return
     if target.exists():
         shutil.rmtree(target)
-    # The project's own ignore rules hold here too, not only the mirror's: a file the source checkout
-    # keeps out of git is not published by copying it into another one.
     from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
 
-    # The asset itself being ignored is the person's explicit publish; what is ignored INSIDE it stays home.
-    ignored = ignored_under(source) - {Path(source).resolve()}
+    if ignored is None:
+        ignored = ignored_under(source) - {Path(source).resolve()}
     base = shutil.ignore_patterns(".git", KEEP_FILE)
 
     def _ignore(directory: str, names: list[str]) -> set[str]:
@@ -270,6 +276,33 @@ def _replace(source: Path, target: Path, *, is_file: bool) -> None:
         return skipped
 
     shutil.copytree(source, target, ignore=_ignore)
+
+
+def _git_view(mirror: "HubRepoMirror", folder: Path) -> list[str]:
+    """How to ask git about ``folder``: its own repository when it is a checkout, else the
+    mirror's git directory over it — git then applies the folder's nested ignore rules
+    without the user's folder ever being initialized."""
+    if (folder / ".git").exists():
+        return ["-C", str(folder)]
+    return ["--git-dir", str(mirror.root / ".git"), "--work-tree", str(folder)]
+
+
+async def _ignored_inside(mirror: "HubRepoMirror", project: Path, rel: str) -> set[Path]:
+    """What the project's ignore rules keep out of the asset at ``rel``; a whole ignored
+    folder is one entry. Asked with :func:`_git_view`, so a project folder that is NOT a
+    checkout keeps its ignored trees (an agent webapp's ``node_modules``) home too — they
+    used to be copied file by file into the mirror. The asset itself being ignored is the
+    person's explicit publish: only what is ignored INSIDE it stays home."""
+    code, listed = await mirror.git(
+        *_git_view(mirror, project),
+        "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory", "--", rel,
+        cwd=project, check=False,
+    )
+    if code != 0:
+        # Git cannot say (a broken ``.git``): copy the folder whole, as before ignore rules applied here.
+        return set()
+    asset = (project / rel).resolve()
+    return {(project / entry.rstrip("/")).resolve() for entry in listed.split("\0") if entry} - {asset}
 
 
 def _update_in_place(source: Path, target: Path, *, is_file: bool) -> None:
@@ -346,7 +379,9 @@ async def sync_asset_with_hub(
     async with _lock(mirror.root):
         await mirror.sync()
         upstream = await mirror.tree_at_head(rel)
-        await asyncio.to_thread(_replace, asset_root, target, is_file=is_file)
+        project = asset_root.parents[len(PurePosixPath(rel).parts) - 1]
+        ignored = set() if is_file else await _ignored_inside(mirror, project, rel)
+        await asyncio.to_thread(_replace, asset_root, target, is_file=is_file, ignored=ignored)
         local = await mirror.staged_tree(rel)
         if local is None:
             raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "The asset has no content to publish")
@@ -405,22 +440,131 @@ def _project_file_is_publishable(rel: str) -> bool:
     return ".flow" not in parts or parts[parts.index(".flow"):] == (".flow", "capsules", f"{IDENTITY}.json")
 
 
-async def sync_project_with_hub(*, mirror: HubRepoMirror, checkout: Path, author: GitAuthor, project_typeid: str) -> str:
-    """Make the hub repo hold the project folder as it is now, and return the hub's head commit.
+@dataclass(frozen=True)
+class GitSourceState:
+    """Where a project checkout stands against the git history a deploy runs.
 
-    What travels is what git would track in ``checkout`` — its tracked files and its new ones,
-    never an ignored one — at their working-tree content, the same content an asset publish
-    sends. It goes through the mirror like an asset does, as one commit on top of the hub's
-    branch: publishing again is always a fast-forward, whatever was published in between.
+    ``uncommitted``: changed or new paths git would track (a publishable one —
+    ``.env`` and ``.flow`` runtime files never travel, so they never block).
+    ``unpushed``: commits on HEAD that no remote-tracking branch holds; ``None``
+    when the checkout has no remote (then the hub repo IS its remote).
     """
+
+    head: str
+    uncommitted: list[str]
+    unpushed: int | None
+
+    @property
+    def remote(self) -> bool:
+        return self.unpushed is not None
+
+    def refusal(self) -> AssetPublishError | None:
+        """Why this checkout cannot be deployed as it is, said as what to do — or ``None``."""
+        if self.uncommitted:
+            n = len(self.uncommitted)
+            then = "commit and push, then deploy" if self.remote else "commit, then deploy"
+            return AssetPublishError(
+                AssetPublishCode.NOT_COMMITTED,
+                f"{n} change{'s' if n != 1 else ''} not committed — {then}",
+                data={"uncommitted": self.uncommitted[:20], "count": n},
+            )
+        if self.unpushed:
+            n = self.unpushed
+            return AssetPublishError(
+                AssetPublishCode.NOT_PUSHED,
+                f"{n} commit{'s' if n != 1 else ''} not pushed — push, then deploy",
+                data={"count": n},
+            )
+        return None
+
+
+def git_source_state(checkout: Path) -> GitSourceState | None:
+    """The checkout's state (blocking git; call off the loop), or ``None`` when ``checkout``
+    is not the root of a git checkout with a commit — then the folder's files are copied."""
+    from flow_sdk.utils.git import _run_git, _sync  # noqa: PLC0415
+
+    if not (checkout / ".git").exists():
+        return None
+    root = str(checkout)
+    head = _sync(root, "rev-parse", "--verify", "--quiet", "HEAD")
+    if not head:
+        return None
+    # ``-z``: paths verbatim; ``--untracked-files=normal``: a new folder is one entry, never walked file by file.
+    listed = _run_git(["git", "status", "--porcelain=v1", "-z", "--untracked-files=normal"], root)
+    entries, uncommitted, skip = (listed.stdout if listed.returncode == 0 else "").split("\0"), [], False
+    for entry in entries:
+        if skip or not entry:
+            skip = False
+            continue
+        code, path = entry[:2], entry[3:]
+        skip = code[0] in "RC"  # a rename/copy is followed by its source path
+        if _project_file_is_publishable(path.rstrip("/")):
+            uncommitted.append(path)
+    unpushed = None
+    if _sync(root, "remote"):
+        unpushed = int(_sync(root, "rev-list", "--count", "HEAD", "--not", "--remotes") or 0)
+    return GitSourceState(head=head, uncommitted=uncommitted, unpushed=unpushed)
+
+
+#: The trailers a Flowpad snapshot commit carries — commits a git-native publish may replace.
+_SNAPSHOT_TRAILERS = ("FlowPad-Project:", "FlowPad-Asset:")
+
+
+async def _push_history(mirror: HubRepoMirror, checkout: Path, state: GitSourceState) -> str:
+    """Make the hub branch the checkout's HEAD — the person's own commits, not a copy.
+
+    The mirror fetches HEAD from the checkout (a local fetch; the person's repository is
+    only read) and pushes it. The hub branch may hold commits that are not in that history:
+    the snapshot commits earlier publishes made (they carry ``FlowPad-Project``/``-Asset``
+    trailers) are replaced; anything else was authored on the hub and is never overwritten.
+    """
+    await mirror.git("fetch", "-q", str(checkout.resolve()), state.head)
+    code, upstream = await mirror.git("rev-parse", "--verify", "--quiet", "HEAD", check=False)
+    if code == 0 and upstream == state.head:
+        return state.head
+    lease: list[str] = []
+    if code == 0 and upstream:
+        ff, _ = await mirror.git("merge-base", "--is-ancestor", upstream, state.head, check=False)
+        if ff != 0:
+            _, bodies = await mirror.git("log", "--format=%B%x00", upstream, "--not", state.head)
+            foreign = [b for b in bodies.split("\0") if b.strip() and not any(t in b for t in _SNAPSHOT_TRAILERS)]
+            if foreign:
+                raise AssetPublishError(
+                    AssetPublishCode.ASSET_CONFLICT,
+                    f"The project's hub repository has {len(foreign)} commit(s) that are not in your git history",
+                )
+            lease = [f"--force-with-lease=refs/heads/{mirror.branch}:{upstream}"]
+    code, _ = await mirror.git("push", "-q", *lease, "origin", f"{state.head}:refs/heads/{mirror.branch}", check=False)
+    if code != 0:
+        raise AssetPublishError(
+            AssetPublishCode.ASSET_CONFLICT, "The project repository moved while publishing; publish again"
+        )
+    await mirror.git("checkout", "-q", "-B", mirror.branch, state.head)
+    return state.head
+
+
+async def sync_project_with_hub(*, mirror: HubRepoMirror, checkout: Path, author: GitAuthor, project_typeid: str) -> str:
+    """Make the hub repo hold the project, and return the hub's head commit.
+
+    A git checkout is the single source of truth: its HEAD — the person's own commits — is
+    pushed (:func:`_push_history`), so a deploy runs exactly a commit the person made, and a
+    checkout with a remote of its own runs one that remote holds. Uncommitted changes, or
+    commits not on that remote, refuse the publish with what to do (:meth:`GitSourceState.refusal`)
+    rather than silently shipping a working tree no commit describes.
+
+    A folder that is NOT a git checkout is copied: what git would track there — never an
+    ignored file — goes as one snapshot commit on top of the hub's branch.
+    """
+    state = await asyncio.to_thread(git_source_state, checkout)
+    if state is not None and (refusal := state.refusal()) is not None:
+        raise refusal
     async with _lock(mirror.root):
         await mirror.sync()
-        # Git evaluates nested ignore rules even for a plain project folder when
-        # the private mirror supplies its git directory. Never initialize the user's folder.
-        args = ["-C", str(checkout)] if (checkout / ".git").exists() else [
-            "--git-dir", str(mirror.root / ".git"), "--work-tree", str(checkout),
-        ]
-        _, listed = await mirror.git(*args, "ls-files", "-z", "--cached", "--others", "--exclude-standard", cwd=checkout)
+        if state is not None:
+            return await _push_history(mirror, checkout, state)
+        _, listed = await mirror.git(
+            *_git_view(mirror, checkout), "ls-files", "-z", "--cached", "--others", "--exclude-standard", cwd=checkout
+        )
         files = [rel for rel in listed.split("\0") if rel and _project_file_is_publishable(rel)]
         await asyncio.to_thread(_replace_tree, checkout, files, mirror.root)
         await mirror.git("add", "-A")

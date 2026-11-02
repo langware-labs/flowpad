@@ -9,6 +9,7 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { useGithubConnected } from '@src/lib/github-oauth-status';
 import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
+import { notify } from '@src/notifications';
 import { CheckCircle2, GitBranch, Github } from 'lucide-react';
 
 /** The remote a git flow will use: which repository, and which branch of it. */
@@ -27,6 +28,27 @@ interface GitRemoteFieldProps {
   onStepChange?: (inPicker: boolean) => void;
   urlLabel?: string;
   urlPlaceholder?: string;
+  /** Prefix for `data-testid`s (`<prefix>-url`, `<prefix>-branch`, …). */
+  testIdPrefix?: string;
+  autoFocus?: boolean;
+  /** Enter in the URL box — the host's submit. */
+  onEnter?: () => void;
+  /** Off while the host dialog is closed, so the repo list isn't fetched. */
+  enabled?: boolean;
+}
+
+/**
+ * Start the GitHub device flow. The global `GitHubDeviceFlowModal` picks it up.
+ * A failure is reported, never swallowed — a bare `void connect()` left the
+ * button doing nothing at all when the backend refused.
+ */
+export async function connectGithub(failTitle: string): Promise<void> {
+  try {
+    await oauthService.connect(OAUTH_PROVIDERS.GITHUB);
+  } catch (err) {
+    const ax = err as { response?: { data?: { message?: string } }; message?: string };
+    notify.error({ title: ax.response?.data?.message ?? ax.message ?? failTitle });
+  }
 }
 
 /**
@@ -47,7 +69,17 @@ interface GitRemoteFieldProps {
  * branches anonymously — so a pasted URL gets the branch step too, via
  * `gitOriginFromUrl`. Connecting only buys the browse path and private repos.
  */
-export function GitRemoteField({ value, onChange, onStepChange, urlLabel, urlPlaceholder }: GitRemoteFieldProps) {
+export function GitRemoteField({
+  value,
+  onChange,
+  onStepChange,
+  urlLabel,
+  urlPlaceholder,
+  testIdPrefix = 'git-remote',
+  autoFocus,
+  onEnter,
+  enabled = true,
+}: GitRemoteFieldProps) {
   const { t } = useLingui();
   const githubConnected = useGithubConnected();
   /** null = step 1 (paste / browse). Non-null = the branch list for this repo. */
@@ -105,12 +137,17 @@ export function GitRemoteField({ value, onChange, onStepChange, urlLabel, urlPla
             placeholder={urlPlaceholder ?? 'https://github.com/owner/repo.git'}
             autoComplete="off"
             className="min-w-0 flex-1 font-mono text-xs"
-            data-testid="git-remote-url"
+            autoFocus={autoFocus}
+            spellCheck={false}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && value.url.trim()) onEnter?.();
+            }}
+            data-testid={`${testIdPrefix}-url`}
           />
           {value.branch ? (
             <div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs">
               <GitBranch className="h-3 w-3" />
-              <span className="font-mono" data-testid="git-remote-branch">
+              <span className="font-mono" data-testid={`${testIdPrefix}-branch`}>
                 {value.branch}
               </span>
               <button
@@ -130,7 +167,7 @@ export function GitRemoteField({ value, onChange, onStepChange, urlLabel, urlPla
                 size="sm"
                 className="h-7 shrink-0 gap-1.5 px-2 text-xs"
                 onClick={() => setBranchesFor(urlRepo)}
-                data-testid="git-remote-pick-branch"
+                data-testid={`${testIdPrefix}-pick-branch`}
               >
                 <GitBranch className="h-3 w-3" />
                 <Trans>Pick branch</Trans>
@@ -146,8 +183,8 @@ export function GitRemoteField({ value, onChange, onStepChange, urlLabel, urlPla
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
             <Trans>GitHub connected — pick a repository below.</Trans>
           </div>
-          <InvitationsStrip provider="github" />
-          <RepoPicker provider="github" onSelect={handlePickRepo} />
+          <InvitationsStrip provider="github" enabled={enabled} />
+          <RepoPicker provider="github" onSelect={handlePickRepo} enabled={enabled} />
         </>
       ) : (
         <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs">
@@ -161,8 +198,8 @@ export function GitRemoteField({ value, onChange, onStepChange, urlLabel, urlPla
               variant="outline"
               size="sm"
               className="h-6 px-2 text-xs"
-              onClick={() => void oauthService.connect(OAUTH_PROVIDERS.GITHUB)}
-              data-testid="git-remote-connect-github"
+              onClick={() => void connectGithub(t`Failed to start GitHub connection`)}
+              data-testid={`${testIdPrefix}-connect-github`}
             >
               <Github className="me-1.5 h-3 w-3" />
               <Trans>Connect</Trans>
