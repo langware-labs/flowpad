@@ -1336,7 +1336,19 @@ async def _box_llm() -> Any:
         candidates = await list_llm_candidates(str(await resolve_default_worker_type()))
     except Exception:  # noqa: BLE001 — no source is an answer, not a crash
         return None
-    chosen = pick_llm_candidate([c for c in candidates if c.endpoint.kind != LLMEndpointKind.DEVICE])
+    from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
+
+    def callable_as_api(endpoint: Any) -> bool:
+        """A provider with no API dialect (e.g. a stored Vertex source) cannot answer a prompt op: it must not be picked."""
+        try:
+            get_dialect(str(getattr(endpoint, "provider", "") or ""))
+            return True
+        except ValueError:
+            return False
+
+    chosen = pick_llm_candidate(
+        [c for c in candidates if c.endpoint.kind != LLMEndpointKind.DEVICE and callable_as_api(c.endpoint)]
+    )
     return chosen.endpoint if chosen is not None else None
 
 
