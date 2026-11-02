@@ -29,6 +29,8 @@ PASSTHROUGH_EXTENSION = "flowpad_passthrough"
 # ``brief``/``submit``). This box's login is neither attached nor consulted -- a lapsed one must
 # not stop a call that never needed it -- and the hub's answer to it can sign no one out here.
 ANONYMOUS_EXTENSION = "flowpad_anonymous"
+# The caller expects this call may fail and handles it: its failure is not shown as a hub warning.
+QUIET_EXTENSION = "flowpad_quiet"
 
 
 def _is_passthrough(response: httpx.Response) -> bool:
@@ -184,6 +186,8 @@ async def _on_response(response: httpx.Response) -> None:
     # A large or non-JSON passthrough body stays unread (the proxy streams it); the status
     # still gets reported, and the caller receives the body verbatim.
     message = redact(_response_message(response)) if body_read else f"HTTP {status_code}"
+    if response.request.extensions.get(QUIET_EXTENSION):
+        return
     await hub_error_reporter.report(
         status_code=status_code,
         method=response.request.method,

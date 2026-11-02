@@ -215,3 +215,28 @@ async def test_a_page_that_is_not_the_hubs_is_offline_not_its_verdict(hub):
     with pytest.raises(HubError) as e:
         await HubProxy.call("GET", "agent", TASK_ID, "mailbox", "messages")
     assert e.value.status_code == 404, "the hub's own 404 stays its verdict"
+
+
+async def test_a_quiet_call_still_raises_but_is_not_a_hub_warning(hub, monkeypatch):
+    """Deleting an agent left its tabs unwatching it; each "Target entity not found" became a hub
+    warning the person could do nothing about (clown-eight, 2026-11-02)."""
+    from flow_sdk.cloud_client.client_hooks import QUIET_EXTENSION, _on_response
+
+    reported = []
+
+    async def report(**kw):
+        reported.append(kw["path"])
+
+    monkeypatch.setattr("flow_sdk.cloud_client.client_hooks.hub_error_reporter.report", report)
+    gone = {"status": "FAIL", "message": "Missing request info(Target entity not found)"}
+    hub.handler = lambda req: httpx.Response(403, json=gone)
+    with pytest.raises(HubError):
+        await HubProxy.call("POST", "agent", TASK_ID, "unwatch", payload={}, quiet=True)
+    assert hub.sent[-1].extensions.get(QUIET_EXTENSION) is True
+
+    for quiet in (True, False):
+        request = httpx.Request("POST", f"http://hub.test/api/v1/graph/agent/{TASK_ID}/unwatch", headers={"Authorization": "Bearer t"})
+        if quiet:
+            request.extensions[QUIET_EXTENSION] = True
+        await _on_response(httpx.Response(403, json=gone, request=request))
+    assert reported == [f"/api/v1/graph/agent/{TASK_ID}/unwatch"], "only the call nobody expected to fail is shown"

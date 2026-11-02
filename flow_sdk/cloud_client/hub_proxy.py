@@ -30,7 +30,12 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
-from flow_sdk.cloud_client.client_hooks import ANONYMOUS_EXTENSION, PASSTHROUGH_EXTENSION, HubAuthExpiredError
+from flow_sdk.cloud_client.client_hooks import (
+    ANONYMOUS_EXTENSION,
+    PASSTHROUGH_EXTENSION,
+    QUIET_EXTENSION,
+    HubAuthExpiredError,
+)
 from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code, _extract_reason, classify_hub_failure
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 
@@ -176,6 +181,7 @@ class HubProxy:
         anonymous: bool = False,
         passthrough: bool = False,
         stream: bool = False,
+        quiet: bool = False,
     ) -> httpx.Response:
         """Send ONE request to the hub and return the response, whatever its status.
 
@@ -189,6 +195,8 @@ class HubProxy:
         extensions: dict[str, Any] = {}
         if anonymous:
             extensions[ANONYMOUS_EXTENSION] = True
+        if quiet:
+            extensions[QUIET_EXTENSION] = True
         if passthrough or stream:
             extensions[PASSTHROUGH_EXTENSION] = True
         try:
@@ -242,13 +250,15 @@ class HubProxy:
         strict: bool = False,
         anonymous: bool = False,
         raw: bool = False,
+        quiet: bool = False,
     ) -> Any:
         """Call a hub graph endpoint and answer its envelope's ``data`` (``{}`` when empty).
 
         Raises ``HubError``: ``not_configured`` with no hub, ``signed_out`` / ``offline`` when
         nothing came back, the hub's status on any non-200, ``server_error`` on a 200 that is not
         JSON. ``strict`` also refuses a 200 envelope that says FAIL, and refuses to send at all
-        without a credential. ``raw`` answers the body's bytes; ``anonymous`` sends no login.
+        without a credential. ``raw`` answers the body's bytes; ``anonymous`` sends no login; ``quiet``
+        keeps a failure the caller handles out of the UI's hub warnings (it still raises).
         """
         url = _require_url(entity_type, entity_id, action, sub_path, scope=scope)
         if strict and not anonymous:
@@ -259,7 +269,7 @@ class HubProxy:
             payload = {}  # the hub parses DELETE bodies (``members`` expects one)
         resp = await cls.send(
             method, url, params=params, json=None if files else payload, files=files,
-            timeout=timeout, anonymous=anonymous,
+            timeout=timeout, anonymous=anonymous, quiet=quiet,
         )  # fmt: skip
         return _unwrap(resp, method=method, url=url, strict=strict, raw=raw)
 
