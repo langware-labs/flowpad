@@ -76,10 +76,10 @@ class Double:
         for call in self.mailbox.calls:
             if call[0] == "send":
                 body = call[2]
-                out.append({"to": (body.get("to") or [None])[0], "text": body.get("text"), "thread": None, "external_id": None})
+                out.append({"to": (body.get("to") or [None])[0], "text": body.get("text"), "subject": body.get("subject"), "thread": None, "external_id": None})
             elif call[0] == "reply":
                 body = call[3]
-                out.append({"to": None, "text": body.get("text"), "thread": call[2], "external_id": None})
+                out.append({"to": None, "text": body.get("text"), "subject": body.get("subject"), "thread": call[2], "external_id": None})
         return out
 
 
@@ -159,8 +159,8 @@ class HubDouble:
         rows = [m for m in (page or {}).get("messages") or []
                 if str((m.get("sender") or {}).get("address") or "").strip().lower() == wanted]
         rows.sort(key=lambda m: str(m.get("timestamp") or ""))
-        return [{"to": self.outsider_address, "text": m.get("text") or m.get("preview") or "", "thread": m.get("thread_id"),
-                 "external_id": m.get("message_id")} for m in rows]
+        return [{"to": self.outsider_address, "text": m.get("text") or m.get("preview") or "", "subject": m.get("subject"),
+                 "thread": m.get("thread_id"), "external_id": m.get("message_id")} for m in rows]
 
 
 @contextmanager

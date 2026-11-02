@@ -56,6 +56,24 @@ describe('AttachedChannelsBar', () => {
     expect(screen.queryByTestId('attached-channels-clear')).toBeNull();
   });
 
+  it('with onMarkPress a mark press goes to the caller and never touches the filter', () => {
+    const onMarkPress = vi.fn();
+    const onSelectedChange = vi.fn();
+    render(
+      <AttachedChannelsBar
+        owner={new TypeId(LOCAL)}
+        rows={[fake('a')]}
+        specFor={specFor}
+        selected={new Set()}
+        onSelectedChange={onSelectedChange}
+        onMarkPress={onMarkPress}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('attached-channel'));
+    expect(onMarkPress).toHaveBeenCalledWith('slack|slack');
+    expect(onSelectedChange).not.toHaveBeenCalled();
+  });
+
   it('a lit mark still wears "!" when one of its sources needs a person', () => {
     mount([fake('a', 'setup'), fake('b')]);
     const mark = screen.getByTestId('attached-channel');

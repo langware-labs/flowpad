@@ -71,6 +71,14 @@ _MARK = "mark:"
 NO_ATTACHMENT_BYTES = "the hub mailbox does not serve attachment bytes yet"
 
 
+def _body(data: MessageData) -> dict[str, Any]:
+    """What a send or a reply hands the hub mailbox: the text, and the subject when the value carries one."""
+    body: dict[str, Any] = {"text": data.text}
+    if getattr(data, "subject", None):
+        body["subject"] = data.subject
+    return body
+
+
 class MailboxTransport(Protocol):
     """An agent's hub mailbox, as the application reaches it. Raises the contract's errors."""
 
@@ -316,9 +324,7 @@ class CloudEmailSource(EmailAddressing, MessageSource):
             return await self.reply_as(latest, data, data.conversation)
         if len(data.recipients) != 1:
             raise Unsupported("a hub mailbox send has exactly one recipient")
-        body: dict[str, Any] = {"to": data.recipients[0].address or data.recipients[0].origin.key, "text": data.text}
-        if getattr(data, "subject", None):
-            body["subject"] = data.subject
+        body = {"to": data.recipients[0].address or data.recipients[0].origin.key, **_body(data)}
         return self._sent(await self.mailbox.send(self.agent_id, body), data, None)
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
@@ -329,7 +335,7 @@ class CloudEmailSource(EmailAddressing, MessageSource):
         return await self.reply_as(origin, data, None)
 
     async def reply_as(self, answered: CloudOrigin, data: MessageData, conversation: Optional[CloudOrigin]) -> MessageItem:
-        sent = self._sent(await self.mailbox.reply(self.agent_id, self._key_of(answered), {"text": data.text}), data, conversation)
+        sent = self._sent(await self.mailbox.reply(self.agent_id, self._key_of(answered), _body(data)), data, conversation)
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": answered}))
 
     def _sent(self, body: dict, data: MessageData, conversation: Optional[CloudOrigin]) -> MessageItem:

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { markdownToPlain } from '@src/components/conversation/message-markdown';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import {
   Archive,
   Inbox as InboxIcon,
@@ -609,6 +609,8 @@ export function StreamInboxView({
   agentId,
   sourceId,
   embedded = false,
+  initialChannel,
+  emptyHint,
   onOpenConversation,
 }: {
   agentId?: string;
@@ -618,6 +620,11 @@ export function StreamInboxView({
   /** Inside another page: no stream-inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
    *  membership invitations — those belong to an owner's stream inbox, not to one source. */
   embedded?: boolean;
+  /** The channel mark (`channelKeyOf` key) the list opens narrowed to — an agent's inbox opens on its email.
+   *  The mark's × clears it like any filter; remount (key the view) to open on another. */
+  initialChannel?: string;
+  /** What the empty list says instead of offering channels to connect (an agent whose mailbox admits nobody yet). */
+  emptyHint?: ReactNode;
 } = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
@@ -664,7 +671,9 @@ export function StreamInboxView({
     ) => attributionForOrigin(origin, originLocal ?? null, channelSpec),
     [attributionForOrigin],
   );
-  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
+  const [channelFilter, setChannelFilter] = useState<Set<string>>(
+    () => new Set(initialChannel ? [initialChannel] : []),
+  );
   // The picked channels that are not listening: the strip above the list explains each one.
   const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
   const channelMatch = useMemo(
@@ -1561,9 +1570,18 @@ export function StreamInboxView({
                       ? t`No messages from this channel yet`
                       : t`No conversations`}
             </span>
-            {/* An owner with no channel connected: the empty list is where connecting one is offered. */}
-            {channelsOwner && !embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
-              <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+            {/* An owner with no channel connected: the empty list is where connecting one is offered —
+                unless the caller knows better what is missing (an allowlist, not a channel). */}
+            {!embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
+              emptyHint ? (
+                <span className="text-sm" data-testid="stream-inbox-empty-hint">
+                  {emptyHint}
+                </span>
+              ) : (
+                // Narrowed to one channel, the list is empty for want of mail on IT: offering other channels
+                // here answers a question nobody asked.
+                channelsOwner && channelFilter.size === 0 && <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+              )
             )}
             {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>

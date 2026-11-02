@@ -31,6 +31,10 @@ vi.mock('@src/components/graph-view/icons/iconRegistry', async () => {
   };
 });
 
+vi.mock('@src/components/stream-inbox-view/AttachedChannelsBar', () => ({
+  AttachedChannelsBar: () => <div data-testid="attached-channels" />,
+  useAttachedChannels: () => ({ rows: [], specFor: () => undefined, offers: [], loading: false }),
+}));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({
   AgentPlacesColumn: () => null,
 }));

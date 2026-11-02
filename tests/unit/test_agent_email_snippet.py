@@ -99,6 +99,8 @@ async def test_the_page_runs_as_written(monkeypatch, tmp_path):
         finally:
             watcher.cancel()
         assert worker.received_prompts == ["where is the treasure?"]
+        # The reply keeps the thread's subject: what goes out to the hub, and what the sent copy records.
+        assert [m["subject"] for m in mail.sent()] == ["Re: Ahoy"]
         assert isinstance(ns["allocated"], AgentMailbox) and ns["pirate"].mailbox.address == "pirate@hub.test"
 
         ns = await run_fence(verbs, ns, filename="agent-email.md#verbs")   # the mailbox's own verbs, in order

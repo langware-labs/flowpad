@@ -1531,9 +1531,20 @@ export class DockPointer implements IDockPointer {
     );
   }
 
-  /** The one address for an Agent's stream inbox surface. */
-  static forAgentStreamInbox(agentId: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.AGENT, `${agentId}/stream_inbox`, undefined, layout);
+  /** The one address for an Agent's stream inbox surface. `channel` (a `channelKeyOf` key) opens it
+   *  narrowed to that channel — a query option, like `forStreamInbox`'s; the path grammar is unchanged.
+   *
+   * URL formats:
+   *   /dock/agent/<id>/stream_inbox
+   *   /dock/agent/<id>/stream_inbox?channel=<key>
+   */
+  static forAgentStreamInbox(
+    agentId: string,
+    options?: { channel?: string | null },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const queryOptions = options?.channel ? { channel: options.channel } : undefined;
+    return new DockPointer(ViewType.AGENT, `${agentId}/stream_inbox`, queryOptions, layout);
   }
 
   static parseAgentPointer(pointer: string | undefined | null): {

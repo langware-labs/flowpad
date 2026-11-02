@@ -20,7 +20,9 @@ class EmailAddressing:
     ) -> tuple[EmailMessageData, Optional[CloudOrigin]]:
         answered = str(in_reply_to or "").strip()
         if answered:
-            return EmailMessageData(text=text), self.origin(answered)  # type: ignore[attr-defined]
+            # The reply keeps its subject (``Re: <the answered subject>``): the sent copy is recorded
+            # with it, and a provider that does not derive one itself sends it.
+            return EmailMessageData(text=text, subject=subject or None), self.origin(answered)  # type: ignore[attr-defined]
         address = str(to or "").strip()
         if not address:
             raise ValueError(f"a {self.provider} send needs a recipient address in `to`")  # type: ignore[attr-defined]

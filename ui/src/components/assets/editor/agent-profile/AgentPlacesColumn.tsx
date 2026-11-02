@@ -4,9 +4,10 @@ import { useWatch } from '@sdk/react/hooks';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useState } from 'react';
-import { ChevronRight, Loader2, Plus, Server } from 'lucide-react';
+import { Loader2, Mail, Plus, Server } from 'lucide-react';
 
 import { Button } from '@src/components/ui/button';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { useActivitySpec } from '@src/store/activity-store';
@@ -132,11 +133,11 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
           {visible.map((place) => {
             const { label, Icon } = display(place);
             return (
-              <li key={place.deployment.id}>
+              <li key={place.deployment.id} className="flex items-center">
                 <button
                   type="button"
                   onClick={() => openPage(place)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-start hover:bg-muted/60"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-start hover:bg-muted/60"
                   data-testid={`agent-place-row-${place.deployment.id}`}
                 >
                   <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -154,8 +155,20 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
                   >
                     {formatTimeAgo(place.last_active) ?? t`never`}
                   </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground rtl:-scale-x-100" />
                 </button>
+                {/* What this place answers is read in the agent's stream inbox: one inbox per agent, so every
+                    row opens the same place — a sibling of the row button, never nested in it. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="me-1 shrink-0 text-muted-foreground"
+                  onClick={() => navigation.openDock(DockPointer.forAgentStreamInbox(agent.id))}
+                  aria-label={t`Open stream inbox`}
+                  title={t`Open stream inbox`}
+                  data-testid={`agent-place-inbox-${place.deployment.id}`}
+                >
+                  <Mail className="h-4 w-4" />
+                </Button>
               </li>
             );
           })}

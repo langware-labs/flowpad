@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent, AgentPlace } from '@sdk';
+import { useOnTag } from '@sdk/react/hooks';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 
 /** Every mounted reader of an agent's places, so one reload (a launch, a switch) refreshes them all. */
@@ -50,6 +51,11 @@ export function useAgentPlaces(agent: Agent | null | undefined): {
   useEffect(() => {
     void read();
   }, [read, placesKey]);
+  // A place that just answered (a run starting or ending on this computer) should say so without a
+  // reload: its `last_active` is read again on the same bus event the place's activity list follows.
+  useOnTag('agent.status', () => {
+    if (!isHubOnly()) void read();
+  });
 
   const reload = useCallback(async () => {
     await read();

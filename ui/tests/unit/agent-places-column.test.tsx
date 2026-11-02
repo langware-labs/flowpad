@@ -101,6 +101,16 @@ describe('Deployments', () => {
     expect(pointer.toUrl()).toContain(`${AGENT_URL}/child/deployment/deployment-${CLOUD_ID}`);
   });
 
+  it('a row’s inbox icon opens the agent’s stream inbox, not the deployment page', async () => {
+    renderColumn([place(LOCAL_ID, true), place(CLOUD_ID, false)]);
+    fireEvent.click(await screen.findByTestId(`agent-place-inbox-${LOCAL_ID}`));
+    expect(nav.openDock).toHaveBeenCalledTimes(1);
+    const pointer = nav.openDock.mock.calls[0][0] as { toUrl(): string };
+    expect(pointer.toUrl()).toBe('/dock/agent/33333333-3333-4333-8333-333333333333/stream_inbox');
+    // The state text stays on the row beside it.
+    expect(screen.getByTestId(`agent-place-state-${LOCAL_ID}`)).toHaveTextContent('On');
+  });
+
   it('on the hub there is no places call: nothing is listed and no New deployment', async () => {
     nav.hub = true;
     renderColumn([place(LOCAL_ID, true), place(CLOUD_ID, false)]);

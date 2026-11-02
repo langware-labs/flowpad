@@ -1,7 +1,7 @@
-import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, type AgentVersionState } from '@sdk';
+import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, TypeId, type AgentVersionState } from '@sdk';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Loader2, Trash2 } from 'lucide-react';
 
 import { notify } from '@src/notifications';
@@ -17,6 +17,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 
+import { AttachedChannelsBar, useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { AddIntroTranslationButton, IntroTranslationFields } from './AgentIntroTranslations';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentRequestLine } from './AgentRequestLine';
@@ -87,6 +88,15 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const autoPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
+  // The channels people reach this agent on, drawn in the header the way the stream inbox header
+  // draws them: one mark per attached channel, the featured ones still to connect, and "+". A mark
+  // opens the agent's stream inbox on that channel — there is no list here to narrow.
+  const channelsOwner = useMemo(() => new TypeId(Agent.type, agent.id), [agent.id]);
+  const { rows: channelRows, specFor: channelSpecFor, offers: channelOffers } = useAttachedChannels(hub ? null : channelsOwner);
+  const openChannel = useCallback(
+    (key: string) => navigation.openDock(DockPointer.forAgentStreamInbox(agent.id, { channel: key })),
+    [navigation, agent.id],
+  );
   // Sharing reads its public grant from the hub on mount; hold it back until "More" is first opened.
   const [moreOpened, setMoreOpened] = useState(false);
 
@@ -282,6 +292,17 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               </span>
             )}
           </div>
+          {!hub && (
+            <div className="mt-2" data-testid="agent-header-channels">
+              <AttachedChannelsBar
+                owner={channelsOwner}
+                rows={channelRows}
+                specFor={channelSpecFor}
+                offers={channelOffers}
+                onMarkPress={openChannel}
+              />
+            </div>
+          )}
         </div>
         {!hub && (
           <Button

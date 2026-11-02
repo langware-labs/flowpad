@@ -60,6 +60,17 @@ export const isMessageChannel = (
   spec: DataDriver | undefined | null,
 ): boolean => !source.read_only && !!(source.channel || '').trim() && isMessageDriverSpec(spec);
 
+/** The record-kind prefix of a driver the application makes for its own plumbing (a deployment's chat
+ *  endpoint): the loop answers it, but no list names it as one of the owner's channels. */
+export const INTERNAL_KIND_PREFIX = 'datasource.internal.';
+
+/** A message channel a person is SHOWN: `isMessageChannel` minus the internal drivers. The loop still
+ *  answers those (`agent_scope.is_message_source` is unchanged); only the lists leave them out. */
+export const isListedChannel = (
+  source: Pick<DataSource, 'read_only' | 'channel'>,
+  spec: DataDriver | undefined | null,
+): boolean => isMessageChannel(source, spec) && !(spec?.kind ?? '').startsWith(INTERNAL_KIND_PREFIX);
+
 /** Everything that is not a message channel is a knowledge source (data source). */
 export const isKnowledgeSource = (
   source: Pick<DataSource, 'read_only' | 'channel'>,

@@ -215,8 +215,9 @@ export function DataSourceDialog({
       if (provisioned) {
         // The one provisioned account today is the agent's mailbox; allocating wires
         // the local source itself.
-        if (await allocateMailbox(new Agent({ id: provisioned }))) {
-          notify.success({ title: t`${spec?.title} is ready` });
+        const allocated = await allocateMailbox(new Agent({ id: provisioned }));
+        if (allocated) {
+          notify.success({ title: t`${spec?.title} is ready`, message: allocated.mailbox?.address || undefined });
           onOpenChange(false);
         }
         return;

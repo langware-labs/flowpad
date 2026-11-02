@@ -15,6 +15,7 @@ import { useAttentionPolling } from '@src/components/data-sources/useAttentionPo
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
+import { channelKeyOf } from './channel-owner';
 import { StreamInboxView } from './StreamInboxView';
 
 const MIN_REFRESH_SECONDS = 60;
@@ -46,6 +47,13 @@ export function AgentStreamInboxView() {
   // The agent's channels — the stream inbox header's own rows, so "has a
   // channel at all" and what that header shows can never disagree.
   const { rows: channels, specFor, offers } = useAttachedChannels(agentTypeId);
+  // The channel the list opens on: the URL's (`?channel=`, a mark pressed on the agent page), else the
+  // agent's email — what a person coming here is after. A standard stream inbox, filtered, not a special list.
+  const urlChannel = currentDock?.options?.channel;
+  // The mailbox state names its source by id only (no provider/channel), so the key comes from that
+  // source's full row among the agent's channels.
+  const mailboxSource = activeState?.source ? channels.find((s) => s.id === activeState.source?.id) : undefined;
+  const initialChannel = urlChannel || (mailboxSource ? channelKeyOf(mailboxSource) : undefined);
 
   const loadState = useCallback(async () => {
     const currentAgent = agentRef.current;
@@ -192,7 +200,20 @@ export function AgentStreamInboxView() {
       </section>
       {activeState?.mailbox || channels.length > 0 ? (
         <div className="min-h-0 flex-1">
-          <StreamInboxView agentId={parsed.agentId} />
+          {/* Keyed on the opening channel: the mailbox source lands after the first render, and the
+              list must open on it, not remember the empty filter it was first built with. */}
+          <StreamInboxView
+            key={initialChannel ?? ''}
+            agentId={parsed.agentId}
+            initialChannel={initialChannel}
+            emptyHint={
+              activeState?.mailbox && (activeState.mailbox.allowed_senders ?? []).length === 0 ? (
+                <span data-testid="agent-inbox-no-senders">
+                  <Trans>Nobody may write to this agent yet — add their address under Allowed senders.</Trans>
+                </span>
+              ) : undefined
+            }
+          />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
