@@ -2432,13 +2432,14 @@ def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
     return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified")
 
 
-async def connection_need(provider: str) -> Optional[SetupNeedSpec]:
+async def connection_need(provider: str, url: Optional[str] = None) -> Optional[SetupNeedSpec]:
     """None when ``provider``'s sign-in works for what runs here (``provider_probe.connection_answer``);
     otherwise the need it is — the answer a source's Verify and its setup step's sign-in node both give."""
     from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
     from flow_sdk.core.oauth.provider_probe import connection_answer  # noqa: PLC0415
 
-    data = await connection_answer(provider)
+    # The source's own probe URL only when it names one: every other caller asks the provider's default.
+    data = await (connection_answer(provider, url) if url else connection_answer(provider))
     if data.get("ok") is not False:
         return None
     code = str(data.get("code") or "")
