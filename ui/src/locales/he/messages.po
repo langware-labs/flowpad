@@ -5899,6 +5899,7 @@ msgid "Cancel"
 msgstr "ביטול"
 
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Cancel download"
 msgstr "בטל הורדה"
 
@@ -11534,8 +11535,12 @@ msgid "Downloaded"
 msgstr "הורדה הושלמה"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Downloaded and ready — the switch takes a few seconds. Not now? It is used the next time FlowPad starts."
-msgstr "הורד ומוכן — המעבר לוקח כמה שניות. לא עכשיו? הוא ישמש בהפעלה הבאה של FlowPad."
+#~ msgid "Downloaded and ready — the switch takes a few seconds. Not now? It is used the next time FlowPad starts."
+#~ msgstr "הורד ומוכן — המעבר לוקח כמה שניות. לא עכשיו? הוא ישמש בהפעלה הבאה של FlowPad."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloaded and ready — the switch usually takes under a minute. Not now? It is used the next time FlowPad starts."
+msgstr "הורד ומוכן — המעבר לוקח בדרך כלל פחות מדקה. לא עכשיו? הוא ישמש בהפעלה הבאה של FlowPad."
 
 #. placeholder {0}: s.version
 #: src/components/version-popover/version-popover.tsx
@@ -16709,8 +16714,12 @@ msgid "It was downloaded in the background. FlowPad restarts to install it."
 msgstr "הוא הורד ברקע. FlowPad יופעל מחדש כדי להתקין אותו."
 
 #: src/components/version-popover/update-ready-modal.tsx
-msgid "It was downloaded in the background. Restarting the engine takes a few seconds — FlowPad stays open."
-msgstr "הוא הורד ברקע. הפעלה מחדש של המנוע לוקחת כמה שניות — FlowPad נשאר פתוח."
+#~ msgid "It was downloaded in the background. Restarting the engine takes a few seconds — FlowPad stays open."
+#~ msgstr "הוא הורד ברקע. הפעלה מחדש של המנוע לוקחת כמה שניות — FlowPad נשאר פתוח."
+
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "It was downloaded in the background. The engine restarts — this usually takes under a minute; FlowPad stays open."
+msgstr "הוא הורד ברקע. המנוע יופעל מחדש — זה לוקח בדרך כלל פחות מדקה; FlowPad נשאר פתוח."
 
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "It was not written."
@@ -34681,6 +34690,10 @@ msgid "Update CHART.md"
 msgstr "עדכון CHART.md"
 
 #: src/components/version-popover/version-popover.tsx
+msgid "Update directly (FlowPad pauses while it installs)"
+msgstr "עדכן ישירות (FlowPad מושהה בזמן ההתקנה)"
+
+#: src/components/version-popover/version-popover.tsx
 msgid "Update downloaded — install it now?"
 msgstr "העדכון ירד — להתקין עכשיו?"
 
@@ -34760,6 +34773,7 @@ msgstr "שדרוג"
 msgid "Upgrade ({n})"
 msgstr ""
 
+#: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade failed."

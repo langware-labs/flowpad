@@ -155,6 +155,7 @@ interface UpdateActionResult {
 interface ElectronAPI {
   getAppVersion?: () => Promise<string>;
   upgradeFlowpad?: (opts?: {
+    direct?: boolean;
     version?: string;
   }) => Promise<{ success: boolean; error?: string; desktopUpdatePending?: boolean }>;
   openExternal?: (url: string) => Promise<boolean>;
@@ -165,6 +166,7 @@ interface ElectronAPI {
   restartApp?: () => Promise<{ started: boolean }>;
   prepareEngine?: (opts?: { version?: string }) => Promise<UpdateActionResult & { desktopUpdatePending?: boolean }>;
   applyEngineUpdate?: () => Promise<UpdateActionResult & { error?: string }>;
+  cancelEngineUpdate?: () => Promise<{ cancelled: boolean }>;
   onEngineUpdateState?: (cb: (s: EngineUpdateState) => void) => () => void;
   onUpdateReady?: (cb: (info: UpdateReadyInfo) => void) => () => void;
   panelReady?: () => Promise<boolean>;
@@ -874,6 +876,15 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     }
   }, [electronApi, compatInfo, updateRefusalText, t]);
 
+  /** "Update directly" after a background download that keeps failing: the old stop-install-start path. */
+  const handleEngineDirect = useCallback(async () => {
+    if (!electronApi?.upgradeFlowpad) return;
+    const version = (enginePush?.version ?? updateInfo?.engineUpdate?.version) || undefined;
+    setUpgradeError(null);
+    const r = await electronApi.upgradeFlowpad({ ...(version ? { version } : {}), direct: true });
+    if (!r.success) setUpgradeError(r.error ?? t`Upgrade failed.`);
+  }, [electronApi, enginePush, updateInfo, t]);
+
   /** "Try again" after a failed background download of the flow SDK. */
   const handleEngineRetry = useCallback(async () => {
     if (!electronApi?.prepareEngine) return;
@@ -1156,13 +1167,25 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             {engineView && engineView.state !== 'idle' && !engineView.coordinated && (
               <div className="space-y-1.5 pt-1" data-testid="engine-update-row">
                 {engineView.state === 'preparing' && (
-                  <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                    <span>
-                      {engineView.version
-                        ? t`Downloading flow SDK v${engineView.version} in the background — FlowPad keeps working.`
-                        : t`Downloading the flow SDK update in the background — FlowPad keeps working.`}
-                    </span>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                      <span>
+                        {engineView.version
+                          ? t`Downloading flow SDK v${engineView.version} in the background — FlowPad keeps working.`
+                          : t`Downloading the flow SDK update in the background — FlowPad keeps working.`}
+                      </span>
+                    </div>
+                    {electronApi?.cancelEngineUpdate && (
+                      <button
+                        type="button"
+                        onClick={() => void electronApi.cancelEngineUpdate?.().then((r) => { if (r.cancelled) setEnginePush({ state: 'idle' }); })}
+                        data-testid="engine-update-cancel-button"
+                        className="rounded-sm border px-2 py-0.5 text-[10px] font-medium transition-colors hover:bg-accent"
+                      >
+                        <Trans>Cancel download</Trans>
+                      </button>
+                    )}
                   </div>
                 )}
                 {engineView.state === 'ready' && (
@@ -1179,7 +1202,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                       {engineView.version ? t`Switch to flow SDK v${engineView.version}` : t`Switch to the new flow SDK`}
                     </button>
                     <p className="text-[10px] text-muted-foreground">
-                      <Trans>Downloaded and ready — the switch takes a few seconds. Not now? It is used the next time FlowPad starts.</Trans>
+                      <Trans>Downloaded and ready — the switch usually takes under a minute. Not now? It is used the next time FlowPad starts.</Trans>
                     </p>
                   </div>
                 )}
@@ -1193,6 +1216,16 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                       className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
                     >
                       <Trans>Try again</Trans>
+                    </button>
+                    {/* The background download keeps failing (a blocked staging folder, antivirus): the
+                        old way still works — the engine stops, updates, and starts again. */}
+                    <button
+                      type="button"
+                      onClick={() => void handleEngineDirect()}
+                      data-testid="engine-upgrade-direct-button"
+                      className="flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                    >
+                      <Trans>Update directly (FlowPad pauses while it installs)</Trans>
                     </button>
                   </div>
                 )}

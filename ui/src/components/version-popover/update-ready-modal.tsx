@@ -51,7 +51,8 @@ export function UpdateReadyModal({ info, busy, error, onRestartNow, onLater }: U
           <p>
             {info.kind === 'engine' ? (
               <Trans>
-                It was downloaded in the background. Restarting the engine takes a few seconds — FlowPad stays open.
+                It was downloaded in the background. The engine restarts — this usually takes under a minute; FlowPad
+                stays open.
               </Trans>
             ) : info.kind === 'both' ? (
               info.enginePrepared ? (

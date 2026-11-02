@@ -3267,23 +3267,30 @@ class UvManager {
   async prepareEngine({ version = null, desktopVersion = null, onProgress } = {}) {
     const key = `${version || 'latest'}@${desktopVersion || this._appVersion || ''}`;
     if (this._preparing && this._preparing.key === key) return this._preparing.promise;
+    // ONE prepare at a time: a different target waits for the running one (two runs used to share one
+    // staging dir, and the first to finish deleted it under the second).
+    const before = this._preparing ? this._preparing.promise.catch(() => {}) : Promise.resolve();
     const run = async () => {
+      await before;
+      this._prepareCancelled = false;
       const previousVersion = this.getInstalledVersionSync() || null;
       const target = await this._resolveUpgradeTarget(version, { desktopVersion });
       if (previousVersion && target.version === previousVersion) return { upToDate: true, version: previousVersion };
-      const stageRoot = path.join(os.tmpdir(), `flowpad-engine-staging-${process.pid}`);
+      const stageRoot = await this._newStageRoot();
       try {
         this.log.info(`[uv] preparing flowpad ${target.version} in the background (the running engine keeps serving)`);
         const flags = await this._stageInstall(target.spec, target.pin, stageRoot, { onProgress });
         let rollbackFlags = null;
-        if (previousVersion && engineCompat.isInstallableVersion(previousVersion)) {
+        if (previousVersion && engineCompat.isInstallableVersion(previousVersion) && !this._prepareCancelled) {
           try {
             const prevPin = await this._pythonPinForUpgrade();
             rollbackFlags = await this._stageInstall(`${PYPI_PACKAGE}==${previousVersion}`, prevPin, stageRoot, {});
           } catch (err) {
+            if (this._prepareCancelled) throw err;
             this.log.warn(`[uv] could not stage the current ${previousVersion} for an offline rollback: ${String(err.message).split('\n')[0]}`);
           }
         }
+        if (this._prepareCancelled) throw Object.assign(new Error('the update download was cancelled'), { cancelled: true });
         const prepared = {
           version: target.version, spec: target.spec, pin: target.pin, flags,
           previousVersion, rollbackFlags, preparedAt: new Date().toISOString(),
@@ -3317,7 +3324,10 @@ class UvManager {
       const python = process.platform === 'win32' ? path.join(venv, 'Scripts', 'python.exe') : path.join(venv, 'bin', 'python');
       if (!fs.existsSync(python)) return false;
       const t0 = Date.now();
-      await this._runStreaming(python, ['-m', 'compileall', '-q', '-j', '0', venv], { shell: false });
+      // -I: isolated — with -m, Python puts the CURRENT DIR first on sys.path, so a compileall.py or
+      // concurrent/ there would run instead of the stdlib's; cwd is the venv anyway. -j 1: one worker,
+      // in the background, while the UI is coming up — not every core.
+      await this._runStreaming(python, ['-I', '-m', 'compileall', '-q', '-j', '1', venv], { shell: false, cwd: venv });
       this.log.info(`[uv] engine bytecode compiled in the background (${Math.round((Date.now() - t0) / 1000)}s)`);
       return true;
     } catch (err) {
@@ -3328,6 +3338,26 @@ class UvManager {
 
   /** Is a background prepare running (prepareEngine)? It never holds isInstalling(): nothing live moves. */
   isPreparing() { return !!this._preparing; }
+
+  /**
+   * Stop the background prepare: kill its uv (a stalled network never ends it by itself) and make the
+   * prepare reject as cancelled. Nothing live is touched. Also run at quit, so no orphan uv keeps going.
+   */
+  cancelPrepare(why = 'cancelled') {
+    if (!this._preparing) return false;
+    this._prepareCancelled = true;
+    if (this._prepareChild) this._killChildTree(this._prepareChild, `engine prepare ${why} — stopping its uv`);
+    return true;
+  }
+
+  /** A fresh staging dir per run, next to uv's cache (same volume; not %TEMP%'s long path or a tmpfs /tmp). */
+  async _newStageRoot() {
+    let base = null;
+    try { const dirs = await this._uvDirs(); if (dirs && dirs.cache) base = path.dirname(dirs.cache); } catch { /* fall back */ }
+    if (!base) base = os.tmpdir();
+    try { fs.mkdirSync(base, { recursive: true }); } catch { /* mkdtemp reports it */ }
+    return fs.mkdtempSync(path.join(base, 'flowpad-staging-'));
+  }
 
   /** The install target upgrade() would pick — { version, spec, pin } — checked against `desktopVersion`. */
   async _resolveUpgradeTarget(version, { desktopVersion = null } = {}) {
@@ -3366,12 +3396,17 @@ class UvManager {
     const strategies = await this._excludeNewerStrategies(baseArgs);
     for (let s = 0; s < strategies.length; s++) {
       try {
+        if (this._prepareCancelled) throw Object.assign(new Error('the update download was cancelled'), { cancelled: true });
         await this._runStreaming('uv', [...baseArgs, ...strategies[s].flags], {
           env,
           onLine: onProgress ? (line) => onProgress(line) : null,
+          onChild: (child) => { this._prepareChild = child; },
         });
+        this._prepareChild = null;
         return strategies[s].flags;
       } catch (err) {
+        this._prepareChild = null;
+        if (this._prepareCancelled) throw Object.assign(new Error('the update download was cancelled'), { cancelled: true });
         const next = strategies[s + 1];
         if (next && strategies[s].flags.length && isUnknownFlagError(err)) { s = strategies.length - 2; continue; }
         if (next && strategies[s].flags.length && isResolutionError(err)) continue;

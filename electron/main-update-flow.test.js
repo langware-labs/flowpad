@@ -171,14 +171,18 @@ function load(opts = {}) {
     // Staging in the background (uv-manager.prepareEngine): held until a test settles it.
     prepareEngine(o) {
       (uv.prepares = uv.prepares || []).push(o);
-      const descriptor = { version: o.version || '0.2.180', spec: `flowpad==${o.version || '0.2.180'}`, pin: '3.11', flags: [], previousVersion: '0.2.168' };
+      // No version given: like the real one, the newest compatible release.
+      const v = o.version || (opts.compatibleRelease && opts.compatibleRelease.version) || '0.2.180';
+      const descriptor = { version: v, spec: `flowpad==${v}`, pin: '3.11', flags: [], previousVersion: '0.2.168' };
       if (opts.prepareThrows) return Promise.reject(new Error(opts.prepareThrows));
+      if (!o.version && opts.resolveThrows) return Promise.reject(new Error(opts.resolveThrows)); // it resolves first, like the real one
       if (!opts.holdPrepare) return Promise.resolve(descriptor); // most scenarios: staging is instant
       return new Promise((resolve, reject) => {
-        uv.finishPrepare = (over = {}) => resolve({ version: o.version || '0.2.180', spec: `flowpad==${o.version || '0.2.180'}`, pin: '3.11', flags: [], previousVersion: '0.2.168', ...over });
+        uv.finishPrepare = (over = {}) => resolve({ ...descriptor, ...over });
         uv.failPrepare = reject;
       });
     }
+    cancelPrepare() { if (!uv.failPrepare) return false; uv.failPrepare(Object.assign(new Error('cancelled'), { cancelled: true })); uv.failPrepare = null; return true; }
     deferPackageVersion(v) { uv.deferred.push(v); }
     undeferPackageVersion(v) { uv.undeferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }
@@ -255,7 +259,7 @@ const HOUR = 60 * 60 * 1000;
     ok(/engine is updated right after FlowPad restarts/.test(env.dialogCalls[0].detail), 'and says when the engine is updated');
     eq(env.readState(), Object.assign({}, env.readState(), { engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false }), 'the engine version on offer is SAVED, not yet agreed');
     eq(env.uv.upgrades.length, 0, 'the OLD desktop does NOT touch the engine');
-    eq(env.uv.deferred, ['0.2.180'], 'no separate engine dialog for that version');
+    eq([...new Set(env.uv.deferred)], ['0.2.180'], 'no separate engine dialog for that version');
     eq(env.autoUpdater.downloads.length, 1, 'the desktop download started');
     eq(reminderTimer(env), undefined, '"Update now": no reminder timer');
     // The download finishes → the ready prompt right away.
@@ -1425,7 +1429,7 @@ const HOUR = 60 * 60 * 1000;
     const r = await env.ipc['update:both'](null, '0.2.180');
     eq(r, { started: true, version: '0.2.48', engineVersion: '0.2.180' }, 'update:both: starts the desktop download, engine riding along');
     eq(env.readState(), Object.assign({}, env.readState(), { engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'panel', consented: true }), 'the engine version is saved, marked panel-initiated, and ALREADY consented (the popup click was the consent)');
-    eq(env.uv.deferred, ['0.2.180'], 'no separate engine dialog for that version');
+    eq([...new Set(env.uv.deferred)], ['0.2.180'], 'no separate engine dialog for that version');
     eq(env.dialogCalls.length, 0, 'no native dialog anywhere in the panel flow');
     eq(env.t.engineChangeAllowed('test'), 'hold', 'the engine holds until the new desktop runs');
 
@@ -2050,7 +2054,7 @@ const HOUR = 60 * 60 * 1000;
     global.fetch = async () => ({ ok: true });
     const p = env.ipc['upgrade-flowpad']();
     await tick(); await tick();
-    eq(env.uv.prepares.map((o) => o.version), ['0.2.180'], 'legacy upgrade: staged first');
+    eq(env.uv.prepares.length, 1, 'legacy upgrade: staged first (it resolves the newest compatible release itself)');
     eq([env.uv.flowStops || 0, env.loadedFiles.length], [0, 0], 'legacy upgrade: nothing stopped while it downloads, the window stays in the app');
     env.uv.finishPrepare(); 
     const r = await p;
@@ -2107,6 +2111,66 @@ const HOUR = 60 * 60 * 1000;
     await env.t.installAndStartBackend();
     await env.t.offerEngineUpdateAfterLaunch();
     eq((env.uv.prepares || []).filter((o) => !o.desktopVersion).length, 0, 'desktop pending: no engine-only prepare after launch (only the one staged FOR the new desktop)');
+  }
+
+  {
+    // Review: the mid-session swap writes its rollback record BEFORE the destructive step, and spends it
+    // only once the new engine answers.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    await env.t.getDesktopUpdateVersion();
+    const states = [];
+    env.uv.instance.upgrade = async (o) => { states.push(env.readState()); env.uv.upgrades.push(o); };
+    global.fetch = async () => ({ ok: true });
+    const r = await env.ipc['upgrade-flowpad'](null, { version: '0.2.180' });
+    delete global.fetch;
+    eq(r.success, true, 'swap: done');
+    eq([states[0].phase, states[0].engineVersion, states[0].previousEngine, states[0].consented], ['installing', '0.2.180', '0.2.168', false],
+      'swap: the record (with the way back) is on disk before the install');
+    eq(env.readState(), null, 'healthy: spent');
+  }
+  {
+    // …and when the new engine never answers: the version is VETOED (failed-unhealthy), not left as a
+    // consented record that installs the same failed release silently at the next start.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    await env.t.getDesktopUpdateVersion();
+    global.fetch = async () => { throw new Error('ECONNREFUSED'); };
+    const r = await env.ipc['upgrade-flowpad'](null, { version: '0.2.180', direct: true }).catch((e) => ({ success: false, error: String(e) }));
+    delete global.fetch;
+    eq(r.success, false, 'unhealthy swap: failed');
+    const rec = env.readState();
+    eq([rec && rec.phase, rec && rec.failedVersion, rec && rec.previousEngine], ['failed-unhealthy', '0.2.180', '0.2.168'], 'the failed version is vetoed, the previous engine known');
+  }
+  {
+    // Cancel for a prepare in progress: its uv is stopped, the row goes back to normal.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', holdPrepare: true });
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['update:prepare-engine'](null, { version: '0.2.180' });
+    eq(await env.ipc['update:cancel-engine'](), { cancelled: true }, 'cancel-engine: done');
+    await tick(); await tick();
+    eq((await env.ipc['update:get-info']()).engineUpdate, { state: 'idle' }, 'the row is back to normal');
+    ok(engineStates(env).some((d) => d.state === 'idle'), 'and the panel hears it');
+    ok(env.uv.undeferred.includes('0.2.180'), 'the version may be offered again');
+  }
+  {
+    // An engine-only prepare never overwrites a coordinated agreement still waiting for its desktop.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    const coordinated = { engineVersion: '0.2.190', desktopVersion: '0.2.49', source: 'panel', consented: true };
+    fs.writeFileSync(env.statePath, JSON.stringify(coordinated));
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['update:prepare-engine'](null, { version: '0.2.180' });
+    await tick(); await tick();
+    eq(env.readState(), coordinated, 'the coordinated record is kept');
+  }
+  {
+    // A desktop update that became pending after the prepare goes first: apply-engine refuses.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['update:prepare-engine'](null, { version: '0.2.180' });
+    await tick(); await tick();
+    env.autoUpdater.checkForUpdates = async () => ({ updateInfo: { version: '0.2.49' } });
+    await env.t.getDesktopUpdateVersion();
+    eq(await env.ipc['update:apply-engine'](), { started: false, reason: 'desktop-first' }, 'apply-engine: desktop first');
+    eq(env.uv.upgrades.length, 0, 'nothing installed');
   }
 
   // ── review round 10: apply outcomes, macOS staging, IPC senders (FLOWPAD-2310) ──

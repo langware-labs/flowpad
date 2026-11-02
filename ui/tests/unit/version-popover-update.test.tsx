@@ -569,7 +569,7 @@ describe('engine updates are prepared in the background, then swapped in seconds
 
     act(() => ready?.({ kind: 'engine', desktopVersion: null, engineVersion: '0.2.240', enginePrepared: true }));
     const modal = await screen.findByTestId('update-ready-modal');
-    expect(modal.textContent).toContain('a few seconds');
+    expect(modal.textContent).toContain('under a minute'); // measured: tens of seconds on a slow machine, not "a few seconds"
     fireEvent.click(screen.getByTestId('update-ready-now-button'));
     await waitFor(() => expect(api.applyEngineUpdate).toHaveBeenCalledTimes(1));
   });
@@ -595,6 +595,38 @@ describe('engine updates are prepared in the background, then swapped in seconds
     act(() => engineState?.({ state: 'error', version: '0.2.240', error: 'PyPI unreachable' }));
     fireEvent.click(await screen.findByTestId('engine-update-retry-button'));
     await waitFor(() => expect(api.prepareEngine).toHaveBeenCalledWith({ version: '0.2.240' }));
+  });
+
+  it('a failure also offers "Update directly" — the old stop-install-start path', async () => {
+    let engineState: ((s: unknown) => void) | null = null;
+    const api = electronApi({
+      onEngineUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        engineState = cb;
+        return () => {};
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    act(() => engineState?.({ state: 'error', version: '0.2.240', error: 'staging folder blocked' }));
+    fireEvent.click(await screen.findByTestId('engine-upgrade-direct-button'));
+    await waitFor(() => expect(api.upgradeFlowpad).toHaveBeenCalledWith({ version: '0.2.240', direct: true }));
+  });
+
+  it('a prepare in progress can be cancelled', async () => {
+    let engineState: ((s: unknown) => void) | null = null;
+    const api = electronApi({
+      cancelEngineUpdate: vi.fn().mockResolvedValue({ cancelled: true }),
+      onEngineUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        engineState = cb;
+        return () => {};
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    act(() => engineState?.({ state: 'preparing', version: '0.2.240' }));
+    fireEvent.click(await screen.findByTestId('engine-update-cancel-button'));
+    await waitFor(() => expect(api.cancelEngineUpdate).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByTestId('engine-update-row')).toBeNull());
   });
 
   it('a prepare started while the panel is closed (the native dialog) is toasted', async () => {

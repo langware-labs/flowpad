@@ -52,7 +52,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // downloadDesktopUpdate → start downloading the available desktop build (no native prompt)
   // applyDesktopUpdate   → install the downloaded build now (restarts the app)
   // updateBoth           → desktop first, then the named engine version after the restart (pending-engine.json)
-  // Optional { version }: the popup's "works with this desktop" fallback pins the release it named.
+  // Optional { version }: the popup's "works with this desktop" fallback pins the release it named;
+  // { direct: true }: skip the background prepare ("Upgrade directly" after it keeps failing).
   upgradeFlowpad: (opts) => ipcRenderer.invoke('upgrade-flowpad', opts),
   // Optional { fresh }: the Upgrade click's pre-flight skips the snapshot and PyPI's CDN.
   getUpdateInfo: (opts) => ipcRenderer.invoke('update:get-info', opts),
@@ -73,6 +74,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // prepareEngine({version?}) stages it while the engine keeps serving; applyEngineUpdate() swaps.
   prepareEngine: (opts) => ipcRenderer.invoke('update:prepare-engine', opts),
   applyEngineUpdate: () => ipcRenderer.invoke('update:apply-engine'),
+  cancelEngineUpdate: () => ipcRenderer.invoke('update:cancel-engine'),
   onEngineUpdateState: (callback) => subscribe('engine-update-state', callback),
   // Everything the panel's update needs is staged: the in-app "restart now or later?" dialog.
   onUpdateReady: (callback) => subscribe('update-ready', callback),

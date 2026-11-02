@@ -172,17 +172,23 @@ FlowPad to X … closes for a moment and reopens by itself"), stays on screen un
 A build older than the published release therefore replaces itself on first run — test a dry-run
 build with a version above the feed's.
 
-**Prepare in the background, swap in seconds.** Every engine update — the panel's Upgrade and its
+**Prepare in the background, then reinstall from the warm cache.** Every engine update — the panel's Upgrade and its
 "works with this desktop" pin, the native engine dialog's Upgrade, Update Both, the native "both" offer —
 first STAGES the release while the running engine keeps serving (`uv-manager.prepareEngine`): a full
 install into a throwaway tool dir (`UV_TOOL_DIR`/`UV_TOOL_BIN_DIR`) that fills uv's shared cache, with the
 winning dependency cut-off recorded; the current version is staged too, so a rollback runs offline
 (uv's cache alone did not reliably still hold an old install's wheels). Staging never touches the live
-tool dir, its marker, or its processes (the live install loop's drain would kill the backend). The swap
-— `upgrade({ prepared })` — installs offline replaying that cut-off (≈3 s with bytecode compilation,
-measured), so the engine is down only for stop + that install + start; anything that keeps the prepared
-install from applying falls back to the full download, and the post-install pair check stays the
-authority. When everything is staged the app asks once, in the app: **Restart now** (engine-only: a swap
+tool dir, its marker, or its processes (the live install loop's drain would kill the backend). What is
+prepared is a WARM CACHE and the winning flags — not a ready venv: the "swap" — `upgrade({ prepared })` —
+is a real reinstall, offline, replaying that cut-off and skipping bytecode (compiled in the background
+once the engine serves again; a rollback or the full-download fallback still compiles while it is down).
+So the engine is down only for stop + that install + start. Measured on the Windows test VM (ARM64,
+emulated x64 Python): 37.7 s of downtime (stop 5.7, install 13.7, boot 24.1), against 131 s for the old
+stop-then-download path — expect less on native hardware. Anything that keeps the prepared install from
+applying falls back to the full download, and the post-install pair check stays the authority. The swap
+writes its rollback record before the destructive step (installing → installed → spent once healthy;
+never healthy → `failed-unhealthy` vetoes that version). One prepare runs at a time, each in its own
+staging dir beside uv's cache; the panel can cancel it, and after a failure offers "Update directly". When everything is staged the app asks once, in the app: **Restart now** (engine-only: a swap
 of a few seconds; with a desktop: FlowPad restarts) or **Later**. Later is never "never": the prepared
 release is saved as an agreed pending-engine record (`prepared` field), which the next start installs
 offline before the engine boots; a downloaded desktop installs on quit (Windows/AppImage: explicitly at

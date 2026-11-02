@@ -1303,9 +1303,9 @@ let skippableDesktopDownload = false;
  * `previousEngine` back (engineRecordAtHealthGate). Before this only Update Both could roll back — any
  * other unhealthy install ended on a Quit-only screen that the next launch reached again.
  */
-function noteStartupEngineInstall(previousEngine, engineVersion) {
+function noteStartupEngineInstall(previousEngine, engineVersion, phase = 'installed') {
   if (!previousEngine || !engineVersion || previousEngine === engineVersion) return;
-  pendingEngineStore.write({ engineVersion, previousEngine, consented: false, phase: 'installed', source: 'startup' });
+  pendingEngineStore.write({ engineVersion, previousEngine, consented: false, phase, source: 'startup' });
 }
 
 /**
@@ -2798,10 +2798,19 @@ async function installAndStartBackend({ quiet = false } = {}) {
               if (go) {
                 sendStatus('Installing a compatible FlowPad engine');
                 const engineBeforeRepair = uvManager.getInstalledVersionSync(activeBin) || null;
-                await uvManager.upgrade({ version: picked.version, onProgress: installProgress('Installing a compatible FlowPad engine') });
+                // Recorded BEFORE the install: a kill between the install and the record left an engine
+                // with no way back.
+                noteStartupEngineInstall(engineBeforeRepair, picked.version, 'installing');
+                try {
+                  await uvManager.upgrade({ version: picked.version, onProgress: installProgress('Installing a compatible FlowPad engine') });
+                } catch (repairErr) {
+                  const rec = pendingEngineStore.read();
+                  if (rec && rec.phase === 'installing' && rec.source === 'startup') pendingEngineStore.clear();
+                  throw repairErr;
+                }
                 activeBin = uvManager.getInstalledFlowBin() || activeBin;
                 backendJustUpgraded = true;
-                noteStartupEngineInstall(engineBeforeRepair, picked.version);
+                noteStartupEngineInstall(engineBeforeRepair, picked.version, 'installed');
               } else {
                 log.warn(`[compat] the user kept engine ${pairIssue.engineVersion}, which needs a newer desktop than ${app.getVersion()}`);
               }
@@ -3340,6 +3349,8 @@ app.on('before-quit', (event) => {
   isQuitting = true;
   rendererWatchdog.stop();
   markPhase('clean-exit');
+  // A background engine prepare's uv must not outlive the app (nothing live depends on it).
+  if (uvManager && typeof uvManager.cancelPrepare === 'function') uvManager.cancelPrepare('the app is quitting');
 
   log.info('Quitting — stopping backend...');
 
@@ -3762,7 +3773,21 @@ ipcMain.handle('upgrade-flowpad', async (event, opts) => {
     }
     log.info(`[update] engine change allowed despite the pending desktop: ${requested} runs on the current desktop`);
   }
-  const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart({ version: requested }));
+  // Prepared in the background first — the backend keeps serving and nothing is held: startGuard (which
+  // refuses restart-backend and the startup Retry) covers only the swap. `direct`: the panel's
+  // "Upgrade directly" after a prepare that keeps failing — the old stop-and-install path.
+  let prepared = null;
+  if (!(opts && opts.direct) && typeof uvManager.prepareEngine === 'function') {
+    try {
+      const staged = await uvManager.prepareEngine({ version: requested });
+      if (staged && staged.upToDate) return { success: true };
+      prepared = staged;
+    } catch (prepErr) {
+      if (prepErr && prepErr.cancelled) return { success: false, error: 'cancelled' };
+      log.warn(`[uv] could not prepare ${requested || 'the update'} in the background (${String(prepErr.message).split('\n')[0]}) — upgrading directly`);
+    }
+  }
+  const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart({ version: requested, prepared }));
   return guarded.skipped ? { success: false, error: 'the backend is already being started' } : guarded.result;
 });
 
@@ -3823,6 +3848,8 @@ function startEnginePrepare({ version = null, desktopVersion = null, source, ann
   if (enginePrep && enginePrep.state === 'preparing' && enginePrep.version === version && enginePrep.desktopVersion === desktopVersion) return enginePrep;
   const prep = { version, desktopVersion, source, announce, state: 'preparing', prepared: null, error: null };
   enginePrep = prep;
+  // The native engine dialog must not offer again a version that is being prepared or is ready.
+  if (version) uvManager.deferPackageVersion(version);
   sendEngineUpdateState({ state: 'preparing', version, coordinated: !!desktopVersion });
   uvManager.prepareEngine({ version, desktopVersion })
     .then((prepared) => {
@@ -3835,12 +3862,20 @@ function startEnginePrepare({ version = null, desktopVersion = null, source, ann
       prep.state = 'ready';
       prep.prepared = prepared;
       prep.version = prepared.version;
+      uvManager.deferPackageVersion(prepared.version);
       recordPreparedEngine(prep);
       sendEngineUpdateState({ state: 'ready', version: prepared.version, coordinated: !!desktopVersion });
       maybeAnnounceUpdateReady();
     })
     .catch((err) => {
       if (enginePrep !== prep) return;
+      if (version) uvManager.undeferPackageVersion(version); // not prepared after all: it may be offered again
+      if (err && err.cancelled) {
+        enginePrep = null;
+        log.info(`[update] preparing the engine ${version || ''} was cancelled`);
+        sendEngineUpdateState({ state: 'idle' });
+        return;
+      }
       prep.state = 'error';
       prep.error = String((err && err.message) || err).split('\n')[0];
       log.warn(`[update] preparing the engine ${version || ''} failed: ${prep.error}`);
@@ -3861,6 +3896,9 @@ function recordPreparedEngine(prep) {
     if (saved && saved.engineVersion === prep.prepared.version) pendingEngineStore.write({ ...saved, prepared: prep.prepared });
     return;
   }
+  // Never over a coordinated agreement still waiting for its desktop, or a veto on this very version.
+  if (saved && saved.consented && saved.desktopVersion && isNewer(app.getVersion(), saved.desktopVersion)) return;
+  if (saved && saved.phase === 'failed-unhealthy' && saved.failedVersion === prep.prepared.version) return;
   savePendingEngine(pendingEngineStore, { engineVersion: prep.prepared.version, desktopVersion: app.getVersion(), source: 'engine' });
   markPendingEngineConsented(pendingEngineStore);
   const rec = pendingEngineStore.read();
@@ -3902,7 +3940,7 @@ async function askEngineReadyNatively(prep) {
     type: 'info',
     title: 'FlowPad update ready',
     message: `FlowPad engine ${prep.version} is downloaded and ready.`,
-    detail: 'Switching to it takes a few seconds. Not now? It is used the next time FlowPad starts.',
+    detail: 'The engine restarts — this usually takes under a minute; FlowPad stays open. Not now? It is used the next time FlowPad starts.',
     buttons: ['Restart engine now', 'Later'],
     defaultId: 0,
     cancelId: 1,
@@ -4151,10 +4189,18 @@ ipcMain.handle('update:prepare-engine', async (event, opts) => {
   return prep ? { started: true, version: requested } : { started: false, reason: 'unsupported' };
 });
 
+// The panel's "Cancel" for a prepare in progress (a stalled network never ends it by itself).
+ipcMain.handle('update:cancel-engine', (event) => {
+  assertTrustedSender(event, 'update:cancel-engine');
+  return { cancelled: !!(uvManager && typeof uvManager.cancelPrepare === 'function' && uvManager.cancelPrepare('cancelled from the version panel')) };
+});
+
 // "Restart now" for a prepared engine-only update: stop, install offline (seconds), start.
 ipcMain.handle('update:apply-engine', async (event) => {
   assertTrustedSender(event, 'update:apply-engine');
   if (!enginePrep || enginePrep.state !== 'ready' || enginePrep.desktopVersion) return { started: false, reason: 'not-prepared' };
+  // A desktop update that became pending after the prepare goes first (the same rule as everywhere).
+  if (engineChangeAllowed('applying a prepared engine') !== 'allow') return { started: false, reason: 'desktop-first' };
   const prepared = enginePrep.prepared;
   const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart({ prepared }));
   if (guarded.skipped) return { started: false, reason: 'busy' };
@@ -4245,22 +4291,17 @@ async function upgradeFlowpadAndRestart({ version = null, prepared = null } = {}
     log.warn(`[uv] panel upgrade refused before stopping anything: ${String(resolveErr.message).split('\n')[0]}`);
     return { success: false, error: resolveErr.message };
   }
-  // Not handed a prepared download (an older panel UI, or the version picker, still calls
-  // 'upgrade-flowpad' directly): prepare it NOW, while the backend keeps serving — the downtime is then
-  // the swap's seconds, not the whole download. A prepare that fails (offline, PyPI down) falls back to
-  // the direct path, exactly as before.
-  if (!prepared && typeof uvManager.prepareEngine === 'function') {
-    try {
-      const staged = await uvManager.prepareEngine({ version: picked ? picked.version : null });
-      if (staged && staged.upToDate) return { success: true };
-      prepared = staged;
-    } catch (prepErr) {
-      log.warn(`[uv] could not prepare ${picked ? picked.version : 'the update'} in the background (${String(prepErr.message).split('\n')[0]}) — upgrading directly`);
-    }
-  }
   // Captured while the old engine still runs: recovery must know what to put BACK — by the time the
   // upgrade fails, uv --force may already have replaced the installed engine with the unhealthy one.
   const versionBeforeUpgrade = uvManager.getInstalledVersionSync() || null;
+  const targetVersion = picked ? picked.version : null;
+  // The rollback record BEFORE the destructive step, as the launch path does: a close or a power cut
+  // while the new engine boots must leave the next start a way back (installing → installed → spent at
+  // the healthy gate; failed-unhealthy vetoes the version).
+  const recordSwap = (state) => {
+    if (targetVersion && versionBeforeUpgrade) pendingEngineStore.write({ engineVersion: targetVersion, previousEngine: versionBeforeUpgrade, consented: false, source: 'engine', ...state });
+  };
+  let installedNew = false;
   try {
     // Show loading screen
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -4274,7 +4315,10 @@ async function upgradeFlowpadAndRestart({ version = null, prepared = null } = {}
     uvManager.isShuttingDown = false;
     uvManager._backendProcess = null;
 
+    recordSwap({ phase: 'installing' });
     await uvManager.upgrade({ version: picked ? picked.version : undefined, prepared, onProgress: installProgress('Upgrading Flowpad') });
+    installedNew = true;
+    recordSwap({ phase: 'installed' });
 
     sendStatus('Starting server');
     await uvManager.start();
@@ -4284,6 +4328,9 @@ async function upgradeFlowpadAndRestart({ version = null, prepared = null } = {}
     // Not healthy is a FAILED upgrade, exactly like a throw: returning here left the window on the
     // splash with nothing serving it (the quieter half of the "stuck update" incident).
     if (!ready) throw new Error('the upgraded backend did not become healthy');
+    // Healthy: the record is spent (only a swap's own record — never someone else's).
+    const rec = pendingEngineStore.read();
+    if (rec && rec.phase === 'installed' && rec.engineVersion === targetVersion) pendingEngineStore.clear();
     if (typeof uvManager.compileBytecodeInBackground === 'function') void uvManager.compileBytecodeInBackground();
 
     // The IPC's answer goes to a page loadFile() destroyed: the reloaded panel PULLS the outcome
@@ -4300,6 +4347,11 @@ async function upgradeFlowpadAndRestart({ version = null, prepared = null } = {}
     // the dialog path does (the "stuck update" incident was exactly this catch returning with the
     // splash still up and nothing running). If even recovery fails, the startup error panel names it.
     log.error(`[uv] panel upgrade failed: ${String(err.message).split('\n')[0]} — restoring the running version`);
+    // Installed but never healthy: veto that version (not offered again until a newer one exists) — a
+    // consented record left behind used to install the same failed release silently at the next start.
+    // Failed before installing: nothing to veto; the record goes.
+    if (installedNew) recordSwap({ phase: 'failed-unhealthy', failedVersion: targetVersion });
+    else { const rec = pendingEngineStore.read(); if (rec && rec.phase === 'installing' && rec.engineVersion === targetVersion) pendingEngineStore.clear(); }
     const restored = await uvManager.recoverAfterFailedUpgrade(mainWindow, {
       waitForBackend,
       backendUrl: BACKEND_URL,

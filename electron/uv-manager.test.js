@@ -2510,14 +2510,65 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m._excludeNewerStrategies = async () => [{ label: 'release date', flags: ['--exclude-newer', '2026-10-30T00:00:00Z'] }, { label: 'none', flags: [] }];
     m._runStreaming = async (cmd, args, opts) => { runs.push({ cmd, args, env: opts.env, installingNow: m.isInstalling() }); };
     m._uvToolInstallForce = async () => { throw new Error('the live install path must not run'); };
+    const cacheBase = fs.mkdtempSync(path.join(require('os').tmpdir(), 'uvhome-'));
+    m._uvDirs = async () => ({ cache: path.join(cacheBase, 'cache') });
     const prepared = await m.prepareEngine({ version: '0.2.247' });
     eq([prepared.version, prepared.spec, prepared.pin, prepared.previousVersion], ['0.2.247', 'flowpad==0.2.247', '3.11', '0.2.240'], 'prepare: the target and what it replaces');
     eq(prepared.flags, ['--exclude-newer', '2026-10-30T00:00:00Z'], 'prepare: the cut-off that won is recorded');
     eq(runs.map((r) => r.args[2]), ['flowpad==0.2.247', 'flowpad==0.2.240'], 'prepare: the target AND the current version are staged (offline rollback)');
-    ok(runs.every((r) => r.env && /flowpad-engine-staging/.test(r.env.UV_TOOL_DIR) && /flowpad-engine-staging/.test(r.env.UV_TOOL_BIN_DIR)), 'prepare: only the staging tool dir is written');
+    ok(runs.every((r) => r.env && r.env.UV_TOOL_DIR.startsWith(path.join(cacheBase, 'flowpad-staging-')) && r.env.UV_TOOL_BIN_DIR.startsWith(path.join(cacheBase, 'flowpad-staging-'))),
+      'prepare: only a staging tool dir is written — next to uv\'s cache, not in %TEMP%');
     ok(runs.every((r) => !r.installingNow), 'prepare: isInstalling() stays false — nothing live is being replaced');
     ok(!fs.existsSync(path.dirname(runs[0].env.UV_TOOL_DIR)), 'prepare: the staging dir is removed afterwards');
     eq(await m.prepareEngine({ version: '0.2.240' }).then((r) => r.upToDate), true, 'prepare of what is installed: up to date, nothing staged');
+    fs.rmSync(cacheBase, { recursive: true, force: true });
+  }
+  {
+    // Two prepares for different targets: one at a time, each in its OWN staging dir (they used to
+    // share one, and the first to finish deleted it under the second).
+    const fs = require('fs'); const path = require('path');
+    const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+    const cacheBase = fs.mkdtempSync(path.join(require('os').tmpdir(), 'uvhome-'));
+    m._uvDirs = async () => ({ cache: path.join(cacheBase, 'cache') });
+    m.getInstalledVersionSync = () => null;
+    m._resolveEngineTarget = async (v) => ({ version: v, info: {} });
+    m._assertCandidateCompatible = async () => {};
+    m._pythonPinForUpgrade = async () => '3.11';
+    m._excludeNewerStrategies = async () => [{ label: 'none', flags: [] }];
+    let active = 0, maxActive = 0; const dirs = [];
+    m._runStreaming = async (cmd, args, opts) => {
+      active++; maxActive = Math.max(maxActive, active); dirs.push(opts.env.UV_TOOL_DIR);
+      await new Promise((r) => setTimeout(r, 5));
+      ok(fs.existsSync(opts.env.UV_TOOL_DIR), 'its staging dir exists for the whole run');
+      active--;
+    };
+    const [a, b] = await Promise.all([m.prepareEngine({ version: '0.2.246' }), m.prepareEngine({ version: '0.2.247' })]);
+    eq([a.version, b.version, maxActive], ['0.2.246', '0.2.247', 1], 'both prepared, never at the same time');
+    eq(new Set(dirs).size, 2, 'each in its own staging dir');
+    fs.rmSync(cacheBase, { recursive: true, force: true });
+  }
+  {
+    // Cancel: the staging uv is killed and the prepare rejects as cancelled (a stalled network never ends it).
+    const fs = require('fs'); const path = require('path');
+    const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+    const cacheBase = fs.mkdtempSync(path.join(require('os').tmpdir(), 'uvhome-'));
+    m._uvDirs = async () => ({ cache: path.join(cacheBase, 'cache') });
+    m.getInstalledVersionSync = () => '0.2.240';
+    m._resolveEngineTarget = async (v) => ({ version: v, info: {} });
+    m._assertCandidateCompatible = async () => {};
+    m._pythonPinForUpgrade = async () => '3.11';
+    m._excludeNewerStrategies = async () => [{ label: 'none', flags: [] }];
+    const killed = [];
+    m._killChildTree = (child, why) => { killed.push(why); child.fail(new Error('killed')); };
+    m._runStreaming = (cmd, args, opts) => new Promise((resolve, reject) => { opts.onChild({ pid: 42, exitCode: null, fail: reject }); });
+    const p = m.prepareEngine({ version: '0.2.247' });
+    await new Promise((r) => setTimeout(r, 10));
+    eq(m.isPreparing(), true, 'preparing');
+    eq(m.cancelPrepare('cancelled from the panel'), true, 'cancel accepted');
+    await assert.rejects(p, (e) => e.cancelled === true); passed++;
+    eq(killed.length, 1, 'its uv was killed');
+    eq(m.cancelPrepare(), false, 'nothing left to cancel');
+    fs.rmSync(cacheBase, { recursive: true, force: true });
   }
   {
     // A cut-off the cache cannot solve moves down the ladder; the one that won is what is recorded.
@@ -2555,9 +2606,9 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     const venv = pathMod.join(require('os').tmpdir(), 'flowpad');
     const py = process.platform === 'win32' ? pathMod.join(venv, 'Scripts', 'python.exe') : pathMod.join(venv, 'bin', 'python');
     fsMod.mkdirSync(pathMod.dirname(py), { recursive: true }); fsMod.writeFileSync(py, '');
-    m._runStreaming = async (cmd, args) => { runs.push([cmd, args]); };
+    m._runStreaming = async (cmd, args, opts) => { runs.push([cmd, args, opts]); };
     eq(await m.compileBytecodeInBackground(), true, 'background compile: runs after a no-bytecode swap');
-    eq([runs[0][0], runs[0][1].slice(0, 2)], [py, ['-m', 'compileall']], "with the engine's own interpreter");
+    eq([runs[0][0], runs[0][1].slice(0, 3)], [py, ['-I', '-m', 'compileall']], "with the engine's own interpreter, isolated (no cwd module can shadow the stdlib)");
     eq(await m.compileBytecodeInBackground(), false, 'and only once');
     fsMod.rmSync(venv, { recursive: true, force: true });
   }
