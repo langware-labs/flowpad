@@ -5,15 +5,16 @@ import { favoriteTargetForDock } from '@src/components/favorites/favorite-target
 import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
 import { BookmarksStarButton } from './BookmarksStarButton';
 import { PageShareButton } from './PageShareButton';
+import { RecordScreenButton } from './RecordScreenButton';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
 /**
- * Bookmark / share / pop-out for whatever the bar is currently addressing.
+ * Record / bookmark / share / pop-out for whatever the bar is currently addressing.
  *
  * Every one of these is an existing surface — this only picks the target and
  * mounts them. In particular the cluster is the SAME `EntityActionsToolbar` the
  * asset editor header uses, in the same order, so the actions don't drift into
- * two dialects of themselves.
+ * two dialects of themselves. Record screen leads the row in both branches.
  *
  * Chat about a document is NOT here: it is per viewer (`ViewerChatToggle`).
  */
@@ -47,6 +48,7 @@ export function TopBarActions({
         // the toolbar's compact size belongs to the entity headers that share
         // it.
         className={`shrink-0 ${chromeActionClusterClassName}`}
+        leading={<RecordScreenButton />}
         // The bar owns the star (it carries the bookmarks menu), so the toolbar
         // must not draw a second one. Riding the `trailing` slot keeps it inside
         // the toolbar's own row rather than in a wrapper repeating its classes.
@@ -64,6 +66,7 @@ export function TopBarActions({
   if (!dock) return null;
   return (
     <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
+      <RecordScreenButton />
       <PageShareButton dock={dock} />
       {favorite && <BookmarksStarButton favorite={favorite} />}
     </div>

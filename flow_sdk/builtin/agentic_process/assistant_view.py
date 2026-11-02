@@ -27,10 +27,9 @@ def _assistant_root() -> Path:
 
 
 def _views_root() -> Path:
-    from flow_sdk import config  # noqa: PLC0415
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    from flow_sdk.config import instance_temp_dir  # noqa: PLC0415
 
-    return Path(config.FLOWPAD_TEMP_DIR) / get_instance_settings().instance_name / "assistant-views"
+    return instance_temp_dir("assistant-views")
 
 
 def skill_catalog() -> list[dict[str, str]]:

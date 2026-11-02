@@ -36792,3 +36792,77 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Could not save the recording"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Could not save to the project"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "in the project under recordings/"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "kept in Flowpad's temp folder until you save it"
+msgstr ""
+
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "Open stream inbox"
+msgstr ""
+
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Open System Settings"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "Record screen"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "Record screen (video only)"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Recording ready"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Save to project"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Saved to project"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "Saving the recording"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+#: src/components/top-nav-bar/use-screen-recorder.ts
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Screen recording is not allowed"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Share the recording or save it to the project."
+msgstr ""
+
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "Stop recording"
+msgstr ""
+
+#: src/components/top-nav-bar/use-screen-recorder.ts
+#~ msgid "The browser refused screen capture. Allow it for this site and try again."
+#~ msgstr ""
+
