@@ -28,11 +28,12 @@ from typing import Callable, Optional
 
 import httpx
 import pytest
+from tests.adjustable_timeout import adjusted
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OWNER_INSTANCE = os.environ.get("OWNER_INSTANCE", "dev-1")
 ASSIGNEE_INSTANCE = os.environ.get("ASSIGNEE_INSTANCE", "dev-2")
-CONVERGE = 10.0
+CONVERGE = adjusted(10.0)
 GRAPH = "/api/v1/graph"
 
 
