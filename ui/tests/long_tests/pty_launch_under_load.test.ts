@@ -15,11 +15,13 @@ import { describe, expect, it } from 'vitest';
 import { stressDescribe } from './_stress_gate';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
 import type { OwnedSdkMainRealm } from '../_sdk_realm';
+import { adjusted } from '../adjustableTimeout';
 
 type SdkRealm = typeof import('@sdk');
 
 const LOAD = Number(process.env.LOAD_PTYS) || 80;
-const BUDGET_MS = 4000;
+// The committed budget is 4000ms; a slower runner widens it with ADJUSTABLE_TIMEOUT, never by editing this.
+const BUDGET_MS = adjusted(4000);
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][@-Z\\^_`a-z{|}~]/g;
 
 stressDescribe('PTY launch readiness under load', () => {
@@ -122,6 +124,6 @@ stressDescribe('PTY launch readiness under load', () => {
         await killInstance(name);
       }
     },
-    240_000,
+    adjusted(240_000),
   );
 });
