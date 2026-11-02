@@ -29,7 +29,7 @@ Contract under test (`ui/src/components/conversation/useConversationSession.ts`,
 
 - **Launch** on a conversation with a mapped project: the header
   `ContextWorkerToolbar` shows a launch button per worker. Launching spawns exactly one
-  VISIBLE `AgenticProcess` with `{workdir: project.fs_storage_mount_path,
+  `AgenticProcess`, shown as a tab, with `{workdir: project.fs_storage_mount_path,
   projectId: conversation.project_id, processType: ProcessKind.Conversation}`,
   links its TypeId onto `conversation.shared_context_entities`, and navigates the
   dock to the process's terminal dockPointer
@@ -50,7 +50,9 @@ test 1: launch spawns a visible conversation-process, links it, opens its dock
 - validate the dock URL navigated to `/dock/shell/agentic_process-<id>`; take
   that `<id>` as the launched process
 - validate via API: exactly ONE new agentic_process exists vs the baseline; it
-  is `visible=true`; its `process_type` is `conversation`; its `project_id`
+  has exactly one visible tab (`GET /api/v1/graph/tab`: `target_id=<id>`,
+  `visible=true` — the strip's membership; `agentic_process.visible` is terminal
+  chrome only); its `process_type` is `conversation`; its `project_id`
   equals the conversation's `project_id` and its `workdir` equals the project's
   `fs_storage_mount_path`
 - validate the conversation's `shared_context_entities` now contains
