@@ -88,6 +88,33 @@ def test_terminate_tree_kills_an_unprotected_process(on):
     child.wait()
 
 
+def test_kill_trees_spares_a_protected_process(on):
+    from flow_sdk.core.app_ports import kill_trees
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time;time.sleep(30)"],
+        start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+    )
+    try:
+        sp.register(ProtectedRole.BACKEND, pid=child.pid)
+        kill_trees([child.pid])   # would killpg the group; the guard must discard it
+        assert psutil.Process(child.pid).is_running()
+    finally:
+        sp.release(child.pid, "test")
+        child.kill()
+        child.wait()
+
+
+def test_kill_trees_kills_an_unprotected_process(on):
+    from flow_sdk.core.app_ports import kill_trees
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time;time.sleep(30)"],
+        start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+    )
+    kill_trees([child.pid])
+    child.wait(timeout=5)
+    assert child.poll() is not None   # reaped
+
+
 def test_authorize_lifecycle_disabled_is_true(monkeypatch):
     monkeypatch.delenv("FLOWPAD_SELF_PROTECTION", raising=False)
     assert sp.authorize_lifecycle([os.getpid()], "stop") is True

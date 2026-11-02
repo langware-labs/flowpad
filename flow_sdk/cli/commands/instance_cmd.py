@@ -106,6 +106,22 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
     server = _read_json(idir / "server.json")
     env = _read_env_file(name)
 
+    # Self-protection (FLOWPAD-2112): reset/restart-backend are legitimate kills of
+    # a protected backend/monitor — authorize (releasing the pids) so the guarded
+    # sweep can reap them. A worker is refused: it must not reset or restart the
+    # backend it runs under. The single choke for both commands.
+    from flow_sdk.core import self_protection  # noqa: PLC0415
+
+    _protect = [p for p in (
+        _as_int(server.get("server_pid")),
+        _as_int(server.get("monitor_pid")),
+        _as_int(launcher.get("monitor_pid")),
+    ) if p]
+    if not self_protection.authorize_lifecycle(_protect, f"kill-instance {name} backend_only={backend_only}"):
+        raise RuntimeError(
+            f"'{name}': a worker may not kill this instance's backend/monitor (self-protection)"
+        )
+
     table = liveness.scan()
     # Let this instance's own records vouch for PIDs whose environ we cannot
     # read (a backend that took FLOW_INSTANCE from dotenv rather than the env).
@@ -352,14 +368,6 @@ def restart_backend(
         server_pid = int(server_pid)
     except (TypeError, ValueError):
         raise RuntimeError(f"instance '{name}' has no recorded backend server PID") from None
-    # Self-protection (FLOWPAD-2112): a restart is a legitimate kill of a protected
-    # backend — authorize it (releasing the pid) so the guarded sweep can reap it.
-    # A worker is refused: it must not restart the backend it runs under.
-    from flow_sdk.core import self_protection  # noqa: PLC0415
-
-    if not self_protection.authorize_lifecycle([server_pid], f"restart-backend {name}"):
-        raise RuntimeError(f"restart-backend '{name}' refused: a worker may not restart the backend")
-
     marker = request_backend_restart(instance_dir, server_pid)
     try:
         killed = _kill_instance_processes(name, backend_only=True)
