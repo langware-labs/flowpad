@@ -167,6 +167,7 @@ interface ElectronAPI {
   applyEngineUpdate?: () => Promise<UpdateActionResult & { error?: string }>;
   onEngineUpdateState?: (cb: (s: EngineUpdateState) => void) => () => void;
   onUpdateReady?: (cb: (info: UpdateReadyInfo) => void) => () => void;
+  panelReady?: () => Promise<boolean>;
   getPairWarning?: () => Promise<string | null>;
   cancelDesktopDownload?: () => Promise<{ cancelled: boolean }>;
   updateBoth?: (engineVersion: string) => Promise<UpdateActionResult>;
@@ -641,6 +642,8 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       setReadyError(null);
       setReadyAsk(info);
     });
+    // Tell the shell this UI shows that dialog: without it the shell asks natively (an older UI).
+    void electronApi?.panelReady?.().catch(() => {});
     return dispose;
   }, [electronApi]);
 

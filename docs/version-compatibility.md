@@ -189,6 +189,14 @@ offline before the engine boots; a downloaded desktop installs on quit (Windows/
 the end of the normal shutdown — `app.exit()` is not relied on to emit `quit`; macOS: Squirrel) or, on
 deb/rpm, at the next launch with one password prompt (`postponed-desktop-update.json`).
 
+**No engine question blocks the launch.** The old pre-start dialog ("Update Available — Upgrade/Later",
+native, before the backend even started) is gone: when no desktop update is pending, the app starts with
+the installed engine, and once its UI is up a newer compatible engine is prepared in the background and
+asked about in the app (`offerEngineUpdateAfterLaunch`). The UI ships with the engine, so an older
+engine's UI does not show that dialog: the panel announces it does (`update:panel-ready`), and without
+that announcement the shell asks with a native "ready" dialog after launch instead — never blocking it.
+What cannot wait still happens before the start: a missing or broken engine, and an incompatible pair.
+
 **When an apply or a download goes wrong:**
 
 - An install failure that arrives *after* `quitAndInstall` returned (Windows: the NSIS spawn fails

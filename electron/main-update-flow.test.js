@@ -31,7 +31,7 @@ module.exports.__t = {
   getStartupFailed: () => startupFailed,
   createWindow, getMainWindow: () => mainWindow, startupUpdateNotice,
   skipDesktopUpdate: (ev) => ipcSkipDesktopUpdate(ev),
-  installWaitingUpdateOnExit,
+  installWaitingUpdateOnExit, offerEngineUpdateAfterLaunch,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
@@ -1238,8 +1238,10 @@ const HOUR = 60 * 60 * 1000;
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false }));
     await env.t.installAndStartBackend();
     eq(env.uv.upgrades.length, 0, 'no silent install without agreement');
-    eq(env.uv.checks, 1, 'the regular engine prompt runs instead');
+    eq(env.uv.checks, 0, 'no engine dialog blocks the launch any more');
     eq(env.readState(), null, 'and the saved version is cleared');
+    await env.t.offerEngineUpdateAfterLaunch();
+    eq((env.uv.prepares || []).map((o) => o.version), ['0.2.180'], 'once the UI is up, the update is prepared in the background instead');
   }
   {
     // Still the old desktop (the update was not applied): keep the saved version, offer the desktop again.
@@ -1877,15 +1879,17 @@ const HOUR = 60 * 60 * 1000;
   }
 
   {
-    // An engine the pre-start DIALOG installs gets the rollback record too — before, only Update Both
+    // An engine the startup's pair REPAIR installs gets the rollback record too — before, only Update Both
     // could roll back, and any other unhealthy install ended on a Quit-only screen.
-    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', engine: '0.2.168', preStartUpgradeTo: '0.2.180' });
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', engine: '0.2.168',
+      pairIssue: { engineVersion: '0.2.168', reasons: ['engine below the desktop floor'], desktopTooOld: false, message: 'x' },
+      compatibleRelease: { version: '0.2.180' } });
     await env.t.getDesktopUpdateVersion();
     env.t.primeLaunchCheck();
     const r = await env.t.installAndStartBackend();
-    eq(r.ok, true, 'pre-start install: startup continues');
+    eq(r.ok, true, 'pair repair: startup continues');
     eq(env.readState(), { engineVersion: '0.2.180', previousEngine: '0.2.168', consented: false, phase: 'installed', source: 'startup' },
-      'pre-start install: the health gate can restore 0.2.168');
+      'pair repair: the health gate can restore 0.2.168');
   }
   {
     // A version rolled back for never becoming healthy is not offered again until a newer one exists.
@@ -2062,6 +2066,47 @@ const HOUR = 60 * 60 * 1000;
     const r = await env.ipc['upgrade-flowpad']();
     delete global.fetch;
     eq([r.success, env.uv.upgrades.map((u) => [u.version, u.prepared])], [true, [['0.2.180', null]]], 'prepare failed: upgraded directly');
+  }
+
+  {
+    // No native engine dialog at launch: the app starts, then the update is prepared and asked about IN
+    // the app — when the loaded UI says it shows that dialog.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    await env.t.getDesktopUpdateVersion();
+    env.t.primeLaunchCheck();
+    const r = await env.t.installAndStartBackend();
+    eq([r.ok, env.uv.checks, env.dialogCalls.length], [true, 0, 0], 'launch: started, no engine dialog, nothing asked');
+    await env.ipc['update:panel-ready']();
+    await env.t.offerEngineUpdateAfterLaunch();
+    await tick(); await tick();
+    eq(env.uv.prepares.map((o) => o.version), ['0.2.180'], 'after launch: prepared in the background');
+    eq(readyAsks(env), [{ kind: 'engine', desktopVersion: null, engineVersion: '0.2.180', enginePrepared: true }], 'then the in-app question');
+    eq(env.dialogCalls.length, 0, 'no native dialog');
+    await env.t.offerEngineUpdateAfterLaunch();
+    eq(env.uv.prepares.length, 1, 'once per launch');
+  }
+  {
+    // An older UI (it ships with the engine) never announces the in-app dialog: the question falls back to
+    // a native one — after launch, not blocking it.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', dialogResponses: [1 /* Later */] });
+    await env.t.getDesktopUpdateVersion();
+    env.t.primeLaunchCheck();
+    await env.t.installAndStartBackend();
+    await env.t.offerEngineUpdateAfterLaunch();
+    await tick(); await tick(); await tick();
+    eq(readyAsks(env).length, 0, 'no in-app question to a UI that cannot show it');
+    eq(env.dialogCalls.length, 1, 'a native "ready" dialog instead');
+    ok(/0\.2\.180 is downloaded and ready/.test(env.dialogCalls[0].message), 'naming the prepared version');
+    eq(env.readState() && env.readState().consented, true, '"Later": still installed at the next start');
+  }
+  {
+    // A desktop update pending at launch: the engine waits for it (desktop first) — nothing is prepared.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1, 1] });
+    await env.t.getDesktopUpdateVersion();
+    env.t.primeLaunchCheck();
+    await env.t.installAndStartBackend();
+    await env.t.offerEngineUpdateAfterLaunch();
+    eq((env.uv.prepares || []).filter((o) => !o.desktopVersion).length, 0, 'desktop pending: no engine-only prepare after launch (only the one staged FOR the new desktop)');
   }
 
   // ── review round 10: apply outcomes, macOS staging, IPC senders (FLOWPAD-2310) ──

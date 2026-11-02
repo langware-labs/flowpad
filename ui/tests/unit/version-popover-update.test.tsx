@@ -574,6 +574,13 @@ describe('engine updates are prepared in the background, then swapped in seconds
     await waitFor(() => expect(api.applyEngineUpdate).toHaveBeenCalledTimes(1));
   });
 
+  it('on mount the panel tells the shell it shows the in-app ready dialog (else the shell asks natively)', async () => {
+    const api = electronApi({ panelReady: vi.fn().mockResolvedValue(true) });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    render(<VersionPopover currentVersion="0.2.230" />);
+    await waitFor(() => expect(api.panelReady).toHaveBeenCalledTimes(1));
+  });
+
   it('a failed background download shows the error with Try again', async () => {
     let engineState: ((s: unknown) => void) | null = null;
     const api = electronApi({

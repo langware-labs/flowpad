@@ -2759,25 +2759,13 @@ async function installAndStartBackend({ quiet = false } = {}) {
         });
         if (action === 'announce') await startOffer(desktopLatest); // through the one-window guard, like the tick's offers
         else if (action !== 'ignore') adoptDesktopUpdateSilently(desktopLatest, action);
-      } else if (engineChangeAllowed('pre-start engine prompt') === 'allow') {
-        // No desktop update (and the check did answer) → the standalone engine prompt handles the "newer on
-        // PyPI" case (and no-ops otherwise). Reads the installed version from `_version.py`, so it works even
-        // when the install is broken or the cloud is unreachable. `beforeBackendStart` makes the call return
-        // right after the upgrade — the normal start path below boots the upgraded backend, avoiding a
-        // double start.
-        const engineBeforePrompt = uvManager.getInstalledVersionSync(activeBin) || null;
-        const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
-          sendStatus,
-          waitForBackend,
-          backendUrl: BACKEND_URL,
-          cloudUrl: FLOWPAD_CLOUD_URL,
-          beforeBackendStart: true,
-        });
-        if (upgradedPreStart) {
-          activeBin = uvManager.getInstalledFlowBin() || activeBin;
-          backendJustUpgraded = true;
-          noteStartupEngineInstall(engineBeforePrompt, uvManager.getInstalledVersionSync(activeBin));
-        }
+      } else {
+        // No desktop update: a newer engine on PyPI is NOT asked about here. The old pre-start dialog
+        // blocked the launch on a native question; now the app starts as is, and once its UI is up the
+        // update downloads in the background and the in-app dialog asks "now or later"
+        // (offerEngineUpdateAfterLaunch). The pre-start path keeps only what cannot wait: a missing or
+        // broken engine (installed below) and an incompatible pair (repaired below).
+        engineUpdateAfterLaunch = true;
       }
 
       // ── Installed-pair compatibility (engine-compat.js) ────────────────
@@ -3244,6 +3232,7 @@ async function startApp() {
   });
   mainWindow.webContents.once('did-finish-load', () => {
     offerPostponedRestartPrompt(); // the app is on screen: a held-back "Restart now" can show
+    void offerEngineUpdateAfterLaunch(); // a newer engine: downloaded in the background, then asked in the app
     rendererWatchdog.arm(); // the app UI is up: from now on, silence means hung
     if (resumedPanelUpdate) {
       // A panel-initiated coordinated update finished across the restart: tell the panel. The value is
@@ -3882,6 +3871,51 @@ function recordPreparedEngine(prep) {
 // null → desktop alone). announced: the dialog for this combination was already shown.
 let panelUpdatePlan = null;
 
+// The launch found the engine may be updatable (no desktop update pending): checked once the UI is up.
+let engineUpdateAfterLaunch = false;
+// The loaded UI announced it shows the in-app "ready — restart now or later?" dialog ('update:panel-ready').
+// The UI ships with the ENGINE, so an older engine's UI does not: then the question falls back to a
+// native dialog (after launch — never blocking it).
+let panelShowsReadyDialog = false;
+
+/** After launch, with the UI up: a newer compatible engine is prepared in the background, then asked about. */
+async function offerEngineUpdateAfterLaunch() {
+  if (!engineUpdateAfterLaunch || !uvManager || isQuitting) return;
+  engineUpdateAfterLaunch = false;
+  if (engineChangeAllowed('engine update after launch') !== 'allow') return;
+  if (enginePrep && enginePrep.state !== 'error') return; // one already under way (e.g. the panel's)
+  let status = null;
+  try { status = await uvManager._pypiUpdateStatus(); } catch (err) { log.warn(`[update] launch engine check failed: ${err.message}`); return; }
+  if (!status || !status.required || !status.latestVersion) return;
+  log.info(`[update] engine ${status.currentVersion || 'unknown'} → ${status.latestVersion}: preparing it in the background (the app is up)`);
+  startEnginePrepare({ version: status.latestVersion, source: 'launch' });
+}
+
+/**
+ * The engine-only "ready" question when the loaded UI cannot show the in-app dialog: a native one, after
+ * launch. Restart now swaps (seconds); Later leaves the agreed record for the next start.
+ */
+async function askEngineReadyNatively(prep) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const scripted = updateTest.answerFor('engine-ready', { engine: prep.version });
+  const { response } = scripted !== null ? { response: scripted } : await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'FlowPad update ready',
+    message: `FlowPad engine ${prep.version} is downloaded and ready.`,
+    detail: 'Switching to it takes a few seconds. Not now? It is used the next time FlowPad starts.',
+    buttons: ['Restart engine now', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0 || enginePrep !== prep || prep.state !== 'ready') return;
+  const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart({ prepared: prep.prepared }));
+  if (!guarded.skipped && guarded.result && guarded.result.success) {
+    enginePrep = null;
+    const rec = pendingEngineStore.read();
+    if (rec && rec.source === 'engine' && rec.engineVersion === prep.prepared.version) pendingEngineStore.clear();
+  }
+}
+
 /** Everything the panel's update needs is staged: ask (once) — restart now or later? */
 function maybeAnnounceUpdateReady() {
   const plan = panelUpdatePlan;
@@ -3903,7 +3937,8 @@ function maybeAnnounceUpdateReady() {
   }
   if (enginePrep && enginePrep.state === 'ready' && !enginePrep.desktopVersion && enginePrep.announce && !enginePrep.announced) {
     enginePrep.announced = true;
-    sendUpdateReady({ kind: 'engine', desktopVersion: null, engineVersion: enginePrep.version, enginePrepared: true });
+    if (panelShowsReadyDialog) sendUpdateReady({ kind: 'engine', desktopVersion: null, engineVersion: enginePrep.version, enginePrepared: true });
+    else void askEngineReadyNatively(enginePrep).catch((err) => log.warn(`[update] engine ready prompt failed: ${err.message}`));
   }
 }
 
@@ -3980,6 +4015,13 @@ ipcMain.handle('update:get-info', async (event, opts) => {
     : null;
   const busy = desktopUpdateRefusal() === 'busy';
   return { desktop, engine, busy, pairWarning: runningPair ? runningPair.message : null, engineUpdate: enginePrepSnapshot() };
+});
+
+// The loaded UI shows the in-app ready dialog (it ships with the engine; older ones do not).
+ipcMain.handle('update:panel-ready', (event) => {
+  assertTrustedSender(event, 'update:panel-ready');
+  panelShowsReadyDialog = true;
+  return true;
 });
 
 // The resumed outcome's pull channel: the panel takes this the moment it mounts (no feed check), so
@@ -4103,6 +4145,7 @@ ipcMain.handle('update:prepare-engine', async (event, opts) => {
     if (!verdict.allowed) return { started: false, desktopUpdatePending: true, reason: 'desktop-first' };
   }
   if (uvManager.isInstalling()) return { started: false, reason: 'busy' };
+  panelShowsReadyDialog = true; // only a UI that shows the in-app dialog knows this channel
   panelUpdatePlan = null; // an engine-only update: announced from the prepare itself
   const prep = startEnginePrepare({ version: requested, source: 'panel' });
   return prep ? { started: true, version: requested } : { started: false, reason: 'unsupported' };

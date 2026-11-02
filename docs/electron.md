@@ -138,6 +138,7 @@ MAX_HEALTH_CHECKS = 240       // 120 seconds max wait
 | `update:restart-app` | `{started}` | Graceful quit + relaunch — the way forward after a late install failure (`restart-required`) |
 | `update:pair-warning` | `string \| null` | The running desktop/engine pair's incompatibility, pulled once at panel mount and toasted |
 | `update:prepare-engine` | `{started, version?, reason?, desktopUpdatePending?}` | Stage an engine release in the background while the engine keeps serving (`uv-manager.prepareEngine`) |
+| `update:panel-ready` | `true` | The loaded UI shows the in-app ready dialog (otherwise the shell asks natively, after launch) |
 | `update:apply-engine` | `{started, version?, reason?, error?}` | "Restart the engine now": stop, install the prepared release offline (seconds), start |
 
 More push channels: `engine-update-state` (`preparing` / `ready` / `error`) and `update-ready` (everything

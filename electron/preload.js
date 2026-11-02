@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onEngineUpdateState: (callback) => subscribe('engine-update-state', callback),
   // Everything the panel's update needs is staged: the in-app "restart now or later?" dialog.
   onUpdateReady: (callback) => subscribe('update-ready', callback),
+  // The panel announces it shows that dialog (an older UI does not, and the shell then asks natively).
+  panelReady: () => ipcRenderer.invoke('update:panel-ready'),
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.
