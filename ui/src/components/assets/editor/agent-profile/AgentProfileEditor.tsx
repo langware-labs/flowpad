@@ -1,4 +1,5 @@
 import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, TypeId, type AgentVersionState } from '@sdk';
+import { useAgentPlaces } from './use-agent-places';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -111,9 +112,13 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     }
   }, [hub]);
 
+  // A deploy publishes the agent without touching its row, so the header follows the deployments too:
+  // without this it still said "Not published yet" after a cloud deploy, until the page was reopened.
+  const { places } = useAgentPlaces(hub ? null : agent);
+  const placesKey = places ? places.map((p) => `${p.deployment.id}:${String(p.deployment.status ?? '')}:${p.behind ?? ''}`).join(',') : '';
   useEffect(() => {
     void loadVersion();
-  }, [loadVersion, agent.updated_date]);
+  }, [loadVersion, agent.updated_date, placesKey]);
 
   // Has this agent already used its once-per-project auto-launch? Local only:
   // the mark lives on this computer, beside the project.
