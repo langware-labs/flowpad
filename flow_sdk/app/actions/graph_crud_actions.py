@@ -266,10 +266,9 @@ async def handle_delete_by_id():
         else:
             is_deleted = await entity_model.delete_by_id(target_typeid.id)
     except HubError as e:
-        # The hub answered (an app failure): its own status. Nothing came back (status 0): 502 for a
-        # connection failure, 401 signed out here, 503 no hub.
+        # Nothing came back from the hub (status 0): 502. Otherwise the hub answered: its own status.
         raise HTTPException(
-            status_code=e.status_code or e.http_status,
+            status_code=502 if e.status_code == 0 else e.status_code,
             detail=f"{e.reason} ({e.status_code}); it is kept here so the delete can be retried",
         ) from e
     # Removing the hub row above fans ``child_deleted`` back to this instance, which can drop the
