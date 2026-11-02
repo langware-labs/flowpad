@@ -23,12 +23,10 @@ vi.mock('@src/notifications', () => ({
 
 vi.mock('@src/components/graph-view/icons/iconRegistry', async () => {
   const React = await import('react');
-  return {
-    iconForType: vi.fn(
-      () => (props: Record<string, unknown>) =>
-        React.createElement('svg', { ...props, 'data-testid': 'registry-agent-icon' }),
-    ),
-  };
+  // One component, like the real registry: a fresh one per call remounts the icon on every render.
+  const RegistryIcon = (props: Record<string, unknown>) =>
+    React.createElement('svg', { ...props, 'data-testid': 'registry-agent-icon' });
+  return { iconForType: vi.fn(() => RegistryIcon) };
 });
 
 vi.mock('@src/components/stream-inbox-view/AttachedChannelsBar', () => ({
