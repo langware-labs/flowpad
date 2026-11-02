@@ -126,3 +126,15 @@ async def test_hub_refresh_keeps_the_box_serving_its_agent():
     await HubWsBridge()._on_data_op({'op': 'update', 'to_entity': f'deployment-{deployment_id}', 'data': body})
     assert (await Deployment.get_by_id(deployment_id)).serving is True
     assert "serving" in Deployment.fields_not_sent_to_hub()
+
+
+def test_a_placement_running_on_this_machine_keeps_its_local_target_across_hub_refresh():
+    """The box that runs a cloud placement holds it as local. A hub refresh carried the hub's view of the
+    target (`gcp_vm`), the row stopped being local here, and the box's supervisor dropped its agent."""
+    row = Deployment(name="On this box", target={"provider": "local", "scope": "agent-test"}, serving=True)
+    hub = {"name": "On this box", "target": {"provider": "gcp_vm", "scope": "agent-test", "location": "https://hub/compute_node/x/open"},
+           "origin": {"kind": "gcp_vm", "provider": "gcp_vm", "external_id": "compute_node-x"}}
+    merged = Deployment.merge_hub_payload(row, hub)
+    assert merged["target"] == row.target
+    assert merged["origin"] == row.origin
+    assert Deployment(**merged).is_local

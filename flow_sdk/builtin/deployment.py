@@ -499,6 +499,11 @@ class Deployment(Entity):
         # placement's address, however, is allocated and refreshed by the hub.
         if local.target.provider != "local" and "origin" in hub_payload:
             merged["origin"] = hub_payload["origin"]
+        # A row this machine runs is held here as local -- the box a cloud placement runs on. The hub's
+        # target names the cloud machine from outside; taking it made the row not local here, and the
+        # box's supervisor stopped the agent.
+        if local.target.provider == "local":
+            merged["target"] = local.target
         return merged
 
     @classmethod
