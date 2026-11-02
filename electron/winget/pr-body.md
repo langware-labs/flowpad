@@ -19,6 +19,6 @@ Submitted automatically by the Flowpad release workflow from the rendered templa
 - [x] This PR only modifies one (1) manifest
 - [x] Validated manifest locally with `winget validate --manifest <path>` ([validation guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md))
 - [x] Tested manifest locally with `winget install --manifest <path>`
-- [x] Manifest conforms to the [1.12 schema](https://github.com/microsoft/winget-pkgs/tree/master/doc/manifest/schema/1.12.0)
+- [x] Manifest conforms to the [1.28 schema](https://github.com/microsoft/winget-pkgs/tree/master/doc/manifest/schema/1.28.0)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
