@@ -24,6 +24,9 @@ class HubErrorCode(str, Enum):
     # The credential itself is dead (missing, unverifiable, revoked, expired). The one
     # signal to sign out on: a bare 401 also means "this key may not do that".
     UNAUTHENTICATED = "unauthenticated"
+    # Local, never sent by the hub: a create answered 409 and the row at that id is not one
+    # this account can reach (``Entity.confirm_hub_row_is_ours``).
+    ID_TAKEN = "id_taken"
 
 
 #: Statuses an older hub answers for a dead JWT, before it carried ``unauthenticated``.

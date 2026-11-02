@@ -2311,12 +2311,12 @@ class Entity(DBEntity):
         try:
             await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
         except HubError as e:
-            # Idempotent: a 409 ("already exist") means this entity is already on
-            # the hub — e.g. ``Conversation.share`` re-runs ``super().share()`` on
-            # every invite. The create's post-condition is already satisfied, so
-            # treat it as a no-op success rather than a 500.
+            # A 409 says only that SOME row holds this id — the hub answers it whoever owns
+            # that row. Ours (``Conversation.share`` re-runs ``super().share()`` on every
+            # invite) is a no-op success; anyone else's must not become ``remote=True``.
             if e.status_code != 409:
                 raise
+            await self.confirm_hub_row_is_ours()
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.
@@ -2332,6 +2332,32 @@ class Entity(DBEntity):
         if recursive:
             await self._share_children()
         return self
+
+    async def confirm_hub_row_is_ours(self) -> None:
+        """After a create answered 409: check the row at this id is one this account can reach.
+
+        A GET settles it without leaking anything — the hub answers it only for a caller holding
+        a role on the row, and says ``target_not_found`` alike for "no such row" and "not yours".
+        So a refusal proves only what matters here: this entity cannot be on the hub from this
+        account. Raises ``HubError`` (``REJECTED``, ``id_taken``); any other failure (offline,
+        signed out, a 5xx) propagates as itself — answering an outage with "not yours" would be
+        a fabricated diagnosis.
+        """
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+        try:
+            await HubProxy.call("GET", self.get_type(), self.id, strict=True)
+        except HubError as e:
+            if not e.is_target_missing:
+                raise
+            raise HubError(
+                409,
+                f"A {self.get_type()} already exists in the cloud at id {self.id}, and this account cannot reach it.",
+                code=HubErrorCode.ID_TAKEN.value,
+                kind=HubFailureKind.REJECTED,
+            ) from e
 
     def _local_fields(self) -> frozenset[str]:
         """The fields that never travel in ``to_common_json`` — every ``PRIVATE``

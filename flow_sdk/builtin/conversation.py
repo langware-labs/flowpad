@@ -784,6 +784,25 @@ class Conversation(ProjectedFields, Entity):
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets
 
+    async def authored_here(self) -> bool:
+        """Whether this conversation holds something written here: an ask captured for the hub
+        (``origin_project_id``), or a message this machine wrote (``FlowMessage.outbound``).
+
+        Not ``created_by``: rows saved off a request are stamped ``system`` or nothing, so it
+        cannot tell a conversation started here from a hub mirror."""
+        if self.origin_project_id:
+            return True
+        return any(fm.outbound for fm in await self.messages())
+
+    async def demote_to_local(self, why: str) -> None:
+        """The hub holds no row at this id that this account can reach: stop claiming one.
+
+        ``remote=True`` on such a row made every sync 403 and the conversation list prune delete
+        the person's own conversation. Kept as a local conversation instead."""
+        self.remote = False
+        await self.save()
+        logging.warning("[conversation] %s: %s — kept as local", (self.id or "?")[:8], why)
+
     @property
     def hub_bound(self) -> bool:
         """Whether this conversation's messages are meant for the hub (so the outbox delivers them)."""

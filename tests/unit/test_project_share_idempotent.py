@@ -77,7 +77,12 @@ def hub(monkeypatch):
         path = str(url)
         path = "/graph/" + path.split("/graph/", 1)[1] if "/graph/" in path else path
         fake = await fake_request(None, method, path, **kwargs)
-        return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
+        return httpx.Response(
+            fake.status_code,
+            text=fake.text,
+            headers={"content-type": "application/json"},  # the hub answers every failure in JSON
+            request=httpx.Request(method, str(url)),
+        )
 
     monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
     return holder

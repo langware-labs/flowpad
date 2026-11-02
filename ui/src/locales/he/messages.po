@@ -14394,7 +14394,6 @@ msgid "Format"
 msgstr "תבנית"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
@@ -26429,7 +26428,6 @@ msgstr "נענתה"
 msgid "Replies:"
 msgstr "תשובות:"
 
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply"
@@ -26444,7 +26442,6 @@ msgstr "תשובה שממתינה לבדיקה שלכם"
 msgid "Reply in {0}"
 msgstr "השיבו ב{0}"
 
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"

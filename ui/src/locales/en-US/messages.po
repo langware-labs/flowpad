@@ -14490,7 +14490,6 @@ msgid "Format"
 msgstr "Format"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
@@ -26629,7 +26628,6 @@ msgstr "Replied"
 msgid "Replies:"
 msgstr "Replies:"
 
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply"
@@ -26644,7 +26642,6 @@ msgstr "Reply awaiting your review"
 msgid "Reply in {0}"
 msgstr "Reply in {0}"
 
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"

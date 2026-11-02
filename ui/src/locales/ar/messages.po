@@ -14394,7 +14394,6 @@ msgid "Format"
 msgstr "التنسيق"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
@@ -26433,7 +26432,6 @@ msgstr "تم الرد"
 msgid "Replies:"
 msgstr "الردود:"
 
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply"
@@ -26448,7 +26446,6 @@ msgstr "رد بانتظار مراجعتكم"
 msgid "Reply in {0}"
 msgstr "الرد في {0}"
 
-#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"
