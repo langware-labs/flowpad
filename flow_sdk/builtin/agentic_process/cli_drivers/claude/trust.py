@@ -7,7 +7,8 @@ from pathlib import Path
 
 
 def claude_trusts(workdir: str | None) -> bool:
-    """Whether Claude has its workspace trust accepted for ``workdir`` or a folder above it (``~/.claude.json``)."""
+    """Whether Claude has its workspace trust accepted for ``workdir`` itself (``~/.claude.json``). A trusted folder
+    above it does not count: Claude refuses --worktree there even with ``/`` trusted."""
     if not workdir:
         return False
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
@@ -20,4 +21,4 @@ def claude_trusts(workdir: str | None) -> bool:
     if not isinstance(projects, dict):
         return False
     here = Path(workdir).expanduser().resolve()
-    return any((projects.get(str(p)) or {}).get("hasTrustDialogAccepted") for p in (here, *here.parents))
+    return bool((projects.get(str(here)) or {}).get("hasTrustDialogAccepted"))

@@ -328,7 +328,7 @@ def test_an_agents_disallowed_tools_become_its_workers():
 
 
 
-def test_claude_trusts_reads_workspace_trust_for_the_folder_or_one_above(tmp_path):
+def test_claude_trusts_reads_workspace_trust_for_the_folder_itself(tmp_path):
     """Claude exits on --worktree in an untrusted folder ("Workspace trust not yet accepted"); the launch
     checks this first and starts Claude plainly there, so its own trust prompt shows."""
     import json
@@ -344,5 +344,6 @@ def test_claude_trusts_reads_workspace_trust_for_the_folder_or_one_above(tmp_pat
     assert not claude_trusts(str(folder))
     settings.write_text(json.dumps({"projects": {str(folder.resolve()): {"hasTrustDialogAccepted": True}}}))
     assert claude_trusts(str(folder))
-    assert claude_trusts(str(folder / "sub"))
-    assert not claude_trusts(str(tmp_path))
+    # A trusted folder above does not count: Claude refused --worktree with ``/`` trusted.
+    settings.write_text(json.dumps({"projects": {"/": {"hasTrustDialogAccepted": True}}}))
+    assert not claude_trusts(str(folder / "sub"))
