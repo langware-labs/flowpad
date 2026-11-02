@@ -6430,6 +6430,7 @@ msgid "checking…"
 msgstr "جارٍ التحقق…"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "جاري التحقق…"
@@ -30263,10 +30264,14 @@ msgstr "تم التخطي"
 msgid "Skipped — setup goes on without it."
 msgstr "تم التخطي — يستمر الإعداد بدونه."
 
-#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Skipped on this machine"
 msgstr "تم تخطّيه على هذا الجهاز"
+
+#. placeholder {0}: readiness.skipped.length
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skipped on this machine ({0})"
+msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "Skipped: it fired too often in one minute"

@@ -29,13 +29,14 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.api.oauth_api import OAuthErrorCode
 from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType
 from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.core.oauth import resolve_user_credentials_name
+from flow_sdk.core.project_status import changes_status
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info, get_current_request_user_fresh
 
 logger = logging.getLogger(__name__)
@@ -203,6 +204,7 @@ async def revoke_var_from(
     )
 
 
+@changes_status
 async def disconnect_oauth_provider(user: Entity, provider: str) -> OAuthAttachmentResult:
     """Delete the user's credential outright. Distinct from detach: detaching
     from your last project keeps the token."""

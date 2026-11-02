@@ -139,11 +139,47 @@ async def run_check(op, *, workdir: Path, extra_env: Optional[dict] = None) -> t
     return "failed", re.sub(r"^(?:error:\s*)?(?:\([^)]*\)\s*)?", "", first, flags=re.IGNORECASE).strip()
 
 
+#: How long a sign-in check's answer holds. A check is a process (``gcloud`` takes ~0.9 s), and a sign-in is
+#: this computer's, not a project's: one answer serves every project until it ages out or is forgotten.
+SIGNIN_TTL_S = 600.0
+_SIGNINS: dict[str, tuple[float, tuple[str, str]]] = {}
+#: A check running now, by key: a second asker awaits it instead of starting the command again.
+_RUNNING: dict[str, "asyncio.Future[tuple[str, str]]"] = {}
+
+
+def forget_signins() -> None:
+    """Drop every remembered sign-in answer: the next check runs its command again (a setup run ended, a
+    person asked to check again)."""
+    _SIGNINS.clear()
+
+
+async def _check_signin(check) -> tuple[str, str]:
+    import json  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    key = json.dumps(check.model_dump(mode="json") if hasattr(check, "model_dump") else check, sort_keys=True,
+                     default=str)
+    kept = _SIGNINS.get(key)
+    if kept is not None and time.time() - kept[0] < SIGNIN_TTL_S:
+        return kept[1]
+    running = _RUNNING.get(key)
+    if running is not None:
+        return await asyncio.shield(running)
+    task = asyncio.ensure_future(run_check(check, workdir=Path.home()))
+    _RUNNING[key] = task
+    try:
+        answer = await asyncio.shield(task)
+    finally:
+        _RUNNING.pop(key, None)
+    _SIGNINS[key] = (time.time(), answer)
+    return answer
+
+
 async def _signed_in(var) -> str:
     """A ``cli`` variable's own check, run on this computer: ``""`` when signed in, else WHY not, in a
     person's words. A tool that is not installed, a check with no command for this OS, and a sign-in that
     lapsed (an expired token: the tool is there, its check fails) are three different things to do."""
-    outcome, reason = await run_check(var.check, workdir=Path.home())
+    outcome, reason = await _check_signin(var.check)
     if outcome == "ok":
         return ""
     if outcome == "no_command":

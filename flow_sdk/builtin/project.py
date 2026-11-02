@@ -34,6 +34,7 @@ from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
+from flow_sdk.core.project_status import changes_status as _changes_status
 from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -597,6 +598,21 @@ class Project(SetupSkippable, Entity):
                 roots.append(canonical)
         return roots
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def local_status(self) -> Optional[dict[str, Any]]:
+        """This project's status on this machine (``core/project_status``), read from its instance file on every
+        serialization and never checked here — so a GET and every push carry the stored answer. Never stored on the
+        row, never sent to the hub."""
+        if not getattr(self, "id", None):
+            return None
+        from flow_sdk.core.project_status import read_stored  # noqa: PLC0415
+
+        try:
+            return read_stored(str(self.id)).model_dump(mode="json")
+        except Exception:  # noqa: BLE001 — a status that cannot be read is no status, never a failed row
+            return None
+
     @computed_field
     @property
     def customization(self) -> dict[str, Any]:
@@ -1024,18 +1040,17 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"added": added.model_dump(mode="json"), "file": str(handlings.file_of(one.asset_ref))})
 
     @action.get(action_name="setup-requirements")
-    async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":
-        """`GET /project/<id>/setup-requirements?include_ready=` — ``ready``, what is left to set up, and the gaps.
-        Every MUST value and needed connection counts; OPTIONAL values never do. Names only. ``include_ready``
-        (the Project setup page) also lists what is set up and each step's tree node."""
-        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+    async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":  # noqa: ARG002
+        """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps. Every MUST value
+        and needed connection counts; OPTIONAL values never do. Names only. The stored ``setup`` part of this project's
+        status (``core/project_status``), refreshed first when it is due; it always lists what is set up and each
+        step's tree node too, so ``include_ready`` is accepted for old callers and changes nothing."""
+        from flow_sdk.core.project_status import SETUP, fresh  # noqa: PLC0415
 
-        try:
-            readiness = await readiness_of(self, include_ready=include_ready)
-            return ApiSuccessResponse(data=readiness.model_dump(mode="json"))
-        except Exception as exc:  # noqa: BLE001 — the caller shows why, not a bare 500
-            log.warning("project setup requirements failed for %s: %s", self.id, exc, exc_info=True)
-            return ApiFailResponse(message=f"Couldn't check what this project needs here: {exc}")
+        part = await fresh(str(self.id), SETUP)
+        if part.value is None:  # never answered here; a failed recheck still has its last answer
+            return ApiFailResponse(message=f"Couldn't check what this project needs here: {part.error or 'no answer'}")
+        return ApiSuccessResponse(data=part.value)
 
     @action.post(action_name="setup")
     async def setup_action(self, root: str = "") -> "ApiResponse":
@@ -1084,6 +1099,14 @@ class Project(SetupSkippable, Entity):
         except SkipRefused as exc:
             return ApiFailResponse(message=str(exc), status_code=409)
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @action.get(action_name="status")
+    async def status_action(self, parts: str = "") -> "ApiResponse":
+        """`GET /project/<id>/status?parts=setup,...` — this project's stored status, at once. Every asked part that
+        is missing, old or stale starts refreshing behind the answer and is pushed on the Project row when it lands."""
+        from flow_sdk.core.project_status import read  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=read(str(self.id), parts.split(",") if parts else None).model_dump(mode="json"))
 
     @action.get(action_name="setup-run")
     async def setup_run_action(self, root: str = "") -> "ApiResponse":
@@ -1593,6 +1616,7 @@ class Project(SetupSkippable, Entity):
             "include_dirs",
             "context_roots",
             "context_dir_infos",
+            "local_status",
         ):
             body.pop(local_only, None)
         return body
@@ -2959,6 +2983,7 @@ class Project(SetupSkippable, Entity):
 
         return await project_dependencies.check_updates(self)
 
+    @_changes_status
     async def add_dependency(
         self,
         source: str,
@@ -3054,6 +3079,7 @@ class Project(SetupSkippable, Entity):
             next(s for s in states if s.name == dep.name and s.via is None)
         )
 
+    @_changes_status
     async def remove_dependency(self, name: str, *, asset: str | None = None) -> "list[DependencyState]":
         """Drop ``name`` from ``flow.json``; its folder leaves the context. The folder on
         disk is never touched."""

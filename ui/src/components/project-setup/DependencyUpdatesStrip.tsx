@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Plural, Trans } from '@lingui/react/macro';
 import { GitBranch, Loader2 } from 'lucide-react';
-import { Project, TypeId, recheckProjectReadiness, type DependencyState } from '@sdk';
+import { Project, recheckProjectReadiness, type DependencyState } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
+import { projectTypeId } from '@sdk/react/hooks/use-project-status';
 import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
 import { cn } from '@src/lib/utils';
 
@@ -11,15 +12,6 @@ import { cn } from '@src/lib/utils';
 function branchOf(source: string): string {
   const hash = source.lastIndexOf('#');
   return hash >= 0 ? source.slice(hash + 1) : '';
-}
-
-/** The project's TypeId, or null for an id that is not one (nothing to read then). */
-function projectTypeId(projectId: string): TypeId | null {
-  try {
-    return new TypeId(Project.type, projectId);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -84,7 +76,9 @@ export function DependencyUpdatesStrip({ projectId }: { projectId: string }) {
               <span
                 className={cn(
                   'flex items-center gap-1 text-xs',
-                  dep.pull_error && !pulling ? 'text-yellow-600 dark:text-yellow-400' : 'text-blue-600 dark:text-blue-400',
+                  dep.pull_error && !pulling
+                    ? 'text-yellow-600 dark:text-yellow-400'
+                    : 'text-blue-600 dark:text-blue-400',
                 )}
               >
                 {pulling && count > 0 ? (

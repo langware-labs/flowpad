@@ -6430,6 +6430,7 @@ msgid "checking…"
 msgstr "בדיקה…"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "בבדיקה…"
@@ -30259,10 +30260,14 @@ msgstr "דולגה"
 msgid "Skipped — setup goes on without it."
 msgstr "דילגנו — ההגדרה ממשיכה בלי זה."
 
-#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Skipped on this machine"
 msgstr "דולג במחשב הזה"
+
+#. placeholder {0}: readiness.skipped.length
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skipped on this machine ({0})"
+msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "Skipped: it fired too often in one minute"

@@ -6469,6 +6469,7 @@ msgid "checking…"
 msgstr "checking…"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "Checking…"
@@ -30488,10 +30489,14 @@ msgstr "Skipped"
 msgid "Skipped — setup goes on without it."
 msgstr "Skipped — setup goes on without it."
 
-#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Skipped on this machine"
 msgstr "Skipped on this machine"
+
+#. placeholder {0}: readiness.skipped.length
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skipped on this machine ({0})"
+msgstr "Skipped on this machine ({0})"
 
 #: src/components/automations/automation-words.ts
 msgid "Skipped: it fired too often in one minute"

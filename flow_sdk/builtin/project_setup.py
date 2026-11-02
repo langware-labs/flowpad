@@ -777,6 +777,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         add_detached_done_callback(task, _log_failure)
         add_detached_done_callback(task, functools.partial(_release_control, key, control))
         add_detached_done_callback(task, functools.partial(_forget_load, pid, root))
+        add_detached_done_callback(task, functools.partial(_status_after_run, pid))
         _RUNS[key] = task
     return setup_run_address(pid, root)
 
@@ -912,6 +913,14 @@ def _forget_load(project_id: str, root: str, _task: "asyncio.Task") -> None:
     forget(project_id, root)
 
 
+def _status_after_run(project_id: str, _task: "asyncio.Task") -> None:
+    """A run of the project ended: what it set up (a sign-in among them) is read again."""
+    from flow_sdk.builtin.credential_status import forget_signins  # noqa: PLC0415
+
+    forget_signins()
+    _status_changed(project_id)
+
+
 def _log_failure(task: "asyncio.Task") -> None:
     """A run that raised is recorded nowhere else — say it, rather than let it vanish."""
     if not task.cancelled() and task.exception() is not None:
@@ -1009,6 +1018,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
             raise SkipRefused(req.why_not_always or f"{req.name} cannot be removed from this project")
         await _uninstall(project, req.roots)
         _skip_live(project, req, "removed from the project")
+        _status_changed(str(project.id))
         return
     if scope != SKIP_LOCAL:
         raise SkipRefused(f"skip {scope!r}? it is {SKIP_LOCAL!r} or {SKIP_ALWAYS!r}")
@@ -1018,6 +1028,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
     else:
         await write_setup_skip(await _record_of(req), mark)
     _skip_live(project, req, skip_detail(mark))
+    _status_changed(str(project.id))
 
 
 async def skip_asking(run: str, step: str, *, by: str = "") -> bool:
@@ -1058,6 +1069,14 @@ async def unskip_requirement(project: "Project", typeid: str, *, name: str = "")
         await write_setup_skip(project, {k: v for k, v in (project.setup_skipped or {}).items() if k != key})
     else:
         await write_setup_skip(await _record_of(req), None)
+    _status_changed(str(project.id))
+
+
+def _status_changed(project_id: str) -> None:
+    """What this project's setup status reads changed: its stored answer is refreshed (``core/project_status``)."""
+    from flow_sdk.core.project_status import SETUP, mark_stale  # noqa: PLC0415
+
+    mark_stale(project_id, [SETUP])
 
 
 async def _delete_credential_staged(mount: Path, record: Any) -> None:

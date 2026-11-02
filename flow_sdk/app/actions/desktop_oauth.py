@@ -42,6 +42,7 @@ from flow_sdk.core.oauth.provider_registry import (
     token_request,
     user_credentials_name,
 )
+from flow_sdk.core.project_status import changes_status
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -844,6 +845,7 @@ def flow_result_response(result: Optional["AuthFlowResult"]) -> ApiResponse:
     return ApiFailResponse(message=result.detail or f"Authorization {result.status.value}")
 
 
+@changes_status
 async def complete_loopback_flow(state: str, code: str = "", error: str = "") -> tuple[Optional["AuthFlowResult"], bool]:
     """Finish a grant this instance runs itself: loopback, pasted manual code, sandbox callback.
 

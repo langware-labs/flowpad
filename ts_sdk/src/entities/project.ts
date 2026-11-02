@@ -255,6 +255,29 @@ export interface ProjectSetupRoot {
   asset_ref: string;
 }
 
+/** One part of a project's status on this machine — mirror of `StatusPartSpec`
+ *  (`flow_sdk/schema/data_spec/project_status_spec.py`). */
+export interface ProjectStatusPart<T = unknown> {
+  /** The part's last answer; null when it was never answered here. */
+  value: T | null;
+  /** Epoch seconds of that answer. */
+  checked_at: number | null;
+  ttl_s: number;
+  /** Something it reads changed: the next read refreshes it. */
+  stale: boolean;
+  /** A refresh is running now. */
+  checking: boolean;
+  /** Why the last refresh failed; empty when it did not. */
+  error: string;
+}
+
+/** A project's status on this machine, by part — mirror of `ProjectStatusSpec`. `setup` holds a
+ *  `ProjectReadiness`. */
+export interface ProjectStatus {
+  project_id: string;
+  parts: { setup?: ProjectStatusPart<ProjectReadiness> } & Record<string, ProjectStatusPart | undefined>;
+}
+
 /** `GET project/<id>/setup-requirements` — is this project ready here? */
 export interface ProjectReadiness {
   project_id: string;
@@ -519,6 +542,9 @@ export class Project extends APIEntity<Project> {
   /** Optional per-project home branding from `.flow/customization/`. Mirrors the
    *  backend computed `Project.customization`. Read-only. */
   customization: ProjectCustomization = {};
+  /** This project's status on this machine — mirror of the backend computed `Project.local_status`, carried
+   *  on every push of the row. Read it through `useProjectStatus`, which also asks for stale parts. */
+  local_status: ProjectStatus | null = null;
   /** True when this project is app-managed — SDK-shipped (the Flowpad
    *  Assistant), the agent mount root, or a help-desk portal checkout. Mirror
    *  of the backend computed `Project.hidden`; read-only, and the ONE answer to
@@ -1209,6 +1235,14 @@ export class Project extends APIEntity<Project> {
   }
 
   /** The setup run's state (`GET project/<id>/setup-run`). */
+  /** `GET project/<id>/status?parts=` — the stored status, at once. Every asked part that is missing, old or
+   *  stale starts refreshing behind the answer and arrives as a push of the project row. */
+  static async status(projectId: string, parts: string[] = []): Promise<ProjectStatus | null> {
+    const actionInfo = new ActionInfo('status', Project.type, projectId, 'GET');
+    if (parts.length) actionInfo.queryParameters = { parts: parts.join(',') };
+    return (await dataManager.callAction<void, ProjectStatus>(actionInfo)) ?? null;
+  }
+
   static async setupRun(projectId: string, root = ''): Promise<ProjectSetupRun | null> {
     const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');
     if (root) actionInfo.queryParameters = { root };

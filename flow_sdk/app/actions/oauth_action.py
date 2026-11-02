@@ -31,6 +31,7 @@ from flow_sdk.core.oauth.hub_oauth import (
     redirect_unreachable_reason,
 )
 from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, get_local_provider, prefers_hub_flow
+from flow_sdk.core.project_status import changes_status
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -583,6 +584,7 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
     return ApiSuccessResponse(data=data)
 
 
+@changes_status
 async def complete_hub_flow(provider: str, flow_id: str) -> tuple[Optional["AuthFlowResult"], bool]:
     """Finish a hub-run grant: read the hub's result, store the local copy, tell the initiator.
 

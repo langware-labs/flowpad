@@ -78,7 +78,7 @@ async function open(readiness: ProjectReadiness, onOpenChange = vi.fn()) {
     if (readiness.ready) expect(screen.getByTestId('project-setup-ready')).toBeInTheDocument();
     else expect(screen.getByTestId('project-setup-requirements').children).toHaveLength(readiness.to_do.length);
     if (readiness.optional?.length) expect(screen.getByTestId('project-setup-optional')).toBeInTheDocument();
-    if (readiness.skipped?.length) expect(screen.getByTestId('project-setup-skipped')).toBeInTheDocument();
+    if (readiness.skipped?.length) expect(screen.getByTestId('project-setup-skipped-toggle')).toBeInTheDocument();
   });
   return onOpenChange;
 }
@@ -137,7 +137,11 @@ describe('ProjectSetupDialog — skipping', () => {
     await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-google-cloud')));
 
     expect(skip).toHaveBeenCalledWith('p1', GCP_TYPEID, 'local', { name: 'google-cloud' });
-    const skipped = await screen.findByTestId('project-setup-skipped');
+    const toggle = await screen.findByTestId('project-setup-skipped-toggle');
+    expect(toggle).toHaveTextContent('(1)');
+    expect(screen.queryByTestId('project-setup-skipped')).toBeNull(); // folded by default
+    fireEvent.click(toggle);
+    const skipped = screen.getByTestId('project-setup-skipped');
     expect(skipped).toHaveTextContent('Required — skipped on this machine');
     expect(screen.queryByTestId('project-setup-chip-google-cloud')).toBeNull();
     expect(screen.getByTestId('project-setup-undo-google-cloud')).toBeInTheDocument();
@@ -209,6 +213,7 @@ describe('ProjectSetupDialog — skipping', () => {
     const mark = { at: 1, by: 'u1', note: '' };
     await open({ ...NOT_READY, to_do: [], ready: true, skipped: [req({ skipped: mark })] });
     const unskip = vi.spyOn(Project, 'unskipSetup').mockResolvedValue(NOT_READY);
+    fireEvent.click(screen.getByTestId('project-setup-skipped-toggle'));
     await act(async () => fireEvent.click(screen.getByTestId('project-setup-undo-google-cloud')));
     expect(unskip).toHaveBeenCalledWith('p1', GCP_TYPEID, 'google-cloud');
   });
