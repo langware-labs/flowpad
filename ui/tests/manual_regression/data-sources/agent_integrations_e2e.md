@@ -40,11 +40,11 @@ test 4: The editor — config form + live items, opened as a webapp
 
 test 5: Define + annotate — a dataset bound to the source, one labelled example
 - [browser] in the frame: shape `sentiment: string` → Define output
-- [browser] validate the dataset counts read "0 examples · 0 labelled"
+- [browser] validate the dataset counts read "(0 rows · 0 labelled)"
 - [browser] Promote the first item → its label form appears → fill sentiment → Save label
-- [browser] validate "labelled (1 total)" and counts "1 examples · 1 labelled"
-- [api] GET /graph/dataset?filter={"source_id":…} → num_examples 1, num_annotated 1
-- [fixture] on disk: examples/0001/{input/item.json, ground_truth/label.json, example.json}
+- [browser] validate "labelled (1 total)" and counts "(1 row · 1 labelled)"
+- [api] GET /graph/dataset?filter={"source_id":…} → num_rows 1, num_annotated 1
+- [api] GET /graph/dataset/<id>/rows → one typed row (no problems): the item as input, {sentiment: positive} as gold
 
 test 6: The agent surface — the persona rides the vibe session and the pane shows the editor
 - [api] create a headless vibe process for the project, embed the personas the way

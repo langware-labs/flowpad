@@ -6,7 +6,7 @@ import { apiBase } from '../_shared/api';
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string, description = '') {
-  const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name, description } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, description } });
   expect(res.status(), 'whiteboard create POST').toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -21,7 +21,7 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
   });
 
   test('S2: whiteboard type registered', async ({ request }) => {
-    const res = await request.get(`${API}/api/v1/graph/whiteboard`);
+    const res = await request.get(`${API}/api/v1/graph/chart`);
     expect(res.status()).toBe(200);
     const text = await res.text();
     expect(text).not.toContain('Unknown entity type');
@@ -49,8 +49,8 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
       'smoke s3',
     );
     // AssetDocPointer grammar requires an explicit typeid/ method segment.
-    await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-    await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+    await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
     await page.waitForTimeout(1_500);
 
     // Excalidraw container healthy height (CSS-missing regression inflates to 33,554,432).
@@ -76,6 +76,6 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
 
     // Cleanup (best-effort; the unique folder name prevents a stale capsule
     // identity from colliding with a later run if the folder remains on disk).
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 });

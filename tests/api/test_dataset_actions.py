@@ -111,7 +111,9 @@ async def test_promote_then_annotate_lands_on_disk_and_in_counts(bootstrapped_cl
     assert resp.status_code == 200, resp.text
     [eid] = resp.json()["data"]["ids"]
     assert resp.json()["data"]["num_rows"] == 1
-    item_doc = json.loads((rows_root_of(folder) / "rows" / "0001" / "input" / "item.json").read_text())
+    from flow_sdk.builtin.source_item import row_input_document
+
+    item_doc = json.loads((rows_root_of(folder) / "rows" / "0001" / "input" / row_input_document()).read_text())
     assert item_doc["external_id"] == items[0]["external_id"] and item_doc["body"] == items[0]["body"]
 
     resp = await client.post(
@@ -126,6 +128,9 @@ async def test_promote_then_annotate_lands_on_disk_and_in_counts(bootstrapped_cl
 
     row = (await client.get(f"/api/v1/graph/dataset/{ds['id']}")).json()["data"]
     assert row["num_rows"] == 1 and row["num_annotated"] == 1
+    # The promoted row reads back TYPED: it is a row of the dataset, not a problem.
+    read = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/rows")).json()["data"]
+    assert read["problems"] == [] and len(read["rows"]) == 1, read
     listed = (await client.get("/api/v1/graph/dataset", params={"filter": json.dumps({"source_id": sid})})).json()[
         "data"
     ]

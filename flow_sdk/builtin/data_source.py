@@ -2306,7 +2306,7 @@ class DataSource(SetupSkippable, Entity):
 
         if get_probe(provider) is None:
             return None  # no probe defined — not a failure, just unverifiable
-        return await connection_need(provider)
+        return await connection_need(provider, driver.cls.connection_probe_url(self.config or {}))
 
     async def _verify_credentials(self) -> Optional[SetupNeedSpec]:
         """For a source that holds datasets' rows (asked only for those: a feed's values may live in a

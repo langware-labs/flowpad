@@ -12,9 +12,9 @@ export function toPathname(path: string): string {
 }
 
 /**
- * Put view mode on the dock URL, the same contract used by the footer toggle.
- * The route loader adopts this into the backend-owned preference and the
- * current project's remembered mode.
+ * Put view mode on the dock URL. Only a session dock (`shell`,
+ * `vibe`) or a child its workspace hosts carries it (docs/viewmodes.md,
+ * `DockPointer.carriesViewMode`); every other page drops it and shows Vibe.
  */
 export function withViewMode(path: string, mode: QaViewMode): string {
   const url = new URL(path, PATH_BASE);

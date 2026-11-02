@@ -379,7 +379,7 @@ Two actions move data along that seam (`flow_sdk/builtin/dataset.py`), both
 
 | Action | Body | Writes |
 | --- | --- | --- |
-| `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `rows/NNNN/input/item.json` (the envelope) + `row.json` with `metadata.source` provenance; replies `{ids, num_rows}`. A dataset whose `input` shape is not `ingest.source_item` refuses (400); an item from another source refuses; an unknown item is 404 |
+| `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `rows/NNNN/input/<source_item main document>` (the envelope) + `row.json` with `metadata.source` provenance; replies `{ids, num_rows}`. A dataset whose `input` shape is not `ingest.source_item` refuses (400); an item from another source refuses; an unknown item is 404 |
 | `POST /graph/dataset/<id>/annotate` | `{"row_id", "ground_truth"}` | `rows/NNNN/ground_truth/label.json` (replacing any earlier gold), validated against the output shape (a mismatch is a 400 carrying the output JSON schema); `metadata.annotations += {by, at}`; replies `{row_id, num_annotated}` |
 | `GET /graph/dataset/<id>/row-index` | — | `{"rows": [{row_id, item_id, kind, annotated}]}` read from the folder |
 

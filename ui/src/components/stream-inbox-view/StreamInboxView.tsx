@@ -676,6 +676,7 @@ export function StreamInboxView({
   );
   // The picked channels that are not listening: the strip above the list explains each one.
   const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
+  // The query already narrows to the picked sources; this also hides rows pushed live from other channels.
   const channelMatch = useMemo(
     () =>
       channelFilter.size
@@ -784,11 +785,22 @@ export function StreamInboxView({
   const { navigation, currentDock } = useDockNavigation();
   const pageBefore = currentDock?.pageBefore ?? null;
   const ownerKey = channelsOwner?.toString() ?? '';
-  const scope = useMemo<ConversationScope | null>(
-    () => (sourceId ? { sourceId } : channelsOwner ? { owner: channelsOwner } : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
-    [ownerKey, sourceId],
+  // The channel marks narrow the QUERY to the picked marks' sources: a page is then rows of those
+  // sources, and Older / Newer page through them, rather than the latest page thinned out in the browser.
+  const pickedSources = useMemo(
+    () =>
+      channelFilter.size
+        ? ownerChannels.filter((s) => s.id && channelFilter.has(channelKeyOf(s))).map((s) => s.id as string)
+        : [],
+    [ownerChannels, channelFilter],
   );
+  const pickedKey = [...pickedSources].sort().join(','); // a refreshed channel list with the same picks keeps the scope
+  const scope = useMemo<ConversationScope | null>(() => {
+    if (sourceId) return { sourceId };
+    if (!channelsOwner) return null;
+    return pickedSources.length ? { owner: channelsOwner, sourceIds: pickedSources } : { owner: channelsOwner };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's and the picks' string forms
+  }, [ownerKey, sourceId, pickedKey]);
   const request = useMemo(() => {
     if (!scope) return null;
     if (searchActive) return conversationsByIdsRequest(scope, [...matchIds]);

@@ -28,6 +28,18 @@ describe('conversationsPageRequest', () => {
     expect(q.validate(row({ archived: true }))).toBe(false);
   });
 
+  it('channel marks narrow the page itself to the picked sources, so a filtered page is full', () => {
+    const narrowed = { owner: OWNER, sourceIds: ['src-slack'] };
+    const page = conversationsPageRequest(narrowed, 'all', null).query!;
+    expect(page.validate(row({ channel_source_id: 'src-slack' }))).toBe(true);
+    expect(page.validate(row({ channel_source_id: 'src-mail' }))).toBe(false);
+    // The newer-page boundary is asked of the same narrowed rows, so Newer pages agree.
+    const above = newerBoundaryRequest(narrowed, 'all', '2026-10-01T00:00:00.000Z').query!;
+    expect(above.validate(row({ channel_source_id: 'src-mail' }))).toBe(false);
+    // No pick is the whole inbox.
+    expect(conversationsPageRequest(scope, 'all', null).query!.validate(row({ channel_source_id: 'src-mail' }))).toBe(true);
+  });
+
   it('a conversation deleted on the hub is not listed; a row kept here (no deleted_at) is', () => {
     const q = conversationsPageRequest(scope, 'all', null).query!;
     expect(q.validate(row({}))).toBe(true);

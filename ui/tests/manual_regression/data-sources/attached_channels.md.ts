@@ -174,7 +174,8 @@ test('2. a mark filters; × shows everything again', async ({ page }) => {
   for (const other of await others.all()) await expect(other.locator(':scope > :first-child')).toHaveCSS('filter', /grayscale/);
   await expect(bar.getByTestId('attached-channels-clear')).toBeVisible();
   await expect(bar.getByTestId('attached-channels-add')).toHaveCount(0);
-  await expect(bar.getByTestId('attached-channels-details')).toHaveCount(0);
+  // Only the + swaps for × (c2dd41599); the details control stays put.
+  await expect(bar.getByTestId('attached-channels-details')).toBeVisible();
   // Only rows whose latest message came through that source: both of ours, each wearing its chip.
   for (const nonce of nonces) await expect(rows.filter({ hasText: nonce })).toHaveCount(1);
   const chipped = rows.filter({ has: page.locator('[data-chip-type="source"]') });
@@ -243,7 +244,7 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   await expect(agentBar.getByTestId('attached-channel'), "a mark of the user's on the agent's line").toHaveCount(0);
 
   await agentBar.getByTestId('attached-channels-add').click();
-  const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Data sources$/ }) });
+  const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Add a channel$/ }) });
   await expect(dialog).toBeVisible();
   // Slack is a group (Flow — no setup / your own Slack app): the tile asks which, then the member opens its form.
   await dialog.getByTestId('provider-group-Slack').click();

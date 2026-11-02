@@ -30,8 +30,8 @@ test 1: the header line shows the user's channels as round marks
 - [browser] validate every conversation row's source chip (data-chip-type="source") shows the same coloured mark
 
 test 2: a mark filters; × shows everything again
-- [browser] click the mark: it gains a ring (aria-pressed="true"), the other marks dim, the two controls are replaced by data-testid="attached-channels-clear", and only rows whose latest message came through that source stay listed
-- [browser] click ×: every row is back, the + and details controls return
+- [browser] click the mark: it gains a ring (aria-pressed="true"), the other marks dim, the + is replaced by data-testid="attached-channels-clear" (the details control stays), and only rows whose latest message came through that source stay listed
+- [browser] click ×: every row is back, the + returns and details is still there
 
 test 3: the details popover is where on/off and delete live
 - [browser] click data-testid="attached-channels-details": one data-testid="attached-channel-row" per channel with its switch and trash
@@ -42,7 +42,7 @@ test 3: the details popover is where on/off and delete live
 
 test 4: an agent's bar is its own
 - [browser] navigate to {APP_URL}/dock/agent/<agent-id>/stream_inbox; the line shows no mark of the user's
-- [browser] click +, pick Slack, name it, paste a channel id, Add source
+- [browser] click + (the "Add a channel" dialog), pick Slack, name it, paste a channel id, Add source
 - [browser] validate data-testid="attached-channels" (in the stream inbox header line) has data-owner `agent-<agent-id>` and exactly one data-testid="attached-channel" (the agent's), with the "!" badge
 - [browser] the agent's stream inbox list renders (not the "no channel" empty state)
 - [browser] back on {APP_URL}/dock/stream_inbox the user's bar shows only the user's source

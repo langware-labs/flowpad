@@ -51,7 +51,7 @@ def probe(monkeypatch):
     asked: list[str] = []
     answer: dict = {"ok": False, "code": "missing_token", "detail": "No token stored for this provider"}
 
-    async def connection_answer(provider: str):
+    async def connection_answer(provider: str, url=None):
         asked.append(provider)
         return dict(answer)
 
