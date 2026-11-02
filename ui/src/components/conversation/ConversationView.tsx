@@ -884,7 +884,7 @@ export function ConversationView({
   const isConversationOwner =
     !!cloudUserId &&
     ((!!conversation?.initiated_by && conversation.initiated_by === cloudUserId) ||
-      (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
+      (participants ?? []).some((p) => p.user_id === cloudUserId && p.roles?.includes('owner')));
 
   // Open-to-read (URL-first): viewing a conversation marks its latest received message read —
   // the mutation lives on the mounted view, so the Stream Inbox row click / banner click / direct
@@ -1188,7 +1188,11 @@ export function ConversationView({
         </p>
       )}
       <ConversationEndedLine endedAt={conversation?.ended_at} />
-      <SealedValuesPanel conversationId={conversationId} version={conversation?.updated_date ? String(conversation.updated_date) : null} />
+      <SealedValuesPanel
+        conversationId={conversationId}
+        version={conversation?.updated_date ? String(conversation.updated_date) : null}
+        members={memberRoster}
+      />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
         <MessageComposer

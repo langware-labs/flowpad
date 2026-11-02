@@ -759,6 +759,8 @@ class FlowMessage(Entity):
     #: The body held across a reference row's write — see ``save``.
     _hydrated_text: Optional[str] = None
     _api_visible: ClassVar[bool] = True
+    #: A message is a chat bubble; ``.sent`` / ``.received`` badge the direction (icon_pack.json).
+    _icon: ClassVar[str | None] = "flowpad.message"
 
     @classmethod
     def is_stale(cls, local, hub_payload):  # type: ignore[override]

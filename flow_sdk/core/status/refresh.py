@@ -13,16 +13,15 @@ async def refresh_status(kinds: list[str] | None = None) -> None:
     verdict through the one login writer. A CLI installed or signed into outside Flowpad
     is picked up here.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
-        prune_dead_binding,
-    )
     from flow_sdk.core.capabilities.discovery import run_discovery  # noqa: PLC0415
     from flow_sdk.core.status.build import build_status  # noqa: PLC0415
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
 
     # Every client re-reads status, funding and connections on a push, and screens refresh on
     # arrival -- so a sweep that found what was already known says nothing.
     before = await build_status()
     await run_discovery(kinds)
-    pruned = await prune_dead_binding()
-    if pruned or await build_status() != before:
+    # Refresh readable budgets without treating absence as invocation revocation.
+    await fetch_hub_llm_endpoints()
+    if await build_status() != before:
         publish_status_changed()

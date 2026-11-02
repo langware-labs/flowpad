@@ -12,7 +12,7 @@ and reached.
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import ClassVar, List, Optional
+from typing import ClassVar, List, Literal, Optional
 
 from pydantic import computed_field
 
@@ -34,6 +34,8 @@ class WebApp(SetupSkippable, Entity):
     #: Skipped in its project's setup on THIS machine (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE.
     setup_skipped: Optional[SetupSkipSpec] = APIField(default=None, sharing=Sharing.PRIVATE)
     description: Optional[str] = APIField(default=None, description="What the app is, for the asset browser")
+    icon: Optional[str] = APIField(default=None, description="Lucide icon name or emoji; unset = the type's icon")
+    open_in: Literal["flowpad", "browser"] = APIField(default="flowpad", description="Where a click opens the app: flowpad or browser")
     kind: KindStr = APIField(default="application.web", description="Dot-path ontology kind")
     #: What an editor edits beyond its parent: kinds and type names (``flow_sdk.builtin.faas.editors``).
     edits: List[str] = APIField(default_factory=list, description="Kinds and types this editor edits")
@@ -70,11 +72,13 @@ class WebApp(SetupSkippable, Entity):
             from flow_sdk.core.webapp import record  # noqa: PLC0415
 
             rec = record.read(str(self.id), self.project_id or "")
-            if rec.state.value == "down":
+            from flow_sdk.schema.data_spec.webapp_lifecycle_spec import LifecycleState  # noqa: PLC0415
+
+            if rec.state is LifecycleState.DOWN:
                 from flow_sdk.builtin.webapp_setup import _processes  # noqa: PLC0415
 
                 if not _processes(self):  # files Flowpad serves itself: up while placed (docs/webapp-lifecycle.md)
-                    rec = rec.model_copy(update={"state": "up", "detail": "files Flowpad serves itself"})
+                    rec = rec.model_copy(update={"state": LifecycleState.UP, "detail": "files Flowpad serves itself"})
             return rec.model_dump(mode="json")
         except Exception:  # noqa: BLE001 — a record that cannot be read is no record, never a broken row
             return None

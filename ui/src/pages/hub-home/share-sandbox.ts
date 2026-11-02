@@ -28,18 +28,8 @@ import { errorMessage, errorStatus } from '@src/lib/error-message';
  */
 export const SANDBOX_SHARE_ROLE = 'admin';
 
-/**
- * What a recipient gets on the PROJECT the sandbox opens.
- *
- * `member`, not `reader`: on `project` the reader role also allows `secret`, and
- * being handed a sandbox is not a reason to reach its secrets. `member` is read
- * plus the member list — exactly what the box's own fetch of the project needs
- * in order to adopt its language and settings.
- *
- * The same on a handover as on a share: owning the machine does not make someone
- * the owner of the work it opens.
- */
-export const SANDBOX_PROJECT_ROLE = 'member';
+/** Reader on the companion project; sandbox admission has its own grant. */
+export const SANDBOX_PROJECT_ROLE = 'reader';
 
 /** What the sender keeps after handing a sandbox over. */
 export const SANDBOX_TRANSFER_ROLE_TO_KEEP = 'reader';
@@ -188,12 +178,8 @@ export async function shareSandboxByEmail(
   // per target (`invitation.transfer and rel.invited_to_role == owner`), so only
   // the box was ever handed over. The invite-time check now reads the same way.
   //
-  // `member`, deliberately, not `reader`: on `project` the reader role also
-  // allows `secret`, and being handed a sandbox is not a reason to reach its
-  // secrets. The same on a handover as on a share -- owning the machine does not
-  // make someone the owner of the work it opens.
   const projectId = pendingSetup(node)?.projectId;
-  const projectTarget = projectId ? { typeid: `${Project.type}-${projectId}`, role: SANDBOX_PROJECT_ROLE } : undefined;
+  const projectTarget = projectId ? { typeid: `${Project.type}-${projectId}`, roles: [SANDBOX_PROJECT_ROLE] } : undefined;
 
   for (const email of emails) {
     try {
@@ -203,7 +189,7 @@ export async function shareSandboxByEmail(
         // graph, so the client's array order is gone by then and the project won.
         // See `sandboxShareLandingPath`.
         callbackOverride: sandboxShareLandingPath(node.id),
-        ...(opts.transfer ? { transfer: true, roleToKeep: opts.roleToKeep ?? null } : {}),
+        ...(opts.transfer ? { transfer: true, rolesToKeep: opts.roleToKeep ? [opts.roleToKeep] : [] } : {}),
         ...(projectTarget ? { extraTargets: [projectTarget] } : {}),
       });
       outcome.granted.push(email);

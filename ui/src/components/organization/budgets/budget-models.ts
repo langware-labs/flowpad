@@ -30,6 +30,59 @@
 export const DEFAULT_MODELS = ['anthropic/claude-haiku-5.5', 'openai/gpt-5-mini', 'openai/text-embedding-3-small'];
 export const ORG_DEFAULT_MODELS = ['anthropic/claude-*', 'openai/*'];
 
+/**
+ * The one-press allow-lists on a budget row: a whole vendor family each. Pressing several chains them
+ * (`withModelEntries`), so an admin can allow Claude AND Gemini without typing either; `Clear` empties the list.
+ *
+ * Two spellings of one family. The ORG states a ceiling, so it gets the glob (`glob`), which opens the family.
+ * A TEAM gets the family's three sizes written out, because a list of exact slugs is what a person reads and
+ * edits, and the first slug (small) is where a request for any other model of that family lands
+ * (`aliasesForPinnedModel`). The sizes are not kept here: the hub declares them per provider and serves them
+ * (`provider-sizes`), and `presetEntries` picks the provider whose three sizes all belong to the family.
+ */
+export const MODEL_FAMILY_PRESETS = [
+  { key: 'anthropic', label: 'Anthropic', glob: 'anthropic/claude-*' },
+  { key: 'openai', label: 'OpenAI', glob: 'openai/*' },
+  { key: 'gemini', label: 'Gemini', glob: 'google/gemini-*' },
+] as const;
+
+/** One provider's declared sizes, as the hub serves them. */
+export interface ProviderSizes {
+  provider: string;
+  sm: string;
+  md: string;
+  lg: string;
+}
+
+function matchesGlob(glob: string, slug: string): boolean {
+  const pattern = glob.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^${pattern.join('.*')}$`).test(slug);
+}
+
+/**
+ * What a family press writes on a row of this level: the glob on the org, and below it the family's three sizes,
+ * small to large, taken from the provider the hub declares them for. `null` when no provider declares sizes inside
+ * this family (or they have not loaded yet): the button then has nothing honest to write.
+ */
+export function presetEntries(
+  preset: (typeof MODEL_FAMILY_PRESETS)[number],
+  scope: BudgetScope,
+  providerSizes: readonly ProviderSizes[] | undefined,
+): readonly string[] | null {
+  if (scope === 'org') return [preset.glob];
+  const declared = (providerSizes ?? []).find((row) =>
+    [row.sm, row.md, row.lg].every((slug) => matchesGlob(preset.glob, slug)),
+  );
+  return declared ? [declared.sm, declared.md, declared.lg] : null;
+}
+
+/** `models` with each of `entries` added at the end, in order, skipping any already there. */
+export function withModelEntries(models: readonly string[], entries: readonly string[]): string[] {
+  const out = [...models];
+  for (const entry of entries) if (!out.includes(entry)) out.push(entry);
+  return out;
+}
+
 /** What each level of the hierarchy starts with when its list is empty. */
 export type BudgetScope = 'org' | 'team' | 'person';
 

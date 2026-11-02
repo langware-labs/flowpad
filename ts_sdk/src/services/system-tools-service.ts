@@ -155,7 +155,7 @@ export interface IndexProgressTable {
 /**
  * Terminal marker on ``IndexProgressTable.text`` — mirrors the backend's
  * ``PROGRESS_TEXT_COMPLETE`` (flow_sdk/fs_store/indexer/progress_table.py).
- * Other text values are informational phase labels (e.g. "sweeping").
+ * Other text values are informational phase labels.
  */
 export const PROGRESS_TEXT_COMPLETE = 'complete';
 

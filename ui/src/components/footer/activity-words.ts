@@ -20,7 +20,8 @@ const KNOWN_WORDS: Record<string, MessageDescriptor> = {
   Restoring: msg`Restoring`,
   Working: msg`Working`,
   // Progress messages the indexer emits.
-  sweeping: msg`sweeping`,
+  // The indexer's cleanup step row (flow_sdk/fs_store/indexer/progress_table.py SWEEP_ROW_NAME).
+  cleanup: msg`Cleaning up`,
   complete: msg`complete`,
   // Activity states (ActivityState).
   pending: msg`pending`,

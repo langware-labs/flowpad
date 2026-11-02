@@ -63,7 +63,7 @@ export interface TicketStateInputs {
 export function ticketStaff(inp: TicketStateInputs): EntityMember[] {
   const requester = inp.initiatedBy || null;
   const staff = (inp.members ?? []).filter(
-    (m) => !!m?.user_id && m.user_id !== requester && (m.role ?? '').toLowerCase() !== 'owner',
+    (m) => !!m?.user_id && m.user_id !== requester && !m.roles?.includes('owner'),
   );
   for (const id of inp.pickedUpBy ?? []) {
     if (id && id !== requester && !staff.some((m) => m.user_id === id)) staff.push({ user_id: id });

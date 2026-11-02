@@ -3244,7 +3244,7 @@ class AgenticProcess(Entity):
             }
         )
 
-    async def on_show(self, payload: dict) -> None:
+    async def on_show(self, payload: dict) -> dict:
         """Present *payload* to this process's watchers — the ``flow show`` verb.
 
         Unlike ``flow navigate`` (which steers the browser tab's URL via a
@@ -3259,6 +3259,7 @@ class AgenticProcess(Entity):
         (``ui/src/hooks/use-show-target-listener.ts``). The live event carries
         target + ``placement``; the durable copy keeps ``last_shown`` the bare
         target with ``show_placement`` beside it — placement is a fact about NOW.
+        Returns the placement, so the caller can say where the target went.
 
         The payload is appended to ``context_data.display_stack`` (the show
         HISTORY, newest last) and mirrored to ``context_data.last_shown`` (the
@@ -3297,6 +3298,7 @@ class AgenticProcess(Entity):
         except Exception:
             logger.warning("on_show: display persist failed", exc_info=True)
         await self.emit_entity_event("on_show", {**payload, "placement": placement})
+        return placement
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:

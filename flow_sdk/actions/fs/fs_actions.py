@@ -12,7 +12,9 @@ import logging
 import mimetypes
 import os
 import re
+import tempfile
 import urllib.parse
+import zipfile
 from contextlib import AsyncExitStack
 from io import BytesIO
 from pathlib import Path, PurePosixPath
@@ -1109,9 +1111,61 @@ async def resolve_symlink(request_info: RequestInfo, fs_info: EntityFSReqInfo) -
     return ApiFailResponse(message="Symlink support not available in this version")
 
 
-async def download_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
-    """Download directory as zip (not implemented in this version)"""
-    return ApiFailResponse(message="Zip download not available in this version")
+def _zip_folder(folder: Path) -> "tempfile.SpooledTemporaryFile[bytes]":
+    """Zip ``folder`` (paths inside the archive start at the folder's own name).
+    Spools to disk past 32 MB so a big folder doesn't sit in memory."""
+    out = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+        base = folder.parent
+        for root, dirs, files in os.walk(folder):
+            dirs.sort()
+            if not files and not dirs:
+                zf.writestr(str(Path(root).relative_to(base)) + "/", "")
+            for name in sorted(files):
+                full = Path(root) / name
+                if full.is_symlink() and not full.exists():
+                    continue
+                zf.write(full, full.relative_to(base))
+    out.seek(0)
+    return out
+
+
+async def download_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> StreamingResponse | ApiFailResponse:
+    """Download a directory as a zip archive named after it."""
+    from flow_sdk.actions.fs.asset_versioning import _real_path
+
+    if request_info.method != "get" or not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Zip download requires GET and a target", status_code=400)
+    try:
+        storage = await _get_storage_for_entity(request_info)
+        real_path = _real_path(storage, fs_info.vpath.abs_vfspath)
+        if real_path is None:
+            return ApiFailResponse(message="Storage does not support zip download", status_code=501)
+        folder = Path(real_path)
+        if not folder.resolve().is_relative_to(Path(storage.mount_path).resolve()):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        if not folder.is_dir():
+            return ApiFailResponse(message="Folder not found", status_code=404)
+        archive = await asyncio.to_thread(_zip_folder, folder)
+
+        async def chunks() -> AsyncIterator[bytes]:
+            try:
+                while chunk := await asyncio.to_thread(archive.read, 1024 * 1024):
+                    yield chunk
+            finally:
+                archive.close()
+
+        name = f"{folder.name or 'folder'}.zip"
+        return StreamingResponse(
+            content=chunks(),
+            media_type="application/zip",
+            headers={"Content-Disposition": make_content_disposition(name, inline=False)},
+        )
+    except Exception as e:
+        if _is_permission_denied_error(e):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        logger.error(f"Zip download error: {e}")
+        return ApiFailResponse(message=f"Zip download failed: {e}")
 
 
 async def upload_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:

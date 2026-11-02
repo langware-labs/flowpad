@@ -21,6 +21,8 @@ const EP = (n: number) => `llm_endpoint-${UUID(n)}`;
 
 const h = vi.hoisted(() => ({
   org: vi.fn(),
+  orgRoster: [] as {user_id:string;roles:string[]}[],
+  localUserId: null as string | null,
   team: vi.fn(),
   setCap: vi.fn(),
   removeAllowance: vi.fn(),
@@ -51,10 +53,10 @@ vi.mock('@src/hooks/entity-hooks/useEntitiesQuery', () => ({
   useEntitiesQuery: (...args: unknown[]) => h.entities(...args),
 }));
 vi.mock('@src/hooks/use-members', () => ({
-  useMembers: () => ({ members: [], refresh: vi.fn() }),
+  useMembers: () => ({ members: h.orgRoster, refresh: vi.fn() }),
 }));
 vi.mock('@src/components/conversation/useLocalUser', () => ({
-  useLocalUser: () => ({ localUser: null, updateName: vi.fn() }),
+  useLocalUser: () => ({ localUser: h.localUserId ? {id:h.localUserId} : null, updateName: vi.fn() }),
 }));
 vi.mock('@src/components/llm-endpoints/use-llm-endpoints', () => ({
   useLlmEndpoint: () => h.pool(),
@@ -129,7 +131,7 @@ const teamScope = (over: Record<string, unknown> = {}) => ({
   spent_usd: 5,
   spent_tokens: 900,
   allocated_usd: null,
-  my_role: null,
+  my_roles: [],
   member_count: null,
   can_configure: true,
   can_allocate: true,
@@ -184,6 +186,8 @@ function openMenu(testId: string) {
 }
 
 beforeEach(() => {
+  h.orgRoster = [];
+  h.localUserId = null;
   h.team.mockReturnValue(idle);
   h.teamBudgets.mockResolvedValue({ team: teamScope(), members: [] });
   h.pool.mockReturnValue(null);
@@ -246,8 +250,8 @@ describe('OrgView', () => {
 
   it('shows the caller’s role on a team, or a dash, and its head count', () => {
     orgReturns(orgScope(), [
-      teamScope({ my_role: 'admin', member_count: 3 }),
-      teamScope({ id: UUID(6), name: 'Growth', my_role: null, member_count: 1 }),
+      teamScope({ my_roles: ['admin'], member_count: 3 }),
+      teamScope({ id: UUID(6), name: 'Growth', my_roles: [], member_count: 1 }),
     ]);
     draw();
     expect(screen.getByTestId(`team-${UUID(4)}-role`).textContent).toBe('admin');
@@ -258,8 +262,8 @@ describe('OrgView', () => {
 
   it('"Only my teams" keeps the teams the caller holds a role on', () => {
     orgReturns(orgScope(), [
-      teamScope({ my_role: 'member' }),
-      teamScope({ id: UUID(6), name: 'Growth', my_role: null }),
+      teamScope({ my_roles: ['reader'] }),
+      teamScope({ id: UUID(6), name: 'Growth', my_roles: [] }),
     ]);
     draw();
     expect(screen.getByTestId(`team-unit-${UUID(6)}`)).toBeTruthy();
@@ -550,11 +554,31 @@ describe('TeamDetail (opened through OrgView)', () => {
 });
 
 describe('Members tab', () => {
+  it.each([['owner', true], ['admin', false], ['editor', false], ['owner_by_api', false]])('only %s with a grant ceiling can remove an admin', async (role, allowed) => {
+    h.localUserId = UUID(2);
+    h.orgRoster = [{user_id:UUID(2),roles:[role as string]}];
+    orgReturns(orgScope({can_invite:true}), [], [{user_id:UUID(9),name:'Admin',email:'admin@x.test',roles:['admin']}]);
+    draw({tab:'members'});
+    await screen.findByTestId(`org-person-${UUID(9)}`);
+    if (allowed) {
+      openMenu(`org-person-more-${UUID(9)}`);
+      expect(await screen.findByTestId(`org-person-remove-org-${UUID(9)}`)).toBeTruthy();
+    } else {
+      expect(screen.queryByTestId(`org-person-more-${UUID(9)}`)).toBeNull();
+    }
+  });
+  it('never offers organization removal for an owner with additional roles', async () => {
+    orgReturns(orgScope({can_invite:true}), [], [{user_id:UUID(9),name:'Owner',email:'owner@x.test',roles:['owner','reader']}]);
+    draw({tab:'members'});
+    expect((await screen.findByTestId(`org-person-${UUID(9)}`)).textContent).toContain('owner, reader');
+    expect(screen.queryByTestId(`org-person-more-${UUID(9)}`)).toBeNull();
+    expect(screen.queryByTestId(`org-person-remove-org-${UUID(9)}`)).toBeNull();
+  });
   it('lists a teamless person from the org read, and the "No team" filter keeps them', async () => {
     orgReturns(
       orgScope(),
       [teamScope()],
-      [{ user_id: UUID(9), name: 'Bob Example', email: 'bob@x.test', role: 'admin' }],
+      [{ user_id: UUID(9), name: 'Bob Example', email: 'bob@x.test', roles: ['admin'] }],
     );
     h.teamBudgets.mockResolvedValue({ team: teamScope(), members: [person()] });
     draw({ tab: 'members' });
@@ -587,7 +611,7 @@ describe('mergeOrgMembers', () => {
         { members: [m({ spent_usd: 2, can_remove: true })] },
         { members: [m({ endpoint_id: EP(8), spent_usd: 3, can_remove: false })] },
       ] as never,
-      new Map([[UUID(3), 'owner']]),
+      new Map([[UUID(3), ['owner', 'reader']]]),
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -598,7 +622,7 @@ describe('mergeOrgMembers', () => {
         { teamId: 'T2', teamName: 'Growth', canRemove: false },
       ],
       spent: 5,
-      role: 'owner',
+      roles: ['owner', 'reader'],
       pending: false,
     });
   });
@@ -609,7 +633,7 @@ describe('mergeOrgMembers', () => {
       [{ members: [m({ user_id: null, email: 'new@x.test' })] }, undefined] as never,
       new Map(),
     );
-    expect(rows[0]).toMatchObject({ key: 'new@x.test', user_id: null, pending: true, role: null });
+    expect(rows[0]).toMatchObject({ key: 'new@x.test', user_id: null, pending: true, roles: [] });
   });
 
   it('adds teamless people from `people`, without duplicating someone already on a team', () => {
@@ -617,14 +641,14 @@ describe('mergeOrgMembers', () => {
       {
         teams,
         people: [
-          { user_id: UUID(3), name: 'Ada Lovelace', email: 'ada@example.com', role: 'admin' },
-          { user_id: UUID(9), name: 'bob', email: null, role: 'member' },
+          { user_id: UUID(3), name: 'Ada Lovelace', email: 'ada@example.com', roles: ['admin'] },
+          { user_id: UUID(9), name: 'bob', email: null, roles: ['reader'] },
         ],
       } as never,
       [{ members: [m()] }, undefined] as never,
       new Map(),
     );
     expect(rows.map((r) => r.key)).toEqual([UUID(3), UUID(9)]);
-    expect(rows[1]).toMatchObject({ teams: [], spent: 0, role: 'member', pending: false });
+    expect(rows[1]).toMatchObject({ teams: [], spent: 0, roles: ['reader'], pending: false });
   });
 });

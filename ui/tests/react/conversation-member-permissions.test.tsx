@@ -21,8 +21,8 @@ vi.mock('@sdk/react/hooks', () => ({
 vi.mock('@src/hooks/use-members', () => ({
   useMembers: () => ({
     members: [
-      { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'owner' },
-      { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', role: 'member' },
+      { user_id: 'me-id', email: 'me@example.com', name: 'Me', roles: ['owner'] },
+      { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', roles: ['reader', 'runner'] },
     ],
     addMembers: vi.fn(),
     removeMember: vi.fn(),
@@ -75,8 +75,8 @@ describe('conversation participant permission dialogs', () => {
       <ConversationParticipants
         kind={ConversationKind.DIRECT}
         participants={[
-          { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'owner' },
-          { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', role: 'member' },
+          { user_id: 'me-id', email: 'me@example.com', name: 'Me', roles: ['owner'] },
+          { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', roles: ['reader', 'runner'] },
         ]}
       />,
     );

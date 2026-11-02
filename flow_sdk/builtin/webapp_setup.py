@@ -219,8 +219,10 @@ async def app_named(name_or_id: str, project_id: str = ""):
     if found is not None:
         return found
     rows = [row for row in await WebApp.get_all({"name": bare}) if row.asset_ref and Path(row.asset_ref).is_dir()]
-    mine = [row for row in rows if project_id and str(row.project_id) == str(project_id)]
-    return (mine or rows or [None])[0]
+    if project_id:
+        rows = [row for row in rows if str(row.project_id) == str(project_id)]
+    # Several apps by that name and nothing to tell them apart: none — never the first one found anywhere.
+    return rows[0] if len(rows) == 1 else None
 
 
 async def _start_one(app, service: str, *, check: bool) -> ReturnedValue:

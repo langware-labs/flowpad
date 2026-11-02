@@ -182,7 +182,7 @@ async def test_the_anthropic_wire_posts_messages_not_chat_completions(monkeypatc
     assert recorder["url"] == "https://api.anthropic.com/v1/messages"
     assert recorder["headers"]["x-api-key"] == "k"
     assert recorder["body"]["system"] == "sys"
-    assert recorder["body"]["model"] == "claude-sonnet-4-5"
+    assert recorder["body"]["model"] == "claude-sonnet-5-5"
 
 
 @pytest.mark.asyncio

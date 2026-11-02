@@ -15,7 +15,7 @@ from flow_sdk.fs_store.type_id import TypeId
 
 class InvitationTarget(BaseModel):
     typeid: TypeId
-    role: str
+    roles: list[str]
 
 
 @dataclass
@@ -53,7 +53,7 @@ class Invitation(Entity):
     target_type: Optional[str] = APIField(None)
     target_id: Optional[str] = APIField(None)
     target_name: Optional[str] = APIField(None)
-    target_role: Optional[str] = APIField(None)
+    target_roles: Optional[list[str]] = APIField(None)
     # The inviter, resolved hub-side from the InvitedBy edge — so the stream inbox row
     # can say WHO invited ("<name> invited you to …"), not just what.
     sender_name: Optional[str] = APIField(None)

@@ -79,6 +79,9 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   //    chooser can still open here: right after Start the popup shows the opening check's
   //    statuses, so step 2 may finish before the chooser appears. Skipping it is an answer.
   const modal = page.getByTestId('ask-modal');
+  // The answers are kept from the attempt that settled: once every step has answered the
+  // popup may close, so a read after the loop can find no rows at all.
+  let settled: Record<string, string> = {};
   await expect(async () => {
     if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
     if (await modal.isVisible()) {
@@ -88,8 +91,8 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     const statuses = await stepStatuses(page);
     const pending = Object.entries(statuses).filter(([, s]) => UNSETTLED.has(s));
     expect(pending, `steps still without an answer: ${JSON.stringify(statuses)}`).toEqual([]);
+    settled = statuses;
   }).toPass({ timeout: 90_000 }); // do not increase timeout without approval
 
-  const statuses = await stepStatuses(page);
-  expect(['satisfied', 'completed'], `git is on every runner: ${JSON.stringify(statuses)}`).toContain(statuses.git);
+  expect(['satisfied', 'completed'], `git is on every runner: ${JSON.stringify(settled)}`).toContain(settled.git);
 });

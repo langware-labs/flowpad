@@ -32,6 +32,7 @@ from flow_sdk.secrets.sealed import (
     open_sealed,
     seal,
 )
+from flow_sdk.stream_inbox._locks import loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,17 @@ NOTE_KIND = FlowMessageKind.SEALED_NOTE.value
 ROTATE_AFTER = timedelta(days=30)
 DEVICE_KEYS = "device_keys"
 FILLED, DECLINED = "filled", "declined"
+#: The receiver's Flowpad ran the credential's test right after the values landed (``test``: one of TEST_STATES).
+VALIDATED = "validated"
+TEST_STATES = ("ok", "invalid", "error", "untested")
+#: A later stage replaces an earlier one; a decline is final.
+_STAGE_ORDER = {FILLED: 1, VALIDATED: 2, DECLINED: 3}
+
+
+def _test_state(value: Any) -> str:
+    """A test state as reported — anything unknown reads as ``error``."""
+    return value if value in TEST_STATES else "error"
+VAULT_ROUTE = "vault"
 
 
 def _now() -> datetime:
@@ -360,17 +372,33 @@ def _envelopes(messages: list[dict]):
             yield m, env
 
 
-def _acks(messages: list[dict]) -> dict[str, dict[str, str]]:
-    """``{transfer_id: {user_id: filled|declined}}`` from the ack messages (hub-stamped senders)."""
-    out: dict[str, dict[str, str]] = {}
+def _acks(messages: list[dict]) -> dict[str, dict[str, dict]]:
+    """``{transfer_id: {user_id: {stage, test?, at?}}}`` from the ack messages (hub-stamped senders) — per user the
+    latest stage (``filled`` → ``validated``; ``declined`` is final). An ack from before tests is a bare ``filled``."""
+    out: dict[str, dict[str, dict]] = {}
     for m in messages:
-        if m.get("kind") != ACK_KIND:
+        if m.get("kind") != ACK_KIND or not m.get("sender_id"):
             continue
         meta = m.get("metadata") or {}
         tid, outcome = str(meta.get("transfer_id") or ""), str(meta.get("outcome") or "")
-        if tid and outcome in (FILLED, DECLINED) and m.get("sender_id"):
-            out.setdefault(tid, {})[str(m["sender_id"])] = outcome
+        if not tid or outcome not in _STAGE_ORDER:
+            continue
+        uid = str(m["sender_id"])
+        prev = out.setdefault(tid, {}).get(uid)
+        if prev is not None and _STAGE_ORDER[prev["stage"]] > _STAGE_ORDER[outcome]:
+            continue
+        entry: dict[str, Any] = {"stage": outcome, "at": str(meta.get("at") or m.get("created_date") or "")}
+        if outcome == VALIDATED:
+            entry["test"] = _test_state(meta.get("test"))
+        out[tid][uid] = entry
     return out
+
+
+def _answered(entry: Optional[dict]) -> Optional[str]:
+    """What an ack says to the cards: ``filled`` (also once validated) or ``declined`` — None while unanswered."""
+    if not entry:
+        return None
+    return DECLINED if entry["stage"] == DECLINED else FILLED
 
 
 @dataclass
@@ -417,10 +445,6 @@ async def seal_credential(credential_typeid: str, conversation_id: str, recipien
     in ``cannot_receive`` (they get the spec, not the values); nobody able to receive → ``sealed_for`` empty and
     nothing posted.
     """
-    from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
-    from flow_sdk.builtin.credential_service import get_credential  # noqa: PLC0415
-    from flow_sdk.builtin.credential_store import Placement, scope_of  # noqa: PLC0415
-
     spec, values = await _credential_values(credential_typeid)
     me = _user_id()
     keys = await member_keys(conversation_id)
@@ -494,16 +518,18 @@ async def _promise(conversation_id: str, credential_typeid: str, users: list[str
     return transfer_id
 
 
-_pending_locks: dict = {}
+_pending_locks = new_registry()
 
 
 def _lock():
     """One writer of ``pending.json`` at a time (per event loop): a promise recorded while an answer pass runs must
     not be lost. Not re-entrant — code holding it never takes it again."""
-    import asyncio  # noqa: PLC0415
+    return loop_lock(_pending_locks)
 
-    loop = asyncio.get_running_loop()
-    return _pending_locks.setdefault(id(loop), asyncio.Lock())
+
+def _meta(message: dict, key: str) -> str:
+    """One metadata field of a hub message, as text ("" when absent)."""
+    return str((message.get("metadata") or {}).get(key) or "")
 
 
 async def answer_requests(conversation_id: str) -> list[str]:
@@ -526,7 +552,7 @@ async def _answer_requests(conversation_id: str) -> list[str]:
     keys: Optional[dict] = None
     served: list[str] = []
     for m in messages:
-        tid = str((m.get("metadata") or {}).get("transfer_id") or "")
+        tid = _meta(m, "transfer_id")
         uid = str(m.get("sender_id") or "")
         p = pending.get(tid)
         if m.get("kind") != REQUEST_KIND or p is None or uid not in p["recipients"] or uid in p["answered"]:
@@ -571,7 +597,7 @@ async def get_secret(conversation_id: str, transfer_id: str) -> dict:
     from flow_sdk.preferences import PREF_SECURE_RECEIVING, write_instance_pref  # noqa: PLC0415
 
     promise = next((m for m in await _hub_messages(conversation_id) if m.get("kind") == PENDING_KIND
-                    and str((m.get("metadata") or {}).get("transfer_id")) == transfer_id), None)  # fmt: skip
+                    and _meta(m, "transfer_id") == transfer_id), None)  # fmt: skip
     meta = (promise or {}).get("metadata") or {}
     if promise is None or _user_id() not in (meta.get("recipients") or []):
         raise SealedError("gone", "these values are no longer waiting for you — ask the sender to share again")
@@ -596,13 +622,18 @@ async def _sent(snap: _Snapshot) -> list[dict]:
         if rec.get("conversation_id") != snap.conversation_id:
             continue
         answered = snap.acks.get(tid, {})
-        state = {uid: answered.get(uid, "pending") for uid in rec.get("recipients") or []}
-        expired = datetime.fromisoformat(rec["expires_at"]) <= _now() and "pending" in state.values()
+        users = rec.get("recipients") or []
+        state = {uid: _answered(answered.get(uid)) or "pending" for uid in users}
+        tests = {uid: {"state": answered[uid]["test"], "at": answered[uid]["at"]}
+                 for uid in users if (answered.get(uid) or {}).get("stage") == VALIDATED}  # fmt: skip
+        expires = rec.get("expires_at")  # a vault share has none: the vault keeps the value
+        expired = bool(expires) and datetime.fromisoformat(expires) <= _now() and "pending" in state.values()
         message = envelopes.get(tid)
         if message is not None and (expired or "pending" not in state.values()):
             done.append(str(message["id"]))
-        out.append({"message_id": (message or {}).get("id") or tid, "transfer_id": tid, "expires_at": rec["expires_at"],
-                    "recipients": state, "expired": expired})  # fmt: skip
+        out.append({"message_id": (message or {}).get("id") or tid, "transfer_id": tid, "expires_at": expires,
+                    "recipients": state, "tests": tests, "route": rec.get("route") or "secured",
+                    "expired": expired})  # fmt: skip
     for m in snap.of_kind(PENDING_KIND):  # promised to members with no key yet: waiting, calmly
         meta = m.get("metadata") or {}
         if str(m.get("sender_id")) == me:
@@ -630,9 +661,9 @@ async def _incoming(snap: _Snapshot) -> list[dict]:
             continue
         card = {"message_id": m["id"], "transfer_id": env.transfer_id, "sender_id": m.get("sender_id"),
                 "sender_name": m.get("sender_name"), "expires_at": env.expires_at}  # fmt: skip
-        answered = snap.acks.get(env.transfer_id, {}).get(me)
-        if answered:
-            out.append({**card, "state": answered})
+        entry = snap.acks.get(env.transfer_id, {}).get(me)
+        if entry:
+            out.append({**card, "state": _answered(entry), **({"test": entry["test"]} if "test" in entry else {})})
             continue
         try:
             if ring is None:
@@ -651,8 +682,8 @@ async def _incoming(snap: _Snapshot) -> list[dict]:
 
 def _promise_cards(snap: _Snapshot, me: str) -> list[dict]:
     """Promises naming me that no sealed value answered yet: ``get`` (Get the secret) or ``requested`` (waiting)."""
-    answered = {str((m.get("metadata") or {}).get("answers") or "") for m in snap.of_kind(SEALED_KIND)}
-    asked = {str((m.get("metadata") or {}).get("transfer_id") or ""): m for m in snap.of_kind(REQUEST_KIND)
+    answered = {_meta(m, "answers") for m in snap.of_kind(SEALED_KIND)}
+    asked = {_meta(m, "transfer_id"): m for m in snap.of_kind(REQUEST_KIND)
              if str(m.get("sender_id")) == me}  # fmt: skip
     cards = []
     for m in snap.of_kind(PENDING_KIND):
@@ -731,7 +762,9 @@ async def fill(conversation_id: str, message_id: str, *, project_id: Optional[st
         await _reverify_waiting_sources(spec.name, getattr(spec, "project", None))
     except Exception:  # noqa: BLE001 — the values are in; a source re-check is best effort
         logger.debug("[sealed] reverify after fill failed", exc_info=True)
-    return {"filled": sorted(payload.values), "credential": str(spec.typeid), "transfer_id": env.transfer_id}
+    test = await _validate(conversation_id, env.transfer_id, spec)
+    return {"filled": sorted(payload.values), "credential": str(spec.typeid), "transfer_id": env.transfer_id,
+            "test": test}  # fmt: skip
 
 
 async def decline(conversation_id: str, message_id: str) -> dict:
@@ -743,7 +776,87 @@ async def decline(conversation_id: str, message_id: str) -> dict:
 async def _answer(conversation_id: str, transfer_id: str, outcome: str) -> None:
     """Remember the transfer as opened (no replay), then tell the sender — the outcome, never a value."""
     _write_json("seen.json", {"transfers": sorted(_seen() | {transfer_id})})
-    await _post(conversation_id, ACK_KIND, {"transfer_id": transfer_id, "outcome": outcome})
+    await _ack(conversation_id, transfer_id, outcome)
+
+
+async def _ack(conversation_id: str, transfer_id: str, outcome: str, **extra: str) -> None:
+    await _post(conversation_id, ACK_KIND, {"transfer_id": transfer_id, "outcome": outcome,
+                                            "at": _now().isoformat(timespec="seconds"), **extra})  # fmt: skip
+
+
+async def _validate(conversation_id: str, transfer_id: str, spec, project=None) -> str:
+    """Run the credential's own test now that its values are here, and tell the sender its state — ``ok`` /
+    ``invalid`` (the provider refused them) / ``error`` (this machine could not run it) / ``untested`` (no test).
+    Only the state crosses: the detail may quote a provider's answer. Never undoes the values."""
+    from flow_sdk.builtin.credential_service import test_credential_spec  # noqa: PLC0415
+
+    try:
+        if project is None:
+            from flow_sdk.builtin.credential_store import scope_of  # noqa: PLC0415
+
+            _, project = await scope_of(spec)
+        result = await test_credential_spec(spec, project)
+        logger.info("[sealed] test after the values landed: %s", result.get("state"))
+        state = str(result.get("state") or "")
+    except Exception:  # noqa: BLE001 — a test that cannot run is reported, not raised
+        logger.info("[sealed] test after the values landed failed to run", exc_info=True)
+        state = "error"
+    state = _test_state(state)
+    try:
+        await _ack(conversation_id, transfer_id, VALIDATED, test=state)
+    except Exception:  # noqa: BLE001 — the test ran; only the sender's view misses it
+        logger.info("[sealed] could not tell the sender the test result", exc_info=True)
+    return state
+
+
+# ── the secret-manager route: the vault carries the value, the conversation carries the status ──
+
+
+def vault_transfer_id(conversation_id: str, credential_name: str) -> str:
+    """The id both sides compute for a vault share — a digest, so the credential's name never reaches the hub."""
+    import hashlib  # noqa: PLC0415
+
+    return f"{VAULT_ROUTE}:" + hashlib.sha256(f"{conversation_id}\0{credential_name}".encode()).hexdigest()[:24]
+
+
+async def track_vault_share(credential_typeid: str, conversation_id: str) -> dict:
+    """The sender's record of a share whose values went to a vault: every other member is a recipient, and their
+    Fetch answers it (``report_fetched``). Names stay here; the hub sees only the digest in their acks."""
+    from flow_sdk.builtin.credential_service import get_credential  # noqa: PLC0415
+
+    spec = await get_credential(credential_typeid)
+    if spec is None:
+        raise SealedError("no_credential", "credential not found")
+    me = _user_id()
+    users = [u for u in await member_keys(conversation_id) if u and u != me]
+    tid = vault_transfer_id(conversation_id, spec.name)
+    sent = _read_json("sent.json")
+    sent[tid] = {"conversation_id": conversation_id, "recipients": users, "expires_at": None, "route": VAULT_ROUTE}
+    _write_json("sent.json", sent)
+    return {"transfer_id": tid, "recipients": users}
+
+
+async def fetch_shared(conversation_id: str, name: str, project_id: str) -> dict:
+    """The receiver's Fetch on a vault share in ``conversation_id``: fetch, then report to the sender (``test`` in
+    the answer). Nothing is reported when no value arrived."""
+    from flow_sdk.builtin.credential_service import _shared_credential, fetch  # noqa: PLC0415
+
+    answer = await fetch(name, project_id)
+    if answer["fetched"]:
+        project, spec, _ = await _shared_credential(name, project_id)
+        answer["test"] = await report_fetched(conversation_id, spec, project)
+    return answer
+
+
+async def report_fetched(conversation_id: str, spec, project=None) -> str:
+    """The receiver fetched a vault share's values: tell the sender they landed, then test them here. A hub that
+    cannot be reached never fails the fetch — the values are already in. Answers the test's state."""
+    tid = vault_transfer_id(conversation_id, spec.name)
+    try:
+        await _ack(conversation_id, tid, FILLED)
+    except Exception:  # noqa: BLE001
+        logger.info("[sealed] could not tell the sender a vault fetch landed", exc_info=True)
+    return await _validate(conversation_id, tid, spec, project)
 
 
 __all__ = [
@@ -751,7 +864,11 @@ __all__ = [
     "decline",
     "answer_pending",
     "answer_requests",
+    "fetch_shared",
     "fill",
+    "report_fetched",
+    "track_vault_share",
+    "vault_transfer_id",
     "get_secret",
     "incoming",
     "key_info",

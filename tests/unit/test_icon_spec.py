@@ -251,6 +251,15 @@ class TestTheFence:
                     res = icons.resolve(tag)
                     assert res and res.exact, f"{pack.kind}.{spec.kind}.{role} -> {tag}"
 
+    def test_a_message_says_which_way_it_went(self):
+        """The message type's icon badges an arrow per direction — out for sent, in for received."""
+        from flow_sdk.builtin.flow_message import FlowMessage
+
+        assert FlowMessage._icon == "flowpad.message"
+        for role, arrow in (("sent", "lucide.arrow-up-right"), ("received", "lucide.arrow-down-left")):
+            res = icons.resolve(f"flowpad.message.{role}")
+            assert res and res.exact and res.sub_tag == arrow
+
     def test_the_generator_is_not_stale(self):
         """The served set must equal the used set — that equality is what makes
         `is_valid` meaningful and what keeps the plain-HTML path from 404-ing."""
@@ -261,7 +270,7 @@ class TestTheFence:
             for pack in icons.packs
             if not pack.is_bundle
             for spec in pack.icons
-            for key in (spec.kind, *(icon_tag(a) for a in spec.aliases))
+            for key in (spec.kind, f"{pack.kind}.{spec.kind}", *(icon_tag(a) for a in spec.aliases))
         }
         wanted = {k for k in (kebab(n) for n in emitted_names()) if k not in covered}
         assert wanted <= served, f"emitted but not served: {sorted(wanted - served)}"

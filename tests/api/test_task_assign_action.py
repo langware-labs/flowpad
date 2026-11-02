@@ -67,7 +67,7 @@ async def test_assign_shares_the_task_and_grants_the_assignee_editor(bootstrappe
     path, body = member_posts[0]
     assert path == f"/graph/task/{task['id']}/members"
     assert body["recipient_email"] == "bob@x.com"
-    assert body["invitation_targets"] == [{"typeid": f"task-{task['id']}", "role": "editor"}]
+    assert body["invitation_targets"] == [{"typeid": f"task-{task['id']}", "roles": ["editor"]}]
     assert body["message"] == "please take a look"
 
     # A FIRST assign needs no field PUT: `share()` POSTs the whole field body,

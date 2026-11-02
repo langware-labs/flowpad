@@ -33,15 +33,20 @@ const MARK_TONE: Record<NonNullable<IMessageMark['tone']>, string> = {
   neutral: 'border-border bg-muted/50',
 };
 
+// A conversation's neutral marks (its repository) get a cool tint so the row is caught at a glance.
+const CONVERSATION_NEUTRAL = 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+
 /** What the message did (approved, merged), drawn before its text: tinted by tone, words in the
  *  foreground colour. Drawn for any message that carries a mark — never by channel. */
-export function MessageMarkChip({ mark }: { mark: IMessageMark }) {
+
+export function MessageMarkChip({ mark, onConversation }: { mark: IMessageMark; onConversation?: boolean }) {
   const tone = mark.tone ?? 'neutral';
+  const toneClass = onConversation && tone === 'neutral' ? CONVERSATION_NEUTRAL : `text-foreground ${MARK_TONE[tone]}`;
   return (
     <span
       data-testid="message-mark"
       data-tone={tone}
-      className={`mb-1 inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium text-foreground ${MARK_TONE[tone]}`}
+      className={`mb-1 inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium ${toneClass}`}
     >
       {mark.label}
     </span>
@@ -54,7 +59,7 @@ export function ConversationMarkChips({ marks }: { marks?: readonly IMessageMark
   return (
     <span data-testid="conversation-marks" className="inline-flex shrink-0 items-center gap-1 [&>span]:mb-0">
       {marks.map((mark) => (
-        <MessageMarkChip key={mark.key} mark={mark} />
+        <MessageMarkChip key={mark.key} mark={mark} onConversation />
       ))}
     </span>
   );

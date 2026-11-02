@@ -46,13 +46,13 @@ export function ProjectLoadGate({
   const fix = useSetupFix(projectId, result, lifecycle.error, (approved) => load(approved));
   const navigate = useNavigate();
   // Joining a provider-only run does not verify this consumer's saved display.
-  // Continue with that check once the shared run completes; never retry a failed load.
+  // Continue with that check once the shared run completes. A refused load stays on screen with
+  // Try again; it is never sent again by itself.
   const displayChecked = !display || result?.display === display;
   useEffect(() => {
-    if (result?.state === 'ready' && !displayChecked && !lifecycle.starting && loadedLocation === location.key) {
-      void load();
-    }
-  }, [result?.state, displayChecked, lifecycle.starting, loadedLocation, location.key, load]);
+    if (result?.state !== 'ready' || displayChecked || lifecycle.starting || lifecycle.error) return;
+    if (loadedLocation === location.key) void load();
+  }, [result?.state, displayChecked, lifecycle.starting, lifecycle.error, loadedLocation, location.key, load]);
   // Opening an APP means "make it work": its owed setup (or one repair per failure) runs here, unasked,
   // in the view the app will fill. A gate for the project alone offers Set up instead.
   const setUp = useRef<string | null>(null);
@@ -68,9 +68,13 @@ export function ProjectLoadGate({
   // A question on screen means the run waits on the person: no spinner, and say so.
   // Otherwise working = a load in flight or a setup run going.
   const waiting = !!lifecycle.questionId;
-  const busy = !waiting && (lifecycle.starting || !result || result.state === 'running');
+  // A refused load is an answer, not work in progress: no spinner over it.
+  const refused = !!lifecycle.error && !lifecycle.starting;
+  const busy = !waiting && !refused && (lifecycle.starting || !result || result.state === 'running');
   const status = waiting ? (
     <Trans>Waiting for your answer</Trans>
+  ) : refused ? (
+    <Trans>This could not be opened</Trans>
   ) : busy ? (
     result?.state === 'running' ? (
       result.phase === 'load' ? (

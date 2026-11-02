@@ -1,3 +1,4 @@
+import { normalizeMembershipRoles, normalizeRetainedRoles, roleCapabilities } from './models/roles';
 import type { FSRefJson } from './fs/FSRef';
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo } from './models/ActionInfo';
@@ -49,7 +50,7 @@ export interface EntityMember {
   user_id?: string | null;
   email?: string | null;
   name?: string | null;
-  role?: string | null;
+  roles?: string[] | null;
   status?: string | null;
   [key: string]: unknown;
 }
@@ -108,23 +109,20 @@ export function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
 }
 
-/** One person a ``share`` invites: a bare ``idOrEmail``, or ``{idOrEmail, role?}``. */
-export type ShareInvitee = string | { idOrEmail: string; role?: string };
+/** One person a ``share`` invites: a bare ``idOrEmail``, or ``{idOrEmail, roles?}``. */
+export type ShareInvitee = string | { idOrEmail: string; roles?: string[] };
 
 /**
  * ``users`` as the ``share`` action's ``recipients`` wire list — trimmed, blanks
  * dropped, a role only when there is one (``ShareRequestSpec`` in
  * ``flow_sdk/app/actions/share_action.py`` validates it).
  */
-export function shareRecipients(users: ShareInvitee[]): (string | { idOrEmail: string; role: string })[] {
-  const recipients: (string | { idOrEmail: string; role: string })[] = [];
-  for (const u of users) {
-    const { idOrEmail, role } = typeof u === 'string' ? { idOrEmail: u, role: undefined } : u;
+export function shareRecipients(users: ShareInvitee[]): (string | { idOrEmail: string; roles: string[] })[] {
+  return users.flatMap(u => {
+    const { idOrEmail, roles } = typeof u === 'string' ? { idOrEmail: u, roles: undefined } : u;
     const trimmed = idOrEmail.trim();
-    if (!trimmed) continue;
-    recipients.push(role ? { idOrEmail: trimmed, role } : trimmed);
-  }
-  return recipients;
+    return trimmed ? [roles ? { idOrEmail: trimmed, roles: normalizeMembershipRoles(roles) } : trimmed] : [];
+  });
 }
 
 /**
@@ -210,7 +208,7 @@ const BASE_WIRE_FIELDS = new Set<string>([
   'schema_version',
   'root_vfs_path',
   'fs_storage_mount_path',
-  'visitor_role',
+  'visitor_roles', 'authenticated_roles', 'public_roles',
   'last_edited_at',
 ]);
 
@@ -284,7 +282,9 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   labels?: string[];
   root_vfs_path?: string;
   fs_storage_mount_path?: string | null;
-  visitor_role?: string;
+  visitor_roles?: string[];
+  authenticated_roles?: string[];
+  public_roles?: string[];
   /** Epoch-ms of the last successful content edit. */
   last_edited_at?: number | string | null;
   /**
@@ -534,23 +534,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   get ImAdmin(): boolean {
-    return this.expand?.roles?.includes('admin') || false;
+    return roleCapabilities(this.expand?.roles ?? []).has('admin');
   }
 
   get ImEditor(): boolean {
-    return this.expand?.roles?.includes('editor') || false;
+    return roleCapabilities(this.expand?.roles ?? []).has('editor');
   }
 
   get ImReader(): boolean {
-    return this.expand?.roles?.includes('reader') || false;
+    return roleCapabilities(this.expand?.roles ?? []).has('reader');
   }
 
-  get ImGuest(): boolean {
-    return this.expand?.roles?.includes('guest') || false;
-  }
-
-  get ImAnonymousViewer(): boolean {
-    return this.expand?.roles?.includes('anonymous_viewer') || false;
+  get ImRunner(): boolean {
+    return roleCapabilities(this.expand?.roles ?? []).has('runner');
   }
 
   isAllowedAction(action: ActionType): boolean {
@@ -1040,7 +1036,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * pattern (one ``POST /graph/<type>/<id>/members`` per recipient — see
    * ``Conversation.share`` / ``Project.share`` on the Python side). Each
    * entry is either a bare ``idOrEmail`` string — for a caller with no role
-   * to send — or ``{idOrEmail, role?}`` when one is needed. ``idOrEmail`` is
+   * to send — or ``{idOrEmail, roles?}`` when one is needed. ``idOrEmail`` is
    * either an email — for anyone, including someone with no account yet —
    * or a hub user id, for a contact the address book knows only by id (the
    * hub never discloses other people's emails, so those contacts have no
@@ -1116,7 +1112,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   /**
    * Invite a member by email — POST ``<type>/<id>/members`` with a
-   * ``MembershipRequest`` (``{recipient_email, invitation_targets:[{typeid, role}]}``).
+   * ``MembershipRequest`` (``{recipient_email, invitation_targets:[{typeid, roles}]}``).
    * Reflected to the hub (``info.hubReflect``): for a ``remote`` entity (e.g. an
    * organization or team) the hub creates the Invitation + emails the recipient.
    * Unlike ``share([email])`` (which is Conversation-shaped and also creates the
@@ -1144,11 +1140,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async inviteMember(
     /** An email — for anyone — or a hub user id, for a contact known only by id. */
     idOrEmail: string,
-    role: string = 'member',
+    roles: string[] | string = this.typeId.type === 'conversation' ? ['reader', 'runner'] : ['reader'],
     opts?: {
       callbackOverride?: string;
       transfer?: boolean;
-      roleToKeep?: string | null;
+      rolesToKeep?: string[] | null;
       /**
        * Entities to grant ALONGSIDE this one, in the same invitation.
        *
@@ -1162,7 +1158,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
        * companion granted at a lower role rides along as an ordinary
        * membership instead of being refused.
        */
-      extraTargets?: { typeid: string; role: string }[];
+      extraTargets?: { typeid: string; roles: string[]; is_final?: boolean }[];
       /**
        * Send the invitation email? Defaults to true (the hub's own default).
        *
@@ -1178,9 +1174,9 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       ...(idOrEmail.includes('@')
         ? { recipient_email: normalizeEmail(idOrEmail) ?? '' }
         : { recipient_user_id: idOrEmail.replace(/^user-/, '') }),
-      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, roles: normalizeMembershipRoles(roles) }, ...(opts?.extraTargets ?? []).map(target => ({...target, roles: normalizeMembershipRoles(target.roles)}))],
       ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
-      ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
+      ...(opts?.transfer ? { transfer: true, roles_to_keep: normalizeRetainedRoles(opts.rolesToKeep) } : {}),
       ...(opts?.notifyByEmail === false ? { notify_by_email: false } : {}),
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
@@ -1201,12 +1197,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Direction, since it is easy to get backwards: this makes `principal` a MEMBER
    * OF this entity (a class inside a school), not the other way round.
    */
-  public async addGroupMember(principal: TypeId, role: string = 'member'): Promise<void> {
+  public async addGroupMember(principal: TypeId, roles: string[] | string = ['reader']): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
       principal: `${principal.type}-${principal.id}`,
-      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, roles: normalizeMembershipRoles(roles) }],
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;
@@ -1250,10 +1246,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * returns it as the action response — seed the cache from it so the next
    * ``fetchMembers`` is free (falls back to invalidation on any other shape).
    */
-  public async setMemberRole(userId: string, role: string): Promise<void> {
+  public async setMemberRole(userId: string, roles: string[] | string): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'PUT');
     info.hubReflect = true; // role change is hub-owned — reflect to the hub
-    info.bodyParameters = { user_id: userId, role };
+    info.bodyParameters = { user_id: userId, roles: normalizeMembershipRoles(roles) };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;
   }

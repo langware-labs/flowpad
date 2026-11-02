@@ -200,6 +200,16 @@ and picks **Secured transfer** or **Secret manager** (above). Secured transfer n
   their key and asks (`sealed_request`); the sender's Flowpad answers by itself — live, or on its catch-up after
   sign-in — sealing for the new device (`answers` the promise). Both steps leave a quiet `sealed_note` reply in the
   share's thread. A promise waits as long as a share (7 days).
+- **Sent → Delivered → Validated, per receiver** — right after the values land (**Fill in**, or **Fetch** on a
+  secret-manager share opened from the conversation: `credentials/fetch {conversation_id}`) the receiver's Flowpad
+  runs the credential's own **test** (`credential_service.test_credential_spec`) and posts a second `sealed_ack`:
+  `{outcome: "validated", test: ok|invalid|error|untested, at}` — the state only, never the detail (it may quote the
+  provider) and never a value. Per receiver the latest stage wins (`filled` → `validated`; `declined` is final). The
+  sender's card shows one line each: `invalid` = the provider refused the key (send a new one), `error` = their
+  machine could not run the test, `untested` = no `test.json`. A secret-manager share is recorded by the sender at
+  share time (`credentials/sealed/track` → `sent.json`, `route: "vault"`); both sides name it by
+  `vault_transfer_id` — a digest of conversation + credential, so the hub never sees the name. A receiver on an
+  older Flowpad sends only `filled`: shown "Delivered · not reported".
 - **CLI**: `flow credentials secure [--on|--off] [--rotate]` — receiving on this install and its key (id only).
   Sharing, filling in and getting values are clicks in Flowpad, never the CLI.
 

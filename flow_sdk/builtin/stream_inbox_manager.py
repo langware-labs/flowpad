@@ -72,7 +72,7 @@ class StreamInboxManager(Entity):
             id=cls._local_id(),
             uname=_LOCAL_UNAME,
             name="Stream Inbox",
-            visitor_role="owner",
+            visitor_roles=["owner"],
         )
         try:
             from flow_sdk.builtin.user import User  # noqa: PLC0415

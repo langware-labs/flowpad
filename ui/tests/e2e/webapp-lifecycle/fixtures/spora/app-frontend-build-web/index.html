@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>Spora (tier-2 bundle)</title>
+<!-- Stands in for `flutter build web`: bootstraps from SPORA_BOOTSTRAP_URL like the real build, and throws the
+     same empty `Uncaught` when the tenant is down (spora-app/setup/recovery.md). -->
+<p id="s">bootstrapping…</p>
+<script>
+  fetch('http://127.0.0.1:8300/api/bootstrap')
+    .then((r) => r.json())
+    .then((b) => { const s = document.getElementById('s'); s.setAttribute('data-testid', 'stub-ready'); s.textContent = 'Spora · ' + b.tenant; })
+    .catch(() => setTimeout(() => { throw ''; }));
+</script>

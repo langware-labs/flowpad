@@ -15,15 +15,15 @@ describe('the invite roles', () => {
     const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue(['member'] as never);
     setSupportedPagesForHubMode(['hub']);
 
-    expect(await membershipService.fetchShareRoles()).toEqual([]);
+    expect(await membershipService.fetchShareRoles()).toEqual(['admin', 'editor', 'reader', 'runner']);
     expect(call).not.toHaveBeenCalled();
   });
 
-  it('are asked of a local backend', async () => {
+  it('use the generated registry on the desktop too', async () => {
     const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue(['member', 'admin'] as never);
     setSupportedPagesForHubMode(['desk', 'hub']);
 
-    expect(await membershipService.fetchShareRoles()).toEqual(['member', 'admin']);
-    expect(call).toHaveBeenCalledTimes(1);
+    expect(await membershipService.fetchShareRoles()).toEqual(['admin', 'editor', 'reader', 'runner']);
+    expect(call).not.toHaveBeenCalled();
   });
 });

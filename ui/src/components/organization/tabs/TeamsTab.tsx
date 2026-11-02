@@ -35,7 +35,7 @@ export function TeamsTab({
   const [mineOnly, setMineOnly] = useState(false);
 
   const shown = teams.filter(
-    (team) => (!mineOnly || !!team.my_role) && team.name.toLowerCase().includes(query.trim().toLowerCase()),
+    (team) => (!mineOnly || !!team.my_roles?.length) && team.name.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
   return (
@@ -172,9 +172,9 @@ function TeamRow({ team, onOpen }: { team: ScopeBudget; onOpen: () => void }) {
         </span>
       </div>
       <div data-testid={`team-${team.id}-role`}>
-        {team.my_role ? (
+        {team.my_roles?.length ? (
           <Badge variant="outline" className="font-normal capitalize">
-            {team.my_role}
+            {team.my_roles?.join(', ')}
           </Badge>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>

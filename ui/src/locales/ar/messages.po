@@ -42,7 +42,7 @@ msgstr " · متوقف مؤقتاً"
 msgid " · the way set up here"
 msgstr " · كما أُعدّ هنا"
 
-#. placeholder {0}: me.role
+#. placeholder {0}: me.roles.join(', ')
 #: src/components/organization/org-detail-panel.tsx
 msgid " · you are {0}"
 msgstr " · دورك {0}"
@@ -229,6 +229,20 @@ msgstr "ستتم إزالة \"{0}\". ستفقد السلاسل التي تستم
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "\"{0}\" will be removed. This cannot be undone."
 msgstr "سيتم حذف \"{0}\". لا يمكن التراجع عن هذا الإجراء."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" already exists"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" already exists there"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "\"{name}\" can't go inside itself"
+msgstr ""
 
 #: src/components/lens-viewer/CliLogViewer.tsx
 msgid "({keyCount} keys)"
@@ -1745,6 +1759,10 @@ msgstr "{selectedCount} محددة"
 msgid "{selectedWithFilesCount} of them contain files. The folders go to your Trash and their Flowpad projects are removed; you can restore them from Finder."
 msgstr "يحتوي {selectedWithFilesCount} منها على ملفات. ستُنقل المجلدات إلى سلة المهملات وتُزال مشاريع Flowpad الخاصة بها؛ يمكنك استعادتها من Finder."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "{sender} sent you the key"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "{senderName} has shared {sharedThing}"
 msgstr "شارك {senderName} {sharedThing}"
@@ -2432,6 +2450,7 @@ msgid "A machine"
 msgstr "جهاز"
 
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "A member"
 msgstr ""
 
@@ -2666,6 +2685,10 @@ msgstr "تم طلب الوصول"
 
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Access to {projectName} vault {vault}"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Access to the {vaultLabel} vault requested."
 msgstr ""
 
 #: src/components/conversation/ShareReplyCard.tsx
@@ -3210,6 +3233,11 @@ msgstr "إضافة متغير"
 msgid "Add…"
 msgstr "إضافة…"
 
+#. placeholder {0}: entries[0].relPath
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Added \"{0}\""
+msgstr ""
+
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: source.name
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -3221,6 +3249,11 @@ msgstr "تمت إضافة {0}"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Added {0} and stored its key"
 msgstr "تمت إضافة {0} وحفظ مفتاحه"
+
+#. placeholder {0}: entries.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Added {0} files"
+msgstr ""
 
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -3265,8 +3298,9 @@ msgstr "روابط إضافية لأسواق الملحقات"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Address"
-msgstr ""
+msgstr "العنوان"
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Address book"
@@ -3502,6 +3536,7 @@ msgstr "الكل"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -3697,6 +3732,11 @@ msgstr ""
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "السماح"
+
+#. placeholder {0}: entries.join(', ')
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Allow {0}"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
@@ -4274,9 +4314,17 @@ msgstr ""
 msgid "App"
 msgstr "التطبيق"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "App id"
+msgstr "معرّف التطبيق"
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "App ID"
 msgstr ""
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "App name"
+msgstr "اسم التطبيق"
 
 #: src/navigation/record-type-nav.ts
 msgid "App not found"
@@ -4473,6 +4521,10 @@ msgstr "تم إنشاء العنصر"
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Artifact deleted"
 msgstr "تم حذف الملف"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Artifact id"
+msgstr "معرّف الأداة"
 
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifacts"
@@ -5399,6 +5451,7 @@ msgid "Browse…"
 msgstr "استعراض…"
 
 #: src/components/links/LinkMenu.tsx
+#: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
 msgstr "المتصفح"
 
@@ -5505,8 +5558,9 @@ msgid "Build command"
 msgstr ""
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Build folder"
-msgstr ""
+msgstr "مجلد البناء"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Build folder — the subfolder that is served"
@@ -5674,6 +5728,10 @@ msgstr "الاستدعاءات"
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Calls"
 msgstr "الاستدعاءات"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Can decrypt"
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskAsk.tsx
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
@@ -5974,6 +6032,10 @@ msgstr ""
 msgid "Change destination"
 msgstr "تغيير الوجهة"
 
+#: src/components/webapp-display/WebAppIconPicker.tsx
+msgid "Change icon"
+msgstr "تغيير الأيقونة"
+
 #: src/components/footer/LanguageSelector.tsx
 #: src/components/footer/LanguageSelector.tsx
 msgid "Change language"
@@ -6223,6 +6285,10 @@ msgstr "يُرجى التحقق من العنوان، أو محاولة فتحه
 #: src/lib/publish-state.ts
 msgid "Check your connection and try again."
 msgstr "يرجى التحقق من الاتصال والمحاولة مرة أخرى"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Checked"
+msgstr "آخر فحص"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Checked for new messages"
@@ -6538,6 +6604,10 @@ msgstr "تنظيف ({0})"
 msgid "Cleaned invalid sessions"
 msgstr "تم تنظيف الجلسات غير الصالحة"
 
+#: src/components/footer/activity-words.ts
+msgid "Cleaning up"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Cleaning…"
 msgstr "جاري التنظيف…"
@@ -6564,6 +6634,7 @@ msgstr "مسح"
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Clear"
@@ -6767,6 +6838,10 @@ msgstr "يمكن النقر لإعادة تسمية الغرفة"
 #: src/components/wizard/WizardButton.tsx
 msgid "Click to run · double-click to open the wizard"
 msgstr "انقر للتشغيل · انقر نقرًا مزدوجًا لفتح المعالج"
+
+#: src/components/credentials/SignInCommand.tsx
+msgid "Click to run · right-click for more"
+msgstr ""
 
 #. placeholder {0}: row.orphan_count
 #. placeholder {1}: row.type
@@ -7823,11 +7898,30 @@ msgstr "تم التحويل إلى لوحة Excalidraw"
 msgid "Copied"
 msgstr "تم النسخ"
 
+#. placeholder {0}: items[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied \"{0}\""
+msgstr ""
+
+#. placeholder {0}: items.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied {0} items"
+msgstr ""
+
 #. placeholder {0}: urls.length
 #. placeholder {1}: urls.length > 1 ? 's' : ''
 #: src/components/assets/useAssetsModel.tsx
 msgid "Copied {0} link{1}"
 msgstr "تم نسخ {0} رابط{1}"
+
+#. placeholder {0}: paths.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied {0} paths"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copied path"
+msgstr ""
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Copied to Clipboard"
@@ -7858,6 +7952,7 @@ msgstr "علامة تبويب Copilot"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/hooks/event-utils.tsx
@@ -7988,6 +8083,7 @@ msgstr "نسخ رابط الاستنساخ للأعضاء"
 msgid "Copy name"
 msgstr "نسخ الاسم"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy path"
 msgstr "نسخ المسار"
@@ -8027,6 +8123,10 @@ msgstr "نسخ الموجه"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "نسخ معرف المزود"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Copy relative path"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Copy remote URL"
@@ -8293,6 +8393,10 @@ msgstr "تعذّر إنشاء مساحة العمل"
 msgid "Could not decide"
 msgstr "تعذّر اتخاذ القرار"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not decline {name}"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
@@ -8362,6 +8466,10 @@ msgstr "تعذر إنهاء الغرفة"
 msgid "could not fetch — showing local copy"
 msgstr "تعذر الجلب — يتم عرض نسخة محلية"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not fetch {name}"
+msgstr ""
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Could not fetch {title}"
 msgstr ""
@@ -8376,6 +8484,10 @@ msgstr "تعذّر جلب الحزم"
 
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Could not fetch the values"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not fill in {name}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -8748,6 +8860,10 @@ msgstr "تعذر إعادة تشغيل {0}."
 msgid "Could not report diagnosis"
 msgstr "تعذر الإبلاغ عن التشخيص"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Could not request access"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not reset auto-launch"
 msgstr "تعذّرت إعادة ضبط التشغيل التلقائي"
@@ -8843,6 +8959,8 @@ msgstr "تعذّر حفظ المهمة"
 msgid "Could not save the advanced settings"
 msgstr "تعذّر حفظ الإعدادات المتقدمة"
 
+#: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Could not save the allowed models"
 msgstr "تعذّر حفظ النماذج المسموح بها"
@@ -9050,6 +9168,10 @@ msgstr ""
 #: src/components/automations/BusView.tsx
 msgid "Could not test it"
 msgstr "تعذّر اختباره"
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Could not test it on this machine."
+msgstr "تعذّر اختباره على هذا الجهاز."
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Could not try"
@@ -9300,6 +9422,10 @@ msgstr "تعذّر بدء الاتصال بـ GitHub."
 msgid "Couldn't terminate {0}"
 msgstr "تعذّر إيقاف {0}"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Couldn't test on their machine"
+msgstr "تعذّر الاختبار على جهازهم"
+
 #: src/lib/publish-state.ts
 msgid "Couldn't update"
 msgstr "تعذّر التحديث"
@@ -9342,7 +9468,6 @@ msgid "CPU:"
 msgstr "المعالج:"
 
 #: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
@@ -9383,10 +9508,9 @@ msgstr "إنشاء مجموعة جهات اتصال — إضافة أعضائه�
 msgid "Create a dashboard"
 msgstr "إنشاء لوحة تحكم"
 
-#. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
 #: src/components/assets/AssetsNavigator.tsx
-msgid "Create a folder in {0}."
-msgstr "إنشاء مجلد في {0}."
+#~ msgid "Create a folder in {0}."
+#~ msgstr "إنشاء مجلد في {0}."
 
 #: src/components/login-required-dialog.tsx
 msgid "Create a free account to continue your conversation and save your progress."
@@ -9694,10 +9818,21 @@ msgstr "تخصيص"
 msgid "Customize response"
 msgstr ""
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Cut"
 msgstr "قص"
+
+#. placeholder {0}: items[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Cut \"{0}\""
+msgstr ""
+
+#. placeholder {0}: items.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Cut {0} items"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Daily at {time}"
@@ -9898,6 +10033,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "معلن على بطاقة الوكيل. لم يُطبَّق على العامل بعد."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
@@ -9924,6 +10060,7 @@ msgstr "فشل الرفض"
 msgid "declined"
 msgstr "مرفوض"
 
+#: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Declined"
 msgstr ""
@@ -10070,6 +10207,7 @@ msgstr "حذف"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -10111,6 +10249,11 @@ msgstr "حذف — إزالة نهائية"
 msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
 msgstr "حذف \"{0}\" من سلسلة مفاتيح نظام التشغيل؟ لا يمكن التراجع عن هذا الإجراء."
 
+#. placeholder {0}: targets[0].label
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Delete \"{0}\"?"
+msgstr ""
+
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Delete ({n})"
 msgstr ""
@@ -10137,6 +10280,11 @@ msgstr "حذف {0} من السياقات؟"
 #: src/components/connections-manager.tsx
 msgid "Delete {0} credential?"
 msgstr "حذف بيانات اعتماد {0}؟"
+
+#. placeholder {0}: targets.length
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Delete {0} items?"
+msgstr ""
 
 #. placeholder {0}: deleting?.title ?? ''
 #. placeholder {0}: org.name
@@ -10457,6 +10605,7 @@ msgstr "جاري الحذف…"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "Delivered"
 msgstr "تم التسليم"
 
@@ -10627,6 +10776,7 @@ msgstr "صِفوا هوية هذا الوكيل وما يقوم به وما يج
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "الوصف"
 
@@ -10667,8 +10817,8 @@ msgid "Desktop version"
 msgstr "إصدار سطح المكتب"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Destination already has an item with that name"
-msgstr "الوجهة تحتوي بالفعل على عنصر بهذا الاسم"
+#~ msgid "Destination already has an item with that name"
+#~ msgstr "الوجهة تحتوي بالفعل على عنصر بهذا الاسم"
 
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Detail"
@@ -11231,6 +11381,7 @@ msgid "Dot-separated; * matches one part, a trailing * matches the rest (task.*)
 msgstr "مفصولة بنقاط؛ * يطابق جزءًا واحدًا، و* في النهاية يطابق ما تبقّى (task.*)."
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -11282,6 +11433,10 @@ msgstr "التنزيل رغم ذلك"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Download as a file instead of sending"
 msgstr "التنزيل كملف بدلًا من الإرسال"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Download as zip"
+msgstr ""
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download attachments"
@@ -11416,6 +11571,10 @@ msgstr "يحذف سجلات هذا المصدر ويعيد ضبط موضع ال�
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Due"
 msgstr "الاستحقاق"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Duplicate"
+msgstr ""
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicate assets"
@@ -11857,6 +12016,10 @@ msgstr "وقت النهاية"
 msgid "End users open it at {0}."
 msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "End-to-end encrypted transfer"
+msgstr ""
+
 #: src/components/conversation/SessionCard.tsx
 msgid "ended"
 msgstr "انتهت"
@@ -11874,6 +12037,7 @@ msgid "Endpoint"
 msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Endpoint id"
 msgstr "معرّف نقطة النهاية"
 
@@ -12586,7 +12750,15 @@ msgid "Expired — ask {0} to share again."
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Expired before everyone filled them in."
+#~ msgid "Expired before everyone filled them in."
+#~ msgstr ""
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Expired before it was opened"
+msgstr "انتهت صلاحيته قبل فتحه"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Expires"
 msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
@@ -12740,6 +12912,10 @@ msgstr "فشل استنساخ المستودع"
 msgid "Failed to copy links"
 msgstr "فشل نسخ الروابط"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#~ msgid "Failed to copy path"
+#~ msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
 msgstr "فشل نسخ المسار إلى الحافظة"
@@ -12758,7 +12934,11 @@ msgstr "فشل إنشاء العنصر"
 msgid "Failed to create contacts group"
 msgstr "فشل إنشاء مجموعة المتصلين"
 
-#: src/components/assets/useAssetsModel.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to create file"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Failed to create folder"
 msgstr "فشل إنشاء المجلد"
 
@@ -12807,6 +12987,10 @@ msgstr "تعذّر حذف السر"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Failed to discard draft"
 msgstr "فشل تجاهل المسودة"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to download"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Failed to enable secrets"
@@ -12929,8 +13113,8 @@ msgid "Failed to look up project."
 msgstr "تعذر العثور على المشروع."
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to move item"
-msgstr "فشل نقل العنصر"
+#~ msgid "Failed to move item"
+#~ msgstr "فشل نقل العنصر"
 
 #: src/components/account/database-section.tsx
 msgid "Failed to open {folderType} folder"
@@ -12960,6 +13144,10 @@ msgstr "تعذر فتح مجلد السجلات"
 msgid "Failed to open project"
 msgstr "تعذر فتح المشروع"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to open terminal"
+msgstr ""
+
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Failed to remove dependency"
 #~ msgstr ""
@@ -12976,6 +13164,10 @@ msgstr "تعذّرت إزالة الحزمة"
 msgid "Failed to remove vibe agent"
 msgstr "فشلت إزالة وكيل vibe"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to rename"
+msgstr ""
+
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Failed to resolve [[{name}]]: {errorText}"
 msgstr "تعذّر تحليل [[{name}]]: {errorText}"
@@ -12983,6 +13175,10 @@ msgstr "تعذّر تحليل [[{name}]]: {errorText}"
 #: src/routes/loaders/load-next-process.ts
 msgid "Failed to restore this session."
 msgstr "تعذرت استعادة هذه الجلسة."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to reveal"
+msgstr ""
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Failed to Save"
@@ -13093,6 +13289,10 @@ msgstr "فشل تحديث Hook"
 msgid "Failed to update trigger"
 msgstr "فشل تحديث المشغّل"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Failed to upload"
+msgstr ""
+
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to upload image"
 msgstr "فشل رفع الصورة"
@@ -13104,6 +13304,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
 msgstr "فشل."
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Failure"
+msgstr "الفشل"
 
 #: src/components/inbound/InboundView.tsx
 msgid "fallback"
@@ -13188,6 +13392,7 @@ msgstr "عنصر الخلاصة"
 #~ msgid "Feeds"
 #~ msgstr "يُغذّي"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Fetch"
@@ -13325,8 +13530,13 @@ msgstr "ملفات موجودة على القرص ولم تُضف بعد إلى 
 msgid "Files: {files}"
 msgstr "الملفات: {files}"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Fill in"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Fill it in and {name} is ready on this machine."
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
@@ -13334,8 +13544,20 @@ msgid "Filled in"
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Filled in by {filled} · the sealed copy was deleted from the hub"
-msgstr ""
+#~ msgid "Filled in · could not test it on this machine"
+#~ msgstr "تمت التعبئة · تعذّر اختباره على هذا الجهاز"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in · tested, the provider accepts it"
+#~ msgstr "تمت التعبئة · تم الاختبار، المزوّد يقبله"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in · the provider refused it — ask {0} for a new one"
+#~ msgstr "تمت التعبئة · رفضه المزوّد — اطلب من {0} مفتاحًا جديدًا"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+#~ msgid "Filled in by {filled} · the sealed copy was deleted from the hub"
+#~ msgstr ""
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -13853,6 +14075,10 @@ msgstr ""
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "يتوقف FlowPad ثم يُحدَّث إلى أحدث إصدار ويُعاد تشغيله على {upgradeTargetName}. يتعطل العمل لدى من يعملون فيه لدقيقة أو دقيقتين، وتُنشَّط البيئة المعزولة المتوقفة مؤقتًا لإنجاز ذلك."
 
+#: src/components/webapp-display/AppOpenInToggle.tsx
+msgid "Flowpad tab"
+msgstr "علامة تبويب Flowpad"
+
 #: src/components/version-popover/version-chip.tsx
 msgid "Flowpad version"
 msgstr "إصدار Flowpad"
@@ -13901,6 +14127,7 @@ msgstr "مجلد"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "مجلد"
@@ -13910,14 +14137,14 @@ msgid "Folder (optional)"
 msgstr "المجلد (اختياري)"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Folder already exists"
-msgstr "المجلد موجود بالفعل"
+#~ msgid "Folder already exists"
+#~ msgstr "المجلد موجود بالفعل"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Folder created"
-msgstr "تم إنشاء المجلد"
+#~ msgid "Folder created"
+#~ msgstr "تم إنشاء المجلد"
 
-#: src/components/assets/AssetsNavigator.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
@@ -13989,11 +14216,11 @@ msgstr "تفريع"
 msgid "Fork Session"
 msgstr "تفريع الجلسة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Fork session — new tab, same conversation history"
 msgstr "تفريع الجلسة — تبويب جديد، نفس سجل المحادثة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Forking…"
 msgstr "جاري التفريع…"
 
@@ -14127,8 +14354,8 @@ msgid "Full — complete rescan"
 msgstr "كامل — إعادة مسح شاملة"
 
 #: src/pages/hub-home/LoginAccessField.tsx
-msgid "Full access"
-msgstr "وصول كامل"
+#~ msgid "Full access"
+#~ msgstr "وصول كامل"
 
 #: src/notifications/error-detail.ts
 msgid "Full answer"
@@ -14288,6 +14515,10 @@ msgstr "احصلوا على FlowPad من flowpad.ai ←"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get it at flowpad.ai"
 msgstr "احصلوا عليه من flowpad.ai"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Get it from the {vaultLabel} vault."
+msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #~ msgid "Get my link code"
@@ -15311,6 +15542,10 @@ msgstr "تم قمع أخطاء Hub"
 msgid "hub repository"
 msgstr "مستودع المركز"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Hub sees"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "Hub WebSocket connected."
 msgstr "تم الاتصال بـ Hub WebSocket."
@@ -15727,8 +15962,8 @@ msgid "Inherits {0}"
 msgstr ""
 
 #: src/components/organization/budgets/EndpointControls.tsx
-msgid "inherits the budget above"
-msgstr "يرث الميزانية أعلاه"
+#~ msgid "inherits the budget above"
+#~ msgstr "يرث الميزانية أعلاه"
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "init"
@@ -16027,7 +16262,11 @@ msgstr "مقارنة الأصول غير صالحة."
 msgid "Invalid asset pointer"
 msgstr "مؤشر أصل غير صالح"
 
-#: src/components/assets/useAssetsModel.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Invalid file name"
+msgstr ""
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "Invalid folder name"
 msgstr "اسم المجلد غير صالح"
 
@@ -16050,6 +16289,10 @@ msgstr "JSON غير صالح — لم يتم الحفظ"
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Invalid Lens URL"
 msgstr "رابط Lens غير صالح"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Invalid name"
+msgstr ""
 
 #: src/components/show-view/ShowView.tsx
 msgid "Invalid Show Path"
@@ -16446,8 +16689,25 @@ msgstr "المفتاح"
 msgid "Key ending {0} — only the owner can change it."
 msgstr "المفتاح المنتهي بـ {0} — لا يغيّره إلا المالك."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key filled in"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key is in {manager}"
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Key not available"
+msgstr ""
+
 #~ msgid "Key not set"
 #~ msgstr "لم يتم تعيين المفتاح"
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Key refused by the provider"
+msgstr "رفض المزوّد المفتاح"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Key rejected"
@@ -16516,6 +16776,7 @@ msgstr "النوع"
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Kind"
 msgstr "النوع"
 
@@ -16770,7 +17031,7 @@ msgstr "تشغيل {name}"
 #~ msgid "Launch a new sandbox running this agent"
 #~ msgstr ""
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Launch a session first"
 msgstr "يجب بدء جلسة أولاً"
 
@@ -18212,6 +18473,10 @@ msgstr "تم تعيين الأعضاء، لكن فشل إرسال بعض الر�
 msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
 msgstr "يستطيع الأعضاء استنساخ هذا المستودع ودفع التغييرات إليه عبر FlowPad بتسجيل دخولهم، دون حاجة إلى حساب GitHub. يستطيع القرّاء السحب، ويستطيع المحررون الدفع. يمكن إلغاء التحديد لإيقاف المشاركة في أي وقت، ولا يتغيّر مستودع GitHub أبدًا."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Members of the vault"
+msgstr ""
+
 #: src/components/conversation/ConversationMembersLine.tsx
 msgid "Members:"
 msgstr ""
@@ -18351,6 +18616,10 @@ msgstr "رسائل عبر"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta official Cloud API"
 msgstr "Meta Cloud API الرسمية"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Method"
+msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
@@ -18658,6 +18927,10 @@ msgstr "المزيد…"
 msgid "Morning briefing"
 msgstr "موجز الصباح"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Mount"
+msgstr "نقطة التركيب"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Mount Flowpad Assistant"
 msgstr "ربط مساعد Flowpad"
@@ -18684,12 +18957,12 @@ msgid "Move to Trash"
 msgstr "نقل إلى سلة المهملات"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Moved"
-msgstr "تم النقل"
+#~ msgid "Moved"
+#~ msgstr "تم النقل"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Moved, but reindex failed"
-msgstr "تم النقل، لكن فشلت إعادة الفهرسة"
+#~ msgid "Moved, but reindex failed"
+#~ msgstr "تم النقل، لكن فشلت إعادة الفهرسة"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "msgs"
@@ -18760,6 +19033,7 @@ msgstr "الاسم"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/token-plan/RenameButton.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
@@ -18835,6 +19109,10 @@ msgstr "name@example.com"
 #~ msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
 #~ msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Names only, never values"
+msgstr ""
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Needed for"
 msgstr "مطلوب من أجل"
@@ -18876,6 +19154,11 @@ msgstr "يحتاج إلى إعداد"
 
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Needs setup"
+msgstr ""
+
+#. placeholder {0}: record.setup_owed
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Needs setup: {0}"
 msgstr ""
 
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -19071,6 +19354,8 @@ msgstr "مستند جديد"
 msgid "New endpoint"
 msgstr "نقطة نهاية جديدة"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New file"
@@ -19083,6 +19368,8 @@ msgstr "ملف جديد"
 #~ msgid "New Files ({0})"
 #~ msgstr "الملفات الجديدة ({0})"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -19091,15 +19378,13 @@ msgstr "ملف جديد"
 msgid "New folder"
 msgstr "مجلد جديد"
 
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New Folder"
 msgstr "مجلد جديد"
 
-#. placeholder {0}: target.label
 #: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
-msgid "New folder in {0}"
-msgstr "مجلد جديد في {0}"
+#~ msgid "New folder in {0}"
+#~ msgstr "مجلد جديد في {0}"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "New folder name"
@@ -19548,6 +19833,10 @@ msgstr "لا توجد عقدة حوسبة متاحة"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "No compute node available in this workspace."
 msgstr "لا توجد عقدة حساب متاحة في مساحة العمل هذه."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "No computer to open a terminal on"
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "No connection test is defined for this provider."
@@ -20484,6 +20773,11 @@ msgstr "لا توجد جلسات مشتركة بعد. سيؤدي تنفيذ مط
 msgid "No shell is linked to this process."
 msgstr "لا توجد قشرة مرتبطة بهذه العملية."
 
+#. placeholder {0}: preset.label
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "No sizes are declared for {0}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No skill-attributed findings to improve."
 msgstr "لا توجد نتائج مسندة للمهارة يمكن تحسينها."
@@ -20602,6 +20896,10 @@ msgstr "لا توجد طرفية أو محادثة مرتبطة بهذه الع�
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "No terminal process was found for session {0}."
 msgstr "لم يتم العثور على عملية طرفية للجلسة {0}."
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "No test for this credential"
+msgstr "لا يوجد اختبار لبيانات الاعتماد هذه"
 
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "No test runs yet"
@@ -20755,7 +21053,6 @@ msgstr "بدون"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -20851,6 +21148,10 @@ msgstr "غير متصل"
 msgid "Not connected — press Connect"
 msgstr "غير متصل — اضغطوا «اتصال»"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not copied"
+msgstr ""
+
 #~ msgid "Not copied into context folder"
 #~ msgstr "لم تُنسخ إلى مجلد السياق"
 
@@ -20861,6 +21162,10 @@ msgstr "غير متصل — اضغطوا «اتصال»"
 #: src/components/assets/useAssetsModel.tsx
 msgid "Not copied into package folder"
 msgstr "لم يُنسخ إلى مجلد الحزمة"
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not deleted"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Not deployed yet — it runs nowhere until you launch it."
@@ -20873,6 +21178,10 @@ msgstr "لم يُنشر بعد — لن يعمل في أي مكان حتى يُ�
 msgid "Not done."
 msgstr "لم يكتمل."
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not duplicated"
+msgstr ""
+
 #: src/components/data-sources/source-attention.ts
 msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
 msgstr "لم يُقيَّم بعد — لم يُحدَّد كيف يبدأ هذا المصدر، لذلك لا يُجلب منه شيء."
@@ -20880,6 +21189,10 @@ msgstr "لم يُقيَّم بعد — لم يُحدَّد كيف يبدأ هذ�
 #: src/components/data-sources/source-parts.tsx
 msgid "Not fetched"
 msgstr "لم يتم الجلب"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not fetched yet"
+msgstr "لم يُجلب بعد"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
@@ -20943,6 +21256,10 @@ msgstr "غير مسجّل الدخول"
 msgid "Not logged in · Please run /login"
 msgstr "غير مسجّل الدخول · شغّلوا /login"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Not moved"
+msgstr ""
+
 #~ msgid "Not needed here: mark its values optional"
 #~ msgstr ""
 
@@ -20965,6 +21282,10 @@ msgstr "ليس الآن"
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Not on this computer either — {0}"
 msgstr "ولا على هذا الكمبيوتر أيضًا — {0}"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not opened yet"
+msgstr "لم يُفتح بعد"
 
 #: src/components/conversation/conversation-category.ts
 msgid "Not picked up"
@@ -20994,6 +21315,10 @@ msgstr "غير جاهز للحفظ"
 #: src/components/data-sources/use-source-verify.ts
 msgid "Not ready yet"
 msgstr "ليس جاهزاً بعد"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Not reported"
+msgstr "لم يُبلَّغ"
 
 #~ msgid "not respected"
 #~ msgstr "غير محترمة"
@@ -21123,6 +21448,7 @@ msgid "not visible"
 msgstr "غير مرئي"
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 msgid "Not yet"
 msgstr "ليس بعد"
 
@@ -21605,6 +21931,10 @@ msgstr "يُشغَّل الأمر <0>flow connect</0> على الجهاز. إن 
 msgid "On the schedule {expr}"
 msgstr "وفق الجدول {expr}"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "On this machine"
+msgstr ""
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr "على هذا الجهاز فقط — يمكن التراجع في أي وقت"
@@ -21762,6 +22092,10 @@ msgstr "لا يمكن عرض هذا الوكيل إلا للأشخاص الذي�
 msgid "Only the steps below"
 msgstr "الخطوات أدناه فقط"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Only this device"
+msgstr ""
+
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "Only this port"
@@ -21772,6 +22106,7 @@ msgid "Oops! Page not found"
 msgstr "عذرًا! الصفحة غير موجودة"
 
 #: src/components/assets/editor/WikiResolveView.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
@@ -21989,6 +22324,10 @@ msgstr "فتح السياق"
 msgid "Open conversation"
 msgstr "افتح المحادثة"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Open credential"
+msgstr ""
+
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Open data_driver.json"
 msgstr "فتح data_driver.json"
@@ -22114,6 +22453,7 @@ msgstr "فتح في علامة تبويب جديدة"
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
+#: src/pages/flow-page/app-display-viewer.tsx
 msgid "Open in browser"
 msgstr "فتح في المتصفح"
 
@@ -22186,6 +22526,7 @@ msgstr "فتح في التشغيلات"
 msgid "Open in Skills tab"
 msgstr "فتح في تبويب المهارات"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/tabs/doc-tab-card.tsx
@@ -22700,6 +23041,11 @@ msgstr "OpenRouter"
 msgid "OpenRouter hosts to avoid (one per line)"
 msgstr "مضيفو OpenRouter المطلوب تجنبهم (واحد في كل سطر)"
 
+#: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/webapp-display/AppOpenInToggle.tsx
+msgid "Opens in"
+msgstr "يفتح في"
+
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
 msgstr "فشلت العملية"
@@ -23153,6 +23499,7 @@ msgstr "تبقى عمليات التشغيل السابقة في السجل."
 msgid "Past test runs"
 msgstr ""
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Paste"
 msgstr "لصق"
@@ -23811,6 +24158,10 @@ msgstr "منفذ وسيط HTTP في الحاوية الرملية"
 msgid "Port for SOCKS proxy in sandbox"
 msgstr "منفذ وسيط SOCKS في الحاوية الرملية"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Ports"
+msgstr "المنافذ"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -24022,6 +24373,10 @@ msgstr "العملية غير متاحة"
 msgid "Processes ({processCount})"
 msgstr "العمليات ({processCount})"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Processes (pid)"
+msgstr "العمليات (pid)"
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr "الملف الشخصي"
@@ -24138,6 +24493,7 @@ msgid "Project home"
 msgstr "الصفحة الرئيسية للمشروع"
 
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Project id"
 msgstr "معرّف المشروع"
 
@@ -24681,6 +25037,10 @@ msgstr "ضعوا المجلد في ~/.flow/skill_rules/ (أو اطلبوا من 
 msgid "Puts a real event on the bus. Every automation listening for it runs for real."
 msgstr "يضع حدثاً حقيقياً على ناقل الأحداث، وتُنفَّذ فعلياً كل أتمتة تستمع إليه."
 
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Puts everything that is available on OpenRouter"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "PyPI unavailable"
 msgstr "PyPI غير متاح"
@@ -24891,6 +25251,15 @@ msgstr "جاهز"
 #: src/components/conversation/ConversationAutomationChip.tsx
 msgid "ready · Open"
 msgstr "جاهز · فتح"
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Ready on this machine — this credential has no test."
+msgstr "جاهز على هذا الجهاز — لا يوجد اختبار لبيانات الاعتماد هذه."
+
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Ready on this machine."
+msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Ready to share"
@@ -25415,6 +25784,10 @@ msgstr ""
 msgid "Remove directory"
 msgstr "إزالة المجلد"
 
+#: src/components/organization/budgets/EndpointControls.tsx
+msgid "Remove every model and every redirect from this list"
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Remove failed"
 msgstr "فشلت الإزالة"
@@ -25640,6 +26013,7 @@ msgstr ""
 #~ msgid "Removing & re-checking…"
 #~ msgstr ""
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -25889,6 +26263,7 @@ msgid "Request"
 msgstr "الطلب"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Request access"
 msgstr "طلب الوصول"
@@ -26321,6 +26696,7 @@ msgstr "إظهار {0} في Finder/Explorer"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 #: src/pages/flow-page/display-history-button.tsx
 #: src/pages/flow-page/display-history-button.tsx
@@ -26817,6 +27193,10 @@ msgstr "في أي مشروع تريدون تشغيل هذه الجلسة الم�
 msgid "Run:"
 msgstr ""
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Runner"
+msgstr ""
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -26983,6 +27363,7 @@ msgid "runtime"
 msgstr "وقت التشغيل"
 
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Runtime"
 msgstr "بيئة التشغيل"
 
@@ -27446,8 +27827,8 @@ msgid "Sealed on this computer for each recipient's Flowpad — only they can op
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Sealed values"
-msgstr ""
+#~ msgid "Sealed values"
+#~ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -27702,6 +28083,7 @@ msgstr "تم حذف السر"
 msgid "secret manager"
 msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secret manager"
@@ -27742,6 +28124,10 @@ msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secured transfer — only the recipients can open the values."
+msgstr ""
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Security details"
 msgstr ""
 
 #. placeholder {0}: results.length
@@ -27991,7 +28377,7 @@ msgstr "إرسال"
 msgid "Send a message below and the agent will get to work."
 msgstr "يمكنكم إرسال رسالة أدناه وسيبدأ الوكيل بالعمل."
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Send a message first — fork requires conversation history"
 msgstr "يجب إرسال رسالة أولاً — يتطلب التفرع سجل المحادثة"
 
@@ -28139,6 +28525,7 @@ msgstr "يُرسل سؤالكم إلى مكتب المساعدة، ويتولّ�
 
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/SealedValuesPanel.tsx
 msgid "Sent"
 msgstr "تم الإرسال"
 
@@ -28206,6 +28593,10 @@ msgstr ""
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Served"
 msgstr "قيد الخدمة"
+
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "Served by"
+msgstr "يُقدَّم عبر"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
@@ -28325,10 +28716,10 @@ msgstr "معرّف الجلسة"
 msgid "Session info"
 msgstr "معلومات الجلسة"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Session is not running"
 msgstr "الجلسة ليست قيد التشغيل"
 
@@ -28453,6 +28844,7 @@ msgstr "جعله عامًا"
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "إعداد"
@@ -28859,6 +29251,14 @@ msgstr ""
 msgid "Shared through the project's vaults: <0>{0}</0>"
 msgstr ""
 
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Shared values · secret manager"
+msgstr "قيم مشتركة · مدير الأسرار"
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "Shared values · secured transfer"
+msgstr "قيم مشتركة · نقل آمن"
+
 #: src/components/conversation/task-it.tsx
 msgid "Shared via cloud"
 msgstr "مُشارَكة عبر السحابة"
@@ -29005,8 +29405,8 @@ msgid "Show Annotations"
 msgstr "إظهار الملاحظات"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-msgid "Show as"
-msgstr "عرض كـ"
+#~ msgid "Show as"
+#~ msgstr "عرض كـ"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Show changes"
@@ -29532,8 +29932,9 @@ msgid "Simple actions — click to show all git operations"
 msgstr "إجراءات بسيطة — انقروا لعرض جميع عمليات Git"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Since"
-msgstr ""
+msgstr "منذ"
 
 #: src/components/data-sources/ReplayDialog.tsx
 msgid "Since (optional)"
@@ -29831,6 +30232,7 @@ msgstr "بعض الأمور تحتاج إلى انتباه."
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/pages/entry/MessageLanding.tsx
@@ -30301,6 +30703,10 @@ msgstr "جارٍ بدء تشغيل بيئتكم المعزولة…"
 msgid "Starting…"
 msgstr "جاري البدء…"
 
+#: src/components/webapp-display/AppInfoPopover.tsx
+msgid "State"
+msgstr "الحالة"
+
 #~ msgid "Stats"
 #~ msgstr "الإحصائيات"
 
@@ -30721,8 +31127,8 @@ msgid "Sweep action"
 msgstr "إجراء التنظيف"
 
 #: src/components/footer/activity-words.ts
-msgid "sweeping"
-msgstr "جارٍ التنظيف"
+#~ msgid "sweeping"
+#~ msgstr "جارٍ التنظيف"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweeping…"
@@ -31160,6 +31566,18 @@ msgstr "تجربة بحدث حديث"
 #: src/components/automations/AutomationPage.tsx
 msgid "Tested"
 msgstr "تم الاختبار"
+
+#: src/components/conversation/CredentialValueLock.tsx
+#~ msgid "Tested here: the provider accepts the key."
+#~ msgstr "تم الاختبار هنا: المزوّد يقبل المفتاح."
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Tested here: the provider refused the key — ask the sender for a new one."
+msgstr "تم الاختبار هنا: رفض المزوّد المفتاح — اطلب من المرسل مفتاحًا جديدًا."
+
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Tested here: the provider takes the key."
+msgstr "تم الاختبار هنا: المزوّد يقبل المفتاح."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "text"
@@ -31928,8 +32346,16 @@ msgstr "تُخزَّن القيمة في نظام Keychain الخاص بنظام
 #~ msgid "The value is written to this project's .env.local and stays on this machine."
 #~ msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "The value was shared too — click for details"
+msgstr ""
+
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "The values could not be filled in."
+msgstr ""
+
+#: src/components/conversation/SealedValuesPanel.tsx
+msgid "The values could not be requested."
 msgstr ""
 
 #: src/components/conversation/SealedValuesPanel.tsx
@@ -32261,6 +32687,10 @@ msgstr "هذه المحادثة لم تعد موجودة أو غير متاحة.
 msgid "This conversation's project is not a checkout of the shared repo"
 msgstr "مشروع هذه المحادثة ليس نسخة عمل من المستودع المشترك"
 
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "This could not be opened"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This could not be prepared for download."
 msgstr "تعذّر تجهيز هذا للتنزيل."
@@ -32530,6 +32960,10 @@ msgstr ""
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "This organization's budgets could not be read. The server answered with nothing to show."
 #~ msgstr "تعذّرت قراءة ميزانيات هذه المؤسسة. ردّ الخادم دون أي بيانات للعرض."
+
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "This permanently deletes it from disk. This cannot be undone."
+msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
@@ -34035,6 +34469,10 @@ msgstr "فشل الرفع."
 msgid "Upload files"
 msgstr "رفع الملفات"
 
+#: src/components/browseable-tree/adapters/fsFileOps.tsx
+msgid "Upload files here…"
+msgstr ""
+
 #: src/components/ui/agent-avatar-picker.tsx
 msgid "Upload image"
 msgstr "رفع صورة"
@@ -34309,6 +34747,10 @@ msgstr "صالح ({0} نماذج)"
 msgid "validated"
 msgstr "تم التحقق"
 
+#: src/components/credentials/credential-test-verdict.ts
+msgid "Validated"
+msgstr "تم التحقق"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "validation"
 msgstr "التحقق"
@@ -34340,6 +34782,10 @@ msgstr "قيمة {key}"
 #~ msgid "value name"
 #~ msgstr ""
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Value shared"
+msgstr ""
+
 #~ msgid "Value stays in .env.local"
 #~ msgstr ""
 
@@ -34350,6 +34796,11 @@ msgstr "تبقى القيمة في {envFileName}"
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr "القيمة:"
+
+#: src/components/conversation/CredentialValueLock.tsx
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Values"
+msgstr ""
 
 #~ msgid "Values are kept in .env.local in your home folder"
 #~ msgstr ""
@@ -34407,8 +34858,9 @@ msgstr "اسم المتغير"
 msgid "Variables"
 msgstr "المتغيرات"
 
-#~ msgid "Vault"
-#~ msgstr ""
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Vault"
+msgstr ""
 
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
@@ -34687,8 +35139,8 @@ msgid "Waiting for {hostName} to approve the live session…"
 msgstr "في انتظار موافقة {hostName} على الجلسة المباشرة…"
 
 #: src/components/conversation/SealedValuesPanel.tsx
-msgid "Waiting for {waiting} recipient(s) · only they can open them"
-msgstr ""
+#~ msgid "Waiting for {waiting} recipient(s) · only they can open them"
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Waiting for approval…"
@@ -35316,6 +35768,10 @@ msgstr "لوحة رسم (Excalidraw)"
 msgid "who calls whom, step by step — with sub-flows and feedback"
 msgstr "من يستدعي من، خطوة بخطوة — مع تدفقات فرعية وملاحظات"
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "Who can read"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
 msgstr "الجهات المخوّلة بتسجيل الدخول إلى هذه البيئة المعزولة"
@@ -35643,6 +36099,7 @@ msgstr "مسحوب"
 msgid "yes"
 msgstr "نعم"
 
+#: src/components/conversation/CredentialValueLock.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Yes"
 msgstr "نعم"
@@ -35705,7 +36162,7 @@ msgstr ""
 msgid "You approved this session only — {guestName} will need your approval again next time."
 msgstr "وافقتم على هذه الجلسة فقط — سيحتاج {guestName} إلى موافقتكم مرة أخرى في المرة القادمة."
 
-#. placeholder {0}: team.my_role
+#. placeholder {0}: team.my_roles?.join(', ')
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "you are {0}"
 msgstr ""
@@ -35771,6 +36228,10 @@ msgstr "لا يمكن دعوة أشخاص هنا — يُرجى التواصل �
 msgid "You can't invite people here."
 msgstr "لا يمكن دعوة أشخاص هنا."
 
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "You declined it."
+msgstr ""
+
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "لم تتم إضافتكم بعد إلى أي منظمة. تُنشأ المنظمات في Flowpad Cloud؛ وبمجرد إضافتكم إليها، ستظهر منظمتكم وأعضاؤها هنا."
@@ -35814,6 +36275,10 @@ msgstr "هذا المستودع موجود لديك في أكثر من مشرو�
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
 msgstr "تسجيل الدخول مطلوب"
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "You need access to the {vaultLabel} vault."
+msgstr ""
 
 #: src/lib/publish-state.ts
 msgid "You now have the latest changes from the cloud."
@@ -36063,6 +36528,10 @@ msgstr "تعذّر حفظ الطلب."
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready."
 msgstr "البيئة المعزولة الخاصة بكم جاهزة."
+
+#: src/components/conversation/CredentialValueLock.tsx
+msgid "your secret manager"
+msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Your session has expired. Sign in again to launch."
