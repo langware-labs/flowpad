@@ -28,7 +28,7 @@
 
 ## Commands (from `ui/`)
 ```bash
-FE=5002 ; AL_FE_PORT=$FE AL_BE_PORT=<be> npx playwright test --config=tests/e2e/agent-auto-launch/playwright.config.ts
+AL_FE_PORT=<fe> AL_BE_PORT=<be> npx playwright test --config=tests/e2e/agent-auto-launch/playwright.config.ts
 npx playwright test --config=tests/e2e/chartit/playwright.config.ts tests/e2e/chartit/chartit.spec.ts
 npx playwright test --config=tests/e2e/llm-tiers/playwright.config.ts -g "test name"
 WL_INSTANCE=<name> npx playwright test --config=tests/e2e/webapp-lifecycle/playwright.config.ts            # tier 1+2

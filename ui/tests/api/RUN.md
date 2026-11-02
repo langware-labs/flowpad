@@ -1,10 +1,10 @@
 # ui/tests/api - how to run
 
-**What**: ~74 SDK-to-backend API tests (compute nodes, shell runs, projects, skills...). Tier: LIVE BACKEND over HTTP/WebSocket (jsdom client, `pool: forks`). Writes real entities (cleaned up by `tests/_cleanup.ts`).
+**What**: 74 files of SDK-to-backend API tests (compute nodes, shell runs, projects, skills...). Tier: LIVE BACKEND over HTTP/WebSocket (jsdom client, `pool: forks`). Writes real entities (cleaned up by `tests/_cleanup.ts`).
 
 ## Prerequisites
 - A running DISPOSABLE backend: `scripts/instance_ctl.sh launch <name>` from this checkout. The config derives the port from `LOCAL_SERVER_PORT` in `.env.$FLOW_INSTANCE.local`, default 9007 when no instance is selected.
-- `FLOWPAD_CLAUDE_HOME` and `CLAUDE_CONFIG_DIR` must resolve to the SAME directory (setup throws otherwise); set both to a cycle-owned dir for isolation, also when launching the instance.
+- `FLOWPAD_CLAUDE_HOME` and `CLAUDE_CONFIG_DIR` must resolve to the SAME directory (`apiSetup.ts` asserts it via `assertClaudeTranscriptHomesAligned` and throws otherwise); set both to a cycle-owned dir for isolation, also when launching the instance.
 - `cd ui && npm ci`.
 
 ## Commands (from `ui/`)

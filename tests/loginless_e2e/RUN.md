@@ -18,7 +18,7 @@ ENDPOINT_ID=<id> SKIP_BUILD=1 HUB=... tests/loginless_e2e/run.sh        # reuse 
 Matrix output: one line per cell `PASS|FAIL <worker> <family>:<size> <secs>s`; exit 1 if any failed.
 
 ## Env vars
-`HUB`, `HUB_IN_CONTAINER`, `PROMPT`, `SCRIPT`, `BARE`, `MATRIX`, `ENDPOINT_ID`, `SKIP_BUILD`, `IMAGE`, `WORKERS`, `FAMILIES`, `SIZES`, `WIZARDS`, `OPENROUTER_API_KEY`, `PUBLIC_COST_USD_TOTAL` (default 1.0).
+`HUB`, `HUB_IN_CONTAINER`, `PROMPT`, `SCRIPT`, `BARE`, `MATRIX`, `ENDPOINT_ID`, `SKIP_BUILD`, `IMAGE`, `WORKERS`, `FAMILIES`, `SIZES`, `WIZARDS`, `OPENROUTER_API_KEY`, `PUBLIC_COST_USD_TOTAL` (default 1.0; 10.0 for the matrix endpoint).
 
 ## Pitfalls
 - Container reaches the host hub via the `host.docker.internal` alias (run.sh rewrites `localhost`).
