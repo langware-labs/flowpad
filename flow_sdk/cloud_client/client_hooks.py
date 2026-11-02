@@ -143,8 +143,9 @@ async def _on_response(response: httpx.Response) -> None:
     status_code = response.status_code
     # A proxied response belongs to the caller downstream — inspect status only.
     passthrough = _is_passthrough(response)
-    # No credential went out, so no answer to it says anything about this box's login.
-    anonymous = _is_anonymous(response.request)
+    # No credential went out, so no answer to it says anything about this box's login — whether the
+    # call was anonymous on purpose or simply went out bare (a 401 to a bare call signed boxes out).
+    anonymous = _is_anonymous(response.request) or "Authorization" not in response.request.headers
     if status_code < 400:
         if not passthrough and not anonymous and await _is_auth_failure_envelope(response):
             # HTTP-layer auth failure (envelope status=fail with auth marker).

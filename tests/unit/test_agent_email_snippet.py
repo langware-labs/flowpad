@@ -138,3 +138,31 @@ async def test_a_machine_that_never_configured_the_mailbox_admits_the_hub_allowl
     assert not admits(source, "stranger@evil.test"), "the Hub's list admits only who it names"
     # One Hub read per window: a stranger writing again does not cost another round trip.
     assert await refresh_policy_for(source) is False
+
+
+async def test_deleting_the_agent_releases_its_mailbox_and_drops_its_source(monkeypatch):
+    """A deleted agent's mailbox stayed listed under the project's message channels and its address
+    stayed alive on the Hub, with no button anywhere to let it go."""
+    from flow_sdk.builtin.agent_mailbox import email_source_for_agent
+
+    hub = _HubMailboxes()
+    monkeypatch.setattr("flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: hub)
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda *_a, **_k: True)
+
+    for other in await Agent.get_all({"name": "leaver"}):
+        await other.delete()
+    agent = Agent(name="leaver", system_prompt="answer")
+    await agent.save()
+    descriptor = await hub.enable_mailbox(agent.id)
+    await AgentMailbox._adopt_onto(agent, descriptor).ensure_source()
+    agent.remote = True  # a published agent: the Hub holds its mailbox
+    monkeypatch.setattr(Agent, "unshare", lambda self, **_k: _done())
+    assert await email_source_for_agent(agent.id) is not None
+
+    await agent.delete()
+    assert hub.rows == {}, "the address is released"
+    assert await email_source_for_agent(agent.id) is None, "no channel outlives its agent"
+
+
+async def _done():
+    return None

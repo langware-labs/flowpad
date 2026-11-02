@@ -525,9 +525,9 @@ class AgentMailbox(Entity):
     async def release(self) -> bool:
         """Release the address. ``False`` when there was nothing to release.
 
-        Terminal, and deliberately NOT part of deleting an Agent: the address is
-        the mailbox's public identity, and dropping it has consequences off this
-        machine — mail to it starts bouncing. It stays an explicit verb.
+        Terminal: the address is the mailbox's public identity, and dropping it
+        has consequences off this machine — mail to it starts bouncing. Deleting
+        the Agent releases it too (nobody is left to answer it).
         """
         from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
