@@ -11599,6 +11599,20 @@ msgstr "Download v{0}"
 msgid "Downloaded"
 msgstr "Downloaded"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloaded and ready — the switch takes a few seconds. Not now? It is used the next time FlowPad starts."
+msgstr "Downloaded and ready — the switch takes a few seconds. Not now? It is used the next time FlowPad starts."
+
+#. placeholder {0}: s.version
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading flow SDK v{0}"
+msgstr "Downloading flow SDK v{0}"
+
+#. placeholder {0}: engineView.version
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading flow SDK v{0} in the background — FlowPad keeps working."
+msgstr "Downloading flow SDK v{0} in the background — FlowPad keeps working."
+
 #. placeholder {0}: r.version
 #: src/components/version-popover/version-popover.tsx
 msgid "Downloading FlowPad Desktop v{0}"
@@ -11616,6 +11630,14 @@ msgstr "Downloading the desktop update"
 #: src/components/version-popover/version-popover.tsx
 msgid "Downloading the desktop update…"
 msgstr "Downloading the desktop update…"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading the flow SDK update"
+msgstr "Downloading the flow SDK update"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading the flow SDK update in the background — FlowPad keeps working."
+msgstr "Downloading the flow SDK update in the background — FlowPad keeps working."
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -14105,6 +14127,11 @@ msgstr "flow SDK v{0} is installed right after the restart. FlowPad asks before 
 msgid "flow SDK v{0} is installed."
 msgstr "flow SDK v{0} is installed."
 
+#. placeholder {0}: info.engineVersion
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "flow SDK v{0} is ready"
+msgstr "flow SDK v{0} is ready"
+
 #. placeholder {0}: info.engineTarget
 #. placeholder {1}: info.minDesktop
 #. placeholder {2}: info.desktopInstalled ?? '?'
@@ -14207,6 +14234,12 @@ msgstr "Flowpad Cloud:"
 msgid "FlowPad Desktop and the flow SDK do not match"
 msgstr "FlowPad Desktop and the flow SDK do not match"
 
+#. placeholder {0}: info.desktopVersion
+#. placeholder {1}: info.engineVersion
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "FlowPad Desktop v{0} and flow SDK v{1} are downloaded. FlowPad restarts to install them."
+msgstr "FlowPad Desktop v{0} and flow SDK v{1} are downloaded. FlowPad restarts to install them."
+
 #. placeholder {0}: info.desktopAvailable
 #: src/components/version-popover/desktop-update-modal.tsx
 msgid "FlowPad Desktop v{0} is available, but the flow SDK version could not be determined — check your connection and try again."
@@ -14217,9 +14250,20 @@ msgstr "FlowPad Desktop v{0} is available, but the flow SDK version could not be
 msgid "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
 msgstr "FlowPad Desktop v{0} is available. Both components update together: the desktop first, then the flow SDK right after the restart."
 
+#. placeholder {0}: info.desktopVersion
+#. placeholder {1}: info.engineVersion
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "FlowPad Desktop v{0} is downloaded. FlowPad restarts to install it, and flow SDK v{1} is installed right after."
+msgstr "FlowPad Desktop v{0} is downloaded. FlowPad restarts to install it, and flow SDK v{1} is installed right after."
+
+#. placeholder {0}: info.desktopVersion
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "FlowPad Desktop v{0} is ready"
+msgstr "FlowPad Desktop v{0} is ready"
+
 #: src/components/version-popover/version-popover.tsx
-msgid "FlowPad Desktop v{version} is ready to install"
-msgstr "FlowPad Desktop v{version} is ready to install"
+#~ msgid "FlowPad Desktop v{version} is ready to install"
+#~ msgstr "FlowPad Desktop v{version} is ready to install"
 
 #: src/i18n/type-labels.ts
 msgid "Flowpad Diagnosis"
@@ -14272,6 +14316,10 @@ msgstr "FlowPad is connected"
 #~ msgid "FlowPad is offline"
 #~ msgstr "FlowPad is offline"
 
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "FlowPad is ready to update"
+msgstr "FlowPad is ready to update"
+
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad isn't connected — Open starts it if it's installed"
 msgstr "FlowPad isn't connected — Open starts it if it's installed"
@@ -14281,8 +14329,12 @@ msgid "FlowPad isn't installed on this computer"
 msgstr "FlowPad isn't installed on this computer"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "FlowPad restarts to apply it."
-msgstr "FlowPad restarts to apply it."
+msgid "FlowPad keeps working meanwhile, and asks before switching to it."
+msgstr "FlowPad keeps working meanwhile, and asks before switching to it."
+
+#: src/components/version-popover/version-popover.tsx
+#~ msgid "FlowPad restarts to apply it."
+#~ msgstr "FlowPad restarts to apply it."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "FlowPad restarts to apply the update. Not now? It installs on the next quit."
@@ -16766,6 +16818,14 @@ msgstr "It shows up in Runs as a test."
 msgid "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "It was downloaded in the background. FlowPad restarts to install it."
+msgstr "It was downloaded in the background. FlowPad restarts to install it."
+
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "It was downloaded in the background. Restarting the engine takes a few seconds — FlowPad stays open."
+msgstr "It was downloaded in the background. Restarting the engine takes a few seconds — FlowPad stays open."
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "It was not written."
 msgstr "It was not written."
@@ -17269,6 +17329,10 @@ msgstr "Last updated {ago} — results may be outdated."
 #: src/components/hooks-manager/index.tsx
 msgid "Last:"
 msgstr "Last:"
+
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "Later"
+msgstr "Later"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Latest on GitHub"
@@ -21594,6 +21658,10 @@ msgstr "Not now"
 msgid "Not Now"
 msgstr "Not Now"
 
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "Not now? The update is installed the next time FlowPad starts."
+msgstr "Not now? The update is installed the next time FlowPad starts."
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #~ msgid "Not on the remote yet — Push publishes this branch"
 #~ msgstr "Not on the remote yet — Push publishes this branch"
@@ -23207,6 +23275,7 @@ msgstr "Open the spec/plan in the Milkdown editor"
 msgid "Open the transcript analysis session"
 msgstr "Open the transcript analysis session"
 
+#: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Open the version panel to try again."
 msgstr "Open the version panel to try again."
@@ -26857,6 +26926,10 @@ msgstr "Restart FlowPad"
 msgid "Restart FlowPad to finish installing the update."
 msgstr "Restart FlowPad to finish installing the update."
 
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "Restart now"
+msgstr "Restart now"
+
 #. placeholder {0}: changedCount === 1 ? 'field' : 'fields'
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Restart required — {changedCount} {0} changed"
@@ -26891,6 +26964,10 @@ msgstr "Restart setup"
 #: src/components/webapp-display/PageCheckPanel.tsx
 #~ msgid "Restart the app's server"
 #~ msgstr "Restart the app's server"
+
+#: src/components/version-popover/update-ready-modal.tsx
+msgid "Restart the engine now"
+msgstr "Restart the engine now"
 
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
@@ -31577,9 +31654,18 @@ msgstr "Switch to {0}?"
 msgid "Switch to dark mode"
 msgstr "Switch to dark mode"
 
+#. placeholder {0}: engineView.version
+#: src/components/version-popover/version-popover.tsx
+msgid "Switch to flow SDK v{0}"
+msgstr "Switch to flow SDK v{0}"
+
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Switch to light mode"
 msgstr "Switch to light mode"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Switch to the new flow SDK"
+msgstr "Switch to the new flow SDK"
 
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Switch to the terminal?"
@@ -32024,6 +32110,10 @@ msgstr "That doesn't name a hub project — paste its id or a link to it."
 msgid "That file has no rows."
 msgstr "That file has no rows."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "That flow SDK version is not newer than the installed one."
+msgstr "That flow SDK version is not newer than the installed one."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "That is not valid JSON."
 msgstr "That is not valid JSON."
@@ -32263,8 +32353,8 @@ msgid "The desktop update feed could not be checked, so this flow SDK version ca
 msgstr "The desktop update feed could not be checked, so this flow SDK version cannot be installed right now. Your current installation is unchanged — check your connection and try again."
 
 #: src/components/version-popover/version-popover.tsx
-msgid "The desktop update is ready to install"
-msgstr "The desktop update is ready to install"
+#~ msgid "The desktop update is ready to install"
+#~ msgstr "The desktop update is ready to install"
 
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -32333,6 +32423,14 @@ msgstr "The fixer could not repair this setup. The step above says what it found
 #: src/components/version-popover/version-popover.tsx
 msgid "The flow SDK is up to date."
 msgstr "The flow SDK is up to date."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The flow SDK update could not be downloaded"
+msgstr "The flow SDK update could not be downloaded"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The flow SDK update could not be downloaded."
+msgstr "The flow SDK update could not be downloaded."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "The flow SDK update{target} failed{reason}"
@@ -32796,6 +32894,10 @@ msgstr "The update could not be started{0}."
 #: src/components/version-popover/version-popover.tsx
 msgid "The update has not finished downloading yet."
 msgstr "The update has not finished downloading yet."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The update is no longer prepared — start it again."
+msgstr "The update is no longer prepared — start it again."
 
 #: src/pages/entry/MessageLanding.tsx
 #~ msgid "The upload didn't complete — ask {senderName} to resend."
@@ -34380,6 +34482,7 @@ msgstr "Triggers"
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
+#: src/components/version-popover/version-popover.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
@@ -34850,7 +34953,6 @@ msgstr "Update failed"
 msgid "Update flow SDK to v{0} (works with this desktop)"
 msgstr "Update flow SDK to v{0} (works with this desktop)"
 
-#: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Update Now"
 msgstr "Update Now"

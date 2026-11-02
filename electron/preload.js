@@ -69,6 +69,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   skipDesktopUpdate: () => ipcRenderer.send('skip-desktop-update'),
   onDesktopUpdateState: (callback) => subscribe('desktop-update-state', callback),
   onEngineUpdateResumed: (callback) => subscribe('engine-update-resumed', callback),
+  // Engine updates are prepared in the background, then swapped in seconds (FLOWPAD-2310):
+  // prepareEngine({version?}) stages it while the engine keeps serving; applyEngineUpdate() swaps.
+  prepareEngine: (opts) => ipcRenderer.invoke('update:prepare-engine', opts),
+  applyEngineUpdate: () => ipcRenderer.invoke('update:apply-engine'),
+  onEngineUpdateState: (callback) => subscribe('engine-update-state', callback),
+  // Everything the panel's update needs is staged: the in-app "restart now or later?" dialog.
+  onUpdateReady: (callback) => subscribe('update-ready', callback),
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.

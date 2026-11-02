@@ -31,6 +31,7 @@ module.exports.__t = {
   getStartupFailed: () => startupFailed,
   createWindow, getMainWindow: () => mainWindow, startupUpdateNotice,
   skipDesktopUpdate: (ev) => ipcSkipDesktopUpdate(ev),
+  installWaitingUpdateOnExit,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
@@ -166,6 +167,14 @@ function load(opts = {}) {
       return opts.preflight === undefined
         ? { installed: '0.2.168', latest: '0.2.180', updateAvailable: true, latestMinDesktop: null, latestCompatible: true, newestCompatible: null }
         : opts.preflight;
+    }
+    // Staging in the background (uv-manager.prepareEngine): held until a test settles it.
+    prepareEngine(o) {
+      (uv.prepares = uv.prepares || []).push(o);
+      return new Promise((resolve, reject) => {
+        uv.finishPrepare = (over = {}) => resolve({ version: o.version || '0.2.180', spec: `flowpad==${o.version || '0.2.180'}`, pin: '3.11', flags: [], previousVersion: '0.2.168', ...over });
+        uv.failPrepare = reject;
+      });
     }
     deferPackageVersion(v) { uv.deferred.push(v); }
     undeferPackageVersion(v) { uv.undeferred.push(v); }
@@ -1213,7 +1222,7 @@ const HOUR = 60 * 60 * 1000;
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: true }));
     const r = await env.t.installAndStartBackend();
     eq(r.ok, true, 'startup succeeds');
-    eq(env.uv.upgrades, [Object.assign({ version: '0.2.180' }, { onProgress: env.uv.upgrades[0] && env.uv.upgrades[0].onProgress })], 'installs flowpad==0.2.180 — the version that was agreed, not "latest"');
+    eq(env.uv.upgrades, [Object.assign({ version: '0.2.180', prepared: null }, { onProgress: env.uv.upgrades[0] && env.uv.upgrades[0].onProgress })], 'installs flowpad==0.2.180 — the version that was agreed, not "latest"');
     eq([env.readState().phase, env.readState().consented, env.readState().previousEngine], ['installed', false, '0.2.168'],
       'the record waits for the HEALTHY gate, demoted meanwhile — a crash in between ASKS next launch');
     eq(env.dialogCalls.length, 0, 'no dialog: the user already agreed');
@@ -1913,6 +1922,117 @@ const HOUR = 60 * 60 * 1000;
     eq(await env.ipc['update:pair-warning'](), 'engine 0.2.100 is older than this desktop needs', 'pair-warning: the live message');
     const fine = load({});
     eq(await fine.ipc['update:pair-warning'](), null, 'pair-warning: none for a compatible pair');
+  }
+
+  // ── prepare in the background, swap in seconds ───────────────────────────
+  const engineStates = (env) => env.sent.filter(([ch]) => ch === 'engine-update-state').map(([, d]) => d);
+  const readyAsks = (env) => env.sent.filter(([ch]) => ch === 'update-ready').map(([, d]) => d);
+  {
+    // Upgrade (engine only): staged while the backend keeps serving; then the in-app question; then a
+    // swap that installs the PREPARED download.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    await env.t.getDesktopUpdateVersion();
+    eq(await env.ipc['update:prepare-engine'](null, { version: '0.2.180' }), { started: true, version: '0.2.180' }, 'prepare-engine: started');
+    eq([env.uv.flowStops || 0, env.loadedFiles.length, env.uv.upgrades.length], [0, 0, 0], 'while preparing: nothing stopped, the window stays in the app');
+    ok(engineStates(env).some((d) => d.state === 'preparing' && d.version === '0.2.180'), 'the panel hears it is preparing');
+    eq((await env.ipc['update:get-info']()).engineUpdate.state, 'preparing', 'get-info: preparing');
+    eq(readyAsks(env).length, 0, 'no question before it is ready');
+
+    env.uv.finishPrepare(); await tick(); await tick();
+    ok(engineStates(env).some((d) => d.state === 'ready' && d.version === '0.2.180'), 'the panel hears it is ready');
+    eq(readyAsks(env), [{ kind: 'engine', desktopVersion: null, engineVersion: '0.2.180', enginePrepared: true }], 'ONE in-app question: restart now or later');
+    const rec = env.readState();
+    eq([rec.engineVersion, rec.consented, rec.source, rec.prepared && rec.prepared.version], ['0.2.180', true, 'engine', '0.2.180'],
+      '"later" is already safe: any next start installs the prepared release');
+
+    // "Restart now": the swap installs the prepared download.
+    global.fetch = async () => ({ ok: true });
+    const applied = await env.ipc['update:apply-engine']();
+    delete global.fetch;
+    eq(applied, { started: true, version: '0.2.180' }, 'apply-engine: done');
+    eq(env.uv.upgrades.map((u) => u.prepared && u.prepared.version), ['0.2.180'], 'the swap installs the PREPARED release (offline)');
+    eq(env.readState(), null, 'applied now: nothing left for the next start');
+    eq(await env.ipc['update:apply-engine'](), { started: false, reason: 'not-prepared' }, 'nothing prepared any more');
+  }
+  {
+    // "Later" and the next start: the prepared release is installed before the engine boots.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    const prepared = { version: '0.2.180', spec: 'flowpad==0.2.180', pin: '3.11', flags: [], previousVersion: '0.2.168' };
+    fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', source: 'engine', consented: true, prepared }));
+    await env.t.getDesktopUpdateVersion();
+    env.t.primeLaunchCheck();
+    const r = await env.t.installAndStartBackend();
+    eq(r.ok, true, 'next start: up');
+    eq(env.uv.upgrades.map((u) => [u.version, u.prepared && u.prepared.version]), [['0.2.180', '0.2.180']], 'next start: the prepared release, offline');
+    const resumed = await env.ipc['update:take-resumed']();
+    eq([resumed.kind, resumed.success], ['engine', true], 'and the panel says the flow SDK was updated — not the desktop');
+  }
+  {
+    // Update Both: desktop download and engine staging in parallel; ONE question once BOTH are ready.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.2.40' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['update:both'](null, '0.2.180');
+    eq(r.started, true, 'update:both: started');
+    eq(env.uv.prepares.map((o) => [o.version, o.desktopVersion]), [['0.2.180', '0.2.48']], 'the engine is staged FOR the new desktop');
+    await tick();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(readyAsks(env).length, 0, 'desktop ready, engine still staging: no question yet');
+    env.uv.finishPrepare(); await tick(); await tick();
+    eq(readyAsks(env), [{ kind: 'both', desktopVersion: '0.2.48', engineVersion: '0.2.180', enginePrepared: true }], 'both ready: one question');
+    eq(env.dialogCalls.length, 0, 'no native dialog anywhere');
+    eq(env.readState().prepared && env.readState().prepared.version, '0.2.180', 'the agreed record carries the prepared download for the NEW desktop');
+  }
+  {
+    // A staging failure does not block the coordinated update: the new desktop downloads the engine itself.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.2.40' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['update:both'](null, '0.2.180');
+    await tick();
+    env.uv.failPrepare(new Error('PyPI went away')); await tick(); await tick();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(readyAsks(env), [{ kind: 'both', desktopVersion: '0.2.48', engineVersion: '0.2.180', enginePrepared: false }], 'still asked, engine not prepared');
+    eq(env.readState().consented, true, 'the agreement stands: the new desktop installs it');
+  }
+  {
+    // The native engine dialog's Upgrade (post-boot): prepared, not a stop-and-download.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    let accepted = null;
+    env.uv.instance.checkForUpdatesInBackground = async (_w, o) => { accepted = o.onUpgradeAccepted; return false; };
+    await env.t.getDesktopUpdateVersion();
+    await env.t.checkPackageUpdateInBackground();
+    ok(typeof accepted === 'function', 'the dialog path is handed the prepare-and-swap owner');
+    accepted('0.2.180');
+    eq(env.uv.prepares.map((o) => o.version), ['0.2.180'], 'Upgrade in the native dialog prepares in the background');
+  }
+  {
+    // Windows / AppImage: a downloaded, not-installed update goes in on quit — explicitly, not hanging on
+    // a 'quit' event app.exit() may never emit.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.ipc['update:download-desktop']();
+    await tick();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.t.installWaitingUpdateOnExit(), true, 'on quit: the waiting update is installed');
+    eq(env.autoUpdater.quits.pop(), [true, false], 'silently, without a relaunch');
+  }
+  {
+    // deb/rpm: no install on quit — the postponed update is installed at the next launch, before the engine.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', installsOnQuit: false });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    eq(env.t.installWaitingUpdateOnExit(), false, 'deb/rpm: nothing is installed on quit');
+    fs.writeFileSync(path.join(env.userData, 'postponed-desktop-update.json'), JSON.stringify({ version: '0.2.48' }));
+    env.t.primeLaunchCheck();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick(); await tick();
+    ok(env.sent.some(([ch, d]) => ch === 'startup-notice' && d && /password/.test(d.detail)), 'the loading screen says the postponed update installs now (password)');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload();
+    const r = await p;
+    eq([r.ok, env.autoUpdater.quits.length], [false, 1], 'deb/rpm: installed at launch, the app restarts into it');
   }
 
   // ── review round 10: apply outcomes, macOS staging, IPC senders (FLOWPAD-2310) ──

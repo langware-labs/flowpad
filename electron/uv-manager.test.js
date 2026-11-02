@@ -2496,6 +2496,101 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       fs.rmSync(venv, { recursive: true, force: true });
     }
   }
+  // ── prepare in the background, swap in seconds ──────────────────────────
+  {
+    const fs = require('fs'); const path = require('path');
+    // prepareEngine stages into its OWN tool dir — never the live one, never isInstalling(), never the
+    // live install loop (whose drain kills processes running from the live venv: the backend).
+    const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+    const runs = [];
+    m.getInstalledVersionSync = () => '0.2.240';
+    m._resolveEngineTarget = async (v) => ({ version: v, info: {} });
+    m._assertCandidateCompatible = async () => {};
+    m._pythonPinForUpgrade = async () => '3.11';
+    m._excludeNewerStrategies = async () => [{ label: 'release date', flags: ['--exclude-newer', '2026-10-30T00:00:00Z'] }, { label: 'none', flags: [] }];
+    m._runStreaming = async (cmd, args, opts) => { runs.push({ cmd, args, env: opts.env, installingNow: m.isInstalling() }); };
+    m._uvToolInstallForce = async () => { throw new Error('the live install path must not run'); };
+    const prepared = await m.prepareEngine({ version: '0.2.247' });
+    eq([prepared.version, prepared.spec, prepared.pin, prepared.previousVersion], ['0.2.247', 'flowpad==0.2.247', '3.11', '0.2.240'], 'prepare: the target and what it replaces');
+    eq(prepared.flags, ['--exclude-newer', '2026-10-30T00:00:00Z'], 'prepare: the cut-off that won is recorded');
+    eq(runs.map((r) => r.args[2]), ['flowpad==0.2.247', 'flowpad==0.2.240'], 'prepare: the target AND the current version are staged (offline rollback)');
+    ok(runs.every((r) => r.env && /flowpad-engine-staging/.test(r.env.UV_TOOL_DIR) && /flowpad-engine-staging/.test(r.env.UV_TOOL_BIN_DIR)), 'prepare: only the staging tool dir is written');
+    ok(runs.every((r) => !r.installingNow), 'prepare: isInstalling() stays false — nothing live is being replaced');
+    ok(!fs.existsSync(path.dirname(runs[0].env.UV_TOOL_DIR)), 'prepare: the staging dir is removed afterwards');
+    eq(await m.prepareEngine({ version: '0.2.240' }).then((r) => r.upToDate), true, 'prepare of what is installed: up to date, nothing staged');
+  }
+  {
+    // A cut-off the cache cannot solve moves down the ladder; the one that won is what is recorded.
+    const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+    m.getInstalledVersionSync = () => null;
+    m._resolveEngineTarget = async (v) => ({ version: v, info: {} });
+    m._assertCandidateCompatible = async () => {};
+    m._pythonPinForUpgrade = async () => '3.11';
+    m._excludeNewerStrategies = async () => [{ label: 'margin', flags: ['--exclude-newer', 'A'] }, { label: 'none', flags: [] }];
+    let n = 0;
+    m._runStreaming = async () => { if (n++ === 0) { const e = new Error('No solution found when resolving tool dependencies'); e.stderr = e.message; throw e; } };
+    const prepared = await m.prepareEngine({ version: '0.2.247' });
+    eq(prepared.flags, [], 'prepare: the ladder fell through and records the strategy that solved');
+  }
+  {
+    // The swap: OFFLINE, replaying exactly the prepared cut-off; no network resolution with the backend down.
+    const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+    const installs = [];
+    m.getInstalledVersionSync = () => '0.2.240';
+    m._resolveEngineTarget = async () => { throw new Error('no PyPI lookup at swap time'); };
+    m._uvToolInstallForce = async (args, opts) => { installs.push({ args, strategies: opts.strategies }); };
+    m._ensureShimOnPath = async () => {};
+    m._resolveFlowBin = async () => '/fake/flow';
+    m._verifyInstalledPairOrRollback = async () => {};
+    const prepared = { version: '0.2.247', spec: 'flowpad==0.2.247', pin: '3.11', flags: ['--exclude-newer', 'X'], previousVersion: '0.2.240', rollbackFlags: [] };
+    await m.upgrade({ version: '0.2.247', prepared });
+    eq(installs.length, 1, 'swap: one install');
+    ok(installs[0].args.includes('--offline'), 'swap: offline');
+    eq(installs[0].strategies, [{ label: 'prepared', flags: ['--exclude-newer', 'X'] }], 'swap: the prepared cut-off, not a recomputed ladder');
+  }
+  {
+    // A pruned cache (or a different pin): the prepared install fails → the normal download path runs.
+    const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+    const installs = [];
+    m.getInstalledVersionSync = () => '0.2.240';
+    m._resolveEngineTarget = async (v) => ({ version: v, info: {} });
+    m._assertCandidateCompatible = async () => {};
+    m._pythonPinForUpgrade = async () => '3.11';
+    m._uvToolInstallForce = async (args) => {
+      installs.push(args);
+      if (args.includes('--offline')) throw new Error('Network connectivity is disabled, but the requested data wasn\'t found in the cache');
+    };
+    m._ensureShimOnPath = async () => {};
+    m._resolveFlowBin = async () => '/fake/flow';
+    m._verifyInstalledPairOrRollback = async () => {};
+    await m.upgrade({ version: '0.2.247', prepared: { version: '0.2.247', spec: 'flowpad==0.2.247', pin: '3.11', flags: [] } });
+    eq([installs.length, installs[1].includes('--offline'), installs[1].includes('--refresh-package')], [2, false, true], 'swap fallback: a normal online install follows');
+  }
+  {
+    // The pair check refused the installed prepared release (and rolled back): no second, online try.
+    const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+    let installs = 0;
+    m.getInstalledVersionSync = () => '0.2.240';
+    m._uvToolInstallForce = async () => { installs++; };
+    m._ensureShimOnPath = async () => {};
+    m._resolveFlowBin = async () => '/fake/flow';
+    m._verifyInstalledPairOrRollback = async () => { throw new Error('not compatible — restored 0.2.240'); };
+    await assert.rejects(() => m.upgrade({ prepared: { version: '0.2.247', spec: 'flowpad==0.2.247', pin: '3.11', flags: [] } }), /not compatible/); passed++;
+    eq(installs, 1, 'a refused pair is not re-downloaded and re-installed');
+  }
+  {
+    // The rollback replays the staged cut-off of the current version, offline first.
+    const m = new UvManager(silentLog);
+    const installs = [];
+    m._prepared = { previousVersion: '0.2.240', rollbackFlags: ['--exclude-newer', 'R'] };
+    m._pythonPinForUpgrade = async () => '3.11';
+    m._uvToolInstallForce = async (args, opts) => { installs.push({ args, strategies: opts.strategies }); };
+    m._resolveFlowBin = async () => '/fake/flow';
+    await m._restoreEngine('0.2.240');
+    eq([installs[0].args.includes('--offline'), installs[0].strategies], [true, [{ label: 'prepared rollback', flags: ['--exclude-newer', 'R'] }]],
+      'rollback: offline with the staged cut-off');
+  }
+
   engineCompatForFixtures.desktopMinBackendVersion = shippedDesktopFloor;
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);

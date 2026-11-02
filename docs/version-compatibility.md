@@ -172,6 +172,23 @@ FlowPad to X … closes for a moment and reopens by itself"), stays on screen un
 A build older than the published release therefore replaces itself on first run — test a dry-run
 build with a version above the feed's.
 
+**Prepare in the background, swap in seconds.** Every engine update — the panel's Upgrade and its
+"works with this desktop" pin, the native engine dialog's Upgrade, Update Both, the native "both" offer —
+first STAGES the release while the running engine keeps serving (`uv-manager.prepareEngine`): a full
+install into a throwaway tool dir (`UV_TOOL_DIR`/`UV_TOOL_BIN_DIR`) that fills uv's shared cache, with the
+winning dependency cut-off recorded; the current version is staged too, so a rollback runs offline
+(uv's cache alone did not reliably still hold an old install's wheels). Staging never touches the live
+tool dir, its marker, or its processes (the live install loop's drain would kill the backend). The swap
+— `upgrade({ prepared })` — installs offline replaying that cut-off (≈3 s with bytecode compilation,
+measured), so the engine is down only for stop + that install + start; anything that keeps the prepared
+install from applying falls back to the full download, and the post-install pair check stays the
+authority. When everything is staged the app asks once, in the app: **Restart now** (engine-only: a swap
+of a few seconds; with a desktop: FlowPad restarts) or **Later**. Later is never "never": the prepared
+release is saved as an agreed pending-engine record (`prepared` field), which the next start installs
+offline before the engine boots; a downloaded desktop installs on quit (Windows/AppImage: explicitly at
+the end of the normal shutdown — `app.exit()` is not relied on to emit `quit`; macOS: Squirrel) or, on
+deb/rpm, at the next launch with one password prompt (`postponed-desktop-update.json`).
+
 **When an apply or a download goes wrong:**
 
 - An install failure that arrives *after* `quitAndInstall` returned (Windows: the NSIS spawn fails

@@ -9,7 +9,6 @@
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { commandFor } from '@src/notifications/command-registry';
 
 const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), notifySuccess: vi.fn(), notifyError: vi.fn(), notifyWarning: vi.fn(), notifyInfo: vi.fn() }));
 vi.mock('@sdk/client', () => ({ default: { get: h.get, post: h.post } }));
@@ -491,13 +490,14 @@ describe('after Update Both the popup is gone: the user still sees what happens'
     await screen.findByTestId('desktop-update-required-modal');
   });
 
-  it('Update Both: a toast says the download started; when it lands, a toast offers Update Now', async () => {
-    let push: ((s: unknown) => void) | null = null;
+  it('Update Both: a toast says the download started; when everything is staged, ONE dialog asks', async () => {
+    let ready: ((i: unknown) => void) | null = null;
     const api = electronApi({
       getUpdateInfo: vi.fn().mockResolvedValue(INCOMPATIBLE_INFO),
       updateBoth: vi.fn().mockResolvedValue({ started: true, version: '0.2.62', engineVersion: '0.2.240' }),
-      onDesktopUpdateState: vi.fn((cb: (s: unknown) => void) => {
-        push = cb;
+      applyDesktopUpdate: vi.fn().mockResolvedValue({ started: true, version: '0.2.62' }),
+      onUpdateReady: vi.fn((cb: (i: unknown) => void) => {
+        ready = cb;
         return () => {};
       }),
     });
@@ -513,32 +513,94 @@ describe('after Update Both the popup is gone: the user still sees what happens'
     expect(started.title).toContain('v0.2.62');
     expect(started.message).toContain('v0.2.240');
 
-    push?.({ state: 'ready', version: '0.2.62' });
-    await waitFor(() =>
-      expect(h.notifyInfo).toHaveBeenCalledWith(expect.objectContaining({ id: 'desktop-update-ready' })),
-    );
-    const ready = h.notifyInfo.mock.calls.find(([d]) => d.id === 'desktop-update-ready')![0] as {
-      durationMs: number | null; actions: { command: string }[];
-    };
-    expect(ready.durationMs).toBeNull(); // it waits for the user
-    // Its Update Now installs (and opens the panel, which shows the restart).
-    commandFor(ready.actions[0].command)!({}, { id: 'desktop-update-ready' });
+    // The shell staged both: the in-app question.
+    act(() => ready?.({ kind: 'both', desktopVersion: '0.2.62', engineVersion: '0.2.240', enginePrepared: true }));
+    const modal = await screen.findByTestId('update-ready-modal');
+    expect(modal.textContent).toContain('0.2.62');
+    expect(modal.textContent).toContain('0.2.240');
+    expect(modal.textContent).toContain('next time FlowPad starts');
+    fireEvent.click(screen.getByTestId('update-ready-now-button'));
     await waitFor(() => expect(api.applyDesktopUpdate).toHaveBeenCalledTimes(1));
-    await screen.findByTestId('version-upgrade-button');
   });
 
-  it('a download the user postponed in the native dialog ("Later") gets no ready toast', async () => {
-    let push: ((s: unknown) => void) | null = null;
+  it('"Later" closes the dialog and installs nothing now', async () => {
+    let ready: ((i: unknown) => void) | null = null;
+    const api = electronApi({
+      onUpdateReady: vi.fn((cb: (i: unknown) => void) => {
+        ready = cb;
+        return () => {};
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    render(<VersionPopover currentVersion="0.2.230" />);
+    act(() => ready?.({ kind: 'desktop', desktopVersion: '0.2.62', engineVersion: null, enginePrepared: false }));
+    fireEvent.click(await screen.findByTestId('update-ready-later-button'));
+    await waitFor(() => expect(screen.queryByTestId('update-ready-modal')).toBeNull());
+    expect(api.applyDesktopUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('engine updates are prepared in the background, then swapped in seconds', () => {
+  it('Upgrade prepares (the engine keeps serving), the row shows it, and the swap runs from the dialog', async () => {
+    let engineState: ((s: unknown) => void) | null = null;
+    let ready: ((i: unknown) => void) | null = null;
+    const api = electronApi({
+      prepareEngine: vi.fn().mockResolvedValue({ started: true }),
+      applyEngineUpdate: vi.fn().mockResolvedValue({ started: true, version: '0.2.240' }),
+      onEngineUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        engineState = cb;
+        return () => {};
+      }),
+      onUpdateReady: vi.fn((cb: (i: unknown) => void) => {
+        ready = cb;
+        return () => {};
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    fireEvent.click(screen.getByTestId('version-upgrade-button'));
+    await waitFor(() => expect(api.prepareEngine).toHaveBeenCalledTimes(1));
+    expect(api.upgradeFlowpad).not.toHaveBeenCalled(); // no stop-and-download any more
+    expect((await screen.findByTestId('engine-update-row')).textContent).toContain('in the background');
+    expect(screen.queryByTestId('version-upgrade-button')).toBeNull();
+
+    act(() => engineState?.({ state: 'ready', version: '0.2.240' }));
+    expect((await screen.findByTestId('engine-restart-now-button')).textContent).toContain('0.2.240');
+
+    act(() => ready?.({ kind: 'engine', desktopVersion: null, engineVersion: '0.2.240', enginePrepared: true }));
+    const modal = await screen.findByTestId('update-ready-modal');
+    expect(modal.textContent).toContain('a few seconds');
+    fireEvent.click(screen.getByTestId('update-ready-now-button'));
+    await waitFor(() => expect(api.applyEngineUpdate).toHaveBeenCalledTimes(1));
+  });
+
+  it('a failed background download shows the error with Try again', async () => {
+    let engineState: ((s: unknown) => void) | null = null;
+    const api = electronApi({
+      prepareEngine: vi.fn().mockResolvedValue({ started: true }),
+      onEngineUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        engineState = cb;
+        return () => {};
+      }),
+    });
+    (window as { electronAPI?: unknown }).electronAPI = api;
+    await openPopover();
+    act(() => engineState?.({ state: 'error', version: '0.2.240', error: 'PyPI unreachable' }));
+    fireEvent.click(await screen.findByTestId('engine-update-retry-button'));
+    await waitFor(() => expect(api.prepareEngine).toHaveBeenCalledWith({ version: '0.2.240' }));
+  });
+
+  it('a prepare started while the panel is closed (the native dialog) is toasted', async () => {
+    let engineState: ((s: unknown) => void) | null = null;
     (window as { electronAPI?: unknown }).electronAPI = electronApi({
-      onDesktopUpdateState: vi.fn((cb: (s: unknown) => void) => {
-        push = cb;
+      onEngineUpdateState: vi.fn((cb: (s: unknown) => void) => {
+        engineState = cb;
         return () => {};
       }),
     });
     render(<VersionPopover currentVersion="0.2.230" />);
-    push?.({ state: 'ready', version: '0.2.62' });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(h.notifyInfo).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'desktop-update-ready' }));
+    act(() => engineState?.({ state: 'preparing', version: '0.2.240' }));
+    await waitFor(() => expect(h.notifyInfo).toHaveBeenCalledWith(expect.objectContaining({ id: 'engine-update-prepare' })));
   });
 });
 
