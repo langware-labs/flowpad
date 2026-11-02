@@ -266,9 +266,13 @@ async def handle_delete_by_id():
         else:
             is_deleted = await entity_model.delete_by_id(target_typeid.id)
     except HubError as e:
-        raise HTTPException(
-            status_code=502, detail=f"{e.reason} ({e.status_code}); it is kept here so the delete can be retried"
-        ) from e
+        # The hub answered: its status and code are the answer (e.g. 403 target_not_found). Nothing came
+        # back (timeout, refused): 502 — or 401 / 503 when this box is signed out / has no hub.
+        return ApiFailResponse(
+            message=f"{e.reason} ({e.status_code}); it is kept here so the delete can be retried",
+            status_code=e.status_code or e.http_status,
+            data=e.envelope_data,
+        )
     # Removing the hub row above fans ``child_deleted`` back to this instance, which can drop the
     # local mirror before ``delete_by_id`` reaches it. A row that existed and is gone now was
     # deleted — by this request — so that is success, not a refusal.

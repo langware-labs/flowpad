@@ -1,21 +1,26 @@
-"""``DELETE /graph/deployment/<id>`` answers with what the hub said, not a blanket 502.
+"""``DELETE /graph/deployment/<id>`` passes on the hub's answer instead of a blanket 502.
 
-A remote placement is deleted on the hub first (``owns_hub_delete``). When the hub refuses, the action
-answers the hub's own status with its code in ``data.hub_code`` (e.g. ``target_not_found``); a 502 only
-when the hub broke or could not be reached; a 401 when nobody is signed in. In every failure the local
-row is kept as the handle to retry.
+A remote placement is deleted on the hub first (``owns_hub_delete``). The delete action
+(``handle_delete_by_id``) tells the two failures apart:
 
-The hub is faked at the HTTP transport, so the real ``HubProxy.send`` turns a hang into a ``HubError``.
-No network.
+* the hub answered (an app failure): its status and code are the answer, e.g. 403 with
+  ``data.hub_code: "target_not_found"``;
+* nothing came back (a connection failure: timeout, refused): 502;
+* not signed in here: 401.
+
+In every failure the local row is kept as the handle to retry. The hub is faked at the HTTP transport,
+so the real ``HubProxy.send`` turns a hang into a ``HubError``. No network.
 """
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import httpx
 import pytest
 
+from flow_sdk.app.actions.graph_crud_actions import handle_delete_by_id
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.responses.response import ApiSuccessResponse
 
@@ -76,6 +81,15 @@ async def _remote_placement() -> Deployment:
     return row
 
 
+async def _delete(row: Deployment):
+    """``DELETE /graph/deployment/<id>`` through the delete action."""
+    request = SimpleNamespace(target_entity_typeid=row.typeid)
+    with patch("flow_sdk.app.actions.graph_crud_actions.get_current_request_info", return_value=request), patch(
+        "flow_sdk.request_context.methods.get_current_request_info", return_value=request
+    ):
+        return await handle_delete_by_id()
+
+
 async def _assert_kept(row: Deployment) -> None:
     assert await Deployment.get_by_id(row.id) is not None, "the handle to retry"
 
@@ -83,7 +97,7 @@ async def _assert_kept(row: Deployment) -> None:
 async def test_the_hub_deletes_it(hub):
     row = await _remote_placement()
 
-    answer = await row.delete_action()
+    answer = await _delete(row)
 
     assert isinstance(answer, ApiSuccessResponse) and answer.data is True
     assert [m for m, _ in hub.calls] == ["DELETE"] and row.id in hub.calls[0][1]
@@ -94,7 +108,7 @@ async def test_already_gone_on_the_hub_is_deleted_here(hub):
     hub.answer = httpx.Response(404)
     row = await _remote_placement()
 
-    answer = await row.delete_action()
+    answer = await _delete(row)
 
     assert isinstance(answer, ApiSuccessResponse)
     assert await Deployment.get_by_id(row.id) is None
@@ -105,7 +119,7 @@ async def test_a_deployment_the_hub_no_longer_has_answers_its_403_and_code(hub):
     hub.answer = httpx.Response(403, json=TARGET_NOT_FOUND)
     row = await _remote_placement()
 
-    answer = await row.delete_action()
+    answer = await _delete(row)
 
     assert answer.status_code == 403
     assert answer.data == {
@@ -118,13 +132,14 @@ async def test_a_deployment_the_hub_no_longer_has_answers_its_403_and_code(hub):
     await _assert_kept(row)
 
 
-async def test_the_hub_failing_to_destroy_the_machine_is_a_502(hub):
+async def test_the_hub_failing_to_destroy_the_machine_answers_its_500(hub):
+    """The hub answered, so it is an app failure: passed on, not turned into a gateway error."""
     hub.answer = httpx.Response(500, json=SERVER_ERROR)
     row = await _remote_placement()
 
-    answer = await row.delete_action()
+    answer = await _delete(row)
 
-    assert answer.status_code == 502
+    assert answer.status_code == 500
     assert answer.data["hub_failure"] == "server_error" and answer.data["hub_status"] == 500
     await _assert_kept(row)
 
@@ -138,18 +153,18 @@ async def test_a_hub_that_does_not_answer_is_a_502(hub, failure):
     hub.answer = failure
     row = await _remote_placement()
 
-    answer = await row.delete_action()
+    answer = await _delete(row)
 
     assert answer.status_code == 502
     assert answer.data["hub_failure"] == "offline" and answer.data["hub_status"] is None
     await _assert_kept(row)
 
 
-async def test_a_credential_the_hub_rejects_is_a_401(hub):
+async def test_a_credential_the_hub_rejects_answers_its_401(hub):
     hub.answer = httpx.Response(401, json=UNAUTHENTICATED)
     row = await _remote_placement()
 
-    answer = await row.delete_action()
+    answer = await _delete(row)
 
     assert answer.status_code == 401
     assert answer.data["hub_failure"] == "signed_out" and answer.data["hub_code"] == "unauthenticated"
@@ -162,7 +177,7 @@ async def test_no_credentials_here_is_a_401_and_never_asks_the_hub(hub, monkeypa
     monkeypatch.setattr(credentials, "load_credentials", lambda: None)
     row = await _remote_placement()
 
-    answer = await row.delete_action()
+    answer = await _delete(row)
 
     assert answer.status_code == 401
     assert answer.data["hub_failure"] == "signed_out"

@@ -806,31 +806,6 @@ class Deployment(Entity):
             raise DeploymentActionError(f"cloud login required to {verb} a cloud machine", status_code=401) from e
         return data if isinstance(data, dict) else {}
 
-    @action.delete(action_name="delete")
-    async def delete_action(self):
-        """`DELETE /deployment/<id>` — delete this placement (the hub row first when remote).
-
-        A hub refusal answers with the hub's own status and code (``data.hub_status`` /
-        ``data.hub_code``, e.g. ``target_not_found``); a 502 only when the hub broke or could not
-        be reached. The row is kept so the delete can be retried.
-        """
-        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
-
-        try:
-            deleted = await self.delete()
-        except HubError as exc:
-            return ApiFailResponse(
-                message=f"{exc.reason} ({exc.status_code}); it is kept here so the delete can be retried",
-                status_code=exc.http_status,
-                data=exc.envelope_data,
-            )
-        # Removing the hub row fans ``child_deleted`` back here, which can drop this row first:
-        # a row that is gone now was deleted by this request.
-        if not deleted and await type(self).get_one({"id": self.id}) is not None:
-            return ApiFailResponse(message=f"Delete entity failed: {self.typeid}", status_code=403)
-        return ApiSuccessResponse[bool](data=True, message="Entity was deleted successfully.")
-
     @action.post(action_name="pause")
     async def pause_action(self):
         """`POST /deployment/<id>/pause` — stop this placement's machine."""
