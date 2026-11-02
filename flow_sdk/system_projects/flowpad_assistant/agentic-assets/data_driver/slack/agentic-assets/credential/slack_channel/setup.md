@@ -3,7 +3,7 @@ Connect Slack — one of three ways.
 **Your own app (the default: everything you are in, live).** Data Sources → Add → Slack → **Connect Slack**
 runs the `slack-connect` wizard: Flowpad cloud hands out a public URL, a link creates your Slack app from a
 manifest that already names it (user scopes, event subscriptions, Request URL), you select your workspace → Next → Create and Install →
-Allow, paste the **User OAuth Token** (`xoxp-…`, OAuth & Permissions), and say hi. Replies are posted as you. By hand, or as an agent: create
+Allow, paste the **User OAuth Token** (`xoxp-…`, OAuth & Permissions). Replies are posted as you. By hand, or as an agent: create
 the app at https://api.slack.com/apps "From an app manifest" with user scopes `channels:history`, `groups:history`,
 `im:history`, `mpim:history`, `channels:read`, `groups:read`, `im:read`, `mpim:read`, `users:read`, `chat:write`,
 `files:read`, `files:write`, `reactions:read`, `reactions:write` and user events `message.channels`,

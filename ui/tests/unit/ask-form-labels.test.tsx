@@ -40,13 +40,9 @@ it('labels each field for a person, keeping the key for the input', async () => 
   expect(screen.getByTestId('ask-input-user_token')).toBeInTheDocument();
 });
 
-it('says where the question stands in its sequence, above the prompt, without repeating it', async () => {
+it('says where the question stands in its sequence, above the prompt', async () => {
   render(<AskForm questionId="q2" />);
-  expect((await screen.findByTestId('ask-stage')).textContent).toBe('2 of 2');
-  cleanup();
-  h.get.mockResolvedValue({ id: 'q4', op: 'x', prompt: 'Paste the token', fields: 'string', stage: { label: 'Set up on Slack', index: 2, total: 2 } });
-  render(<AskForm questionId="q4" />);
-  expect((await screen.findByTestId('ask-stage')).textContent).toBe('2 of 2 · Set up on Slack');
+  expect((await screen.findByTestId('ask-stage')).textContent).toBe('2 of 2 · Paste the token');
 });
 
 it('shows no stage line when the question stands alone', async () => {

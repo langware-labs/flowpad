@@ -12,7 +12,7 @@
     "secret": true,
     "timeout_seconds": 1800,
     "stage": {
-      "label": "Paste the token",
+      "label": "Your token",
       "index": 2,
       "total": 2
     },

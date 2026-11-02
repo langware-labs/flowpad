@@ -52,7 +52,7 @@ def stub(request, monkeypatch):
                 return ReturnedValue.satisfied("live", value=SourceUpdateSpec(shown=shown), ran=False)
             return ReturnedValue.satisfied("ready", value=SourceUpdateSpec(owner=values["owner"], shown=shown))
 
-        @setup_step("judge")
+        @setup_step("judge", probes=True)
         async def _judge(self, *, check: bool, values: Mapping[str, str], probe: bool = False) -> ReturnedValue:
             if probe:
                 return ReturnedValue.satisfied(f"probed {values.get('value', '')}", ran=False)
@@ -405,27 +405,19 @@ async def test_heard_is_satisfied_by_any_message_of_the_source_since_a_moment(st
 
 async def test_a_probe_judges_typed_values_and_keeps_nothing(stub, monkeypatch):
     """A question's Verify runs a step as a PROBE: the step judges the typed values, nothing is kept, and a step
-    that cannot judge (no ``probe`` argument, or a generic step) says so instead of running."""
-    from flow_sdk.builtin import data_source as module
-
-    kept = []
-    monkeypatch.setattr(module.DataSource, "_keep", lambda self, driver, update: kept.append(update) or _done())
-    name, _ = stub
+    that cannot judge (not declared ``probes=True``, or a generic step) says so instead of running."""
+    name, kept = stub
     source = DataSource(provider=name, name="bot", config={})
     await source.save()
     try:
         judged = await source.step("judge", probe=True, values={"value": "v1"})
-        assert judged.ok and not judged.ran and judged.detail == "probed v1" and kept == []
-        assert (await source.step("app", probe=True, values={"app_id": "A"})).exit_code is ExitCode.NOT_APPLICABLE, "no probe argument"
+        assert judged.ok and not judged.ran and judged.detail == "probed v1" and kept["credentials"] == []
+        assert (await source.step("app", probe=True, values={"app_id": "A"})).exit_code is ExitCode.NOT_APPLICABLE, "not declared probing"
         assert (await source.step("heard", probe=True, values={})).exit_code is ExitCode.NOT_APPLICABLE, "a generic step"
         for_real = await source.step("judge", values={"value": "v1"})
-        assert for_real.ok and len(kept) == 1
+        assert for_real.ok and kept["credentials"] == [("stubcred", {"STUB_SECRET": "v1"})], "keyed by the credential's env var"
     finally:
         await source.delete()
-
-
-async def _done():
-    return None
 
 
 async def test_heard_names_this_sources_own_url_when_nothing_arrives(stub, monkeypatch):

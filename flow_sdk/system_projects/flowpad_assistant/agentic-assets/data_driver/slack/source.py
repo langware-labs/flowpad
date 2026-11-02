@@ -99,11 +99,11 @@ SLACK_API_BASE = "https://slack.com/api"
 HISTORY_PAGE = 15
 #: What a person's own internal app reads a call (Slack's hard ceiling is 999; 100 keeps a pass short).
 EVERYTHING_PAGE = 100
-#: Conversations one everything-mode pass reads, the most recently active first: a first connect lands
-#: the live ones within a pass or two, a quiet workspace is swept in one.
+#: Conversations one everything-mode pass reads (in the order ``_AllCursor.due`` gives): a first connect
+#: lands the live ones within a pass or two, a quiet workspace is swept in one.
 CHANNELS_PER_PASS = 20
 #: How often everything-mode re-lists the person's conversations (a new DM, a joined channel).
-SWEEP_SECONDS = 60
+SWEEP_SECONDS = 60  # every poll at the default cadence: the sweep is what says which conversations moved
 #: Every conversation kind a person can be in.
 CONVERSATION_TYPES = "public_channel,private_channel,im,mpim"
 #: The everything cursor stays under ``MAX_CURSOR_LENGTH`` (4096): past this, the conversations whose
@@ -371,9 +371,9 @@ class SlackSource(MessageSource):
             for conversation in listed:
                 state.newest.setdefault(conversation["id"], "")
             state.swept = now
-            state.recent = [c["id"] for c in sorted(listed, key=lambda c: -_ts_key(str(c.get("updated") or 0)))]
-            # Slack's ``updated`` is milliseconds: a conversation that moved since its last read is read first.
-            state.active = [c for c in state.recent if state.newest.get(c) and _ts_key(str(_updated_s(listed, c))) > _ts_key(state.newest[c])]
+            # Slack's ``updated`` is milliseconds; most recently active first.
+            updated = {c["id"]: float(c.get("updated") or 0) / 1000.0 for c in listed}
+            state.updated = dict(sorted(updated.items(), key=lambda kv: -kv[1]))
         floor = f"{query.since.timestamp():.6f}" if query.since else ""
         items: list = []
         for channel in state.due(CHANNELS_PER_PASS):
@@ -807,7 +807,7 @@ class SlackSource(MessageSource):
         shown = SetupShown(name=name, link=manifest_link(url, name))
         return ReturnedValue.satisfied(f"Create {name} in Slack from this link", ran=not check, value=SourceUpdateSpec(shown=shown))
 
-    @setup_step("app")
+    @setup_step("app", probes=True)
     async def _app_step(self, *, check: bool, values: Mapping[str, str], probe: bool = False) -> ReturnedValue:
         """The person's app: its User OAuth Token acts as them (``auth.test`` names the workspace and who
         they are there). Kept: the token in the credential (the ``app`` way), the workspace and user in
@@ -816,7 +816,8 @@ class SlackSource(MessageSource):
         if not self.everything:
             return ReturnedValue.not_applicable("one channel as a bot: no app to connect")
         typed = str(values.get("user_token") or values.get("value") or "").strip()  # the wizard's bind, or the form's probe
-        token = typed if (probe or not check) and typed else str(self._secret("SLACK_USER_TOKEN") or "").strip()
+        kept_token = str(self._secret("SLACK_USER_TOKEN") or "").strip()
+        token = kept_token if check and not probe else typed or kept_token  # a check judges what is kept
         if not token:
             return ReturnedValue.not_yet("Paste the User OAuth Token (OAuth & Permissions).")
         if not token.startswith("xoxp-"):
@@ -949,22 +950,15 @@ def manifest_link(request_url: str, name: str = DEFAULT_APP_NAME) -> str:
     return "https://api.slack.com/apps?new_app=1&manifest_json=" + quote(json.dumps(manifest(request_url, name), separators=(",", ":")), safe="")
 
 
-def _updated_s(listed: list[dict], channel: str) -> float:
-    """When Slack last saw activity in ``channel`` (``users.conversations``' ``updated``, milliseconds), in seconds."""
-    for c in listed:
-        if c.get("id") == channel:
-            return float(c.get("updated") or 0) / 1000.0
-    return 0.0
-
-
 def _channel_key(config: Mapping[str, Any]) -> str:
     entry = config.get("channel") or ""
     return str((entry.get("id") if isinstance(entry, Mapping) else entry) or "").strip()
 
 
 class _AllCursor:
-    """Where an everything-mode row is in each conversation: ``all:{"s": <swept at>, "c": {<channel>:
-    <newest ts read, "" = never>}, "p": {<channel>: [<pending high-water ts>, <Slack page cursor>]}}``.
+    """Where an everything-mode row is in each conversation: ``all:{"s": <swept at>, "o": <rotation offset>,
+    "c": {<channel>: <newest ts read, "" = never>}, "p": {<channel>: [<pending high-water ts>, <Slack page
+    cursor>]}}``.
     Encoded under ``CURSOR_BUDGET``: the conversations whose newest message is oldest are forgotten first
     (their next read re-floors at the window — a bounded re-read, never a loss of position for the rest)."""
 
@@ -972,11 +966,10 @@ class _AllCursor:
         self.swept = 0.0
         self.newest: dict[str, str] = {}
         self.pending: dict[str, list[str]] = {}
-        #: Most recently active first, from the sweep that just ran (not kept across passes).
-        self.recent: list[str] = []
-        #: Read before and changed since, per the sweep that just ran (not kept across passes).
-        self.active: list[str] = []
-        #: Where the rotation over the quiet conversations stands, so every one gets its turn.
+        #: When Slack last saw activity in each conversation, most recent first — the sweep that just ran
+        #: (not kept across passes).
+        self.updated: dict[str, float] = {}
+        #: Where the rotation over the quiet conversations stands (``o``), so every one gets its turn.
         self.offset = 0
 
     @classmethod
@@ -1013,18 +1006,17 @@ class _AllCursor:
             self.forget(victims.pop(0) if victims else next(iter(self.newest)))
 
     def due(self, count: int) -> list[str]:
-        """The conversations this pass reads: ones mid-page first, then ones that changed since they were read
+        """The conversations this pass reads: ones mid-page first, then ones that moved since they were read
         (the sweep's word), then never read (most recently active first), then the rest in turn — a rotation
-        that advances each pass, so a quiet conversation is never starved by busier ones."""
-        order = {c: i for i, c in enumerate(self.recent)}
-        active = [c for c in self.active if c in self.newest and c not in self.pending]
+        that advances by what it took, so a quiet conversation is never starved by busier ones."""
+        order = {c: i for i, c in enumerate(self.updated)}
+        active = [c for c, at in self.updated.items() if self.newest.get(c) and c not in self.pending and at > _ts_key(self.newest[c])]
         never = sorted((c for c, ts in self.newest.items() if not ts and c not in self.pending), key=lambda c: order.get(c, len(order)))
-        ahead = set(self.pending) | set(active) | set(never)
-        rest = sorted(c for c in self.newest if c not in ahead)
+        head = [*self.pending, *active, *never]
+        rest = sorted(self.newest.keys() - set(head))
         start = self.offset % len(rest) if rest else 0
-        turn = rest[start:] + rest[:start]
-        chosen = [*self.pending, *active, *never, *turn][:count]
-        self.offset = (start + max(0, count - len(self.pending) - len(active) - len(never))) % len(rest) if rest else 0
+        chosen = [*head, *rest[start:], *rest[:start]][:count]
+        self.offset = (start + max(0, len(chosen) - len(head))) % len(rest) if rest else 0
         return chosen
 
     def forget(self, channel: str) -> None:

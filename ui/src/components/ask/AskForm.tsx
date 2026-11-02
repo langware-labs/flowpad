@@ -40,7 +40,7 @@ export function AskForm({
   /** Show the op's name under the prompt — useful in a bare window, noise inside a wizard. */
   showOp?: boolean;
   /** How the host runs a question's `verify` on the typed values (a source setup dialog: that source's step as a
-   *  check): once by itself after a paste, then on the Verify button, the verdict shown in place. */
+   *  probe): once by itself after a paste, then on the Verify button, the verdict shown in place. */
   verifyWith?: (step: string, values: Record<string, string>) => Promise<Pick<ReturnedValue, 'exit_code' | 'detail'>>;
 }) {
   const { _ } = useLingui();
@@ -156,7 +156,7 @@ export function AskForm({
         {question.stage ? (
           <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground" data-testid="ask-stage">
             {question.stage.index} of {question.stage.total}
-            {question.stage.label && question.stage.label !== question.prompt ? ` · ${question.stage.label}` : ''}
+            {question.stage.label ? ` · ${question.stage.label}` : ''}
           </p>
         ) : null}
         <h1 className="whitespace-pre-line text-base font-medium" data-testid="ask-prompt">

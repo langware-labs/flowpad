@@ -902,8 +902,7 @@ def test_the_everything_cursor_round_trips_refuses_garbage_and_stays_under_budge
     assert "C000000000" not in kept.newest, "the quietest are forgotten first (re-floored at the window next time)"
     rest = sorted(c for c in kept.newest if c != "C000000399")
     assert kept.due(3) == ["C000000399", *rest[:2]], "mid-page first, then the rotation from where it stands"
-    assert kept.due(3) == ["C000000399", *rest[2:4]], "the rotation advanced: the next quiet ones get their turn"
-    assert slack_source._AllCursor.decode(kept.encode()).offset == kept.offset, "the rotation survives the cursor"
+    assert slack_source._AllCursor.decode(kept.encode()).offset == kept.offset == 2, "the rotation survives the cursor"
 
 
 def test_a_pass_reads_changed_conversations_first_and_rotates_through_the_rest():
@@ -912,11 +911,11 @@ def test_a_pass_reads_changed_conversations_first_and_rotates_through_the_rest()
     state = slack_source._AllCursor()
     state.newest = {"C1": "100.0", "C2": "100.0", "C3": "100.0", "D1": "100.0", "N1": ""}
     state.pending = {"P1": ["150.0", "pg"]}
-    state.recent = ["D1", "N1", "C1", "C2", "C3"]
-    state.active = ["D1"]
+    state.updated = {"D1": 120.0, "N1": 110.0, "C1": 50.0, "C2": 50.0, "C3": 50.0}  # D1 moved since it was read
     assert state.due(3) == ["P1", "D1", "N1"], "mid-page, changed, never read"
     assert state.due(5) == ["P1", "D1", "N1", "C1", "C2"]
-    state.active, state.newest["N1"] = [], "100.0"  # read now: it joins the rotation
+    state.updated["D1"] = state.updated["N1"] = 50.0  # both quiet now
+    state.newest["N1"] = "100.0"  # N1 read: it joins the rotation
     assert state.due(2) == ["P1", "C3"], "the rotation goes on from where it stood"
     assert state.due(3) == ["P1", "D1", "N1"]
     assert state.due(3) == ["P1", "C1", "C2"], "and wraps around"
@@ -1208,7 +1207,7 @@ def test_the_connect_wizard_is_declared_and_every_step_it_names_exists():
     assert "{{manifest.link}}" in ops["ask-create-app"]["exe_data"]["detail"], "the link the person taps, shown at its place in the run"
     keys = ops["ask-user-token"]
     assert keys["output_spec_kind"] == "string" and keys["exe_data"]["secret"], "one value, masked"
-    assert keys["exe_data"]["stage"] == {"label": "Paste the token", "index": 2, "total": 2}
+    assert keys["exe_data"]["stage"] == {"label": "Your token", "index": 2, "total": 2}
     assert keys["exe_data"]["verify"] == {"label": "Verify", "source_step": "app"}, "the token is checked in place, by the app step as a probe"
     assert "{{manifest.name}}" in keys["exe_data"]["detail"], "names the app the person just made: asked after it exists"
     assert next(s for s in wizard["steps"] if s["id"] == "ask-user-token")["bind"] == "user_token", "what the app step reads"
