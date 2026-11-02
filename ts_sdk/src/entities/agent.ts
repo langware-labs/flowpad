@@ -477,12 +477,17 @@ export class Agent extends APIEntity<Agent> {
    * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
    * back to the owner's capped default; omitted leaves it as it is.
    */
-  async deploy(
-    environment?: string,
-    provider?: 'local' | CloudDeployProvider,
-    tokenAllocation?: AgentTokenAllocation | null,
-    machineSize?: string,
-  ): Promise<AgentDeployResult> {
+  async deploy({
+    environment,
+    provider,
+    tokenAllocation,
+    machineSize,
+  }: {
+    environment?: string;
+    provider?: 'local' | CloudDeployProvider;
+    tokenAllocation?: AgentTokenAllocation | null;
+    machineSize?: string;
+  } = {}): Promise<AgentDeployResult> {
     const body = {
       ...(environment ? { environment } : {}),
       ...(provider ? { provider } : {}),

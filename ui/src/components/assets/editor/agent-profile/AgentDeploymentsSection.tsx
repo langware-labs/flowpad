@@ -86,7 +86,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
   const deploy = useCallback(async () => {
     setDeploying(true);
     try {
-      const data = await agent.deploy(undefined, ComputeProviderType.E2B);
+      const data = await agent.deploy({ provider: ComputeProviderType.E2B });
       // Taken on: the machine is placed after this answer; the run below follows it to the end.
       if (data.activity) setRun({ activity: data.activity, launch: Date.now() });
     } catch (e) {

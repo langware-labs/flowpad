@@ -97,7 +97,7 @@ describe('New deployment', () => {
     expect(screen.queryByTestId('mock-checklist')).toBeNull();
     expect(screen.queryByTestId('new-deployment-environment')).toBeNull();
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith(undefined, 'local'));
+    await waitFor(() => expect(deploy).toHaveBeenCalledWith({ provider: 'local' }));
     await waitFor(() => expect(onLaunched).toHaveBeenCalledWith('dep-1'));
   });
 
@@ -110,14 +110,28 @@ describe('New deployment', () => {
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
     // Unchecked "Token allocation" = the owner's default: `null` releases any earlier allocation.
     // The size travels with the deploy; nothing is written into agent.json (it would dirty the checkout).
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', 'e2b', null, 'md'));
+    await waitFor(() =>
+      expect(deploy).toHaveBeenCalledWith({
+        environment: 'production',
+        provider: 'e2b',
+        tokenAllocation: null,
+        machineSize: 'md',
+      }),
+    );
   });
 
   it('a monthly machine deploys on its own provider, at its size', async () => {
     const { deploy } = renderDialog();
     fireEvent.click(screen.getByTestId('new-deployment-type-gcp_vm-lg'));
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', 'gcp_vm', null, 'lg'));
+    await waitFor(() =>
+      expect(deploy).toHaveBeenCalledWith({
+        environment: 'production',
+        provider: 'gcp_vm',
+        tokenAllocation: null,
+        machineSize: 'lg',
+      }),
+    );
   });
 
   it('a cloud deploy taken on closes on the answer and says it runs in the background', async () => {
