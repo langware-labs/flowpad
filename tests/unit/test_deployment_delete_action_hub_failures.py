@@ -4,7 +4,8 @@ A remote placement is deleted on the hub first (``owns_hub_delete``). The delete
 (``handle_delete_by_id``) tells the two failures apart:
 
 * the hub answered (an app failure): its own status, e.g. 403 for a deployment it no longer has;
-* nothing came back from the hub (status 0: timeout, refused, never sent): 502.
+* nothing came back from the hub (status 0), by kind: 502 for a connection failure (timeout, refused),
+  401 when this box holds no credentials.
 
 In every failure the local row is kept as the handle to retry. The hub is faked at the HTTP transport,
 so the real ``HubProxy.send`` turns a hang into a ``HubError``. No network.
@@ -153,12 +154,12 @@ async def test_a_credential_the_hub_rejects_answers_its_401(hub):
     assert (await _refused(row)).status_code == 401
 
 
-async def test_no_credentials_here_is_a_502_and_never_asks_the_hub(hub, monkeypatch):
-    """No hub answer at all (status 0), so a 502 like any other connection failure."""
+async def test_no_credentials_here_is_a_401_and_never_asks_the_hub(hub, monkeypatch):
+    """No hub answer (status 0), but signed out, not a connection failure: 401."""
     from flow_sdk.cli.auth import credentials
 
     monkeypatch.setattr(credentials, "load_credentials", lambda: None)
     row = await _remote_placement()
 
-    assert (await _refused(row)).status_code == 502
+    assert (await _refused(row)).status_code == 401
     assert hub.calls == []
