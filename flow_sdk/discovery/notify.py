@@ -10,6 +10,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from typing import Optional
@@ -39,6 +40,12 @@ def get_flowpad_status() -> str:
     return discover_flowpad().status
 
 
+#: How long the server list is reused. Reading it stats and parses every instance dir; a machine with a hundred of
+#: them (a QA host) paid ~1-3 s of that, on the event loop, for EVERY notification -- so every add_message.
+_REPORT_URLS_TTL_S = 2.0
+_report_urls_cache: tuple[float, list[str]] | None = None
+
+
 def _get_report_urls() -> list[str]:
     """Return webhook URLs for all servers that have written a server.json.
 
@@ -55,12 +62,18 @@ def _get_report_urls() -> list[str]:
     ``_on_server_startup``), and stale files are cleared on shutdown.
     Webhook POSTs themselves are fire-and-forget; a dead URL is harmless.
     """
+    global _report_urls_cache
+    now = time.monotonic()
+    if _report_urls_cache is not None and now - _report_urls_cache[0] < _REPORT_URLS_TTL_S:
+        return list(_report_urls_cache[1])
     from flow_sdk.discovery.flowpad_discovery import read_all_server_infos
     # Dedupe: many instance state dirs can point at the SAME port (relaunched
     # named instances reuse port bands), and each notification spawns one
     # sender per URL. Without dedupe a message-send fanned out to dozens of
     # duplicate/dead URLs, and that spawn loop dominated per-message latency.
-    return list(dict.fromkeys(info.url for info in read_all_server_infos()))
+    urls = list(dict.fromkeys(info.url for info in read_all_server_infos()))
+    _report_urls_cache = (now, urls)
+    return list(urls)
 
 
 # ---------------------------------------------------------------------------

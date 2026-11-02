@@ -136,3 +136,26 @@ def test_send_resource_sync_no_server(monkeypatch):
         type="task", id="1", operation=SyncOperation.CREATE, data={}
     )
     assert queued is False
+
+
+def test_report_urls_are_read_once_per_ttl(monkeypatch):
+    """Every notification (every add_message) asks for the server list; scanning all instance dirs each time cost seconds."""
+    from types import SimpleNamespace
+
+    calls = []
+
+    def fake_read():
+        calls.append(1)
+        return [SimpleNamespace(url="http://localhost:6001"), SimpleNamespace(url="http://localhost:6001")]
+
+    monkeypatch.setattr("flow_sdk.discovery.flowpad_discovery.read_all_server_infos", fake_read)
+    monkeypatch.setattr(notify, "_report_urls_cache", None)
+    clock = [100.0]
+    monkeypatch.setattr(notify.time, "monotonic", lambda: clock[0])
+
+    assert notify._get_report_urls() == ["http://localhost:6001"]
+    assert notify._get_report_urls() == ["http://localhost:6001"]
+    assert len(calls) == 1
+    clock[0] += notify._REPORT_URLS_TTL_S + 0.1
+    notify._get_report_urls()
+    assert len(calls) == 2
