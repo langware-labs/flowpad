@@ -300,7 +300,13 @@ class ProjectTree:
         driver = await self._driver(source.provider or "")
         needs = list(dict.fromkeys(needs))
         before = ""
-        for stage in getattr(driver, "setup_wizards", None) or []:
+        stages = getattr(driver, "setup_wizards", None) or []
+        if stages and "credential" in getattr(stages[0], "provides", ()):
+            # The first stage writes the driver's credential itself (its wizard asks for the values once the
+            # thing they belong to exists): the credential is not a need before it.
+            provided = credential_node_id(str(getattr(getattr(driver, "auth", None), "credential", "") or ""))
+            needs = [n for n in needs if n != provided]
+        for stage in stages:
             wizard = await self._wizard(stage.wizard, str(getattr(driver, "folder", "") or getattr(driver, "asset_ref", "") or ""))
             spec = wizard.spec() if wizard is not None else None
             if spec is None:
@@ -468,8 +474,14 @@ def requirement_node_id(req) -> str:
         return str(req.typeid)
     if req.is_oauth:
         return f"connection:{req.provider or req.name}"
-    prefix = {REQUIREMENT_DEPENDENCY: "dependency"}.get(req.kind, "credential")
-    return f"{prefix}:{req.name}"
+    if req.kind == REQUIREMENT_DEPENDENCY:
+        return f"dependency:{req.name}"
+    return credential_node_id(req.name)
+
+
+def credential_node_id(name: str) -> str:
+    """The tree node of the credential ``name`` — the one spelling, whoever needs or provides it."""
+    return f"credential:{name}"
 
 
 def _stage_recorder(wizard, target: str):

@@ -88,6 +88,9 @@ export interface SetupStageState {
 export interface DriverProfile {
   name?: string;
   description?: string;
+  /** What a new source of this way should be called for THIS person ("Eran's inbox") — the same name the
+   *  driver gives whatever it creates for them (a Slack app), so the two are named once. */
+  default_name?: string;
   avatar?: string | null;
   number?: string;
   available?: boolean;

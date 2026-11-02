@@ -35,7 +35,9 @@ VERIFY = "verify"
 ANSWERED = "answered"
 #: a message from an allowed sender, and one after it going back — the conversation works.
 FIRST_TURN = "first-turn"
-GENERIC_STEPS = frozenset({PUBLIC_WEBHOOK, VERIFY, ANSWERED, FIRST_TURN})
+#: something arrived since a moment (``since``, else the verify): the source hears its channel.
+HEARD = "heard"
+GENERIC_STEPS = frozenset({PUBLIC_WEBHOOK, VERIFY, ANSWERED, FIRST_TURN, HEARD})
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -116,5 +118,5 @@ SourceUpdateSpec.model_rebuild()
 
 
 __all__ = [
-    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "PUBLIC_WEBHOOK", "VERIFY", "ReturnedValue", "SetupShown", "SourceUpdateSpec", "setup_step", "setup_steps",
+    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "HEARD", "PUBLIC_WEBHOOK", "VERIFY", "ReturnedValue", "SetupShown", "SourceUpdateSpec", "setup_step", "setup_steps",
 ]

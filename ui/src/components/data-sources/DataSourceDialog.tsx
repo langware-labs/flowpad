@@ -401,6 +401,9 @@ export function DataSourceDialog({
       <SteppedDialogContent
         ref={contentRef}
         crumbs={crumbs}
+        // The provider grid and the ways-to-connect cards share one fixed height so swapping between them never
+        // jumps; the form is a few fields, and the same height leaves it mostly empty — it takes its own size.
+        className={step === 'form' ? 'h-auto max-h-[85vh]' : undefined}
         description={
           step === 'provider' && beforeSetup ? (
             variant === 'channel' ? (
@@ -518,8 +521,8 @@ export function DataSourceDialog({
             group={group}
             members={groupMembers(specs, group)}
             selected={draft.provider}
-            onPick={(m) => {
-              setDraft(emptyDraft(m));
+            onPick={(m, profile) => {
+              setDraft(emptyDraft(m, profile));
               setStep('form');
             }}
           />

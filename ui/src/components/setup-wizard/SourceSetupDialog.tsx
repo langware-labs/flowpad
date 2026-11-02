@@ -195,7 +195,12 @@ export function SourceSetupPanel({
       )}
       {setup.questionId && (
         <div className="rounded border p-3" data-testid="source-setup-question">
-          <AskForm questionId={setup.questionId} showOp={false} onSettled={setup.settleQuestion} />
+          <AskForm
+            questionId={setup.questionId}
+            showOp={false}
+            onSettled={setup.settleQuestion}
+            verifyWith={(step, values) => source.step(step, { check: true, values })}
+          />
         </div>
       )}
       {finished && <SourceSetupFinished tree={tree} account={source.account_key ?? ''} onDone={onDone} />}

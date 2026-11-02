@@ -226,6 +226,8 @@ async def test_public_webhook_claims_the_account_on_the_hub_chain_when_the_drive
     asked: list = []
 
     async def fake_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        if method == "GET":
+            return {"webhooks": []}  # the step first asks which claims already deliver here
         assert method == "POST"
         asked.append((entity_type, action, payload))
         return {"id": "c-1", "url": "https://hub.example/api/v1/webhook/c-1"}
@@ -254,6 +256,172 @@ async def test_public_webhook_claims_the_account_on_the_hub_chain_when_the_drive
     }
     assert kept["credentials"] == [("stubcred", {"STUB_WEBHOOK_URL": "https://hub.example/api/v1/webhook/c-1"})]
     assert answer.exit_code is ExitCode.OK
+
+
+async def test_public_webhook_hands_out_the_url_before_the_account_exists_then_proves_it(stub, monkeypatch):
+    """A driver whose vendor app is created FROM a manifest naming its Request URL declares its claim with no key
+    first: the hub holds a PENDING account claim under a URL the source keeps. Once the app exists — key and proof
+    known — the same step proves THAT claim (``webhook/<id>/prove``) instead of chaining a second one, and its
+    check reads not-yet in between."""
+    from pydantic import SecretStr
+
+    from flow_sdk.instance_settings import runtime
+    from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
+
+    name, kept = stub
+    driver = DataDriver.loaded(name)
+    asked: list = []
+    hub = {"claims": []}
+    source = DataSource(provider=name, name="bot", config={})
+    url = "https://hub.example/api/v1/webhook/p-1"
+
+    async def fake_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        if method == "GET":
+            return {"webhooks": hub["claims"]}
+        asked.append((entity_type, entity_id, action, payload))
+        if action == "chain":
+            hub["claims"] = [{"id": "p-1", "status": "pending", "claim": {"kind": "account", "key": ""}, "url": url,
+                              "target": {"kind": "desktop", "instance_id": "inst-1", "data_source_id": str(source.id)}}]
+            return {"id": "p-1", "status": "pending", "url": url}
+        if action == "prove":
+            hub["claims"][0] = {**hub["claims"][0], "status": "active", "claim": {"kind": "account", "key": payload["key"]}}
+            return {"id": "p-1", "status": "active", "url": url, "claim": {"kind": "account", "key": payload["key"]}}
+        raise AssertionError(action)
+
+    state = {"secrets": {}}
+
+    async def credentials_for(_row):
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in state["secrets"].items()})
+
+    def hub_claim(cls, config, secrets):
+        if config.get("app_id") and secrets.get("secret"):
+            return {"provider": "vendor", "key": config["app_id"], "proof": {"credential": secrets["secret"], "app_secret": "sign"}}
+        return {"provider": "vendor", "key": ""}
+
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
+    monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
+    monkeypatch.setattr(driver, "credentials_for", credentials_for)
+    monkeypatch.setattr(driver.cls, "hub_claim", classmethod(hub_claim), raising=False)
+
+    # A URL already in the shared credential is a SIBLING source's (sources of one driver share it): not this one's.
+    state["secrets"] = {"webhook_url": "https://hub.example/api/v1/webhook/someone-elses"}
+    assert (await source.step("public-webhook", check=True)).exit_code is ExitCode.NOT_YET, "a held URL is not a claim of this source"
+    state["secrets"] = {}
+
+    first = await source.step("public-webhook")
+    assert first.exit_code is ExitCode.OK and first.value["shown"]["link"] == url and first.value["shown"]["connected"] is False
+    assert asked[-1][2] == "chain" and asked[-1][3]["claim"] == {"kind": "account", "key": ""} and asked[-1][3]["proof"] == {}
+    assert kept["credentials"][-1] == ("stubcred", {"STUB_WEBHOOK_URL": url}), "the URL is kept before the app exists"
+    state["secrets"] = {"webhook_url": url}
+
+    again = await source.step("public-webhook")
+    assert again.exit_code is ExitCode.OK and not again.ran and len(asked) == 1, "asked again before the app exists: the same URL, no second claim"
+
+    # The app now exists: its id and credential are known.
+    source.config = {**source.config, "app_id": "A1"}
+    state["secrets"] = {"webhook_url": url, "secret": "app-secret"}
+    not_yet = await source.step("public-webhook", check=True)
+    assert not_yet.exit_code is ExitCode.NOT_YET and "proof" in not_yet.detail
+
+    proven = await source.step("public-webhook")
+    assert proven.exit_code is ExitCode.OK and proven.value["shown"] == {"name": "", "number": "", "avatar": "", "link": url, "code": "", "qr": "", "connected": True}
+    assert asked[-1][:3] == ("webhook", "p-1", "prove") and asked[-1][3] == {"key": "A1", "proof": {"credential": "app-secret", "app_secret": "sign"}}
+    assert (await source.step("public-webhook", check=True)).exit_code is ExitCode.OK
+
+
+async def test_a_url_another_source_of_the_driver_holds_is_not_this_sources(stub, monkeypatch):
+    """The URL variable sits in the driver's credential, shared by every source of the driver on this box: a
+    second source must not read the first's URL as its own (its check would hold, its claim never made, and
+    the vendor app it creates would post to the FIRST source's claim)."""
+    from pydantic import SecretStr
+
+    from flow_sdk.instance_settings import runtime
+    from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
+
+    name, _ = stub
+    driver = DataDriver.loaded(name)
+    first = DataSource(provider=name, name="first", config={})
+    second = DataSource(provider=name, name="second", config={})
+    url = "https://hub.example/api/v1/webhook/p-first"
+    claims = [{"id": "p-first", "status": "pending", "claim": {"kind": "account", "key": ""}, "url": url,
+               "target": {"kind": "desktop", "instance_id": "inst-1", "data_source_id": str(first.id)}}]
+
+    async def fake_call(method, entity_type, entity_id=None, action=None, *a, payload=None, **kw):
+        if method == "GET":
+            return {"webhooks": claims}
+        assert action == "chain" and payload["target"]["data_source_id"] == str(second.id)
+        claims.append({"id": "p-second", "status": "pending", "claim": {"kind": "account", "key": ""},
+                       "url": "https://hub.example/api/v1/webhook/p-second", "target": payload["target"]})
+        return {"id": "p-second", "status": "pending", "url": "https://hub.example/api/v1/webhook/p-second"}
+
+    async def credentials_for(_row):
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={"webhook_url": SecretStr(url)})
+
+    monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
+    monkeypatch.setattr(runtime, "instance_uid", lambda: "inst-1")
+    monkeypatch.setattr(driver, "credentials_for", credentials_for)
+    monkeypatch.setattr(driver.cls, "hub_claim", classmethod(lambda cls, config, secrets: {"provider": "vendor", "key": ""}), raising=False)
+
+    assert (await first.step("public-webhook", check=True)).exit_code is ExitCode.OK, "the first source holds its own URL"
+    not_mine = await second.step("public-webhook", check=True)
+    assert not_mine.exit_code is ExitCode.NOT_YET and "own" in not_mine.detail
+    made = await second.step("public-webhook")
+    assert made.exit_code is ExitCode.OK and made.value["shown"]["link"].endswith("/p-second"), "the second source gets a claim of its own"
+
+
+async def test_heard_is_satisfied_by_any_message_of_the_source_since_a_moment(stub, monkeypatch):
+    """The generic ``heard`` step: something — anyone's message, the person's own included — arrived after
+    ``since`` (else after the verify). No reply is needed: that is ``first-turn``."""
+    from datetime import datetime, timedelta, timezone
+
+    from flow_sdk.builtin.source_item import SourceItem
+
+    name, _ = stub
+    source = DataSource(provider=name, name="bot", config={})
+    await source.save()
+    now = datetime.now(timezone.utc)
+    try:
+        nothing = await source.step("heard", check=True, values={"since": (now - timedelta(minutes=5)).isoformat()})
+        assert nothing.exit_code is ExitCode.NOT_YET
+        row = SourceItem(data_source_id=str(source.id), provider=name, kind="ingest.message.stub", external_id="m-1",
+                         name="hi", body="hi there", occurred_at=(now - timedelta(minutes=1)).isoformat(), sent_by_us=True)
+        await row.save()
+        heard = await source.step("heard", check=True, values={"since": (now - timedelta(minutes=5)).isoformat()})
+        assert heard.exit_code is ExitCode.OK and "hi" in heard.detail and not heard.ran
+        older = await source.step("heard", check=True, values={"since": now.isoformat()})
+        assert older.exit_code is ExitCode.NOT_YET, "written before the moment"
+        assert (await source.step("heard", check=True, values={"since": "yesterday"})).exit_code is ExitCode.NOT_YET
+        timed_out = await source.step("heard", values={"since": now.isoformat(), "wait": "0"})
+        assert timed_out.exit_code is ExitCode.NOT_YET
+    finally:
+        await source.delete()
+
+
+async def test_heard_names_this_sources_own_url_when_nothing_arrives(stub, monkeypatch):
+    """A pushed source that hears nothing names where the provider must post — its OWN hub URL — because an app
+    made from an older link (a deleted sibling's claim) posts elsewhere and that failure is otherwise silent."""
+    from datetime import datetime, timezone
+
+    from flow_sdk.builtin import data_source as module
+
+    name, _ = stub
+    source = DataSource(provider=name, name="bot", config={})
+    await source.save()
+    mine = [
+        {"id": "old", "url": "https://hub/webhook/old", "claim": {"kind": "account"}, "target": {"data_source_id": "other"}},
+        {"id": "own", "url": "https://hub/webhook/own", "claim": {"kind": "account"}, "target": {"data_source_id": str(source.id)}},
+    ]
+
+    async def claims():
+        return mine
+
+    monkeypatch.setattr(module, "_hub_claims", claims)
+    try:
+        answer = await source.step("heard", values={"since": datetime.now(timezone.utc).isoformat(), "wait": "0"})
+        assert answer.exit_code is ExitCode.NOT_YET
+        assert "https://hub/webhook/own" in answer.detail and "https://hub/webhook/old" not in answer.detail
+    finally:
+        await source.delete()
 
 
 async def test_public_webhook_chains_a_part_of_an_account_under_the_accounts_claim(stub, monkeypatch):

@@ -421,6 +421,24 @@ class AskItemSpec(DataSpec):
         return self.kind == ConfirmSpec.spec_kind
 
 
+class AskStageSpec(DataSpec):
+    """One question's place in the sequence a person walks: its name, and which of how many it is."""
+
+    label: str = ""
+    index: int = Field(ge=1)
+    total: int = Field(ge=1)
+
+
+class AskVerifySpec(DataSpec):
+    """A check the person can run on what they typed BEFORE sending it: the surface that runs a source's wizard
+    posts the typed values to that source's setup step ``source_step`` with ``check`` (a probe: the step judges
+    the values and stores nothing), and shows its verdict under the field. Run once by itself when a value is
+    pasted, then on the button."""
+
+    label: str = "Verify"
+    source_step: str
+
+
 class AskOp(ExeData):
     """A person, asked for the op's declared output."""
 
@@ -446,6 +464,15 @@ class AskOp(ExeData):
     #: the op's ``cancelled`` answer.
     submit_label: str = ""
     cancel_label: str = ""
+    #: What each field of a record answer is called where it is typed (``{"user_token": "User OAuth Token"}``):
+    #: a key is a name for a program, a label is one for a person. A field without one shows its key.
+    labels: dict[str, str] = Field(default_factory=dict)
+    #: Where this question stands in a sequence the person walks ("Set up on Slack · 1 of 2"): shown above
+    #: the prompt by a surface that runs a wizard. ``None``: the question stands alone.
+    stage: Optional["AskStageSpec"] = None
+    #: A check of the typed value before it is sent (a token probed against the provider), by the source setup
+    #: step it names. ``None``: nothing to verify, only to send.
+    verify: Optional["AskVerifySpec"] = None
     #: The agent a person can hand this question to (the AI Assist button): it follows the op's
     #: ``setup`` and answers the SAME question, so the op returns the same ``AskResult`` whoever
     #: answered. Empty: no assist — the person answers or nobody does. Not a rung: a person starts it.

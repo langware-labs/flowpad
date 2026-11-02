@@ -1,0 +1,26 @@
+{
+  "type": "compute_op",
+  "id": "832f6ab8-79e4-4c6e-9e22-01a452524c33",
+  "name": "slack-heard",
+  "label": "First message",
+  "description": "A message reached your inbox.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" heard",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" heard",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE heard; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300,
+    "source_step": "heard"
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" heard --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" heard --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE heard --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "heard"
+  }
+}

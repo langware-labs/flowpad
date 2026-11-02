@@ -1,0 +1,22 @@
+{
+  "type": "compute_op",
+  "id": "a0872423-971b-4df3-a9d8-50bac3623b8a",
+  "name": "slack-ask-say-hi",
+  "label": "Say hi",
+  "description": "Your first message.",
+  "subkind": "ask",
+  "output_spec_kind": "string",
+  "exe_data": {
+    "prompt": "In Slack, send yourself a DM (or post in any channel you are in), then type ok",
+    "timeout_seconds": 1800
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" heard --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" heard --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE heard --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "heard"
+  }
+}

@@ -1925,6 +1925,10 @@ class DataSource(SetupSkippable, Entity):
                     external_id=str((values or {}).get("external_id") or ""),
                     since=str((values or {}).get("since") or ""),
                 )
+            elif name == steps.HEARD:
+                answer = await self._heard_step(
+                    check=check, wait=float((values or {}).get("wait") or 0), since=str((values or {}).get("since") or ""),
+                )
             else:
                 method = setup_steps(driver.cls).get(name)
                 if method is None:
@@ -2025,6 +2029,60 @@ class DataSource(SetupSkippable, Entity):
                 )
             # A wait on a person, polled at a human pace: the person is typing on their phone.
             await asyncio.sleep(2.0)
+
+    async def _heard_step(self, *, check: bool, wait: float, since: str = ""):
+        """Something arrived: a message of this source — anyone's, the person's own included — written after
+        ``since`` (ISO-8601; else after the source was verified). The proof a connected source hears its
+        channel; a reply is not required (``first-turn`` is that). Without ``check`` it waits up to ``wait``
+        seconds, at a human pace."""
+        import asyncio  # noqa: PLC0415
+        import time  # noqa: PLC0415
+
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+
+        after = iso_to_utc(since) if since else self.verified_at
+        if since and after is None:
+            return ReturnedValue.not_yet("since must be an ISO-8601 timestamp")
+        if after is not None and after.tzinfo is None:
+            after = after.replace(tzinfo=timezone.utc)
+
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        by_source = ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(self.id)])
+        match = by_source if after is None else ExpressionNode(op=QueryOp.AND, operands=[
+            by_source, ExpressionNode(op=QueryOp.GE, operands=["occurred_at", after.isoformat()]),
+        ])
+
+        async def heard() -> Optional[SourceItem]:
+            rows = await SourceItem.get_all(QueryFilter(match=match, order_by=[{"occurred_at": "desc"}], limit=1)) or []
+            return next((row for row in rows if iso_to_utc(row.occurred_at or "") is not None), None)
+
+        deadline = time.monotonic() + (0 if check else max(0.0, wait))
+        while True:
+            row = await heard()
+            if row is not None:
+                return ReturnedValue.satisfied(f"heard: {(row.name or row.body or row.external_id or '')[:60]}", ran=not check)
+            if time.monotonic() >= deadline:
+                return ReturnedValue.not_yet("Nothing has arrived yet — send a message where this source listens." + await self._delivery_hint())
+            await asyncio.sleep(2.0)
+
+    async def _delivery_hint(self) -> str:
+        """Where the provider must post for a pushed source: this source's own hub URL. Named when nothing arrives,
+        because the one silent failure of a pushed source is a provider pointed at another (older) URL."""
+        if self.webhook_delivery is not WebhookDelivery.HUB:
+            return ""
+        try:
+            own = await self._own_account_claims()
+        except Exception:  # noqa: BLE001 — no hub: no hint
+            return ""
+        url = next((str(c.get("url") or "") for c in own if c.get("url")), "")
+        return f" Live delivery needs the provider to post to exactly {url} (an app made from an older link posts elsewhere)." if url else ""
+
+    async def _own_account_claims(self) -> list[dict]:
+        """The hub's account claims that deliver to THIS source — never the URL in the credential: sources of
+        one driver share that credential, so a held URL may be a sibling's (proven with the sibling's app)."""
+        return [c for c in _claims_for(await _hub_claims(), str(self.id)) if (c.get("claim") or {}).get("kind") == "account"]
 
     async def _open_for_setup(self, driver):
         """This source, opened as far as its setup allows: with its credential when it resolves, else
@@ -2127,7 +2185,19 @@ class DataSource(SetupSkippable, Entity):
                 wanted = {"kind": kind, "key": declared["key"]}
                 routed = any(c.get("claim") == wanted for c in _claims_for(await _hub_claims(), str(self.id)))
                 return ReturnedValue.satisfied(f"the hub routes this {kind} here") if routed else ReturnedValue.not_yet(f"the hub does not route this {kind} here yet")
-            return ReturnedValue.satisfied("a public URL is set") if held else ReturnedValue.not_yet("no public URL yet")
+            if declared is not None:
+                own = await self._own_account_claims()
+                if not own:
+                    return ReturnedValue.not_yet("no public URL of this source's own yet")
+                if declared.get("key"):
+                    # The URL was handed out before the account was known (a pending claim): done only once the
+                    # hub holds the proof — until then the URL answers the vendor's handshake and routes nothing.
+                    proven = any(str(c.get("status") or "active") == "active" for c in own)
+                    return ReturnedValue.satisfied("a public URL is set and proven") if proven else ReturnedValue.not_yet("the hub does not hold your app's proof yet")
+                return ReturnedValue.satisfied("a public URL is set")
+            if not held:
+                return ReturnedValue.not_yet("no public URL yet")
+            return ReturnedValue.satisfied("a public URL is set")
         config: dict = {}
         token = str((self.config or {}).get("verify_token") or "")
         if not token and "verify_token" in (driver.config or {}):
@@ -2147,11 +2217,29 @@ class DataSource(SetupSkippable, Entity):
             # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
             # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
             # instance -- never to every desktop of the person.
+            #
+            # A driver that needs the URL BEFORE the account exists (an app created from a manifest naming
+            # its Request URL) declares the claim with no key first: the hub holds it PENDING under the same
+            # URL, and the second time through — key and proof known — that claim is proven, not replaced.
+            pending = next((c for c in await self._own_account_claims() if str(c.get("status") or "") == "pending"), None)
+            if pending is not None and claim["claim"]["key"] and (claim.get("proof") or {}).get("credential"):
+                data = await _post_unless_unconfigured("webhook", "prove", {"key": claim["claim"]["key"], "proof": claim["proof"]}, entity_id=str(pending["id"]))
+                if not data or str(data.get("status") or "") != "active":
+                    return ReturnedValue.not_yet("the hub did not take your app's proof — sign in to Flowpad cloud first")
+                url = str(data.get("url") or pending.get("url") or "")
+                update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url, connected=True))
+                return ReturnedValue.satisfied("the hub now checks your app's signature and delivers here", value=update)
+            if pending is not None and not claim["claim"]["key"]:
+                url = str(pending.get("url") or "")
+                update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url))
+                return ReturnedValue.satisfied(f"public URL {url}", ran=False, value=update)
             data = await _post_unless_unconfigured("webhook", "chain", claim)
             if not data or not data.get("url"):
                 return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
-            update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
-            return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
+            url = str(data["url"])
+            connected = str(data.get("status") or "active") == "active"
+            update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url, connected=connected))
+            return ReturnedValue.satisfied(f"public URL {url}", value=update)
         body = {
             "name": f"{self.provider}-{self.id}",
             "default_path": WEBHOOK_ROUTE.format(name=self.provider),
@@ -2549,15 +2637,15 @@ async def _hub_claims() -> list[dict]:
     return [r for r in rows or [] if isinstance(r, dict)]
 
 
-async def _post_unless_unconfigured(entity_type: str, action: str, payload: dict) -> Any:
-    """POST to the hub; None when this box has no hub configured (Local mode) — the caller's
-    "sign in to Flowpad cloud first" path. Every other hub failure raises."""
+async def _post_unless_unconfigured(entity_type: str, action: str, payload: dict, *, entity_id: Optional[str] = None) -> Any:
+    """POST to the hub (a class action, or ``entity_id``'s own); None when this box has no hub configured
+    (Local mode) — the caller's "sign in to Flowpad cloud first" path. Every other hub failure raises."""
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
     try:
-        return await HubProxy.call("POST", entity_type, None, action, payload=payload)
+        return await HubProxy.call("POST", entity_type, entity_id, action, payload=payload)
     except HubError as e:
         if e.kind is not HubFailureKind.NOT_CONFIGURED:
             raise

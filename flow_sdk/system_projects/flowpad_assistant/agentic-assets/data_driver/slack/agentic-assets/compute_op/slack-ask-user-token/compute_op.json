@@ -1,0 +1,33 @@
+{
+  "type": "compute_op",
+  "id": "8b34355c-a095-465d-9e1f-dbf6aefdf237",
+  "name": "slack-ask-user-token",
+  "label": "Paste the token",
+  "description": "The User OAuth Token your Slack app shows: it acts as you. Verified against Slack before it is sent.",
+  "subkind": "ask",
+  "output_spec_kind": "string",
+  "exe_data": {
+    "prompt": "Paste the token",
+    "detail": "In {{manifest.name}}: **OAuth & Permissions** → *User OAuth Token* (`xoxp-…`). It acts as you in Slack.",
+    "secret": true,
+    "timeout_seconds": 1800,
+    "stage": {
+      "label": "Paste the token",
+      "index": 2,
+      "total": 2
+    },
+    "verify": {
+      "label": "Verify",
+      "source_step": "app"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" app --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" app --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE app --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "app"
+  }
+}
