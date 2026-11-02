@@ -14491,6 +14491,8 @@ msgstr "Format"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -26141,6 +26143,7 @@ msgstr "Relaunched."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Reload"
 msgstr "Reload"
 
@@ -26627,6 +26630,8 @@ msgid "Replies:"
 msgstr "Replies:"
 
 #: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 msgid "Reply"
 msgstr "Reply"
 
@@ -26640,6 +26645,8 @@ msgid "Reply in {0}"
 msgstr "Reply in {0}"
 
 #: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"
 msgstr "Reply in thread"
 
@@ -32848,6 +32855,10 @@ msgstr "The sender's id as the vendor sends it. Already claimed by someone else 
 #: src/pages/entry/MessageLanding.tsx
 msgid "The sender's upload didn't complete. Ask {firstName} to resend."
 msgstr "The sender's upload didn't complete. Ask {firstName} to resend."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
+msgstr "The server now runs v{currentVersion}; this page is still v{pageVersion}."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"

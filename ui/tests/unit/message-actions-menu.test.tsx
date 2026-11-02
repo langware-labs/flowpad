@@ -39,7 +39,7 @@ const openMenu = () => fireEvent.keyDown(screen.getByTestId('message-actions-men
 afterEach(cleanup);
 
 describe('message header row', () => {
-  it('shows only the sender, the time and the ⋮ — no action icons', () => {
+  it('shows reply and forward as icons on the row; everything else stays behind the ⋮', () => {
     render(
       <MemoryRouter>
       <MessageBubble
@@ -56,8 +56,8 @@ describe('message header row', () => {
       </MemoryRouter>,
     );
     const row = screen.getByText('Ron Vardinon').parentElement!;
-    expect(within(row).getAllByRole('button').map((b) => b.getAttribute('data-testid'))).toEqual(['message-actions-menu']);
-    for (const id of ['message-reply', 'message-react', 'message-forward', 'message-task-it', 'message-download']) {
+    expect(within(row).getAllByRole('button').map((b) => b.getAttribute('data-testid'))).toEqual(['message-reply', 'message-forward', 'message-actions-menu']);
+    for (const id of ['message-react', 'message-task-it', 'message-download']) {
       expect(screen.queryByTestId(id)).toBeNull();
     }
     expect(screen.queryByTitle('Delete message')).toBeNull();

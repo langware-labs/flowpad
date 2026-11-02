@@ -14395,6 +14395,8 @@ msgstr "التنسيق"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -25950,6 +25952,7 @@ msgstr "تم إعادة الإطلاق."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Reload"
 msgstr "إعادة تحميل"
 
@@ -26431,6 +26434,8 @@ msgid "Replies:"
 msgstr "الردود:"
 
 #: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 msgid "Reply"
 msgstr "رد"
 
@@ -26444,6 +26449,8 @@ msgid "Reply in {0}"
 msgstr "الرد في {0}"
 
 #: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"
 msgstr "الرد في السلسلة"
 
@@ -32606,6 +32613,10 @@ msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "The sender's upload didn't complete. Ask {firstName} to resend."
+msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
