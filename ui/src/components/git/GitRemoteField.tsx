@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { gitOriginFromUrl, gitOriginRepoFullName, isHubOnly, type RepoSummary } from '@sdk';
+import { canSetUpProjects, dataContext, gitOriginFromUrl, gitOriginRepoFullName, type RepoSummary } from '@sdk';
 import { ConnectGithubButton } from '@src/components/git/ConnectGithubButton';
 import { BranchPicker, type BranchPickerRepo } from '@src/components/git/BranchPicker';
 import { InvitationsStrip } from '@src/components/git/InvitationsStrip';
@@ -184,8 +184,8 @@ export function GitRemoteField({
               label={<Trans>Connect</Trans>}
               testId={`${testIdPrefix}-connect-github`}
             />
-            {/* Journeys are a desktop feature — the hub serves none. */}
-            {!isHubOnly() && (
+            {/* A guided setup needs a disk here and a person to answer: not on the hub, not on an agent box. */}
+            {canSetUpProjects(dataContext.caps) && (
               <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY} variant="ghost">
                 <Trans>Guided setup</Trans>
               </SetupJourneyButton>
