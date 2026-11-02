@@ -80,13 +80,22 @@ def mirror_table(node: "Activity", table: IndexProgressTable) -> None:
         # A type whose count reached its known total is finished — end it now, so the
         # parent's "n/m" counts it. Needed only because legacy rows carry no end signal;
         # it goes with this module.
-        if row_total is not None and row.done >= row_total and not child.is_terminal:
+        if (row.finished or (row_total is not None and row.done >= row_total)) and not child.is_terminal:
             child.done()
+
+    # A step the producer stopped reporting is over — e.g. a type the scan phase counted
+    # that the index table does not carry. Left running, the chip would name it as the
+    # step at work.
+    if table.rows:
+        _close_open_steps(node, keep={str(row.type_name) for row in table.rows})
 
     node.set_progress(done=table.done)
 
-    # `complete` is a state, not something to say.
+    # `complete` is a state, not something to say. Legacy rows carry no end signal, so a
+    # step still open here finished with the job — end it as done, or the root's done()
+    # would record it as interrupted.
     if table.text == PROGRESS_TEXT_COMPLETE:
+        _close_open_steps(node)
         node.done()
     elif table.text and table.text != node.message_text:
         node.message(table.text)
@@ -95,6 +104,13 @@ def mirror_table(node: "Activity", table: IndexProgressTable) -> None:
         where = ", ".join(table.roots)
         if where != node.message_text:
             node.message(where)
+
+
+def _close_open_steps(node: "Activity", keep: "set[str]" = frozenset()) -> None:
+    """End every still-open step of ``node`` as done, except those named in ``keep``."""
+    for step in list(node._children.values()):
+        if step.name not in keep and not step.is_terminal:
+            step.done()
 
 
 __all__ = ["mirror_table"]

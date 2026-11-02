@@ -14,6 +14,7 @@ import { useEffect } from 'react';
 import { NavigationActions } from '@src/navigation/NavigationActions';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { isAppType } from '@src/navigation/app-dock';
 import {
   dockPointerForClickTarget,
   renderDesktopNotification,
@@ -69,6 +70,12 @@ export function useUiCommandListener(): void {
         typeId = new TypeId(msg.type, msg.id);
       } catch (err) {
         console.warn('[ui_command] invalid TypeId', msg, err);
+        return;
+      }
+
+      // An app (web app, artifact, endpoint) opens running — the same dock `flow show` opens it in.
+      if (isAppType(typeId.type)) {
+        navigateTo(new DockPointerData(ViewType.APP, typeId.toString()));
         return;
       }
 

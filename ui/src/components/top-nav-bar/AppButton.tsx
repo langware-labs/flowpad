@@ -20,7 +20,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { NavIconButton } from './NavIconButton';
-import { projectAppDock, useProjectApps, type ProjectApp } from './use-project-apps';
+import { WebAppIcon } from '@src/components/webapp-display/WebAppIcon';
+import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { useOpenProjectApp, useProjectApps, type ProjectApp } from './use-project-apps';
 
 /**
  * The project's apps and agents, with registry icons for each type. A lone app
@@ -38,12 +40,12 @@ export function AppButton({ project }: { project?: Project | null }) {
   const { agents } = useProjectAgents(project);
   const { launch } = useAgentLauncher();
   const [menuOpen, setMenuOpen] = useState(false);
+  const openApp = useOpenProjectApp(project ? String(project.id) : '');
   if (isHubOnly() || !project || (!apps.length && !agents.length)) return null;
 
   const projectId = String(project.id);
   const shownId = appDockAddress(currentDock ?? null)?.microAppId ?? null;
-  const open = (entry: ProjectApp) =>
-    navigation.openDock(projectAppDock(entry, projectId), undefined, { topLevel: true });
+  const open = (entry: ProjectApp) => void openApp(entry);
 
   const label = t`Apps and agents`;
   // The app's editor (`webapp.json` as a form) — the same URL the asset list opens.
@@ -96,16 +98,14 @@ export function AppButton({ project }: { project?: Project | null }) {
         </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="min-w-56">
-        {apps.map((entry) => {
-          const Icon = iconForType(entry.app.type);
-          return (
+        {apps.map((entry) => (
             <DropdownMenuItem
               key={entry.app.id}
               data-testid={`top-nav-app-${entry.app.name}`}
               onSelect={() => open(entry)}
               className="group gap-2"
             >
-              <Icon className="size-4 shrink-0" aria-hidden />
+              <WebAppIcon app={entry.app} />
               <span className="min-w-0 flex-1 truncate">{entry.app.displayName}</span>
               {entry.providerProjectId !== projectId && <Badge variant="outline">{t`Package`}</Badge>}
               <Badge variant="secondary">{entry.app.audience === 'admin' ? t`Admin` : t`User`}</Badge>
@@ -131,8 +131,7 @@ export function AppButton({ project }: { project?: Project | null }) {
                 <Pencil className="size-3.5" aria-hidden />
               </button>
             </DropdownMenuItem>
-          );
-        })}
+        ))}
         {agents.map((agent) => {
           const Icon = iconForType(agent.type);
           return (
@@ -142,7 +141,11 @@ export function AppButton({ project }: { project?: Project | null }) {
               onSelect={() => void launch(agent, projectId)}
               className="group gap-2"
             >
-              <Icon className="size-4 shrink-0" aria-hidden />
+              {agent.avatar || agent.avatarImageUrl ? (
+                <AgentAvatar agent={agent} className="size-4" glyphClassName="size-3 text-[10px]" />
+              ) : (
+                <Icon className="size-4 shrink-0" aria-hidden />
+              )}
               <span className="min-w-0 flex-1 truncate">{agent.displayName}</span>
               <button
                 type="button"

@@ -148,6 +148,12 @@ export interface IWebApp extends IEntity {
   /** Dot-path ontology kind (backend default `application.web`); an index field
    *  on the type — see `flow_sdk/builtin/faas/micro_app.py`. */
   kind?: string | null;
+  /** Lucide icon name or emoji (`webapp.json` `icon`); unset = the type's icon (`APIEntity.icon`). */
+  icon?: string | null;
+  /** Where a click opens the app (`webapp.json` `open_in`): a Flowpad tab, or the system browser. */
+  open_in?: 'flowpad' | 'browser' | null;
+  /** The app folder on disk, stamped by the indexer (local only). */
+  asset_ref?: string;
   /** Served subdir inside the app folder. */
   build?: string | null;
   /** How the app is served when placed; empty means the `app` audience. */
@@ -200,6 +206,11 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
   /** An app is labelled by its title ("Sales Desk"); `name` is the folder slug. */
   override getDisplayName(): string | null {
     return this.title?.trim() || null;
+  }
+
+  /** The app's folder on disk: its primary occurrence, else the path it was indexed at; '' when unknown. */
+  get folder(): string {
+    return this.asset_ref || this.asset_occurrences?.[0]?.path || '';
   }
 
   /** The app's setup folder: error rules, recovery.md and the error log. */

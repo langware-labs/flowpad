@@ -19,7 +19,22 @@ export function AppLifecyclePanel({ lifecycle }: { lifecycle: AppLifecycle }) {
   if (!record) return <Checking />;
   switch (record.state) {
     case 'up':
-      return null;
+      // Up, and what it stands on still owes something (a credential expired under it): said over the live app.
+      return record.setup_owed ? (
+        <div
+          role="status"
+          data-testid="app-lifecycle-owed"
+          className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs"
+        >
+          <span className="min-w-0 flex-1 truncate" title={record.setup_owed}>
+            <Trans>Needs setup: {record.setup_owed}</Trans>
+          </span>
+          <Button size="sm" variant="outline" className="h-6" data-testid="app-lifecycle-setup"
+            onClick={() => void lifecycle.fixIt()}>
+            <Trans>Set up</Trans>
+          </Button>
+        </div>
+      ) : null;
     case 'degraded':
       return (
         <div

@@ -20,6 +20,7 @@ from flow_sdk.actions import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.project import Project, ProjectInviteRoleError
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.flowpad_types.enums.auth_enums import ROLE_GRANTS, ROLE_ORDER
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -48,7 +49,8 @@ def _local_mode_share_blocked() -> bool:
 
 
 # The roles a share invite may grant — one global list, served by ``share-roles``.
-SHARE_ROLES: tuple[str, ...] = ("guest", "editor", "member", "admin")
+
+SHARE_ROLES: tuple[str, ...] = tuple(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"])
 
 
 @action.get(action_name="share-roles", types=None)
@@ -189,7 +191,15 @@ async def share_entity() -> ApiResponse:
     # ``share()`` below.
     try:
         if isinstance(entity, Conversation):
-            await entity.share(recipients=recipients, recipient_user_ids=recipient_user_ids)
+            if any(inv.roles is not None for inv in invitees):
+                for inv in invitees:
+                    await entity.share(
+                        recipients=[inv.email] if inv.email else None,
+                        recipient_user_ids=[inv.user_id] if inv.user_id else None,
+                        invitation={"roles": inv.roles} if inv.roles is not None else None,
+                    )
+            else:
+                await entity.share(recipients=recipients, recipient_user_ids=recipient_user_ids)
         elif project_invite_only:
             await entity.invite(invitees=invitees or None, teams=teams or None, note=note)
         elif isinstance(entity, Project):

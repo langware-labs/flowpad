@@ -226,7 +226,7 @@ export function UserInfo({ user }: UserInfoProps) {
             <Trans>Organization:</Trans>
           </label>
           <div className="flex flex-wrap gap-2">
-            <OrganizationChip orgId={user.organization_id} role={user.organization_role} />
+            <OrganizationChip orgId={user.organization_id} role={user.organization_roles?.join(', ')} />
           </div>
         </div>
       )}

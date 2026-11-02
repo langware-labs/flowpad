@@ -1,0 +1,18 @@
+{
+  "id": "4e7a1c9b-2d3f-4a8e-b6c5-1f0e9d8c7b62",
+  "name": "spora-tenant-launch",
+  "subkind": "cli",
+  "label": "Spora's local tenant is running (tier 2: the stub tenant)",
+  "exe_data": {
+    "commands": {
+      "darwin": "python3 __STUB__ 8300 --detach",
+      "linux": "python3 __STUB__ 8300 --detach"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "curl -sf http://127.0.0.1:8300/api/bootstrap >/dev/null",
+      "linux": "curl -sf http://127.0.0.1:8300/api/bootstrap >/dev/null"
+    }
+  }
+}

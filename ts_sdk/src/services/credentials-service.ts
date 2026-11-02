@@ -223,7 +223,12 @@ export interface SecretFetchResult {
   missing: string[];
   denied: string[];
   vaults: string[];
+  /** Fetched from a share in a conversation: the credential's test, run here right after (the sender sees it). */
+  test?: CredentialTestState;
 }
+
+/** A credential test's state, as a receiver reports it to the sender — never its detail. */
+export type CredentialTestState = CredentialTestResult['state'];
 
 /** Whether a vault is reachable from this computer. */
 export interface SecretVaultCheck {
@@ -419,11 +424,17 @@ export class CredentialsService {
   }
 
   /** Fetch credential `name`'s values from the vaults its refs name into this computer's store. */
-  async fetch(name: string, projectId: string): Promise<SecretFetchResult> {
+  async fetch(name: string, projectId: string, conversationId?: string | null): Promise<SecretFetchResult> {
     const action = this.action('fetch', 'POST');
-    action.bodyParameters = { name, project_id: projectId };
+    action.bodyParameters = { name, project_id: projectId, conversation_id: conversationId ?? undefined };
     const res = await dataManager.callAction<unknown, Partial<SecretFetchResult>>(action);
-    return { fetched: res?.fetched ?? [], missing: res?.missing ?? [], denied: res?.denied ?? [], vaults: res?.vaults ?? [] };
+    return {
+      fetched: res?.fetched ?? [],
+      missing: res?.missing ?? [],
+      denied: res?.denied ?? [],
+      vaults: res?.vaults ?? [],
+      test: res?.test,
+    };
   }
 
   /** Run credential `name`'s `test` with this computer's values; `untested` when it declares none. */
@@ -482,6 +493,13 @@ export class CredentialsService {
     return ((await dataManager.callAction<unknown, SealedCard[]>(action)) ?? []) as SealedCard[];
   }
 
+  /** The sender's record of a share whose values went to a vault, so each receiver's Fetch reports back. */
+  async sealedTrack(typeid: string, conversationId: string): Promise<void> {
+    const action = this.action('sealed/track', 'POST');
+    action.bodyParameters = { typeid, conversation_id: conversationId };
+    await dataManager.callAction(action);
+  }
+
   /** The sender's transfers in the conversation, and who filled / declined / is pending. */
   async sealedSent(conversationId: string): Promise<SealedSent[]> {
     const action = this.action('sealed/sent', 'GET');
@@ -532,13 +550,20 @@ export interface SealedCard {
   credential_title?: string;
   variables?: string[];
   error?: string;
+  /** Once filled: the credential's test, run on this machine right after. */
+  test?: CredentialTestState;
 }
 
 export interface SealedSent {
   message_id: string;
   transfer_id: string;
-  expires_at: string;
+  expires_at: string | null;
+  /** Per receiver: `filled` = the values landed there (delivered). */
   recipients: Record<string, 'pending' | 'filled' | 'declined'>;
+  /** Per receiver whose Flowpad ran the credential's test after the values landed. */
+  tests?: Record<string, { state: CredentialTestState; at: string }>;
+  /** `secured` (sealed to their device) or `vault` (they fetch from the secret manager). */
+  route?: 'secured' | 'vault';
   expired: boolean;
 }
 

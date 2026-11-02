@@ -12,7 +12,7 @@ import inspect
 import logging
 import time
 from collections.abc import Collection
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -27,6 +27,7 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.progress_table import (
     PROGRESS_TEXT_COMPLETE,
+    SWEEP_ROW_NAME,
     IndexProgressTable,
     TypeProgressRow,
 )
@@ -71,13 +72,18 @@ class _ProgressEmitter:
         self._total_fn = total_fn
         self._last_emit_at = 0.0
         self.current: "RecordType | None" = None
+        # A last row for work after the per-type pass (SWEEP_ROW_NAME).
+        self.tail: TypeProgressRow | None = None
 
     def table(self, text: str | None = None) -> IndexProgressTable:
         rows = self._rows_fn()
         current = self.current
+        # Once the tail runs the per-type pass is over: say so on each row, even
+        # one whose count fell short (failed files) or never had a total.
+        shown = rows if self.tail is None else [replace(r, finished=True) for r in rows] + [self.tail]
         return IndexProgressTable(
             job_name=self._job_name,
-            rows=tuple(rows),
+            rows=tuple(shown),
             current=(str(current) if current is not None and current not in _PROGRESS_HIDDEN_TYPES else None),
             done=sum(r.done for r in rows),
             total=self._total_fn(rows),
@@ -1242,12 +1248,15 @@ class FSIndexer:
         # create) until the whole index finishes. Duplicate/orphan removals
         # still open their own short writer sessions through the driver.
         #
-        # Phase marker before the (potentially long) orphan sweep: without
-        # it the last loop snapshot (done==total, no text) is what watchers
-        # and refresh-time activity-status replay see for the whole sweep —
-        # a stalled-looking 100% bar. Any non-complete text works; the
-        # activity stays alive until the terminal emit below.
-        await progress.emit(text="sweeping", force=True)
+        # The cleanup sweep gets its own row; without it the table reads
+        # finished (every type at done==total) while the sweep still runs.
+        # Total is unknown until the types are resolved below.
+        async def _sweep_progress(done: int, total: int) -> None:
+            progress.tail = TypeProgressRow(type_name=SWEEP_ROW_NAME, done=done, total=total)
+            await progress.emit(force=True)
+
+        progress.current = None
+        await _sweep_progress(0, 0)
 
         # ----- Superseded-identity sweep -----
         # A re-keying leaves residue no other pass can reach. When a type's
@@ -1341,7 +1350,9 @@ class FSIndexer:
             for type_name in orphan_filter_types:
                 db_rows_per_type[type_name] = await driver.list_entity_sources_by_type(type_name)
 
-        for type_name in orphan_filter_types:
+        sweep_total = len(orphan_filter_types)
+        for swept, type_name in enumerate(orphan_filter_types):
+            await _sweep_progress(swept, sweep_total)
             try:
                 rt = RecordType(type_name)
             except ValueError:
@@ -1415,6 +1426,8 @@ class FSIndexer:
 
             acc["orphans_db_removed"] = db_removed
             acc["orphans_disk_removed"] = disk_removed
+
+        await _sweep_progress(sweep_total, sweep_total)
 
         # Build per-type result for the IndexResult return value.
         per_type: dict[RecordType, PerTypeIndexResult] = {}

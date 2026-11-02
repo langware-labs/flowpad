@@ -139,8 +139,11 @@ describe('secured transfer — the journey in the UI', () => {
     await pollUntil(async () => {
       await alice.page.reload({ waitUntil: 'domcontentloaded' });
       await sent.waitFor({ timeout: 10_000 }).catch(() => undefined);
-      return /Filled in by 1/.test((await sent.textContent().catch(() => '')) ?? '') ? true : null;
-    }, 30_000, 'Alice sees Filled in');
+      const line = sent.getByTestId('sealed-receiver').first();
+      return (await line.getAttribute('data-stage').catch(() => null)) === 'filled' ? true : null;
+    }, 30_000, 'Alice sees Delivered');
+    // Bob's Flowpad ran the credential's test right after filling and told Alice its state.
+    expect(await sent.getByTestId('sealed-receiver').first().getAttribute('data-test')).not.toBe('');
     await shot(alice, '06-alice-filled-in');
   }, 180_000);
 

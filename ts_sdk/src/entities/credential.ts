@@ -46,6 +46,8 @@ export interface CredentialVar {
   account_key?: boolean;
   /** Backend default is TRUE — see `isSecret`, never read this raw. */
   secret?: boolean;
+  /** Where a teammate's copy lives: `{vault, key}` in one of the project's vaults. */
+  secret_ref?: { vault: string; key: string } | null;
   /** Where to obtain THIS value; differs per member within one credential. */
   help_url?: string;
   /** `ONE_OF`: the way this variable belongs to — members sharing one are given together. Empty: its own name. */

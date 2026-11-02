@@ -75,6 +75,16 @@ export function useLlmEndpointModels(id: string | undefined) {
   });
 }
 
+/** The sizes each provider declares. The same answer for every endpoint, so it is cached once, not per row. */
+export function useLlmProviderSizes(id: string | undefined) {
+  return useQuery({
+    queryKey: ['llm-endpoint', 'provider-sizes'],
+    queryFn: () => llmEndpointsService.listProviderSizes(id as string),
+    enabled: !!id,
+    staleTime: Infinity,
+  });
+}
+
 /** Key + fetcher for one endpoint's usage over `query` — shared by the detail's
  *  Usage tab and the list's Today column, so the two hit one cache entry. */
 export function usageQueryOptions(id: string, query: LLMUsageQuery) {

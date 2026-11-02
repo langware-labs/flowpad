@@ -243,7 +243,7 @@ async def _finalize_login(login_data: LoginData) -> None:
         org_id = login_data.organization.get("id")
         if org_id:
             user_info["organization_id"] = org_id
-            user_info["organization_role"] = login_data.organization_role or "member"
+            user_info["organization_roles"] = login_data.organization_roles or ["reader"]
 
     await _broadcast_oauth(
         OAuthMessage(

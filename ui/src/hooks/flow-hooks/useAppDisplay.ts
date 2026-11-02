@@ -1,4 +1,4 @@
-import { QueryRequest, ServedApp, ServiceEndpoint, TypeId, WEB_AUDIENCES } from '@sdk';
+import { dataManager, QueryRequest, ServedApp, ServiceEndpoint, TypeId, WEB_AUDIENCES } from '@sdk';
 import { useTheme } from 'next-themes';
 import { useViewMode } from '@src/contexts/view-mode-context';
 import { useQuery } from '@tanstack/react-query';
@@ -71,6 +71,29 @@ function servedBy(proxies: ServiceEndpoint[], field: 'artifact_id' | 'webapp_id'
   return proxies.flatMap((proxy) => proxy.served()).filter((app) => app.mount !== null && app[field] === id);
 }
 
+/** This machine's dev server and served files among `rows` — a cloud placement of the same app is not served here. */
+function localRuntimes(rows: ServedApp[]): { dev: ServedApp | null; served: ServedApp | null } {
+  const local = rows.filter((app) => !app.remote);
+  return {
+    dev: local.find((app) => app.backend?.type === 'proxy') ?? null,
+    served: local.find((app) => app.backend?.type === 'static') ?? null,
+  };
+}
+
+/**
+ * The address the system browser opens an app at, asked once at click time (no live rows held):
+ * its dev server's own address when it answers, else the files this backend serves; '' when nothing
+ * serves it on this machine yet.
+ */
+export async function appBrowserUrl(webappId: string): Promise<string> {
+  const proxies = (await Promise.all(AUDIENCE_PROXIES.map((request) => dataManager.query<ServiceEndpoint>(request))))
+    .reverse()
+    .flat();
+  const { dev, served } = localRuntimes(servedBy(proxies, 'webapp_id', webappId));
+  const devUrl = dev ? await dev.directUrl().catch(() => '') : '';
+  return devUrl || (served?.serviceUrl() ?? '');
+}
+
 /**
  * Every audience proxy's rows, `app` first (its route wins over `admin`'s), and whether any is still loading.
  * One query per audience: `AUDIENCE_PROXIES` is a module constant, so the hook count never changes.
@@ -118,7 +141,8 @@ function useDirectUrl(endpoint: ServedApp | null): { url: string; pending: boole
   const { data, isPending } = useQuery({
     // The port too: a restarted server keeps its mount and moves its address.
     queryKey: ['service_endpoint', endpoint?.id ?? null, 'direct-url', endpoint?.mount ?? null, port],
-    queryFn: () => endpoint!.directUrl().catch(() => ''),
+    // A failure is not an answer: it is asked again (react-query's own retry), never kept as '' for good.
+    queryFn: () => endpoint!.directUrl(),
     enabled: !!endpoint,
     staleTime: Infinity,
   });
@@ -184,13 +208,12 @@ export function useAppDisplay(
       : microAppId
         ? servedBy(proxies, 'webapp_id', microAppId)
         : [];
-  // This machine's rows only: a cloud placement of the same app is not served here.
-  const local = rows.filter((app) => !app.remote);
-  const devFound = local.find((app) => app.backend?.type === 'proxy') ?? null;
-  const servedFound = local.find((app) => app.backend?.type === 'static') ?? null;
+  const { dev: devFound, served: servedFound } = localRuntimes(rows);
   // Held by VALUE (the proxy and the mount): `served()` builds a fresh view per render, and everything
   // downstream — the direct-url query, the frame's key — must not see a new app each time.
-  const held = `${devFound?.id ?? ''}/${devFound?.mount ?? ''}|${servedFound?.id ?? ''}/${servedFound?.mount ?? ''}`;
+  // The dev server's PORT too: a server that comes up on another port (a first start, a moved one) is a new address.
+  const devPort = devFound?.backend?.type === 'proxy' ? devFound.backend.port : '';
+  const held = `${devFound?.id ?? ''}/${devFound?.mount ?? ''}:${devPort}|${servedFound?.id ?? ''}/${servedFound?.mount ?? ''}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const [devEndpoint, servedEndpoint] = useMemo(() => [devFound, servedFound], [held]);
   // An address not answered yet is not an idle app: until it is, nothing is chosen (no setup gate).

@@ -44,6 +44,8 @@ export interface IMessageAttachment extends IEntity {
   asset_id?: string;
   name?: string | null;
   description?: string | null;
+  /** The kind a `*.value.json` file carries (its `spec_kind`), read once at stage time. */
+  value_kind?: string | null;
   /** Staging path RELATIVE to the message's data dir. */
   unpacked_path?: string;
   /** Whether "Install global" (user scope) is offered — schema-derived and

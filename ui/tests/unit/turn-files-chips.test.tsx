@@ -258,15 +258,16 @@ describe('turn-file chip — what a click opens', () => {
     expect(lastPath).toContain('compute_node-@local/repo/src/new.ts');
   });
 
-  it('opens a markdown file rebased onto the project, so it gets its own tab', () => {
+  it("opens a markdown file as the plain dock; the loader places it in the file's own project", () => {
     renderList({ groups: oneTurn('/repo/NOTES.md'), showTurnFiles: true, process: processStub() });
 
     fireEvent.click(screen.getByTestId('turn-file-chip'));
 
-    // A bare `/dock/assets/…` pointer is SCOPE-keyed: it would fold into the
-    // scope's single Assets tab and rename it. The project rebase is what mints
-    // a tab of its own.
-    expect(lastPath).toContain(`/dock/project/${PROJECT_ID}/`);
+    // A click is rule 2 (the file's own project), not the session's: the click
+    // only navigates, and the loader's RESOLVE redirect rebases the document onto
+    // the project folder holding it, so it still gets a tab of its own.
+    expect(lastPath).toContain('/dock/assets/');
+    expect(lastPath).not.toContain(`/dock/project/${PROJECT_ID}/`);
     expect(lastPath).toContain('markdown');
     expect(lastPath).toContain('compute_node-@local/repo/NOTES.md');
   });

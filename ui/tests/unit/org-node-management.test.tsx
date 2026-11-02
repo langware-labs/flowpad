@@ -13,9 +13,9 @@ import { OrgNodeManagement } from '@src/components/organization/org-node-managem
  * which the shared ``assignableRoles`` refuses because a group row has no user_id.
  */
 
-const OWNER_ME = { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'owner', type: 'user' };
-const A_MEMBER = { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', role: 'member', type: 'user' };
-const A_TEAM = { user_id: null, id: 'team-1', name: 'Class 3B', role: 'member', type: 'team' };
+const OWNER_ME = { user_id: 'me-id', email: 'me@example.com', name: 'Me', roles: ['owner'], type: 'user' };
+const A_MEMBER = { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', roles: ['reader', 'runner'], type: 'user' };
+const A_TEAM = { user_id: null, id: 'team-1', name: 'Class 3B', roles: ['reader', 'runner'], type: 'team' };
 
 vi.mock('@src/components/conversation/useLocalUser', () => ({
   useLocalUser: () => ({ localUser: { id: 'me-id', email: 'me@example.com' }, updateName: vi.fn() }),
@@ -36,7 +36,7 @@ function mockRoster(members: unknown[], overrides: Record<string, unknown> = {})
     reason: 'available',
     refresh: vi.fn(),
     removeMember: vi.fn(),
-    setRole: vi.fn(),
+    setRoles: vi.fn(),
     ...overrides,
   });
 }
@@ -59,7 +59,7 @@ describe('OrgNodeManagement', () => {
   it('offers no controls to a caller below admin', () => {
     // Same roster, but "me" is only a member — assignableRoles returns nothing, so
     // the row must fall back to a static role label.
-    mockRoster([{ ...OWNER_ME, role: 'member' }, A_MEMBER]);
+    mockRoster([{ ...OWNER_ME, roles: ['reader', 'runner'] }, A_MEMBER]);
     render(<OrgNodeManagement nodeType="organization" nodeId="org-1" nodeLabel="Springfield High" />);
 
     expect(screen.queryByTestId('member-role-select')).toBeNull();

@@ -208,3 +208,19 @@ async def test_sync_group_member_pulls_parent_artifacts(monkeypatch):
 
 
 # ── bundle packing of loose attachments ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_group_invitation_parent_is_final_reader_and_own_task_editor(monkeypatch):
+    from types import SimpleNamespace
+
+    from flow_sdk.app.actions.group_task_action import _invite_member
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+    calls = []
+    async def call(*args, **kwargs):
+        calls.append(kwargs["payload"])
+    monkeypatch.setattr(HubProxy, "call", call)
+    await _invite_member("person@example.com", SimpleNamespace(id="child", title="Task"), SimpleNamespace(id="parent", title="Task"))
+    assert calls[0]["invitation_targets"] == [
+        {"typeid": "task-child", "roles": ["editor"]},
+        {"typeid": "task-parent", "roles": ["reader"], "is_final": True},
+    ]

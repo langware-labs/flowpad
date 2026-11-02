@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Lock } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, Lock, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { credentialsService, dataContext, type SealedCard, type SealedSent } from '@sdk';
+import { credentialsService, dataContext, type EntityMember, type SealedCard, type SealedSent } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { useTestVerdict } from '@src/components/credentials/credential-test-verdict';
 import { errorMessage } from '@src/lib/error-message';
 
 /**
@@ -11,12 +12,26 @@ import { errorMessage } from '@src/lib/error-message';
  * messages live on the hub only; this re-reads them whenever the conversation changes (`version`). Names only:
  * a value is never fetched to the page.
  */
-export function SealedValuesPanel({ conversationId, version }: { conversationId: string; version?: string | null }) {
+export function SealedValuesPanel({
+  conversationId,
+  version,
+  members = [],
+}: {
+  conversationId: string;
+  version?: string | null;
+  /** The conversation's roster — a receiver's name by hub user id. */
+  members?: readonly EntityMember[];
+}) {
   const { t } = useLingui();
   const [cards, setCards] = useState<SealedCard[]>([]);
   const [sent, setSent] = useState<SealedSent[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const verdict = useTestVerdict();
+  const names = useMemo(
+    () => Object.fromEntries(members.filter((m) => m.user_id).map((m) => [String(m.user_id), m.name || m.email || ''])),
+    [members],
+  );
 
   const load = useCallback(async () => {
     if (!conversationId || !dataContext.caps.localFiles) return; // sealed values live in this machine's store
@@ -40,7 +55,7 @@ export function SealedValuesPanel({ conversationId, version }: { conversationId:
       else await credentialsService.sealedGet(conversationId, card.transfer_id);
       await load();
     } catch (e) {
-      setError(errorMessage(e, t`The values could not be filled in.`));
+      setError(errorMessage(e, what === 'get' ? t`The values could not be requested.` : t`The values could not be filled in.`));
     } finally {
       setBusy(null);
     }
@@ -95,8 +110,8 @@ export function SealedValuesPanel({ conversationId, version }: { conversationId:
               </div>
             </>
           ) : card.state === 'filled' ? (
-            <p className="mt-1 text-xs text-green-600">
-              <Trans>Filled in</Trans>
+            <p className={`mt-1 text-xs ${card.test ? verdict(card.test, 'self').tone : 'text-green-600'}`}>
+              {card.test ? verdict(card.test, 'self').text : <Trans>Filled in</Trans>}
             </p>
           ) : card.state === 'declined' ? (
             <p className="mt-1 text-xs text-muted-foreground">
@@ -113,32 +128,9 @@ export function SealedValuesPanel({ conversationId, version }: { conversationId:
           )}
         </div>
       ))}
-      {sent.map((row) => {
-        const states = Object.values(row.recipients);
-        const filled = states.filter((s) => s === 'filled').length;
-        const waiting = states.filter((s) => s === 'pending').length;
-        return (
-          <div
-            key={row.message_id}
-            className={`max-w-xl rounded-lg border p-3 text-sm ${waiting ? 'border-primary/50' : 'border-green-500/50'} bg-muted/30`}
-            data-testid="sealed-sent"
-          >
-            <div className="flex items-center gap-1.5 font-medium">
-              <Lock className="h-3.5 w-3.5" />
-              <Trans>Sealed values</Trans>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {row.expired ? (
-                <Trans>Expired before everyone filled them in.</Trans>
-              ) : waiting ? (
-                <Trans>Waiting for {waiting} recipient(s) · only they can open them</Trans>
-              ) : (
-                <Trans>Filled in by {filled} · the sealed copy was deleted from the hub</Trans>
-              )}
-            </p>
-          </div>
-        );
-      })}
+      {sent.map((row) => (
+        <SentRow key={row.message_id} row={row} names={names} />
+      ))}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
@@ -155,5 +147,90 @@ export function SealedNoteLine({ text }: { text: string }) {
         <Trans>automatic</Trans>
       </span>
     </div>
+  );
+}
+
+
+/**
+ * The sender's view of one share whose values travelled: per receiver, Sent → Delivered (the values landed on
+ * their machine) → Validated (the credential's own test passed THERE, run by their Flowpad right after).
+ */
+function SentRow({ row, names }: { row: SealedSent; names: Record<string, string> }) {
+  const { t } = useLingui();
+  const users = Object.keys(row.recipients);
+  const allGood = users.length > 0 && users.every((u) => row.tests?.[u]?.state === 'ok');
+  return (
+    <div
+      className={`max-w-xl rounded-lg border p-3 text-sm ${allGood ? 'border-green-500/50' : 'border-primary/50'} bg-muted/30`}
+      data-testid="sealed-sent"
+    >
+      <div className="flex items-center gap-1.5 font-medium">
+        <Lock className="h-3.5 w-3.5" />
+        {row.route === 'vault' ? <Trans>Shared values · secret manager</Trans> : <Trans>Shared values · secured transfer</Trans>}
+      </div>
+      <ul className="mt-1.5 flex flex-col gap-1">
+        {users.map((uid) => (
+          <ReceiverLine
+            key={uid}
+            name={names[uid] || t`A member`}
+            stage={row.recipients[uid]}
+            test={row.tests?.[uid]}
+            expired={row.expired}
+            vault={row.route === 'vault'}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ReceiverLine({
+  name,
+  stage,
+  test,
+  expired,
+  vault,
+}: {
+  name: string;
+  stage: SealedSent['recipients'][string];
+  test?: NonNullable<SealedSent['tests']>[string];
+  expired: boolean;
+  vault: boolean;
+}) {
+  const { t } = useLingui();
+  const verdict = useTestVerdict();
+  const at = test?.at ? new Date(test.at).toLocaleString() : '';
+  const result: { icon: LucideIcon | null; tone: string; text: string } =
+    stage === 'declined'
+      ? { icon: X, tone: 'text-muted-foreground', text: t`Declined` }
+      : stage === 'pending'
+        ? expired
+          ? { icon: TriangleAlert, tone: 'text-amber-600', text: t`Expired before it was opened` }
+          : { icon: null, tone: 'text-muted-foreground', text: vault ? t`Not fetched yet` : t`Not opened yet` }
+        : test
+          ? verdict(test.state, 'sender')
+          : { icon: null, tone: 'text-muted-foreground', text: t`Not reported` };
+  const Icon = result.icon;
+  return (
+    <li className="flex flex-wrap items-center gap-x-1.5 text-xs" data-testid="sealed-receiver" data-stage={stage} data-test={test?.state ?? ''}>
+      <span className="font-medium text-foreground">{name}</span>
+      <span className="text-muted-foreground">·</span>
+      <Step done label={t`Sent`} />
+      <Step done={stage === 'filled'} label={t`Delivered`} />
+      <span className={`inline-flex items-center gap-0.5 ${result.tone}`} title={at}>
+        {Icon && <Icon className="h-3 w-3" />}
+        {result.text}
+      </span>
+    </li>
+  );
+}
+
+function Step({ done, label }: { done: boolean; label: string }) {
+  return (
+    <span className={`inline-flex items-center gap-0.5 ${done ? 'text-green-600' : 'text-muted-foreground/60'}`}>
+      {done && <Check className="h-3 w-3" />}
+      {label}
+      <span className="text-muted-foreground">·</span>
+    </span>
   );
 }

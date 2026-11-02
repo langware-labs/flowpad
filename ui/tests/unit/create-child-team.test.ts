@@ -51,7 +51,7 @@ describe('createChildTeam', () => {
     // Membership is granted on the SAME team the create just made, not a re-derived id.
     const createdTeamTypeId = h.save.mock.calls[0][0];
     expect(h.getByTypeId).toHaveBeenCalledWith(ORG);
-    expect(h.addGroupMember).toHaveBeenCalledWith(createdTeamTypeId, 'member');
+    expect(h.addGroupMember).toHaveBeenCalledWith(createdTeamTypeId, 'reader');
   });
 
   it('refuses to grant membership when the parent could not be loaded', async () => {

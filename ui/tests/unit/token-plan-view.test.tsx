@@ -233,6 +233,27 @@ describe('TokenPlanView', () => {
     expect(h.openPage).toHaveBeenLastCalledWith(PageId.HUB, ViewType.LLM_ENDPOINTS, ORG_EP);
   });
 
+  it('cuts a long "Funded by" label and keeps the full text as the tooltip', async () => {
+    const address = 'flowpad-vertex-llm@langware.iam.gserviceaccount.com';
+    const long = ep(ORG_EP, 'worker root', [], 'user', { owner: true, key: true, allocate: true });
+    long.credential_hint = `service account ${address}`;
+    h.endpoints = [long];
+    renderView(undefined);
+    const chip = await screen.findByTestId(`source-type-${ORG_EP}`);
+    expect(chip.className).toContain('truncate');
+    expect(chip.getAttribute('title')).toBe(chip.textContent);
+    expect(chip.getAttribute('title')).toContain(address);
+  });
+
+  it("pins a row's actions to the table's end edge, so a wide table never scrolls them out of reach", async () => {
+    h.endpoints = [ep(ORG_EP, 'worker root', [], 'user', { owner: true, key: true, allocate: true })];
+    renderView(undefined);
+    const tree = await screen.findByTestId('token-sources');
+    // jsdom has no layout: the pinning itself is checked in a browser; this keeps the cell from losing it.
+    expect(within(tree).getByTestId(`configure-${ORG_EP}`).closest('td')?.className).toContain('sticky');
+    expect(within(tree).getByTestId(`allocate-${ORG_EP}`).closest('td')?.className).toContain('sticky');
+  });
+
   it('teams without a budget are not sources: they are only counted', async () => {
     h.me.mockResolvedValue(plan([meScope, scope({ kind: 'team', id: 't9', name: 'Empty', endpoint_id: null })]));
     renderView(undefined);

@@ -165,11 +165,11 @@ class DesktopActionsMixin:
             if not isinstance(body, dict):
                 return ApiFailResponse(message="Invalid request body (expected JSON object)")
 
-            command = body.get("command")
-            if not command:
-                return ApiFailResponse(message="command field is required")
-
+            command = body.get("command") or ""
             cwd = body.get("cwd")
+            # No command: just a terminal in ``cwd`` ("Open in terminal").
+            if not command and not cwd:
+                return ApiFailResponse(message="command or cwd is required")
             system = platform.system()
             # Optional ``browser: {browser, profile}``: pages the command opens land in that profile.
             env = None
@@ -195,14 +195,16 @@ class DesktopActionsMixin:
                 escaped_command = _escape_applescript(command)
                 if cwd:
                     escaped_cwd = _escape_applescript(cwd)
-                    shell_cmd = f'cd \\"{escaped_cwd}\\" && {escaped_command}'
+                    shell_cmd = f'cd \\"{escaped_cwd}\\"'
+                    if command:
+                        shell_cmd += f" && {escaped_command}"
                 else:
                     shell_cmd = escaped_command
 
                 apple_script = f'tell application "Terminal"\n  activate\n  do script "{shell_cmd}"\nend tell'
                 subprocess.Popen(["osascript", "-e", apple_script])
             elif system == "Windows":
-                args = ["cmd", "/c", "start", "cmd", "/k", command]
+                args = ["cmd", "/c", "start", "cmd", "/k", command] if command else ["cmd", "/c", "start", "cmd"]
                 subprocess.Popen(args, cwd=cwd, env=env)
             else:
                 # Linux - try common terminal emulators
@@ -210,7 +212,9 @@ class DesktopActionsMixin:
                     import shutil
 
                     if shutil.which(term):
-                        if term == "gnome-terminal":
+                        if not command:
+                            subprocess.Popen([term], cwd=cwd, env=env)
+                        elif term == "gnome-terminal":
                             subprocess.Popen([term, "--", "bash", "-c", command], cwd=cwd, env=env)
                         else:
                             subprocess.Popen([term, "-e", command], cwd=cwd, env=env)

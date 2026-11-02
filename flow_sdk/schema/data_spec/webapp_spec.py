@@ -136,6 +136,10 @@ class WebappManifestSpec(DataSpec):
     #: The app's name AND its folder name. One noun.
     name: str = ""
     title: str = ""
+    #: The app's icon: a lucide icon name or an emoji (what the icon picker stores). Empty = the type's icon.
+    icon: str = ""
+    #: Where a click on the app opens it: ``flowpad`` (a Flowpad tab) or ``browser`` (the system browser).
+    open_in: Literal["flowpad", "browser"] = "flowpad"
     description: str = ""
     #: Dot-path ontology, same vocabulary as ``Artifact.kind``. What the app IS
     #: to whatever contains it: ``application.web.editor`` marks the app a

@@ -837,18 +837,15 @@ export class NavigationActions {
     return dock;
   }
 
-  /** Resolve on activation, then open using the same presentation as an agent show. */
+  /**
+   * Resolve on activation, then open the plain dock. A user click opens the target
+   * in ITS OWN project, never the clicker's: the loader owns placement (it rebases a
+   * document onto its owner before the tab is minted), and the backend places the
+   * new tab after the active one — the tab the link was clicked in.
+   */
   async openLink(link: string, source: LinkSource | null): Promise<void> {
-    const origin = this.here;
     try {
-      const [dock, tabs] = await Promise.all([this.resolveLinkDock(link, source), tabManager.listAll()]);
-      const anchor = tabForDockKey(tabs, origin.tabHash ?? '');
-      const placed = await presentDockTab(dock, {
-        projectId: source?.project_id ?? anchor?.project_id,
-        afterTabId: anchor?.id ?? null,
-        parentTabId: anchor?.parent_tab_id ?? null,
-      });
-      this.openDock(placed);
+      this.openDock(await this.resolveLinkDock(link, source));
     } catch (error) {
       notifyLinkError(error);
     }
@@ -905,7 +902,8 @@ export class NavigationActions {
     const web = bareWebUrl(link);
     if (web?.sure) return web.url;
     try {
-      return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+      // The plain dock: the loader rebases a document onto its own project (rule 2).
+      return this.getDockUrl(await this.resolveLinkDock(link, source));
     } catch (error) {
       if (web) return web.url;
       throw error;

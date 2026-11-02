@@ -1,10 +1,14 @@
 import { ARTIFACT_KINDS, TypeId, kindMatches, type Project, type WebApp } from '@sdk';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { appsQuery, EDITOR_APP_KIND } from '@src/hooks/flow-hooks/useAssetApps';
 import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
 import { projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { appBrowserUrl } from '@src/hooks/flow-hooks/useAppDisplay';
+import { appOpenIn } from '@src/components/webapp-display/AppOpenInToggle';
+import { openExternal } from '@src/lib/open-external';
 import { CONSUMER_PROJECT_PARAM, PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 
 /** Apps whose `kind` says they render a value inside another view, not a page of their own. */
@@ -64,4 +68,20 @@ export function projectAppDock(entry: ProjectApp, consumerProjectId: string): Do
   return entry.providerProjectId === consumerProjectId
     ? dock
     : dock.withOption(CONSUMER_PROJECT_PARAM, consumerProjectId);
+}
+
+/**
+ * Open one of a project's apps where it says it opens (`webapp.json` `open_in`): a Flowpad tab, or the
+ * system browser at its address. One not served yet opens in a tab, which brings it up.
+ */
+export function useOpenProjectApp(consumerProjectId: string): (entry: ProjectApp) => Promise<void> {
+  const { navigation } = useDockNavigation();
+  return useCallback(
+    async (entry: ProjectApp) => {
+      const url = appOpenIn(entry.app) === 'browser' ? await appBrowserUrl(entry.app.id) : '';
+      if (url) openExternal(url);
+      else navigation.openDock(projectAppDock(entry, consumerProjectId), undefined, { topLevel: true });
+    },
+    [navigation, consumerProjectId],
+  );
 }

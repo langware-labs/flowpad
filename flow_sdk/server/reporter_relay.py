@@ -66,8 +66,13 @@ REPORTER_JS = """(() => {
   // A viewer that mounts over a frame it did not load (a cached frame) asks again.
   window.addEventListener('message', (e) => { if (e.source === window.parent && e.data &&
     e.data.type === '%(request)s' && settled) post(); });
-  if (document.querySelector('meta[name="flowpad-upstream"][content="down"]')) add('relay', 'not_answering');
-  if (document.readyState === 'complete') settle(); else window.addEventListener('load', settle);
+  // The relay's own "server did not answer" page is marked in its head — read once the document is parsed (the
+  // script runs first in the head, before the marker exists).
+  const start = () => {
+    if (document.querySelector('meta[name="flowpad-upstream"][content="down"]')) add('relay', 'not_answering');
+    else settle();
+  };
+  if (document.readyState === 'complete') start(); else window.addEventListener('load', start);
 })();
 """ % {"type": MESSAGE_TYPE, "request": REQUEST_TYPE}
 
@@ -98,14 +103,19 @@ def inject(html: bytes, load_id: str = "") -> bytes:
     return html[:at] + _script_tag(load_id) + html[at:]
 
 
-def _not_answering(request: Request) -> Response:
+def _not_answering(request: Request, upstream_port: int = 0) -> Response:
     """The server is down: a page that says so AND reports it, so the viewer recovers instead of showing it."""
     if "text/html" not in request.headers.get("accept", ""):
         return Response("the app's server did not answer", status_code=502)
     # Marked, not worded: the reporter sends a structured ``relay``/``not_answering`` error (a built-in rule).
     page = (b'<!doctype html><html><head><meta name="flowpad-upstream" content="down"></head>'
             b"<body><p>The app's server did not answer.</p></body></html>")
-    return Response(inject(page), status_code=502, media_type="text/html")
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+    load_id = str(mint_uuid())
+    if upstream_port:
+        _LATEST_LOAD[upstream_port] = load_id  # this down page IS the document now shown
+    return Response(inject(page, load_id), status_code=502, media_type="text/html")
 
 
 class _Relay:
@@ -145,7 +155,7 @@ class _Relay:
         try:
             upstream = await client.send(outgoing, stream=True)
         except httpx.RequestError:
-            return _not_answering(request)
+            return _not_answering(request, self.port)
         out_headers = [(k, v) for k, v in upstream.headers.multi_items() if k.lower() not in _DROP_IN]
         if "text/html" in upstream.headers.get("content-type", "") and request.method == "GET":
             body = await upstream.aread()

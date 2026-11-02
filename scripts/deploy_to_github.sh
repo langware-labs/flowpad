@@ -174,6 +174,13 @@ echo ""
 # Get current branch
 CURRENT_BRANCH=$(git branch --show-current)
 echo -e "Branch: ${GREEN}$CURRENT_BRANCH${NC}"
+# A release must come from release/v0.2. On a detached HEAD the branch push below pushes
+# nothing and only the tag lands -- that is how v0.2.245 shipped a fix release never had.
+RELEASE_BRANCH="release/v0.2"
+if [[ "$CURRENT_BRANCH" != "$RELEASE_BRANCH" ]]; then
+    echo -e "${RED}Error: releases are cut from ${RELEASE_BRANCH}, not '${CURRENT_BRANCH:-detached HEAD}'${NC}"
+    exit 1
+fi
 
 # Check if remote exists
 REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
