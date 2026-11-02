@@ -69,7 +69,7 @@ def people(hub_base_url) -> dict:
 
 @pytest.fixture
 def c():
-    with httpx.Client(timeout=10.0) as client:
+    with httpx.Client(timeout=adjusted(10.0)) as client:
         yield client
 
 
