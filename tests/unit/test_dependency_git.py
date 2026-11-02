@@ -403,3 +403,25 @@ async def test_readiness_counts_updates_without_blocking(tmp_path: Path, vendor_
     readiness = await readiness_of(project)
     assert readiness.updates == 1
     assert readiness.ready and readiness.to_do == []
+
+
+async def test_a_checkout_already_in_the_workspace_is_used_not_cloned_over(
+    tmp_path: Path, vendor_repo: str, workspace: Path
+) -> None:
+    """A deployed machine gets its dependencies from the hub, already checked out where a clone would land.
+    Resolving finds that checkout and uses it: no clone (the origin may not even be reachable from the box),
+    and no "already exists" failure."""
+    source = Path(vendor_repo.removeprefix("git+file://"))
+    delivered = workspace / "vendor"
+    subprocess.run(["git", "clone", "-q", str(source), str(delivered)], check=True)
+    # The hub sets the remote to the origin's canonical clone URL (``<repo>.git``), token-free.
+    canonical = f"file://{source}.git"
+    subprocess.run(["git", "-C", str(delivered), "remote", "set-url", "origin", canonical], check=True)
+    # The origin goes away: only the delivered checkout can satisfy the dependency now.
+    source.rename(tmp_path / "vendor-gone")
+    project = await _project(tmp_path, "deployed")
+    state = await project.add_dependency(vendor_repo)
+
+    assert state.state == "ready", state
+    assert Path(state.local_path) == delivered
+    assert not (workspace / "vendor-1").exists(), "nothing was cloned beside the delivered checkout"

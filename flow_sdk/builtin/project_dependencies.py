@@ -190,10 +190,17 @@ async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, updat
         if not fetch:
             raise _NotReady("missing", "not on this machine yet — sync to fetch it")
         target = await asyncio.to_thread(origin.next_clone_target)
-        result = await git_clone(origin.clone_url(), str(target), branch=branch or None, token=await _github_token())
-        if not result.ok:
-            raise _NotReady("unreachable", f"could not clone {origin.clone_url()}: {result.detail}")
-        repo, made = target, True
+        if target.exists() and await asyncio.to_thread(origin.matches_checkout, target, require_branch=True):
+            # Already here: the hub delivered it with the project (a deployed machine never clones a
+            # dependency itself), or an earlier clone that no project registered yet.
+            repo = target
+        else:
+            result = await git_clone(
+                origin.clone_url(), str(target), branch=branch or None, token=await _github_token()
+            )
+            if not result.ok:
+                raise _NotReady("unreachable", f"could not clone {origin.clone_url()}: {result.detail}")
+            repo, made = target, True
     elif update and cloned:
         if _has_local_changes(await _checkout_status(repo)):
             # ``pull --autostash`` would replay them onto the new commits and leave conflict markers in
