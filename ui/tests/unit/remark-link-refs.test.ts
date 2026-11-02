@@ -22,6 +22,15 @@ function links(markdown: string): Array<{ url: string; code: boolean; ref?: stri
   return out;
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.spaced_path_links.rules: FAILING? a whole inline-code absolute
+//       path with spaces in its folders must stay ONE link (SPACED_ABSOLUTE_FILE in
+//       wrapCode). Read this tag's rules before touching link-matches TOKENS or remark-link-refs
+//       wrapCode.
+// flowpad:endcapsule tag
 describe('remarkLinkRefs', () => {
   it('links a path in prose, keeping the text around it', () => {
     expect(links('Edited ui/src/a.ts:42 and /tmp/x.')).toEqual([
@@ -47,6 +56,13 @@ describe('remarkLinkRefs', () => {
 
   it('finds a path glued to Hebrew prose', () => {
     expect(links('ערכתי את ב-src/a.ts עכשיו')).toEqual([{ url: 'src/a.ts', code: false }]);
+  });
+
+  it('links inline code that is one absolute path whose folder has a space', () => {
+    expect(links('כתבתי את המערך ל-`~/Flowpad workspace/lesson-4-plan.md`.')).toEqual([
+      { url: '~/Flowpad workspace/lesson-4-plan.md', code: true },
+    ]);
+    expect(links('Run `/usr/bin/env -S python x.py`.')).toEqual([]);
   });
 
   it('leaves fenced code alone', () => {
