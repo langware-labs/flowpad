@@ -40,14 +40,7 @@ function renderDialog() {
   const deploy = vi.spyOn(agent, 'deploy').mockResolvedValue({ deployment: { id: 'dep-1' } } as never);
   const onLaunched = vi.fn();
   const onOpenChange = vi.fn();
-  renderInQuery(
-    <NewDeploymentDialog
-      agent={agent}
-      open
-      onOpenChange={onOpenChange}
-      onLaunched={onLaunched}
-    />,
-  );
+  renderInQuery(<NewDeploymentDialog agent={agent} open onOpenChange={onOpenChange} onLaunched={onLaunched} />);
   return { deploy, onLaunched, onOpenChange };
 }
 

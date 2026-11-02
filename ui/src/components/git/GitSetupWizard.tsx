@@ -27,10 +27,7 @@ type WizardStep = 'where' | 'setup' | 'done';
  * `adopt` mode — init, commit, push. The payload is the contract; the prompt
  * does not restate it, so the two cannot disagree about the remote or branch.
  */
-async function runProjectGitSetup(
-  project: Project,
-  target: Exclude<GitTarget, { mode: 'flowpad' }>,
-): Promise<boolean> {
+async function runProjectGitSetup(project: Project, target: Exclude<GitTarget, { mode: 'flowpad' }>): Promise<boolean> {
   const path = project.fs_storage_mount_path;
   if (!path) return false;
   const result = await launchWizard('git-dependency', {

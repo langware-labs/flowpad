@@ -24,7 +24,11 @@ import { useDeployProviders } from '@src/hooks/use-deploy-providers';
 import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeploymentSecretsGate } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
-import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES, AGENT_MONTHLY_MACHINE_SIZE_LABELS } from './agent-vocabularies';
+import {
+  AGENT_MACHINE_SIZE_LABELS,
+  AGENT_MACHINE_SIZES,
+  AGENT_MONTHLY_MACHINE_SIZE_LABELS,
+} from './agent-vocabularies';
 
 /** A cloud machine's credential environment when nobody names one. */
 const DEFAULT_CLOUD_ENVIRONMENT = 'production';
@@ -77,12 +81,7 @@ interface NewDeploymentDialogProps {
  * what launching that type needs, and Launch. Only a cloud machine needs the publish checklist
  * (it runs the published definition) and a credential environment; this computer needs neither.
  */
-export function NewDeploymentDialog({
-  agent,
-  open,
-  onOpenChange,
-  onLaunched,
-}: NewDeploymentDialogProps) {
+export function NewDeploymentDialog({ agent, open, onOpenChange, onLaunched }: NewDeploymentDialogProps) {
   const { t } = useLingui();
   const [type, setType] = useState<DeploymentType>('local');
   const [launching, setLaunching] = useState(false);

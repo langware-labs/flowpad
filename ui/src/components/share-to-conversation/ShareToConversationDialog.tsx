@@ -393,7 +393,19 @@ export function ShareToConversationDialog({
     if (gitCapable && !preflight.answered) return;
     if (gitCapable && preflight.fix) setStep('changes');
     else linkOrCompose();
-  }, [open, step, owner.loading, preferences.isLoaded, preShare.answered, preShare.answer, preShareDone, gitCapable, preflight.answered, preflight.fix, linkOrCompose]);
+  }, [
+    open,
+    step,
+    owner.loading,
+    preferences.isLoaded,
+    preShare.answered,
+    preShare.answer,
+    preShareDone,
+    gitCapable,
+    preflight.answered,
+    preflight.fix,
+    linkOrCompose,
+  ]);
   const preShareFinished = useCallback(() => {
     setPreShareDone(true);
     // The credential/manifest changed: the project's Git state did too — ask again before composing.
@@ -605,7 +617,9 @@ export function ShareToConversationDialog({
           try {
             setSealOutcome(await credentialsService.sealedSeal(preShare.answer.typeid, convId));
           } catch (sealErr) {
-            setLocalError(errorMessage(sealErr, t`The credential was shared, but its values could not be sent securely.`));
+            setLocalError(
+              errorMessage(sealErr, t`The credential was shared, but its values could not be sent securely.`),
+            );
           }
         }
         if (convId && shareValues && valuesRoute === 'manager' && preShare.answer?.typeid) {
@@ -986,7 +1000,12 @@ export function ShareToConversationDialog({
                       disabled={busy}
                       multiple
                       value={selectedRoles[recipient]}
-                      onChange={(e) => setRoleChoices((current) => ({ ...current, [recipient]: Array.from(e.target.selectedOptions, option => option.value) }))}
+                      onChange={(e) =>
+                        setRoleChoices((current) => ({
+                          ...current,
+                          [recipient]: Array.from(e.target.selectedOptions, (option) => option.value),
+                        }))
+                      }
                       data-testid="share-project-role"
                     >
                       {membership.roles.map((role) => (
@@ -1070,12 +1089,12 @@ export function ShareToConversationDialog({
               )}
             </div>
             {secureValues && (
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="share-secured-line">
-                    <Lock className="h-3.5 w-3.5 text-green-600" />
-                    <Trans>Secured transfer — only the recipients can open the values.</Trans>
-                  </p>
-                )}
-                {gitCapable && participants.length > 0 && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="share-secured-line">
+                <Lock className="h-3.5 w-3.5 text-green-600" />
+                <Trans>Secured transfer — only the recipients can open the values.</Trans>
+              </p>
+            )}
+            {gitCapable && participants.length > 0 && (
               <p
                 className="text-xs text-muted-foreground"
                 data-testid="share-transfer-mode"

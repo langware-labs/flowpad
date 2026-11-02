@@ -140,8 +140,13 @@ async def test_after_the_history_push_an_unchanged_asset_pushes_nothing(world):
     head = await _publish(mirror, project)
 
     synced = await sync_asset_with_hub(
-        mirror=mirror, asset_root=agent, rel_path="agentic-assets/agent/q", is_file=False,
-        last_tree=None, author=AUTHOR, asset_typeid="agent-1",
+        mirror=mirror,
+        asset_root=agent,
+        rel_path="agentic-assets/agent/q",
+        is_file=False,
+        last_tree=None,
+        author=AUTHOR,
+        asset_typeid="agent-1",
     )
 
     assert synced.pushed is False
@@ -162,8 +167,13 @@ async def test_a_folder_that_is_not_a_checkout_keeps_its_ignored_trees_home(tmp_
     assert git_source_state(project) is None
 
     await sync_asset_with_hub(
-        mirror=mirror, asset_root=agent, rel_path="agentic-assets/agent/q", is_file=False,
-        last_tree=None, author=AUTHOR, asset_typeid="agent-1",
+        mirror=mirror,
+        asset_root=agent,
+        rel_path="agentic-assets/agent/q",
+        is_file=False,
+        last_tree=None,
+        author=AUTHOR,
+        asset_typeid="agent-1",
     )
 
     assert (mirror.root / "agentic-assets/agent/q/agent.json").exists()

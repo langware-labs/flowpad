@@ -295,8 +295,16 @@ async def _ignored_inside(mirror: "HubRepoMirror", project: Path, rel: str) -> s
     person's explicit publish: only what is ignored INSIDE it stays home."""
     code, listed = await mirror.git(
         *_git_view(mirror, project),
-        "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory", "--", rel,
-        cwd=project, check=False,
+        "ls-files",
+        "-z",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+        "--",
+        rel,
+        cwd=project,
+        check=False,
     )
     if code != 0:
         # Git cannot say (a broken ``.git``): copy the folder whole, as before ignore rules applied here.
@@ -437,7 +445,7 @@ def _project_file_is_publishable(rel: str) -> bool:
     parts = PurePosixPath(rel).parts
     if is_pack_cruft(rel) or any(part == ".env" or part.startswith(".env.") for part in parts):
         return False
-    return ".flow" not in parts or parts[parts.index(".flow"):] == (".flow", "capsules", f"{IDENTITY}.json")
+    return ".flow" not in parts or parts[parts.index(".flow") :] == (".flow", "capsules", f"{IDENTITY}.json")
 
 
 @dataclass(frozen=True)
@@ -570,7 +578,9 @@ async def _push_history(mirror: HubRepoMirror, checkout: Path, state: GitSourceS
     return state.head
 
 
-async def sync_project_with_hub(*, mirror: HubRepoMirror, checkout: Path, author: GitAuthor, project_typeid: str) -> str:
+async def sync_project_with_hub(
+    *, mirror: HubRepoMirror, checkout: Path, author: GitAuthor, project_typeid: str
+) -> str:
     """Make the hub repo hold the project, and return the hub's head commit.
 
     A git checkout is the single source of truth: its HEAD — the person's own commits — is

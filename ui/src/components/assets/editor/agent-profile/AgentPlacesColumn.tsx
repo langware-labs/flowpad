@@ -103,12 +103,7 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
         )}
       </div>
       {deployOpen && !hub && (
-        <NewDeploymentDialog
-          agent={agent}
-          open
-          onOpenChange={setDeployOpen}
-          onLaunched={reload}
-        />
+        <NewDeploymentDialog agent={agent} open onOpenChange={setDeployOpen} onLaunched={reload} />
       )}
       {places === null ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
