@@ -45,6 +45,8 @@ export async function openInstancePage(browser: Browser, name: string): Promise<
   const feUrl = `http://localhost:${fePort}`;
   const apiUrl = `http://localhost:${env.LOCAL_SERVER_PORT}`;
   const page = await browser.newPage();
+  // A cold dev-server load of the bundle takes ~25 s on a slow host: Playwright's 30 s default navigation cap widens with ADJUSTABLE_TIMEOUT.
+  page.setDefaultNavigationTimeout(adjusted(30_000));
   const consoleErrors: string[] = [];
   page.on('console', (msg) => {
     if (msg.type() === 'error') consoleErrors.push(msg.text());
