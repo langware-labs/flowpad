@@ -23,6 +23,7 @@
  * declined step is still an answer, which is what "settles" checks.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 const STEPS = ['claude-code', 'python', 'git', 'node'];
 // `stepStatus` / `LIVE_STATE` words that mean "this step has not answered yet".
@@ -33,7 +34,7 @@ const UNSETTLED = new Set(['not_reached', 'running']);
 async function stepStatuses(page: Page): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const id of STEPS) {
-    out[id] = (await page.getByTestId(`wizard-step-${id}`).getAttribute('data-status', { timeout: 1_000 })) ?? '';
+    out[id] = (await page.getByTestId(`wizard-step-${id}`).getAttribute('data-status', { timeout: adjusted(1_000) })) ?? '';
   }
   return out;
 }
@@ -47,7 +48,7 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   // 1. The wizard popup opens OVER the page the tab was on — the URL does not change — with no
   //    chooser, no running step and no Start click yet. A live tab is watching, so the trigger
   //    stops there.
-  await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 30_000 }); // do not increase timeout without approval
+  await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: adjusted(30_000) }); // do not increase timeout without approval
   await expect(page).not.toHaveURL(/\/editor\/wizard\/typeid\//);
   await expect(page.getByTestId('wizard-viewer')).toContainText('Finish setting up Flowpad');
   // The check that decided to open the popup already ran: the tool set aside is owed, and
@@ -66,13 +67,13 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   await expect(async () => {
     // The chooser is a small popup with "Choose a source" and "Skip for now"; the "Assistants &
     // keys" dialog opens only from the first, so skipping needs nothing closed first.
-    if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
-    await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 1_000 });
+    if (await skip.isVisible()) await skip.click({ timeout: adjusted(1_000) });
+    await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: adjusted(1_000) });
     // Start resets the owed step to `not_reached` while the source chooser is up; only a step
     // past both means the wizard itself is running.
     const started = !['not_started', 'not_reached'].includes((await stepStatuses(page))['claude-code']);
     expect(started, 'the wizard has started running').toBe(true);
-  }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
+  }).toPass({ timeout: adjusted(30_000) }); // do not increase timeout without approval
 
   // 3–4. All four tools are on the page (`stepStatuses` reads every row), and declining every
   //    install question, the run reaches an answer for each. The source
@@ -92,7 +93,7 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     const pending = Object.entries(statuses).filter(([, s]) => UNSETTLED.has(s));
     expect(pending, `steps still without an answer: ${JSON.stringify(statuses)}`).toEqual([]);
     settled = statuses;
-  }).toPass({ timeout: 90_000 }); // do not increase timeout without approval
+  }).toPass({ timeout: adjusted(90_000) }); // do not increase timeout without approval
 
   expect(['satisfied', 'completed'], `git is on every runner: ${JSON.stringify(settled)}`).toContain(settled.git);
 });
