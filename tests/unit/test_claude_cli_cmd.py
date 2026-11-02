@@ -325,3 +325,24 @@ def test_an_agents_disallowed_tools_become_its_workers():
 
     agent = Agent(name="careful", worker_type="claude", disallowed_tools=DENY)
     assert agent.to_agent_options().disallowed_tools == DENY
+
+
+
+def test_claude_trusts_reads_workspace_trust_for_the_folder_or_one_above(tmp_path):
+    """Claude exits on --worktree in an untrusted folder ("Workspace trust not yet accepted"); the launch
+    checks this first and starts Claude plainly there, so its own trust prompt shows."""
+    import json
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts
+    from flow_sdk.instance_settings import get_instance_settings
+
+    folder = tmp_path / "repo"
+    (folder / "sub").mkdir(parents=True)
+    settings = get_instance_settings().user_home / ".claude.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps({"projects": {}}))
+    assert not claude_trusts(str(folder))
+    settings.write_text(json.dumps({"projects": {str(folder.resolve()): {"hasTrustDialogAccepted": True}}}))
+    assert claude_trusts(str(folder))
+    assert claude_trusts(str(folder / "sub"))
+    assert not claude_trusts(str(tmp_path))
