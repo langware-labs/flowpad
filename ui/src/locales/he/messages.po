@@ -22522,6 +22522,8 @@ msgstr "פתיחת תיקייה: {path}"
 msgid "Open folder: {projectPath}"
 msgstr "פתיחת התיקייה: {projectPath}"
 
+#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open from git"
 msgstr "פתיחת פרויקט מ-Git"

@@ -22522,6 +22522,8 @@ msgstr "فتح المجلد: {path}"
 msgid "Open folder: {projectPath}"
 msgstr "فتح المجلد: {projectPath}"
 
+#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open from git"
 msgstr "فتح من Git"
