@@ -196,3 +196,22 @@ async def test_an_empty_list_is_a_complete_walk(hub):
     hub.handler = lambda req: httpx.Response(200, json={"status": "SUCCESS", "data": []})
     walk = await HubProxy.walk("organization")
     assert walk.complete is True and walk.rows == []
+
+
+async def test_a_page_that_is_not_the_hubs_is_offline_not_its_verdict(hub):
+    """A tunnel whose endpoint went offline answered the agent's mailbox poll with ngrok's own 404 page;
+    read as the hub's 404 it meant "this agent has no mailbox", and the source stopped polling for good
+    (clown-six, 2026-11-02). A page that is not the hub's JSON is the hub not reached."""
+    from flow_sdk.builtin.drivers.hub_agent_mailbox_driver import _as_email_error
+
+    hub.handler = lambda req: httpx.Response(404, text="The endpoint x.ngrok-free.dev is offline.\nERR_NGROK_3200")
+    with pytest.raises(HubError) as e:
+        await HubProxy.call("GET", "agent", TASK_ID, "mailbox", "messages")
+    assert e.value.status_code == 0 and e.value.kind is HubFailureKind.OFFLINE
+    # Status 0 is what the mailbox source reads as "unreachable, try the next tick" (``mailbox_refusal``).
+    assert (await _as_email_error(e.value)).status_code == 0
+
+    hub.handler = lambda req: httpx.Response(404, json={"status": "FAIL", "message": "agent has no mailbox"})
+    with pytest.raises(HubError) as e:
+        await HubProxy.call("GET", "agent", TASK_ID, "mailbox", "messages")
+    assert e.value.status_code == 404, "the hub's own 404 stays its verdict"

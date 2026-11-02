@@ -627,10 +627,27 @@ def _extract_data(resp: httpx.Response) -> Any:
     return body.get("data") if isinstance(body, dict) else None
 
 
+def _is_json(resp: httpx.Response) -> bool:
+    try:
+        resp.json()
+    except ValueError:
+        return False
+    return True
+
+
 def _unwrap(resp: httpx.Response, *, method: str = "", url: Any = "", strict: bool = False, raw: bool = False) -> Any:
     """A hub response read as a graph-call answer: ``data`` on 200, ``HubError`` otherwise."""
     if resp.status_code != 200:
         logger.warning("[hub] %s %s returned %s: %s", method, url, resp.status_code, resp.text[:200])
+        if not _is_json(resp):
+            # The hub answers every failure in JSON. A page that is not JSON came from something between
+            # us and the hub -- a tunnel or proxy whose endpoint is offline (ngrok's 404 ERR_NGROK_3200) --
+            # so the hub was not reached: read as a 404, it told a mailbox source "you have no mailbox"
+            # and stopped it for good.
+            raise HubError(
+                0, f"the hub could not be reached (HTTP {resp.status_code} from the way there)",
+                kind=HubFailureKind.OFFLINE,
+            )
         raise HubError(
             resp.status_code, _extract_reason(resp), code=_extract_error_code(resp), data=_extract_data(resp)
         )
