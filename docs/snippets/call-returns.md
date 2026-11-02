@@ -171,6 +171,8 @@ class AskOp(ExeData):                         # compute_op.ask — a person
     detail: str                               # a paragraph under the heading: why, and what each answer does
     submit_label: str                         # the button words; empty ⇒ Send / Cancel
     cancel_label: str
+    labels: dict[str, str]                    # what each field of a record answer is called where it is typed
+    stage: AskStageSpec | None                # where it stands in a sequence the person walks ("1 of 2"); None: alone
     assist_agent: str                         # AI Assist: this agent follows setup and answers the SAME question
     until_answered: bool                      # no deadline — refuses alongside timeout_seconds
     recheck: bool                             # Send runs the completion check; until it holds the question stays open
