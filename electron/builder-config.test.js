@@ -146,4 +146,41 @@ const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, msg); passed++; };
   ok(/\$\{ifNot\} \$\{isUpdated\}/.test(nsh), '…and skips the delete during an auto-update (uninstall --updated)');
 }
 
+// ── the uninstaller removes only what flow-rs proves is FlowPad's (FLOWPAD-2250) ─────────────
+// installer.nsh is the UI around `flow-rs uninstall`; these pin the safety rules of that UI.
+{
+  const fs = require('fs');
+  const nsh = fs.readFileSync(path.join(__dirname, committed.nsis.include), 'utf8');
+  const code = nsh.split(/\r?\n/).filter((l) => !/^\s*;/.test(l)).join('\n');
+  const macro = (name) => (code.match(new RegExp(`!macro ${name}\\b[\\s\\S]*?!macroend`)) || [''])[0];
+
+  ok(!/REBOOTOK/i.test(code), 'no /REBOOTOK: per-user reboot deletion fails silently; flow-rs schedules and verifies its own');
+  ok(!/RMDir\s+\/r/i.test(code) && !/rmdir\s+\/s/i.test(code), 'no recursive delete in NSIS: only flow-rs deletes, by handle');
+  ok(!/powershell|Get-CimInstance/i.test(code.replace(/!insertmacro (IS_POWERSHELL_AVAILABLE|_CHECK_APP_RUNNING)/g, '')),
+    'no PowerShell/WMI of our own (it hung on the VM)');
+
+  const uninstall = macro('customUnInstall');
+  ok(/\$\{ifNot\} \$\{isUpdated\}[\s\S]*flow-rs\.exe|FLOWPAD_RS\}" uninstall[\s\S]*\$\{endIf\}/.test(uninstall)
+    && uninstall.indexOf('${ifNot} ${isUpdated}') < uninstall.indexOf('" uninstall --install-dir'),
+    'customUnInstall runs flow-rs uninstall only outside an update');
+  ok(/--delete-app-data/.test(uninstall) && /--delete-instance-data/.test(uninstall) && /--remove-engine/.test(uninstall),
+    'data and engine flags are passed only from the user\'s choices');
+  ok(!/Sign out or restart to finish"[\s\S]*\$\{If\} \$1 == 0/.test(uninstall) && /\$\{If\} \$1 == 0/.test(uninstall),
+    'the finish title follows flow-rs\'s exit code');
+  ok(!/StrCpy \$FlowpadFinishTitle "FlowPad was uninstalled"\s*\n\s*\$\{EndIf\}/.test(uninstall),
+    'no unconditional success title');
+
+  const page = macro('flowpadOptionsPage');
+  ok(/\$FlowpadUpdating == 1[\s\S]*\$\{OrIf\} \$\{Silent\}[\s\S]*Abort/.test(page), 'the options page is skipped during an update and in silent mode');
+  ok(!/NSD_Check\b|BST_CHECKED\}\s*$/m.test(page.replace(/\$\{If\} \$0 == \$\{BST_CHECKED\}/g, '')), 'nothing on the page starts checked');
+  ok(/MB_YESNO\|[^"]*MB_DEFBUTTON2[^"]*"This permanently deletes/.test(page), 'deleting data needs a confirmation whose default is No');
+  ok(/IDYES flowpad_confirmed[\s\S]*StrCpy \$FlowpadDeleteAppData 0[\s\S]*StrCpy \$FlowpadDeleteData 0/.test(page), 'answering No deletes nothing');
+  ok(/--classify-only/.test(page), 'the page shows what flow-rs classified, read-only');
+
+  ok(/app-running --install-dir/.test(macro('customCheckAppRunning')), 'the uninstaller checks the app with flow-rs (bounded), not electron-builder\'s WMI call');
+  ok(/deferred-cleanup --trigger installer/.test(macro('customInstall')), 'a new install finishes a pending cleanup before the first launch');
+  const init = macro('customUnInit');
+  ok(['/REMOVEENGINE', '/DELETEAPPDATA', '/DELETEDATA'].every((s) => init.includes(`"${s}"`)), 'silent switches are documented and parsed');
+}
+
 console.log(`${path.basename(__filename)}: ${passed} assertions passed`);

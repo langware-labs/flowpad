@@ -81,6 +81,19 @@ enum Cmd {
     #[cfg(windows)]
     #[command(name = "self-test")]
     SelfTest,
+    /// Is `<install dir>\Flowpad.exe` running? Exit 0 no, 1 yes. With --stop, stop exactly those
+    /// processes and exit 0 once none is left. Used by the uninstaller instead of electron-builder's
+    /// PowerShell/WMI check, which can hang (FLOWPAD-2250, Phase 0 P8).
+    #[cfg(windows)]
+    #[command(name = "app-running", rename_all = "kebab-case")]
+    AppRunning {
+        #[arg(long)]
+        install_dir: std::path::PathBuf,
+        #[arg(long)]
+        stop: bool,
+        #[arg(long, default_value_t = 30)]
+        deadline_secs: u64,
+    },
 }
 
 /// Exit with 124 at the deadline, whatever is in progress: nothing may hang the uninstaller.
@@ -164,6 +177,27 @@ fn main() -> anyhow::Result<()> {
         Cmd::SelfTest => {
             println!("{}", flow_rs::uninstall::deferred::SELF_TEST_OK);
             Ok(())
+        }
+        #[cfg(windows)]
+        Cmd::AppRunning { install_dir, stop, deadline_secs } => {
+            use flow_rs::uninstall::procs;
+            watchdog(deadline_secs);
+            let exe = install_dir.join("Flowpad.exe");
+            let running = || procs::app_processes(&procs::scan(), &exe.display().to_string());
+            let found = running();
+            if !stop {
+                std::process::exit(if found.is_empty() { 0 } else { 1 });
+            }
+            for p in &found {
+                let _ = procs::terminate(p.pid, p.created);
+            }
+            for _ in 0..50 {
+                if running().is_empty() {
+                    std::process::exit(0);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            std::process::exit(1)
         }
     }
 }

@@ -127,6 +127,12 @@ fn close(a: Option<f64>, b: Option<f64>) -> bool {
     matches!((a, b), (Some(x), Some(y)) if (x - y).abs() <= CREATE_TIME_TOLERANCE)
 }
 
+/// The app's own processes: image exactly `app_exe`, never this process.
+pub fn app_processes(procs: &[Proc], app_exe: &str) -> Vec<Proc> {
+    let me = std::process::id();
+    procs.iter().filter(|p| p.pid != me && p.image.as_deref().is_some_and(|i| same_path(i, app_exe))).cloned().collect()
+}
+
 pub fn select(procs: &[Proc], ctx: &Context) -> Selection {
     let by_pid: BTreeMap<u32, &Proc> = procs.iter().map(|p| (p.pid, p)).collect();
     let is_interpreter = |p: &Proc| p.image.as_deref().is_some_and(|i| ctx.engine_interpreters.iter().any(|e| same_path(i, e)));
@@ -518,6 +524,15 @@ mod tests {
         assert_eq!(absent.launched_by, None);
         assert_eq!(null.launched_by, Some(None));
         assert_eq!(desk.launched_by, Some(Some("desktop".into())));
+    }
+
+    #[test]
+    fn app_processes_match_the_exact_exe_only() {
+        let mut w = world();
+        w.push(p(700, 1, r"C:\Users\u\AppData\Local\Programs\Flowpad2\Flowpad.exe", 1.0, "Flowpad.exe"));
+        w.push(p(701, 1, r"C:\Other\Flowpad.exe", 1.0, "Flowpad.exe"));
+        let found: Vec<u32> = app_processes(&w, APP).iter().map(|p| p.pid).collect();
+        assert_eq!(found, vec![10], "another install's Flowpad.exe is not this app");
     }
 
     #[test]
