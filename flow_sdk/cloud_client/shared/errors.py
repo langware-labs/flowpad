@@ -60,10 +60,19 @@ class HubError(Exception):
     envelope carried one (see ``HubErrorCode``) — None otherwise.
     """
 
-    def __init__(self, status_code: int, reason: str, code: str | None = None, kind: "HubFailureKind | None" = None):
+    def __init__(
+        self,
+        status_code: int,
+        reason: str,
+        code: str | None = None,
+        kind: "HubFailureKind | None" = None,
+        data: object = None,
+    ):
         self.status_code = status_code
         self.reason = reason
         self.code = code
+        #: The refusal's ``data``, when the hub said more than a message (e.g. which dependencies are not ready).
+        self.data = data
         # Given when the status alone cannot say it: no hub configured, no credential to send.
         self.kind = kind or classify_hub_failure(status_code, code)
         super().__init__(f"hub error {status_code}: {reason}")

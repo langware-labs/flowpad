@@ -618,11 +618,22 @@ class HubProxy:
         return HubAnswer(resp.status_code, hdrs, resp.content)
 
 
+def _extract_data(resp: httpx.Response) -> Any:
+    """The ``data`` of a refusal's JSON envelope, or None."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    return body.get("data") if isinstance(body, dict) else None
+
+
 def _unwrap(resp: httpx.Response, *, method: str = "", url: Any = "", strict: bool = False, raw: bool = False) -> Any:
     """A hub response read as a graph-call answer: ``data`` on 200, ``HubError`` otherwise."""
     if resp.status_code != 200:
         logger.warning("[hub] %s %s returned %s: %s", method, url, resp.status_code, resp.text[:200])
-        raise HubError(resp.status_code, _extract_reason(resp), code=_extract_error_code(resp))
+        raise HubError(
+            resp.status_code, _extract_reason(resp), code=_extract_error_code(resp), data=_extract_data(resp)
+        )
     if raw:
         return resp.content
     try:
