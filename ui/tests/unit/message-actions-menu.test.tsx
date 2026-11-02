@@ -67,8 +67,6 @@ describe('message header row', () => {
 
 describe('message ⋮ menu', () => {
   it('holds every action and fires each one', () => {
-    const onReply = vi.fn();
-    const onForward = vi.fn();
     const onTaskIt = vi.fn();
     const onDelete = vi.fn();
     render(
@@ -76,23 +74,16 @@ describe('message ⋮ menu', () => {
         flowMessageId="m-1"
         conversationId="22222222-2222-4222-8222-222222222222"
         messageText="please add the founding number"
-        onReply={onReply}
-        replyInThread
         onReact={vi.fn()}
-        onForward={onForward}
         onTaskIt={onTaskIt}
         onEditName={vi.fn()}
         onDelete={onDelete}
       />,
     );
     openMenu();
-    expect(screen.getByTestId('message-reply').textContent).toContain('Reply in thread');
-    for (const id of ['message-react', 'message-forward', 'message-task-it', 'message-download', 'message-favorite', 'message-edit-name', 'message-delete']) {
+    for (const id of ['message-react', 'message-task-it', 'message-download', 'message-favorite', 'message-edit-name', 'message-delete']) {
       expect(screen.getByTestId(id)).toBeTruthy();
     }
-    fireEvent.click(screen.getByTestId('message-reply'));
-    expect(onReply).toHaveBeenCalled();
-    openMenu();
     fireEvent.click(screen.getByTestId('message-favorite'));
     expect(toggleFavorite).toHaveBeenCalledWith({
       entityType: 'flow_message',

@@ -249,6 +249,9 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
   );
 }
 
+/** Reply / Forward: icon-only on the row, shown on hover like Slack and Teams. */
+const HOVER_ICON_BUTTON_CLASS = `self-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ${MESSAGE_ROW_ICON_BUTTON_CLASS}`;
+
 export function MessageBubble({
   message,
   flowMessageId,
@@ -421,7 +424,7 @@ export function MessageBubble({
               onClick={onReply}
               title={replyInThread ? t`Reply in thread` : t`Reply`}
               aria-label={replyInThread ? t`Reply in thread` : t`Reply`}
-              className={`self-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ${MESSAGE_ROW_ICON_BUTTON_CLASS}`}
+              className={HOVER_ICON_BUTTON_CLASS}
               data-testid="message-reply"
             >
               <Reply className="size-3" />
@@ -433,7 +436,7 @@ export function MessageBubble({
               onClick={onForwardMessage}
               title={t`Forward`}
               aria-label={t`Forward`}
-              className={`self-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ${MESSAGE_ROW_ICON_BUTTON_CLASS}`}
+              className={HOVER_ICON_BUTTON_CLASS}
               data-testid="message-forward"
             >
               <Forward className="size-3 rtl:-scale-x-100" />
