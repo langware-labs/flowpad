@@ -12,6 +12,7 @@
 import { promises as fsp } from 'node:fs';
 
 import { HUB_URL, syncAssignedConversationAt } from './_hub';
+import { adjusted } from '../adjustableTimeout';
 
 // Rendezvous file: alice writes the freshly-created conv id here after
 // ``share()``; bob polls for it so he targets THIS run's conversation and
@@ -62,7 +63,7 @@ export async function pollUntil<T>(
   timeoutMs: number,
   label: string,
 ): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + adjusted(timeoutMs);
   while (Date.now() < deadline) {
     const v = await fn();
     if (v) return v;

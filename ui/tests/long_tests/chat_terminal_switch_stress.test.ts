@@ -94,6 +94,8 @@ stressDescribe('chat⇄terminal counter — one session, 10 switches, every turn
       };
 
       await vi.waitFor(() => expect(ap.session_id).toBeTruthy(), { timeout: BOOT_MS, interval: 500 });
+      // The launch prompt is a turn too: settle it first (a mid-turn switchMode is 409'd).
+      await vi.waitFor(() => expect(ap.busy).toBe(false), { timeout: BOOT_MS, interval: 500 });
       const session: string = ap.session_id;
       const run = ap.id.replace(/-/g, '').slice(0, 6).toUpperCase();
 
@@ -120,6 +122,8 @@ stressDescribe('chat⇄terminal counter — one session, 10 switches, every turn
         // Settle: wait for the turn to finish before the next switch (a mid-turn
         // switchMode is 409'd). This also lets a resumed PTY fully quiesce.
         await ap.waitForReady({ timeout: BOOT_MS });
+        // Headless is "always ready" to the SDK gate, but the server 409s a switch until the turn ends.
+        await vi.waitFor(() => expect(ap.busy).toBe(false), { timeout: BOOT_MS, interval: 500 });
       }
 
       expect(ap.session_id, 'one session survived all 10 switches').toBe(session);

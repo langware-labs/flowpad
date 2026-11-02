@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Publish an agent to git from the desktop, then open its editor on the hub UI.
@@ -13,8 +14,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  timeout: 120_000,
-  expect: { timeout: 30_000 },
+  timeout: adjusted(120_000),
+  expect: { timeout: adjusted(30_000) },
   fullyParallel: false,
   retries: 0,
   workers: 1,

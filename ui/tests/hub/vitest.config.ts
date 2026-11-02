@@ -2,6 +2,7 @@ import path from 'path';
 import { defineConfig, mergeConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import viteConfig from '../../vite.config';
+import { adjusted } from '../adjustableTimeout';
 
 // FLOW_INSTANCE selects the matching generated `.env.<name>.local`. The root
 // Vitest config evaluates every project config, so missing/mismatched selection
@@ -27,8 +28,8 @@ export default mergeConfig(
       // Hub round-trips include local-backend → hub HTTP, hub fanout, WS bridge
       // back to the local backend, and finally to the in-test SDK. Each leg is
       // ~tens of ms; 30s budget covers a 5-message ping-pong with margin.
-      testTimeout: 30000, // do not increase timeout without approval
-      hookTimeout: 15000,
+      testTimeout: adjusted(30000), // do not increase timeout without approval
+      hookTimeout: adjusted(15000),
       // Reset the per-instance SDK realm override (__FLOWPAD_API_URL__) after
       // every file so a two-client file never leaks its backend target into a
       // subsequent single-client file (single-threaded -> shared globalThis).

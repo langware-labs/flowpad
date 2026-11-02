@@ -177,6 +177,41 @@ def alive(deployment) -> bool:
     return pid_of(deployment) is not None
 
 
+def alive_many(deployments) -> set[str]:
+    """The ids, among *deployments*, that a process runs now -- ``alive`` for each, but the process table is read ONCE.
+
+    ``alive`` on a deployment whose lock is not held reads every process's command line (``_starting``); done per
+    deployment, on the event loop, by a supervisor tick, that stalled a backend with many deployments for seconds.
+    """
+    import psutil  # noqa: PLC0415
+
+    found: set[str] = set()
+    unlocked = []
+    for deployment in deployments:
+        path = _lock_path(str(deployment.id))
+        if path.is_file():
+            with open(path, "a+", encoding="utf-8") as fh:
+                if _try_lock(fh):
+                    _unlock(fh)
+                else:
+                    fh.seek(0)
+                    if fh.read().strip().isdigit():
+                        found.add(str(deployment.id))
+                        continue
+        unlocked.append(deployment)
+    if not unlocked:
+        return found
+    tails = {(str(file_of(d)), str(d.id)): str(d.id) for d in unlocked}
+    me = os.getpid()
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        cmdline = proc.info.get("cmdline") or []
+        if len(cmdline) >= 2 and proc.info["pid"] != me:
+            hit = tails.get((cmdline[-2], cmdline[-1]))
+            if hit is not None:
+                found.add(hit)
+    return found
+
+
 def shell_id_of(deployment) -> str:
     return str((getattr(deployment, "provider_labels", None) or {}).get(SHELL_LABEL) or "")
 

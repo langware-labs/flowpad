@@ -45,7 +45,8 @@ class _CaptureHandler(BaseHTTPRequestHandler):
 
 
 @pytest.mark.asyncio
-async def test_index_consent_event_reaches_listen_route(bootstrapped_client):
+async def test_index_consent_event_reaches_listen_route(bootstrapped_client, monkeypatch):
+    import flow_sdk.discovery.notify as notify
     from flow_sdk.fs_store.indexer.consent_notify import surface_pending_consent
     from flow_sdk.fs_store.indexer.special_folders import (
         IndexDecision,
@@ -78,6 +79,9 @@ async def test_index_consent_event_reaches_listen_route(bootstrapped_client):
             }
         )
     )
+    # The emitter caches the server list (notify._REPORT_URLS_TTL_S); an earlier test in this worker
+    # may have filled it before the sink existed. Start from an empty cache so the sink is read.
+    monkeypatch.setattr(notify, "_report_urls_cache", None)
 
     try:
         # 3. Real emitter, real transport (detached subprocess POST).

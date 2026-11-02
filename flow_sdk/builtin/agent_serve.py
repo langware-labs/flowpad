@@ -1269,21 +1269,26 @@ class AgentServer:
         wanted: dict[str, tuple] = {}
         strays: list = []
         agents = QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["parent_type_id", "agent-%"]))
+        unwanted: list = []
         for deployment in await Deployment.get_all(agents):
             if not deployment.places_agent or not deployment.is_local:
                 continue
             agent = await deployment.agent() if deployment.serving else None
             if agent is not None and agent.enabled_on(deployment.id):
                 wanted[str(deployment.id)] = (agent, deployment)
-            elif str(deployment.id) not in self._running and deployment_process.alive(deployment):
-                strays.append(deployment)
+            elif str(deployment.id) not in self._running:
+                unwanted.append(deployment)
+        # One read of the process table, off the event loop: per-deployment scans stalled every request on a busy host.
+        if unwanted:
+            running = await asyncio.to_thread(deployment_process.alive_many, unwanted)
+            strays = [d for d in unwanted if str(d.id) in running]
         return wanted, strays
 
     async def _keep_running(self, agent, deployment) -> None:
-        if str(deployment.id) in self._running and deployment_process.alive(deployment):
+        if str(deployment.id) in self._running and await asyncio.to_thread(deployment_process.alive, deployment):
             return
         await ensure_chat_channel(agent, deployment)
-        if not deployment_process.alive(deployment):
+        if not await asyncio.to_thread(deployment_process.alive, deployment):
             labels = await deployment_process.start(deployment)
             if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
                 deployment.provider_labels = {**(deployment.provider_labels or {}), **labels}

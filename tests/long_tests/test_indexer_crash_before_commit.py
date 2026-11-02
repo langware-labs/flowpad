@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 import pytest
+from tests.adjustable_timeout import adjusted
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
@@ -53,7 +54,7 @@ def test_crash_before_commit_does_not_strand_records(tmp_path: Path) -> None:
     # Phase 1: real index, SIGKILLed the moment the first real .hash sentinel
     # lands (before the first batch commit at 50) — a server restart mid-index.
     p = _spawn(db, tmp_path / "proj", records, "crash")
-    deadline = time.time() + 20
+    deadline = time.time() + adjusted(20)
     killed = False
     while time.time() < deadline:
         if p.poll() is not None:
@@ -63,14 +64,14 @@ def test_crash_before_commit_does_not_strand_records(tmp_path: Path) -> None:
             killed = True
             break
         time.sleep(0.001)
-    p.wait(timeout=10)
+    p.wait(timeout=adjusted(10))
     assert killed, "never observed a sentinel to kill on (indexer too fast / layout changed)"
     assert any(records.rglob("*.hash")), "no sentinel survived the kill — repro setup wrong"
 
     # Phase 2: ordinary (non-force) index in a fresh process. Every source file
     # must now have a committed row.
     v = _spawn(db, tmp_path / "proj", records, "verify")
-    out, _ = v.communicate(timeout=20)
+    out, _ = v.communicate(timeout=adjusted(20))
     line = next((l for l in out.splitlines() if l.startswith("MARKDOWN_ROWS=")), None)
     assert line is not None, f"verify worker produced no count:\n{out}"
     rows = int(line.split("=", 1)[1])

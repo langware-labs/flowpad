@@ -107,6 +107,13 @@ def _declared_under(spec: "Credential", scope: CredentialScope) -> bool:
     if not ref or scope.root is None:
         return True
     path, root = Path(ref), Path(scope.root)
+    if scope.scope == SCOPE_USER:
+        # User-scope declarations are repo assets: a non-prod instance keeps them in its own folder
+        # (``user_asset_root``), not under ``scope.root`` (the user's home, where its env files live).
+        from flow_sdk.assets.placement import AssetClass, Scope  # noqa: PLC0415
+        from flow_sdk.builtin.asset_placement import root_for_scope  # noqa: PLC0415
+
+        root = root_for_scope(Scope.USER, asset_class=AssetClass.REPO) or root
     if not path.exists():
         return False
     # Both are normally written from the same root, so the plain comparison
