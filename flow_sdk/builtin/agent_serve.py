@@ -914,6 +914,12 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
         return await skip_message(message)
     channel = source.channel or source.provider
     if not admits(source, author):
+        # The cached allowlist may be stale or never filled on this machine (a cloud placement's):
+        # re-read it once from its owner before refusing.
+        from flow_sdk.builtin.agent_mailbox import refresh_policy_for  # noqa: PLC0415
+
+        await refresh_policy_for(source)
+    if not admits(source, author):
         console.info("✗ %s  %s — not an allowed sender, not answered", channel, author)
         _announce(engine.deployment, "refused", data_source_id=str(source.id))
         return await skip_message(message)

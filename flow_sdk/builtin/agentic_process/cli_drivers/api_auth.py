@@ -421,6 +421,22 @@ async def _size_overrides(worker_type: str, provider: LMApiProvider) -> dict[str
     return dict((getattr(cap, "model_map", None) or {}).get(provider.value) or {})
 
 
+async def _fresh_hub_tiers(endpoint_typeid) -> dict[str, str]:
+    """The sizes the hub serves for one endpoint NOW, read past the listing's memo; ``{}`` when unreadable."""
+    from flow_sdk.instance_settings.llm_endpoint import _list_cache, fetch_hub_llm_endpoints  # noqa: PLC0415
+
+    _list_cache.clear()
+    try:
+        endpoints = await fetch_hub_llm_endpoints()
+    except Exception:  # noqa: BLE001 -- the refusal below explains a size that stays missing
+        return {}
+    wanted = str(endpoint_typeid or "")
+    for endpoint in endpoints:
+        if str(getattr(endpoint, "typeid", "")) == wanted or str(getattr(endpoint, "endpoint_typeid", "")) == wanted:
+            return dict(getattr(endpoint, "tiers", None) or {})
+    return {}
+
+
 def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: str | None, overrides: dict) -> str:
     """The model a funded spawn runs: the slug the ENDPOINT declares for the size, never a code default.
 
@@ -563,6 +579,11 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
         bound = get_hub_llm_endpoint()
         if bound is not None and (not own_url or bound.endpoint_typeid == source.endpoint_typeid):
             sizes = dict(bound.tiers)
+    wanted = spec.native_tiers.get(tier, tier) if tier else default_size()
+    if is_hub and is_model_tier(wanted) and not sizes.get(wanted):
+        # The sizes above are a copy (the listing's memo, or what the hub pushed when this box was bound);
+        # a pool's sizes set since then reach a spawn only through a fresh read of the hub's listing.
+        sizes = {**sizes, **await _fresh_hub_tiers(source.endpoint_typeid)}
     slug = _slug_for(worker_type, spec, sizes, source, tier, await _size_overrides(worker_type, provider))
     env = {**binding.base_env, binding.token_env_var: key}
     if spec.max_output_env_var:

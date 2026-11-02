@@ -803,6 +803,20 @@ class Deployment(Entity):
         # The hub already drops anything that is not a run.
         return list(data.get("runs") or [])
 
+    async def _read_remote(self, verb: str, params: dict[str, str]) -> dict[str, Any]:
+        """What a cloud machine answers for one of its own reads (``threads``, ``timeline``), through the hub.
+
+        A box's conversations, turns and replies live in the box's database. Answered from this computer's
+        rows instead, the page listed what this computer had ingested -- threads the box never handled,
+        and not the one it answered.
+        """
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+        data = await HubProxy.try_call("GET", self.get_type(), self.id, verb, params=params)
+        if not isinstance(data, dict):
+            raise DeploymentActionError("the hub did not answer for this cloud machine", status_code=502)
+        return data
+
     async def _hub_action(self, verb: str) -> dict[str, Any]:
         """POST one action on this placement's hub row; the row itself comes back down the bridge."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
@@ -903,6 +917,10 @@ class Deployment(Entity):
             except ValueError:
                 return ApiFailResponse(message=f"before={raw_before!r} is not an ISO time", status_code=400)
         conversation = str((request_info.get_param("conversation") if request_info else None) or "").strip() or None
+        if not self.is_local:
+            params = {"limit": str(limit), **({"before": raw_before} if raw_before else {}),
+                      **({"conversation": conversation} if conversation else {})}
+            return await self._answer("timeline", lambda: self._read_remote("timeline", params))
         page = await timeline(self, limit=limit, before=before, conversation=conversation)
         return ApiSuccessResponse(data=page.model_dump(mode="json"))
 
@@ -913,6 +931,8 @@ class Deployment(Entity):
         from flow_sdk.builtin.deployment_timeline import threads  # noqa: PLC0415
         from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
+        if not self.is_local:
+            return await self._answer("threads", lambda: self._read_remote("threads", {}))
         return ApiSuccessResponse(data=(await threads(self)).model_dump(mode="json"))
 
     def _local_process(self):

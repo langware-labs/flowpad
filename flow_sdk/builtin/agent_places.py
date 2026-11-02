@@ -249,6 +249,15 @@ async def _last_active(deployment) -> str | None:
         )
         stamp = getattr(newest[0], "updated_date", None) if newest else None
         return stamp.isoformat() if hasattr(stamp, "isoformat") else (str(stamp) if stamp else None)
+    # A cloud place's runs live on its box: its newest conversation is when it last did something.
+    # A box the hub cannot read (paused, unreachable) answers with when it was last seen instead.
+    try:
+        data = await deployment._read_remote("threads", {})
+        stamps = [t.get("last_at") for t in (data.get("threads") or []) if isinstance(t, dict) and t.get("last_at")]
+        if stamps:
+            return max(stamps)
+    except Exception:  # noqa: BLE001 — a listing must not fail over a decoration
+        pass
     return getattr(deployment.status, "observed_at", None) or None
 
 

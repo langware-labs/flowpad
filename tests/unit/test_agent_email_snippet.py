@@ -105,3 +105,36 @@ async def test_the_page_runs_as_written(monkeypatch, tmp_path):
 
         ns = await run_fence(verbs, ns, filename="agent-email.md#verbs")   # the mailbox's own verbs, in order
     assert hub.rows == {}, "release() deletes the Hub's mailbox"
+
+
+async def test_a_machine_that_never_configured_the_mailbox_admits_the_hub_allowlist(monkeypatch):
+    """The allowlist is cached on the mailbox's source only where someone configured it. A machine that
+    merely WIRES the mailbox — a cloud placement after its deploy — holds a source with an empty copy, and
+    the sender gate refused everyone: the clown on e2b answered nobody, ``eran@… — not an allowed sender``,
+    while the Hub listed eran. The gate must read the Hub's list before refusing."""
+    import flow_sdk.builtin.agent_mailbox as agent_mailbox_module
+    from flow_sdk.builtin.agent_mailbox import refresh_policy_for
+    from flow_sdk.builtin.agent_serve import admits
+    from flow_sdk.fs_store.type_id import TypeId
+
+    hub = _HubMailboxes()
+    monkeypatch.setattr("flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: hub)
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda *_a, **_k: True)
+    monkeypatch.setattr(agent_mailbox_module, "_policy_read_at", {})
+
+    for other in await Agent.get_all({"name": "gatekeeper"}):
+        await other.delete()
+    agent = Agent(name="gatekeeper", system_prompt="answer")
+    await agent.save()
+    # The person set the allowlist from ANOTHER machine: the Hub holds it, this one never configured.
+    descriptor = await hub.enable_mailbox(agent.id, allowed_senders=["captain@gmail.com"])
+    mailbox = AgentMailbox.from_hub_descriptor({**descriptor, "allowed_senders": []}, agent_typeid=TypeId(type="agent", id=agent.id))
+    source = await mailbox.ensure_source()          # what wiring the mailbox on this machine does
+    assert source.allowed_senders == []
+    assert not admits(source, "captain@gmail.com"), "the unconfigured copy refuses (the bug's state)"
+
+    assert await refresh_policy_for(source) is True
+    assert admits(source, "captain@gmail.com")
+    assert not admits(source, "stranger@evil.test"), "the Hub's list admits only who it names"
+    # One Hub read per window: a stranger writing again does not cost another round trip.
+    assert await refresh_policy_for(source) is False

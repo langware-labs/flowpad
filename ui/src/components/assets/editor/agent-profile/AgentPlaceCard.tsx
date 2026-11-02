@@ -94,7 +94,17 @@ export function AgentPlaceCard({ agent, place, pendingChanges = 0, onChanged }: 
     showDeleteAssetModal({
       name: deployment.name,
       description: t`This destroys the cloud machine. Its runs and chats on that machine are lost.`,
-      onConfirm: () => act('delete', () => deployment.delete(), t`Could not delete the cloud machine`),
+      onConfirm: () =>
+        act(
+          'delete',
+          async () => {
+            await deployment.delete();
+            // Shown on the deployment's own page, the URL still names the machine just destroyed:
+            // go back to the agent, the page that lists what is left.
+            if (currentDock?.child?.typeId === `deployment-${deployment.id}`) navigation.openDock(currentDock.withoutChild());
+          },
+          t`Could not delete the cloud machine`,
+        ),
     });
 
   return (
