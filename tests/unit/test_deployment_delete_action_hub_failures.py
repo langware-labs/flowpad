@@ -1,10 +1,9 @@
-"""``DELETE /graph/deployment/<id>`` passes on the hub's answer instead of a blanket 502.
+"""``DELETE /graph/deployment/<id>`` passes on the hub's status instead of a blanket 502.
 
 A remote placement is deleted on the hub first (``owns_hub_delete``). The delete action
 (``handle_delete_by_id``) tells the two failures apart:
 
-* the hub answered (an app failure): its status and code are the answer, e.g. 403 with
-  ``data.hub_code: "target_not_found"``;
+* the hub answered (an app failure): its own status, e.g. 403 for a deployment it no longer has;
 * nothing came back (a connection failure: timeout, refused): 502;
 * not signed in here: 401.
 
@@ -19,6 +18,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from fastapi import HTTPException
 
 from flow_sdk.app.actions.graph_crud_actions import handle_delete_by_id
 from flow_sdk.builtin.deployment import Deployment
@@ -90,8 +90,13 @@ async def _delete(row: Deployment):
         return await handle_delete_by_id()
 
 
-async def _assert_kept(row: Deployment) -> None:
+async def _refused(row: Deployment) -> HTTPException:
+    """The delete fails; the local row stays as the handle to retry."""
+    with pytest.raises(HTTPException) as refused:
+        await _delete(row)
+    assert "kept here so the delete can be retried" in refused.value.detail
     assert await Deployment.get_by_id(row.id) is not None, "the handle to retry"
+    return refused.value
 
 
 async def test_the_hub_deletes_it(hub):
@@ -114,22 +119,12 @@ async def test_already_gone_on_the_hub_is_deleted_here(hub):
     assert await Deployment.get_by_id(row.id) is None
 
 
-async def test_a_deployment_the_hub_no_longer_has_answers_its_403_and_code(hub):
+async def test_a_deployment_the_hub_no_longer_has_answers_its_403(hub):
     """The live case: the hub's row (and its machine) is gone, and its authorizer answers 403 target_not_found."""
     hub.answer = httpx.Response(403, json=TARGET_NOT_FOUND)
     row = await _remote_placement()
 
-    answer = await _delete(row)
-
-    assert answer.status_code == 403
-    assert answer.data == {
-        "error_code": "rejected",
-        "hub_failure": "rejected",
-        "hub_status": 403,
-        "hub_code": "target_not_found",
-    }
-    assert "kept here so the delete can be retried" in answer.message
-    await _assert_kept(row)
+    assert (await _refused(row)).status_code == 403
 
 
 async def test_the_hub_failing_to_destroy_the_machine_answers_its_500(hub):
@@ -137,11 +132,7 @@ async def test_the_hub_failing_to_destroy_the_machine_answers_its_500(hub):
     hub.answer = httpx.Response(500, json=SERVER_ERROR)
     row = await _remote_placement()
 
-    answer = await _delete(row)
-
-    assert answer.status_code == 500
-    assert answer.data["hub_failure"] == "server_error" and answer.data["hub_status"] == 500
-    await _assert_kept(row)
+    assert (await _refused(row)).status_code == 500
 
 
 @pytest.mark.parametrize(
@@ -153,22 +144,14 @@ async def test_a_hub_that_does_not_answer_is_a_502(hub, failure):
     hub.answer = failure
     row = await _remote_placement()
 
-    answer = await _delete(row)
-
-    assert answer.status_code == 502
-    assert answer.data["hub_failure"] == "offline" and answer.data["hub_status"] is None
-    await _assert_kept(row)
+    assert (await _refused(row)).status_code == 502
 
 
 async def test_a_credential_the_hub_rejects_answers_its_401(hub):
     hub.answer = httpx.Response(401, json=UNAUTHENTICATED)
     row = await _remote_placement()
 
-    answer = await _delete(row)
-
-    assert answer.status_code == 401
-    assert answer.data["hub_failure"] == "signed_out" and answer.data["hub_code"] == "unauthenticated"
-    await _assert_kept(row)
+    assert (await _refused(row)).status_code == 401
 
 
 async def test_no_credentials_here_is_a_401_and_never_asks_the_hub(hub, monkeypatch):
@@ -177,9 +160,5 @@ async def test_no_credentials_here_is_a_401_and_never_asks_the_hub(hub, monkeypa
     monkeypatch.setattr(credentials, "load_credentials", lambda: None)
     row = await _remote_placement()
 
-    answer = await _delete(row)
-
-    assert answer.status_code == 401
-    assert answer.data["hub_failure"] == "signed_out"
+    assert (await _refused(row)).status_code == 401
     assert hub.calls == []
-    await _assert_kept(row)
