@@ -1,6 +1,6 @@
 # ui/tests/react - how to run
 
-**What**: ~120 React component/hook tests with Testing Library in jsdom (`reactSetup.ts`). Tier: mock (no live backend). The config reads `FLOW_INSTANCE`'s generated env only to set the jsdom URL.
+**What**: ~94 files of React component/hook tests with Testing Library in jsdom (`reactSetup.ts`). Tier: mock (no live backend). The config reads `FLOW_INSTANCE`'s generated env only to set the jsdom URL.
 
 ## Prerequisites
 `cd ui && npm ci`. No credentials, no backend.

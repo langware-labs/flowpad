@@ -1,11 +1,11 @@
 # ui/tests/long_tests - how to run
 
-**What**: ~30 real-worker tests: Claude/Codex PTY turns, PTY recovery after backend restart, embedded assets, e2b sandbox, system skills. Tier: LIVE BACKEND + real LLM + real CLIs (project `long`; includes `tests/api` files too per its config).
+**What**: 31 real-worker test files: Claude/Codex PTY turns, PTY recovery after backend restart, embedded assets, e2b sandbox, system skills. Tier: LIVE BACKEND + real LLM + real CLIs (project `long`; includes `tests/api` files too per its config).
 
 ## Prerequisites
 - Disposable backend/instance (see `ui/tests/api/RUN.md`); restart/recovery tests launch their own via `scripts/instance_ctl.sh` (`_backend_lifecycle.ts`).
 - The worker CLI installed, signed in AND onboarded (a fresh config without `hasCompletedOnboarding`/trust dialog stalls) plus an LLM credential. A missing credential is reported as missing, not fixed.
-- `FLOWPAD_CLAUDE_HOME` = `CLAUDE_CONFIG_DIR` (api setup throws otherwise).
+- `FLOWPAD_CLAUDE_HOME` = `CLAUDE_CONFIG_DIR` (`apiSetup.ts` throws otherwise).
 
 ## Commands (from `ui/`)
 ```bash

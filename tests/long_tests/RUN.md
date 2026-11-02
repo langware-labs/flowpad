@@ -1,10 +1,10 @@
 # tests/long_tests - how to run
 
-**What**: ~87 slow live tests: real worker CLIs in PTYs (Claude/Codex/...), real backends, docker, e2b, channels, share/hub flows, ask-browser. Tier: LIVE backend, real LLM, sometimes docker or two hub instances.
+**What**: ~80 files of slow live tests: real worker CLIs in PTYs (Claude/Codex/...), real backends, docker, e2b, channels, share/hub flows, ask-browser. Tier: LIVE backend, real LLM, sometimes docker or two hub instances.
 
 ## Prerequisites
 - `DEEP_TESTING=1` (files use `tests/test_settings.py` skipif; `.env.local` is also read for it). Without it most files skip.
-- Live-instance tests read an instance name from env (e.g. `FLOW_INSTANCE`, `OWNER_INSTANCE`, `ALICE_INSTANCE`, `BOB_INSTANCE`, `CAROL_INSTANCE`, `ASSIGNEE_INSTANCE`) and skip when unset. The instance must be launcher-owned and live: `scripts/instance_ctl.sh launch <name>`; env file, launcher registry, PID and port must agree or the test fails closed.
+- Live-instance tests read an instance name from env via the `resolve_live_e2e_instance` fixture (`conftest.py`): `FLOWPAD_E2E_INSTANCE`, `FLOWPAD_E2E_PEER_INSTANCE` (a second, distinct one), `FLOWPAD_DEPLOY_E2E_INSTANCE`, `FLOWPAD_STAGING_MATRIX_INSTANCE`; they skip when unset. The instance must be launcher-owned and live: `scripts/instance_ctl.sh launch <name>`; env file, launcher registry, PID and port must agree or the test fails closed.
 - Worker tests: the CLI (claude/codex/...) installed AND signed in/onboarded (a fresh config without `hasCompletedOnboarding`/trust dialog stalls), plus an LLM credential such as `OPENROUTER_API_KEY`. A missing credential is reported as missing/skipped, not fixed.
 - Per-file extras by name: `AGENTMAIL_API_KEY`, `TELEGRAM_BOT_TOKEN`/`TELEGRAM_TEST_CHAT_ID`, `WHATSAPP_*`, `E2B` key, `ALICE_EMAIL/ALICE_PW/BOB_EMAIL/BOB_PW`, docker daemon (`FLOWPAD_DOCKER_IMAGE`).
 
@@ -14,12 +14,12 @@ export DEEP_TESTING=1
 uv run pytest tests/long_tests -x                      # whole folder (hours; prefer subsets)
 uv run pytest tests/long_tests/test_shell_pty.py
 uv run pytest tests/long_tests/test_shell_pty.py::test_name
-FLOW_INSTANCE=<name> uv run pytest -p no:env tests/long_tests/test_listen_e2e.py   # instance-bound file, example
+FLOWPAD_E2E_INSTANCE=<a> FLOWPAD_E2E_PEER_INSTANCE=<b> uv run pytest tests/long_tests/test_ws_reconnect_message_catchup.py   # instance-bound file, example
 DEEP_TESTING=1 ANTHROPIC_API_KEY=... uv run pytest tests/long_tests/stress_matrix/   # see its README
 ```
 
 ## Env vars
-`DEEP_TESTING`, `FLOW_INSTANCE` and the other *_INSTANCE names above, `FLOW_HOME`, `FLOWPAD_HUB_URL`, `OPENROUTER_API_KEY`, `FLOWPAD_MAIN_CHECKOUT`.
+`DEEP_TESTING`, `FLOWPAD_E2E_INSTANCE` / `FLOWPAD_E2E_PEER_INSTANCE` / `FLOWPAD_DEPLOY_E2E_INSTANCE` / `FLOWPAD_STAGING_MATRIX_INSTANCE`, `FLOW_INSTANCE`, `FLOW_HOME`, `FLOWPAD_HUB_URL`, `OPENROUTER_API_KEY`, `FLOWPAD_MAIN_CHECKOUT`.
 
 ## Pitfalls
 - Files that talk to a hub need `-p no:env` (pytest-env pins the hub URL to dead port 127.0.0.1:9).

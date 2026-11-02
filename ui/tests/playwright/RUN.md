@@ -1,9 +1,9 @@
 # ui/tests/playwright - how to run
 
-**What**: two loose specs, `markdown-comments.spec.ts` and `trace-gutter.spec.ts`. Tier: live app at a hard-coded `http://localhost:4097` (trace-gutter) with a real backend. Some assertions are intentionally permissive (`count >= 0`); full historical/live trace tests are manual/CI-only per the spec comment.
+**What**: two loose specs, `markdown-comments.spec.ts` and `trace-gutter.spec.ts`. Tier: live app at HARD-CODED URLs, `http://localhost:4098` (markdown-comments) and `http://localhost:4097` (trace-gutter), with a real backend. Some assertions are intentionally permissive (`count >= 0`); full historical/live trace tests are manual/CI-only per the spec comment.
 
 ## Prerequisites
-- Frontend dev server on port 4097 (`cd ui && npm run dev`, `VITE_PORT=4097`) and a backend with a terminal tab available.
+- Frontend dev servers on 4097 (`cd ui && npm run dev`; 4097 is the default `VITE_PORT`) and 4098 for markdown-comments, plus a backend with a terminal tab available.
 - `cd ui && npm ci && npx playwright install chromium`.
 
 ## Commands (from `ui/`)
@@ -18,7 +18,7 @@ npx playwright test tests/playwright/trace-gutter.spec.ts -g "renders trace-gutt
 None are read; the URL is hard-coded.
 
 ## Pitfalls
-- Hard-coded port 4097: if your instance uses another port, edit locally (do not commit) or proxy 4097.
+- Hard-coded ports 4097/4098: if your instance uses other ports, edit locally (do not commit) or proxy 4097.
 - With no config the project list is Playwright's default; if Playwright reports "no browsers", install chromium as above.
 - Do not treat the permissive assertions as proof of a feature.
 

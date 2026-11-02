@@ -1,6 +1,6 @@
 # ui/tests/hub - how to run
 
-**What**: ~39 two-client hub tests (share, conversations, skills, tasks, vibe, matrix...). Tier: TWO LAUNCHED INSTANCES (alice/bob) + a hub; one realm per instance in a single process (`_instances.ts`). Also the `hub-paired` project: two-PROCESS halves that only pass when run concurrently (`matrix.alice/bob`, `conversation_messages` + `.bob`, `rename.alice/bob`) via `scripts/run_hub_paired.sh`. The plain `hub` project excludes those. See `CLAUDE.md`.
+**What**: 39 two-client hub test files (share, conversations, skills, tasks, vibe, matrix...). Tier: TWO LAUNCHED INSTANCES (alice/bob) + a hub; one realm per instance in a single process (`_instances.ts`). Also the `hub-paired` project: two-PROCESS halves that only pass when run concurrently (`matrix.alice/bob`, `conversation_messages` + `.bob`, `rename.alice/bob`) via `scripts/run_hub_paired.sh`. The plain `hub` project excludes those. See `CLAUDE.md`.
 
 ## Prerequisites
 - A hub (`FLOWPAD_HUB_URL`, usually a local one) with two users.

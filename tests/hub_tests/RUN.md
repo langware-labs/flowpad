@@ -1,9 +1,9 @@
 # tests/hub_tests - how to run
 
-**What**: ~39 tests of hub-backed features (conversations, sharing, members, OAuth, agent mailboxes, live sessions). Tier: LIVE LOCAL HUB (+ real CLI turns / real LLM for some). Marker: `hub`.
+**What**: 39 test files of hub-backed features (conversations, sharing, members, OAuth, agent mailboxes, live sessions). Tier: LIVE LOCAL HUB (+ real CLI turns / real LLM for some). Marker: `hub`.
 
 ## Prerequisites
-- A healthy LOCAL hub: `$FLOWPAD_HUB_URL` must be localhost/127.0.0.1/::1 and answer `GET /api/v1/health/status`. Otherwise the WHOLE folder is skipped (reason is printed), which is not a pass.
+- A healthy LOCAL hub, run from the separate private `flowpad-hub` checkout (see `AGENTS.md`; default `localhost:8093`), NOT the minimal `flow-hub/` stub in this tree: `$FLOWPAD_HUB_URL` must be localhost/127.0.0.1/::1 and answer `GET /api/v1/health/status`. Otherwise the WHOLE folder is skipped (reason is printed), which is not a pass.
 - Hub test users (credentials by name): `ALICE_EMAIL`, `ALICE_PW`, `BOB_EMAIL`, `BOB_PW` for the two-client tests.
 - Real-turn tests: `claude` (or codex/copilot/opencode) CLI on PATH, signed in and onboarded.
 - `test_live_session_llm_matrix.py`: `DEEP_TESTING=1` and `OPENROUTER_API_KEY`.

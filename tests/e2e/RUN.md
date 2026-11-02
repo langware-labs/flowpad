@@ -13,7 +13,7 @@
 | `connector_on_e2b.py` | external connector installed on an e2b box; runs from the HUB checkout |
 
 ## Prerequisites
-- A launched disposable instance: `scripts/instance_ctl.sh launch <name> [--keep-env]` (gives `.env.<name>.local`, backend 600X, frontend 500X).
+- A launched disposable instance: `scripts/instance_ctl.sh launch <name>` (gives `.env.<name>.local`, backend 600X, frontend 500X).
 - Hub reachable (`FLOWPAD_HUB_URL`, e.g. a local hub) for anything needing a cloud mailbox/login.
 - `uv sync`; for `.cjs` scripts `cd ui && npm ci && npx playwright install chromium`.
 
