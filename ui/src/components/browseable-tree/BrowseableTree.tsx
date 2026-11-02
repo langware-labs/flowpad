@@ -816,11 +816,10 @@ function BrowseableRow({
   // clipboard to paste) is current. Right-clicking a row outside the
   // multi-selection drops the selection, like every file manager.
   const [menuItems, setMenuItems] = useState<ToolbarAction[]>([]);
-  // The tooltip trigger wraps the ROW, and the context-menu trigger wraps that:
-  // both are ref-forwarding slots, so the row gets both behaviours. Wrapping the
-  // ContextMenu ROOT in TooltipTrigger instead hands a ref to a function
-  // component (React warns "Function components cannot be given refs").
-  const hasTip = !!(node.tooltip || node.entity);
+  // A tooltip only on a row without a right-click menu: wrapping the menu's row in a TooltipTrigger as
+  // well takes over its focus and keys (F2 rename stops opening), and wrapping the ContextMenu ROOT hands a
+  // ref to a function component. A menu row never showed its tooltip before either.
+  const hasTip = !!(node.tooltip || node.entity) && !node.contextMenu;
   const tipTarget = hasTip ? <TooltipTrigger asChild>{rowEl}</TooltipTrigger> : rowEl;
   const triggerEl = node.contextMenu ? (
     <ContextMenu
@@ -830,7 +829,7 @@ function BrowseableRow({
         setMenuItems(typeof node.contextMenu === 'function' ? node.contextMenu() : (node.contextMenu ?? []));
       }}
     >
-      <ContextMenuTrigger asChild>{tipTarget}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild>{rowEl}</ContextMenuTrigger>
       <ContextMenuContent
         className="min-w-[13rem]"
         data-testid={`browseable-context-menu-${node.id}`}
