@@ -1645,7 +1645,7 @@ class UvManager {
    *     RCA fad616fc). We quarantine the corrupt dir aside (renamed, not deleted,
    *     so it survives for diagnosis) and retry, which rebuilds the env clean.
    */
-  async _uvToolInstallForce(installArgs, { onProgress, strategies = null } = {}) {
+  async _uvToolInstallForce(installArgs, { onProgress, strategies = null, compileBytecode = true } = {}) {
     this._assertOpen('install flowpad');
     this._installing = true;
     this._installAborted = false;
@@ -1653,7 +1653,7 @@ class UvManager {
     this._spawned = false;
     this._writeInstallMarker(installArgs);
     try {
-      return await this._uvToolInstallForceAttempts(installArgs, { onProgress, strategies });
+      return await this._uvToolInstallForceAttempts(installArgs, { onProgress, strategies, compileBytecode });
     } catch (err) {
       // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
       // half-written tool dir: the venv may be half-replaced, so keep the marker.
@@ -1672,7 +1672,7 @@ class UvManager {
     }
   }
 
-  async _uvToolInstallForceAttempts(installArgs, { onProgress, strategies: fixedStrategies = null } = {}) {
+  async _uvToolInstallForceAttempts(installArgs, { onProgress, strategies: fixedStrategies = null, compileBytecode = true } = {}) {
     // Compile the venv's bytecode here, in the install, not on the first boot.
     // uv leaves .py files uncompiled by default, so the first boot after an
     // install compiles ~2,000 modules while importing them — the slowest phase
@@ -1687,7 +1687,7 @@ class UvManager {
     // has no wheel for this machine and settles on the newest one that has. (pyproject.toml also
     // bounds it on Intel Mac; this covers the next platform to lose its wheel.)
     const baseArgs = [...installArgs];
-    if (!baseArgs.includes('--compile-bytecode')) baseArgs.push('--compile-bytecode');
+    if (compileBytecode && !baseArgs.includes('--compile-bytecode')) baseArgs.push('--compile-bytecode');
     if (!baseArgs.includes('--no-build-package')) baseArgs.push('--no-build-package', 'cryptography');
     // Dependencies frozen in time (see EXCLUDE_NEWER_MARGIN_DAYS): strictest cut-off first, the next
     // one when uv finds no solution under it. A caller that already chose a cut-off keeps it.
@@ -3186,9 +3186,13 @@ class UvManager {
         this.log.info(`[uv] Upgrading flowpad to ${prepared.version} from the prepared download (offline)...`);
         await this._uvToolInstallForce(
           ['tool', 'install', prepared.spec, '--python', prepared.pin, '--force', '--offline'],
-          { onProgress, strategies: [{ label: 'prepared', flags: prepared.flags }] },
+          // No bytecode during the swap: compiling all ~13k files is the swap's biggest cost (25 s of 54 s
+          // measured on an emulated Windows VM), while the boot compiles only what it imports (~2k files,
+          // +5 s). The rest compiles in the background once the engine is up (compileBytecodeInBackground).
+          { onProgress, strategies: [{ label: 'prepared', flags: prepared.flags }], compileBytecode: false },
         );
         installed = true;
+        this._bytecodePending = true;
       } catch (err) {
         if (err && (err.signal || err.killedByGuard)) throw err; // killed: a download would not fix that
         this.log.warn(`[uv] the prepared install did not apply (${String((err && err.message) || err).split('\n')[0]}) — downloading instead`);
@@ -3296,6 +3300,30 @@ class UvManager {
     const promise = run().finally(() => { if (this._preparing && this._preparing.promise === promise) this._preparing = null; });
     this._preparing = { key, promise };
     return promise;
+  }
+
+  /**
+   * After a swap installed without bytecode (upgrade({ prepared })): compile the rest of the engine's
+   * venv in the background, with the engine already serving, so the NEXT boot is fast again. Python writes
+   * .pyc files atomically, so compiling beside a running interpreter is safe. Best effort, once.
+   */
+  async compileBytecodeInBackground() {
+    if (!this._bytecodePending) return false;
+    this._bytecodePending = false;
+    try {
+      const dirs = await this._uvDirs();
+      if (!dirs) return false;
+      const venv = path.join(dirs.tools, PYPI_PACKAGE);
+      const python = process.platform === 'win32' ? path.join(venv, 'Scripts', 'python.exe') : path.join(venv, 'bin', 'python');
+      if (!fs.existsSync(python)) return false;
+      const t0 = Date.now();
+      await this._runStreaming(python, ['-m', 'compileall', '-q', '-j', '0', venv], { shell: false });
+      this.log.info(`[uv] engine bytecode compiled in the background (${Math.round((Date.now() - t0) / 1000)}s)`);
+      return true;
+    } catch (err) {
+      this.log.warn(`[uv] background bytecode compile failed (the engine compiles on import instead): ${String(err.message).split('\n')[0]}`);
+      return false;
+    }
   }
 
   /** Is a background prepare running (prepareEngine)? It never holds isInstalling(): nothing live moves. */

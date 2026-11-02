@@ -2538,7 +2538,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     const installs = [];
     m.getInstalledVersionSync = () => '0.2.240';
     m._resolveEngineTarget = async () => { throw new Error('no PyPI lookup at swap time'); };
-    m._uvToolInstallForce = async (args, opts) => { installs.push({ args, strategies: opts.strategies }); };
+    m._uvToolInstallForce = async (args, opts) => { installs.push({ args, strategies: opts.strategies, compileBytecode: opts.compileBytecode }); };
     m._ensureShimOnPath = async () => {};
     m._resolveFlowBin = async () => '/fake/flow';
     m._verifyInstalledPairOrRollback = async () => {};
@@ -2547,6 +2547,19 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     eq(installs.length, 1, 'swap: one install');
     ok(installs[0].args.includes('--offline'), 'swap: offline');
     eq(installs[0].strategies, [{ label: 'prepared', flags: ['--exclude-newer', 'X'] }], 'swap: the prepared cut-off, not a recomputed ladder');
+    eq(installs[0].compileBytecode, false, 'swap: no bytecode while the engine is down (the boot compiles what it imports)');
+    // …and the rest compiles in the background once the engine serves again, once.
+    const runs = [];
+    m._uvDirs = async () => ({ tools: require('os').tmpdir() });
+    const fsMod = require('fs'); const pathMod = require('path');
+    const venv = pathMod.join(require('os').tmpdir(), 'flowpad');
+    const py = process.platform === 'win32' ? pathMod.join(venv, 'Scripts', 'python.exe') : pathMod.join(venv, 'bin', 'python');
+    fsMod.mkdirSync(pathMod.dirname(py), { recursive: true }); fsMod.writeFileSync(py, '');
+    m._runStreaming = async (cmd, args) => { runs.push([cmd, args]); };
+    eq(await m.compileBytecodeInBackground(), true, 'background compile: runs after a no-bytecode swap');
+    eq([runs[0][0], runs[0][1].slice(0, 2)], [py, ['-m', 'compileall']], "with the engine's own interpreter");
+    eq(await m.compileBytecodeInBackground(), false, 'and only once');
+    fsMod.rmSync(venv, { recursive: true, force: true });
   }
   {
     // A pruned cache (or a different pin): the prepared install fails → the normal download path runs.

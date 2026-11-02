@@ -3220,6 +3220,8 @@ async function startApp() {
     // The agreed-engine record is spent only HERE: installed AND answering. Until then a re-run of the
     // startup keeps it (planAfterDesktopUpdate), so the unhealthy gate can still restore previousEngine.
     if (engineRecordAtHealthGate(pendingEngineStore.read(), { healthy: true }) === 'spend') pendingEngineStore.clear();
+    // A swap that skipped bytecode (prepared install): finish it now, with the engine already serving.
+    if (uvManager && typeof uvManager.compileBytecodeInBackground === 'function') void uvManager.compileBytecodeInBackground();
   }
   writeRecoveryState(updateRecovery.markStartupHealthy());
   clearFailureRecord('the backend is healthy');
@@ -4239,6 +4241,7 @@ async function upgradeFlowpadAndRestart({ version = null, prepared = null } = {}
     // Not healthy is a FAILED upgrade, exactly like a throw: returning here left the window on the
     // splash with nothing serving it (the quieter half of the "stuck update" incident).
     if (!ready) throw new Error('the upgraded backend did not become healthy');
+    if (typeof uvManager.compileBytecodeInBackground === 'function') void uvManager.compileBytecodeInBackground();
 
     // The IPC's answer goes to a page loadFile() destroyed: the reloaded panel PULLS the outcome
     // (update:take-resumed, the same channel a post-restart resume uses).
