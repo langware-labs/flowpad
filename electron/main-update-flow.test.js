@@ -118,7 +118,7 @@ function load(opts = {}) {
   const logLines = [];
   const log = { info: (l) => logLines.push(String(l)), warn: (l) => logLines.push(String(l)), error: (l) => logLines.push(String(l)), transports: { file: {}, console: {} }, hooks: [] };
 
-  const uv = { calls: [], deferred: [], undeferred: [], upgrades: [], checks: 0 };
+  const uv = { calls: [], deferred: [], undeferred: [], upgrades: [], checks: 0, prepares: [] };
   class FakeUv {
     constructor() { Object.assign(this, { _isInstalling: false }); uv.instance = this; }
     getInstalledFlowBin() { return opts.installed === false ? null : '/fake/bin/flow'; }
@@ -130,6 +130,8 @@ function load(opts = {}) {
     deferPackageVersion(v) { uv.deferred.push(v); }
     undeferPackageVersion(v) { uv.undeferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }
+    async _recoverRunningBackendAfterFailedUpgrade() { uv.recovered = (uv.recovered || 0) + 1; return true; }
+    async prepareEngine(o) { uv.prepares.push(o); if (opts.prepareThrows) throw new Error(opts.prepareThrows); return { version: o.version }; }
     async checkForUpdatesInBackground() { uv.checks++; return false; }
     async startWithBin() { if (opts.startThrows) throw new Error(opts.startThrows); }
     isBrokenInstallError(err) { return /flow_sdk/.test(String(err && err.message)); }
@@ -170,11 +172,11 @@ function load(opts = {}) {
     t = m.exports.__t;
   } finally { Module._load = origLoad; process.on = realProcessOn; } // global.setInterval stays captured: setupElectronAutoUpdater() arms its tick later
 
-  const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], loadFile: async () => {}, loadURL() {}, show() {}, hide() {}, focus() {} };
+  const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], shown: [], loadFile: async (f) => { win.shown.push(`file:${require('path').basename(f)}`); }, loadURL(u) { win.shown.push(`url:${u}`); }, show() {}, hide() { win.shown.push('hidden'); }, focus() {} };
   t.setMainWindow(win);
   t.setUvManager(new FakeUv());
   t.setBackendReady(opts.backendReady !== false); // the app is up unless a test says it is still starting
-  return { t, ipc, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
+  return { t, ipc, processHandlers, win, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } }, schedulePath: path.join(userData, 'update-schedule.json'), readSchedule: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'update-schedule.json'), 'utf8')); } catch { return null; } }, writeSchedule: (s) => fs.writeFileSync(path.join(userData, 'update-schedule.json'), JSON.stringify(s)) };
 }
 
 const REMINDER_MS = 90 * 60 * 1000;
@@ -198,6 +200,7 @@ const HOUR = 60 * 60 * 1000;
     eq(env.uv.upgrades.length, 0, 'the OLD desktop does NOT touch the engine');
     eq(env.uv.deferred, ['0.2.180'], 'no separate engine dialog for that version');
     eq(env.autoUpdater.downloads.length, 1, 'the desktop download started');
+    eq(env.uv.prepares, [{ version: '0.2.180', desktopVersion: '0.2.48' }], 'with it, the engine is prepared for the NEW desktop');
     eq(reminderTimer(env), undefined, '"Update now": no reminder timer');
     // The download finishes → the ready prompt right away.
     env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
@@ -208,6 +211,11 @@ const HOUR = 60 * 60 * 1000;
     eq(env.readState().consented, true, '"Restart now" = agreement to install the saved engine version');
     eq(env.autoUpdater.quits, [[true, true]], 'quitAndInstall(silent, relaunch)');
     eq(env.uv.stopped, 1, 'the backend was stopped first');
+    ok(!env.win.shown.includes('hidden') && env.win.shown.includes('file:loading.html'), 'the window stays up, on the loading screen');
+    ok(env.win.sent.some(([ch, d]) => ch === 'startup-status' && /Installing the update/.test(d)), 'and says the update is installing');
+    // The installer did not start after all: the app comes back (its backend was stopped for the install).
+    env.autoUpdater.emit('error', new Error('no installer')); await tick(); await tick();
+    eq(env.uv.recovered, 1, 'a failed install starts the backend again and reloads the app');
   }
 
   // ── download finishes while FlowPad is still starting: no restart prompt until the app is up ──

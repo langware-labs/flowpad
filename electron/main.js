@@ -136,6 +136,13 @@ const restartApplier = createRestartApplier({
   autoUpdater: { quitAndInstall: (silent, forceRun) => autoUpdater.quitAndInstall(silent, updateTest.forceRunAfter(forceRun)) },
   setQuitting: (v) => { isQuitting = v; },
   hideWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); },
+  // The window stays up and says what is happening until the quit takes it (before-quit leaves it alone
+  // while isQuitting is set): an update never looks like FlowPad vanished.
+  showInstalling: async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('no window');
+    await mainWindow.loadFile(path.join(__dirname, 'loading.html'));
+    sendStatus('Installing the update — FlowPad will reopen by itself');
+  },
   showWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } },
   // The silent installer runs with no window of ours for ~30s, then the new desktop installs the engine: say so.
   notifyInstalling: () => {
@@ -157,6 +164,12 @@ const restartApplier = createRestartApplier({
       share: (text) => shareDiagnostics(text, 'could not restart to apply an update'),
       log,
     });
+    // The app stays: apply() stopped the backend and the window shows "Installing" — start the backend
+    // again and bring the app back. Pre-start flows (backendReady false) continue on their own.
+    if (uvManager && backendReady) {
+      void uvManager._recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl: BACKEND_URL, sendStatus })
+        .catch((e) => log.warn(`[update-restart] bringing the app back failed: ${e && e.message}`));
+    }
   },
   log,
 });
@@ -934,6 +947,22 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
       desktopDownloadVersion = null;
       desktopDownloadToken = null;
     });
+  prepareEngineForDesktop(version);
+}
+
+/**
+ * While the desktop update downloads, the engine saved to ride along with it (pending-engine.json) is
+ * downloaded, staged and checked too — for the NEW desktop — so after the restart that desktop installs
+ * it offline in seconds instead of downloading it with the app down. Nothing is asked or changed: a
+ * failed, cancelled (the quit into the update) or unfinished prepare only means the new desktop
+ * downloads the engine, as before.
+ */
+function prepareEngineForDesktop(desktopVersion) {
+  const saved = pendingEngineStore.read();
+  if (!uvManager || !desktopVersion || !saved || saved.desktopVersion !== desktopVersion || !saved.engineVersion) return;
+  uvManager.prepareEngine({ version: saved.engineVersion, desktopVersion })
+    .then((rec) => { if (rec) log.info(`[update] engine ${rec.version} is prepared for desktop ${desktopVersion}`); })
+    .catch((err) => log.info(`[update] the engine for desktop ${desktopVersion} was not prepared (it downloads after the restart): ${String((err && err.message) || err).split('\n')[0]}`));
 }
 
 /**
@@ -2607,6 +2636,7 @@ async function startApp() {
   backendReady = backendWait.ready;
   if (backendWait.ready) {
     updateTest.event('engine-ready', { desktop: app.getVersion(), engine: (uvManager && uvManager.getInstalledVersionSync()) || null });
+    if (uvManager) void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
   }
 
   if (!backendWait.ready && (backendWait.reason === 'policy-blocked' || backendWait.reason === 'fatal-failure')) {
@@ -3229,6 +3259,7 @@ async function upgradeFlowpadAndRestart() {
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);
     }
+    if (ready) void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
 
     return { success: ready };
   } catch (err) {

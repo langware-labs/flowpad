@@ -30,7 +30,7 @@ Electron (main.js)
 | File | Role |
 | --- | --- |
 | `main.js` | Entry point (no exports). Window, menu, deep links, IPC, desktop updates, the startup/install flow (`startApp`, `installAndStartBackend`), the error panel. |
-| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. |
+| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. A post-boot engine update is first prepared in the background (`prepareEngine`: staged in a throwaway tool dir, then checked to import and report the release; the record is `~/.flow/prepared-engine.json`), so the upgrade after "Upgrade" — now, or at a later launch — installs offline in seconds. The engine that rides along with a desktop update is prepared the same way while the desktop downloads, for the NEW desktop, which installs it offline after the restart. |
 | `preload.js` | `contextBridge` bridge to the renderer. |
 | `loading.html`, `loading-renderer.js` | Loading screen, progress, and the error panel (including "Send Report"). |
 
@@ -45,7 +45,7 @@ Electron (main.js)
 | `backend-wait.js` | Waiting for the server to come up. |
 | `flow-rs-keychain.js` | Reading keys from the keychain. |
 | `progress-watchdog.js` | Progress guard: 30 s windows, 3 quiet windows in a row = stalled. Gated by `canStall`, async sampling, overlap-safe. |
-| `update-restart.js` | `createRestartApplier` — "Restart now": stops the backend, installs, and recovers if the restart fails. |
+| `update-restart.js` | `createRestartApplier` — "Restart now": the window stays up on "Installing the update" (never hidden before the quit begins), stops the backend, installs, and brings the app back if the restart fails. |
 | `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |

@@ -109,5 +109,23 @@ function harness({ stop, quitAndInstall } = {}) {
     eq(calls, ['qai'], 'works without a backend manager');
   }
 
+  // showInstalling: the window is never hidden — it says "installing" until the quit takes it; if the
+  // screen cannot be shown, hiding is the fallback. A failed install brings the window back as before.
+  for (const throws of [false, true]) {
+    const calls = [];
+    const a = createRestartApplier({
+      uvManager: { stop: async () => { calls.push('stop'); } },
+      autoUpdater: { quitAndInstall: () => calls.push('qai') },
+      setQuitting() {}, hideWindow: () => calls.push('hide'), showWindow: () => calls.push('show'),
+      showInstalling: async () => { calls.push('installing'); if (throws) throw new Error('window gone'); },
+      onFailure: () => calls.push('onFailure'), log: silentLog,
+    });
+    await a.apply();
+    eq(calls, throws ? ['installing', 'hide', 'stop', 'qai'] : ['installing', 'stop', 'qai'],
+      throws ? 'showInstalling failed → hidden, as before' : 'showInstalling: shown before the stop, never hidden');
+    a.failed(new Error('no installer'));
+    eq(calls.slice(-2), ['show', 'onFailure'], 'a failed install shows the window and tells the user');
+  }
+
   console.log(`update-restart.test.js: ${passed} assertions passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

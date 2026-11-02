@@ -22,19 +22,25 @@
  * @param {{quitAndInstall: (silent: boolean, forceRun: boolean) => void}} deps.autoUpdater
  * @param {(v: boolean) => void} deps.setQuitting   set/clear main's isQuitting
  * @param {() => void} deps.hideWindow
+ * @param {() => (void|Promise<void>)} [deps.showInstalling]  instead of hiding the window: it says "installing"
+ *   until the quit takes it — the window never disappears before the quit has begun (hideWindow is the fallback)
  * @param {() => void} deps.showWindow
  * @param {() => void} [deps.notifyInstalling]  an OS toast: the silent installer shows no window for ~30s, and the app is gone by then
  * @param {(err: Error) => void} deps.onFailure     tell the user; the app is running again
  * @param {{info: Function, warn: Function}} deps.log
  */
-function createRestartApplier({ uvManager, autoUpdater, setQuitting, hideWindow, showWindow, notifyInstalling, onFailure, log }) {
+function createRestartApplier({ uvManager, autoUpdater, setQuitting, hideWindow, showInstalling, showWindow, notifyInstalling, onFailure, log }) {
   let busy = false;
 
   async function apply() {
     if (busy) return false; // a second click / prompt must not run the sequence twice
     busy = true;
     setQuitting(true);
-    hideWindow();
+    let shown = false;
+    if (showInstalling) {
+      try { await showInstalling(); shown = true; } catch (err) { log.warn(`[update-restart] could not show the installing screen: ${err && err.message}`); }
+    }
+    if (!shown) hideWindow();
     try { if (notifyInstalling) notifyInstalling(); } catch (err) { log.warn(`[update-restart] notification failed: ${err && err.message}`); }
     try {
       // Same stop before-quit's shutdown runs — bounded by the budgets UvManager.stop() carries.
