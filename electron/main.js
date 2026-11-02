@@ -4200,6 +4200,19 @@ async function upgradeFlowpadAndRestart({ version = null, prepared = null } = {}
     log.warn(`[uv] panel upgrade refused before stopping anything: ${String(resolveErr.message).split('\n')[0]}`);
     return { success: false, error: resolveErr.message };
   }
+  // Not handed a prepared download (an older panel UI, or the version picker, still calls
+  // 'upgrade-flowpad' directly): prepare it NOW, while the backend keeps serving — the downtime is then
+  // the swap's seconds, not the whole download. A prepare that fails (offline, PyPI down) falls back to
+  // the direct path, exactly as before.
+  if (!prepared && typeof uvManager.prepareEngine === 'function') {
+    try {
+      const staged = await uvManager.prepareEngine({ version: picked ? picked.version : null });
+      if (staged && staged.upToDate) return { success: true };
+      prepared = staged;
+    } catch (prepErr) {
+      log.warn(`[uv] could not prepare ${picked ? picked.version : 'the update'} in the background (${String(prepErr.message).split('\n')[0]}) — upgrading directly`);
+    }
+  }
   // Captured while the old engine still runs: recovery must know what to put BACK — by the time the
   // upgrade fails, uv --force may already have replaced the installed engine with the unhealthy one.
   const versionBeforeUpgrade = uvManager.getInstalledVersionSync() || null;

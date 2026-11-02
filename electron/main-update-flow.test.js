@@ -171,6 +171,9 @@ function load(opts = {}) {
     // Staging in the background (uv-manager.prepareEngine): held until a test settles it.
     prepareEngine(o) {
       (uv.prepares = uv.prepares || []).push(o);
+      const descriptor = { version: o.version || '0.2.180', spec: `flowpad==${o.version || '0.2.180'}`, pin: '3.11', flags: [], previousVersion: '0.2.168' };
+      if (opts.prepareThrows) return Promise.reject(new Error(opts.prepareThrows));
+      if (!opts.holdPrepare) return Promise.resolve(descriptor); // most scenarios: staging is instant
       return new Promise((resolve, reject) => {
         uv.finishPrepare = (over = {}) => resolve({ version: o.version || '0.2.180', spec: `flowpad==${o.version || '0.2.180'}`, pin: '3.11', flags: [], previousVersion: '0.2.168', ...over });
         uv.failPrepare = reject;
@@ -1930,7 +1933,7 @@ const HOUR = 60 * 60 * 1000;
   {
     // Upgrade (engine only): staged while the backend keeps serving; then the in-app question; then a
     // swap that installs the PREPARED download.
-    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    const env = load({ holdPrepare: true, appVersion: '0.2.48', desktopFeed: '0.2.48' });
     await env.t.getDesktopUpdateVersion();
     eq(await env.ipc['update:prepare-engine'](null, { version: '0.2.180' }), { started: true, version: '0.2.180' }, 'prepare-engine: started');
     eq([env.uv.flowStops || 0, env.loadedFiles.length, env.uv.upgrades.length], [0, 0, 0], 'while preparing: nothing stopped, the window stays in the app');
@@ -1969,7 +1972,7 @@ const HOUR = 60 * 60 * 1000;
   }
   {
     // Update Both: desktop download and engine staging in parallel; ONE question once BOTH are ready.
-    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.2.40' });
+    const env = load({ holdPrepare: true, appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.2.40' });
     env.t.setupElectronAutoUpdater();
     await env.t.getDesktopUpdateVersion();
     const r = await env.ipc['update:both'](null, '0.2.180');
@@ -1985,7 +1988,7 @@ const HOUR = 60 * 60 * 1000;
   }
   {
     // A staging failure does not block the coordinated update: the new desktop downloads the engine itself.
-    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.2.40' });
+    const env = load({ holdPrepare: true, appVersion: '0.2.47', desktopFeed: '0.2.48', candidateFloor: '0.2.40' });
     env.t.setupElectronAutoUpdater();
     await env.t.getDesktopUpdateVersion();
     await env.ipc['update:both'](null, '0.2.180');
@@ -2033,6 +2036,32 @@ const HOUR = 60 * 60 * 1000;
     env.autoUpdater.finishDownload();
     const r = await p;
     eq([r.ok, env.autoUpdater.quits.length], [false, 1], 'deb/rpm: installed at launch, the app restarts into it');
+  }
+
+  {
+    // An OLDER panel UI (the UI ships with the engine) still calls 'upgrade-flowpad': the shell prepares
+    // first, with the app still up, and only then swaps — seconds of downtime instead of the download.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', compatibleRelease: { version: '0.2.180' }, holdPrepare: true });
+    await env.t.getDesktopUpdateVersion();
+    global.fetch = async () => ({ ok: true });
+    const p = env.ipc['upgrade-flowpad']();
+    await tick(); await tick();
+    eq(env.uv.prepares.map((o) => o.version), ['0.2.180'], 'legacy upgrade: staged first');
+    eq([env.uv.flowStops || 0, env.loadedFiles.length], [0, 0], 'legacy upgrade: nothing stopped while it downloads, the window stays in the app');
+    env.uv.finishPrepare(); 
+    const r = await p;
+    delete global.fetch;
+    eq(r.success, true, 'legacy upgrade: done');
+    eq(env.uv.upgrades.map((u) => u.prepared && u.prepared.version), ['0.2.180'], 'and the swap installs the prepared download');
+  }
+  {
+    // A prepare that fails (offline) falls back to the direct path — the old behavior, not a refusal.
+    const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', compatibleRelease: { version: '0.2.180' }, prepareThrows: 'PyPI unreachable' });
+    await env.t.getDesktopUpdateVersion();
+    global.fetch = async () => ({ ok: true });
+    const r = await env.ipc['upgrade-flowpad']();
+    delete global.fetch;
+    eq([r.success, env.uv.upgrades.map((u) => [u.version, u.prepared])], [true, [['0.2.180', null]]], 'prepare failed: upgraded directly');
   }
 
   // ── review round 10: apply outcomes, macOS staging, IPC senders (FLOWPAD-2310) ──
