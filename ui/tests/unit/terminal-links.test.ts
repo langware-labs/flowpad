@@ -179,6 +179,24 @@ describe('terminal links', () => {
     }
   });
 
+  it('links a colored command whose spaces a TUI skipped, broken across rows by its word wrap', async () => {
+    // Claude Code draws `` `! sh mark.sh inline` `` in its own color, moves the cursor over the
+    // spaces instead of writing them, and wraps the sentence inside the command.
+    const color = (s: string) => `\x1b[38;2;177;185;249m${s}\x1b[39m`;
+    const terminal = new HeadlessTerminal({ cols: 80, rows: 4, allowProposedApi: true });
+    try {
+      const row1 = '  Then the recap: you run "! sh mark.sh quoted" in the prompt, or ';
+      await new Promise<void>((resolve) =>
+        terminal.write(`${row1}${color('!')}\x1b[1C${color('sh')}\x1b[1C${color('mark.sh')}\r\n  ${color('inline')}, and tell me.`, resolve),
+      );
+      const term = terminal as unknown as Terminal;
+      expect(linkAtCell(term, row1.length + 1, 1)).toBe('! sh mark.sh inline');
+      expect(linkAtCell(term, 4, 2)).toBe('! sh mark.sh inline');
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   it('does not join a row that ends before the last column', async () => {
     const terminal = new HeadlessTerminal({ cols: 40, rows: 4, allowProposedApi: true });
     try {

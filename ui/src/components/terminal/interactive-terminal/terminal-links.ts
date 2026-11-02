@@ -53,7 +53,13 @@ function commandContinues(buffer: IBuffer, row: number, cols: number, above: Tex
   for (let r = row, span = above, hops = 0; hops < 8; hops++) {
     const cells = buffer.getLine(r)!;
     let col = span.end - 1;
-    while (col > span.start && fgOf(cells, col - 1) === color) col--;
+    // A TUI may move the cursor over a command's spaces instead of writing them: an empty cell
+    // between two cells of the command's color is still the command.
+    while (col > span.start) {
+      if (fgOf(cells, col - 1) === color) col--;
+      else if (col - 1 > span.start && !shown(cells, col - 1) && fgOf(cells, col - 2) === color) col -= 2;
+      else break;
+    }
     if (cells.getCell(col)?.getChars() === '!') return true;
     if (col !== span.start || r === 0) return false;
     const prev = buffer.getLine(r - 1);
@@ -339,7 +345,8 @@ function coloredCommands(line: LogicalLine): LinkMatch[] {
     const color = line.fg[i];
     if (line.text[i] !== '!' || color === -1 || line.fg[i - 1] === color) continue;
     let end = i + 1;
-    while (end < line.text.length && line.fg[end] === color) end++;
+    // A skipped space (an empty cell between two cells of the color) is still inside the command.
+    while (end < line.text.length && (line.fg[end] === color || (line.text[end] === ' ' && line.fg[end] === -1 && line.fg[end + 1] === color))) end++;
     const text = line.text.slice(i, end).trimEnd();
     if (COMMAND_LINK.test(text)) found.push({ text, index: i });
     i = end - 1;
