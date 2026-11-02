@@ -3364,10 +3364,8 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
                 # this account can reach. For a conversation started here that is a
                 # wrong ``remote`` flag (a share that took a 409 on someone else's
                 # row), not a lost conversation: stop claiming the hub counterpart.
-                if e.is_target_missing:
-                    conv = await Conversation.get_one({"id": conv_id})
-                    if conv is not None and conv.remote and await conv.authored_here():
-                        await conv.demote_to_local("hub has no row here this account can reach")
+                if e.is_target_missing and (conv := await Conversation.get_one({"id": conv_id})):
+                    await conv.heal_if_fake_remote("hub has no row here this account can reach")
                 logger.warning("[conv-msg-fetch] %s: children listing unavailable, skipping", conv_id[:8])
                 return False
             # An EMPTY LIST is a real answer ("this conversation has zero messages
@@ -4028,11 +4026,8 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
             # out of the hub list means "not in it", not "gone".
             if c.remote and c.id and c.id not in seen_ids and not c.channel_source_id:
                 try:
-                    if await c.authored_here():
-                        # Started here: absent from the hub means its remote flag was
-                        # wrong (or the hub copy went away) — never the person's data.
-                        await c.demote_to_local("absent from the hub's conversation list")
-                        continue
+                    if await c.heal_if_fake_remote("absent from the hub's conversation list"):
+                        continue  # written here: never the person's data
                     await _hard_delete_local_conversation(c)
                     pruned.append(c.id)
                 except Exception as e:  # noqa: BLE001

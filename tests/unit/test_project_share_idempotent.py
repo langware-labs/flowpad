@@ -30,6 +30,7 @@ import pytest
 from flow_sdk.app.actions.share_action import ShareInvitee
 from flow_sdk.builtin.project import Project
 from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.shared.errors import HubError
 
 
 class _FakeResponse:
@@ -137,7 +138,7 @@ async def test_share_refuses_a_409_row_this_account_cannot_reach(hub):
     hub["get"] = _FakeResponse(404, _HIDDEN)
     proj = _project()
 
-    with pytest.raises(RuntimeError, match="cannot reach it"):
+    with pytest.raises(HubError, match="cannot reach it"):
         await proj.share()
 
     assert proj.remote is not True, "an unreachable row must not be claimed as published"

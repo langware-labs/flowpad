@@ -25,7 +25,7 @@ def hub_hides_every_row(monkeypatch):
     """The hub's one network hop answers what it answered Ami: 403 target_not_found."""
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda: SimpleNamespace(api_key="test-key", user={"id": "hub-me"}, is_expired=lambda *_a: False),
+        lambda: SimpleNamespace(api_key="test-key", is_expired=lambda *_a: False),
     )
 
     async def fake_send(method, url, **kwargs):

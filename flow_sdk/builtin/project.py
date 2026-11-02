@@ -1636,22 +1636,6 @@ class Project(SetupSkippable, Entity):
         await self.save()
         return True
 
-    async def _assert_hub_row_is_reachable(self) -> None:
-        """The 409 check every share runs (``Entity.confirm_hub_row_is_ours``), worded for a Project:
-        its id lives in the folder's ``.flow/id``, so a cloned repo carries the ORIGINAL author's id."""
-        from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode  # noqa: PLC0415
-
-        try:
-            await self.confirm_hub_row_is_ours()
-        except HubError as e:
-            if e.code != HubErrorCode.ID_TAKEN.value:
-                raise
-            raise RuntimeError(
-                f"A project already exists in the cloud at id {self.id}, and this account "
-                "cannot reach it, so this folder cannot be linked from here. Link it from "
-                "the account that owns it, or give this folder a new project id."
-            ) from e
-
     async def share(
         self,
         invitees: Optional[List["ShareInvitee"]] = None,
@@ -1708,7 +1692,10 @@ class Project(SetupSkippable, Entity):
             # remediation the UI offers is the same POST that just 409'd.
             created = await client.post(build_hub_url(self.get_type()), body, idempotent=True)
             if created is None:
-                await self._assert_hub_row_is_reachable()
+                await self.confirm_hub_row_is_ours(
+                    remedy="A project's id lives in its folder's .flow/id, so a cloned repo carries the "
+                    "original author's id: link it from the account that owns it, or give this folder a new project id."
+                )
             if "remote" in type(self).model_fields:
                 self.remote = True
             # Publication marker. Receiver materialization also sets ``remote``,

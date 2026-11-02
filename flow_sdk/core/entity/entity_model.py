@@ -2333,7 +2333,7 @@ class Entity(DBEntity):
             await self._share_children()
         return self
 
-    async def confirm_hub_row_is_ours(self) -> None:
+    async def confirm_hub_row_is_ours(self, *, remedy: str = "") -> None:
         """After a create answered 409: check the row at this id is one this account can reach.
 
         A GET settles it without leaking anything — the hub answers it only for a caller holding
@@ -2354,7 +2354,9 @@ class Entity(DBEntity):
                 raise
             raise HubError(
                 409,
-                f"A {self.get_type()} already exists in the cloud at id {self.id}, and this account cannot reach it.",
+                " ".join(
+                    filter(None, (f"A {self.get_type()} already exists in the cloud at id {self.id}, and this account cannot reach it.", remedy))
+                ),
                 code=HubErrorCode.ID_TAKEN.value,
                 kind=HubFailureKind.REJECTED,
             ) from e
