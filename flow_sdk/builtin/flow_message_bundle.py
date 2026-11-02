@@ -1317,7 +1317,10 @@ async def _restore_git_transfer_entry(
     preferred_project_id: str | None,
     overwrite: bool,
     owner_typeid: str | None,
-) -> bool:
+) -> "str | bool":
+    """Open a git share's asset in the receiver's checkout and index it. Answers the asset's id HERE (truthy),
+    else False. That id is the one the receiver's own folder carries — a git checkout brings no sender id
+    (``.flow/`` is not committed), so the sender's id would name nothing on this machine."""
     from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
     from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
@@ -1390,6 +1393,14 @@ async def _restore_git_transfer_entry(
     except ValueError:
         return False
     await _index_git_checkout(entry_type, local_root, origin, info, project_id)
+    # Adopt the id the walk indexed at this path (the natural key), not the sender's.
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+
+    indexed = await Entity.get_by_asset_ref(asset_ref)
+    if indexed is not None and str(indexed.typeid.type) == entry_type and str(indexed.id) != entry_id:
+        logger.info("[bundle] git share %s opens as %s-%s here", key, entry_type, indexed.id)
+        entry_id = str(indexed.id)
+        key = _entry_key(entry_type, entry_id)
     await _apply_git_transfer_metadata(
         tmp_root,
         transfer,
@@ -1404,7 +1415,7 @@ async def _restore_git_transfer_entry(
     # does, so a receiver UI that already asked for it (and cached the miss)
     # sees it without a reload.
     await _notify_received_assets({(entry_type, entry_id)})
-    return True
+    return entry_id
 
 
 #: (checkout, commit) pairs whose ``received_with`` companions are already

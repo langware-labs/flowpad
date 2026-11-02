@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AlertTriangle, CloudDownload, CloudUpload, KeyRound } from 'lucide-react';
+import { AlertTriangle, CloudDownload, CloudUpload, KeyRound, Wand2 } from 'lucide-react';
 import { Credential, credentialsService } from '@sdk';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { Button } from '@src/components/ui/button';
@@ -10,7 +10,7 @@ import { notify } from '@src/notifications';
 /** Why a fetch did not fill the values — the codes `credentials/fetch` answers or refuses with. */
 type Blocked =
   | { kind: 'denied'; vaults: string[] }
-  | { kind: 'needs_connection' | 'unknown_vault' | 'missing'; vaults?: string[] }
+  | { kind: 'needs_connection' | 'manager_missing' | 'unknown_vault' | 'missing'; vaults?: string[] }
   | null;
 
 /** One stored variable and the vault its value is shared through (`secret_ref`); null — none yet. */
@@ -72,11 +72,38 @@ export function SecretVaultPanel({
       const { code, message } = describeApiError(error, t`Could not fetch the values`);
       const used = [...new Set(refs.map((r) => r.vault).filter((v): v is string => !!v))];
       if (code === 'denied') setBlocked({ kind: 'denied', vaults: used.length ? used : vaults });
-      else if (code === 'needs_connection' || code === 'unknown_vault') setBlocked({ kind: code });
+      else if (code === 'needs_connection' || code === 'manager_missing' || code === 'unknown_vault') setBlocked({ kind: code });
       else notify.error({ title: t`Could not fetch ${title}`, message });
     } finally {
       setBusy(false);
     }
+  };
+
+  // The vault's secret-manager setup wizard (install its CLI, sign in, check the vault), then fetch again.
+  const setUp = async () => {
+    const used = [...new Set(refs.map((r) => r.vault).filter((v): v is string => !!v))];
+    const vault = used[0] ?? vaults[0];
+    if (!vault) return;
+    setBusy(true);
+    try {
+      const res = await credentialsService.vaultSetup(projectId, vault);
+      if (!res.ready) {
+        const failed = res.steps.find((s) => s.state === 'failed');
+        notify.error({
+          title: t`Vault ${vault} is not readable yet`,
+          message: failed ? `${failed.label}: ${failed.detail}` : res.reason,
+        });
+        return;
+      }
+      notify.success({ title: t`Vault ${vault} is set up on this computer` });
+      setBlocked(null);
+    } catch (error) {
+      notify.error({ title: t`Could not set up vault ${vault}`, message: describeApiError(error, '').message });
+      return;
+    } finally {
+      setBusy(false);
+    }
+    await fetchValues();
   };
 
   const publish = async () => {
@@ -182,7 +209,12 @@ export function SecretVaultPanel({
           )}
           {blocked?.kind === 'needs_connection' && (
             <p className="mt-1 text-destructive" data-testid="credential-vault-signin">
-              <Trans>Sign in to the secret manager first (the project setup), then fetch again.</Trans>
+              <Trans>This computer is not signed in to the secret manager yet — Set up signs in, then fetches.</Trans>
+            </p>
+          )}
+          {blocked?.kind === 'manager_missing' && (
+            <p className="mt-1 text-destructive" data-testid="credential-vault-manager-missing">
+              <Trans>The secret manager is not installed on this computer — Set up installs it, signs in, then fetches.</Trans>
             </p>
           )}
           {blocked?.kind === 'unknown_vault' && (
@@ -216,9 +248,15 @@ export function SecretVaultPanel({
                   </Button>
                 ),
               )}
+              {(blocked?.kind === 'needs_connection' || blocked?.kind === 'manager_missing') && (
+                <Button size="sm" disabled={busy} onClick={() => void setUp()} data-testid="credential-vault-setup">
+                  <Wand2 className="mr-1 h-3.5 w-3.5" />
+                  <Trans>Set up</Trans>
+                </Button>
+              )}
               <Button
                 size="sm"
-                variant={denied.length ? 'outline' : 'default'}
+                variant={denied.length || blocked ? 'outline' : 'default'}
                 disabled={busy}
                 onClick={() => void fetchValues()}
                 data-testid="credential-vault-fetch"

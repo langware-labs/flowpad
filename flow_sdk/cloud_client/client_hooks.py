@@ -182,12 +182,12 @@ async def _on_response(response: httpx.Response) -> None:
     # elsewhere — by an auth-failure envelope on a 2xx (handled above), or
     # by the hub closing the WS with an auth close code (handled in
     # ws_client._handle_closed_connection).
+    if response.request.extensions.get(QUIET_EXTENSION):
+        return
     path = redact(request_path(response.request.url))
     # A large or non-JSON passthrough body stays unread (the proxy streams it); the status
     # still gets reported, and the caller receives the body verbatim.
     message = redact(_response_message(response)) if body_read else f"HTTP {status_code}"
-    if response.request.extensions.get(QUIET_EXTENSION):
-        return
     await hub_error_reporter.report(
         status_code=status_code,
         method=response.request.method,

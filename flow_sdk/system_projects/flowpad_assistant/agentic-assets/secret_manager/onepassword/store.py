@@ -18,7 +18,7 @@ from typing import Any, Awaitable, Callable, ClassVar, Iterable, Mapping, Option
 from pydantic import ConfigDict, Field, SecretStr
 
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.secrets.errors import SecretStoreError, StoreAccessDenied, StoreNeedsConnection
+from flow_sdk.secrets.errors import SecretStoreError, StoreAccessDenied, StoreNeedsConnection, StoreToolMissing
 from flow_sdk.secrets.store import SecretStore, plain_values, register_store
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class OnePasswordNotSignedIn(StoreNeedsConnection):
         self.providers = []
 
 
-class OnePasswordCliMissing(SecretStoreError):
+class OnePasswordCliMissing(StoreToolMissing):
     code = "op-missing"
 
 

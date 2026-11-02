@@ -79,6 +79,8 @@ class SecretManagerSpec(AssetDocumentSpec):
     #: Environment for every command, filled like a command (``{"OP_ACCOUNT": "{account}"}``); a
     #: variable whose placeholder the vault's config does not fill is left out.
     env: dict[str, str] = Field(default_factory=dict)
+    #: What the person does when sign-in fails (a desktop-app setting, an approval): shown by the setup wizard.
+    login_help: str = ""
 
 
 class UnknownSecretManager(SecretStoreError, KeyError):

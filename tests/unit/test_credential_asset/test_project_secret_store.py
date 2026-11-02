@@ -312,3 +312,46 @@ async def test_a_fetch_that_cannot_run_still_opens_the_credential(home, project,
     target = await (await credential_named("bright_data", project)).setup_on_receive(project_id=str(project.id))
     assert target["receive_fetch"] == {"error": "needs_connection"}
     assert target.get("type") == "credential" or target, "the credential still opens"
+
+
+# ── a vault this computer cannot read: say so, and the setup that fixes it ──
+
+
+async def test_a_test_with_no_value_from_an_unreadable_vault_refuses_and_names_the_setup(home, project, mount, team_file, monkeypatch):
+    """The receiver had no `op`: the test ran with no key and the provider answered 401. Nothing reaches the
+    provider now; the answer names the vault and `flow secrets setup`."""
+    from flow_sdk.builtin import credential_store
+    from flow_sdk.builtin.credential_service import test_credential
+    from flow_sdk.secrets.errors import StoreToolMissing
+
+    await _bright_data(project, secret_ref={"vault": "team", "key": "BRIGHT_DATA_API"})
+    folder = mount / "agentic-assets" / "credential" / "bright_data"
+    folder.joinpath("test.json").write_text(json.dumps({"commands": {p: "exit 1" for p in ("darwin", "linux", "win32")}}))
+
+    class Unreadable:
+        async def names(self):
+            raise StoreToolMissing("the team CLI is not installed on this machine")
+
+    monkeypatch.setattr(credential_store, "project_vault", lambda _p, _n: Unreadable())
+    tested = await test_credential("bright_data", str(project.id))
+    assert tested["state"] == "error"
+    assert tested["detail"] == ("no value here for BRIGHT_DATA_API — vault team cannot be read here: "
+                                "the team CLI is not installed on this machine — run `flow secrets setup team`")
+
+
+async def test_a_fetch_from_a_vault_whose_manager_is_not_installed_answers_manager_missing(home, project, mount, team_file, monkeypatch):
+    from flow_sdk.secrets import managers
+    from flow_sdk.secrets.errors import StoreToolMissing
+
+    await _bright_data(project, secret_ref={"vault": "team", "key": "BRIGHT_DATA_API"})
+
+    class Unreadable:
+        async def load(self, _names):
+            raise StoreToolMissing("the team CLI is not installed on this machine")
+
+        names = load
+
+    monkeypatch.setattr(managers, "store_for", lambda _v: Unreadable())
+    with pytest.raises(CredentialError) as refused:
+        await fetch("bright_data", str(project.id))
+    assert refused.value.code == "manager_missing"

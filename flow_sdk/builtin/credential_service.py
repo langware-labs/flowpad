@@ -829,6 +829,10 @@ def _store_refusal(e: Exception) -> Optional[CredentialError]:
         return CredentialError(str(e), code="unknown_vault")
     if isinstance(e, UnknownSecretManager):
         return CredentialError(str(e), code="unknown_secret_manager")
+    from flow_sdk.secrets.errors import StoreToolMissing  # noqa: PLC0415
+
+    if isinstance(e, StoreToolMissing):
+        return CredentialError(f"the secret manager is not installed here: {e}", code="manager_missing")
     if isinstance(e, StoreNeedsConnection):
         return CredentialError(f"the secret manager needs a sign-in: {e}", code="needs_connection")
     if isinstance(e, StoreAccessDenied):
@@ -973,6 +977,45 @@ async def vault_check(project_id: str, vault: str) -> dict[str, Any]:
     return {"vault": vault, "ready": ready, "reason": reason}
 
 
+async def vault_setup(project_id: str, vault: str) -> dict[str, Any]:
+    """Run ``vault``'s secret-manager setup wizard on this computer (install the CLI, sign in, check the vault —
+    each skipped when it holds): ``{vault, ready, steps: [{id, label, state, detail}]}``."""
+    from pathlib import Path  # noqa: PLC0415
+
+    from flow_sdk.core.wizard.runner import Resolved, run_wizard  # noqa: PLC0415
+    from flow_sdk.secrets.setup_wizard import login_help, vault_setup_wizard  # noqa: PLC0415
+
+    project = await _project_of(project_id)
+    spec = _vault_spec(_vault_specs(project), vault)
+    built = vault_setup_wizard(str(project.id), vault, spec)
+    if built is None:
+        raise CredentialError(f"vault {vault!r} names an unknown secret manager {spec.manager!r}", code="unknown_secret_manager")
+    wizard, ops = built
+
+    async def resolve(name: str) -> Optional[Resolved]:
+        return Resolved(ops[name], True) if name in ops else None
+
+    result = await run_wizard(
+        wizard, activity_path=f"secrets-setup/{project.id}/{vault}", trusted=True,
+        workdir=Path(project.fs_storage_mount_path or Path.home()), resolve_op=resolve,
+    )
+    answers = dict(result.steps or {})
+    steps = []
+    for step in wizard.steps:
+        answer = answers.get(step.id)
+        if answer is None:
+            state, detail = "not_reached", ""
+        elif answer.ok:
+            state, detail = ("done" if answer.ran else "already_done"), ""
+        else:
+            state, detail = "failed", (answer.detail or "failed")
+            if step.id == "login" and (hint := login_help(spec)):
+                detail = hint  # the manager's own instruction, not its CLI's generic error
+        steps.append({"id": step.id, "label": step.display_label, "state": state, "detail": detail})
+    checked = await vault_check(project_id, vault)
+    return {"vault": vault, "ready": checked["ready"], "reason": checked["reason"], "steps": steps}
+
+
 async def grant(project_id: str, vault: str, email: str) -> dict[str, Any]:
     """Give ``email`` read access to ``vault`` through its manager's own sharing: ``{vault, email}``."""
     from flow_sdk.secrets import managers  # noqa: PLC0415
@@ -1034,6 +1077,19 @@ async def test_credential(name: str, project_id: str = "") -> dict[str, Any]:
     return await test_credential_spec(spec, project)
 
 
+async def _vault_why(spec: "Credential", project: Optional["Project"]) -> str:
+    """Why the first vault this credential points into cannot be read here (ending in the setup command); "" when all can."""
+    from flow_sdk.builtin.credential_store import project_vault  # noqa: PLC0415
+    from flow_sdk.secrets.setup_wizard import store_why  # noqa: PLC0415
+
+    for name in spec.vault_names():
+        try:
+            await project_vault(project, name).names()
+        except Exception as e:  # noqa: BLE001 — the reason is the answer
+            return store_why(e, name)
+    return ""
+
+
 async def test_credential_spec(spec: "Credential", project: Optional["Project"]) -> dict[str, Any]:
     """:func:`test_credential` for a credential already in hand — what a secured transfer or a vault fetch runs
     right after the values land, so the sender learns they work there."""
@@ -1049,8 +1105,12 @@ async def test_credential_spec(spec: "Credential", project: Optional["Project"])
     stored = set(spec.stored_var_names())
     values = await resolve_project_secrets(project, only=stored, placement=await Placement.of(None))
     plain = {k: v.get_secret_value() for k, v in values.items()}
-    if missing := [v for v in spec.required_var_names() if v in stored - plain.keys()]:
-        state, detail = "error", f"no value here for {', '.join(missing)}"
+    absent = stored - plain.keys()
+    # A MUST value absent, or every stored value absent (an optional key the vault could not hand over): the
+    # provider would only answer "unauthorized" — say what is missing here, and the vault fix when one is.
+    if missing := [v for v in spec.required_var_names() if v in absent] or (sorted(absent) if stored and not plain else []):
+        why = await _vault_why(spec, project)
+        state, detail = "error", f"no value here for {', '.join(missing)}" + (f" — {why}" if why else "")
     else:
         outcome, reason = await run_check(test, workdir=spec.folder or Path.home(), extra_env=plain)
         state, detail = {

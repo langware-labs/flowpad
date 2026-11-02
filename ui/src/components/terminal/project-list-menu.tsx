@@ -469,6 +469,12 @@ export function useProjectListMenu({
       await handleRecover(bucket);
       return;
     }
+    // The project already shown: a no-op. Resuming it would re-open its last tab's
+    // stored pointer and drop the current URL's own state (viewMode, scope).
+    if (bucket.projectId === currentProjectId) {
+      setOpen(false);
+      return;
+    }
     if (bucket.state === 'live' && bucket.project) {
       closeForNavigation();
       // A resumed tab is a TOP-LEVEL tab, as its chip is: never a child of the

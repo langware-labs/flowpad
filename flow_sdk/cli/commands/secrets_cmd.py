@@ -165,3 +165,60 @@ def grant_cmd(
 ) -> None:
     """Give EMAIL read access to VAULT, through the secret manager's own sharing."""
     ok(_call("grant", {"project_id": project, "vault": vault, "email": email}))
+
+
+@secrets_app.command("setup")
+def setup_cmd(vault: Annotated[str, typer.Argument(help="The vault to set up (e.g. team).")], project: _ProjectOpt = None) -> None:
+    """Run VAULT's secret-manager setup wizard on this computer: install the manager's CLI, sign in, check the
+    vault — each step skipped when it already holds. Exit 1 until the vault is readable here."""
+    import asyncio  # noqa: PLC0415
+
+    code = asyncio.run(_setup(vault, project))
+    if code:
+        raise typer.Exit(code)
+
+
+async def _setup(vault_name: str, project_id: Optional[str]) -> int:
+    import os  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.cli.commands.project_cmd import _step_line, _terminal_answers  # noqa: PLC0415
+    from flow_sdk.core.wizard.runner import Resolved, run_wizard  # noqa: PLC0415
+    from flow_sdk.secrets.setup_wizard import vault_setup_wizard  # noqa: PLC0415
+
+    project = await (Project.get_by_id(project_id) if project_id else Project.find_by_cwd(os.getcwd()))
+    if project is None:
+        fail(2, "NO_PROJECT", "no project here: cd into a project folder or pass --project")
+    vaults = vaults_of(project)
+    if vault_name not in vaults:
+        fail(int(ExitCode.NOT_FOUND), "UNKNOWN_VAULT", f"project {project.name} declares no vault {vault_name!r} "
+             f"(declared: {', '.join(sorted(vaults)) or 'none'})")
+    built = vault_setup_wizard(str(project.id), vault_name, vaults[vault_name])
+    if built is None:
+        fail(2, "UNKNOWN_MANAGER", f"vault {vault_name!r} names an unknown secret manager")
+    wizard, ops = built
+
+    async def resolve(name: str) -> Optional[Resolved]:
+        return Resolved(ops[name], True) if name in ops else None
+
+    typer.echo(wizard.label)
+    async with _terminal_answers() as seams:
+        result = await run_wizard(
+            wizard, activity_path=f"secrets-setup/{project.id}/{vault_name}", trusted=True,
+            workdir=Path(project.fs_storage_mount_path or os.getcwd()), resolve_op=resolve, **seams,
+        )
+    steps = dict(result.steps or {})
+    for step in wizard.steps:
+        typer.echo(_step_line(step.display_label, steps.get(step.id), asked=False))
+    from flow_sdk.secrets.setup_wizard import login_help  # noqa: PLC0415
+
+    signed_in = steps.get("login")
+    if signed_in is not None and not signed_in.ok and (hint := login_help(vaults[vault_name])):
+        typer.echo(f"\nTo sign in: {hint}")
+    from flow_sdk.secrets.managers import run_check  # noqa: PLC0415
+
+    ready = await run_check(vaults[vault_name])
+    typer.echo(f"Vault {vault_name} is readable here." if ready else f"Vault {vault_name} is not readable yet — run it again.")
+    return int(ExitCode.OK if ready else ExitCode.NOT_YET)

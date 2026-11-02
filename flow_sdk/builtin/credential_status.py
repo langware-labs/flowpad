@@ -104,15 +104,15 @@ def _in_vault(spec, scope: CredentialScope, env_var: str, environment: str, name
     return name in names
 
 
-async def _remote_names(refs: list["SecretStoreRef"]) -> dict[tuple[str, str], Optional[set[str]]]:
-    """``{ref.key: names}`` for each remote store; ``None`` for one that could not be asked."""
+async def _remote_names(refs: list["SecretStoreRef"]) -> dict[tuple[str, str], "set[str] | Exception"]:
+    """``{ref.key: names}`` for each remote store; the error for one that could not be asked."""
     from flow_sdk.secrets import SecretStore  # noqa: PLC0415
 
-    async def names(ref: "SecretStoreRef") -> Optional[set[str]]:
+    async def names(ref: "SecretStoreRef") -> "set[str] | Exception":
         try:
             return set(await SecretStore.from_ref(ref).names())
-        except Exception:  # noqa: BLE001 — reported per variable as unreachable
-            return None
+        except Exception as e:  # noqa: BLE001 — reported per variable as unreachable, with its reason
+            return e
 
     unique = list({ref.key: ref for ref in refs}.values())
     return dict(zip((ref.key for ref in unique), await asyncio.gather(*(names(ref) for ref in unique))))
@@ -200,7 +200,8 @@ def why_not_ready(row: Optional[dict]) -> str:
 
     spec = CredentialStatusRowSpec.model_validate(row)
     missing = set(spec.missing)
-    return next((v.why for v in spec.vars if v.env_var in missing and v.why), "")
+    return next((v.why for v in spec.vars if v.env_var in missing and v.why), "") or next(
+        (v.why for v in spec.vars if not v.present and v.why), "")
 
 
 def _grant_key(provider: str, scopes) -> tuple[str, tuple[str, ...]]:
@@ -345,11 +346,22 @@ async def credentials_status(
                     present = credential_file(spec, scope, env_var, environment).is_file()
                 found_in = VALUE_STORE_VAULT if in_vault else (VALUE_STORE_ENV if in_env else None)
                 warning = None if present else ("wrong-store" if found_in else "missing")
+                if not present and var.secret_ref is not None and project is not None:
+                    # Fetched from a project vault: say when this machine cannot reach it, and the fix.
+                    from flow_sdk.secrets.setup_wizard import manager_missing_why  # noqa: PLC0415
+
+                    if why := manager_missing_why(project, var.secret_ref.vault):
+                        shown["why"] = why
             else:
                 held = remote.get(ref.key)
-                present = held is not None and env_var in held
+                unreachable = held is None or isinstance(held, Exception)
+                present = not unreachable and env_var in held
                 found_in = store if present else None
-                warning = None if present else ("unreachable" if held is None else "missing")
+                warning = None if present else ("unreachable" if unreachable else "missing")
+                if unreachable and var.secret_ref is not None:
+                    from flow_sdk.secrets.setup_wizard import store_why  # noqa: PLC0415
+
+                    shown["why"] = store_why(held or RuntimeError("not reachable"), var.secret_ref.vault)
             winner = declared.get(env_var)
             shadowed_by = str(winner.spec.typeid) if winner is not None and winner.spec.id != spec.id else None
             var_rows.append(CredentialVarStatusSpec(

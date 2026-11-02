@@ -638,11 +638,7 @@ def _extract_data(resp: httpx.Response) -> Any:
 
 
 def _is_json(resp: httpx.Response) -> bool:
-    try:
-        resp.json()
-    except ValueError:
-        return False
-    return True
+    return "json" in resp.headers.get("content-type", "")
 
 
 def _unwrap(resp: httpx.Response, *, method: str = "", url: Any = "", strict: bool = False, raw: bool = False) -> Any:
