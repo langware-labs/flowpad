@@ -951,6 +951,18 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
 }
 
 /**
+ * "Later" to the engine update at launch: the question is not repeated this session, so nothing else would
+ * download it. Prepare it now, with the engine up, so the next "Upgrade" (the next launch asks again) is
+ * a short offline swap. Not while a newer desktop is pending: its own engine is prepared with its download.
+ */
+function prepareDeferredEngineUpdate() {
+  if (!uvManager || !uvManager.deferredPackageVersion() || engineChangeAllowed('preparing the postponed engine update') !== 'allow') return;
+  uvManager.prepareEngine()
+    .then((rec) => { if (rec) log.info(`[update] the postponed engine update ${rec.version} is prepared for the next upgrade`); })
+    .catch((err) => log.info(`[update] the postponed engine update was not prepared (the upgrade downloads it): ${String((err && err.message) || err).split('\n')[0]}`));
+}
+
+/**
  * While the desktop update downloads, the engine saved to ride along with it (pending-engine.json) is
  * downloaded, staged and checked too — for the NEW desktop — so after the restart that desktop installs
  * it offline in seconds instead of downloading it with the app down. Nothing is asked or changed: a
@@ -2637,6 +2649,7 @@ async function startApp() {
   if (backendWait.ready) {
     updateTest.event('engine-ready', { desktop: app.getVersion(), engine: (uvManager && uvManager.getInstalledVersionSync()) || null });
     if (uvManager) void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
+    prepareDeferredEngineUpdate();
   }
 
   if (!backendWait.ready && (backendWait.reason === 'policy-blocked' || backendWait.reason === 'fatal-failure')) {

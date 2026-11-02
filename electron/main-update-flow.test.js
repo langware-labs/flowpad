@@ -23,7 +23,7 @@ const EXPOSE = `
 module.exports.__t = {
   offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
-  runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer,
+  runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer, prepareDeferredEngineUpdate,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
   disarmAccountWatch: () => { accountWatcher = { close() {} }; },
@@ -131,6 +131,7 @@ function load(opts = {}) {
     undeferPackageVersion(v) { uv.undeferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }
     async _recoverRunningBackendAfterFailedUpgrade() { uv.recovered = (uv.recovered || 0) + 1; return true; }
+    deferredPackageVersion() { return opts.deferredEngine || null; }
     async prepareEngine(o) { uv.prepares.push(o); if (opts.prepareThrows) throw new Error(opts.prepareThrows); return { version: o.version }; }
     async checkForUpdatesInBackground() { uv.checks++; return false; }
     async startWithBin() { if (opts.startThrows) throw new Error(opts.startThrows); }
@@ -278,6 +279,26 @@ const HOUR = 60 * 60 * 1000;
     await env.t.checkPackageUpdateInBackground();
     eq(env.uv.checks, 0, 'no separate engine dialog while the desktop update is pending');
     ok(env.logLines.some((l) => /engine change hold \(periodic package check\): desktop 0\.2\.48 is pending/.test(l)), 'and it says why');
+  }
+
+  // ── "Later" to the engine at launch: it is prepared once the app is up (not while a desktop is pending) ──
+  {
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', deferredEngine: '0.2.180' });
+    await env.t.getDesktopUpdateVersion();
+    env.t.prepareDeferredEngineUpdate(); await tick();
+    eq(env.uv.prepares, [undefined], 'a postponed engine update is prepared (the newest compatible release)');
+    const none = load({ appVersion: '0.2.47', desktopFeed: '0.2.47' });
+    await none.t.getDesktopUpdateVersion();
+    none.t.prepareDeferredEngineUpdate(); await tick();
+    eq(none.uv.prepares, [], 'nothing postponed → nothing prepared');
+    const held = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', deferredEngine: '0.2.180' });
+    await held.t.getDesktopUpdateVersion();
+    held.t.prepareDeferredEngineUpdate(); await tick();
+    eq(held.uv.prepares, [], 'a newer desktop is pending → its own engine is prepared with its download, not this one');
+    const failing = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', deferredEngine: '0.2.180', prepareThrows: 'offline' });
+    await failing.t.getDesktopUpdateVersion();
+    failing.t.prepareDeferredEngineUpdate(); await tick(); await tick();
+    ok(failing.logLines.some((l) => /postponed engine update was not prepared/.test(l)), 'a failed prepare is only logged');
   }
 
   // ── DESKTOP FIRST: the engine is changed only when the desktop status is known and current ──

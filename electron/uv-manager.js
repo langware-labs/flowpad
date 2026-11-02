@@ -2800,6 +2800,11 @@ class UvManager {
     if (version) this._deferredPackageVersion = version;
   }
 
+  /** The version the user answered "Later" to this session, or null. */
+  deferredPackageVersion() {
+    return this._deferredPackageVersion || null;
+  }
+
   /** Undo deferPackageVersion for a version whose offer was withdrawn (superseded, never answered). */
   undeferPackageVersion(version) {
     if (version && this._deferredPackageVersion === version) this._deferredPackageVersion = null;
