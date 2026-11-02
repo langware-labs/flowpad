@@ -26,6 +26,7 @@ import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openDriver, openSource } from './data-sources-pointer';
 import { SourceActions, SourceSetupDetails, SourceStatusLine, sourceLook } from './source-parts';
+import { useSourceVerify } from './use-source-verify';
 
 interface Props {
   source: DataSource;
@@ -47,6 +48,8 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
   // setup" / "needs attention", and a screen of parked sources must still fit
   // on one screen. The detail is one click away.
   const [open, setOpen] = useState(false);
+  // Verify belongs to the row: pressed in the actions, answered on the status line — one place, in order.
+  const { verify, busy: verifying, last: verdict } = useSourceVerify(source, { quiet: true });
   // The CHANNEL's mark — the spec's glyph, a multi-channel transport's per-channel
   // one — badged with whose way it is (Flow on WhatsApp: WhatsApp with Flowpad's
   // badge, the rule the Add-source choice card uses). A screen of sources is
@@ -107,7 +110,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
           </div>
         </div>
 
-        <SourceStatusLine source={source} />
+        <SourceStatusLine source={source} verifying={verifying} verdict={verdict} />
 
         <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
           {timeSince(source.last_synced_at)}
@@ -117,7 +120,15 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
           {source.isActive ? timeUntil(source.next_poll_at) : '—'}
         </span>
 
-        <SourceActions source={source} spec={spec} onEdit={onEdit} onReplay={onReplay} onDelete={onDelete} />
+        <SourceActions
+          source={source}
+          spec={spec}
+          onEdit={onEdit}
+          onReplay={onReplay}
+          onDelete={onDelete}
+          onVerify={verify}
+          verifying={verifying}
+        />
       </div>
 
       {open && (

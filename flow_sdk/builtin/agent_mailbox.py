@@ -88,6 +88,51 @@ async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
     )
 
 
+#: How often one source may re-read its mailbox's allowlist from the Hub after refusing a sender.
+POLICY_REFRESH_SECONDS = 30.0
+_policy_read_at: dict[str, float] = {}
+
+
+async def refresh_policy_for(source) -> bool:
+    """Re-read the Hub's allowlist onto *source*, when it polls an agent mailbox; answers whether it did.
+
+    The allowlist is a private, runtime-only field of the source: the machine where the person saved
+    it holds it, every other machine starts empty. A cloud placement's source comes with its deploy
+    and was never configured there, so its gate refused everyone. The serve loop calls this when the
+    gate refuses a sender — the one moment a stale copy matters — at most once per
+    ``POLICY_REFRESH_SECONDS`` per source, so a stranger writing in costs no more than that.
+    """
+    import logging  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded("cloud_email")
+    if driver is None or getattr(source, "provider", "") != driver.provider:
+        return False
+    key = str(getattr(source, "id", "") or "")
+    now = time.monotonic()
+    if now - _policy_read_at.get(key, float("-inf")) < POLICY_REFRESH_SECONDS:
+        return False
+    _policy_read_at[key] = now
+    from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import agent_id_of  # noqa: PLC0415
+
+    # By agent id, straight from the Hub: a cloud machine's copy of the agent is not marked published
+    # (``remote``), so ``for_agent`` would answer None there without asking.
+    agent_id = agent_id_of(source)
+    try:
+        descriptor = await get_agent_mailbox_driver().get_mailbox(agent_id)
+    except Exception as exc:  # noqa: BLE001 — an unreachable Hub leaves the gate's answer as it was
+        logging.getLogger(__name__).info("agent %s: could not re-read the mailbox allowlist: %s", agent_id, exc)
+        return False
+    if not descriptor:
+        return False
+    mailbox = AgentMailbox.from_hub_descriptor(descriptor, agent_typeid=TypeId(type=EntityType.AGENT.value, id=agent_id))
+    await mailbox._cache_policy(source)
+    return True
+
+
 def _mailbox_id_from(config: Mapping[str, Any]) -> str:
     """The mailbox id stamped in a source's config, or ``""`` when absent/unparseable.
 
@@ -480,9 +525,9 @@ class AgentMailbox(Entity):
     async def release(self) -> bool:
         """Release the address. ``False`` when there was nothing to release.
 
-        Terminal, and deliberately NOT part of deleting an Agent: the address is
-        the mailbox's public identity, and dropping it has consequences off this
-        machine — mail to it starts bouncing. It stays an explicit verb.
+        Terminal: the address is the mailbox's public identity, and dropping it
+        has consequences off this machine — mail to it starts bouncing. Deleting
+        the Agent releases it too (nobody is left to answer it).
         """
         from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415

@@ -34,15 +34,23 @@ class _FakeResponse:
         return json.loads(self.text)
 
 
+_OK = '{"status":"success","data":{}}'
+_CONFLICT = '{"detail":"A conflicting record already exists"}'
+_HIDDEN = '{"status":"FAIL","message":"Missing request info(Target entity not found)","data":{"error_code":"target_not_found"}}'
+
+
 @pytest.fixture()
 def hub_response(monkeypatch):
     """Stub the hub client's single network method so ``Entity.share`` runs
-    fully offline. Mutate ``holder['resp']`` per test to pick the hub's reply."""
-    holder = {"resp": _FakeResponse(200, '{"status":"success","data":{}}')}
+    fully offline, answering per HTTP method: ``post`` is the create, ``get``
+    the ownership probe a 409 makes."""
+    holder = {"post": _FakeResponse(200, _OK), "get": _FakeResponse(200, _OK)}
 
     async def fake_send(method, url, **kwargs):
-        r = holder["resp"]
-        return httpx.Response(r.status_code, text=r.text, request=httpx.Request(method, str(url)))
+        r = holder[method.lower()]
+        return httpx.Response(
+            r.status_code, text=r.text, headers={"content-type": "application/json"}, request=httpx.Request(method, str(url))
+        )
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
@@ -57,22 +65,26 @@ def hub_response(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 @pytest.mark.parametrize(
-    "status, text, expect_raise",
+    "post, get, raises",
     [
-        (200, '{"status":"success","data":{}}', False),
-        (409, '{"detail":"Save error(already exist) - Conversation: id = x"}', False),
-        (500, '{"detail":"boom"}', True),
+        ((200, _OK), (200, _OK), None),  # clean create
+        ((409, _CONFLICT), (200, _OK), None),  # the row is ours: idempotent re-share
+        ((409, _CONFLICT), (403, _HIDDEN), "id_taken"),  # someone else's row: never remote
+        ((409, _CONFLICT), (503, '{"detail":"down"}'), "503"),  # an outage stays an outage
+        ((500, '{"detail":"boom"}'), (200, _OK), "500"),
     ],
 )
-async def test_share_idempotent_on_409(hub_response, status, text, expect_raise):
-    """200 and 409 both succeed (and flip ``remote=True``); any other non-200
-    is a real failure that still raises."""
-    hub_response["resp"] = _FakeResponse(status, text)
-    conv = Conversation(title=f"share-{status}")
+async def test_share_sets_remote_only_for_a_row_this_account_reaches(hub_response, post, get, raises):
+    """``remote=True`` means the hub holds this id FOR US. A 409 alone proves only that
+    some row holds it — the hub answers 409 whoever owns it — so share probes it."""
+    hub_response["post"], hub_response["get"] = _FakeResponse(*post), _FakeResponse(*get)
+    conv = Conversation(title="share-probe")
 
-    if expect_raise:
-        with pytest.raises(HubError, match=str(status)):
+    if raises:
+        with pytest.raises(HubError) as err:
             await Entity.share(conv)
+        assert raises in (err.value.code or "") or raises in str(err.value)
+        assert conv.remote is not True
     else:
         assert await Entity.share(conv) is conv
-        assert conv.remote is True  # 409 still means "this entity is on the hub"
+        assert conv.remote is True

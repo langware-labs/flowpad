@@ -10,6 +10,7 @@ from flow_sdk.schema.view_mode import ViewMode
 MARKDOWN = TypeInfo(
     hub_main_file="document.md",
     type_name=EntityType.MARKDOWN,
+    template={"body": "# {name}\n\n"},
     editor="markdown",
     icon="FileText",
     display_name="Documents",

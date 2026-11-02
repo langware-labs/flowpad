@@ -13,8 +13,9 @@ follow-up quotes the root).
 
 Receiver:
 - the conversation opens from the base stream inbox (`stream-inbox-conversation-row`);
-- the thread packs into ONE stack (`thread-stack-open`: "2 earlier in this thread");
-- opening it is a navigation: the URL gains `?thread=`, and `thread-header` names it with "3 messages";
+- a channel's thread IS its conversation, so the feed shows it flat: all three messages, no
+  `thread-stack-open` stack (only native threads stack — 2f0ae8c0a);
+- the thread opens by URL: `?thread=<id>`, and `thread-header` names it with "3 messages";
 - where the provider names the answered message (gmail, telegram, whatsapp, teams), the follow-up shows the
   quote block (`message-quote`) of the root.
 
@@ -26,7 +27,7 @@ Sender:
 - ⋮ → Reply on the root (`message-reply`, `composer-reply-banner`) reaches the provider as a reply to the root;
 - our copies join the thread: the header count reaches 5.
 
-Back: `thread-header-all` ("All messages") drops `?thread=`; the thread packs again.
+Back: `thread-header-all` ("All messages") drops `?thread=`; the feed is flat again, our reply in it.
 
 cloud_email is an agent's email, so its cell runs on an agent:
 - the spec creates the agent, allocates its mailbox and opens it on the doubles (`/agent_mailbox`);

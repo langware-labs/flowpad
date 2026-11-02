@@ -17,23 +17,23 @@ tags: [whiteboard, mermaid]
 ### M1: Mermaid block written
 * Inject 2 rectangles + 1 arrow with text labels (same as C4).
 * Wait 1500ms.
-* `cat <folder>/WHITE_BOARD.md` → MUST contain `<!-- BEGIN whiteboard:auto -->` followed by ` ```mermaid` followed by `flowchart TD` followed by node tokens for the labels followed by `<!-- END whiteboard:auto -->`.
+* `cat <folder>/CHART.md` → MUST contain `<!-- BEGIN chart:auto -->` followed by ` ```mermaid` followed by `flowchart TD` followed by node tokens for the labels followed by `<!-- END chart:auto -->`.
 
 ### M2: Human content preserved outside markers
-* Edit WHITE_BOARD.md via Bash (heredoc) to insert prose ABOVE the BEGIN marker and BELOW the END marker, plus a `[[wiki link]]` in the post-content. Keep stale content INSIDE markers.
+* Edit CHART.md via Bash (heredoc) to insert prose ABOVE the BEGIN marker and BELOW the END marker, plus a `[[wiki link]]` in the post-content. Keep stale content INSIDE markers.
 * Trigger another save (inject one more element + call `__chartOnChange`). Wait 1500ms.
-* `cat <folder>/WHITE_BOARD.md` → prose above + below MUST survive. `[[wiki link]]` MUST be intact. The content inside the BEGIN/END block MUST be replaced (no longer stale).
+* `cat <folder>/CHART.md` → prose above + below MUST survive. `[[wiki link]]` MUST be intact. The content inside the BEGIN/END block MUST be replaced (no longer stale).
 
 ### M3: Degenerate (freehand-only) board still emits valid mermaid
 * Create a NEW whiteboard for this case (POST + navigate).
 * Inject only freedraw strokes via `convertToExcalidrawElements([{ type:'freedraw', x:0, y:0, points:[[0,0],[50,20],[100,30]] }])`.
 * Wait 1500ms.
-* WHITE_BOARD.md mermaid block must contain `flowchart TD` AND a `%% loose elements:` comment (with `freedraw` mentioned). The fenced block must not be empty (renderers fail on empty mermaid).
+* CHART.md mermaid block must contain `flowchart TD` AND a `%% loose elements:` comment (with `freedraw` mentioned). The fenced block must not be empty (renderers fail on empty mermaid).
 
 ### M4: Decision diamond
 * On the M3 board (or a new one), inject `{ type: 'diamond', x: 50, y: 200, width: 100, height: 80, label: { text: 'OK?' } }`.
 * Wait 1500ms.
-* WHITE_BOARD.md mermaid block must contain `N<n>{{OK?}}` (mermaid v10+ double-curly diamond syntax). The single-curly `N<n>{OK?}` form is also acceptable for backward compat.
+* CHART.md mermaid block must contain `N<n>{{OK?}}` (mermaid v10+ double-curly diamond syntax). The single-curly `N<n>{OK?}` form is also acceptable for backward compat.
 
 ### M5: Mermaid import dialog
 * In the editor, click `[data-testid="open-import-mermaid"]`.
@@ -45,7 +45,7 @@ tags: [whiteboard, mermaid]
 * Click `[data-testid="confirm-import-mermaid"]`.
 * Wait 1500ms past debounce.
 * Validate `window.__chartApi.getSceneElements().length` includes new rectangles labelled "Foo" and "Bar".
-* WHITE_BOARD.md mermaid block now reflects the imported elements (contains `Foo` and `Bar` tokens).
+* CHART.md mermaid block now reflects the imported elements (contains `Foo` and `Bar` tokens).
 
 ## Pass criteria
 

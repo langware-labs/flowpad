@@ -165,3 +165,40 @@ def grant_cmd(
 ) -> None:
     """Give EMAIL read access to VAULT, through the secret manager's own sharing."""
     ok(_call("grant", {"project_id": project, "vault": vault, "email": email}))
+
+
+@secrets_app.command("setup")
+def setup_cmd(vault: Annotated[str, typer.Argument(help="The vault to set up (e.g. team).")], project: _ProjectOpt = None) -> None:
+    """Run VAULT's secret-manager setup wizard on this computer: install the manager's CLI, sign in, check the
+    vault — each step skipped when it already holds. Exit 1 until the vault is readable here."""
+    import asyncio  # noqa: PLC0415
+
+    code = asyncio.run(_setup(vault, project))
+    if code:
+        raise typer.Exit(code)
+
+
+async def _setup(vault_name: str, project_id: Optional[str]) -> int:
+    import os  # noqa: PLC0415
+
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.cli.commands.project_cmd import _terminal_answers  # noqa: PLC0415
+    from flow_sdk.secrets.setup_wizard import run_vault_setup  # noqa: PLC0415
+
+    project = await (Project.get_by_id(project_id) if project_id else Project.find_by_cwd(os.getcwd()))
+    if project is None:
+        fail(2, "NO_PROJECT", "no project here: cd into a project folder or pass --project")
+    vaults = vaults_of(project)
+    if vault_name not in vaults:
+        fail(int(ExitCode.NOT_FOUND), "UNKNOWN_VAULT", f"project {project.name} declares no vault {vault_name!r} "
+             f"(declared: {', '.join(sorted(vaults)) or 'none'})")
+    # In this process: a sign-in may ask on this terminal.
+    async with _terminal_answers() as seams:
+        result = await run_vault_setup(project, vault_name, vaults[vault_name], **seams)
+    marks = {"done": "✓", "already_done": "✓", "failed": "✗", "not_reached": "·"}
+    for step in result["steps"]:
+        said = {"done": "done", "already_done": "already done", "not_reached": "not reached"}.get(step["state"], step["detail"])
+        typer.echo(f"  {marks[step['state']]}  {step['label']}: {said}")
+    typer.echo(f"Vault {vault_name} is readable here." if result["ready"] else f"Vault {vault_name} is not readable yet: {result['reason']}")
+    return int(ExitCode.OK if result["ready"] else ExitCode.NOT_YET)

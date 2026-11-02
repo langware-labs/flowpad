@@ -706,7 +706,7 @@ async def _install(
     if ma.transfer_mode == TransferMode.BOTH.value and await _opens_by_git(ma, root):
         # Git first, into the receiver's project; the bytes are the fallback.
         try:
-            if await _restore_git_transfer_entry(
+            if opened := await _restore_git_transfer_entry(
                 unpacked_dir(ma.flow_message_id),
                 entry_key,
                 ma.git_transfer or {},
@@ -716,6 +716,7 @@ async def _install(
                 overwrite=overwrite,
                 owner_typeid=someone_typeid,
             ):
+                ma.asset_id = opened  # the id this checkout carries, not the sender's
                 return await _finalize_install(ma, scope, project_id, None, someone_typeid)
         except GitShareError as e:
             if e.keeps_copy_out:
@@ -742,6 +743,7 @@ async def _install(
             )
             if not restored:
                 return ApiFailResponse(message="git transfer restore failed", status_code=500)
+            ma.asset_id = restored  # the id this checkout carries, not the sender's
         else:
             entry_dir = _entry_dir_for(ma)
             if entry_dir is None or not entry_dir.exists():

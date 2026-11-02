@@ -15,7 +15,7 @@ import { useGitOrgRepos, useGitOrgs, useGitRepos } from '@src/hooks/use-git-prov
 import { formatRelative } from './relative-time';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, ChevronsUpDown, GitFork, Loader2, Lock, RefreshCw, Search } from 'lucide-react';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 /** Where a person grants (or requests) an app's access to an organization. */
 const GITHUB_APP_ACCESS_URL = 'https://github.com/settings/applications';
@@ -33,14 +33,9 @@ interface RepoPickerProps {
   /** Offered in the ERROR branch only, as the way out of it. A failed repo
    *  list is usually a missing or revoked provider grant, and without this the
    *  panel states the failure and stops — every remaining affordance needs the
-   *  same broken grant. The host owns the connect flow (it knows which provider
-   *  and what to do after), so this is a button spec, not a connect
-   *  implementation. */
-  connectionAction?: {
-    label: string;
-    pending: boolean;
-    onClick: () => void;
-  };
+   *  same broken grant. The host decides what happens after a connect, so it
+   *  passes the control itself — for GitHub, a `ConnectGithubButton`. */
+  connectionAction?: ReactNode;
 }
 
 function roleBadgeClass(role: RepoSummary['role']): string {
@@ -266,19 +261,7 @@ function RepoPickerImpl({
             <span>
               <Trans>Couldn’t load your repos.</Trans> {error?.message ?? ''}
             </span>
-            {connectionAction && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 shrink-0 px-2 text-xs"
-                disabled={connectionAction.pending}
-                onClick={connectionAction.onClick}
-                data-testid="repo-picker-connect"
-              >
-                {connectionAction.pending ? <Trans>Connecting…</Trans> : connectionAction.label}
-              </Button>
-            )}
+            {connectionAction}
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">

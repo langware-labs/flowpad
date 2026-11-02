@@ -1,4 +1,4 @@
-import type { IBuffer, IBufferLine, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm';
+import type { IBuffer, IBufferCell, IBufferLine, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm';
 import { COMMAND_LINK } from '@src/lib/link-kind';
 import { BOX_GLYPHS, commandLinkMatches, ENDS_WHOLE, HAS_RTL, linkMatches, type LinkMatch } from '@src/lib/link-matches';
 import { isPrimaryClick, type LinkHandlers } from '@src/components/links/link-events';
@@ -26,7 +26,51 @@ interface TextSpan {
 }
 
 /** How a row runs on: `end` is the column after its last text cell when the break is hard. */
-type Continuation = { kind: 'soft' } | { kind: 'hard'; end: number } | undefined;
+type Continuation = { kind: 'soft' } | { kind: 'hard'; end: number; space?: true } | undefined;
+
+/** A cell's foreground color as `coloredCommands` reads it; -1 is the default color. */
+function fgOf(line: IBufferLine, col: number): number {
+  const cell = line.getCell(col);
+  return cell ? fgKey(cell) : -1;
+}
+
+function fgKey(cell: IBufferCell): number {
+  return cell.isFgDefault() ? -1 : (cell.getFgColorMode() << 24) | cell.getFgColor();
+}
+
+/**
+ * Whether row `row` ends inside a colored `! command` that a TUI word-wrapped onto the next row:
+ * Claude Code breaks a long command at a space, so the row stops short of the edge, the next row
+ * starts in the same color, and that next word would not have fitted in the room left. The run
+ * must start with `!` on this row, or on a row above it that already continues the same command.
+ */
+function commandContinues(buffer: IBuffer, row: number, cols: number, above: TextSpan, below: TextSpan, headCells: number): boolean {
+  const line = buffer.getLine(row)!;
+  const next = buffer.getLine(row + 1)!;
+  const color = fgOf(line, above.end - 1);
+  if (color === -1 || fgOf(next, below.start) !== color) return false;
+  if (headCells <= Math.min(line.length, cols) - above.end - 1) return false;
+  for (let r = row, span = above, hops = 0; hops < 8; hops++) {
+    const cells = buffer.getLine(r)!;
+    let col = span.end - 1;
+    // A TUI may move the cursor over a command's spaces instead of writing them: an empty cell
+    // between two cells of the command's color is still the command.
+    while (col > span.start) {
+      if (fgOf(cells, col - 1) === color) col--;
+      else if (col - 1 > span.start && !shown(cells, col - 1) && fgOf(cells, col - 2) === color) col -= 2;
+      else break;
+    }
+    if (cells.getCell(col)?.getChars() === '!') return true;
+    if (col !== span.start || r === 0) return false;
+    const prev = buffer.getLine(r - 1);
+    if (!prev) return false;
+    const prevSpan = textSpan(prev, cols);
+    if (fgOf(prev, prevSpan.end - 1) !== color) return false;
+    r -= 1;
+    span = prevSpan;
+  }
+  return false;
+}
 
 /** Blank cells that set a right-hand column (a size, a timing, a count) apart from the text. */
 const COLUMN_GAP = 3;
@@ -151,9 +195,11 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuatio
   const head = edgeWord(next, below, 1);
   if (!head.cells) return undefined;
   const above = textSpan(line, cols);
+  if (commandContinues(buffer, row, cols, above, below, head.cells)) return { kind: 'hard', end: above.end, space: true };
   if (above.margin <= MAX_MARGIN) {
     const tail = edgeWord(line, above, -1);
-    const joins = /[\p{L}\p{N}]/u.test(tail.text) && !resumesProse(tail.text, head.text);
+    // A rule row (`+----+`) under a narrow table names nothing, so it carries no cut word on.
+    const joins = /[\p{L}\p{N}]/u.test(tail.text) && /[\p{L}\p{N}]/u.test(head.text) && !resumesProse(tail.text, head.text);
     if (joins && tail.cells + head.cells > above.end - below.start) return { kind: 'hard', end: above.end };
   }
   const tail = columnTail(line, above, cols);
@@ -167,6 +213,11 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuatio
   // An ASCII table is not a broken path: its rule row (`+----+`) names nothing, and a data
   // row has more cells after a divider, where the rest of a path leaves its row's cells blank.
   if (!/[\p{L}\p{N}]/u.test(head.text)) return undefined;
+  // The rest of a path stands alone on its row, before at most a border or a right-hand column
+  // COLUMN_GAP blanks away; a row that goes on with more words (a shell prompt) is a line of its own.
+  let gap = below.start + head.cells;
+  while (gap < below.end && !shown(next, gap)) gap++;
+  if (gap < below.end && gap - (below.start + head.cells) < COLUMN_GAP && !BORDER.test(shown(next, gap))) return undefined;
   let divider = false;
   for (let col = below.start + head.cells; col < below.end; col++) {
     const char = shown(next, col);
@@ -176,32 +227,58 @@ function continuesBelow(buffer: IBuffer, row: number, cols: number): Continuatio
   return { kind: 'hard', end: tail.end };
 }
 
-/** The (soft- or hard-) wrapped logical line through buffer row `y` (1-based), with each character's cells. */
-function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
+type Below = (row: number) => Continuation;
+
+/** How each buffer row runs on, judged once per row: hover asks for the same rows while walking and while building. */
+function judge(terminal: Terminal): Below {
   const buffer = terminal.buffer.active;
-  const cols = terminal.cols;
-  // Each boundary is judged once: hover asks for the same rows again while walking and while building.
   const judged = new Map<number, Continuation>();
-  const below = (row: number): Continuation => {
-    if (!judged.has(row)) judged.set(row, continuesBelow(buffer, row, cols));
+  return (row) => {
+    if (!judged.has(row)) judged.set(row, continuesBelow(buffer, row, terminal.cols));
     return judged.get(row);
   };
-  let start = y - 1;
-  let end = start;
-  // Bound pathological wrapped output without adding work to the paint path.
-  const maxCells = 16384;
-  while (start > 0 && below(start - 1) && (end - start + 1) * cols < maxCells) start--;
-  while (below(end) && (end - start + 1) * cols < maxCells) end++;
-  if ((end - start + 1) * cols >= maxCells) return undefined;
+}
 
+/** Bound pathological wrapped output without adding work to the paint path. */
+const MAX_CELLS = 16384;
+
+/** The buffer rows `[start, end]` (0-based) of the logical line through `row`, or undefined past the bound. */
+function rowsOf(terminal: Terminal, row: number, below: Below): { start: number; end: number } | undefined {
+  const cols = terminal.cols;
+  let start = row;
+  let end = row;
+  while (start > 0 && below(start - 1) && (end - start + 1) * cols < MAX_CELLS) start--;
+  while (below(end) && (end - start + 1) * cols < MAX_CELLS) end++;
+  return (end - start + 1) * cols >= MAX_CELLS ? undefined : { start, end };
+}
+
+/** The (soft- or hard-) wrapped logical line through buffer row `y` (1-based), with each character's cells. */
+function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
+  const below = judge(terminal);
+  const rows = rowsOf(terminal, y - 1, below);
+  return rows && buildLine(terminal, rows.start, rows.end, below);
+}
+
+/** The text of buffer rows `[start, end]` joined as one logical line, with each character's cells. */
+function buildLine(terminal: Terminal, start: number, end: number, below: Below): LogicalLine {
+  const buffer = terminal.buffer.active;
+  const cols = terminal.cols;
   const line: LogicalLine = { text: '', starts: [], ends: [], fg: [] };
   for (let row = start; row <= end; row++) {
     const bufferLine = buffer.getLine(row);
     if (!bufferLine) continue;
     const width = Math.min(bufferLine.length, cols);
-    const hardAbove = row > start && below(row - 1)?.kind === 'hard';
+    const above = row > start ? below(row - 1) : undefined;
+    const hardAbove = above?.kind === 'hard';
     const next = row < end ? below(row) : undefined;
     const hardEnd = next?.kind === 'hard' ? next.end : undefined;
+    // A word wrap dropped the space between the rows; put it back.
+    if (above?.kind === 'hard' && above.space) {
+      line.text += ' ';
+      line.fg.push(line.fg.at(-1) ?? -1);
+      line.starts.push(line.starts.at(-1)!);
+      line.ends.push(line.ends.at(-1)!);
+    }
     // Around a hard break the indentation, a box's borders and the right margin are layout, not text.
     const from = hardAbove ? textSpan(bufferLine, cols).start : 0;
     const to = hardEnd ?? width;
@@ -221,7 +298,7 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
         continue;
       const chars = cell.getChars() || ' ';
       line.text += chars;
-      const fg = cell.isFgDefault() ? -1 : (cell.getFgColorMode() << 24) | cell.getFgColor();
+      const fg = fgKey(cell);
       for (let i = 0; i < chars.length; i++) {
         line.fg.push(fg);
         line.starts.push({ x: col + 1, y: row + 1 });
@@ -230,6 +307,32 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
     }
   }
   return line;
+}
+
+/**
+ * What a copy of the selection should hold: each logical line once, joined the way links join
+ * it — a TUI's own line breaks, the indentation and box borders around them, gone, and a
+ * word-wrapped command's space put back — so a pasted command or path runs as one. `range` is
+ * xterm's selection: 0-based cells, `end` exclusive.
+ */
+export function selectionText(terminal: Terminal, range = terminal.getSelectionPosition()): string {
+  if (!range) return terminal.getSelection();
+  const below = judge(terminal);
+  // xterm's selection in rangeContains' terms: 1-based cells, `end` inclusive.
+  const selected = { start: { x: range.start.x + 1, y: range.start.y + 1 }, end: { x: range.end.x, y: range.end.y + 1 } };
+  const lines: string[] = [];
+  for (let row = range.start.y; row <= range.end.y; ) {
+    const rows = rowsOf(terminal, row, below);
+    if (!rows) return terminal.getSelection();
+    const line = buildLine(terminal, rows.start, rows.end, below);
+    let text = '';
+    for (let i = 0; i < line.text.length; i++) {
+      if (rangeContains(selected, line.starts[i].x, line.starts[i].y)) text += line.text[i];
+    }
+    lines.push(text.trimEnd());
+    row = rows.end + 1;
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -242,7 +345,8 @@ function coloredCommands(line: LogicalLine): LinkMatch[] {
     const color = line.fg[i];
     if (line.text[i] !== '!' || color === -1 || line.fg[i - 1] === color) continue;
     let end = i + 1;
-    while (end < line.text.length && line.fg[end] === color) end++;
+    // A skipped space (an empty cell between two cells of the color) is still inside the command.
+    while (end < line.text.length && (line.fg[end] === color || (line.text[end] === ' ' && line.fg[end] === -1 && line.fg[end + 1] === color))) end++;
     const text = line.text.slice(i, end).trimEnd();
     if (COMMAND_LINK.test(text)) found.push({ text, index: i });
     i = end - 1;
@@ -302,6 +406,20 @@ function cellAtPoint(terminal: Terminal, clientX: number, clientY: number): { x:
   const row = Math.floor(((clientY - rect.top) / rect.height) * terminal.rows);
   if (x < 1 || x > terminal.cols || row < 0 || row >= terminal.rows) return null;
   return { x, y: row + 1 + terminal.buffer.active.viewportY };
+}
+
+/** Call after `terminal.open()`: a copy from the terminal (menu, Cmd+C) takes the joined text, not the rows as drawn. */
+export function registerJoinedCopy(terminal: Terminal): void {
+  terminal.element?.addEventListener(
+    'copy',
+    (event) => {
+      if (!terminal.hasSelection() || !event.clipboardData) return;
+      event.clipboardData.setData('text/plain', selectionText(terminal));
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    },
+    true,
+  );
 }
 
 /** Call after `terminal.open()`: the right-click menu listens on the terminal's own element. */

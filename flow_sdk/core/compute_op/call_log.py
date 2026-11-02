@@ -91,9 +91,18 @@ def row_of(spec: Any, input: Any, answer: Any, context: Any, latency_ms: float) 
         row = getattr(load_module(context), spec.log.row)(given, answer)
         if row is None:
             return None
-        if not _fits(row, limit):
+        extra = dict(row.get("data") or {})
+        dropped: list[str] = []
+        # Too big to keep whole: leave out its largest extras (a model's full transcript) before the decision itself.
+        if not _fits({**row, "data": extra}, limit):
+            for key in sorted(extra, key=lambda k: len(json.dumps(extra[k], default=str)), reverse=True):
+                extra.pop(key)
+                dropped.append(key)
+                if _fits({**row, "data": extra}, limit):
+                    break
+        if not _fits({**row, "data": extra}, limit):
             return None
-        return {**row, "data": {**data, **(row.get("data") or {})}}
+        return {**row, "data": {**data, **extra, **({"truncated": dropped} if dropped else {})}}
     row = {"kind": "train", "input": held(given), "data": data}
     if spec.output_shape is not None and answer.has_value:
         output = dump(answer.value)

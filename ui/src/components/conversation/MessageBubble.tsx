@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Check, CheckCheck, Clock, FileText, Loader2, Zap } from 'lucide-react';
+import { Check, CheckCheck, Clock, FileText, Forward, Loader2, Reply, Zap } from 'lucide-react';
 import type { AutomationState } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
@@ -249,6 +249,9 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
   );
 }
 
+/** Reply / Forward: icon-only on the row, shown on hover like Slack and Teams. */
+const HOVER_ICON_BUTTON_CLASS = `self-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ${MESSAGE_ROW_ICON_BUTTON_CLASS}`;
+
 export function MessageBubble({
   message,
   flowMessageId,
@@ -415,6 +418,30 @@ export function MessageBubble({
               className="self-center"
             />
           )}
+          {!editing && onReply && (
+            <button
+              type="button"
+              onClick={onReply}
+              title={replyInThread ? t`Reply in thread` : t`Reply`}
+              aria-label={replyInThread ? t`Reply in thread` : t`Reply`}
+              className={HOVER_ICON_BUTTON_CLASS}
+              data-testid="message-reply"
+            >
+              <Reply className="size-3" />
+            </button>
+          )}
+          {!editing && onForwardMessage && (
+            <button
+              type="button"
+              onClick={onForwardMessage}
+              title={t`Forward`}
+              aria-label={t`Forward`}
+              className={HOVER_ICON_BUTTON_CLASS}
+              data-testid="message-forward"
+            >
+              <Forward className="size-3 rtl:-scale-x-100" />
+            </button>
+          )}
           {!editing && onAutomate && (
             <button
               type="button"
@@ -435,10 +462,7 @@ export function MessageBubble({
                 messageText={message.content}
                 origin={flowMessage?.origin}
                 forwarded={!!flowMessage?.cloned_from_id}
-                onReply={onReply}
-                replyInThread={replyInThread}
                 onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
-                onForward={onForwardMessage}
                 onLaunchWorker={onLaunchWorker}
                 onTaskIt={taskIt && !taskIt.task ? taskIt.onClick : undefined}
                 onAutomate={onAutomate}

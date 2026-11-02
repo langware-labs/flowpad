@@ -7,6 +7,7 @@ test 1: "Open in Worktree" (session actions menu) spawns a worktree sibling; "Co
 - prerequisite: a git-repo workdir with at least one commit (create a tmp dir, `git init && git commit --allow-empty -m init`)
 - launch a Claude session in that workdir (e.g. via HomeLanding search, or navigate to /dock/shell/new_terminal?cwd=<path> and open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude"))
 - wait for the banner
+- a folder Claude has not trusted shows its "Is this a project you created or one you trust?" prompt: choose "Yes, I trust this folder" (Claude refuses --worktree in an untrusted folder, so Flowpad launches it plainly there first)
 - validate the "Open in Worktree" (session actions menu) is ENABLED (its second line mentions worktree) — `isGitRepoHasCommit` returns true
 - validate the "Commit & Merge" (session actions menu) is NOT rendered in this tab (cliOptions.worktree is false on the parent process)
 - click "Open in Worktree" (session actions menu)

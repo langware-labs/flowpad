@@ -19,12 +19,12 @@ tags:
 
 ### Sc1: Project-scoped board creation
 * POST `${API_URL}/api/v1/graph/project/<projectId>/whiteboard` with body `{"name":"sc1-proj-<random>"}`.
-* Expect HTTP 200 with `asset_ref` under the project's `fs_storage_mount_path` (e.g. `<project>/agentic-assets/whiteboard/sc1-proj-...`), NOT the user-scoped `~/agentic-assets/whiteboard/`.
+* Expect HTTP 200 with `asset_ref` under the project's `fs_storage_mount_path` (e.g. `<project>/agentic-assets/chart/sc1-proj-...`), NOT the user-scoped `~/agentic-assets/chart/`.
 * Navigate to the editor URL for that asset_ref (the folder + board.json materialize lazily on first editor mount/save, not on POST).
 * The folder + board.json exist at the project path on disk after the editor mounts.
 
 ### Sc2: User + project scopes coexist
-* POST `${API_URL}/api/v1/graph/whiteboard` with body `{"name":"sc2-user-<random>"}` (user scope) → asset_ref under `~/agentic-assets/whiteboard/`.
+* POST `${API_URL}/api/v1/graph/chart` with body `{"name":"sc2-user-<random>"}` (user scope) → asset_ref under `~/agentic-assets/chart/`.
 * Both ids distinct; navigate each editor to materialize; both folders exist at their respective scopes.
 
 ## Pass criteria

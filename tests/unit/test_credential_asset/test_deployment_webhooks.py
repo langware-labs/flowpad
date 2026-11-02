@@ -66,7 +66,7 @@ async def _agent(project) -> Agent:
     return agent
 
 
-async def _published(self, actor=None):
+async def _published(self, actor=None, *, force=False):
     return None
 
 

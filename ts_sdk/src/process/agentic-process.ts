@@ -3190,6 +3190,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // guard, so removing the short-circuit here costs nothing on tab-switch
     // performance and removes the empty-shell-after-refresh failure mode
     // (the cached ``status === RUNNING`` could outlive the actual worker).
+    // restart() can leave this object evicted (a stopped, hidden row is retired);
+    // re-register before the request so the launch broadcast still reaches it.
+    if (!dataManager.getByTypeIdFromCache(this.typeId)) dataManager.register_new_entity(this.typeId, this);
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     // Sampled per launch, not per caller: the CLI reads the theme at startup, so
     // a mid-session toggle recolors the next worker, never the running one.

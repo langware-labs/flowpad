@@ -334,3 +334,47 @@ async def test_a_dependency_declared_under_another_declaration_attaches_in_any_o
     assert tree.nodes["asset_setup:tenant"].children == ("asset_setup:admin-api",)
     assert tree.nodes["micro_app-a1"].children == ("asset_setup:tenant",)
     assert dict(tree.nodes["asset_setup:admin-api"].inputs)["service"] == "api"
+
+
+@pytest.mark.asyncio
+async def test_a_stage_that_provides_the_credential_is_not_preceded_by_it(project, monkeypatch, tmp_path):
+    """A driver whose first stage writes its own credential (the wizard asks for an app's token once the app
+    exists) declares ``provides: [credential]``: the credential is no need before that stage — else the tree
+    asks for values that cannot exist yet. A stage that does not say so still comes after the credential."""
+    reqs = [
+        SetupRequirementSpec(kind="pack", name="slackish", vars=[SetupVarSpec(env_var="TOKEN")], used_by=["mine", "other"]),
+    ]
+    sources = [FakeSource("s1", "mine", "ownapp"), FakeSource("s2", "other", "plainapp")]
+    drivers = {
+        "ownapp": SimpleNamespace(
+            folder=tmp_path / "ownapp", auth=SimpleNamespace(credential="slackish"),
+            setup_wizards=[SetupStageSpec(stage="connect", wizard="connect-stage", provides=("credential",))],
+        ),
+        "plainapp": SimpleNamespace(
+            folder=tmp_path / "plainapp", auth=SimpleNamespace(credential="slackish"),
+            setup_wizards=[SetupStageSpec(stage="connect", wizard="connect-stage")],
+        ),
+    }
+    wizards = {"connect-stage": FakeWizard("connect-stage", [{"id": "c", "kind": "compute", "ref": "connect-op"}])}
+
+    async def collect(_p, *_a):
+        return reqs
+
+    async def sources_of(_p):
+        return sources
+
+    async def driver_of(name):
+        return drivers.get(name)
+
+    async def by_name(name, near=""):
+        return wizards.get(name)
+
+    monkeypatch.setattr(project_setup, "collect_requirements", collect)
+    monkeypatch.setattr(project_setup, "project_sources", sources_of)
+    monkeypatch.setattr(readiness, "driver_of", driver_of)
+    monkeypatch.setattr(Wizard, "by_name", by_name)
+    tree = await ProjectTree(project).load()
+    node = tree.nodes
+
+    assert node["stage:s1:connect-stage"].children == (), "the stage provides the credential: nothing comes before it"
+    assert node["stage:s2:connect-stage"].children == ("credential:slackish",), "a stage that does not provide it still needs it first"

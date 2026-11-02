@@ -566,9 +566,12 @@ def _pointer_project_id(pointer: str | None) -> str | None:
         data = _json.loads(pointer)
     except (ValueError, TypeError):
         return None
-    if not isinstance(data, dict) or data.get("viewType") != "project":
+    if not isinstance(data, dict):
         return None
-    candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
+    if data.get("viewType") == "project":
+        candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
+    else:  # a dock presented in a project other than its target's own (``flow show``)
+        candidate = str(data.get("presentedIn") or "").strip()
     return candidate if is_valid_uuid(candidate) else None
 
 

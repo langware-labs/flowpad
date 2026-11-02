@@ -218,6 +218,22 @@ export interface SecretPublishResult {
 
 /** What `fetch` brought from the vaults — names only. `missing`: no ref or no value in the vault;
  *  `denied`: vaults this person may not read. */
+/** One step of a vault's setup wizard, as it ended. */
+export interface VaultSetupStep {
+  id: string;
+  label: string;
+  state: 'done' | 'already_done' | 'failed' | 'not_reached';
+  detail: string;
+}
+
+/** What `vault-setup` answers: whether the vault is readable here now, and each step. */
+export interface VaultSetupResult {
+  vault: string;
+  ready: boolean;
+  reason: string;
+  steps: VaultSetupStep[];
+}
+
 export interface SecretFetchResult {
   fetched: string[];
   missing: string[];
@@ -435,6 +451,14 @@ export class CredentialsService {
       vaults: res?.vaults ?? [],
       test: res?.test,
     };
+  }
+
+  /** Run `vault`'s secret-manager setup wizard on this computer: install its CLI, sign in, check the vault. */
+  async vaultSetup(projectId: string, vault: string): Promise<VaultSetupResult> {
+    const action = this.action('vault-setup', 'POST');
+    action.bodyParameters = { project_id: projectId, vault };
+    const res = await dataManager.callAction<unknown, Partial<VaultSetupResult>>(action);
+    return { vault: res?.vault ?? vault, ready: !!res?.ready, reason: res?.reason ?? '', steps: res?.steps ?? [] };
   }
 
   /** Run credential `name`'s `test` with this computer's values; `untested` when it declares none. */

@@ -69,6 +69,8 @@ interface VersionCheckResponse {
    *  sits beside `hub` rather than inside `pypi`. Null for a source checkout. */
   installed_at: string | null;
   hub: HubInfo | null;
+  /** The version the server runs NOW — differs from the page's after a restart onto another version. */
+  running_version?: string;
 }
 
 interface ElectronAPI {
@@ -280,7 +282,7 @@ interface VersionPopoverProps {
   currentVersion: string;
 }
 
-export function VersionPopover({ currentVersion }: VersionPopoverProps) {
+export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverProps) {
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
@@ -294,6 +296,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [picking, setPicking] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [installResult, setInstallResult] = useState<InstallVersionResponse | null>(null);
+  // The server may have restarted onto another version since this page loaded: show what it runs.
+  const currentVersion = data?.running_version || pageVersion;
+  const pageIsStale = currentVersion !== pageVersion;
   const [restarting, setRestarting] = useState(false);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
   const [diagReport, setDiagReport] = useState<{
@@ -336,10 +341,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     }
   }, []);
 
+  // Every open asks again: the running version is only true as of the last ask.
   useEffect(() => {
-    if (!open || data || loading) return;
-    void fetchData();
-  }, [open, data, loading, fetchData]);
+    if (open) void fetchData();
+  }, [open, fetchData]);
 
   useEffect(() => {
     if (!open || !electronApi?.getAppVersion) return;
@@ -453,6 +458,19 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       </PopoverTrigger>
       <PopoverContent ref={sourceRef} side="top" align="end" className="w-96 p-3">
         <div className="space-y-3">
+          {pageIsStale && (
+            <div
+              className="flex items-center justify-between gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1.5 text-xs"
+              data-testid="version-page-stale"
+            >
+              <span>
+                <Trans>The server now runs v{currentVersion}; this page is still v{pageVersion}.</Trans>
+              </span>
+              <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => window.location.reload()}>
+                <Trans>Reload</Trans>
+              </Button>
+            </div>
+          )}
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

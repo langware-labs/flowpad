@@ -1,8 +1,10 @@
-import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, type AgentVersionState } from '@sdk';
+import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, TypeId, type AgentVersionState } from '@sdk';
+import { useAgentPlaces } from './use-agent-places';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight, Loader2, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronRight, Loader2, MessageCircle, Trash2 } from 'lucide-react';
+import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -17,6 +19,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 
+import { AttachedChannelsBar, useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { AddIntroTranslationButton, IntroTranslationFields } from './AgentIntroTranslations';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { AgentRequestLine } from './AgentRequestLine';
@@ -59,10 +62,11 @@ interface AgentProfileEditorProps {
 export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) {
   const { t } = useLingui();
   const hub = isHubOnly();
+  const { launch, busyId } = useAgentLauncher();
 
   const agentRef = useRef(agent);
   agentRef.current = agent;
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const nested = useNestedHost();
   const onDelete = useCallback(() => {
     showDeleteAssetModal({
@@ -87,6 +91,15 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const autoPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
+  // The channels people reach this agent on, drawn in the header the way the stream inbox header
+  // draws them: one mark per attached channel, the featured ones still to connect, and "+". A mark
+  // opens the agent's stream inbox on that channel — there is no list here to narrow.
+  const channelsOwner = useMemo(() => new TypeId(Agent.type, agent.id), [agent.id]);
+  const { rows: channelRows, specFor: channelSpecFor, offers: channelOffers } = useAttachedChannels(hub ? null : channelsOwner);
+  const openChannel = useCallback(
+    (key: string) => navigation.openDock(DockPointer.forAgentStreamInbox(agent.id, { channel: key })),
+    [navigation, agent.id],
+  );
   // Sharing reads its public grant from the hub on mount; hold it back until "More" is first opened.
   const [moreOpened, setMoreOpened] = useState(false);
 
@@ -99,9 +112,13 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     }
   }, [hub]);
 
+  // A deploy publishes the agent without touching its row, so the header follows the deployments too:
+  // without this it still said "Not published yet" after a cloud deploy, until the page was reopened.
+  const { places } = useAgentPlaces(hub ? null : agent);
+  const placesKey = places ? places.map((p) => `${p.deployment.id}:${String(p.deployment.status ?? '')}:${p.behind ?? ''}`).join(',') : '';
   useEffect(() => {
     void loadVersion();
-  }, [loadVersion, agent.updated_date]);
+  }, [loadVersion, agent.updated_date, placesKey]);
 
   // Has this agent already used its once-per-project auto-launch? Local only:
   // the mark lives on this computer, beside the project.
@@ -281,7 +298,31 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 {pending === 1 ? t`1 change not published` : t`${pending} changes not published`}
               </span>
             )}
+            {!hub && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void launch(agent, currentDock?.scopeProjectId ?? null)}
+                disabled={busyId === agent.id || agent.enabled === false}
+                data-testid="agent-chat"
+                className="h-6 shrink-0 gap-1 px-2 text-xs"
+              >
+                {busyId === agent.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />}
+                <Trans>Chat</Trans>
+              </Button>
+            )}
           </div>
+          {!hub && (
+            <div className="mt-2" data-testid="agent-header-channels">
+              <AttachedChannelsBar
+                owner={channelsOwner}
+                rows={channelRows}
+                specFor={channelSpecFor}
+                offers={channelOffers}
+                onMarkPress={openChannel}
+              />
+            </div>
+          )}
         </div>
         {!hub && (
           <Button
@@ -571,7 +612,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
         </section>
 
         <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
-          <AgentPlacesColumn agent={agent} onMachineSize={(size) => save({ machine_size: size })} />
+          <AgentPlacesColumn agent={agent} />
         </aside>
       </div>
       {!hub && <AgentRequestLine agent={agent} displayName={title || (agent.name ?? '')} />}

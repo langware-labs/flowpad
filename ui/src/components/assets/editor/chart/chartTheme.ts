@@ -40,3 +40,16 @@ export const CHART_DARK: typeof CHART_LIGHT = {
 export const CHART_SLOTS = ['--s1', '--s2', '--s3', '--s4'];
 
 export const chartTokens = (theme: string | undefined) => (theme === 'dark' ? CHART_DARK : CHART_LIGHT);
+
+/**
+ * Architecture chart role fills — behind a white glyph, so one set reads in both themes. Kept apart
+ * from the categorical slots: a role is a fixed meaning (client, db…), never a series.
+ */
+export const ARCH_ROLE_COLORS = {
+  client: '#8b5cf6',
+  service: '#f97316',
+  db: '#3b82f6',
+  files: '#14b8a6',
+  worker: '#22c55e',
+  external: '#ec4899',
+} as const;

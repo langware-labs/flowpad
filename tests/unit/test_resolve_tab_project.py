@@ -18,7 +18,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.tab import Tab, ensure_tab, reconcile_tab_project, resolve_tab_project, tab_owner_project
+from flow_sdk.builtin.tab import Tab, _build_tab_list, ensure_tab, reconcile_tab_project, resolve_tab_project, tab_owner_project
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 
@@ -226,3 +226,19 @@ async def test_reconcile_leaves_a_scope_keyed_row_on_its_scope(world: World) -> 
 
     assert (await Tab.get_by_id(scoped.id)).project_id == world.b.id
     assert (await Tab.get_by_id(plain.id)).project_id == world.inner.id
+
+
+@pytest.mark.asyncio
+async def test_a_shown_app_opens_in_the_showing_sessions_project(world: World) -> None:
+    """`flow show` of an app from another project, session not in Vibe: the UI asks
+    for the session's project (placement.project_id). The tab must land in that
+    strip, or it is created where the person isn't looking while show reports success."""
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+
+    app = WebApp(name=f"demo-{uuid.uuid4().hex[:6]}", project_id=world.a.id)  # the app's own project
+    await app.save()
+    # The pointer `placeDockInProject` stores for the show (DockPointer.toJSON).
+    pointer = _ptr("app", f"micro_app-{app.id}", presentedIn=world.b.id)  # the session's project
+    tab = await ensure_tab(pointer, target_type="micro_app", target_id=app.id, project_id=world.a.id)
+    assert tab.project_id == world.b.id
+    assert tab.id in {t.id for t in await _build_tab_list(world.b.id)}  # the session's strip lists it

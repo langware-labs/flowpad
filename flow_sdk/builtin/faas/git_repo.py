@@ -1171,6 +1171,36 @@ class GitRepo:
             return GitRestoreResult(ok=False, message=staged.stderr.strip() or "Stage failed")
         return GitRestoreResult(ok=True, message=f"Staged {file_path}")
 
+    async def commit(self, paths: list[str] | None = None) -> GitRestoreResult:
+        """Commit without pushing: every change (``paths=None``) or just ``paths``.
+
+        Scoped commits pass the pathspec to ``git commit`` too, so anything else
+        already staged stays staged and out of this commit. Refused while the
+        tree is stuck in a conflict — staging would commit the markers.
+        """
+        stuck = await self._conflict_state()
+        if stuck.open:
+            return GitRestoreResult(ok=False, message=self._still_open(stuck))
+        pathspec = [] if paths is None else ["--", *paths]
+        added = await self._git("add", "-A", *pathspec)
+        if not added.ok:
+            return GitRestoreResult(ok=False, message=_said(added) or "Stage failed")
+        if (await self._git("diff", "--cached", "--quiet", *pathspec)).ok:
+            return GitRestoreResult(ok=True, message="Nothing to commit")
+        error = await self._commit_staged(pathspec)
+        return GitRestoreResult(ok=error is None, message=error or "Committed")
+
+    async def _commit_staged(self, pathspec: list[str], message: str | None = None) -> str | None:
+        """Commit what is staged under ``pathspec`` — with ``message``, or the
+        friendly "Flowpad: save changes (n files)" one. Returns an error, or None."""
+        if message is None:
+            names = (await self._git("diff", "--cached", "--name-only", *pathspec)).stdout
+            n = len([ln for ln in names.splitlines() if ln.strip()])
+            stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            message = f"Flowpad: save changes ({n} file{'s' if n != 1 else ''}) — {stamp}"
+        made = await self._git("commit", "-m", message, *pathspec)
+        return None if made.ok else (_said(made) or "Commit failed")
+
     async def unstage_file(self, file_path: str) -> GitRestoreResult:
         """Unstage just this file (``git restore --staged -- <file>``)."""
         unstaged = await self._git("restore", "--staged", "--", file_path)
@@ -1383,14 +1413,9 @@ class GitRepo:
 
         # 4. Commit, with the caller's message or a friendly, non-technical one.
         if has_staged:
-            if message is None:
-                names = (await self._git("diff", "--cached", "--name-only", *pathspec)).stdout
-                n = len([ln for ln in names.splitlines() if ln.strip()])
-                stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-                message = f"Flowpad: save changes ({n} file{'s' if n != 1 else ''}) — {stamp}"
-            made = await self._git("commit", "-m", message, *pathspec)
-            if not made.ok:
-                return result("generic", _said(made) or "Commit failed")
+            error = await self._commit_staged(pathspec, message)
+            if error:
+                return result("generic", error)
             committed = True
             sha = (await self._git("rev-parse", "HEAD")).stdout.strip() or None
 
@@ -1585,6 +1610,9 @@ class GitRepo:
             has-commit          → has_commit()           → {hasCommit}
             diff                → get_file_diff()        → {diff}  (requires ?file=&status=)
             push  (POST)        → push()                 → GitPushResult {ok, nothing, kind, branch, message, conflicted}
+            push-commits (POST) → push_commits()         → GitPushResult (plain push: commits nothing)
+            commit-all   (POST) → commit()               → {ok, message}  (commit everything, no push)
+            commit-file  (POST) → commit([file])         → {ok, message}  (requires ?file=; no push)
             fetch (POST)        → fetch()                → GitStatus with a fresh ``behind``
             pull  (POST)        → pull()                 → GitPullResult {ok, kind, branch, message, conflicted}
             init  (POST)        → init()                 → {ok, message}  (idempotent)
@@ -1604,6 +1632,10 @@ class GitRepo:
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/push requires POST", status_code=405)
             return ApiSuccessResponse(data=(await self.push()).model_dump(by_alias=True))
+        if sub == "push-commits":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/push-commits requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.push_commits()).model_dump(by_alias=True))
         if sub == "fetch":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/fetch requires POST", status_code=405)
@@ -1711,7 +1743,12 @@ class GitRepo:
             "discard-file": lambda fp: self.discard_file(fp, params.get("status", "M")),
             "stage-file": lambda fp: self.stage_file(fp),
             "unstage-file": lambda fp: self.unstage_file(fp),
+            "commit-file": lambda fp: self.commit([fp]),
         }
+        if sub == "commit-all":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/commit-all requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.commit()).model_dump(by_alias=True))
         if sub in post_file_ops:
             if method.upper() != "POST":
                 return ApiFailResponse(message=f"git-ops/{sub} requires POST", status_code=405)

@@ -38,8 +38,25 @@ from flow_sdk.fs_store.record_types import RecordType
 _DOCS = 10
 
 
+@pytest.fixture()
+def blob_storage(tmp_path):
+    """Blob-storage fallback: a new Task's template fills its description, a blob field."""
+    from flow_sdk.config import default_service_config
+    from flow_sdk.request_context import methods as _ctx
+    from flow_sdk.storage.local_fs_driver import LocalStorageDriver
+
+    prev_dev = default_service_config.development
+    default_service_config.development = True
+    _ctx.set_default_test_storage_fallback(LocalStorageDriver(str(tmp_path / "blobs")))
+    try:
+        yield
+    finally:
+        _ctx.set_default_test_storage_fallback(None)
+        default_service_config.development = prev_dev
+
+
 @pytest.mark.asyncio
-async def test_waiting_writer_is_served_within_one_record(tmp_path: Path, monkeypatch) -> None:
+async def test_waiting_writer_is_served_within_one_record(tmp_path: Path, monkeypatch, blob_storage) -> None:
     docs = tmp_path / "proj" / "docs"
     docs.mkdir(parents=True)
     for i in range(_DOCS):

@@ -17,8 +17,14 @@ import { dataContext } from '../../FlowSync/context';
 import { cloudManager, type HubClientErrorInfo } from '../../services/cloud_login';
 import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
 import { useCleanupSummary } from './use-cleanup-summary';
+import type { ProjectReadiness } from '../../entities/project';
 import { useProjectSetupLeft } from './use-project-readiness';
-import { refreshProjectReadiness } from '../../stores/project-readiness-store';
+import {
+  checkProjectUpdatesOnce,
+  refreshProjectReadiness,
+  setProjectReadiness,
+} from '../../stores/project-readiness-store';
+import { useProjectStatus } from './use-project-status';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useContext } from './useContext';
 import { useLazyAsset } from './useLazyAsset';
@@ -79,7 +85,15 @@ export function useWarnings() {
   const projectName = context.project?.name ?? '';
   useEffect(() => {
     void refreshProjectReadiness(projectId);
+    // Fetching dependency remotes is network work: in the background, after the readiness read.
+    void checkProjectUpdatesOnce(projectId);
   }, [projectId]);
+  // The setup answer the backend pushes on the project row (``local_status``): a skip, a credential, an app coming
+  // up or a setup run ending reaches the footer and the nav bar's button without anyone asking again.
+  const setupValue = useProjectStatus(isDesktop ? projectId : null).part('setup')?.value;
+  useEffect(() => {
+    if (setupValue) setProjectReadiness(setupValue as ProjectReadiness);
+  }, [setupValue]);
   const setupLeft = useProjectSetupLeft(projectId);
 
   const cleanup = useCleanupSummary();

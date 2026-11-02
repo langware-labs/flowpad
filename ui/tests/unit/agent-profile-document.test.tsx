@@ -7,6 +7,10 @@ import { AgentProfileEditor } from '@src/components/assets/editor/agent-profile/
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({ AgentScheduleSection: () => null }));
+vi.mock('@src/components/stream-inbox-view/AttachedChannelsBar', () => ({
+  AttachedChannelsBar: () => <div data-testid="attached-channels" />,
+  useAttachedChannels: () => ({ rows: [], specFor: () => undefined, offers: [], loading: false }),
+}));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => <div data-testid="agent-places" /> }));
 vi.mock('@src/components/assets/editor/agent-profile/use-agent-mcp-sync', () => ({ useAgentMcpSync: () => undefined }));
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
@@ -94,6 +98,8 @@ describe('Unreadable definition', () => {
     const alert = await screen.findByTestId('agent-definition-error');
     expect(alert).toHaveTextContent('document is not implemented on the hub');
     expect(screen.getByTestId('agent-places')).toBeInTheDocument();
+    // The header carries the agent's channels line (the stream inbox header's bar), definition or not.
+    expect(screen.getByTestId('agent-header-channels')).toContainElement(screen.getByTestId('attached-channels'));
     expect(screen.getByTestId('agent-more')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'System prompt' })).toBeDisabled();
   });

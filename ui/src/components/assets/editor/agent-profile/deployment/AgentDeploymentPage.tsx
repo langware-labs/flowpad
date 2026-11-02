@@ -142,7 +142,13 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
           <div className="min-h-0 flex-1 overflow-y-auto">
             {error ? (
               <p className="px-5 py-6 text-sm text-destructive">{error}</p>
-            ) : threads === null ? null : (
+            ) : threads === null ? (
+              // A cloud deployment's threads are read from its machine, which takes seconds: a blank
+              // list there read as "no threads yet".
+              <p className="px-5 py-6 text-sm text-muted-foreground" data-testid="deployment-threads-loading">
+                <Trans>Reading the threads…</Trans>
+              </p>
+            ) : (
               <DeploymentThreads threads={threads} selected={selected?.conversation_id ?? null} onSelect={open} />
             )}
           </div>

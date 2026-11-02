@@ -1,19 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  OAUTH_PROVIDERS,
-  OAuthStatus,
-  gitOriginFromUrl,
-  gitOriginRepoFullName,
-  oauthService,
-  type AdoptHelpdeskResult,
-  type Project,
-  type RepoSummary,
-} from '@sdk';
-import { useOAuthFlowComplete } from '@sdk/react/hooks';
-import { BranchPicker, type BranchPickerRepo } from '@src/components/git/BranchPicker';
-import { InvitationsStrip } from '@src/components/git/InvitationsStrip';
-import { RepoPicker } from '@src/components/git/RepoPicker';
+import { type AdoptHelpdeskResult, type Project } from '@sdk';
+import { GitRepoPicker, type GitTarget } from '@src/components/git/GitRepoPicker';
 import { DependencyKindChips } from '@src/components/assets/dependency-sources';
 import { Button } from '@src/components/ui/button';
 import {
@@ -24,15 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { Input } from '@src/components/ui/input';
 import type { DependencyKind } from '@src/hooks/use-project-dependencies';
-import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import { errorMessage } from '@src/lib/error-message';
-import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { AlertTriangle, CheckCircle2, GitBranch, Github, LifeBuoy, Loader2 } from 'lucide-react';
+import { AlertTriangle, LifeBuoy, Loader2 } from 'lucide-react';
 
 /**
  * Adopt a help desk: attach a vendor's desk repo to this project.
@@ -69,9 +54,8 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AdoptHelpdeskResult | null>(null);
   const [removing, setRemoving] = useState(false);
-  const [githubConnected, setGithubConnected] = useState(false);
-  /** null = step 1 (paste / browse). Non-null = the branch list for this repo. */
-  const [branchesFor, setBranchesFor] = useState<BranchPickerRepo | null>(null);
+  /** True while the shared picker's branch list owns the body. */
+  const [inBranchPicker, setInBranchPicker] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -82,51 +66,13 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
     setError(null);
     setResult(null);
     setRemoving(false);
-    setBranchesFor(null);
-
-    let cancelled = false;
-    // Same retry as the clone dialog: `github/status` returns null until
-    // `dataContext.userTypeId` lands, which races a dialog opened at boot.
-    const poll = async () => {
-      const status = await fetchGithubStatus();
-      if (cancelled) return;
-      if (status === null) {
-        setTimeout(() => {
-          if (!cancelled) void poll();
-        }, 500);
-        return;
-      }
-      setGithubConnected(status);
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-    };
+    setInBranchPicker(false);
   }, [open]);
 
-  useOAuthFlowComplete(
-    OAUTH_PROVIDERS.GITHUB,
-    (msg) => {
-      if (msg.status !== OAuthStatus.SUCCESS) return;
-      void fetchGithubStatus().then((status) => setGithubConnected(status ?? false));
-    },
-    open,
-  );
-
-  /** The pasted URL as something `BranchPicker` can list branches for. This is
-   *  what lets a public vendor desk be pinned to its real branch with no
-   *  GitHub connection at all. `default_branch: ''` simply means "don't pin one
-   *  to the top" — we genuinely do not know it without asking GitHub. */
-  const urlRepo = useMemo<BranchPickerRepo | null>(() => {
-    const origin = gitOriginFromUrl(url.trim());
-    if (!origin) return null;
-    return { git_origin: origin, full_name: gitOriginRepoFullName(origin), default_branch: '' };
-  }, [url]);
-
-  const handlePickRepo = useCallback((repo: RepoSummary) => {
-    setUrl(`${repo.html_url}.git`);
-    setBranch(null);
-    setBranchesFor(repo);
+  const handlePick = useCallback((target: GitTarget | null) => {
+    setUrl(target?.mode === 'existing' ? target.url : '');
+    setBranch(target?.mode === 'existing' ? (target.branch ?? null) : null);
+    setError(null);
   }, []);
 
   const submit = useCallback(async () => {
@@ -212,92 +158,18 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
             onOpenPortal={openPortal}
             onRemove={() => void removeFolder()}
           />
-        ) : branchesFor ? (
-          <BranchPicker
-            repo={branchesFor}
-            onSelect={(b) => {
-              setBranch(b.name);
-              setBranchesFor(null);
-            }}
-            onBack={() => setBranchesFor(null)}
-          />
         ) : (
           <div className="flex flex-col gap-3">
-            {githubConnected ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                <Trans>GitHub connected.</Trans>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs">
-                <span className="text-muted-foreground">
-                  {/* Deliberately not "connect to continue" — a public desk needs
-                      nothing, and this dialog's whole point is the paste path. */}
-                  <Trans>A public desk needs no connection. Connect GitHub to browse your own repos.</Trans>
-                </span>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => void oauthService.connect(OAUTH_PROVIDERS.GITHUB)}
-                    data-testid="add-helpdesk-connect-github"
-                  >
-                    <Github className="me-1.5 h-3 w-3" />
-                    <Trans>Connect</Trans>
-                  </Button>
-                  <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY} variant="ghost">
-                    <Trans>Guided setup</Trans>
-                  </SetupJourneyButton>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <Input
-                placeholder={t`https://github.com/owner/help-desk`}
-                value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  setError(null);
-                }}
-                autoFocus
-                spellCheck={false}
-                className="font-mono text-xs"
-                data-testid="add-helpdesk-url"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && url.trim() && !busy) void submit();
-                }}
-              />
-              {branch ? (
-                <div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs">
-                  <GitBranch className="h-3 w-3" />
-                  <span className="font-mono" data-testid="add-helpdesk-branch">
-                    {branch}
-                  </span>
-                  <button
-                    type="button"
-                    className="ms-1 text-muted-foreground hover:text-foreground"
-                    onClick={() => setBranch(null)}
-                    title={t`Clear branch (uses the default)`}
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 px-2 text-xs"
-                  disabled={!urlRepo}
-                  onClick={() => urlRepo && setBranchesFor(urlRepo)}
-                  data-testid="add-helpdesk-choose-branch"
-                >
-                  <GitBranch className="me-1.5 h-3 w-3" />
-                  <Trans>Choose branch</Trans>
-                </Button>
-              )}
-            </div>
+            {/* The URL is primary here: a vendor's desk is somebody else's repo. */}
+            <GitRepoPicker
+              modes={['existing']}
+              onChange={handlePick}
+              onStepChange={setInBranchPicker}
+              onEnter={() => !busy && void submit()}
+              urlPlaceholder={t`https://github.com/owner/help-desk`}
+              enabled={open}
+              testIdPrefix="add-helpdesk"
+            />
 
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
@@ -321,18 +193,10 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
                 <Trans>Fetching the desk and indexing it…</Trans>
               </div>
             )}
-
-            {githubConnected && (
-              <>
-                <div className="my-1 border-t border-border" />
-                <InvitationsStrip provider="github" enabled={open} />
-                <RepoPicker provider="github" onSelect={handlePickRepo} enabled={open} />
-              </>
-            )}
           </div>
         )}
 
-        {!result && !branchesFor && (
+        {!result && !inBranchPicker && (
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
               <Trans>Cancel</Trans>

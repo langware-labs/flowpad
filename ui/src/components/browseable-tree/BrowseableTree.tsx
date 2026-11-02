@@ -816,6 +816,11 @@ function BrowseableRow({
   // clipboard to paste) is current. Right-clicking a row outside the
   // multi-selection drops the selection, like every file manager.
   const [menuItems, setMenuItems] = useState<ToolbarAction[]>([]);
+  // A tooltip only on a row without a right-click menu: wrapping the menu's row in a TooltipTrigger as
+  // well takes over its focus and keys (F2 rename stops opening), and wrapping the ContextMenu ROOT hands a
+  // ref to a function component. A menu row never showed its tooltip before either.
+  const hasTip = !!(node.tooltip || node.entity) && !node.contextMenu;
+  const tipTarget = hasTip ? <TooltipTrigger asChild>{rowEl}</TooltipTrigger> : rowEl;
   const triggerEl = node.contextMenu ? (
     <ContextMenu
       onOpenChange={(open) => {
@@ -862,7 +867,7 @@ function BrowseableRow({
       </ContextMenuContent>
     </ContextMenu>
   ) : (
-    rowEl
+    tipTarget
   );
 
   return (
@@ -871,9 +876,9 @@ function BrowseableRow({
       data-selection-key={node.selectionKey}
       data-resource-vfs={node.pointer?.resourceVfsPath?.uri}
     >
-      {node.tooltip || node.entity ? (
+      {hasTip ? (
         <Tooltip>
-          <TooltipTrigger asChild>{triggerEl}</TooltipTrigger>
+          {triggerEl}
           {/* Sideways, never below: rows stack vertically, so a bottom tooltip
               would cover the next row and sit in the pointer's downward travel
               path. WHICH side depends on the host — away from the panel, into

@@ -2,11 +2,11 @@
  * The overflow menu on a source card.
  *
  * Everything but the setup verb lives here — Pull and the folders too: the row
- * should read as status at a glance, and seven buttons in a row read as a toolbar. Two kinds
- * of item, deliberately mixed — verbs that mutate this source, and links to the
- * two surfaces that answer "what did it do" (Events) and "what did it run"
- * (Runs). Both links are URL-first: they navigate, and the destination reads its
- * own scope off the URL.
+ * should read as status at a glance, and seven buttons in a row read as a toolbar. The four
+ * verbs a source is driven with (Pull, Pause, Edit, Delete) are the menu; everything rarer —
+ * replaying history, the files behind the source, and the two surfaces that answer "what did
+ * it do" (Events) and "what did it run" (Runs) — sits under Advanced. The links are URL-first:
+ * they navigate, and the destination reads its own scope off the URL.
  */
 import { type DataSource, type DataDriver } from '@sdk';
 import { revealFolder } from './OpenFolderButton';
@@ -22,6 +22,7 @@ import {
   RadioTower,
   RefreshCw,
   Rewind,
+  SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
 import { cn } from '@src/lib/utils';
@@ -35,6 +36,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 
@@ -92,63 +96,68 @@ export function SourceMenu({ source, spec, onPull, pulling, onToggleEnabled, onE
         <DropdownMenuItem onSelect={() => onEdit(source)}>
           <Pencil className="size-3.5" /> {t`Edit`}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onReplay(source)}>
-          <Rewind className="size-3.5" /> {t`Replay…`}
-        </DropdownMenuItem>
-
         <DropdownMenuSeparator />
 
-        {/* Narrowed to this source. `target` is the FlowEvent's own key, and
-            `ingest.*.sync.*` already targets `data_source:<id>` — so this is a
-            filter on the envelope, not a search over its text. */}
-        {/* Editor apps the definition ships, as ordinary child assets. Opened at
-            their own address like any other webapp; URL-first, so the app reads
-            the source id off its own query string. */}
-        {editors.map((app) => (
-          <DropdownMenuItem
-            key={app.id}
-            data-testid={`source-open-editor-${app.name}`}
-            onSelect={() => navigation.openDock(DockPointer.forAppEntity(app.typeId, { source: source.id }))}
-          >
-            <LayoutPanelLeft className="me-2 size-4" />
-            {t`Open ${app.name}`}
-          </DropdownMenuItem>
-        ))}
-        {/* Two folders, named for what is in them: this source's own (its data_source.json) and the definition's
-            (its manifest, driver and the apps above). */}
-        {source.asset_ref && (
-          <DropdownMenuItem
-            data-testid={`data-source-file-${source.id}`}
-            onSelect={() => openSourceFile(navigation, source.asset_ref)}
-          >
-            <FileJson className="size-3.5" /> {t`Open data_source.json`}
-          </DropdownMenuItem>
-        )}
-        {source.asset_ref && (
-          <DropdownMenuItem
-            data-testid={`data-source-folder-${source.id}`}
-            onSelect={() => revealFolder(source.asset_ref!)}
-          >
-            <FolderOpen className="size-3.5" /> {t`Open source folder`}
-          </DropdownMenuItem>
-        )}
-        {spec?.asset_ref && (
-          <DropdownMenuItem data-testid={`source-reveal-${source.id}`} onSelect={() => revealFolder(spec.asset_ref!)}>
-            <FolderCog className="size-3.5" /> {t`Open driver folder`}
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem
-          onSelect={() =>
-            navigation.openDock(DockPointer.forAutomations({ place: 'bus', target: `data_source:${source.id}` }))
-          }
-        >
-          <RadioTower className="size-3.5" /> {t`Events on the bus`}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() => navigation.openDock(DockPointer.forProcessRuns({ data_source_id: source.id }))}
-        >
-          <History className="size-3.5" /> {t`Runs`}
-        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger data-testid={`source-advanced-${source.id}`}>
+            <SlidersHorizontal className="size-3.5" /> {t`Advanced`}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuItem onSelect={() => onReplay(source)}>
+              <Rewind className="size-3.5" /> {t`Replay…`}
+            </DropdownMenuItem>
+            {/* Editor apps the definition ships, as ordinary child assets. Opened at
+                their own address like any other webapp; URL-first, so the app reads
+                the source id off its own query string. */}
+            {editors.map((app) => (
+              <DropdownMenuItem
+                key={app.id}
+                data-testid={`source-open-editor-${app.name}`}
+                onSelect={() => navigation.openDock(DockPointer.forAppEntity(app.typeId, { source: source.id }))}
+              >
+                <LayoutPanelLeft className="me-2 size-4" />
+                {t`Open ${app.name}`}
+              </DropdownMenuItem>
+            ))}
+            {/* Two folders, named for what is in them: this source's own (its data_source.json) and the
+                definition's (its manifest, driver and the apps above). */}
+            {source.asset_ref && (
+              <DropdownMenuItem
+                data-testid={`data-source-file-${source.id}`}
+                onSelect={() => openSourceFile(navigation, source.asset_ref)}
+              >
+                <FileJson className="size-3.5" /> {t`Open data_source.json`}
+              </DropdownMenuItem>
+            )}
+            {source.asset_ref && (
+              <DropdownMenuItem
+                data-testid={`data-source-folder-${source.id}`}
+                onSelect={() => revealFolder(source.asset_ref!)}
+              >
+                <FolderOpen className="size-3.5" /> {t`Open source folder`}
+              </DropdownMenuItem>
+            )}
+            {spec?.asset_ref && (
+              <DropdownMenuItem data-testid={`source-reveal-${source.id}`} onSelect={() => revealFolder(spec.asset_ref!)}>
+                <FolderCog className="size-3.5" /> {t`Open driver folder`}
+              </DropdownMenuItem>
+            )}
+            {/* Narrowed to this source. `target` is the FlowEvent's own key, and `ingest.*.sync.*` already targets
+                `data_source:<id>` — so this is a filter on the envelope, not a search over its text. */}
+            <DropdownMenuItem
+              onSelect={() =>
+                navigation.openDock(DockPointer.forAutomations({ place: 'bus', target: `data_source:${source.id}` }))
+              }
+            >
+              <RadioTower className="size-3.5" /> {t`Events on the bus`}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => navigation.openDock(DockPointer.forProcessRuns({ data_source_id: source.id }))}
+            >
+              <History className="size-3.5" /> {t`Runs`}
+            </DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
 
         <DropdownMenuSeparator />
 

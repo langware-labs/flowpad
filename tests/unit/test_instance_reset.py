@@ -28,6 +28,23 @@ def test_backend_only_reset_preserves_transcript_consumption_checkpoint(
     assert not database.exists()
 
 
+def test_backend_only_reset_preserves_worker_history_cache(monkeypatch, tmp_path) -> None:
+    """The cache mirrors the user's own transcripts, validated by (path, mtime, size);
+    wiping it made the first worker-history call after a reset re-parse every transcript."""
+    instance_dir = tmp_path / "instances" / "qa"
+    kept = [instance_dir / f"worker_history_cache.sqlite{s}" for s in ("", "-wal", "-shm")]
+    for path in kept:
+        _write(path)
+    _write(instance_dir / "flowpad.db")
+    monkeypatch.setattr(instance_cmd, "_instance_dir", lambda _name: instance_dir)
+    monkeypatch.setattr(instance_cmd, "_user_asset_home", lambda _name: tmp_path / "assets" / "qa")
+
+    instance_cmd._wipe("qa", backend_only=True)
+
+    assert all(path.exists() for path in kept)
+    assert not (instance_dir / "flowpad.db").exists()
+
+
 def test_full_reset_still_removes_transcript_consumption_checkpoint(
     monkeypatch,
     tmp_path,

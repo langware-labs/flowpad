@@ -1,0 +1,29 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id; links may name it."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The group's name, centred at its top."
+    },
+    "sublabel": {
+      "shape": "?string",
+      "description": "One line under the name: the host, the region, who shares it."
+    },
+    "tiers": {
+      "shape": "?[chartit.architecture_tier]",
+      "description": "The dashed boxes inside, top to bottom."
+    },
+    "parts": {
+      "shape": "?[chartit.architecture_part]",
+      "description": "Parts listed straight on the group (no tiers): drawn as one untitled tier."
+    },
+    "cols": {
+      "shape": "?int",
+      "description": "Columns for `parts` listed straight on the group; default one column."
+    }
+  }
+}

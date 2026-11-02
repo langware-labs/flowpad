@@ -99,7 +99,97 @@ async def test_the_page_runs_as_written(monkeypatch, tmp_path):
         finally:
             watcher.cancel()
         assert worker.received_prompts == ["where is the treasure?"]
+        # The reply keeps the thread's subject: what goes out to the hub, and what the sent copy records.
+        assert [m["subject"] for m in mail.sent()] == ["Re: Ahoy"]
         assert isinstance(ns["allocated"], AgentMailbox) and ns["pirate"].mailbox.address == "pirate@hub.test"
 
         ns = await run_fence(verbs, ns, filename="agent-email.md#verbs")   # the mailbox's own verbs, in order
     assert hub.rows == {}, "release() deletes the Hub's mailbox"
+
+
+async def test_a_machine_that_never_configured_the_mailbox_admits_the_hub_allowlist(monkeypatch):
+    """The allowlist is cached on the mailbox's source only where someone configured it. A machine that
+    merely WIRES the mailbox — a cloud placement after its deploy — holds a source with an empty copy, and
+    the sender gate refused everyone: the clown on e2b answered nobody, ``eran@… — not an allowed sender``,
+    while the Hub listed eran. The gate must read the Hub's list before refusing."""
+    import flow_sdk.builtin.agent_mailbox as agent_mailbox_module
+    from flow_sdk.builtin.agent_mailbox import refresh_policy_for
+    from flow_sdk.builtin.agent_serve import admits
+    from flow_sdk.fs_store.type_id import TypeId
+
+    hub = _HubMailboxes()
+    monkeypatch.setattr("flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: hub)
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda *_a, **_k: True)
+    monkeypatch.setattr(agent_mailbox_module, "_policy_read_at", {})
+
+    for other in await Agent.get_all({"name": "gatekeeper"}):
+        await other.delete()
+    agent = Agent(name="gatekeeper", system_prompt="answer")
+    await agent.save()
+    # The person set the allowlist from ANOTHER machine: the Hub holds it, this one never configured.
+    descriptor = await hub.enable_mailbox(agent.id, allowed_senders=["captain@gmail.com"])
+    mailbox = AgentMailbox.from_hub_descriptor({**descriptor, "allowed_senders": []}, agent_typeid=TypeId(type="agent", id=agent.id))
+    source = await mailbox.ensure_source()          # what wiring the mailbox on this machine does
+    assert source.allowed_senders == []
+    assert not admits(source, "captain@gmail.com"), "the unconfigured copy refuses (the bug's state)"
+
+    assert await refresh_policy_for(source) is True
+    assert admits(source, "captain@gmail.com")
+    assert not admits(source, "stranger@evil.test"), "the Hub's list admits only who it names"
+    # One Hub read per window: a stranger writing again does not cost another round trip.
+    assert await refresh_policy_for(source) is False
+
+
+async def test_deleting_the_agent_releases_its_mailbox_and_drops_its_source(monkeypatch):
+    """A deleted agent's mailbox stayed listed under the project's message channels and its address
+    stayed alive on the Hub, with no button anywhere to let it go."""
+    from flow_sdk.builtin.agent_mailbox import email_source_for_agent
+
+    hub = _HubMailboxes()
+    monkeypatch.setattr("flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: hub)
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda *_a, **_k: True)
+
+    for other in await Agent.get_all({"name": "leaver"}):
+        await other.delete()
+    agent = Agent(name="leaver", system_prompt="answer")
+    await agent.save()
+    descriptor = await hub.enable_mailbox(agent.id)
+    await AgentMailbox._adopt_onto(agent, descriptor).ensure_source()
+    agent.remote = True  # a published agent: the Hub holds its mailbox
+    monkeypatch.setattr(Agent, "unshare", lambda self, **_k: _done())
+    assert await email_source_for_agent(agent.id) is not None
+
+    await agent.delete()
+    assert hub.rows == {}, "the address is released"
+    assert await email_source_for_agent(agent.id) is None, "no channel outlives its agent"
+
+
+async def _done():
+    return None
+
+
+async def test_a_mailbox_source_wired_before_its_driver_loaded_names_the_same_channel(monkeypatch):
+    """A process that wires the mailbox before the ``cloud_email`` driver is loaded saves the source with no
+    channel; projecting an email there named the thread ``cloud_email`` (the provider) while the app named it
+    ``email`` -- one email, two threads on the agent's machine (2026-11-02, clown-five)."""
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.core.cache.entity_cache import entity_cache
+    from flow_sdk.stream_inbox.projection import channel_of
+
+    hub = _HubMailboxes()
+    monkeypatch.setattr("flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: hub)
+    for other in await Agent.get_all({"name": "twin"}):
+        await other.delete()
+    agent = Agent(name="twin", system_prompt="answer")
+    await agent.save()
+    mailbox = AgentMailbox._adopt_onto(agent, await hub.enable_mailbox(agent.id))
+    loaded = DataDriver.loaded("cloud_email")
+    source = await mailbox.ensure_source()  # wired while the driver is loaded: the app's view
+    with monkeypatch.context() as unloaded:
+        unloaded.setattr(DataDriver, "loaded", classmethod(lambda cls, name: None if name == "cloud_email" else loaded))
+        source.channel = ""
+        await source.save()  # the same row, saved by a process that has not loaded the driver
+    entity_cache.invalidate_entity_cache(source.typeid)
+    fresh = await DataSource.get_by_id(source.id)
+    assert channel_of(fresh) == "email", "every process names one source's channel the same"

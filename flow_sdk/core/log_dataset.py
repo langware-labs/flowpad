@@ -27,10 +27,9 @@ _pending: set[asyncio.Task] = set()
 
 def temp_datasets() -> Path:
     """This instance's datasets in Flowpad's TEMP folder."""
-    from flow_sdk import config  # noqa: PLC0415
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    from flow_sdk.config import instance_temp_dir  # noqa: PLC0415
 
-    return Path(config.FLOWPAD_TEMP_DIR) / get_instance_settings().instance_name / "agentic-assets" / "dataset"
+    return instance_temp_dir("agentic-assets", "dataset")
 
 
 def _lock(name: str) -> asyncio.Lock:

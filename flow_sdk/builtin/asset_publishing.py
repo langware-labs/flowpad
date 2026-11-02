@@ -137,9 +137,13 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     last_tree = await asyncio.to_thread(last_synced_tree, repo_id, rel_path) or (
         previous.tree if previous is not None and previous.rel_path == rel_path else None
     )
+    from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
+
     mirror = HubRepoMirror(
         root=mirror_root(repo_id),
-        clone_url=repo["clone_url"],
+        # This desktop's own hub URL, as ``publish_files_to_hub`` uses: the hub's ``clone_url``
+        # carries ITS external host, which a box behind a proxy (Docker) cannot reach.
+        clone_url=hub_graph_url("git_repo", repo_id, "git"),
         branch=repo.get("default_branch") or "main",
         token=token,
     )

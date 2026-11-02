@@ -885,11 +885,12 @@ class Agent(Entity):
         )
         from flow_sdk.builtin.readiness import refresh_requirements  # noqa: PLC0415
 
+        # What it needs travels with it: written first, so a git-backed project's clean-tree check
+        # (``sync_project_with_hub``) sees the agent.json that will be published.
+        await refresh_requirements(self)
         project = await owning_project(self)
         if project is not None:
             await project.ensure_on_hub()
-        # What it needs travels with it: the commit below carries the current requirements.
-        await refresh_requirements(self)
         await publish_git_asset(self, actor)
         return True
 
@@ -966,6 +967,23 @@ class Agent(Entity):
                 "readiness": (await readiness(self, deployment)).model_dump(mode="json"),
             }
         )
+
+    async def delete(self):
+        """Delete the agent with its mailbox: nobody is left to answer the address, so it is
+        released on the Hub, and the local source that polled it goes too — otherwise the
+        project keeps listing a channel of an agent that no longer exists."""
+        from flow_sdk.builtin.agent_mailbox import email_source_for_agent  # noqa: PLC0415
+        from flow_sdk.core.entity.entity_model import _MIRROR_DELETE  # noqa: PLC0415
+
+        if not _MIRROR_DELETE.get():  # a mirror of the Hub's own delete: the Hub already let go
+            mailbox = await AgentMailbox.for_agent(self)
+            if mailbox is not None:
+                await mailbox.release()  # before the row goes: a Hub refusal keeps the agent whole
+        source = await email_source_for_agent(self.id)
+        result = await super().delete()
+        if source is not None:
+            await source.delete()
+        return result
 
     # ── the mailbox ───────────────────────────────────────────────────────
 
@@ -1208,6 +1226,7 @@ class Agent(Entity):
                 body.environment,
                 provider=body.provider or None,
                 token_allocation=body.token_allocation if body.allocation_given else _UNSET,
+                machine_size=body.machine_size,
             )
         except DeployRunning as exc:
             return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})

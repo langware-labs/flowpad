@@ -10,10 +10,10 @@ tags: [whiteboard, ui]
 
 ## Steps
 
-### U1: Tree row + Palette icon
+### U1: Tree row + ChartNetwork icon
 * Create a whiteboard `ui-u1-<random>`.
-* Navigate to `${APP_URL}/dock/assets/list/whiteboard`.
-* Wait for the asset list. Find a row containing `ui-u1-<random>`. Its row icon must be a Palette glyph (lucide-react Palette).
+* Navigate to `${APP_URL}/dock/assets/list/chart`.
+* Wait for the asset list. Find a row containing `ui-u1-<random>`. Its row icon must be the chart type icon (lucide-react ChartNetwork).
 
 ### U2: Type filter shows whiteboards only
 * On the same page, locate `EntityTypeBar` (`[data-testid^="entity-type-"]` or similar).

@@ -147,11 +147,25 @@ def behind_count(
     return _count(repo[0], f"{source_revision}..{published_commit}", repo[1]) if repo else None
 
 
+def _project_checkout_state(agent: "Agent", hub: Optional[tuple[str, str]]):
+    """The agent's project folder as a git checkout (``git_source_state``), or None when it is not one."""
+    from flow_sdk.assets.hub_repo_sync import git_source_state  # noqa: PLC0415
+
+    if hub is not None:
+        root: Optional[Path] = Path(agent_folder(agent)).resolve().parents[len(Path(hub[1]).parts) - 1]
+    else:
+        repo = _agent_repo(agent)
+        root = Path(repo[0]) if repo else None
+    return git_source_state(root) if root is not None and root.is_dir() else None
+
+
 def version_state(agent: "Agent") -> dict[str, Any]:
     """What the definition on this computer has that its published version lacks.
 
-    ``pending_changes`` counts uncommitted paths under the agent's folder plus
-    commits touching it since the published commit. Blocking (git); call it off
+    In a project that is a git checkout (``git_native``) the checkout is what deploys:
+    ``uncommitted`` paths and, with a remote of its own, ``unpushed`` commits are pending
+    — a deploy refuses them. Otherwise ``pending_changes`` counts uncommitted paths under
+    the agent's folder plus commits touching it since the published commit. Blocking (git); call it off
     the event loop.
     """
     from flow_sdk.utils.git import _sync  # noqa: PLC0415
@@ -161,10 +175,27 @@ def version_state(agent: "Agent") -> dict[str, Any]:
         "published": bool(agent.remote and published_commit),
         "published_commit": published_commit,
         "has_repo": False,
+        "git_native": False,
         "pending_changes": 0,
     }
     published = hub_origin(agent)
     hub = _hub_mirror(published)
+    git = _project_checkout_state(agent, hub)
+    if git is not None:
+        # A git checkout is what deploys (``sync_project_with_hub``): what is not committed — and,
+        # with a remote of its own, not pushed — is what a deploy would refuse, so it is what is pending.
+        unpushed = git.unpushed or 0
+        state.update(
+            has_repo=True,
+            git_native=True,
+            has_remote=git.remote,
+            uncommitted=len(git.uncommitted),
+            unpushed=unpushed,
+            pending_changes=len(git.uncommitted) + unpushed,
+        )
+        if published is not None:
+            state.update(published=True, published_commit=published.head_commit)
+        return state
     if hub is not None:
         # Published into the project's hub repo: the local folder either still matches
         # the published version (its tree) or it has changes to publish.
@@ -249,6 +280,15 @@ async def _last_active(deployment) -> str | None:
         )
         stamp = getattr(newest[0], "updated_date", None) if newest else None
         return stamp.isoformat() if hasattr(stamp, "isoformat") else (str(stamp) if stamp else None)
+    # A cloud place's runs live on its box: its newest conversation is when it last did something.
+    # A box the hub cannot read (paused, unreachable) answers with when it was last seen instead.
+    try:
+        data = await deployment._read_remote("threads", {})
+        stamps = [t.get("last_at") for t in (data.get("threads") or []) if isinstance(t, dict) and t.get("last_at")]
+        if stamps:
+            return max(stamps)
+    except Exception:  # noqa: BLE001 — a listing must not fail over a decoration
+        pass
     return getattr(deployment.status, "observed_at", None) or None
 
 

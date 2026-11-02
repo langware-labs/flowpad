@@ -40,3 +40,8 @@ def test_an_unknown_format_is_kept_as_declared_for_the_editor_to_name():
     assert declared_chart_format({"format": "hologram"}) == "hologram"
     assert declared_chart_format({}) == "excalidraw"
     assert chart_format({"format": "hologram"}) == "excalidraw"  # what THIS build can draw
+
+
+def test_architecture_is_a_known_format():
+    assert chart_format({"format": "architecture"}) == "architecture"
+    assert CHART_SOURCES["architecture"][0] == "architecture.json"

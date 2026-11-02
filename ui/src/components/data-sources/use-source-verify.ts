@@ -22,12 +22,13 @@ export interface VerifyOutcome {
   error?: string;
 }
 
-export function useSourceVerify(source: DataSource, { quiet = false }: { quiet?: boolean } = {}) {
+export function useSourceVerify(source: DataSource | null, { quiet = false }: { quiet?: boolean } = {}) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<VerifyOutcome | null>(null);
 
   const verify = useCallback(async () => {
+    if (!source) return; // a page still loading its source: nothing to check yet
     setBusy(true);
     try {
       const result = await source.verify();
