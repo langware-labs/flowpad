@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import type { Terminal, ILink } from '@xterm/xterm';
-import { TerminalLinkProvider, linkAtCell } from '@src/components/terminal/interactive-terminal/terminal-links';
+import { TerminalLinkProvider, linkAtCell, selectionText } from '@src/components/terminal/interactive-terminal/terminal-links';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -18,6 +18,67 @@ describe('terminal links', () => {
         new TerminalLinkProvider(terminal as unknown as Terminal, () => {}).provideLinks(y, (value) => { links = value; });
         expect(links?.map((link) => [link.text, link.range.start.y, link.range.end.y])).toEqual([[name, y, y]]);
       }
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  describe('a command a TUI word-wrapped at a space', () => {
+    // Claude Code wraps `! gcloud ... --role=...` at a space, so the row stops short of the edge.
+    const c = (text: string) => `\x1b[94m${text}\x1b[0m`;
+    const command = (n: number) => `! gcloud projects add-iam-policy-binding p --member=user:eran@langware.ai --role=roles/r${n}`;
+    const rows = [
+      '1. Paste these:',
+      ...[1, 2, 3].flatMap((n) => [c(command(n).slice(0, 73)), c(command(n).slice(74))]),
+      '2. Say "a".',
+    ];
+    const withTerminal = async (run: (term: Terminal) => void) => {
+      const terminal = new HeadlessTerminal({ cols: 80, rows: 10, allowProposedApi: true });
+      try {
+        await new Promise<void>((resolve) => terminal.write(rows.map((r, i) => `\x1b[${i + 1};1H${r}`).join(''), resolve));
+        run(terminal as unknown as Terminal);
+      } finally {
+        terminal.dispose();
+      }
+    };
+    const links = (term: Terminal, y: number) => {
+      let found: ILink[] | undefined;
+      new TerminalLinkProvider(term, () => {}).provideLinks(y, (value) => { found = value; });
+      return (found ?? []).map((link) => link.text).filter((text) => text.startsWith('!'));
+    };
+
+    it('links the whole command from either row, and nothing past it', () =>
+      withTerminal((term) => {
+        expect(links(term, 2)).toEqual([command(1)]);
+        expect(links(term, 3)).toEqual([command(1)]);
+        expect(links(term, 4)).toEqual([command(2)]);
+        expect(links(term, 8)).toEqual([]);
+      }));
+
+    it('copies each command as one line, the prose around it as drawn', () =>
+      withTerminal((term) => {
+        const all = { start: { x: 0, y: 0 }, end: { x: 80, y: 7 } };
+        expect(selectionText(term, all)).toBe(['1. Paste these:', command(1), command(2), command(3), '2. Say "a".'].join('\n'));
+      }));
+
+    it('clips a copy that starts and ends mid-row', () =>
+      withTerminal((term) => {
+        expect(selectionText(term, { start: { x: 2, y: 1 }, end: { x: 10, y: 2 } })).toBe(
+          `${command(1).slice(2, 73)} ${command(1).slice(74, 84)}`,
+        );
+      }));
+  });
+
+  it('copies a URL a TUI broke at the edge as one, and keeps an ASCII table\'s rows', async () => {
+    const url = 'https://example.com/a/very/long/path?x=1';
+    const terminal = new HeadlessTerminal({ cols: 29, rows: 8, allowProposedApi: true });
+    try {
+      const table = ['+----+----+', '| a  | b  |', '+----+----+'];
+      await new Promise<void>((resolve) =>
+        terminal.write(`\x1b[1;1H  ${url.slice(0, 27)}\x1b[2;1H  ${url.slice(27)}` + table.map((r, i) => `\x1b[${i + 3};1H${r}`).join(''), resolve),
+      );
+      const term = terminal as unknown as Terminal;
+      expect(selectionText(term, { start: { x: 0, y: 0 }, end: { x: 29, y: 4 } })).toBe([`  ${url}`, ...table].join('\n'));
     } finally {
       terminal.dispose();
     }
