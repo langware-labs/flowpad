@@ -23,6 +23,10 @@ ALLOWED: dict[str, str] = {
         "own build output on every level, and gives up past WALK_LIMIT files"
     ),
     "flow_sdk/datasets/stores.py": "walks ONE dataset's rows/ folder (its store folder or working copy), never a project tree",
+    "flow_sdk/assets/hub_repo_sync.py": (
+        "pull-back mirrors ONE asset folder from its hub checkout: every file of the checkout in, and the "
+        "target's own files out, skipping what ignored_under keeps (the person's git-ignored files)"
+    ),
     "flow_sdk/fs_store/operations/markdown_dirs.py": "prunes with is_ignored on every level",
     "flow_sdk/schema/data_spec/layout.py": "row_version walks ONE example folder (a dataset row's own files)",
     "flow_sdk/core/compute_op/python.py": "hashes ONE Python compute op's own folder (its .py files) to key its module",
