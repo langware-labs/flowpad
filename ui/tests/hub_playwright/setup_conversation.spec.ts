@@ -97,7 +97,7 @@ test('setup: alice creates → bob is a member at once → realtime round-trip <
     console.log(`[setup] realtime round-trip alice → bob: ${rtt} ms`);
 
     expect(convId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(rtt).toBeLessThan(500); // realtime SLO
+    expect(rtt).toBeLessThan(adjusted(500)); // realtime SLO (committed 500 ms; a slower runner widens it with ADJUSTABLE_TIMEOUT)
   } finally {
     await browser.close();
   }
