@@ -607,7 +607,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
         </section>
 
         <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
-          <AgentPlacesColumn agent={agent} onMachineSize={(size) => save({ machine_size: size })} />
+          <AgentPlacesColumn agent={agent} />
         </aside>
       </div>
       {!hub && <AgentRequestLine agent={agent} displayName={title || (agent.name ?? '')} />}

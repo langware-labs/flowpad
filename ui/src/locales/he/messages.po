@@ -36936,3 +36936,10 @@ msgstr ""
 #~ msgid "The browser refused screen capture. Allow it for this site and try again."
 #~ msgstr ""
 
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Git repo"
+msgstr "מאגר Git"
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "No projects to choose from — use a git repo."
+msgstr "אין פרויקטים לבחירה — השתמשו במאגר Git."

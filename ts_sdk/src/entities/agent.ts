@@ -481,11 +481,14 @@ export class Agent extends APIEntity<Agent> {
     environment?: string,
     provider?: 'local' | CloudDeployProvider,
     tokenAllocation?: AgentTokenAllocation | null,
+    machineSize?: string,
   ): Promise<AgentDeployResult> {
     const body = {
       ...(environment ? { environment } : {}),
       ...(provider ? { provider } : {}),
       ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+      // This deploy's box size; never written into agent.json (that would dirty the checkout it deploys).
+      ...(machineSize ? { machine_size: machineSize } : {}),
     };
     return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
   }

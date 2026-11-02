@@ -37214,3 +37214,10 @@ msgstr "Stop recording"
 #~ msgid "The browser refused screen capture. Allow it for this site and try again."
 #~ msgstr "The browser refused screen capture. Allow it for this site and try again."
 
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Git repo"
+msgstr "Git repo"
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "No projects to choose from — use a git repo."
+msgstr "No projects to choose from — use a git repo."

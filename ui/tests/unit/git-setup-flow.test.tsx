@@ -92,6 +92,10 @@ describe('Connect GitHub lives only in the repo picker', () => {
     'components/git/GitRequiredStrip.tsx',
     'components/project-home/ProjectGitChecksDialog.tsx',
     'hooks/use-add-dependency.tsx',
+    'pages/hub-home/NewSandboxDialog.tsx',
+    'pages/entry/OpenSandboxLanding.tsx',
+    'pages/entry/InstallLanding.tsx',
+    'components/share-to-conversation/ShareToConversationDialog.tsx',
   ])('%s does not start the GitHub connection itself', (file) => {
     const text = readFileSync(resolve(SRC, file), 'utf8');
     expect(text).not.toMatch(/oauthService\.connect/);

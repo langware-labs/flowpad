@@ -86,7 +86,7 @@ class FakeHubStore:
         assert method == "DELETE", method
         return await self.delete(etype, eid, action, sub_path)
 
-    async def deploy(self, entity, environment=None, *, provider=None, require=None):
+    async def deploy(self, entity, environment=None, *, provider=None, require=None, machine_size=None):
         self.deploys.append({"environment": environment, "provider": provider, "require": list(require or [])})
         return {"deployment": {}, "secrets": {"placed": sorted(require or []), "failed": {}}}
 

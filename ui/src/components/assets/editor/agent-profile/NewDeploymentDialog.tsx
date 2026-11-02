@@ -68,8 +68,6 @@ interface NewDeploymentDialogProps {
   agent: Agent;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Saves the cloud machine size into agent.json (the hub sizes the box from it). Resolves once written. */
-  onMachineSize?: (size: string) => Promise<unknown>;
   /** Called with the new deployment's id once launched. */
   onLaunched: (deploymentId?: string) => void | Promise<void>;
 }
@@ -83,7 +81,6 @@ export function NewDeploymentDialog({
   agent,
   open,
   onOpenChange,
-  onMachineSize,
   onLaunched,
 }: NewDeploymentDialogProps) {
   const { t } = useLingui();
@@ -130,9 +127,8 @@ export function NewDeploymentDialog({
         data = await agent.deploy(undefined, 'local');
         notify.success({ title: t`${agent.name} now runs on this computer` });
       } else {
-        // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
-        await onMachineSize?.(machine.size);
-        data = await agent.deploy(environment, machine.provider, tokenAllocation);
+        // The size travels with the deploy: writing it into agent.json would dirty the checkout being deployed.
+        data = await agent.deploy(environment, machine.provider, tokenAllocation, machine.size);
         // Taken on: the machine is placed in the background, after this answer.
         notify.info({ title: t`Deployment running in the background` });
       }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { OAUTH_PROVIDERS, gitOriginFromUrl, gitOriginRepoFullName, oauthService, type RepoSummary } from '@sdk';
+import { gitOriginFromUrl, gitOriginRepoFullName, isHubOnly, type RepoSummary } from '@sdk';
+import { ConnectGithubButton } from '@src/components/git/ConnectGithubButton';
 import { BranchPicker, type BranchPickerRepo } from '@src/components/git/BranchPicker';
 import { InvitationsStrip } from '@src/components/git/InvitationsStrip';
 import { RepoPicker } from '@src/components/git/RepoPicker';
@@ -9,8 +10,7 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { useGithubConnected } from '@src/lib/github-oauth-status';
 import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
-import { notify } from '@src/notifications';
-import { CheckCircle2, GitBranch, Github } from 'lucide-react';
+import { CheckCircle2, GitBranch } from 'lucide-react';
 
 /** The remote a git flow will use: which repository, and which branch of it. */
 export interface GitRemoteValue {
@@ -35,20 +35,6 @@ interface GitRemoteFieldProps {
   onEnter?: () => void;
   /** Off while the host dialog is closed, so the repo list isn't fetched. */
   enabled?: boolean;
-}
-
-/**
- * Start the GitHub device flow. The global `GitHubDeviceFlowModal` picks it up.
- * A failure is reported, never swallowed — a bare `void connect()` left the
- * button doing nothing at all when the backend refused.
- */
-export async function connectGithub(failTitle: string): Promise<void> {
-  try {
-    await oauthService.connect(OAUTH_PROVIDERS.GITHUB);
-  } catch (err) {
-    const ax = err as { response?: { data?: { message?: string } }; message?: string };
-    notify.error({ title: ax.response?.data?.message ?? ax.message ?? failTitle });
-  }
 }
 
 /**
@@ -193,20 +179,17 @@ export function GitRemoteField({
             <Trans>Paste any public repo URL, or connect GitHub to browse your own.</Trans>
           </span>
           <div className="flex shrink-0 items-center gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <ConnectGithubButton
               className="h-6 px-2 text-xs"
-              onClick={() => void connectGithub(t`Failed to start GitHub connection`)}
-              data-testid={`${testIdPrefix}-connect-github`}
-            >
-              <Github className="me-1.5 h-3 w-3" />
-              <Trans>Connect</Trans>
-            </Button>
-            <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY} variant="ghost">
-              <Trans>Guided setup</Trans>
-            </SetupJourneyButton>
+              label={<Trans>Connect</Trans>}
+              testId={`${testIdPrefix}-connect-github`}
+            />
+            {/* Journeys are a desktop feature — the hub serves none. */}
+            {!isHubOnly() && (
+              <SetupJourneyButton journey={SETUP_GITHUB_JOURNEY} variant="ghost">
+                <Trans>Guided setup</Trans>
+              </SetupJourneyButton>
+            )}
           </div>
         </div>
       )}

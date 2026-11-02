@@ -25,8 +25,6 @@ const runningDeploys = new Set<string>();
 
 interface AgentPlacesColumnProps {
   agent: Agent;
-  /** Saves the size a new cloud machine is created at (`machine_size` in agent.json); resolves once written. */
-  onMachineSize?: (size: string) => Promise<unknown>;
 }
 
 /**
@@ -36,7 +34,7 @@ interface AgentPlacesColumnProps {
  * agent (its live timeline and processes), and says when it was last active. On the hub there is no local deployment and
  * no deploy.
  */
-export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnProps) {
+export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const display = usePlaceDisplay();
@@ -109,7 +107,6 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
           agent={agent}
           open
           onOpenChange={setDeployOpen}
-          onMachineSize={onMachineSize}
           onLaunched={reload}
         />
       )}

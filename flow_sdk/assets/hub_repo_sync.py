@@ -478,9 +478,10 @@ class GitSourceState:
         return None
 
 
-def git_source_state(checkout: Path) -> GitSourceState | None:
+def git_source_state(checkout: Path, *, remote: str | None = None) -> GitSourceState | None:
     """The checkout's state (blocking git; call off the loop), or ``None`` when ``checkout``
-    is not the root of a git checkout with a commit — then the folder's files are copied."""
+    is not the root of a git checkout with a commit — then the folder's files are copied.
+    ``unpushed`` counts commits no remote holds, or only ``remote`` when it is named."""
     from flow_sdk.utils.git import _run_git, _sync  # noqa: PLC0415
 
     if not (checkout / ".git").exists():
@@ -502,8 +503,34 @@ def git_source_state(checkout: Path) -> GitSourceState | None:
             uncommitted.append(path)
     unpushed = None
     if _sync(root, "remote"):
-        unpushed = int(_sync(root, "rev-list", "--count", "HEAD", "--not", "--remotes") or 0)
+        held = f"--remotes={remote}" if remote else "--remotes"
+        unpushed = int(_sync(root, "rev-list", "--count", "HEAD", "--not", held) or 0)
     return GitSourceState(head=head, uncommitted=uncommitted, unpushed=unpushed)
+
+
+def github_deploy_source(checkout: Path) -> dict | None:
+    """What a deploy of ``checkout`` runs straight from: its GitHub ``origin`` at HEAD, as the git
+    origin the hub's deploy takes as ``source`` (blocking git; call off the loop).
+
+    ``None`` when the checkout has no GitHub ``origin`` -- then the files travel through the
+    project's hub repo. A GitHub checkout whose work is not all on ``origin`` raises the
+    refusal that says what to do: the machine runs a commit GitHub holds, never a working tree.
+    """
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.utils.git import git_remote_url  # noqa: PLC0415
+
+    # Origin first: a checkout without a GitHub origin pays for no status scan here.
+    url = git_remote_url(str(checkout)) if (checkout / ".git").exists() else None
+    origin = GitOrigin.from_url(url) if url else None
+    if origin is None or origin.provider != "github":
+        return None
+    # Pushed means on ``origin``: a commit only on some other remote is not on GitHub.
+    state = git_source_state(checkout, remote="origin")
+    if state is None:
+        return None
+    if (refusal := state.refusal()) is not None:
+        raise refusal
+    return origin.model_copy(update={"head_commit": state.head}).model_dump(mode="json")
 
 
 #: The trailers a Flowpad snapshot commit carries — commits a git-native publish may replace.

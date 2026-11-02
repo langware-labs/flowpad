@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import Literal, TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import ConfigDict, field_validator
 
@@ -51,6 +51,9 @@ class AgentDeployRequest(DataSpec):
     provider: str = ""
     environment: Optional[str] = None
     token_allocation: Optional[TokenAllocationSpec] = None
+    #: The cloud box size for THIS deploy (``sm`` | ``md`` | ``lg``); empty: the agent's own ``machine_size``.
+    #: Sent with the deploy, never written into agent.json: a deploy must not dirty the checkout it deploys.
+    machine_size: Optional[Literal["sm", "md", "lg"]] = None
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -87,6 +90,7 @@ class DeployContext:
     environment: Optional[str]
     provider: Optional[str]
     token_allocation: Any
+    machine_size: Optional[str] = None
     deployment: Optional["Deployment"] = None
     ready: Optional["ReadinessSpec"] = None
 
@@ -158,7 +162,13 @@ async def _start_machine(ctx: DeployContext) -> None:
     from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
     try:
-        await deploy_entity_to_cloud(ctx.agent, ctx.environment, provider=ctx.provider, require=ctx.ready.value_names())
+        await deploy_entity_to_cloud(
+            ctx.agent,
+            ctx.environment,
+            provider=ctx.provider,
+            require=ctx.ready.value_names(),
+            machine_size=ctx.machine_size,
+        )
     except HubError as exc:
         # A transport failure (the load balancer dropped the answer): the hub's push into the local row is the answer.
         if exc.status_code == 0 and exc.kind is HubFailureKind.OFFLINE:
@@ -202,6 +212,7 @@ async def run_deployment_steps(
     *,
     provider: Optional[str] = None,
     token_allocation: Any = _UNSET,
+    machine_size: Optional[str] = None,
 ) -> dict[str, Any]:
     """``DEPLOYMENT_STEPS`` under *agent*'s ``deploy`` activity, each as its child — running, then done or failed
     with its error — then the activity's end. The ``inline`` steps run first, a failure raised to the caller (and
@@ -224,7 +235,7 @@ async def run_deployment_steps(
     root.label(f"Deploy {agent.name or agent.id}").plan(
         [{"name": step.name, "label": step.label} for step in DEPLOYMENT_STEPS]
     )
-    ctx = DeployContext(agent, actor, environment, provider, token_allocation)
+    ctx = DeployContext(agent, actor, environment, provider, token_allocation, machine_size)
 
     async def run(steps: list[DeployStep]) -> None:
         for step in steps:
