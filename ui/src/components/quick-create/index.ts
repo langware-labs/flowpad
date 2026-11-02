@@ -5,3 +5,4 @@ export { QuickCreateDialog } from './QuickCreateDialog';
 export { QuickCreateModal } from './QuickCreateModal';
 export { getDescriptor } from './registry';
 export type { QuickCreateDescriptor, QuickCreateResult } from './registry';
+export { NewOfTypeDialog } from './NewOfTypeDialog';

@@ -1,4 +1,4 @@
-# chartit — the data behind sequence and C4 charts
+# chartit — the data behind sequence, C4 and architecture charts
 
 | kind | a value is |
 |---|---|
@@ -11,6 +11,12 @@
 | `chartit.c4_relation` | one arrow between two elements |
 | `chartit.c4_link` | a link chip on a box or arrow: code, doc, asset or URL |
 | `chartit.c4_param` | one typed input of a code-level element |
+| `chartit.architecture` | a `format: architecture` Chart's `architecture.json`: groups, tiers, parts, links, steps |
+| `chartit.architecture_group` | one outer box: where things run |
+| `chartit.architecture_tier` | one dashed tier inside a group |
+| `chartit.architecture_part` | one client, service, store, worker or outside system |
+| `chartit.architecture_link` | one arrow between parts, tiers or groups |
+| `chartit.architecture_step` | one numbered step of the walk-through |
 
 Charts themselves are Flowpad **Chart** entities (`agentic-assets/chart/<name>/`), not rows; these kinds
-check a chart's source file (`c4.json`, `chart.json`).
+check a chart's source file (`c4.json`, `chart.json`, `architecture.json`).

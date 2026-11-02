@@ -1174,6 +1174,12 @@ msgstr ""
 msgid "{0}: {1} participants, {2} messages"
 msgstr "{0}: {1} مشاركين، {2} رسائل"
 
+#. placeholder {0}: value.title || t`Architecture chart`
+#. placeholder {1}: value.links.length
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "{0}: {partCount} parts, {1} links"
+msgstr "{0}: {partCount} مكوّنات، {1} روابط"
+
 #. placeholder {0}: m[1]
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: agent, again"
@@ -1668,6 +1674,12 @@ msgstr "{openDisplayCount, plural, one {خطأ مفتوح مجمَّع خلال 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {open error in the last 24 hours} other {open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {خطأ مفتوح خلال آخر 24 ساعة} other {أخطاء مفتوحة خلال آخر 24 ساعة}}"
+
+#. placeholder {0}: value.links.length
+#. placeholder {1}: value.steps.length
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "{partCount} parts · {0} links · {1} steps"
+msgstr "{partCount} مكوّنات · {0} روابط · {1} خطوات"
 
 #: src/components/conversation/ConversationParticipants.tsx
 msgid "{participantCount, plural, one {# participant} other {# participants}}"
@@ -4459,6 +4471,18 @@ msgstr "التطبيقات والوكلاء"
 msgid "Apps in {projectName} with a deployment"
 msgstr "التطبيقات في {projectName} التي لديها نشر"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "architecture"
+msgstr "البنية"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Architecture"
+msgstr "البنية"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Architecture chart"
+msgstr "مخطط البنية"
+
 #: src/components/account/system-log.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
@@ -4807,6 +4831,10 @@ msgstr "المساعدات والمفاتيح"
 #: src/components/assets/editor/chart/C4ChartView.tsx
 msgid "async"
 msgstr ""
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "async / optional"
+msgstr "غير متزامن / اختياري"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "At"
@@ -7051,6 +7079,10 @@ msgstr "إغلاق اللوحة"
 #: src/components/top-nav-bar/AddressSearchField.tsx
 msgid "Close search"
 msgstr "إغلاق البحث"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Close steps"
+msgstr "إغلاق الخطوات"
 
 #: src/components/tabs/TabStrip.tsx
 msgid "Close tab"
@@ -9507,8 +9539,6 @@ msgstr "استخدام المعالج (%)"
 msgid "CPU:"
 msgstr "المعالج:"
 
-#: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -9523,6 +9553,7 @@ msgstr "المعالج:"
 #: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -12113,8 +12144,8 @@ msgstr "يُرجى التأكد من تثبيت Claude CLI والمصادقة ع
 msgid "Enter a name and choose a parent folder for the new project."
 msgstr "يُرجى إدخال اسم واختيار المجلد الأب للمشروع الجديد."
 
-#. placeholder {0}: m.newTypeTarget ?? 'item'
-#: src/components/assets/AssetsNavigator.tsx
+#. placeholder {0}: type ?? 'item'
+#: src/components/quick-create/NewOfTypeDialog.tsx
 msgid "Enter a name for the new {0}."
 msgstr "يُرجى إدخال اسم للـ {0} الجديد."
 
@@ -14344,6 +14375,7 @@ msgstr "JSON حر لمفاتيح الميزات التجريبية. لا يتم 
 msgid "from"
 msgstr "من"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -17350,6 +17382,12 @@ msgstr "السطر الاحتياطي"
 msgid "Lines"
 msgstr "الأسطر"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "link"
+msgstr "رابط"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Link"
@@ -17664,6 +17702,7 @@ msgstr "جارٍ تحميل الميزانيات…"
 msgid "Loading capabilities…"
 msgstr "جارٍ تحميل القدرات…"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
@@ -19075,8 +19114,6 @@ msgstr "الاسم"
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
@@ -19097,6 +19134,7 @@ msgstr "الاسم"
 #: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/token-plan/RenameButton.tsx
@@ -19325,12 +19363,12 @@ msgstr "جديد"
 msgid "New"
 msgstr "جديد"
 
-#. placeholder {0}: m.newTypeTarget ?? ''
 #. placeholder {0}: t(descriptor.label)
+#. placeholder {0}: type ?? ''
 #. placeholder {0}: type.label
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/browseable-tree/adapters/assetTypeRoot.tsx
 #: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "New {0}"
 msgstr "{0} جديد"
@@ -22221,6 +22259,7 @@ msgstr "فتح"
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
 #. placeholder {0}: item.label
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
@@ -22282,6 +22321,7 @@ msgstr "فتح {vendorLabel} في طرفية النظام هنا"
 msgid "Open {workerName} terminal"
 msgstr "فتح طرفية {workerName}"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
@@ -23520,6 +23560,10 @@ msgstr "موقوف مؤقتًا"
 
 #~ msgid "Parked: the scheduler skips it until you pull"
 #~ msgstr ""
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Part"
+msgstr "مكوّن"
 
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
@@ -26895,6 +26939,7 @@ msgstr ""
 msgid "Right-to-left paragraph"
 msgstr "فقرة من اليمين إلى اليسار"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/organization/invite-row.tsx
@@ -27909,6 +27954,10 @@ msgstr "التمرير إلى الأسفل"
 msgid "scroll to navigate"
 msgstr "التمرير للتنقل"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Scroll to zoom · drag to pan · click a number for the steps"
+msgstr "مرّر للتكبير · اسحب للتحريك · انقر على رقم لعرض الخطوات"
+
 #. placeholder {0}: changes ? ' · click an element to change it' : ''
 #: src/components/assets/editor/chart/C4ChartView.tsx
 msgid "Scroll to zoom · drag to pan{0}"
@@ -28723,6 +28772,10 @@ msgstr "الخدمة غير متاحة"
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Services"
 msgstr "الخدمات"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "services, databases and clients in grouped boxes, with numbered steps"
+msgstr "خدمات وقواعد بيانات وعملاء في مربعات مجمّعة، مع خطوات مرقّمة"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -30869,6 +30922,15 @@ msgstr "الحالة: {0}"
 #~ msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
 #~ msgstr "يبقى على هذا الجهاز فقط — لا يُرسل المجلد إلى أي شخص، حتى الأشخاص الذين يُشارَك معهم هذا المشروع."
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Step"
+msgstr "خطوة"
+
+#. placeholder {0}: p.step
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Step {0}"
+msgstr "الخطوة {0}"
+
 #. placeholder {0}: at + 1
 #. placeholder {1}: WIZARD.length
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -30879,6 +30941,7 @@ msgstr ""
 #~ msgstr "الخطوة: {0}ms · إلغاء الاهتزاز: {1}ms"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "الخطوات"
@@ -33623,6 +33686,7 @@ msgstr "العنوان"
 msgid "to"
 msgstr "إلى"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
@@ -34469,6 +34533,7 @@ msgstr "تحديث متاح"
 msgid "Update channel for auto-updates"
 msgstr "قناة التحديث للتحديثات التلقائية"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
@@ -35823,6 +35888,7 @@ msgstr "عند حدوث هذا"
 msgid "When you are signed out, ask whether to sign in so the search line can open screens directly."
 msgstr "عند تسجيل الخروج، يُسأل المستخدم إن كان يريد تسجيل الدخول حتى يتمكن شريط البحث من فتح الشاشات مباشرة."
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/automations/AutomationPage.tsx
 msgid "Where"
 msgstr ""

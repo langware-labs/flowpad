@@ -1177,6 +1177,12 @@ msgstr "{0}: {1} elements, {2} relations"
 msgid "{0}: {1} participants, {2} messages"
 msgstr "{0}: {1} participants, {2} messages"
 
+#. placeholder {0}: value.title || t`Architecture chart`
+#. placeholder {1}: value.links.length
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "{0}: {partCount} parts, {1} links"
+msgstr "{0}: {partCount} parts, {1} links"
+
 #. placeholder {0}: m[1]
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: agent, again"
@@ -1677,6 +1683,12 @@ msgstr "{openDisplayCount, plural, one {grouped open error in the last 24 hours}
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {open error in the last 24 hours} other {open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {open error in the last 24 hours} other {open errors in the last 24 hours}}"
+
+#. placeholder {0}: value.links.length
+#. placeholder {1}: value.steps.length
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "{partCount} parts · {0} links · {1} steps"
+msgstr "{partCount} parts · {0} links · {1} steps"
 
 #: src/components/conversation/ConversationParticipants.tsx
 msgid "{participantCount, plural, one {# participant} other {# participants}}"
@@ -4491,6 +4503,18 @@ msgstr "Apps and agents"
 msgid "Apps in {projectName} with a deployment"
 msgstr "Apps in {projectName} with a deployment"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "architecture"
+msgstr "architecture"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Architecture"
+msgstr "Architecture"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Architecture chart"
+msgstr "Architecture chart"
+
 #: src/components/account/system-log.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
@@ -4841,6 +4865,10 @@ msgstr "Assistants & keys"
 #: src/components/assets/editor/chart/C4ChartView.tsx
 msgid "async"
 msgstr "async"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "async / optional"
+msgstr "async / optional"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "At"
@@ -7093,6 +7121,10 @@ msgstr "Close panel"
 #: src/components/top-nav-bar/AddressSearchField.tsx
 msgid "Close search"
 msgstr "Close search"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Close steps"
+msgstr "Close steps"
 
 #: src/components/tabs/TabStrip.tsx
 msgid "Close tab"
@@ -9568,8 +9600,6 @@ msgstr "CPU Usage (%)"
 msgid "CPU:"
 msgstr "CPU:"
 
-#: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -9584,6 +9614,7 @@ msgstr "CPU:"
 #: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -12189,8 +12220,8 @@ msgstr "Ensure the claude CLI is installed and authenticated."
 msgid "Enter a name and choose a parent folder for the new project."
 msgstr "Enter a name and choose a parent folder for the new project."
 
-#. placeholder {0}: m.newTypeTarget ?? 'item'
-#: src/components/assets/AssetsNavigator.tsx
+#. placeholder {0}: type ?? 'item'
+#: src/components/quick-create/NewOfTypeDialog.tsx
 msgid "Enter a name for the new {0}."
 msgstr "Enter a name for the new {0}."
 
@@ -14445,6 +14476,7 @@ msgstr "Free-form JSON for experimental feature toggles. Invalid JSON is not sav
 msgid "from"
 msgstr "from"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -17477,6 +17509,12 @@ msgstr "line fallback"
 msgid "Lines"
 msgstr "Lines"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "link"
+msgstr "link"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Link"
@@ -17799,6 +17837,7 @@ msgstr "Loading budgets…"
 msgid "Loading capabilities…"
 msgstr "Loading capabilities…"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
@@ -19219,8 +19258,6 @@ msgstr "name"
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
@@ -19241,6 +19278,7 @@ msgstr "name"
 #: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/token-plan/RenameButton.tsx
@@ -19469,12 +19507,12 @@ msgstr "new"
 msgid "New"
 msgstr "New"
 
-#. placeholder {0}: m.newTypeTarget ?? ''
 #. placeholder {0}: t(descriptor.label)
+#. placeholder {0}: type ?? ''
 #. placeholder {0}: type.label
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/browseable-tree/adapters/assetTypeRoot.tsx
 #: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "New {0}"
 msgstr "New {0}"
@@ -22393,6 +22431,7 @@ msgstr "Open"
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
 #. placeholder {0}: item.label
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
@@ -22454,6 +22493,7 @@ msgstr "Open {vendorLabel} in an OS terminal here"
 msgid "Open {workerName} terminal"
 msgstr "Open {workerName} terminal"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
@@ -23701,6 +23741,10 @@ msgstr "Parked"
 #: src/components/data-sources/source-parts.tsx
 #~ msgid "Parked: the scheduler skips it until you pull"
 #~ msgstr "Parked: the scheduler skips it until you pull"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Part"
+msgstr "Part"
 
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
@@ -27098,6 +27142,7 @@ msgstr "Right-click the channel → Copy → Copy link, and paste it here:"
 msgid "Right-to-left paragraph"
 msgstr "Right-to-left paragraph"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/organization/invite-row.tsx
@@ -28119,6 +28164,10 @@ msgstr "Scroll to bottom"
 msgid "scroll to navigate"
 msgstr "scroll to navigate"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Scroll to zoom · drag to pan · click a number for the steps"
+msgstr "Scroll to zoom · drag to pan · click a number for the steps"
+
 #. placeholder {0}: changes ? ' · click an element to change it' : ''
 #: src/components/assets/editor/chart/C4ChartView.tsx
 msgid "Scroll to zoom · drag to pan{0}"
@@ -28938,6 +28987,10 @@ msgstr "Service Unavailable"
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Services"
 msgstr "Services"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "services, databases and clients in grouped boxes, with numbered steps"
+msgstr "services, databases and clients in grouped boxes, with numbered steps"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -31097,6 +31150,15 @@ msgstr "status: {0}"
 #~ msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
 #~ msgstr "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Step"
+msgstr "Step"
+
+#. placeholder {0}: p.step
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Step {0}"
+msgstr "Step {0}"
+
 #. placeholder {0}: at + 1
 #. placeholder {1}: WIZARD.length
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -31108,6 +31170,7 @@ msgstr "Step {0} of {1}"
 #~ msgstr "step: {0}ms · debounce: {1}ms"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "Steps"
@@ -33876,6 +33939,7 @@ msgstr "Title"
 msgid "to"
 msgstr "to"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
@@ -34724,6 +34788,7 @@ msgstr "Update available"
 msgid "Update channel for auto-updates"
 msgstr "Update channel for auto-updates"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
@@ -36092,6 +36157,7 @@ msgstr "When this happens"
 msgid "When you are signed out, ask whether to sign in so the search line can open screens directly."
 msgstr "When you are signed out, ask whether to sign in so the search line can open screens directly."
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/automations/AutomationPage.tsx
 msgid "Where"
 msgstr "Where"
