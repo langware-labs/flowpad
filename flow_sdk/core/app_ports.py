@@ -13,6 +13,7 @@ runs these through ``asyncio.to_thread``.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import signal
@@ -22,6 +23,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Iterable, Literal, Optional
+
+logger = logging.getLogger(__name__)
 
 from flow_sdk.core.dev_server import LOOPBACKS, dev_command, port_open
 
@@ -348,6 +351,22 @@ def kill_trees(pids: Iterable[int]) -> None:
         if group != os.getpgrp():
             groups.add(group)
             doomed.update((member.pid, member) for member in _tree(group))
+    # Self-protection: never kill a live protected FlowPad process, and never
+    # killpg a group that contains one (the group kill would take it down too).
+    # A no-op unless FLOWPAD_SELF_PROTECTION is on.
+    from flow_sdk.core import self_protection  # noqa: PLC0415
+
+    protected = set(self_protection.partition_kill(list(doomed))[1])
+    if protected:
+        for pid in protected:
+            doomed.pop(pid, None)
+        if sys.platform != "win32":
+            for pid in protected:
+                try:
+                    groups.discard(os.getpgid(pid))
+                except OSError:
+                    pass
+        logger.warning("[self_protection] kill_trees sparing protected pids %s", sorted(protected))
     for group in groups:
         try:
             os.killpg(group, signal.SIGKILL)

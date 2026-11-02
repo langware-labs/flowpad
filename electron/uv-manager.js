@@ -2220,6 +2220,11 @@ class UvManager {
         MINIHUB_RELOAD: 'false',
         FLOWPAD_NO_BROWSER: '1',
         FLOWPAD_DESKTOP: '1',
+        // Self-protection (FLOWPAD-2112): the backend registers THIS Electron process
+        // as a protected "desktop" process, using psutil for create_time so the
+        // registry's liveness recheck is consistent (a JS-computed start time would not
+        // match). Passing the pid here avoids a cross-language create_time mismatch.
+        FLOWPAD_DESKTOP_PID: String(process.pid),
         // `flow start` reports its boot phases on stdout (flow_sdk/boot_progress.py)
         // so the startup gate can tell a slow launcher from a hung one. The CLI
         // consumes the variable; nothing it spawns inherits it.

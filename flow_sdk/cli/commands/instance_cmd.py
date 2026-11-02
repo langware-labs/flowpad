@@ -352,6 +352,14 @@ def restart_backend(
         server_pid = int(server_pid)
     except (TypeError, ValueError):
         raise RuntimeError(f"instance '{name}' has no recorded backend server PID") from None
+    # Self-protection (FLOWPAD-2112): a restart is a legitimate kill of a protected
+    # backend — authorize it (releasing the pid) so the guarded sweep can reap it.
+    # A worker is refused: it must not restart the backend it runs under.
+    from flow_sdk.core import self_protection  # noqa: PLC0415
+
+    if not self_protection.authorize_lifecycle([server_pid], f"restart-backend {name}"):
+        raise RuntimeError(f"restart-backend '{name}' refused: a worker may not restart the backend")
+
     marker = request_backend_restart(instance_dir, server_pid)
     try:
         killed = _kill_instance_processes(name, backend_only=True)

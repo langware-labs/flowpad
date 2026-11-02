@@ -14,6 +14,7 @@ a minutes-long one. This mirrors the batching already proven in
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ from pathlib import Path
 
 from .liveness import ProcInfo, ProcTable
 from .model import ProcRef, Role
+
+logger = logging.getLogger(__name__)
 
 #: Seconds to wait after SIGTERM before escalating, and after SIGKILL before
 #: declaring a survivor. These are escalation steps in a shutdown ladder, not
@@ -110,6 +113,17 @@ def terminate_tree(roots: list) -> tuple[list[int], list[int]]:
                     targets[child.pid] = child
         except gone:
             pass
+
+    # Self-protection: never reap a live protected FlowPad process (backend,
+    # monitor, desktop), even if it was discovered as a tree member. A no-op
+    # unless FLOWPAD_SELF_PROTECTION is on.
+    from flow_sdk.core import self_protection  # noqa: PLC0415
+
+    _, refused = self_protection.partition_kill(list(targets))
+    for pid in refused:
+        targets.pop(pid, None)
+    if refused:
+        logger.warning("[self_protection] terminate_tree sparing protected pids %s", refused)
 
     procs = list(targets.values())
     for p in procs:
