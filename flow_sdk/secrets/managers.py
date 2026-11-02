@@ -197,13 +197,38 @@ def command_argv(template: str, values: Mapping[str, Any]) -> list[str]:
     return [arg.format_map(filled) for arg in shlex.split(template)]
 
 
-def _prepared(vault: Any) -> tuple["SecretManagerSpec", dict[str, Any]]:
+def _prepared(vault: Any, name: str = "") -> tuple["SecretManagerSpec", dict[str, Any]]:
     """The vault's manager and the values its commands are filled from: the config with the store's
-    defaults filled in, plus ``vault`` (its name in the manager)."""
+    defaults filled in, plus ``vault`` (its name in the manager; ``name``, the project's, when unset)."""
     manager, config = _vault_parts(vault)
     spec = get_manager(manager)
     config = _with_defaults(manager, config)
-    return spec, {**config, "vault": _vault_name(vault, config)}
+    return spec, {**config, "vault": _vault_name(vault, config) or name}
+
+
+def vault_command(vault: Any, op: str, os: Optional[str] = None, *, name: str = "") -> tuple[list[str], dict[str, str]]:
+    """The manager's ``op`` for this vault on ``os`` as ``(argv, env)`` — exactly what :func:`_run` runs.
+    ``([], {})`` when the manager has no such command there."""
+    spec, values = _prepared(vault, name)
+    template = cli_command(spec, op, os)
+    return (command_argv(template, values), command_env(spec.env, values)) if template else ([], {})
+
+
+def shell_line(argv: list[str], env: Mapping[str, str], os: Optional[str] = None) -> str:
+    """``argv`` with ``env`` as one shell line for ``os``: each argument quoted, so a value is never syntax."""
+    if not argv:
+        return ""
+    if (os or current_os()) == "win32":
+        line = " ".join(f'"{a}"' if " " in a and not a.startswith('"') else a for a in argv)
+        return "".join(f"set {k}={v}&& " for k, v in env.items()) + line
+    return " ".join([*(f"{k}={shlex.quote(v)}" for k, v in env.items()), shlex.join(argv)])
+
+
+def tool_missing(vault: Any) -> str:
+    """The tool the vault's manager drives (its ``check``'s program) when it is not on this machine, else "".
+    Runs nothing — no unlock prompt — so it is cheap enough for every status read."""
+    argv, _ = vault_command(vault, "check")
+    return argv[0] if argv and shutil.which(argv[0]) is None else ""
 
 
 async def run_check(vault: Any) -> bool:
@@ -253,7 +278,10 @@ class _Keep(dict):
 def _with_defaults(manager: str, config: Mapping[str, Any]) -> dict[str, Any]:
     """The vault's config with the store's defaults filled in, so a command never sees an unfilled
     placeholder for a field the person left empty (a GCP vault with no prefix)."""
-    spec = store_class(manager).config_spec
+    try:
+        spec = store_class(manager).config_spec
+    except KeyError:  # a manager with no store of its own has no defaults
+        return dict(config)
     return {**spec.model_validate(dict(config)).model_dump(), **{k: v for k, v in config.items() if k not in spec.model_fields}}
 
 
@@ -269,5 +297,5 @@ def _vault_name(vault: Any, config: Mapping[str, Any]) -> str:
 
 __all__ = [
     "OSES", "SecretManagerSpec", "UnknownSecretManager", "cli_command", "get_manager", "list_managers", "load_managers",
-    "run_check", "run_grant", "store_class", "store_for",
+    "run_check", "run_grant", "shell_line", "store_class", "store_for", "tool_missing", "vault_command",
 ]

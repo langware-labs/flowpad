@@ -180,13 +180,11 @@ def setup_cmd(vault: Annotated[str, typer.Argument(help="The vault to set up (e.
 
 async def _setup(vault_name: str, project_id: Optional[str]) -> int:
     import os  # noqa: PLC0415
-    from pathlib import Path  # noqa: PLC0415
 
     from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.cli.commands.project_cmd import _step_line, _terminal_answers  # noqa: PLC0415
-    from flow_sdk.core.wizard.runner import Resolved, run_wizard  # noqa: PLC0415
-    from flow_sdk.secrets.setup_wizard import vault_setup_wizard  # noqa: PLC0415
+    from flow_sdk.cli.commands.project_cmd import _terminal_answers  # noqa: PLC0415
+    from flow_sdk.secrets.setup_wizard import run_vault_setup  # noqa: PLC0415
 
     project = await (Project.get_by_id(project_id) if project_id else Project.find_by_cwd(os.getcwd()))
     if project is None:
@@ -195,30 +193,12 @@ async def _setup(vault_name: str, project_id: Optional[str]) -> int:
     if vault_name not in vaults:
         fail(int(ExitCode.NOT_FOUND), "UNKNOWN_VAULT", f"project {project.name} declares no vault {vault_name!r} "
              f"(declared: {', '.join(sorted(vaults)) or 'none'})")
-    built = vault_setup_wizard(str(project.id), vault_name, vaults[vault_name])
-    if built is None:
-        fail(2, "UNKNOWN_MANAGER", f"vault {vault_name!r} names an unknown secret manager")
-    wizard, ops = built
-
-    async def resolve(name: str) -> Optional[Resolved]:
-        return Resolved(ops[name], True) if name in ops else None
-
-    typer.echo(wizard.label)
+    # In this process: a sign-in may ask on this terminal.
     async with _terminal_answers() as seams:
-        result = await run_wizard(
-            wizard, activity_path=f"secrets-setup/{project.id}/{vault_name}", trusted=True,
-            workdir=Path(project.fs_storage_mount_path or os.getcwd()), resolve_op=resolve, **seams,
-        )
-    steps = dict(result.steps or {})
-    for step in wizard.steps:
-        typer.echo(_step_line(step.display_label, steps.get(step.id), asked=False))
-    from flow_sdk.secrets.setup_wizard import login_help  # noqa: PLC0415
-
-    signed_in = steps.get("login")
-    if signed_in is not None and not signed_in.ok and (hint := login_help(vaults[vault_name])):
-        typer.echo(f"\nTo sign in: {hint}")
-    from flow_sdk.secrets.managers import run_check  # noqa: PLC0415
-
-    ready = await run_check(vaults[vault_name])
-    typer.echo(f"Vault {vault_name} is readable here." if ready else f"Vault {vault_name} is not readable yet — run it again.")
-    return int(ExitCode.OK if ready else ExitCode.NOT_YET)
+        result = await run_vault_setup(project, vault_name, vaults[vault_name], **seams)
+    marks = {"done": "✓", "already_done": "✓", "failed": "✗", "not_reached": "·"}
+    for step in result["steps"]:
+        said = {"done": "done", "already_done": "already done", "not_reached": "not reached"}.get(step["state"], step["detail"])
+        typer.echo(f"  {marks[step['state']]}  {step['label']}: {said}")
+    typer.echo(f"Vault {vault_name} is readable here." if result["ready"] else f"Vault {vault_name} is not readable yet: {result['reason']}")
+    return int(ExitCode.OK if result["ready"] else ExitCode.NOT_YET)

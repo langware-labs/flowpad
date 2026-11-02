@@ -498,12 +498,6 @@ def _staging_gone(suffix: str = "") -> ApiFailResponse:
 # ---------------------------------------------------------------------------
 
 
-def _adopt_opened_id(ma: MessageAttachment, opened: "str | bool") -> None:
-    """A git share opens as the id the receiver's checkout carries: the row, its chip and Open follow it."""
-    if isinstance(opened, str) and opened and opened != ma.asset_id:
-        ma.asset_id = opened
-
-
 async def _adopt_indexed_asset_id(ma: MessageAttachment, root: Path, placed: list[Path]) -> None:
     """Point a zip-derived row at the entity its install indexed.
 
@@ -722,7 +716,7 @@ async def _install(
                 overwrite=overwrite,
                 owner_typeid=someone_typeid,
             ):
-                _adopt_opened_id(ma, opened)
+                ma.asset_id = opened  # the id this checkout carries, not the sender's
                 return await _finalize_install(ma, scope, project_id, None, someone_typeid)
         except GitShareError as e:
             if e.keeps_copy_out:
@@ -749,7 +743,7 @@ async def _install(
             )
             if not restored:
                 return ApiFailResponse(message="git transfer restore failed", status_code=500)
-            _adopt_opened_id(ma, restored)
+            ma.asset_id = restored  # the id this checkout carries, not the sender's
         else:
             entry_dir = _entry_dir_for(ma)
             if entry_dir is None or not entry_dir.exists():

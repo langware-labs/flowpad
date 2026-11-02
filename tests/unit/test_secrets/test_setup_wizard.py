@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 from flow_sdk.secrets.errors import StoreToolMissing
-from flow_sdk.secrets.setup_wizard import store_why, vault_commands, vault_setup_wizard
+from flow_sdk.secrets.setup_wizard import store_why, vault_setup_wizard
 
 VAULT = SecretVaultSpec(manager="onepassword", config={"vault": "GTM Studio", "account": "acme.1password.com"})
 
 
 def test_a_vault_name_with_a_space_is_one_argument_on_every_os():
-    check = vault_commands("team", VAULT)["check"]
+    _, ops = vault_setup_wizard("p1", "team", VAULT)
+    check = {p: ops["vault:team:login"].completion_check.command_for(p) for p in ("darwin", "win32")}
     assert check["darwin"] == "OP_ACCOUNT=acme.1password.com op vault get 'GTM Studio' --format json"
     assert check["win32"] == 'set OP_ACCOUNT=acme.1password.com&& op vault get "GTM Studio" --format json'
 
@@ -28,7 +29,7 @@ def test_why_a_vault_cannot_be_read_names_the_command_that_fixes_it():
     assert why == "vault team cannot be read here: the 1Password CLI (`op`) is not installed on this machine — run `flow secrets setup team`"
 
 
-def test_a_failed_sign_in_shows_the_managers_own_instruction():
-    from flow_sdk.secrets.setup_wizard import login_help
+def test_the_1password_manager_says_what_to_click_when_sign_in_fails():
+    from flow_sdk.secrets.managers import get_manager
 
-    assert "Integrate with 1Password CLI" in login_help(VAULT)
+    assert "Integrate with 1Password CLI" in get_manager("onepassword").login_help

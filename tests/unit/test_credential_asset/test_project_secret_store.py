@@ -31,8 +31,10 @@ def team_manager(monkeypatch):
 
     real = managers.get_manager
 
+    team = managers.SecretManagerSpec(name="team")
+
     def get_manager(name):
-        return {"name": "team"} if name == "team" else real(name)
+        return team if name == "team" else real(name)
 
     def store_for(vault: SecretVaultSpec) -> EnvFileStore:
         assert vault.manager == "team"
@@ -237,7 +239,7 @@ async def test_a_credential_in_a_vault_sets_the_vault_up_below_it_then_fetches(h
     from flow_sdk.secrets import managers
 
     commands = {"install": "brew install teamcli", "login": "teamcli signin", "check": "teamcli vault get {vault}"}
-    monkeypatch.setattr(managers, "cli_command", lambda _m, op, _os, **v: commands[op].format(**v))
+    monkeypatch.setattr(managers, "cli_command", lambda _m, op, _os=None: commands[op])
     await save_credential(
         manifest={"name": "bright_data", "vars": {"BRIGHT_DATA_API": {
             "required": "MUST", "secret_ref": {"vault": "team", "key": "BRIGHT_DATA_API"}}}, "setup": "From the team."},
@@ -320,23 +322,20 @@ async def test_a_fetch_that_cannot_run_still_opens_the_credential(home, project,
 async def test_a_test_with_no_value_from_an_unreadable_vault_refuses_and_names_the_setup(home, project, mount, team_file, monkeypatch):
     """The receiver had no `op`: the test ran with no key and the provider answered 401. Nothing reaches the
     provider now; the answer names the vault and `flow secrets setup`."""
-    from flow_sdk.builtin import credential_store
     from flow_sdk.builtin.credential_service import test_credential
-    from flow_sdk.secrets.errors import StoreToolMissing
+    from flow_sdk.secrets import managers
 
+    # The team manager drives a CLI this machine does not have.
+    absent = managers.SecretManagerSpec(name="team", title="Team", check="teamcli-not-on-this-machine vault get {vault}")
+    monkeypatch.setattr(managers, "get_manager", lambda name: absent)
     await _bright_data(project, secret_ref={"vault": "team", "key": "BRIGHT_DATA_API"})
     folder = mount / "agentic-assets" / "credential" / "bright_data"
     folder.joinpath("test.json").write_text(json.dumps({"commands": {p: "exit 1" for p in ("darwin", "linux", "win32")}}))
 
-    class Unreadable:
-        async def names(self):
-            raise StoreToolMissing("the team CLI is not installed on this machine")
-
-    monkeypatch.setattr(credential_store, "project_vault", lambda _p, _n: Unreadable())
     tested = await test_credential("bright_data", str(project.id))
     assert tested["state"] == "error"
-    assert tested["detail"] == ("no value here for BRIGHT_DATA_API — vault team cannot be read here: "
-                                "the team CLI is not installed on this machine — run `flow secrets setup team`")
+    assert tested["detail"] == ("no value here for BRIGHT_DATA_API — vault team cannot be read here: Team's CLI "
+                                "(teamcli-not-on-this-machine) is not installed on this machine — run `flow secrets setup team`")
 
 
 async def test_a_fetch_from_a_vault_whose_manager_is_not_installed_answers_manager_missing(home, project, mount, team_file, monkeypatch):

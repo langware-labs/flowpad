@@ -59,6 +59,8 @@ export function SecretVaultPanel({
   const [requested, setRequested] = useState<string[]>([]);
   const [asking, setAsking] = useState<null | { title: string; notes: string }>(null);
   if (!projectId) return null;
+  /** The vaults this credential's variables are shared through. */
+  const usedVaults = [...new Set(refs.map((r) => r.vault).filter((v): v is string => !!v))];
 
   const fetchValues = async () => {
     setBusy(true);
@@ -70,8 +72,7 @@ export function SecretVaultPanel({
       await onChanged();
     } catch (error) {
       const { code, message } = describeApiError(error, t`Could not fetch the values`);
-      const used = [...new Set(refs.map((r) => r.vault).filter((v): v is string => !!v))];
-      if (code === 'denied') setBlocked({ kind: 'denied', vaults: used.length ? used : vaults });
+      if (code === 'denied') setBlocked({ kind: 'denied', vaults: usedVaults.length ? usedVaults : vaults });
       else if (code === 'needs_connection' || code === 'manager_missing' || code === 'unknown_vault') setBlocked({ kind: code });
       else notify.error({ title: t`Could not fetch ${title}`, message });
     } finally {
@@ -81,8 +82,7 @@ export function SecretVaultPanel({
 
   // The vault's secret-manager setup wizard (install its CLI, sign in, check the vault), then fetch again.
   const setUp = async () => {
-    const used = [...new Set(refs.map((r) => r.vault).filter((v): v is string => !!v))];
-    const vault = used[0] ?? vaults[0];
+    const vault = usedVaults[0] ?? vaults[0];
     if (!vault) return;
     setBusy(true);
     try {
