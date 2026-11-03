@@ -37043,3 +37043,19 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/ui/full-screen.tsx
+msgid "Full screen"
+msgstr "ملء الشاشة"
+
+#: src/components/ui/full-screen.tsx
+msgid "Exit full screen"
+msgstr "الخروج من ملء الشاشة"
+
+#: src/components/ui/full-screen.tsx
+msgid "Full screen (Esc to exit)"
+msgstr "ملء الشاشة (Esc للخروج)"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Instructions — the agent's system prompt"
+msgstr "التعليمات — موجّه النظام للوكيل"

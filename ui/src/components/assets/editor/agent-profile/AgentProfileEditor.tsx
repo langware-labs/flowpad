@@ -17,6 +17,7 @@ import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
+import { FullScreenButton, FullScreenView } from '@src/components/ui/full-screen';
 import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
@@ -108,6 +109,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   );
   // Sharing reads its public grant from the hub on mount; hold it back until "More" is first opened.
   const [moreOpened, setMoreOpened] = useState(false);
+  const [promptFull, setPromptFull] = useState(false);
   // Milkdown rebuilds on a new onChange, so keep the callback stable and read the latest body from a ref.
   const setBodyRef = useRef(content.setBody);
   setBodyRef.current = content.setBody;
@@ -220,6 +222,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   );
 
   const AgentIcon = iconForType(Agent.type);
+  // Save the prompt when focus leaves its editor box (not when it moves inside it).
+  const commitPromptOnLeave = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit('system_prompt', prompt);
+  };
   const avatarImageUrl =
     profile.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
   const pending = version?.pending_changes ?? 0;
@@ -229,6 +235,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   // An unreadable definition (a hub that serves no agent document) fails only the definition column:
   // the deployments beside it come from the agent row, not from this file.
   const definitionError = content.loadError;
+  const promptMode = hub || definitionError ? 'view' : 'editor';
+  const promptEditor = (toolbarRight?: React.ReactNode) => (
+    <MilkdownEditor content={prompt} onChange={onPromptChange} editorMode={promptMode} toolbarRight={toolbarRight} />
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -367,9 +377,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               <h2 id="agent-definition" className="text-sm font-semibold">
                 <Trans>Definition</Trans>
               </h2>
-              <span className="text-xs text-muted-foreground">
-                <Trans>Shared by every place</Trans>
-              </span>
             </div>
             {definitionError && (
               <div
@@ -398,7 +405,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 <Trans>Deployments</Trans>
                 {places && places.length > 0 && (
                   <span
-                    className="ms-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold leading-none tabular-nums text-primary-foreground"
+                    className="ms-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums leading-none text-primary-foreground"
                     data-testid="agent-tab-deployments-count"
                   >
                     {places.length}
@@ -406,7 +413,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 )}
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="instructions" className="mt-3 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden">
+            <TabsContent
+              value="instructions"
+              className="mt-3 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+            >
               <span className="mb-1 text-xs text-muted-foreground">
                 <Trans>Behaviour — who this agent is, its system prompt</Trans>
               </span>
@@ -414,16 +424,39 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 className="min-h-48 flex-1 overflow-y-auto rounded-md border border-input text-sm"
                 aria-label={t`System prompt`}
                 data-testid="agent-system-prompt"
-                onBlur={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit('system_prompt', prompt);
-                }}
+                onBlur={commitPromptOnLeave}
               >
-                <MilkdownEditor
-                  content={prompt}
-                  onChange={onPromptChange}
-                  editorMode={hub || definitionError ? 'view' : 'editor'}
-                />
+                {/* One editor at a time: while full screen is open, the prompt is edited there. */}
+                {!promptFull &&
+                  promptEditor(<FullScreenButton className="ms-auto" onClick={() => setPromptFull(true)} />)}
               </div>
+              <FullScreenView
+                open={promptFull}
+                onExit={() => {
+                  setPromptFull(false);
+                  commit('system_prompt', prompt);
+                }}
+                title={title || agent.name}
+                subtitle={<Trans>Instructions — the agent's system prompt</Trans>}
+                icon={
+                  <AgentAvatar
+                    agent={agent}
+                    imageUrl={avatarImageUrl}
+                    color={profile.color ?? null}
+                    className="h-9 w-9 shrink-0"
+                    glyphClassName="h-5 w-5 text-lg"
+                    fallback={<AgentIcon className="h-5 w-5" />}
+                  />
+                }
+              >
+                <div
+                  className="flex min-h-0 flex-1 flex-col overflow-y-auto text-sm"
+                  data-testid="agent-system-prompt-full"
+                  onBlur={commitPromptOnLeave}
+                >
+                  {promptEditor()}
+                </div>
+              </FullScreenView>
             </TabsContent>
             {/* Kept mounted so a settings draft survives switching tabs. */}
             <TabsContent

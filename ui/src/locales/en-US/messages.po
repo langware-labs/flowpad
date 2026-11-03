@@ -37317,3 +37317,19 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/ui/full-screen.tsx
+msgid "Full screen"
+msgstr "Full screen"
+
+#: src/components/ui/full-screen.tsx
+msgid "Exit full screen"
+msgstr "Exit full screen"
+
+#: src/components/ui/full-screen.tsx
+msgid "Full screen (Esc to exit)"
+msgstr "Full screen (Esc to exit)"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Instructions — the agent's system prompt"
+msgstr "Instructions — the agent's system prompt"

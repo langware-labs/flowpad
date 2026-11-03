@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx } from '@milkdown/core';
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx } from '@milkdown/core';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
 import {
   commonmark,
@@ -53,6 +53,7 @@ import { changeMarksKey, changeMarksPlugin, type ChangeMark } from './plugins/ch
 // `AssetsPage` imports its column modules, and it keeps `fence-render/` free of
 // any dependency on the renderers built on top of it.
 import './plugins/fence-render/renderers/mermaid';
+import { tightLists } from './plugins/list-spread';
 import './plugins/fence-render/renderers/interface';
 import './plugins/fence-render/renderers/breadcrumb';
 import {
@@ -1031,6 +1032,7 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
         .config((ctx) => {
           ctx.set(rootCtx, root);
           ctx.set(defaultValueCtx, initialContentRef.current);
+          ctx.update(remarkStringifyOptionsCtx, tightLists);
           // Read-only modes disable editing but keep the DOM interactive
           // (anchors remain clickable, hover events still fire).
           // Register the grammars refractor's common bundle lacks. Must be

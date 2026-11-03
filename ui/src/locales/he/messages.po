@@ -37039,3 +37039,19 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
+
+#: src/components/ui/full-screen.tsx
+msgid "Full screen"
+msgstr "מסך מלא"
+
+#: src/components/ui/full-screen.tsx
+msgid "Exit full screen"
+msgstr "יציאה ממסך מלא"
+
+#: src/components/ui/full-screen.tsx
+msgid "Full screen (Esc to exit)"
+msgstr "מסך מלא (Esc ליציאה)"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Instructions — the agent's system prompt"
+msgstr "הוראות — הנחיית המערכת של הסוכן"
