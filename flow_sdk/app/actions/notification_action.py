@@ -39,8 +39,6 @@ from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.entity.parent_share import collect_parent_share_typeids
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.discovery.notify import send_resource_sync
-from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -588,7 +586,6 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
 
 async def _upload_body_and_finalize(
     reply_fm: "FlowMessage",
-    conv_id: str,
     *,
     transfer_mode: str = "copy",
     create_bookmark: bool = False,
@@ -618,7 +615,6 @@ async def _upload_body_and_finalize(
     else:
         reply_fm.delivery_failure = None
         await reply_fm.save()
-        _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
         return None
     logger.warning("[append_conversation] body upload failed: %s", failure.message)
     if failure.code == "target_not_found":
@@ -630,7 +626,6 @@ async def _upload_body_and_finalize(
         failure = failure.model_copy(update={"kind": HubFailureKind.SERVER_ERROR})
     reply_fm.body_status = BodyStatus.FAILED
     await reply_fm.record_delivery_failure(failure)
-    _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
     return failure
 
 
@@ -659,10 +654,8 @@ async def _finalize_message_dispatch(
         fm_id=fm.id,
         someone_typeid=someone_typeid,
     )
-    # Refresh the sender's UI immediately, then create the hub-side header
-    # (graph-linked to the parent Conversation so delivery receipts work). The
-    # body bundle uploads in a background task.
-    _notify_ui_conversation_updated(conv.id, "", fm.id)
+    # Create the hub-side header (graph-linked to the parent Conversation so
+    # delivery receipts work). The body bundle uploads in a background task.
     if is_remote_send:
         # The header now, in order behind anything this conversation still owes; the body after,
         # off the request. Its state is on the row, so a task that dies is resumed, not lost.
@@ -792,7 +785,6 @@ async def _try_send_reply_via_hub(
         (time.monotonic() - t_mat) * 1000,
     )
     message_count = conv_after.message_count if conv_after else 0
-    _notify_ui_conversation_updated(conv_id, "", hub_fm_id)
     # Spread the hub-confirmed FlowMessage fields into the response — see
     # _fm_response_fields for why the id must be carried (SDK mints a random
     # one otherwise).
@@ -806,33 +798,6 @@ async def _try_send_reply_via_hub(
             "flow_message_id": hub_fm_id,
         }
     )
-
-
-def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> None:
-    """Fire-and-forget sniffer EVENT so the UI refreshes the conversation panel.
-
-    Must be SyncOperation.EVENT — never CRUD. Sent as UPDATE it reached the
-    webhook receiver's ``_reflect_entity``, which loaded the Conversation
-    entity *while ``materialize_flow_message`` was still mid-flight* (before
-    the new pointer was projected into ``message_ids``), re-saved that stale
-    snapshot, and re-broadcast ``notify_updated()`` — clobbering the freshly
-    projected message list and leaving the UI exactly one message behind.
-    EVENT routes to the event handler / sniffer instead, which is all this
-    channel was ever for. Mirrors ``materialize_flow_message``'s own
-    ``conversation_updated`` event.
-    """
-    try:
-        send_resource_sync(
-            type="conversation",
-            id=conv_id,
-            operation=SyncOperation.EVENT,
-            data={
-                "event_name": "conversation_updated",
-                "event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id},
-            },
-        )
-    except Exception:
-        pass
 
 
 def _unshippable_payload(gaps) -> list[dict]:

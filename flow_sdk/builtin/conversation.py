@@ -862,7 +862,7 @@ class Conversation(ProjectedFields, Entity):
                     owed_bodies.append(fm)
         if bodies:
             for fm in owed_bodies:
-                await _upload_body_and_finalize(fm, self.id, **upload_options)
+                await _upload_body_and_finalize(fm, **upload_options)
 
     async def _open_on_hub(self, *, force: bool) -> bool:
         """Stage 0: a conversation captured here for the hub (an ask for help) is created there
