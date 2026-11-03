@@ -10,7 +10,7 @@ import { CredentialsSubview, ViewType } from './view-types';
  * pointer passes through.
  *
  * This is the ONE statement of the retirement. The URL side
- * (`credentials-dock-canonicalization.ts`, which redirects before anything parses
+ * (`retired-views-dock-canonicalization.ts`, which redirects before anything parses
  * the pointer) derives its matcher from this table rather than restating it —
  * a ViewType's enum value IS its URL segment, so the keys serve both. Retiring
  * the next view is one edit here.
@@ -33,14 +33,38 @@ export const RETIRED_DOCK_VIEWS: Partial<Record<ViewType, { viewType: ViewType; 
 };
 
 /**
- * Resolve a retired view type forward. Returns the pointer unchanged when it
- * names a live view, so callers can apply it unconditionally.
+ * Retired SECTIONS of a live view: one (viewType, pointer) that moved to another
+ * screen while the rest of its view lives on. Same contract as
+ * `RETIRED_DOCK_VIEWS` — decodable forever, resolved forward by
+ * `normalizeRetiredDockPointer` — but keyed by view type AND exact pointer, so
+ * a sibling pointer of the same view is left alone.
+ */
+export const RETIRED_DOCK_POINTERS: Partial<
+  Record<ViewType, Readonly<Record<string, { viewType: ViewType; pointer: string }>>>
+> = {
+  // Data sources › Channels became the one Channels screen (`/dock[/hub]/inbound`).
+  [ViewType.DATA_SOURCES]: { channels: { viewType: ViewType.INBOUND, pointer: '' } },
+};
+
+/** Where a retired view type, or a retired section of a live one, resolves to — or undefined when it is live. */
+export function retiredDockTarget(pointer: IDockPointer): { viewType: ViewType; pointer: string } | undefined {
+  if (!pointer.viewType) return undefined;
+  const view = RETIRED_DOCK_VIEWS[pointer.viewType];
+  if (view) return view;
+  const sections = RETIRED_DOCK_POINTERS[pointer.viewType];
+  const section = pointer.pointer;
+  return sections && section != null && Object.hasOwn(sections, section) ? sections[section] : undefined;
+}
+
+/**
+ * Resolve a retired view type (or retired section) forward. Returns the pointer
+ * unchanged when it names a live view, so callers can apply it unconditionally.
  */
 export function normalizeRetiredDockPointer(pointer: IDockPointer): IDockPointer {
-  const target = pointer.viewType ? RETIRED_DOCK_VIEWS[pointer.viewType] : undefined;
+  const target = retiredDockTarget(pointer);
   if (!target) return pointer;
 
-  // The retired trio never carried a pointer of their own, so the subview
-  // replaces it outright rather than merging with anything.
+  // A retired view never carried a pointer of its own and a retired section IS
+  // its pointer, so the target replaces it outright rather than merging.
   return { ...pointer, viewType: target.viewType, pointer: target.pointer };
 }

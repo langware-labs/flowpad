@@ -1,7 +1,6 @@
-import { canonicalChannelsDockPath } from '@src/navigation/channels-dock-canonicalization';
-import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
 import { canonicalProcessDockPath, canonicalVibeHostPath } from '@src/navigation/process-dock-canonicalization';
 import { canonicalWorkspaceDisplayPath } from '@src/navigation/workspace-display-canonicalization';
+import { canonicalRetiredViewDockPath } from '@src/navigation/retired-views-dock-canonicalization';
 import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
 
 /** One syntactic rewrite: the canonical `path+search` for a URL, or null when it already is. */
@@ -17,16 +16,15 @@ type Canonicalizer = (pathname: string, search: string) => string | null;
  *  - a process URL asking for Vibe by option → the Vibe host dock `/dock/vibe/<proc>`
  *  - the workspace display host only exists with the display pane on screen
  *  - retired WorldView spellings → the WorldView dock
- *  - retired credential views (environment / connections / api-keys) → credentials/<subview>
- *  - retired Data sources › Channels → the one Channels screen (inbound)
+ *  - retired views and sections (RETIRED_DOCK_VIEWS / RETIRED_DOCK_POINTERS): credential
+ *    aliases → credentials/<subview>, Data sources › Channels → inbound, …
  */
 const CANONICALIZERS: readonly Canonicalizer[] = [
   canonicalProcessDockPath,
   canonicalVibeHostPath,
   canonicalWorkspaceDisplayPath,
   canonicalWorldViewDockPath,
-  canonicalCredentialsDockPath,
-  canonicalChannelsDockPath,
+  canonicalRetiredViewDockPath,
 ];
 
 export function canonicalizeDockUrl(pathname: string, search: string): string | null {

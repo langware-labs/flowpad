@@ -7,18 +7,16 @@ import {
   type InboundClaim,
   InboundWebhooks,
   accountChainBody,
-  isHubOnly,
   linkChainBody,
 } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
-import { errorMessage, errorStatus } from '@src/lib/error-message';
+import { errorMessage } from '@src/lib/error-message';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { cn } from '@src/lib/utils';
 import { Chip } from './Chip';
-import { provisionMailboxOnHub } from './use-inbound-mailboxes';
 import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import {
@@ -36,7 +34,7 @@ type Step = 'choose' | 'link' | 'own' | 'connected' | 'email';
 const WAIT_POLL_MS = 3000;
 
 /** The own-account form: the account's key at the vendor, its credential, and how deliveries are signed. */
-const EMPTY_FORM = { key: '', token: '', graphUrl: '', appSecret: '' };
+const EMPTY_FORM = { key: '', token: '', graphUrl: '', appSecret: '', businessAccount: '' };
 
 /**
  * Connect a number or bot: through Flowpad's own account on the vendor (a code proves the caller's account), or the
@@ -55,7 +53,7 @@ export function ConnectNumberDialog({
   /** Where a number of `provider` can send what no rule matches (no "default": a number has no parent place).
    *  On a desktop the first "This computer" place is preselected. */
   optionsFor: (provider: string) => DestinationOption[];
-  /** The person's own agents — whom an inbox can belong to (the screen already read them). */
+  /** The person's own agents — whom a mailbox can belong to (the screen already read them). */
   agents: Agent[];
   onDone: () => void;
   api?: InboundApi;
@@ -72,30 +70,25 @@ export function ConnectNumberDialog({
   const [made, setMade] = useState<InboundClaim | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inbox, setInbox] = useState({ agentId: '', username: '', displayName: '' });
+  const [mailboxForm, setMailboxForm] = useState({ agentId: '', username: '', displayName: '' });
   const [verifyToken, setVerifyToken] = useState('');
   const allocateMailbox = useAllocateAgentMailbox();
-  const inboxAgent = agents.find((a) => String(a.id) === inbox.agentId) ?? agents[0] ?? null;
+  const mailboxAgent = agents.find((a) => String(a.id) === mailboxForm.agentId) ?? agents[0] ?? null;
 
-  /** One inbox per agent, minted by the hub (billable, permanent). A desktop allocates through the one shared path
-   *  (sign-in gate, the hub's "no agent email" answer); the hub page asks the hub directly. */
-  const createInbox = async () => {
-    if (!inboxAgent) return;
-    const body = { username: inbox.username.trim() || undefined, display_name: inbox.displayName.trim() || undefined };
+  /** One mailbox per agent, minted by the hub (billable, permanent) — through the one shared allocation path on both
+   *  pages; it tells the person why when it fails (sign-in, no agent email, a full mail plan). */
+  const createMailbox = async () => {
+    if (!mailboxAgent) return;
+    const body = {
+      username: mailboxForm.username.trim() || undefined,
+      display_name: mailboxForm.displayName.trim() || undefined,
+    };
     setBusy(true);
     setError(null);
     try {
-      if (isHubOnly()) await provisionMailboxOnHub(inboxAgent, body);
-      else if (!(await allocateMailbox(inboxAgent, body))) return; // the hook already told the person why
+      if (!(await allocateMailbox(mailboxAgent, body))) return;
       onDone();
       onOpenChange(false);
-    } catch (e) {
-      // 402: the hub's mail plan has no free inbox — a fact about the plan, said plainly.
-      setError(
-        errorStatus(e) === 402
-          ? t`The mail plan has no free inbox left. Remove an inbox you no longer use, or ask whoever runs the hub to upgrade the plan.`
-          : errorMessage(e, String(e)),
-      );
     } finally {
       setBusy(false);
     }
@@ -105,7 +98,7 @@ export function ConnectNumberDialog({
     if (!open) return;
     setStep('choose');
     setTab('whatsapp');
-    setInbox({ agentId: '', username: '', displayName: '' });
+    setMailboxForm({ agentId: '', username: '', displayName: '' });
     setVerifyToken('');
     setMade(null);
     setError(null);
@@ -165,6 +158,7 @@ export function ConnectNumberDialog({
         credential: form.token,
         appSecret: form.appSecret,
         graphUrl: route?.ownServer ? form.graphUrl : '',
+        businessAccount: route?.id === 'meta' ? form.businessAccount : '',
         verifyToken: token,
         // No fallback asked: anything no rule matches is ignored until a rule says otherwise.
       }),
@@ -231,7 +225,7 @@ export function ConnectNumberDialog({
                   ? t`Email`
                   : title
                 : {
-                    email: t`Email › Flowpad inbox`,
+                    email: t`Email › Flowpad mailbox`,
                     link: t`${title} › Flowpad's number`,
                     own: t`${title} › Your own number`,
                     connected: t`${title} › Connected`,
@@ -254,8 +248,8 @@ export function ConnectNumberDialog({
             </div>
             {email && (
               <Choice
-                testId="inbound-choice-inbox"
-                title={t`Flowpad inbox`}
+                testId="inbound-choice-mailbox"
+                title={t`Flowpad mailbox`}
                 detail={t`A real email address the hub creates for one of your agents. Nothing to set up.`}
                 onClick={() => setStep('email')}
               />
@@ -327,6 +321,15 @@ export function ConnectNumberDialog({
               secret
               hint={text.secretHint}
             />
+            {route.id === 'meta' && (
+              <Field
+                testId="inbound-field-business-account"
+                label={t`WhatsApp account ID (optional)`}
+                value={form.businessAccount}
+                onChange={field('businessAccount')}
+                hint={t`Meta app › WhatsApp › API Setup, under the number. Needed only when Meta has not linked the account to your app yet.`}
+              />
+            )}
           </div>
         )}
 
@@ -366,25 +369,29 @@ export function ConnectNumberDialog({
                 <Trans>the token acts as {made.claim?.key}</Trans>
               </span>
             </div>
-            <p>
-              {route?.id === 'meta' ? (
+            {route?.id === 'meta' ? (
+              <p data-testid="inbound-connected-registered">
                 <Trans>
-                  Last step, in your Meta app: WhatsApp › Configuration › Webhook — paste the Callback URL and Verify
-                  token below, Verify and save, then subscribe the messages field.
+                  ✓ Webhook set at Meta for you — Meta now sends this number's messages here. Removing the channel
+                  removes it from Meta too.
                 </Trans>
-              ) : (
-                <Trans>Now send your messages to the hub. Paste these into your server's webhook settings:</Trans>
-              )}
-            </p>
-            <CopyRow testId="inbound-connected-url" value={made.url} />
-            {verifyToken && <CopyRow testId="inbound-connected-verify-token" value={verifyToken} />}
-            <p className="text-xs text-muted-foreground">
-              <Trans>
-                Verify token: when you save the URL, your server calls it once with this word and the hub echoes back a
-                challenge only if the word matches. It proves you own the URL; it is not a password for messages — those
-                are checked with the app secret.
-              </Trans>
-            </p>
+              </p>
+            ) : (
+              <>
+                <p>
+                  <Trans>Now send your messages to the hub. Paste these into your server's webhook settings:</Trans>
+                </p>
+                <CopyRow testId="inbound-connected-url" value={made.url} />
+                {verifyToken && <CopyRow testId="inbound-connected-verify-token" value={verifyToken} />}
+                <p className="text-xs text-muted-foreground">
+                  <Trans>
+                    Verify token: when you save the URL, your server calls it once with this word and the hub echoes
+                    back a challenge only if the word matches. It proves you own the URL; it is not a password for
+                    messages — those are checked with the app secret.
+                  </Trans>
+                </p>
+              </>
+            )}
             <StatusPill waiting={!made.deliveries}>
               {made.deliveries ? (
                 <Trans>first delivery received</Trans>
@@ -402,11 +409,11 @@ export function ConnectNumberDialog({
                 <Trans>Agent</Trans>
               </span>
               <Select
-                value={inboxAgent ? String(inboxAgent.id) : undefined}
-                onValueChange={(agentId) => setInbox((b) => ({ ...b, agentId }))}
+                value={mailboxAgent ? String(mailboxAgent.id) : undefined}
+                onValueChange={(agentId) => setMailboxForm((b) => ({ ...b, agentId }))}
               >
                 <SelectTrigger data-testid="inbound-email-agent">
-                  <SelectValue placeholder={t`No agent without an inbox`} />
+                  <SelectValue placeholder={t`No agent without a mailbox`} />
                 </SelectTrigger>
                 <SelectContent>
                   {agents.map((a) => (
@@ -418,10 +425,10 @@ export function ConnectNumberDialog({
               </Select>
               <span className="text-xs text-muted-foreground" data-testid="inbound-email-agent-hint">
                 {agents.length ? (
-                  <Trans>One inbox per agent; it answers the senders you allow.</Trans>
+                  <Trans>One mailbox per agent; it answers the senders you allow.</Trans>
                 ) : (
                   <Trans>
-                    Every agent already has an inbox — an inbox belongs to one agent, so create another agent first.
+                    Every agent already has a mailbox — a mailbox belongs to one agent, so create another agent first.
                   </Trans>
                 )}
               </span>
@@ -429,15 +436,15 @@ export function ConnectNumberDialog({
             <Field
               testId="inbound-email-name"
               label={t`Name`}
-              value={inbox.username}
-              onChange={(v) => setInbox((b) => ({ ...b, username: v }))}
+              value={mailboxForm.username}
+              onChange={(v) => setMailboxForm((b) => ({ ...b, username: v }))}
               hint={t`The part before the @. Permanent once created.`}
             />
             <Field
               testId="inbound-email-display"
               label={t`Display name`}
-              value={inbox.displayName}
-              onChange={(v) => setInbox((b) => ({ ...b, displayName: v }))}
+              value={mailboxForm.displayName}
+              onChange={(v) => setMailboxForm((b) => ({ ...b, displayName: v }))}
               hint={t`What people see in their mail app.`}
             />
           </div>
@@ -473,11 +480,11 @@ export function ConnectNumberDialog({
               </Button>
               <Button
                 data-testid="inbound-email-create"
-                disabled={!inboxAgent || busy}
-                onClick={() => void createInbox()}
+                disabled={!mailboxAgent || busy}
+                onClick={() => void createMailbox()}
               >
                 {busy && <Loader2 className="size-4 animate-spin" />}
-                <Trans>Create inbox</Trans>
+                <Trans>Create mailbox</Trans>
               </Button>
             </>
           )}

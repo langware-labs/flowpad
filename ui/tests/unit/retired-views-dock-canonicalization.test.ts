@@ -9,44 +9,57 @@
 import { CredentialsSubview, ViewType } from '@sdk';
 import { describe, it, expect } from 'vitest';
 
-import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
-import { normalizeRetiredDockPointer } from '@sdk';
+import { canonicalRetiredViewDockPath } from '@src/navigation/retired-views-dock-canonicalization';
+import { normalizeRetiredDockPointer, Tab } from '@sdk';
 
-describe('canonicalCredentialsDockPath', () => {
+describe('canonicalRetiredViewDockPath', () => {
   it.each([
     ['/dock/environment', '/dock/credentials/connections'],
     ['/dock/connections', '/dock/credentials/connections'],
     ['/dock/api-keys', '/dock/credentials/connections'],
     ['/dock/skills', '/dock/assets/list/skill'],
   ])('redirects %s', (from, to) => {
-    expect(canonicalCredentialsDockPath(from, '')).toBe(to);
+    expect(canonicalRetiredViewDockPath(from, '')).toBe(to);
   });
 
   it('keeps the page segment', () => {
-    expect(canonicalCredentialsDockPath('/dock/hub/connections', '')).toBe('/dock/hub/credentials/connections');
+    expect(canonicalRetiredViewDockPath('/dock/hub/connections', '')).toBe('/dock/hub/credentials/connections');
   });
 
   it('handles the dev and win dock prefixes', () => {
-    expect(canonicalCredentialsDockPath('/dev/environment', '')).toBe('/dev/credentials/connections');
-    expect(canonicalCredentialsDockPath('/win/hub/api-keys', '')).toBe('/win/hub/credentials/connections');
+    expect(canonicalRetiredViewDockPath('/dev/environment', '')).toBe('/dev/credentials/connections');
+    expect(canonicalRetiredViewDockPath('/win/hub/api-keys', '')).toBe('/win/hub/credentials/connections');
   });
 
   it('preserves the query string, which may hold unrelated dock options', () => {
-    expect(canonicalCredentialsDockPath('/dock/environment', '?layout=split')).toBe(
+    expect(canonicalRetiredViewDockPath('/dock/environment', '?layout=split')).toBe(
       '/dock/credentials/connections?layout=split',
     );
   });
 
   it('drops a trailing segment — none of the three ever carried a pointer', () => {
-    expect(canonicalCredentialsDockPath('/dock/environment/whatever', '')).toBe('/dock/credentials/connections');
+    expect(canonicalRetiredViewDockPath('/dock/environment/whatever', '')).toBe('/dock/credentials/connections');
+  });
+
+  it.each([
+    ['/dock/data-sources/channels', '/dock/inbound'],
+    ['/dock/hub/data-sources/channels', '/dock/hub/inbound'],
+  ])('redirects the retired Data sources › Channels section %s', (from, to) => {
+    expect(canonicalRetiredViewDockPath(from, '')).toBe(to);
+  });
+
+  it('leaves the live Data sources sections alone', () => {
+    expect(canonicalRetiredViewDockPath('/dock/data-sources', '')).toBeNull();
+    expect(canonicalRetiredViewDockPath('/dock/data-sources/drivers', '')).toBeNull();
+    expect(canonicalRetiredViewDockPath('/dock/data-sources/constructor', '')).toBeNull();
   });
 
   it('leaves everything else alone, including the view that replaced them', () => {
-    expect(canonicalCredentialsDockPath('/dock/credentials/connections', '')).toBeNull();
-    expect(canonicalCredentialsDockPath('/dock/home', '')).toBeNull();
-    expect(canonicalCredentialsDockPath('/dock/hub/worldview/world', '')).toBeNull();
+    expect(canonicalRetiredViewDockPath('/dock/credentials/connections', '')).toBeNull();
+    expect(canonicalRetiredViewDockPath('/dock/home', '')).toBeNull();
+    expect(canonicalRetiredViewDockPath('/dock/hub/worldview/world', '')).toBeNull();
     // Not a dock URL at all.
-    expect(canonicalCredentialsDockPath('/environment', '')).toBeNull();
+    expect(canonicalRetiredViewDockPath('/environment', '')).toBeNull();
   });
 });
 
@@ -74,5 +87,23 @@ describe('normalizeRetiredDockPointer', () => {
       pointer: CredentialsSubview.CONNECTIONS,
       options: { layout: 'split' },
     });
+  });
+});
+
+describe('a saved Tab row on a retired section', () => {
+  it('normalizes data-sources / channels to the Channels screen', () => {
+    const tab = new Tab({
+      id: '00000000-0000-4000-8000-000000000001',
+      pointer: JSON.stringify({ viewType: ViewType.DATA_SOURCES, pointer: 'channels' }),
+    });
+    expect(tab.dockPointer).toMatchObject({ viewType: ViewType.INBOUND, pointer: '', tabHash: 'inbound|' });
+  });
+
+  it('leaves a saved live Data sources section alone', () => {
+    const tab = new Tab({
+      id: '00000000-0000-4000-8000-000000000002',
+      pointer: JSON.stringify({ viewType: ViewType.DATA_SOURCES, pointer: 'drivers' }),
+    });
+    expect(tab.dockPointer).toMatchObject({ viewType: ViewType.DATA_SOURCES, pointer: 'drivers' });
   });
 });

@@ -1113,6 +1113,15 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message=str(exc), status_code=409)
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
 
+    @classmethod
+    @action.get(action_name="last-active")
+    async def last_active_action(cls) -> "ApiResponse":
+        """`GET /project/last-active` — ``{"project_id"}`` of the project this instance was last used in
+        (:meth:`get_last_active`, the project the app opens on), ``None`` when there is none. What a CLI
+        command outside any project folder scopes a new asset to, the way the app scopes it to the open one."""
+        project = await cls.get_last_active()
+        return ApiSuccessResponse(data={"project_id": str(project.id) if project else None})
+
     @action.get(action_name="status")
     async def status_action(self, parts: str = "") -> "ApiResponse":
         """`GET /project/<id>/status?parts=setup,...` — this project's stored status, at once. Every asked part that

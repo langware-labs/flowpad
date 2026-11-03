@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActionInfo, Agent, type MailboxAllocation, QueryRequest, dataManager, isHubOnly } from '@sdk';
+import { Agent, QueryRequest } from '@sdk';
 
 /**
- * The hub-allocated inboxes the signed-in person's agents hold — the email rows of the Channels screen.
+ * The hub-allocated mailboxes the signed-in person's agents hold — the email rows of the Channels screen.
  *
- * An inbox belongs to ONE agent (the hub's `AgentMailbox`); its "routing" is that agent plus the mailbox's
- * allowlist (`allowed_senders`, empty = nobody). The one place that knows the two transports: a desktop asks its own
- * Agent (`mailbox_state` / `configure_mailbox` / `allocate_mailbox`, which wire the local source too); the hub page
- * asks the hub's `agent/<id>/mailbox` door directly.
+ * A mailbox belongs to ONE agent (the hub's `AgentMailbox`); its "routing" is that agent plus the mailbox's
+ * allowlist (`allowed_senders`, empty = nobody). Read through `Agent.mailboxState()`, which knows both transports
+ * (the desktop's own Agent, or the hub page's `agent/<id>/mailbox` door).
  */
 export interface InboundMailbox {
   /** The owning agent's id — the row's key and the Routing page's pointer (`mailboxPointer`). */
@@ -17,12 +16,7 @@ export interface InboundMailbox {
   allowedSenders: string[];
 }
 
-interface MailboxDescriptor {
-  address?: string;
-  allowed_senders?: string[];
-}
-
-/** What a Channels routing pointer names: a hub claim (a number) or an agent's inbox. */
+/** What a Channels routing pointer names: a hub claim (a number) or an agent's mailboxForm. */
 export type RoutingTarget = { kind: 'number'; id: string } | { kind: 'mailbox'; agentId: string };
 
 const MAILBOX_POINTER_PREFIX = 'mailbox-';
@@ -38,55 +32,24 @@ export function parseRoutingPointer(pointer: string | undefined): RoutingTarget 
     : { kind: 'number', id: pointer };
 }
 
-/** Flowpad's own agents (shipped in a system project) are not the person's: they hold no inbox of theirs. */
+/** Flowpad's own agents (shipped in a system project) are not the person's: they hold no mailbox of theirs. */
 function isBuiltinAgent(agent: Agent): boolean {
-  return !!agent.system || (agent.bundleDirectory ?? '').includes('/system_projects/');
-}
-
-function hubMailboxCall(agentId: string, verb: string, method: 'GET' | 'POST', body?: object): ActionInfo {
-  const info = new ActionInfo(verb ? `mailbox/${verb}` : 'mailbox', 'agent', agentId, method);
-  if (body) info.bodyParameters = body as Record<string, unknown>;
-  return info;
-}
-
-function toRow(agent: Agent, d: MailboxDescriptor | null | undefined): InboundMailbox | null {
-  if (!d?.address) return null;
-  return {
-    agentId: String(agent.id),
-    agentName: agent.name || String(agent.id),
-    address: d.address,
-    allowedSenders: d.allowed_senders ?? [],
-  };
+  return !!agent.system || !!agent.shipped;
 }
 
 async function readMailbox(agent: Agent): Promise<InboundMailbox | null> {
-  if (isHubOnly()) {
-    const data = await dataManager.callAction<unknown, { mailbox?: MailboxDescriptor | null }>(
-      hubMailboxCall(String(agent.id), '', 'GET'),
-    );
-    return toRow(agent, data?.mailbox);
-  }
-  return toRow(agent, (await agent.mailboxState()).mailbox);
-}
-
-/** Set an inbox's allowlist (full addresses). Answers the list as the hub stored it — normalized, de-duplicated. */
-export async function setAllowedSenders(agent: Agent, allowedSenders: string[]): Promise<string[]> {
-  if (isHubOnly()) {
-    const saved = await dataManager.callAction<unknown, MailboxDescriptor>(
-      hubMailboxCall(String(agent.id), 'configure', 'POST', { allowed_senders: allowedSenders }),
-    );
-    return saved?.allowed_senders ?? allowedSenders;
-  }
-  return (await agent.configureMailbox({ allowed_senders: allowedSenders })).mailbox?.allowed_senders ?? allowedSenders;
-}
-
-/** Mint the inbox on the hub page. A desktop allocates through `useAllocateAgentMailbox` (it wires the source). */
-export async function provisionMailboxOnHub(agent: Agent, body: MailboxAllocation): Promise<void> {
-  await dataManager.callAction(hubMailboxCall(String(agent.id), 'provision', 'POST', body));
+  const mailbox = (await agent.mailboxState()).mailbox;
+  if (!mailbox?.address) return null;
+  return {
+    agentId: String(agent.id),
+    agentName: agent.name || String(agent.id),
+    address: mailbox.address,
+    allowedSenders: mailbox.allowed_senders ?? [],
+  };
 }
 
 export function useInboundMailboxes(): {
-  /** The person's own agents (an inbox belongs to one of them). */
+  /** The person's own agents (a mailbox belongs to one of them). */
   agents: Agent[];
   mailboxes: InboundMailbox[];
   refresh: () => Promise<void>;

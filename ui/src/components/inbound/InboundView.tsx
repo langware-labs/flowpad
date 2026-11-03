@@ -13,7 +13,6 @@ import {
 } from '@sdk';
 import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
-import { Input } from '@src/components/ui/input';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { notify } from '@src/notifications';
@@ -21,6 +20,7 @@ import { errorMessage } from '@src/lib/error-message';
 import { AddRuleDialog } from './AddRuleDialog';
 import { ConnectNumberDialog } from './ConnectNumberDialog';
 import { Chip } from './Chip';
+import { AllowedSendersEditor } from '@src/components/agents/AllowedSendersEditor';
 import { RouteCheck } from './RouteCheck';
 import {
   type DestinationOption,
@@ -31,13 +31,7 @@ import {
   optionFor,
 } from './inbound-model';
 import { useDestinationLabels, useInboundChannels, useInboundClaims } from './use-inbound';
-import {
-  mailboxPointer,
-  parseRoutingPointer,
-  type InboundMailbox,
-  setAllowedSenders,
-  useInboundMailboxes,
-} from './use-inbound-mailboxes';
+import { mailboxPointer, parseRoutingPointer, type InboundMailbox, useInboundMailboxes } from './use-inbound-mailboxes';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 type RuleEdit = { number: InboundClaim; rule: InboundClaim | null };
@@ -128,7 +122,7 @@ export function InboundView({ api = InboundWebhooks, pointer }: { api?: InboundA
           </h1>
           <p className="text-sm text-muted-foreground">
             {routedMailbox ? (
-              <Trans>Flowpad inbox · only allowed senders reach {routedMailbox.agentName}</Trans>
+              <Trans>Flowpad mailbox · only allowed senders reach {routedMailbox.agentName}</Trans>
             ) : (
               <Trans>The most specific rule wins: in a group the group, else the sender, else everything else</Trans>
             )}
@@ -259,7 +253,7 @@ export function InboundView({ api = InboundWebhooks, pointer }: { api?: InboundA
                   key={m.agentId}
                   testId={`inbound-channel-mailbox-${m.agentId}`}
                   name={`${t`Email`} · ${m.address}`}
-                  info={`${t`Flowpad inbox`} · ${t`answered by ${m.agentName}`} · ${
+                  info={`${t`Flowpad mailbox`} · ${t`answered by ${m.agentName}`} · ${
                     m.allowedSenders.length === 1 ? t`1 allowed sender` : t`${m.allowedSenders.length} allowed senders`
                   }`}
                   onRouting={() => openRouting(mailboxPointer(m.agentId))}
@@ -282,7 +276,7 @@ export function InboundView({ api = InboundWebhooks, pointer }: { api?: InboundA
         open={connectOpen}
         onOpenChange={setConnectOpen}
         optionsFor={numberOptionsFor}
-        // One inbox per agent: only an agent without one can be given one.
+        // One mailbox per agent: only an agent without one can be given one.
         agents={agents.filter((a) => !mailboxes.some((m) => m.agentId === String(a.id)))}
         onDone={() => {
           void refresh();
@@ -445,7 +439,7 @@ function NumberRouting({
   );
 }
 
-/** An inbox's routing: its agent answers the allowed senders; anyone else is ignored (empty list = nobody). */
+/** A mailbox's routing: its agent answers the allowed senders; anyone else is ignored (empty list = nobody). */
 function MailboxRouting({
   mailbox,
   agent,
@@ -456,19 +450,6 @@ function MailboxRouting({
   onSaved: (allowedSenders: string[]) => void;
 }) {
   const { t } = useLingui();
-  const [adding, setAdding] = useState('');
-  const [busy, setBusy] = useState(false);
-  const save = async (next: string[]) => {
-    setBusy(true);
-    try {
-      if (!agent) throw new Error(t`This inbox's agent is gone`);
-      onSaved(await setAllowedSenders(agent, next));
-    } catch (e) {
-      notify.error({ title: errorMessage(e, String(e)) });
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <>
       <RuleTable testId={`inbound-mailbox-${mailbox.agentId}`}>
@@ -479,54 +460,12 @@ function MailboxRouting({
         />
         <RuleRow testId="inbound-mailbox-else" from={t`Anyone else`} place={{ label: t`Ignore`, detail: '' }} />
       </RuleTable>
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
-        <span className="text-xs text-muted-foreground">
-          <Trans>Allowed senders — empty means nobody</Trans>
-        </span>
-        <div className="flex flex-wrap gap-2" data-testid="inbound-mailbox-senders">
-          {mailbox.allowedSenders.map((a) => (
-            <span key={a} className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
-              {a}
-              <button
-                type="button"
-                aria-label={t`Remove ${a}`}
-                className="text-muted-foreground hover:text-foreground"
-                disabled={busy}
-                onClick={() => void save(mailbox.allowedSenders.filter((x) => x !== a))}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const v = adding.trim();
-            if (!v) return;
-            setAdding('');
-            void save([...mailbox.allowedSenders, v]);
-          }}
-        >
-          <Input
-            className="h-8"
-            placeholder={t`An email address`}
-            value={adding}
-            onChange={(e) => setAdding(e.target.value)}
-            data-testid="inbound-mailbox-add-input"
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            type="submit"
-            disabled={busy || !adding.trim()}
-            data-testid="inbound-mailbox-add"
-          >
-            <Trans>+ Add sender</Trans>
-          </Button>
-        </form>
-      </div>
+      <AllowedSendersEditor
+        agent={agent}
+        allowedSenders={mailbox.allowedSenders}
+        onSaved={onSaved}
+        testId="inbound-mailbox"
+      />
     </>
   );
 }

@@ -1,36 +1,24 @@
-import { normalizeRetiredDockPointer, RETIRED_DOCK_VIEWS } from '@sdk';
+import { normalizeRetiredDockPointer, retiredDockTarget } from '@sdk';
 import { DockPointer } from './DockPointer';
 import { tryParseDock } from './try-parse-dock';
 
 /**
- * The retired view types in URL form. A ViewType's enum value IS its URL
- * segment, so the retirement table's own keys are the segments to match — the
- * mapping is not restated here. `RETIRED_DOCK_VIEWS` (ts_sdk) is the one place
- * a retirement is declared; this file is only its URL half.
- */
-/**
- * Collapse the retired credential view types into the one Credentials
- * grammar: `/dock[/hub]/credentials/<subview>`.
+ * Resolve a retired dock address forward in URL form: a retired view type
+ * (`environment`, `connections`, `api-keys` → `/dock[/hub]/credentials/connections`,
+ * `skills`, the Events trio, …) or a retired section of a live view
+ * (`/dock[/hub]/data-sources/channels` → `/dock[/hub]/inbound`).
  *
- * `environment`, `connections`, and `api-keys` used to be sibling view types
- * rendering the same three components as this view's tabs — four doors onto one
- * room, each with its own active-state and framing rules. They survive only as
- * decodable URLs so old links, bookmarks, and saved tabs keep working, the same
- * way `atlas` survives for WorldView.
+ * `RETIRED_DOCK_VIEWS` / `RETIRED_DOCK_POINTERS` (ts_sdk `retired-views.ts`) are
+ * the one place a retirement is declared; saved Tab rows go through the same
+ * `normalizeRetiredDockPointer` (`tab.ts`). This file is only its URL half.
  *
  * Pure, and the root loader owns the redirect, so a mounted view only ever
- * observes canonical URL state. Any trailing segment is dropped: none of the
- * three ever carried a pointer, so there is nothing to preserve — but the query
- * string is, since it may hold unrelated dock options.
+ * observes canonical URL state. The pointer is replaced by the target's; the
+ * query string (dock options), layout and page are kept.
  */
-export function canonicalCredentialsDockPath(pathname: string, search: string): string | null {
+export function canonicalRetiredViewDockPath(pathname: string, search: string): string | null {
   const dock = tryParseDock(`${pathname}${search}`);
-  const target = dock?.viewType ? RETIRED_DOCK_VIEWS[dock.viewType] : undefined;
-  if (!dock || !target) return null;
-  // `normalizeRetiredDockPointer` is the ONE declaration of where a retired
-  // view resolves to; saved Tab rows already go through it (`tab.ts`). This is
-  // the URL half, now reading the same table through the same function instead
-  // of re-implementing the mapping as a regex + template.
+  if (!dock || !retiredDockTarget({ viewType: dock.viewType, pointer: dock.pointer })) return null;
   const normalized = normalizeRetiredDockPointer({ viewType: dock.viewType, pointer: dock.pointer });
   return new DockPointer(normalized.viewType, normalized.pointer, dock.options, dock.layout, dock.page).toUrl(
     pathname,

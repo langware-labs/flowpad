@@ -1365,6 +1365,10 @@ msgstr "{filteredCount} من {totalCount} مستودعات"
 msgid "{firstName} is still uploading the bundle. Try again in a moment."
 msgstr ""
 
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{folder} — {harness} asks once per folder"
+msgstr ""
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
 msgstr "لدى {folderName} تغييرات لم تُدفع بعد. يمكن للمستقبل سحب ما هو موجود على المستودع البعيد فقط."
@@ -1391,6 +1395,38 @@ msgstr "طلب من {guestName} لتشغيل الأوامر على جهازكم.
 #: src/utils/format-time-ago.ts
 msgid "{h}h ago"
 msgstr "منذ {h} ساعة"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{harness} asks once per folder"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{harness} asks to confirm full access"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{harness} couldn't start"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{harness} crashed on start"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{harness} isn't connected to an account"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{harness} isn't installed on this computer"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{harness} needs a one-time setup"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{harness} starts by itself when it's ready"
+msgstr ""
 
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "{harnessCount, plural, one {Clear harness history for # project?} other {Clear harness history for # projects?}}"
@@ -2017,6 +2053,14 @@ msgstr ""
 msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
 msgstr "لدى {who} هذه المحادثة في المشروع {0}، وهذا المشروع ليس نسخة عمل من <0>{where}</0>"
 
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{who} key ****{hint} was rejected"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{who} key was rejected"
+msgstr ""
+
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "{who} to {targetLabel} as {role}."
 msgstr "{who} إلى {targetLabel} بصفة {role}."
@@ -2089,7 +2133,7 @@ msgstr ""
 msgid "+ Add rule"
 msgstr "+ إضافة قاعدة"
 
-#: src/components/inbound/InboundView.tsx
+#: src/components/agents/AllowedSendersEditor.tsx
 msgid "+ Add sender"
 msgstr "+ إضافة مرسل"
 
@@ -2247,6 +2291,10 @@ msgstr "⚡ {latencyMs} ms"
 #: src/components/conversation/ConversationActions.tsx
 msgid "✓ {label} · {when}"
 msgstr "✓ {label} · {when}"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "✓ Webhook set at Meta for you — Meta now sends this number's messages here. Removing the channel removes it from Meta too."
+msgstr "✓ تم إعداد الـ webhook لك في Meta — ترسل Meta الآن رسائل هذا الرقم إلى هنا. إزالة القناة تزيله من Meta أيضًا."
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "🎉 No problems found — nothing needs your attention."
@@ -2639,6 +2687,10 @@ msgstr ""
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "a source this project does not list"
 msgstr "مصدر غير مدرج في قائمة هذا المشروع"
+
+#: src/components/funding-chip/FundingChip.tsx
+msgid "A stored key was rejected"
+msgstr ""
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "A subject such as task:* or data_source:<id>. Empty = any."
@@ -3826,6 +3878,7 @@ msgstr ""
 msgid "Allocation saved"
 msgstr ""
 
+#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "السماح"
@@ -3880,10 +3933,10 @@ msgid "Allowed Domains"
 msgstr "النطاقات المسموح بها"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "Allowed senders"
-msgstr "المرسلون المسموح لهم"
+#~ msgid "Allowed senders"
+#~ msgstr "المرسلون المسموح لهم"
 
-#: src/components/inbound/InboundView.tsx
+#: src/components/agents/AllowedSendersEditor.tsx
 msgid "Allowed senders — empty means nobody"
 msgstr "المرسلون المسموح لهم — القائمة الفارغة تعني لا أحد"
 
@@ -4030,7 +4083,7 @@ msgstr "يقرأ وكيل المهمة، ويُشعِر عند الحاجة إل
 msgid "An allowed sender"
 msgstr "مرسل مسموح له"
 
-#: src/components/inbound/InboundView.tsx
+#: src/components/agents/AllowedSendersEditor.tsx
 msgid "An email address"
 msgstr "عنوان بريد إلكتروني"
 
@@ -4350,8 +4403,9 @@ msgstr "يصبح كل ما يحتاج إلى شخص اليوم مهمة لكم."
 msgid "Anything to add? (optional)"
 msgstr "هل هناك ما تضيفه؟ (اختياري)"
 
-#~ msgid "API"
-#~ msgstr ""
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "API"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Api Key"
@@ -7691,6 +7745,10 @@ msgstr "تأكيد"
 msgid "Confirm deletion"
 msgstr "تأكيد الحذف"
 
+#: src/components/agentic-progress/shared/status-indicator.tsx
+msgid "confirm full access"
+msgstr ""
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
 msgstr "تحقّق من الرسوم محل النزاع، واشرح مسار الاسترداد، وأعدّ مسودة الرد. لا ترسله."
@@ -7704,6 +7762,7 @@ msgstr "تأكيد: {0}"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/git/GitRemoteField.tsx
+#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
@@ -8071,6 +8130,7 @@ msgstr "تم التحويل إلى لوحة Excalidraw"
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/hooks/event-utils.tsx
+#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -8199,6 +8259,10 @@ msgstr "نسخ معرف عقدة الحساب"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Copy content to clipboard"
 msgstr "نسخ المحتوى إلى الحافظة"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Copy details"
+msgstr ""
 
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -9122,6 +9186,10 @@ msgstr "تعذّر الحفظ"
 #~ msgid "Could not save agent"
 #~ msgstr "تعذر حفظ الوكيل"
 
+#: src/components/agents/AllowedSendersEditor.tsx
+msgid "Could not save allowed senders"
+msgstr "تعذّر حفظ المرسلين المسموح لهم"
+
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Could not save environment variables. Your edits are still here; try again."
 msgstr "تعذّر حفظ متغيرات البيئة. التعديلات ما زالت هنا؛ يُرجى المحاولة مجددًا."
@@ -9279,6 +9347,7 @@ msgstr ""
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
+#: src/navigation/open-new-chat.ts
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
@@ -9772,13 +9841,13 @@ msgstr "إنشاء ملف"
 msgid "Create Folder"
 msgstr "إنشاء مجلد"
 
-#: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Create inbox"
-msgstr "إنشاء صندوق بريد"
-
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Create it"
 msgstr "إنشاء"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Create mailbox"
+msgstr "إنشاء صندوق بريد"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
@@ -11051,6 +11120,7 @@ msgstr "التفاصيل"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
+#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Details"
@@ -12066,8 +12136,8 @@ msgid "Email"
 msgstr "البريد الإلكتروني"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Email › Flowpad inbox"
-msgstr "البريد › صندوق Flowpad"
+msgid "Email › Flowpad mailbox"
+msgstr "البريد › صندوق بريد Flowpad"
 
 #. placeholder {0}: mailboxes.length
 #: src/components/inbound/InboundView.tsx
@@ -12605,7 +12675,7 @@ msgid "Every agent {projectName} can launch"
 msgstr "كل الوكلاء التي يمكن لـ {projectName} تشغيلها"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Every agent already has an inbox — an inbox belongs to one agent, so create another agent first."
+msgid "Every agent already has a mailbox — a mailbox belongs to one agent, so create another agent first."
 msgstr "لكل الوكلاء صندوق بريد بالفعل — الصندوق يتبع وكيلًا واحدًا، لذا أنشئ وكيلًا آخر أولًا."
 
 #: src/components/asset-counters/agent-counters.tsx
@@ -13087,6 +13157,7 @@ msgstr "جارٍ الاستخراج…"
 msgid "failed"
 msgstr "فشل"
 
+#: src/components/agentic-progress/shared/status-indicator.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -13507,6 +13578,7 @@ msgstr "تعذر تعيين المشروع"
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/notes/useNoteWorker.ts
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Failed to start session"
@@ -13519,6 +13591,10 @@ msgstr "تعذر بدء الجلسة"
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "فشل بدء جلسة البناء."
+
+#: src/navigation/open-new-chat.ts
+msgid "Failed to start the session."
+msgstr ""
 
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 msgid "Failed to start the skill run session."
@@ -13657,10 +13733,6 @@ msgstr "جلب"
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Fetch missing"
 msgstr "جلب الحزم الناقصة"
-
-#: src/components/stream-inbox-view/StreamInboxView.tsx
-#~ msgid "Fetch new messages from hub"
-#~ msgstr "جلب الرسائل الجديدة من Hub"
 
 #: src/components/assets/dependency-sources.tsx
 msgid "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
@@ -13977,6 +14049,11 @@ msgstr "الإكمال لاحقًا"
 msgid "Finish setting up Flowpad"
 msgstr "إنهاء إعداد Flowpad"
 
+#: src/components/agentic-progress/shared/status-indicator.tsx
+msgid "finish setup"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Finish setup"
 msgstr "إنهاء الإعداد"
@@ -14288,16 +14365,6 @@ msgstr "لم يُفتح FlowPad؟ ثبّتوه ثم عودوا إلى هذه ا�
 msgid "Flowpad git"
 msgstr "Flowpad git"
 
-#: src/components/inbound/ConnectNumberDialog.tsx
-#: src/components/inbound/InboundView.tsx
-msgid "Flowpad inbox"
-msgstr "صندوق Flowpad"
-
-#. placeholder {0}: routedMailbox.agentName
-#: src/components/inbound/InboundView.tsx
-msgid "Flowpad inbox · only allowed senders reach {0}"
-msgstr "صندوق Flowpad · لا يصل إلى {0} إلا المرسلون المسموح لهم"
-
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
@@ -14336,6 +14403,20 @@ msgstr ">>>>>>> aea919ba5"
 #: src/components/git/GitRepoPicker.tsx
 msgid "Flowpad keeps the repository for you. No GitHub account needed."
 msgstr "يحتفظ Flowpad بالمستودع نيابةً عنك. لا حاجة إلى حساب GitHub."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/InboundView.tsx
+msgid "Flowpad mailbox"
+msgstr "صندوق بريد Flowpad"
+
+#. placeholder {0}: routedMailbox.agentName
+#: src/components/inbound/InboundView.tsx
+msgid "Flowpad mailbox · only allowed senders reach {0}"
+msgstr "صندوق بريد Flowpad · لا يصل إلى {0} إلا المرسلون المسموح لهم"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Flowpad runs it without per-step prompts"
+msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -14839,6 +14920,10 @@ msgstr "جارٍ جلب المشروع المراد العمل عليه"
 #. placeholder {0}: card.sender_name || t`the sender`
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Getting the values from {0}'s Flowpad… they arrive by themselves."
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Getting your Flowpad budget ready…"
 msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -16375,6 +16460,7 @@ msgstr "داخل"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
+#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Install"
 msgstr "تثبيت"
@@ -16444,6 +16530,10 @@ msgstr "تثبيت الحزمة"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "Install project"
 msgstr "تثبيت المشروع"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Install takes about a minute"
+msgstr ""
 
 #: src/components/install/InstallButton.tsx
 msgid "Install this asset on your desktop"
@@ -16785,6 +16875,10 @@ msgstr "لم تعد هذه النقطة ضمن نقاط النهاية التي 
 #: src/components/project-setup/ProjectLoadGate.tsx
 #~ msgid "It is not answering on its port, or its page failed the last time it opened."
 #~ msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "It isn't set up on this computer"
+msgstr ""
 
 #: src/pages/entry/EntityLanding.tsx
 msgid "It lives in git under {repoPath}. Clone it, and open it in the FlowPad desktop app."
@@ -17287,8 +17381,8 @@ msgid "last session: {lastSession}"
 msgstr "آخر جلسة: {lastSession}"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Last step, in your Meta app: WhatsApp › Configuration › Webhook — paste the Callback URL and Verify token below, Verify and save, then subscribe the messages field."
-msgstr "الخطوة الأخيرة، في تطبيق Meta الخاص بك: WhatsApp › Configuration › Webhook — الصق Callback URL و Verify token أدناه، ثم Verify and save، ثم اشترك في حقل messages."
+#~ msgid "Last step, in your Meta app: WhatsApp › Configuration › Webhook — paste the Callback URL and Verify token below, Verify and save, then subscribe the messages field."
+#~ msgstr "الخطوة الأخيرة، في تطبيق Meta الخاص بك: WhatsApp › Configuration › Webhook — الصق Callback URL و Verify token أدناه، ثم Verify and save، ثم اشترك في حقل messages."
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last success"
@@ -18965,6 +19059,10 @@ msgid "Meta app › WhatsApp › API Setup — the number's id, not the phone nu
 msgstr "تطبيق Meta › WhatsApp › API Setup — معرّف الرقم، وليس رقم الهاتف نفسه."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Meta app › WhatsApp › API Setup, under the number. Needed only when Meta has not linked the account to your app yet."
+msgstr "تطبيق Meta › WhatsApp › API Setup، تحت الرقم. مطلوب فقط إن لم تربط Meta الحساب بتطبيقك بعد."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta official Cloud API"
 msgstr "Meta Cloud API الرسمية"
 
@@ -19993,16 +20091,12 @@ msgstr "لم يتم تكوين أي خطاطيف للوكيل"
 #~ msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "No agent without an inbox"
+msgid "No agent without a mailbox"
 msgstr "لا يوجد وكيل بلا صندوق بريد"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 #~ msgid "No agents yet"
 #~ msgstr "لا يوجد وكلاء بعد"
-
-#: src/components/inbound/ConnectNumberDialog.tsx
-#~ msgid "No agents yet — an inbox belongs to an agent, so create one first."
-#~ msgstr "لا يوجد وكلاء بعد — صندوق البريد يتبع وكيلًا، لذا أنشئ وكيلًا أولًا."
 
 #: src/pages/hub-home/HubItemsSection.tsx
 msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
@@ -21147,6 +21241,10 @@ msgstr "لا توجد جلسات مشتركة بعد. سيؤدي تنفيذ مط
 msgid "No shell is linked to this process."
 msgstr "لا توجد قشرة مرتبطة بهذه العملية."
 
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "No sign-in or key"
+msgstr ""
+
 #. placeholder {0}: preset.label
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "No sizes are declared for {0}"
@@ -21402,7 +21500,7 @@ msgstr ""
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Nobody may write to this agent yet — add their address under Allowed senders."
-msgstr ""
+msgstr "لا يمكن لأحد مراسلة هذا الوكيل بعد — أضف عنوانه ضمن المرسلين المسموح لهم."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Nobody yet"
@@ -22370,13 +22468,13 @@ msgstr "قرار واحد، ولا يُشغَّل شيء."
 msgid "One group"
 msgstr "مجموعة واحدة"
 
-#: src/components/inbound/ConnectNumberDialog.tsx
-msgid "One inbox per agent; it answers the senders you allow."
-msgstr "صندوق واحد لكل وكيل؛ يرد على المرسلين الذين تسمح لهم."
-
 #: src/components/credentials/CredentialDialog.tsx
 msgid "One line: what this project uses it for"
 msgstr "سطر واحد: فيمَ يستخدمه هذا المشروع"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "One mailbox per agent; it answers the senders you allow."
+msgstr "صندوق بريد واحد لكل وكيل؛ يرد على المرسلين الذين تسمح لهم."
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "One model per line. Empty = whatever the provider lists."
@@ -22434,8 +22532,8 @@ msgid "One sender"
 msgstr "مُرسِل واحد"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "one@example.com"
-msgstr "one@example.com"
+#~ msgid "one@example.com"
+#~ msgstr "one@example.com"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
@@ -26092,12 +26190,17 @@ msgstr "مسجَّل على المركز، لكن مستنده لم يُرفع �
 msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "المراقبون المسجَّلون: <0>{registeredCount}</0>"
 
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Reinstall"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
 msgstr "رفض"
 
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/harness-login/funding-pill.ts
+#: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Rejected"
 msgstr "مرفوض"
 
@@ -26185,7 +26288,7 @@ msgstr "إزالة {0} من {1}؟"
 #~ msgid "Remove {0} from {teamName}"
 #~ msgstr "إزالة {0} من {teamName}"
 
-#: src/components/inbound/InboundView.tsx
+#: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
 msgstr "إزالة {a}"
 
@@ -26554,6 +26657,10 @@ msgstr "استبدال الموجود"
 
 #: src/components/conversation/asset-review/ReplacePrompt.tsx
 msgid "Replace it"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Replace key"
 msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
@@ -29342,6 +29449,7 @@ msgstr "جعله عامًا"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/git/GitSetupWizard.tsx
+#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -32617,8 +32725,8 @@ msgstr "لم يكتمل تسجيل الخروج."
 msgid "The machine reads this environment's credentials."
 msgstr "يقرأ الجهاز بيانات اعتماد هذه البيئة."
 
-#: src/components/inbound/ConnectNumberDialog.tsx
-msgid "The mail plan has no free inbox left. Remove an inbox you no longer use, or ask whoever runs the hub to upgrade the plan."
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "The mail plan has no free mailbox left. Remove a mailbox you no longer use, or ask whoever runs the hub to upgrade the plan."
 msgstr "لم يتبقَّ صندوق بريد متاح في خطة البريد. أزل صندوقًا لم تعد تستخدمه، أو اطلب ممن يدير الـ hub ترقية الخطة."
 
 #: src/components/assets/editor/PublishedToggle.tsx
@@ -32982,6 +33090,10 @@ msgstr "أبلغ المعالج عن خطأ."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again."
 msgstr "خرج العامل فور تشغيله، لذا أُوقفت إعادة التشغيل التلقائي مؤقتًا. أعيدوا المحاولة لتشغيله مرة أخرى."
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Theme and sign-in screens are waiting"
+msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/blocks/ThenBlock.tsx
@@ -33376,10 +33488,6 @@ msgstr "لا يتوفر في هذا المركز مكتب مساعدة — يم�
 msgid "This hub isn't configured to run sandboxes"
 msgstr "هذا المركز غير مُهيَّأ لتشغيل البيئات المعزولة"
 
-#: src/components/inbound/InboundView.tsx
-msgid "This inbox's agent is gone"
-msgstr "وكيل صندوق البريد هذا لم يعد موجودًا"
-
 #: src/lib/content-install.ts
 msgid "This install link has an invalid content branch."
 msgstr "رابط التثبيت يحتوي على فرع محتوى غير صالح."
@@ -33492,12 +33600,16 @@ msgid "this machine"
 msgstr "هذا الجهاز"
 
 #: src/components/task-receive/LaunchDialog.tsx
-msgid "This machine has no model to run the agent on. Set one up, then try again."
-msgstr "لا يوجد نموذج على هذا الجهاز لتشغيل الوكيل. يُرجى إعداد نموذج ثم إعادة المحاولة."
+#~ msgid "This machine has no model to run the agent on. Set one up, then try again."
+#~ msgstr "لا يوجد نموذج على هذا الجهاز لتشغيل الوكيل. يُرجى إعداد نموذج ثم إعادة المحاولة."
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "This machine is not connected to the hub, so it cannot be opened from here."
 msgstr ""
+
+#: src/components/agents/AllowedSendersEditor.tsx
+msgid "This mailbox's agent is gone"
+msgstr "وكيل صندوق البريد هذا لم يعد موجودًا"
 
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "This message carries no assets."
@@ -33698,6 +33810,14 @@ msgstr "هذا المشروع غير مشارك معكم، لذلك لا يمك�
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "This project needs these packages, and they are not on this computer."
 msgstr "يحتاج هذا المشروع إلى هذه الحزم، وهي غير موجودة على هذا الجهاز."
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "This project requires {source}"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "This project requires a specific model source"
+msgstr ""
 
 #~ msgid "This project stops using it and the stored value is deleted."
 #~ msgstr ""
@@ -34498,8 +34618,26 @@ msgstr "تم التشغيل"
 msgid "Triggers"
 msgstr "المشغّلات"
 
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Trust"
+msgstr ""
+
+#: src/components/agentic-progress/shared/status-indicator.tsx
+msgid "trust folder"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Trust folder {name}?"
+msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "Trust this folder?"
+msgstr ""
+
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
+#: src/components/launch-failure/LaunchFailureCard.tsx
+#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/organization/tabs/OrgView.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/LaunchDialog.tsx
@@ -35823,6 +35961,10 @@ msgstr ""
 msgid "waiting for you"
 msgstr "في انتظاركم"
 
+#: src/components/agentic-progress/shared/status-indicator.tsx
+msgid "Waiting for you"
+msgstr ""
+
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Waiting for you to approve on {0}…"
@@ -35835,6 +35977,10 @@ msgstr "في انتظار موافقتكم…"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "waiting for you to choose an LLM source"
 msgstr "في انتظار أن تختاروا مصدر LLM"
+
+#: src/components/agentic-progress/shared/status-indicator.tsx
+msgid "Waiting for you: {what}"
+msgstr ""
 
 #~ msgid "Waiting for you…"
 #~ msgstr "في انتظارك…"
@@ -36239,6 +36385,10 @@ msgstr "ما الذي يمكنكم العمل عليه؟"
 #: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 msgid "Whatever I get"
 msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "WhatsApp account ID (optional)"
+msgstr "معرّف حساب WhatsApp (اختياري)"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "WhatsApp Business account ID"
