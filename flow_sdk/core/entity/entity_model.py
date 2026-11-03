@@ -2501,14 +2501,19 @@ class Entity(DBEntity):
                     await child.unshare(recursive=True)
 
         if getattr(self, "remote", False):
+            from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
             creds = load_credentials()
             if not creds or not creds.api_key:
-                raise RuntimeError("Cloud login required before unshare()")
+                raise HubError(0, "signed out", kind=HubFailureKind.SIGNED_OUT)
             response = await HubProxy.send("DELETE", hub_public_url(build_hub_url(self)))
             if response.status_code >= 400 and response.status_code != 404:  # 404: already gone
-                from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-
-                raise HubError(response.status_code, f"the hub did not delete {self.typeid}")
+                raise HubError(
+                    response.status_code,
+                    f"the hub did not delete {self.typeid}",
+                    code=_extract_error_code(response),
+                )
             if "remote" in type(self).model_fields:
                 self.remote = False
         return self
