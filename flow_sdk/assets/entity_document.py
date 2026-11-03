@@ -97,7 +97,9 @@ def patch_entity_document_bytes(
     fields.update(patch.set_fields)
     # The same normalisation the writer applies, so "changed" means changed, not reformatted.
     new_body = before.body if patch.body is None or info.body_file is None else patch.body.strip()
-    body_changed = new_body != before.body
+    # Compared stripped on both sides: the file keeps its trailing newline, the patch is stripped, so
+    # an untouched body sent back as loaded is not a change (it bumped ``version`` on every such save).
+    body_changed = new_body != before.body.strip()
     if fields == before.fields and not body_changed:
         return before, raw, body
     # The file's keys are the spec's ALIASES where it declares one (``data_driver_name``), its names otherwise.

@@ -171,8 +171,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
       else current.setField(key, value as DocumentValue);
     }
     const operation = writeQueueRef.current.then(async () => {
+      // A save with nothing changed writes nothing, so it is not an edit: no recency stamp and no
+      // git re-check (a blur on an untouched field used to stamp the agent as edited).
+      const wrote = contentRef.current.isDirty();
       const saved = await contentRef.current.save();
-      if (saved) {
+      if (saved && wrote) {
         agentRef.current.markEdit();
         // A saved agent.md in a git checkout is auto-committed server-side
         // (`asset_versioning`), which moves the branch ahead of its remote with

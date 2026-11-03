@@ -37,8 +37,9 @@ function fixture(extraFields: Record<string, unknown> = {}) {
   });
   const rawWrite = vi.spyOn(mainRef, 'write');
   const entitySave = vi.spyOn(agent, 'save');
+  const markEdit = vi.spyOn(agent, 'markEdit').mockImplementation(() => undefined);
   render(<MemoryRouter><TooltipProvider><AgentProfileEditor agent={agent} mainRef={mainRef} /></TooltipProvider></MemoryRouter>);
-  return { update, rawWrite, entitySave, externalEdit: () => { stored = {...stored, revision: 'external', body: 'External'}; } };
+  return { update, rawWrite, entitySave, markEdit, externalEdit: () => { stored = {...stored, revision: 'external', body: 'External'}; } };
 }
 
 describe('Agent profile document adapter', () => {
@@ -49,6 +50,17 @@ describe('Agent profile document adapter', () => {
     await waitFor(() => expect(f.update).toHaveBeenCalledTimes(1));
     expect(f.update).toHaveBeenCalledWith({expected_revision: 'first', body: 'My prompt'});
     expect(f.rawWrite).not.toHaveBeenCalled(); expect(f.entitySave).not.toHaveBeenCalled();
+  });
+  it('a blur with nothing changed writes nothing and is not an edit', async () => {
+    const f = fixture();
+    fireEvent.blur(await screen.findByRole('textbox', { name: 'System prompt' }));
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Agent title' }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(f.update).not.toHaveBeenCalled();
+    expect(f.markEdit).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Agent title' }), { target: { value: 'Renamed' } });
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Agent title' }));
+    await waitFor(() => expect(f.markEdit).toHaveBeenCalledTimes(1));
   });
   it('edits the prompt full screen and saves it once on exit', async () => {
     const f = fixture();
