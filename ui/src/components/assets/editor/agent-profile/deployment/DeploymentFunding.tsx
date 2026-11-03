@@ -17,7 +17,10 @@ import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
-import { TokenAllocationField, tokenAllocationComplete } from '../TokenAllocationField';
+import { useLlmEndpointChain } from '@src/components/llm-endpoints/use-llm-endpoints';
+import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
+
+import { allocationFromChain, TokenAllocationField, tokenAllocationComplete } from '../TokenAllocationField';
 
 export function useDeploymentFunding(deployment: Deployment | null | undefined) {
   return useQuery({
@@ -90,7 +93,7 @@ export function DeploymentFundingCard({ agent, deployment }: { agent: Agent; dep
           {data.size ? `${data.size} → ${data.model}` : data.model}
         </span>
       )}
-      <ChangeAllocation agent={agent} deployment={deployment} />
+      <ChangeAllocation agent={agent} deployment={deployment} funding={data ?? null} />
       {problem && (
         <span className="w-full text-destructive" data-testid="deployment-funding-problem">
           {problem}
@@ -101,19 +104,46 @@ export function DeploymentFundingCard({ agent, deployment }: { agent: Agent; dep
 }
 
 /** Give the deployment its own sub-budget (or a new one): a source, a daily cap and a size or model. */
-function ChangeAllocation({ agent, deployment }: { agent: Agent; deployment: Deployment }) {
+function ChangeAllocation({
+  agent,
+  deployment,
+  funding,
+}: {
+  agent: Agent;
+  deployment: Deployment;
+  funding: DeploymentFunding | null;
+}) {
   const { t } = useLingui();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState<AgentTokenAllocation | null>(null);
+  // The editor opens on the allocation the deployment HAS: until it is read, nothing is shown or saved —
+  // an unseeded `null` would read as "unchecked" and saving it would drop the allocation.
+  const [seeded, setSeeded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const own = funding?.kind === 'allocation';
+  const chain = useLlmEndpointChain(
+    editing && own && funding.endpoint_typeid ? endpointIdFromTypeId(funding.endpoint_typeid) : undefined,
+  );
+
+  useEffect(() => {
+    if (!editing || seeded || !funding) return;
+    if (own && !chain.data && !chain.error) return;
+    setValue(allocationFromChain(chain.data, funding));
+    setSeeded(true);
+  }, [editing, seeded, funding, own, chain.data, chain.error]);
+
+  const close = () => {
+    setEditing(false);
+    setSeeded(false);
+  };
 
   const save = async () => {
     setBusy(true);
     try {
       await agent.planDeployment(deployment.environment, deployment.target.provider, value);
       notify.success({ title: value ? t`Allocation saved` : t`Back on the owner's default` });
-      setEditing(false);
+      close();
       await queryClient.invalidateQueries({ queryKey: ['deployment', deployment.id, 'funding'] });
     } catch (e) {
       notify.error({ title: t`Could not change the allocation`, message: errorMessage(e, '') });
@@ -137,22 +167,28 @@ function ChangeAllocation({ agent, deployment }: { agent: Agent; deployment: Dep
   }
   return (
     <div className="w-full space-y-2 pt-2" data-testid="deployment-allocation-editor">
-      <TokenAllocationField
-        agent={agent}
-        environment={deployment.environment}
-        provider={deployment.target.provider}
-        value={value}
-        onChange={setValue}
-        disabled={busy}
-      />
+      {!seeded ? (
+        <span className="text-xs text-muted-foreground" data-testid="deployment-allocation-loading">
+          <Trans>Reading the current allocation…</Trans>
+        </span>
+      ) : (
+        <TokenAllocationField
+          agent={agent}
+          environment={deployment.environment}
+          provider={deployment.target.provider}
+          value={value}
+          onChange={setValue}
+          disabled={busy}
+        />
+      )}
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={busy}>
+        <Button variant="ghost" size="sm" onClick={close} disabled={busy}>
           <Trans>Cancel</Trans>
         </Button>
         <Button
           size="sm"
           onClick={() => void save()}
-          disabled={busy || (value !== null && !tokenAllocationComplete(value))}
+          disabled={busy || !seeded || (value !== null && !tokenAllocationComplete(value))}
           data-testid="deployment-allocation-save"
         >
           {busy ? '…' : t`Save`}

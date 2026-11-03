@@ -1,4 +1,12 @@
-import { LLM_MODEL_SIZES, TypeId, type Agent, type AgentTokenAllocation, type CloudDeployProvider } from '@sdk';
+import {
+  LLM_MODEL_SIZES,
+  TypeId,
+  type Agent,
+  type AgentTokenAllocation,
+  type CloudDeployProvider,
+  type DeploymentFunding,
+  type LLMChain,
+} from '@sdk';
 import { useDebounceCallback } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
@@ -14,7 +22,11 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { endpointTypeId, openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import {
+  endpointIdFromTypeId,
+  endpointTypeId,
+  openLlmEndpoint,
+} from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import {
   useLlmEndpointChain,
   useLlmEndpointModels,
@@ -339,4 +351,26 @@ function ConfigureButton({
 /** Whether a checked allocation says enough to deploy with. */
 export function tokenAllocationComplete(value: AgentTokenAllocation | null): boolean {
   return value === null || (!!value.source && !!value.model);
+}
+
+/**
+ * The allocation a deployment already has, read back from its endpoint's chain: the entry hop is the
+ * deployment's own sub-endpoint (its daily cap and the one model it allows), the next hop on the first path
+ * is the budget it was carved from (the source). `null` when the deployment runs on no allocation of its
+ * own — that is what "unchecked" means, and saving it drops the allocation.
+ */
+export function allocationFromChain(
+  chain: LLMChain | null | undefined,
+  funding: DeploymentFunding | null | undefined,
+): AgentTokenAllocation | null {
+  if (!funding || funding.kind !== 'allocation') return null;
+  const same = (a: string, b: string) => endpointIdFromTypeId(a) === endpointIdFromTypeId(b);
+  const entry = chain?.hops.find((hop) => same(hop.id, chain.entry.id));
+  const path = chain?.paths[0] ?? [];
+  const parentId = path[path.findIndex((id) => same(id, chain?.entry.id ?? '')) + 1];
+  return {
+    source: parentId ? endpointTypeId(endpointIdFromTypeId(parentId)) : '',
+    cost_usd_per_day: entry?.limits?.cost_usd_per_day ?? null,
+    model: entry?.effective_filters?.models_allow?.[0] ?? funding.model ?? '',
+  };
 }
