@@ -243,6 +243,7 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onLaunched }: N
                 agent={agent}
                 environment={environment}
                 provider={machine.provider}
+                deploymentId={null}
                 value={tokenAllocation}
                 onChange={setTokenAllocation}
                 disabled={launching}

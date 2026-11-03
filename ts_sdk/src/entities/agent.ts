@@ -503,17 +503,20 @@ export class Agent extends APIEntity<Agent> {
    * (default `production`), before it
    * has a machine, and whether it is ready: each missing value can be filled ("use mine",
    * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
-   * `deploy`, which is refused (409 `not_ready`) until it is.
+   * `deploy`, which is refused (409 `not_ready`) until it is. `deploymentId` plans the existing deployment it
+   * names again (changing its allocation); omitted, the hub makes a new one.
    */
   async planDeployment(
     environment?: string,
     provider?: CloudDeployProvider,
     tokenAllocation?: AgentTokenAllocation | null,
+    deploymentId?: string,
   ): Promise<AgentPlannedDeployment> {
     const body = {
       ...(environment ? { environment } : {}),
       ...(provider ? { provider } : {}),
       ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+      ...(deploymentId ? { deployment_id: deploymentId } : {}),
     };
     return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
   }

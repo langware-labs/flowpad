@@ -957,7 +957,10 @@ class Agent(Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
         try:
             deployment = await self.plan_deployment(
-                str(body.get("environment") or "").strip() or None, provider=provider, token_allocation=allocation
+                str(body.get("environment") or "").strip() or None,
+                provider=provider,
+                token_allocation=allocation,
+                deployment_id=str(body.get("deployment_id") or "").strip() or None,
             )
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=f"plan failed: {exc}", status_code=502)
@@ -1162,10 +1165,12 @@ class Agent(Entity):
         *,
         provider: str | None = None,
         token_allocation: "TokenAllocationSpec | None | object" = _UNSET,
+        deployment_id: str | None = None,
     ) -> "Deployment":
         """The cloud placement this agent will have on ``provider`` (none: ``e2b``) in ``environment``
         — the hub's row, adopted here —
-        before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent. Its
+        before it has a machine: where "use mine" stores values ahead of a deploy. A new row on each call;
+        ``deployment_id`` plans the one it names again, and the deploy that follows names the row it plans. Its
         :meth:`webhook_specs` are kept on the hub, following its machine, each URL stored as its variable —
         so readiness finds them and "use mine" never copies this computer's. ``token_allocation`` gives the
         placement its own hub LLM endpoint drawn from ``source`` (``None`` releases it back to the owner's
@@ -1180,6 +1185,7 @@ class Agent(Entity):
             "environment": environment,
             "provider": provider or DEFAULT_CLOUD_PROVIDER,
             "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()],
+            **({"deployment_id": deployment_id} if deployment_id else {}),
         }
         if token_allocation is not _UNSET:
             body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
@@ -1227,6 +1233,7 @@ class Agent(Entity):
                 provider=body.provider or None,
                 token_allocation=body.token_allocation if body.allocation_given else _UNSET,
                 machine_size=body.machine_size,
+                deployment_id=body.deployment_id,
             )
         except DeployRunning as exc:
             return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})

@@ -2845,7 +2845,12 @@ class Project(SetupSkippable, Entity):
         becomes a timeout in practice the fix is 202-and-poll on the node's
         ``ops/status``, which already exists, not a longer client timeout.
         """
-        from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
+        from flow_sdk.builtin.cloud_deploy import (  # noqa: PLC0415
+            DEFAULT_CLOUD_ENVIRONMENT,
+            DEFAULT_CLOUD_PROVIDER,
+            deploy_entity_to_cloud,
+        )
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
@@ -2854,8 +2859,15 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
             body = (await request_info.get_post_data()) or {}
+            provider = str(body.get("provider") or "").strip() or None
+            # The hub makes a new placement (and box) for a deploy that names none: a redeploy names the one it has.
+            existing = await Deployment.find_existing(
+                str(self.typeid), provider or DEFAULT_CLOUD_PROVIDER, environment=DEFAULT_CLOUD_ENVIRONMENT
+            )
             await self.ensure_on_hub()
-            data = await deploy_entity_to_cloud(self, provider=str(body.get("provider") or "").strip() or None)
+            data = await deploy_entity_to_cloud(
+                self, provider=provider, deployment_id=str(existing.id) if existing else None
+            )
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"project_id": self.id, **data})

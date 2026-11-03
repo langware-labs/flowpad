@@ -103,8 +103,13 @@ async def _published(self, actor, force=False):
 
 
 async def test_a_gcp_vm_deploy_whose_answer_the_load_balancer_drops_ends_on_the_hubs_push(agent, hub, monkeypatch):
-    planned = hub.deployment(f"agent-{agent.id}", "production")
     subject = str(agent.typeid)
+
+    def planned() -> dict:
+        """The one placement this deploy's plan made (the hub makes a new one per plan)."""
+        (row,) = hub.planned(subject, "production")
+        return row
+
     ended: list[ActivityProgressSpec] = []
     done = asyncio.Event()
 
@@ -120,7 +125,7 @@ async def test_a_gcp_vm_deploy_whose_answer_the_load_balancer_drops_ends_on_the_
 
     async def get_by_id(eid):
         row = await read(eid)
-        if hub.dropped.is_set() and eid == planned["id"]:
+        if hub.dropped.is_set() and eid == planned()["id"]:
             looked.set()
         return row
 
@@ -135,11 +140,11 @@ async def test_a_gcp_vm_deploy_whose_answer_the_load_balancer_drops_ends_on_the_
         assert answer.data == {
             "agent_id": agent.id,
             "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": subject},
-            "deployment_id": planned["id"],
+            "deployment_id": planned()["id"],
         }
 
         await looked.wait()
-        assert hub.sent == [{"environment": "production", "provider": "gcp_vm"}]
+        assert hub.sent == [{"environment": "production", "provider": "gcp_vm", "deployment_id": planned()["id"]}]
         waiting = monitor.get(DEPLOY_ACTIVITY, subject_entity=subject)
         assert (waiting.state, [(c.name, c.state) for c in waiting.children][-1]) == (
             ActivityState.RUNNING,
@@ -149,9 +154,9 @@ async def test_a_gcp_vm_deploy_whose_answer_the_load_balancer_drops_ends_on_the_
         # The hub's push of the placement with its machine: the bridge mirrors it into the row, which announces it.
         await hub_ws_bridge._handle_deployment_op(
             "update",
-            planned["id"],
+            planned()["id"],
             {
-                **planned,
+                **planned(),
                 "updated_date": "2099-01-01T00:00:01Z",
                 "origin": {"kind": "gcp_vm", "provider": "gcp_vm", "external_id": "compute_node-box"},
                 "status": {"provider_state": "running"},
@@ -164,5 +169,5 @@ async def test_a_gcp_vm_deploy_whose_answer_the_load_balancer_drops_ends_on_the_
     final = ended[-1]
     assert [(c.name, c.state) for c in final.children][-1] == ("machine", ActivityState.COMPLETED)
     assert final.state == ActivityState.COMPLETED
-    mirrored = await read(planned["id"])
+    mirrored = await read(planned()["id"])
     assert mirrored.origin.external_id == "compute_node-box" and mirrored.status.provider_state == "running"
