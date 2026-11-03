@@ -3,9 +3,8 @@
 A remote placement is deleted on the hub first (``owns_hub_delete``). The delete action
 (``handle_delete_by_id``) tells the two failures apart:
 
-* the hub answered (an app failure): its own status, e.g. 403 for a deployment it no longer has;
-* nothing came back from the hub (status 0), by kind: 502 for a connection failure (timeout, refused),
-  401 when this box holds no credentials.
+* the hub refused it: its own status, e.g. 403 for a deployment it no longer has;
+* the hub broke (5xx) or nothing came back: 502 (timeout, refused), 401 when this box holds no credentials.
 
 In every failure the local row is kept as the handle to retry. The hub is faked at the HTTP transport,
 so the real ``HubProxy.send`` turns a hang into a ``HubError``. No network.
@@ -94,7 +93,7 @@ async def _refused(row: Deployment) -> HTTPException:
     """The delete fails; the local row stays as the handle to retry."""
     with pytest.raises(HTTPException) as refused:
         await _delete(row)
-    assert "kept here so the delete can be retried" in refused.value.detail
+    assert refused.value.detail == refused.value.__cause__.user_message(), "the hub failure's own sentence"
     assert await Deployment.get_by_id(row.id) is not None, "the handle to retry"
     return refused.value
 
@@ -119,6 +118,13 @@ async def test_already_gone_on_the_hub_is_deleted_here(hub):
     assert await Deployment.get_by_id(row.id) is None
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.hub_delete_status.rules: FAILING? read this tag's rules before
+#       editing — the status comes from HubError.http_status, never a hard-coded one
+# flowpad:endcapsule tag
 async def test_a_deployment_the_hub_no_longer_has_answers_its_403(hub):
     """The live case: the hub's row (and its machine) is gone, and its authorizer answers 403 target_not_found."""
     hub.answer = httpx.Response(403, json=TARGET_NOT_FOUND)
@@ -127,12 +133,12 @@ async def test_a_deployment_the_hub_no_longer_has_answers_its_403(hub):
     assert (await _refused(row)).status_code == 403
 
 
-async def test_the_hub_failing_to_destroy_the_machine_answers_its_500(hub):
-    """The hub answered, so it is an app failure: passed on, not turned into a gateway error."""
+async def test_the_hub_failing_to_destroy_the_machine_is_a_502(hub):
+    """The hub itself broke: a bad gateway, so the UI can tell it from a local 500."""
     hub.answer = httpx.Response(500, json=SERVER_ERROR)
     row = await _remote_placement()
 
-    assert (await _refused(row)).status_code == 500
+    assert (await _refused(row)).status_code == 502
 
 
 @pytest.mark.parametrize(
