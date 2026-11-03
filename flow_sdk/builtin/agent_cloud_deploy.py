@@ -54,6 +54,8 @@ class AgentDeployRequest(DataSpec):
     #: The cloud box size for THIS deploy (``sm`` | ``md`` | ``lg``); empty: the agent's own ``machine_size``.
     #: Sent with the deploy, never written into agent.json: a deploy must not dirty the checkout it deploys.
     machine_size: Optional[Literal["sm", "md", "lg"]] = None
+    #: The planned placement this deploy is for (the one a refused deploy named); empty: a new one.
+    deployment_id: Optional[str] = None
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -91,6 +93,8 @@ class DeployContext:
     provider: Optional[str]
     token_allocation: Any
     machine_size: Optional[str] = None
+    #: The planned placement asked for; none: the plan makes a new one.
+    deployment_id: Optional[str] = None
     deployment: Optional["Deployment"] = None
     ready: Optional["ReadinessSpec"] = None
 
@@ -116,8 +120,9 @@ async def _share_dependencies(ctx: DeployContext) -> None:
 
 
 async def _plan(ctx: DeployContext) -> None:
+    # The hub makes a new placement for a plan that names none: a deploy for a planned one names it.
     ctx.deployment = await ctx.agent.plan_deployment(
-        ctx.environment, provider=ctx.provider, token_allocation=ctx.token_allocation
+        ctx.environment, provider=ctx.provider, token_allocation=ctx.token_allocation, deployment_id=ctx.deployment_id
     )
 
 
@@ -214,10 +219,12 @@ async def run_deployment_steps(
     provider: Optional[str] = None,
     token_allocation: Any = _UNSET,
     machine_size: Optional[str] = None,
+    deployment_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """``DEPLOYMENT_STEPS`` under *agent*'s ``deploy`` activity, each as its child — running, then done or failed
     with its error — then the activity's end. The ``inline`` steps run first, a failure raised to the caller (and
-    ending the activity); the rest run after this returns, a failure told only on the activity.
+    ending the activity); the rest run after this returns, a failure told only on the activity. ``deployment_id``
+    names the planned placement the deploy is for; none plans a new one.
 
     The answer: where the activity reports, and the placement it lands on. Single-flight per agent: a deploy
     already running raises :class:`DeployRunning`.
@@ -236,7 +243,7 @@ async def run_deployment_steps(
     root.label(f"Deploy {agent.name or agent.id}").plan(
         [{"name": step.name, "label": step.label} for step in DEPLOYMENT_STEPS]
     )
-    ctx = DeployContext(agent, actor, environment, provider, token_allocation, machine_size)
+    ctx = DeployContext(agent, actor, environment, provider, token_allocation, machine_size, deployment_id)
 
     async def run(steps: list[DeployStep]) -> None:
         for step in steps:

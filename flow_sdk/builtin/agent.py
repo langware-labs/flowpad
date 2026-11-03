@@ -1233,6 +1233,7 @@ class Agent(Entity):
                 provider=body.provider or None,
                 token_allocation=body.token_allocation if body.allocation_given else _UNSET,
                 machine_size=body.machine_size,
+                deployment_id=body.deployment_id,
             )
         except DeployRunning as exc:
             return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})

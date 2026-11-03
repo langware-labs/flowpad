@@ -43,10 +43,12 @@ async def test_a_planned_cloud_deployment_keeps_its_values_in_the_hub_and_keeps_
     agent = await _agent(project)
 
     deployment = await agent.plan_deployment("production", provider="e2b")
-    again = await agent.plan_deployment("production", provider="e2b")
+    again = await agent.plan_deployment("production", provider="e2b", deployment_id=str(deployment.id))
+    another = await agent.plan_deployment("production", provider="e2b")
 
     assert deployment.remote and deployment.secrets.store.type == "hub"
-    assert again.id == deployment.id and again.secrets == deployment.secrets
+    assert again.id == deployment.id and again.secrets == deployment.secrets, "a plan naming its row keeps it"
+    assert another.id != deployment.id, "a plan naming none is a new placement"
 
 
 async def test_the_hub_store_takes_values_lists_names_and_never_gives_one_back(home, project, hub):
@@ -79,9 +81,9 @@ async def test_the_deploy_is_refused_until_use_mine_fills_the_store(home, projec
     assert await use_mine(str(deployment.id)) == {"copied": ["STRIPE_KEY"], "not_here": [], "hub_funded": []}
     assert hub.values[str(deployment.id)] == {"STRIPE_KEY": VALUE}
 
-    await deploy_ended(agent, "user-1", "production", provider="e2b")
+    await deploy_ended(agent, "user-1", "production", provider="e2b", deployment_id=str(deployment.id))
     assert hub.deploys == [{"environment": "production", "provider": "e2b", "require": ["STRIPE_KEY"]}]
-    assert hub.deploy_ids == [hub.deployment(f"agent-{agent.id}", "production")["id"]], "the deploy names its plan"
+    assert hub.deploy_ids == [str(deployment.id)], "the deploy is for the placement use mine filled"
 
 
 async def test_a_protected_deployment_refuses_use_mine(home, project, hub):
@@ -196,6 +198,30 @@ async def test_the_deploy_dialog_plans_then_authorizes_and_revokes_over_rest(hom
     assert granted.status == "SUCCESS" and held["authorizations"] == [{"provider": "google"}]
     assert revoked == {"revoked": ["google"]} and hub.authorized[str(deployment.id)] == []
     assert refused.status_code == 400
+
+
+async def test_changing_an_allocation_names_its_deployment_and_a_new_deployment_names_none(
+    home, project, hub, monkeypatch
+):
+    """The deployment panel's "Change allocation" (`POST agent/<id>/plan_deployment` naming the row's
+    `deployment_id`) lands on that row; the same request naming none is a new deployment's, and plans a new one."""
+    agent = await _agent(project)
+    allocation = {"source": f"llm_endpoint-{'5' * 8}-5555-4555-8555-{'5' * 12}", "cost_usd_per_day": 0.1,
+                  "model": "openai/gpt-5"}
+    _request(monkeypatch, {"environment": "production", "provider": "e2b"})
+    existing = (await agent.plan_deployment_action()).data["deployment"]
+
+    _request(monkeypatch, {"environment": "production", "provider": "e2b", "token_allocation": allocation,
+                           "deployment_id": existing["id"]})
+    changed = (await agent.plan_deployment_action()).data["deployment"]
+    _request(monkeypatch, {"environment": "production", "provider": "e2b", "token_allocation": allocation})
+    new = (await agent.plan_deployment_action()).data["deployment"]
+
+    assert changed["id"] == existing["id"], "the change lands on the deployment being changed"
+    assert not existing["llm_endpoint_typeid"] and changed["llm_endpoint_typeid"], "it now has its own allocation"
+    assert (await Deployment.get_by_id(existing["id"])).llm_endpoint_typeid == changed["llm_endpoint_typeid"]
+    assert new["id"] != existing["id"] and new["llm_endpoint_typeid"], "a new deployment is a new placement"
+    assert [r["id"] for r in hub.planned(str(agent.typeid), "production")] == [existing["id"], new["id"]]
 
 
 async def test_use_mine_never_copies_an_llm_provider_key(home, project, hub):
