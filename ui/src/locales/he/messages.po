@@ -578,7 +578,7 @@ msgstr ""
 #. placeholder {0}: m.allowedSenders.length
 #: src/components/inbound/InboundView.tsx
 msgid "{0} allowed senders"
-msgstr ""
+msgstr "{0} שולחים מורשים"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #~ msgid "{0} already has a cloud machine"
@@ -1043,7 +1043,7 @@ msgstr ""
 #. placeholder {0}: n.rules.length
 #: src/components/inbound/InboundView.tsx
 msgid "{0} rules"
-msgstr ""
+msgstr "{0} כללים"
 
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -2058,7 +2058,7 @@ msgstr "← חזרה"
 
 #: src/components/inbound/InboundView.tsx
 msgid "← Channels"
-msgstr ""
+msgstr "← ערוצים"
 
 #. placeholder {0}: el.absRow
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -2090,7 +2090,7 @@ msgstr "+ הוספת כלל"
 
 #: src/components/inbound/InboundView.tsx
 msgid "+ Add sender"
-msgstr ""
+msgstr "+ הוספת שולח"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "+ Allocate"
@@ -2281,7 +2281,7 @@ msgstr "$ ליום"
 
 #: src/components/inbound/InboundView.tsx
 msgid "1 allowed sender"
-msgstr ""
+msgstr "שולח מורשה אחד"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "1 change not applied"
@@ -2332,7 +2332,7 @@ msgstr "שורה אחת"
 
 #: src/components/inbound/InboundView.tsx
 msgid "1 rule"
-msgstr ""
+msgstr "כלל אחד"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "1 week"
@@ -2344,7 +2344,7 @@ msgstr "1. יש להעתיק את הקוד הזה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "1. The hub proves the bot is yours: it calls Telegram's getMe with the bot token. Only an answer naming the same bot id passes."
-msgstr ""
+msgstr "1. ה-hub מוודא שהבוט שלך: הוא קורא ל-getMe של Telegram עם טוקן הבוט. רק תשובה עם אותו מזהה בוט עוברת."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "1. The hub proves the number is yours: it asks your server for this phone number ID using the access token. Only an answer naming the same ID passes."
@@ -2376,7 +2376,7 @@ msgstr "2. העתיקו ופתחו את עמוד ההתחברות"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "2. You get a webhook URL. Register it with setWebhook and the secret token below — deliveries without it are refused."
-msgstr ""
+msgstr "2. מתקבלת כתובת webhook. רשום אותה עם setWebhook והטוקן הסודי שלמטה — הודעות בלעדיו נדחות."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "2. You get a webhook URL. Your server sends every message there, signed with the app secret — unsigned messages are refused."
@@ -2438,7 +2438,7 @@ msgstr "התחברות OAuth של {label} במחשב הזה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "A bot you made with @BotFather. Telegram calls the hub's webhook URL; replies go out as your bot."
-msgstr ""
+msgstr "בוט שיצרת עם ‎@BotFather. Telegram קורא לכתובת ה-webhook של ה-hub; התשובות יוצאות בשם הבוט שלך."
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "A call here spends"
@@ -2587,7 +2587,7 @@ msgstr "כבר קיים פרויקט בשם הזה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "A real email address the hub creates for one of your agents. Nothing to set up."
-msgstr ""
+msgstr "כתובת מייל אמיתית שה-hub יוצר לאחד הסוכנים שלך. אין מה להגדיר."
 
 #~ msgid "A request just failed because {name} isn't signed in on this machine."
 #~ msgstr "בקשה נכשלה כרגע מכיוון ש-{name} לא מחובר במחשב הזה."
@@ -3885,7 +3885,7 @@ msgstr "שולחים מורשים"
 
 #: src/components/inbound/InboundView.tsx
 msgid "Allowed senders — empty means nobody"
-msgstr ""
+msgstr "שולחים מורשים — רשימה ריקה פירושה אף אחד"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -4028,11 +4028,11 @@ msgstr "סוכן קורא את המשימה ומציין אם נדרשת התע�
 
 #: src/components/inbound/InboundView.tsx
 msgid "An allowed sender"
-msgstr ""
+msgstr "שולח מורשה"
 
 #: src/components/inbound/InboundView.tsx
 msgid "An email address"
-msgstr ""
+msgstr "כתובת מייל"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
@@ -4234,7 +4234,7 @@ msgstr "נענה על ידי"
 #. placeholder {0}: m.agentName
 #: src/components/inbound/InboundView.tsx
 msgid "answered by {0}"
-msgstr ""
+msgstr "עונה: {0}"
 
 #~ msgid "Answered by {answeringName}"
 #~ msgstr ""
@@ -4278,7 +4278,7 @@ msgstr "כל תוצאה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Any server that speaks Meta's {title} API and webhook format. The hub proves the number on that server and replies through it."
-msgstr ""
+msgstr "כל שרת שמדבר ב-API ובפורמט ה-webhook של {title} של Meta. ה-hub מאמת את המספר בשרת הזה ועונה דרכו."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 #~ msgid "Any server that speaks Meta's WhatsApp API and webhook format. The hub proves the number on that server and replies through it."
@@ -4295,7 +4295,7 @@ msgstr "כל תפקיד"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 msgid "Anyone else"
-msgstr ""
+msgstr "כל השאר"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see it; launching still needs the project shared with them."
@@ -4756,7 +4756,7 @@ msgstr "לשאול לפני שיתוף נכסים אם לקשר פרויקט ש�
 
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Ask whoever runs the hub to turn agent mailboxes on, or use another channel."
-msgstr ""
+msgstr "בקש ממי שמפעיל את ה-hub להפעיל תיבות מייל לסוכנים, או השתמש בערוץ אחר."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Ask whoever shared it to start it, or to send a new link."
@@ -5492,12 +5492,12 @@ msgstr "סימניות"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Bot id"
-msgstr ""
+msgstr "מזהה בוט"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Bot token"
-msgstr ""
+msgstr "טוקן בוט"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Bot token (xoxb-…)"
@@ -5754,7 +5754,7 @@ msgstr "רשימת נקודות"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Business Settings › System users › Generate token — never expires, with whatsapp_business_messaging. Stored write-only."
-msgstr ""
+msgstr "Business Settings › System users › Generate token — ללא תפוגה, עם whatsapp_business_messaging. נשמר לכתיבה בלבד."
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "By"
@@ -9774,7 +9774,7 @@ msgstr "צרו תיקייה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Create inbox"
-msgstr ""
+msgstr "יצירת תיבה"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Create it"
@@ -10299,7 +10299,7 @@ msgstr "ברירת מחדל"
 
 #: src/components/inbound/InboundView.tsx
 msgid "Default — dropped unless a rule matches"
-msgstr ""
+msgstr "ברירת מחדל — נזרק אלא אם כלל מתאים"
 
 #: src/components/inbound/use-inbound.ts
 msgid "Default — the number's fallback"
@@ -11455,7 +11455,7 @@ msgstr "הצגת היסטוריה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Display name"
-msgstr ""
+msgstr "שם תצוגה"
 
 #: src/components/ui/sidebar.tsx
 msgid "Displays the mobile sidebar."
@@ -12067,12 +12067,12 @@ msgstr "דוא״ל"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Email › Flowpad inbox"
-msgstr ""
+msgstr "מייל › תיבת Flowpad"
 
 #. placeholder {0}: mailboxes.length
 #: src/components/inbound/InboundView.tsx
 msgid "Email {0}"
-msgstr ""
+msgstr "מייל {0}"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Email {0} an invitation to {teamName}"
@@ -14287,12 +14287,12 @@ msgstr "Flowpad git"
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/InboundView.tsx
 msgid "Flowpad inbox"
-msgstr ""
+msgstr "תיבת Flowpad"
 
 #. placeholder {0}: routedMailbox.agentName
 #: src/components/inbound/InboundView.tsx
 msgid "Flowpad inbox · only allowed senders reach {0}"
-msgstr ""
+msgstr "תיבת Flowpad · רק שולחים מורשים מגיעים אל {0}"
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -15953,7 +15953,7 @@ msgstr "התעלמות"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 msgid "Ignore"
-msgstr ""
+msgstr "התעלם"
 
 #~ msgid "ignore patterns"
 #~ msgstr "דפוסים להתעלמות"
@@ -17284,7 +17284,7 @@ msgstr "סשן אחרון: {lastSession}"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Last step, in your Meta app: WhatsApp › Configuration › Webhook — paste the Callback URL and Verify token below, Verify and save, then subscribe the messages field."
-msgstr ""
+msgstr "שלב אחרון, באפליקציית Meta שלך: WhatsApp › Configuration › Webhook — הדבק את ה-Callback URL ואת ה-Verify token שלמטה, לחץ Verify and save, ואז הירשם לשדה messages."
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last success"
@@ -18954,11 +18954,11 @@ msgstr "הודעות ב"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta app › App settings › Basic. Checks every delivery came from Meta. Stored write-only."
-msgstr ""
+msgstr "אפליקציית Meta › App settings › Basic. בודק שכל הודעה הגיעה מ-Meta. נשמר לכתיבה בלבד."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta app › WhatsApp › API Setup — the number's id, not the phone number itself."
-msgstr ""
+msgstr "אפליקציית Meta › WhatsApp › API Setup — המזהה של המספר, לא מספר הטלפון עצמו."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta official Cloud API"
@@ -19990,11 +19990,11 @@ msgstr "לא הוגדרו וו-וצקי סוכן"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "No agents yet"
-msgstr ""
+msgstr "אין סוכנים עדיין"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "No agents yet — an inbox belongs to an agent, so create one first."
-msgstr ""
+msgstr "אין סוכנים עדיין — תיבה שייכת לסוכן, אז צור סוכן קודם."
 
 #: src/pages/hub-home/HubItemsSection.tsx
 msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
@@ -20146,7 +20146,7 @@ msgstr "אין עדיין ערוץ שמגיע לסוכן הזה. יש להגדי
 
 #: src/components/inbound/InboundView.tsx
 msgid "No channels yet. Add one: messages arrive at the hub and go where its rules say — anything else is ignored."
-msgstr ""
+msgstr "אין ערוצים עדיין. הוסף אחד: הודעות מגיעות ל-hub ועוברות לאן שהכללים אומרים — כל השאר מתעלמים ממנו."
 
 #: src/components/assets/editor/chart/useOpenChart.ts
 msgid "No chart named “{ref}” in this project"
@@ -22364,7 +22364,7 @@ msgstr "קבוצה אחת"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "One inbox per agent; it answers the senders you allow."
-msgstr ""
+msgstr "תיבה אחת לכל סוכן; הוא עונה לשולחים שאתה מאשר."
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "One line: what this project uses it for"
@@ -25166,11 +25166,11 @@ msgstr "הוכיחו וקשרו"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Proves the bot (getMe). Stored write-only."
-msgstr ""
+msgstr "מאמת את הבוט (getMe). נשמר לכתיבה בלבד."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Proves the number on your server. Stored write-only."
-msgstr ""
+msgstr "מאמת את המספר בשרת שלך. נשמר לכתיבה בלבד."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 #~ msgid "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
@@ -26175,7 +26175,7 @@ msgstr "להסיר את {0} מ-{1}?"
 
 #: src/components/inbound/InboundView.tsx
 msgid "Remove {a}"
-msgstr ""
+msgstr "הסרת {a}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
@@ -27327,7 +27327,7 @@ msgstr "שורשים מדברים עם ספק באמצעות מפתח שמור; 
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 msgid "Routing"
-msgstr ""
+msgstr "ניתוב"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Row index within the currently visible viewport (0 = top visible row). viewportTopRow shows the absolute buffer row at the top of the viewport."
@@ -28577,7 +28577,7 @@ msgstr "סוד נשמר"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Secret token"
-msgstr ""
+msgstr "טוקן סודי"
 
 #: src/components/account/account-info.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
@@ -30433,7 +30433,7 @@ msgstr "מתנתק…"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Signs every delivery. Stored write-only."
-msgstr ""
+msgstr "חותם כל הודעה. נשמר לכתיבה בלבד."
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
@@ -32543,7 +32543,7 @@ msgstr "ה-Hub דחה את הלקוח הזה."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The id your server's API uses for the number (not the phone number itself)."
-msgstr ""
+msgstr "המזהה שה-API של השרת שלך משתמש בו למספר (לא מספר הטלפון עצמו)."
 
 #: src/components/ui/media-lightbox.tsx
 msgid "The image could not be copied to the clipboard."
@@ -32620,7 +32620,7 @@ msgstr "ההודעה שממנה הגעתם — או הדביקו כל הודעה
 
 #: src/components/inbound/InboundView.tsx
 msgid "The most specific rule wins: in a group the group, else the sender, else everything else"
-msgstr ""
+msgstr "הכלל הספציפי ביותר מנצח: בקבוצה — הקבוצה, אחרת השולח, אחרת כל השאר"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
@@ -32633,7 +32633,7 @@ msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The number before the colon in the bot token."
-msgstr ""
+msgstr "המספר שלפני הנקודתיים בטוקן הבוט."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 #~ msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
@@ -32662,7 +32662,7 @@ msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The part before the @. Permanent once created."
-msgstr ""
+msgstr "החלק שלפני ה-@. קבוע אחרי היצירה."
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
@@ -32768,7 +32768,7 @@ msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The secret_token you pass to setWebhook; Telegram sends it with every delivery. Stored write-only."
-msgstr ""
+msgstr "ה-secret_token שאתה מעביר ל-setWebhook; Telegram שולח אותו עם כל הודעה. נשמר לכתיבה בלבד."
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
@@ -32790,7 +32790,7 @@ msgstr "השולח עדיין מכין אותו"
 
 #: src/components/inbound/AddRuleDialog.tsx
 msgid "The sender's id as the vendor sends it. Already claimed by someone else → refused."
-msgstr ""
+msgstr "מזהה השולח כפי שהספק שולח אותו. אם כבר נתפס על ידי מישהו אחר ← נדחה."
 
 #: src/components/inbound/AddRuleDialog.tsx
 #~ msgid "The sender's number as the vendor sends it. Already claimed by someone else → refused."
@@ -33179,7 +33179,7 @@ msgstr "זה עשוי להימשך עד דקה אם ה-Sandbox היה במצב �
 
 #: src/components/inbound/InboundView.tsx
 msgid "This channel is not yours, or it is gone."
-msgstr ""
+msgstr "הערוץ הזה לא שלך, או שהוא כבר לא קיים."
 
 #. placeholder {0}: chart?.format
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
@@ -33350,7 +33350,7 @@ msgstr "לנכס תיקייה זה אין מטא-נתונים של קובץ רא
 
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "This hub does not offer agent email"
-msgstr ""
+msgstr "ה-hub הזה לא מציע מייל לסוכנים"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "This hub has no help desk — pick a person to ask."
@@ -33362,7 +33362,7 @@ msgstr "ה-Hub הזה לא מוגדר להפעלת סנדבוקסים"
 
 #: src/components/inbound/InboundView.tsx
 msgid "This inbox's agent is gone"
-msgstr ""
+msgstr "הסוכן של התיבה הזו כבר לא קיים"
 
 #: src/lib/content-install.ts
 msgid "This install link has an invalid content branch."
@@ -36117,7 +36117,7 @@ msgstr "על מה עבד"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "What people see in their mail app."
-msgstr ""
+msgstr "מה שאנשים רואים באפליקציית המייל שלהם."
 
 #: src/components/assets/editor/PublishedToggle.tsx
 #~ msgid "What Published does"
@@ -36301,7 +36301,7 @@ msgstr "כשהאבחון מסתיים, Flowpad שולח את התוצאות אל
 
 #: src/components/inbound/InboundView.tsx
 msgid "When the message is from"
-msgstr ""
+msgstr "כשההודעה מגיעה מ"
 
 #~ msgid "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
 #~ msgstr ""
@@ -37112,7 +37112,7 @@ msgstr "הנכסים שלכם, משותפים לכל הפרויקטים"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Your own bot"
-msgstr ""
+msgstr "הבוט שלך"
 
 #: src/components/inbound/InboundView.tsx
 msgid "Your own number"
