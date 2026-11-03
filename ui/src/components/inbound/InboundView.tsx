@@ -18,6 +18,7 @@ import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { AddRuleDialog } from './AddRuleDialog';
 import { ConnectNumberDialog } from './ConnectNumberDialog';
+import { whatsappBridgeUrl } from './whatsapp-bridge';
 import { Chip } from './Chip';
 import { RouteCheck } from './RouteCheck';
 import {
@@ -172,6 +173,7 @@ export function InboundView({ api = InboundWebhooks }: { api?: InboundApi }) {
         optionsFor={numberOptionsFor}
         onDone={() => void refresh()}
         api={api}
+        findBridge={whatsappBridgeUrl}
       />
       {ruleEdit && (
         <AddRuleDialog

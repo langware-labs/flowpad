@@ -26,7 +26,7 @@ import {
   VENDOR,
 } from './inbound-model';
 
-type Step = 'choose' | 'link' | 'own' | 'connected';
+type Step = 'choose' | 'link' | 'own' | 'connected' | 'pair';
 
 /** How often a pending claim (a code waiting to be sent, a URL waiting for its first delivery) is re-read. */
 const WAIT_POLL_MS = 3000;
@@ -44,6 +44,8 @@ export function ConnectNumberDialog({
   optionsFor,
   onDone,
   api = InboundWebhooks,
+  findBridge,
+  openUrl = (url: string) => void window.open(url, '_blank', 'noopener'),
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +54,9 @@ export function ConnectNumberDialog({
   optionsFor: (provider: string) => DestinationOption[];
   onDone: () => void;
   api?: InboundApi;
+  /** Where a deployed WhatsApp bridge pairs a phone by QR ('' for none). Without it, scan-to-pair is not offered. */
+  findBridge?: () => Promise<string>;
+  openUrl?: (url: string) => void;
 }) {
   const { t } = useLingui();
   const [step, setStep] = useState<Step>('choose');
@@ -63,6 +68,18 @@ export function ConnectNumberDialog({
   const [made, setMade] = useState<InboundClaim | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bridgeUrl, setBridgeUrl] = useState('');
+
+  useEffect(() => {
+    if (!open || !findBridge) return;
+    let live = true;
+    findBridge()
+      .then((url) => live && setBridgeUrl(url))
+      .catch(() => live && setBridgeUrl(''));
+    return () => {
+      live = false;
+    };
+  }, [open, findBridge]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,7 +113,7 @@ export function ConnectNumberDialog({
   }, [open, madeId, waiting, api]);
 
   const close = (next: boolean) => {
-    if (!next && made) onDone();
+    if (!next && (made || step === 'pair')) onDone();
     onOpenChange(next);
   };
 
@@ -182,6 +199,7 @@ export function ConnectNumberDialog({
                     link: t`${title} › Flowpad's number`,
                     own: t`${title} › Your own number`,
                     connected: t`${title} › Connected`,
+                    pair: t`${title} › Your own WhatsApp`,
                   }[step]}
             </b>
           </DialogTitle>
@@ -206,6 +224,17 @@ export function ConnectNumberDialog({
               onClick={linkAgent}
               disabled={busy}
             />
+            {provider === 'whatsapp' && bridgeUrl && (
+              <Choice
+                testId="inbound-choice-qr"
+                title={t`Your own WhatsApp (scan QR)`}
+                detail={t`Pair your own phone with this deployment's WhatsApp bridge by scanning a QR code. The bridge connects the number to the hub.`}
+                onClick={() => {
+                  openUrl(bridgeUrl);
+                  setStep('pair');
+                }}
+              />
+            )}
             {VENDOR[provider].own.map((r) => {
               const c = ownText(r.id);
               return (
@@ -351,6 +380,20 @@ export function ConnectNumberDialog({
           </div>
         )}
 
+        {step === 'pair' && (
+          <div className="flex flex-col gap-3 text-sm" data-testid="inbound-pair-step">
+            <p>
+              <Trans>
+                The WhatsApp bridge opened in a new tab. Add a number there, scan its QR code with WhatsApp on your
+                phone (Linked devices), then connect it to the hub. The number appears here once it connects.
+              </Trans>
+            </p>
+            <Button variant="outline" data-testid="inbound-pair-reopen" onClick={() => openUrl(bridgeUrl)}>
+              <Trans>Open the WhatsApp bridge again</Trans>
+            </Button>
+          </div>
+        )}
+
         {error && (
           <p className="text-sm text-destructive" data-testid="inbound-connect-error">
             {error}
@@ -374,7 +417,7 @@ export function ConnectNumberDialog({
               </Button>
             </>
           )}
-          {(step === 'link' || step === 'connected') && (
+          {(step === 'link' || step === 'connected' || step === 'pair') && (
             <Button data-testid="inbound-connect-done" onClick={() => close(false)}>
               <Trans>Done</Trans>
             </Button>
