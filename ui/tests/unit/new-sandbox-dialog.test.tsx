@@ -269,7 +269,7 @@ describe('new desktop: project + asset packages', () => {
     const connect = await screen.findByTestId('loaded-project-git-connect-github');
     await userEvent.click(connect);
 
-    expect(h.connect).toHaveBeenCalledWith('github');
+    expect(h.connect.mock.calls[0]?.[0]).toBe('github');
     // Only one panel is open across the dialog, so only one Connect exists.
     expect(screen.queryAllByTestId(/connect-github$/)).toHaveLength(1);
   });

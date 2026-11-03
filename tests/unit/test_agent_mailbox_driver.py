@@ -80,7 +80,7 @@ class TestTheHubMember:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_enable_carries_the_name_a_new_mailbox_gets(self, monkeypatch):
-        """The Channels screen names the inbox it creates: `username` / `display_name` reach the hub's
+        """The Channels screen names the mailbox it creates: `username` / `display_name` reach the hub's
         `enable` (which provisions when absent); empty ones are left out, so the hub picks."""
         seen: list[tuple[str, dict]] = []
 

@@ -96,7 +96,7 @@ def patch_entity_document_bytes(
     fields = {key: value for key, value in before.fields.items() if key not in patch.drop_fields}
     fields.update(patch.set_fields)
     # The same normalisation the writer applies, so "changed" means changed, not reformatted.
-    new_body = before.body if patch.body is None or info.body_file is None else patch.body.strip()
+    new_body = (before.body if patch.body is None or info.body_file is None else patch.body).strip()
     # Compared stripped on both sides: the file keeps its trailing newline, the patch is stripped, so
     # an untouched body sent back as loaded is not a change (it bumped ``version`` on every such save).
     body_changed = new_body != before.body.strip()
