@@ -1,10 +1,9 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound } from 'lucide-react';
-import type { Project } from '@sdk';
+import { canSetUpProjects, dataContext, type Project } from '@sdk';
 import { useProjectSetupLeft, useProjectUpdatesPending } from '@sdk/react/hooks/use-project-readiness';
 import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { cn } from '@src/lib/utils';
 
 /**
@@ -20,7 +19,8 @@ export function ProjectSetupButton({ project }: { project?: Project | null }) {
   const { t } = useLingui();
   const left = useProjectSetupLeft(project?.id);
   const updates = useProjectUpdatesPending(project?.id);
-  if (isHubOnly() || !project || (!left && !updates)) return null;
+  // Setup is answered on this backend's disk by a person here: never on the hub, nor an agent's box.
+  if (!canSetUpProjects(dataContext.caps) || !project || (!left && !updates)) return null;
   const onlyUpdates = !left;
   return (
     <Tooltip>

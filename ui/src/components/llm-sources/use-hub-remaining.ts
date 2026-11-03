@@ -12,11 +12,10 @@
  * no row for a hub endpoint, so the hub-page fetcher answers "Entity not found" here. The sources
  * page's Test goes the same way, for the same reason.
  */
-import { llmSourcesService, type LLMFundingStatus } from '@sdk';
+import { dataContext, llmSourcesService, type LLMFundingStatus } from '@sdk';
 import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { endpointIdFromTypeId, endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { tightestCostLimit, type CostLeftByEndpoint } from '@src/components/llm-endpoints/usage-math';
 import type { LLMChain } from '@sdk';
@@ -59,7 +58,8 @@ function chainQuery(typeid: string) {
   return {
     queryKey: ['llm-sources', 'chain', id],
     queryFn: () => llmSourcesService.chain(id),
-    enabled: !isHubOnly(),
+    // The chain is read from this backend's own LLM sources; the hub has none to read.
+    enabled: dataContext.caps.localFiles,
     staleTime: 15_000,
   };
 }
