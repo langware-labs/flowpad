@@ -1250,6 +1250,14 @@ msgstr "{behind} new changes in the cloud — pull them"
 msgid "{changedCount} changed"
 msgstr "{changedCount} changed"
 
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+msgstr "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+msgstr "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "{completedCount}/{totalCount} completed"
 msgstr "{completedCount}/{totalCount} completed"
@@ -1369,8 +1377,12 @@ msgid "{firstName} is still uploading the bundle. Try again in a moment."
 msgstr "{firstName} is still uploading the bundle. Try again in a moment."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{folder} — {harness} asks once per folder"
-msgstr "{folder} — {harness} asks once per folder"
+msgid "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
+msgstr "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+#~ msgid "{folder} — {harness} asks once per folder"
+#~ msgstr "{folder} — {harness} asks once per folder"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
@@ -1401,36 +1413,36 @@ msgid "{h}h ago"
 msgstr "{h}h ago"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{harness} asks once per folder"
-msgstr "{harness} asks once per folder"
+#~ msgid "{harness} asks once per folder"
+#~ msgstr "{harness} asks once per folder"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{harness} asks to confirm full access"
-msgstr "{harness} asks to confirm full access"
+#~ msgid "{harness} asks to confirm full access"
+#~ msgstr "{harness} asks to confirm full access"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{harness} couldn't start"
-msgstr "{harness} couldn't start"
+#~ msgid "{harness} couldn't start"
+#~ msgstr "{harness} couldn't start"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{harness} crashed on start"
-msgstr "{harness} crashed on start"
+#~ msgid "{harness} crashed on start"
+#~ msgstr "{harness} crashed on start"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{harness} isn't connected to an account"
-msgstr "{harness} isn't connected to an account"
+#~ msgid "{harness} isn't connected to an account"
+#~ msgstr "{harness} isn't connected to an account"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{harness} isn't installed on this computer"
-msgstr "{harness} isn't installed on this computer"
+#~ msgid "{harness} isn't installed on this computer"
+#~ msgstr "{harness} isn't installed on this computer"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{harness} needs a one-time setup"
-msgstr "{harness} needs a one-time setup"
+#~ msgid "{harness} needs a one-time setup"
+#~ msgstr "{harness} needs a one-time setup"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{harness} starts by itself when it's ready"
-msgstr "{harness} starts by itself when it's ready"
+#~ msgid "{harness} starts by itself when it's ready"
+#~ msgstr "{harness} starts by itself when it's ready"
 
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "{harnessCount, plural, one {Clear harness history for # project?} other {Clear harness history for # projects?}}"
@@ -2066,12 +2078,12 @@ msgid "{who} has this conversation in project {0}, which is not a checkout of <0
 msgstr "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{who} key ****{hint} was rejected"
-msgstr "{who} key ****{hint} was rejected"
+#~ msgid "{who} key ****{hint} was rejected"
+#~ msgstr "{who} key ****{hint} was rejected"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{who} key was rejected"
-msgstr "{who} key was rejected"
+#~ msgid "{who} key was rejected"
+#~ msgstr "{who} key was rejected"
 
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "{who} to {targetLabel} as {role}."
@@ -2704,8 +2716,8 @@ msgid "a source this project does not list"
 msgstr "a source this project does not list"
 
 #: src/components/funding-chip/FundingChip.tsx
-msgid "A stored key was rejected"
-msgstr "A stored key was rejected"
+#~ msgid "A stored key was rejected"
+#~ msgstr "A stored key was rejected"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "A subject such as task:* or data_source:<id>. Empty = any."
@@ -3908,7 +3920,6 @@ msgstr "Allocation"
 msgid "Allocation saved"
 msgstr "Allocation saved"
 
-#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "Allow"
@@ -4436,8 +4447,8 @@ msgid "Anything to add? (optional)"
 msgstr "Anything to add? (optional)"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "API"
-msgstr "API"
+#~ msgid "API"
+#~ msgstr "API"
 
 #: src/i18n/type-labels.ts
 msgid "Api Key"
@@ -7794,8 +7805,8 @@ msgid "Confirm deletion"
 msgstr "Confirm deletion"
 
 #: src/components/agentic-progress/shared/status-indicator.tsx
-msgid "confirm full access"
-msgstr "confirm full access"
+#~ msgid "confirm full access"
+#~ msgstr "confirm full access"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
@@ -7810,7 +7821,6 @@ msgstr "Confirm: {0}"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/git/GitRemoteField.tsx
-#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
@@ -8182,7 +8192,6 @@ msgstr "Converted to an Excalidraw board"
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/hooks/event-utils.tsx
-#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -8313,8 +8322,8 @@ msgid "Copy content to clipboard"
 msgstr "Copy content to clipboard"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Copy details"
-msgstr "Copy details"
+#~ msgid "Copy details"
+#~ msgstr "Copy details"
 
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -11183,7 +11192,6 @@ msgstr "Detail"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
-#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Details"
@@ -13236,7 +13244,6 @@ msgstr "Extracting…"
 msgid "failed"
 msgstr "failed"
 
-#: src/components/agentic-progress/shared/status-indicator.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -13660,8 +13667,6 @@ msgstr "Failed to set project"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/notes/useNoteWorker.ts
-#: src/components/quick-create/QuickCreatePanel.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Failed to start session"
@@ -13676,8 +13681,8 @@ msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
 
 #: src/navigation/open-new-chat.ts
-msgid "Failed to start the session."
-msgstr "Failed to start the session."
+#~ msgid "Failed to start the session."
+#~ msgstr "Failed to start the session."
 
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 msgid "Failed to start the skill run session."
@@ -14134,10 +14139,9 @@ msgid "Finish setting up Flowpad"
 msgstr "Finish setting up Flowpad"
 
 #: src/components/agentic-progress/shared/status-indicator.tsx
-msgid "finish setup"
-msgstr "finish setup"
+#~ msgid "finish setup"
+#~ msgstr "finish setup"
 
-#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Finish setup"
 msgstr "Finish setup"
@@ -14510,8 +14514,8 @@ msgid "Flowpad mailbox · only allowed senders reach {0}"
 msgstr "Flowpad mailbox · only allowed senders reach {0}"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Flowpad runs it without per-step prompts"
-msgstr "Flowpad runs it without per-step prompts"
+#~ msgid "Flowpad runs it without per-step prompts"
+#~ msgstr "Flowpad runs it without per-step prompts"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -15026,8 +15030,8 @@ msgid "Getting the values from {0}'s Flowpad… they arrive by themselves."
 msgstr "Getting the values from {0}'s Flowpad… they arrive by themselves."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Getting your Flowpad budget ready…"
-msgstr "Getting your Flowpad budget ready…"
+#~ msgid "Getting your Flowpad budget ready…"
+#~ msgstr "Getting your Flowpad budget ready…"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Getting your Slack link…"
@@ -16573,7 +16577,6 @@ msgstr "inside"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
-#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Install"
 msgstr "Install"
@@ -16645,8 +16648,8 @@ msgid "Install project"
 msgstr "Install project"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Install takes about a minute"
-msgstr "Install takes about a minute"
+#~ msgid "Install takes about a minute"
+#~ msgstr "Install takes about a minute"
 
 #: src/components/install/InstallButton.tsx
 msgid "Install this asset on your desktop"
@@ -16990,8 +16993,8 @@ msgstr "It is no longer one of the endpoints the hub lists for you — or this m
 #~ msgstr "It is not answering on its port, or its page failed the last time it opened."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "It isn't set up on this computer"
-msgstr "It isn't set up on this computer"
+#~ msgid "It isn't set up on this computer"
+#~ msgstr "It isn't set up on this computer"
 
 #: src/pages/entry/EntityLanding.tsx
 msgid "It lives in git under {repoPath}. Clone it, and open it in the FlowPad desktop app."
@@ -21400,8 +21403,8 @@ msgid "No shell is linked to this process."
 msgstr "No shell is linked to this process."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "No sign-in or key"
-msgstr "No sign-in or key"
+#~ msgid "No sign-in or key"
+#~ msgstr "No sign-in or key"
 
 #. placeholder {0}: preset.label
 #: src/components/organization/budgets/EndpointControls.tsx
@@ -26382,8 +26385,8 @@ msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "registered watchers: <0>{registeredCount}</0>"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Reinstall"
-msgstr "Reinstall"
+#~ msgid "Reinstall"
+#~ msgstr "Reinstall"
 
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
@@ -26854,8 +26857,8 @@ msgid "Replace it"
 msgstr "Replace it"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Replace key"
-msgstr "Replace key"
+#~ msgid "Replace key"
+#~ msgstr "Replace key"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
@@ -29666,7 +29669,6 @@ msgstr "Set public"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/git/GitSetupWizard.tsx
-#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -33337,8 +33339,8 @@ msgid "The worker exited immediately after launch, so auto-relaunch is paused. R
 msgstr "The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Theme and sign-in screens are waiting"
-msgstr "Theme and sign-in screens are waiting"
+#~ msgid "Theme and sign-in screens are waiting"
+#~ msgstr "Theme and sign-in screens are waiting"
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/blocks/ThenBlock.tsx
@@ -34063,12 +34065,12 @@ msgid "This project needs these packages, and they are not on this computer."
 msgstr "This project needs these packages, and they are not on this computer."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "This project requires {source}"
-msgstr "This project requires {source}"
+#~ msgid "This project requires {source}"
+#~ msgstr "This project requires {source}"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "This project requires a specific model source"
-msgstr "This project requires a specific model source"
+#~ msgid "This project requires a specific model source"
+#~ msgstr "This project requires a specific model source"
 
 #~ msgid "This project stops using it and the stored value is deleted."
 #~ msgstr "This project stops using it and the stored value is deleted."
@@ -34874,25 +34876,23 @@ msgid "Triggers"
 msgstr "Triggers"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Trust"
-msgstr "Trust"
+#~ msgid "Trust"
+#~ msgstr "Trust"
 
 #: src/components/agentic-progress/shared/status-indicator.tsx
-msgid "trust folder"
-msgstr "trust folder"
+#~ msgid "trust folder"
+#~ msgstr "trust folder"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Trust folder {name}?"
-msgstr "Trust folder {name}?"
+#~ msgid "Trust folder {name}?"
+#~ msgstr "Trust folder {name}?"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "Trust this folder?"
-msgstr "Trust this folder?"
+#~ msgid "Trust this folder?"
+#~ msgstr "Trust this folder?"
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
-#: src/components/launch-failure/LaunchFailureCard.tsx
-#: src/components/launch-failure/LaunchFailureCard.tsx
 #: src/components/organization/tabs/OrgView.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/LaunchDialog.tsx
@@ -36219,8 +36219,8 @@ msgid "waiting for you"
 msgstr "waiting for you"
 
 #: src/components/agentic-progress/shared/status-indicator.tsx
-msgid "Waiting for you"
-msgstr "Waiting for you"
+#~ msgid "Waiting for you"
+#~ msgstr "Waiting for you"
 
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
@@ -36236,8 +36236,8 @@ msgid "waiting for you to choose an LLM source"
 msgstr "waiting for you to choose an LLM source"
 
 #: src/components/agentic-progress/shared/status-indicator.tsx
-msgid "Waiting for you: {what}"
-msgstr "Waiting for you: {what}"
+#~ msgid "Waiting for you: {what}"
+#~ msgstr "Waiting for you: {what}"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Waiting for you…"

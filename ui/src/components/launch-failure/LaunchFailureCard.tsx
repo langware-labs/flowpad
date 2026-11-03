@@ -91,7 +91,7 @@ export function LaunchFailureCard({ failure: f0, retry, process }: Props) {
   const folder = f.facts?.folder ?? '';
   const name = folder.split(/[\\/]/).filter(Boolean).pop();
   const values = { code: f.code, fix, h: workerLabel(worker), folder, name, provider: 'API', ...f.facts };
-  const line2 = i18n._({ ...LINE2, values }) || (f.evidence || f.detail || '').trim().split('\n')[0];
+  const line2 = i18n._(LINE2.id, values, { message: LINE2.message }) || (f.evidence || f.detail || '').trim().split('\n')[0];
   const tip = [f.detail, f.evidence].filter(Boolean).join('\n\n');
   return (
     <div
@@ -102,7 +102,7 @@ export function LaunchFailureCard({ failure: f0, retry, process }: Props) {
       {(waiting || busy) && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
       <div className="min-w-0 flex-1 truncate">
         <div className="truncate text-sm font-medium" data-testid="launch-failure-title">
-          {i18n._({ ...LINE1, values })}
+          {i18n._(LINE1.id, values, { message: LINE1.message })}
         </div>
         <div className="truncate text-xs text-muted-foreground">{line2}</div>
       </div>
@@ -118,7 +118,7 @@ export function LaunchFailureCard({ failure: f0, retry, process }: Props) {
       )}
       {!waiting && (
         <Button size="sm" onClick={onClick} disabled={busy} data-testid="launch-failure-fix" data-fix={fix}>
-          {i18n._({ ...BUTTON, values })}
+          {i18n._(BUTTON.id, values, { message: BUTTON.message })}
         </Button>
       )}
       <AskInstallOneOfDialog kinds={install} onClose={() => setInstall(null)} />
