@@ -650,6 +650,27 @@ class Deployment(Entity):
             return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
         return ApiSuccessResponse(data=providers if isinstance(providers, list) else [])
 
+    @action.get(action_name="funding")
+    async def funding_action(self):
+        """`GET /deployment/<id>/funding` — what pays for this placement's model turns: the hub's answer
+        (``{kind, endpoint_typeid, name, size, model, exhausted}``), relayed.
+
+        Hub funding only pays for a placement the hub holds (``remote``). A purely local placement runs
+        on this computer's own model logins, so no hub endpoint funds it and none refuses its turns:
+        ``kind: "none"`` with an empty ``exhausted`` — never a guessed allocation or default.
+        """
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.remote:
+            return ApiSuccessResponse(data={"kind": "none", "endpoint_typeid": "", "name": "", "exhausted": ""})
+        if not hub_base_url():
+            return ApiFailResponse(message="Sign in to the hub to see what funds this deployment", status_code=409)
+        funding = await self.funding()
+        if not isinstance(funding, dict):
+            return ApiFailResponse(message="the hub did not answer for this cloud placement", status_code=502)
+        return ApiSuccessResponse(data=funding)
+
     @action.get(action_name="endpoints")
     async def endpoints_action(self):
         """`GET /deployment/<id>/endpoints` — what this placement serves.
