@@ -148,11 +148,17 @@ test + status.
 - **Bypass:** same as L1.
 - **Test:** ⬜ (harness case pending).
 
-### L9 — `flow-diagnose` skill softening (prompt, non-authoritative)
-- **Prevents:** the skill telling the AI to kill the self-PID
-  (`SKILL.md:359-363`, `catalog.md:18`).
-- **Bypass:** **yes** — it is a prompt. This is cleanup, NOT the fix; the fix is L1–L4.
-- **Test:** —.
+### L9 — `flow-diagnose` skill fix (prompt, non-authoritative) — IMPLEMENTED
+- **Prevents:** the skill telling the AI to kill the self-PID. A1 now resolves
+  `server_pid` from `server.json`: if the port holder is this instance's live,
+  healthy backend it is not a conflict — do not kill it, do not `flow stop` from
+  inside FlowPad. Step 2a reframed likewise; the catalog and the worked example
+  match. (`SKILL.md` A1 / Step 2a, `references/catalog.md` A1.)
+- **Bypass:** **yes** — it is a prompt. It fixes the observed path cheaply, but it
+  is not the boundary: a `DiagnosisRequest`'s remote instructions, another skill,
+  an improvised kill, or a plain "kill python" are unaffected. The boundary is
+  L1–L4.
+- **Test:** structural skill tests pass; the prose change carries no unit test.
 
 ### L10 — CDP / remote-debugging surface (top priority; bypasses L1/L2)
 - **Prevents:** the worker closing/controlling Electron (or the carve-out browser) via a

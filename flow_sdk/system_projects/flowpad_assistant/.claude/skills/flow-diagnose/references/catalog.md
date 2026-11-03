@@ -11,11 +11,12 @@ platform, repair class, and repair action or workaround.
 ## A. Runtime / Backend — AUTO-REPAIRABLE
 
 ### A1 Port occupied ($PORT, default 9007)
-- **Cause**: A previous backend process did not exit cleanly and is still holding the port.
+- **Cause**: a process OTHER than this instance's live backend holds the port — a foreign program, or a stale/dead backend. The port being held by this instance's own healthy backend (`server_pid` in `server.json`) is the normal running state, NOT A1.
 - **Detection**:
   - macOS/Linux: `lsof -ti tcp:$PORT`
   - Windows: `netstat -ano | findstr ":$PORT"`
-- **Repair**: `flow stop` → if still held, SIGTERM/SIGKILL (mac/linux) or `taskkill /PID <pid> /F` (win). Tell user to relaunch.
+  - Then compare the PID to `server_pid` in `server.json`: if it matches and the backend answers healthy, there is no conflict — stop.
+- **Repair**: only when the holder is NOT this instance's live `server_pid`: SIGTERM/SIGKILL (mac/linux) or `taskkill /PID <pid> /F` (win) the foreign/stale PID, then tell the user to relaunch. Never `flow stop` or signal the live `server_pid` of the instance you run inside — it kills the backend this skill runs in.
 
 ### A2 Backend unhealthy / failed to respond within 30 s
 - **Cause**: Stale lock from dead PID, DB corruption, or disk full.
