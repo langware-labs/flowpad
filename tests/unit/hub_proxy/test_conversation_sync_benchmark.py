@@ -14,6 +14,8 @@ import time
 import pytest
 import pytest_asyncio
 
+from tests.adjustable_timeout import adjusted
+
 from tests.unit.hub_proxy.test_failure_modes_echo import CONVERSATIONS, _conversation_list, _hub_conversations
 
 pytestmark = [pytest.mark.long]
@@ -81,7 +83,7 @@ async def test_the_conversation_list_over_2400_hub_conversations_end_to_end(desk
         await flow_message_action._deferred_reconcile
     background_s = time.monotonic() - started
     # Measured ~3.4 s + ~1.3 s for 2,400 rows (one transaction per row took ~20 s in all).
-    assert cold_s + background_s < 12, f"the first sync took {cold_s:.2f}s + {background_s:.2f}s in the background"
+    assert cold_s + background_s < adjusted(12), f"the first sync took {cold_s:.2f}s + {background_s:.2f}s in the background"
     hub_ids = {row["id"] for row in echo_hub.paged[CONVERSATIONS]}
     assert hub_ids <= {c.id for c in await Conversation.get_all({})}, "the walk did not bring every row in"
     started = time.monotonic()
