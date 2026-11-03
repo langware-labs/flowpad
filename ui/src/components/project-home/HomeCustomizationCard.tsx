@@ -65,10 +65,7 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
   useEffect(() => setHomePage(declaredHomePage), [declaredHomePage]);
   // The declared asset, loaded for its name. Any type: the picker offers every
   // registered asset. The manifest may name it by TypeId or by `./path`.
-  const { typeId: homePageTypeId, missing: homePageUnresolved } = useHomePageTypeId(
-    project?.fs_storage_mount_path,
-    homePage,
-  );
+  const { typeId: homePageTypeId, missing: homePageUnresolved } = useHomePageTypeId(project?.id, homePage);
   const { data: homePageAsset, notFound: homePageNotFound } = useEntity(homePageTypeId);
   const homePageMissing = homePageUnresolved || homePageNotFound;
   // The picker's own list is the backend's default staging set (what a session

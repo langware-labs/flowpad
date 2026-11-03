@@ -1251,6 +1251,16 @@ export class Project extends APIEntity<Project> {
     return (await dataManager.callAction<void, ProjectHomePage>(actionInfo)) ?? { asset: null, type: null };
   }
 
+  /** The TypeId a home-page declaration (a TypeId or a `./path`) names in this
+   *  checkout (`GET project/<id>/home-page-typeid`), or null. Resolve only: unlike
+   *  {@link openHomePage} it never loads the project. The backend owns the path
+   *  rule (relative to this checkout, contained in it). */
+  static async resolveHomePageTypeId(projectId: string, reference: string): Promise<string | null> {
+    const actionInfo = new ActionInfo('home-page-typeid', Project.type, projectId, 'GET');
+    actionInfo.queryParameters = { reference };
+    return (await dataManager.callAction<void, { typeid: string | null }>(actionInfo))?.typeid ?? null;
+  }
+
   /** Get-or-create the `Folder` entity for a directory, WITHOUT declaring it as
    *  a dependency. Folder ids are deterministic (a Folder's id is its origin
    *  key), so this is a safe get-or-create: it never links, never indexes, and

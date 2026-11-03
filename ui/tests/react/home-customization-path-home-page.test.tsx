@@ -25,6 +25,7 @@ import { i18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 import { Agent, Project } from '@sdk';
 import { HomeCustomizationCard } from '@src/components/project-home/HomeCustomizationCard';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
@@ -58,6 +59,14 @@ function pathDeclaration(projectRoot: string, assetDir: string): string {
   return `./${dir.slice(root.length + 1)}`;
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.home_page_path.rules: FAILING? home_page may be a ./path - never
+//       pass it to new TypeId(); resolve it through Project.resolveHomePageTypeId. Read
+//       this tag's rules before touching useHomePageTypeId or resolve_home_page_typeid.
+// flowpad:endcapsule tag
 describe('HomeCustomizationCard — a ./path home page declaration', () => {
   beforeEach(async (ctx) => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
@@ -76,18 +85,18 @@ describe('HomeCustomizationCard — a ./path home page declaration', () => {
     expect((await project.setHomePage(declaration)).home_page).toBe(declaration);
 
     render(
-      <I18nProvider i18n={i18n}>
-        <ScreenBoundary>
-          <HomeCustomizationCard project={project} />
-        </ScreenBoundary>
-      </I18nProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <I18nProvider i18n={i18n}>
+          <ScreenBoundary>
+            <HomeCustomizationCard project={project} />
+          </ScreenBoundary>
+        </I18nProvider>
+      </QueryClientProvider>,
     );
 
     // The card shows the default until the manifest row arrives; then it either
     // names the declared agent or the boundary catches the throw.
-    await waitFor(() => expect(screen.queryByRole('alert') ?? screen.queryByText(AGENT_NAME)).not.toBeNull(), {
-      timeout: 10_000,
-    });
+    await waitFor(() => expect(screen.queryByRole('alert') ?? screen.queryByText(AGENT_NAME)).not.toBeNull());
     expect(screen.queryByRole('alert')?.textContent ?? null).toBeNull();
     expect(screen.getByText(AGENT_NAME)).toBeInTheDocument();
   });

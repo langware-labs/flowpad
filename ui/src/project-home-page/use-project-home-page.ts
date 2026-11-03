@@ -1,6 +1,7 @@
-import { QueryFilter, QueryRequest, RecordType, TypeId, isTypeId, systemTools, type ProjectManifest } from '@sdk';
+import { Project, QueryFilter, QueryRequest, RecordType, TypeId, isTypeId, type ProjectManifest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
-import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 
 /**
  * The home page `projectId`'s manifest declares, or null.
@@ -26,43 +27,34 @@ export function useProjectHomePage(projectId: string | null | undefined): string
   return data?.[0]?.home_page ?? null;
 }
 
-const typeIdOrNull = (value: string): TypeId | null => (isTypeId(value) ? new TypeId(value) : null);
+const typeIdOrNull = (value: string | null | undefined): TypeId | null =>
+  value && isTypeId(value) ? new TypeId(value) : null;
 
 /**
  * The asset a declared home page names, for showing it — never throws.
  *
  * The declaration is an asset TypeId or a `./path` inside the project
- * (docs/navigation/project-home-page.md). A path is classified by the backend's
- * path resolver (`systemTools.resolveByPath`), so every clone shows its own
- * local asset. `missing` when the declaration names no asset here — including
- * a value only a hand edit could produce (`agent:<uuid>`).
+ * (docs/navigation/project-home-page.md). A TypeId is used as is. Anything else
+ * goes to the backend's `Project.resolve_home_page_typeid`
+ * (`Project.resolveHomePageTypeId`), the one owner of the path rule: relative to
+ * this checkout, and contained in it. So every clone shows its own local asset.
+ * `missing` when the declaration names no asset here.
  */
 export function useHomePageTypeId(
-  projectRoot: string | null | undefined,
+  projectId: string | null | undefined,
   declaration: string | null,
 ): { typeId: TypeId | null; missing: boolean } {
-  const direct = useMemo(() => (declaration ? typeIdOrNull(declaration) : null), [declaration]);
-  const path =
-    !direct && declaration?.startsWith('./') && projectRoot
-      ? `${projectRoot.replace(/[\\/]+$/, '')}/${declaration.slice(2)}`
-      : null;
-  const [resolved, setResolved] = useState<{ path: string; typeId: TypeId | null } | null>(null);
-  useEffect(() => {
-    if (!path) return;
-    let live = true;
-    const settle = (typeId: TypeId | null) => live && setResolved({ path, typeId });
-    systemTools.resolveByPath(path).then(
-      (asset) => settle(asset ? typeIdOrNull(`${asset.type}${TypeId.DELIMITER}${asset.id}`) : null),
-      () => settle(null),
-    );
-    return () => {
-      live = false;
-    };
-  }, [path]);
+  const direct = useMemo(() => typeIdOrNull(declaration), [declaration]);
+  const { data, isPending } = useQuery({
+    queryKey: ['project-home-page-typeid', projectId, declaration],
+    queryFn: () => Project.resolveHomePageTypeId(projectId!, declaration!),
+    enabled: !!projectId && !!declaration && !direct,
+    retry: false,
+  });
+  const resolved = useMemo(() => typeIdOrNull(data), [data]);
 
   if (!declaration) return { typeId: null, missing: false };
   if (direct) return { typeId: direct, missing: false };
-  if (path && resolved?.path !== path) return { typeId: null, missing: false }; // still resolving
-  const typeId = path ? (resolved?.typeId ?? null) : null;
-  return { typeId, missing: !typeId };
+  if (isPending) return { typeId: null, missing: false }; // still resolving
+  return { typeId: resolved, missing: !resolved };
 }
