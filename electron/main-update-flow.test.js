@@ -520,6 +520,13 @@ const HOUR = 60 * 60 * 1000;
     eq(env.readSchedule().lastResult, { state: 'current', version: null }, 'the answer is persisted');
     await schedulerTick(env).fn(); await tick();
     eq([env.autoUpdater.checks, env.uv.checks], [1, 1], 'the next tick is not due: NEITHER channel is checked');
+    // An hour later the desktop feed is looked at again — only the desktop: the engine keeps its day.
+    env.writeSchedule({ ...env.readSchedule(), lastAttemptAt: agoIso(HOUR + 60000) });
+    await schedulerTick(env).fn(); await tick();
+    eq([env.autoUpdater.checks, env.uv.checks], [2, 1], 'hourly: the desktop feed is checked, the engine is not');
+    ok(env.readSchedule().lastDesktopCheckAt && env.readSchedule().lastSuccessAt === env.readSchedule().lastSuccessAt, 'the desktop-only check is paced on its own field');
+    await schedulerTick(env).fn(); await tick();
+    eq(env.autoUpdater.checks, 2, 'and not again until the next hour');
   }
   {
     // @langware.ai checks hourly; everyone else daily — same two-hour-old state, different verdicts.
@@ -533,11 +540,12 @@ const HOUR = 60 * 60 * 1000;
     regular.writeSchedule(staleByTwoHours);
     regular.t.setupElectronAutoUpdater();
     await schedulerTick(regular).fn(); await tick();
-    eq(regular.autoUpdater.checks, 0, 'regular account, same state: not due (daily)');
+    eq(regular.autoUpdater.checks, 1, 'regular account, same state: the desktop feed is checked anyway (hourly, every account)');
+    eq(regular.uv.checks, 0, 'but the engine keeps the daily cadence');
     // An account switch re-reads the email on the next pass: the overdue check fires at once.
     writeAccountEmail('dev@langware.ai');
     await regular.t.runScheduledUpdateCheck(); await tick();
-    eq(regular.autoUpdater.checks, 1, 'switching to an internal account makes the stale check due');
+    eq([regular.autoUpdater.checks, regular.uv.checks], [2, 1], 'switching to an internal account makes the stale (two-channel) check due');
   }
   {
     // RESTART: the persisted answer is reused — no check, and the engine is NOT held by it.
@@ -546,9 +554,11 @@ const HOUR = 60 * 60 * 1000;
     eq(await first.t.startLaunchDesktopCheck(), null, 'first launch: the real check runs (nothing newer)');
     eq(first.autoUpdater.checks, 1, 'first launch: it hit the feed');
     const second = load({ userDataDir });
-    eq(await second.t.startLaunchDesktopCheck(), null, 'relaunch inside the interval: skipped');
-    eq(second.autoUpdater.checks, 0, 'a restart does not reset the interval — the feed is not touched');
-    eq(second.t.getDesktopStatus().state, 'current', 'the status is seeded from the persisted answer');
+    const anchor = second.readSchedule().lastSuccessAt;
+    eq(await second.t.startLaunchDesktopCheck(), null, 'relaunch inside the interval: nothing newer');
+    eq(second.autoUpdater.checks, 1, 'every launch looks at the desktop feed');
+    eq(second.readSchedule().lastSuccessAt, anchor, 'without resetting the shared interval');
+    eq(second.t.getDesktopStatus().state, 'current', 'the status is the fresh answer');
     await second.t.checkPackageUpdateInBackground();
     eq(second.uv.checks, 1, 'so the engine check is not held by the skipped check');
   }
@@ -1187,7 +1197,31 @@ const HOUR = 60 * 60 * 1000;
     eq(r.backendJustUpgraded, true, 'the start waits the longer post-upgrade window');
   }
   {
-    // The new desktop was installed on quit after "Later" (nothing agreed): today's engine dialog, never a silent install.
+    // The desktop leads: installed on quit after "Later" (nothing agreed), the new desktop still installs the newest
+    // engine it accepts — no question. Offline (nothing resolvable): the version saved with the update.
+    for (const [compatibleRelease, expect, why] of [[{ version: '0.2.181' }, '0.2.181', 'the newest compatible engine'], [null, '0.2.180', 'PyPI silent → the saved version']]) {
+      const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', compatibleRelease });
+      fs.writeFileSync(path.join(env.userData, 'desktop-version.json'), JSON.stringify({ version: '0.2.47' }));
+      await env.t.getDesktopUpdateVersion();
+      fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false }));
+      await env.t.installAndStartBackend();
+      eq(env.uv.upgrades.map((o) => o.version), [expect], `desktop updated after "Later": ${why} is installed, unasked`);
+      eq(env.dialogCalls.length, 0, 'no engine dialog');
+    }
+    // No record at all (a desktop-only update): the engine still follows the new desktop.
+    const bare = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', compatibleRelease: { version: '0.2.181' } });
+    fs.writeFileSync(path.join(bare.userData, 'desktop-version.json'), JSON.stringify({ version: '0.2.47' }));
+    await bare.t.getDesktopUpdateVersion();
+    await bare.t.installAndStartBackend();
+    eq(bare.uv.upgrades.map((o) => o.version), ['0.2.181'], 'a desktop-only update: the newest compatible engine follows it');
+    // Already on it: nothing to do.
+    const same = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', compatibleRelease: { version: '0.2.168' } });
+    fs.writeFileSync(path.join(same.userData, 'desktop-version.json'), JSON.stringify({ version: '0.2.47' }));
+    await same.t.installAndStartBackend();
+    eq(same.uv.upgrades.length, 0, 'the installed engine is already the newest compatible: nothing installed');
+  }
+  {
+    // Same desktop as last run (not an update) and nothing agreed: today's engine dialog, never a silent install.
     const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
     await env.t.getDesktopUpdateVersion(); // the launch-time check answered: running the latest desktop
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false }));
@@ -1209,7 +1243,7 @@ const HOUR = 60 * 60 * 1000;
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: true }));
     const r = await env.t.installAndStartBackend();
     eq(r.ok, true, 'startup still succeeds with the current engine');
-    ok(env.logLines.some((l) => /installing the agreed engine 0\.2\.180 failed/.test(l)), 'and the failure is logged');
+    ok(env.logLines.some((l) => /installing engine 0\.2\.180 after the desktop update failed/.test(l)), 'and the failure is logged');
   }
 
   {

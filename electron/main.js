@@ -311,8 +311,11 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
       // "due" tick after tick, and the blocked DESKTOP work is exactly what unblocks it.
       pass = 'follow-up';
     } else if (updateSchedule.engineRetryDue({ state, now: Date.now() })) {
-      pass = 'engine-retry';
+      pass = 'engine-retry'; // paced by its backoff, so it never starves the hourly desktop look below
       log.info('[update] engine check retry due (engine backoff)');
+    } else if (updateSchedule.desktopCheckDue({ state, now: Date.now() })) {
+      pass = 'desktop'; // the hourly look at the desktop feed, for every account (the engine half does not run)
+      log.info('[update] desktop check due (hourly)');
     } else {
       return;
     }
@@ -320,7 +323,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
   autoCheckInFlight = true;
   const desktopWasBlocked = followUpDesktop;
   const packageWasBlocked = followUpPackage;
-  if (pass !== 'engine-retry') followUpDesktop = false; // an engine-retry never runs the desktop half: its debt is kept
+  if (pass !== 'engine-retry' && pass !== 'desktop') followUpDesktop = false; // an engine-retry never runs the desktop half: its debt is kept
   followUpPackage = false;
   try {
     const last = state.lastResult || {};
@@ -328,7 +331,8 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     // version the running app already is (a scheduled pass always gets a fresh answer instead).
     const cached = (pass === 'follow-up' && desktopWasBlocked && last.state === 'available'
       && last.version && isNewer(app.getVersion(), last.version)) ? last.version : null;
-    const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion() : cached;
+    const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion()
+      : pass === 'desktop' ? await getDesktopUpdateVersion({ desktopOnly: true }) : cached;
     if (desktopLatest) {
       // A newer release than the one on screen / being downloaded: close that
       // prompt (as "Later") or cancel that download, so the user only ever sees
@@ -863,18 +867,28 @@ async function offerDesktopUpdate(desktopLatest) {
  * downloading (autoDownload is false), so it's safe to await before boot to
  * decide whether to fold the desktop update into the pre-start prompt.
  */
-async function getDesktopUpdateVersion() {
-  if (!app.isPackaged || process.windowsStore) return recordCheck({ state: 'unsupported' }).version;
+async function getDesktopUpdateVersion({ desktopOnly = false } = {}) {
+  // desktopOnly: the extra launch/hourly look at the desktop feed (DESKTOP_INTERVAL_MS). It neither anchors the
+  // shared cadence nor starts the backoff, and a failure keeps the last answer instead of 'unknown' (which
+  // would hold the engine on a hiccup of a check the schedule did not even ask for).
+  const record = desktopOnly ? recordDesktopOnlyCheck : recordCheck;
+  if (!app.isPackaged || process.windowsStore) return record({ state: 'unsupported' }).version;
   try {
     const result = await autoUpdater.checkForUpdates();
-    if (!result) return recordCheck({ state: 'unsupported' }).version; // the updater is inactive
+    if (!result) return record({ state: 'unsupported' }).version; // the updater is inactive
     const latest = result.updateInfo && result.updateInfo.version;
-    if (!latest) return recordCheck({ state: 'unknown', reason: 'the update feed returned no version' }).version;
-    return recordCheck(isNewer(app.getVersion(), latest) ? { state: 'available', version: latest } : { state: 'current' }).version;
+    if (!latest) return record({ state: 'unknown', reason: 'the update feed returned no version' }).version;
+    return record(isNewer(app.getVersion(), latest) ? { state: 'available', version: latest } : { state: 'current' }).version;
   } catch (err) {
     log.warn(`[electron-updater] desktop update check failed: ${err.message}`);
-    return recordCheck({ state: 'unknown', reason: `update check failed: ${err.message}` }).version;
+    return record({ state: 'unknown', reason: `update check failed: ${err.message}` }).version;
   }
+}
+
+function recordDesktopOnlyCheck(status) {
+  scheduleStore.write(updateSchedule.recordDesktopCheck(scheduleStore.read(), { at: Date.now() }));
+  if (status.state === 'unknown') return desktopStatus; // keep the last answer
+  return setDesktopStatus(status);
 }
 
 /**
@@ -948,6 +962,20 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
       desktopDownloadToken = null;
     });
   prepareEngineForDesktop(version);
+}
+
+/**
+ * The engine a just-updated desktop installs: the newest release it accepts (compat contract, both
+ * directions) when newer than the installed one; `agreed` (saved with the update) when PyPI cannot answer.
+ */
+async function engineForUpdatedDesktop(installed, agreed) {
+  let picked = null;
+  try { picked = await uvManager.resolveCompatibleEngineVersion(); } catch (err) {
+    log.warn(`[update] no compatible engine for desktop ${app.getVersion()}: ${String(err.message).split('\n')[0]}`);
+    return null; // PyPI answered and nothing fits: the pair repair below decides
+  }
+  const target = (picked && picked.version) || agreed;
+  return target && (!installed || isNewer(installed, target)) ? target : null;
 }
 
 /**
@@ -1196,9 +1224,11 @@ function startLaunchDesktopCheck() {
     ? { run: true, reason: 'update-test' } // the update-cycle harness drives the cadence itself
     : updateSchedule.planLaunchCheck({ state: scheduleStore.read(), intervalMs: currentIntervalMs(), now: Date.now() });
   if (plan.run) return boundedDesktopCheck();
-  log.info(`[update] launch desktop check skipped (${plan.reason})${plan.seed ? '; reusing the last answer' : ''}`);
+  // Not due for the shared cadence: the desktop feed is still looked at, every launch (DESKTOP_INTERVAL_MS).
+  log.info(`[update] launch check not due (${plan.reason})${plan.seed ? '; reusing the last answer' : ''} — checking the desktop feed only`);
   if (plan.seed) setDesktopStatus(plan.seed);
-  return Promise.resolve(null);
+  launchDesktopCheckRan = true;
+  return updateRecovery.boundedCheck(() => getDesktopUpdateVersion({ desktopOnly: true }), { log, ms: updateTest.checkBoundMs() });
 }
 /** The recovery panels' check: runs for real if the scheduled one was skipped. */
 function forcedLaunchDesktopCheck() {
@@ -2288,23 +2318,32 @@ async function installAndStartBackend({ quiet = false } = {}) {
       // by choosing "Restart now". Install exactly X now, with THIS desktop (its Python pin, its start
       // contract). No agreement (the app was closed after "Later")? Then the normal engine dialog below
       // asks. See update-plan.js. A failure keeps the current engine; the normal dialog offers it again.
+      const savedEngine = pendingEngineStore.read();
       const enginePlan = planAfterDesktopUpdate({
-        state: pendingEngineStore.read(),
+        state: savedEngine,
         appVersion: app.getVersion(),
         installedEngine: uvManager.getInstalledVersionSync(flowBin),
         isNewer,
       });
       if (enginePlan.clear) pendingEngineStore.clear();
-      if (enginePlan.action === 'install') {
-        log.info(`[update] installing the engine version agreed before the restart: ${enginePlan.version}`);
-        updateTest.event('agreed-engine-install', { version: enginePlan.version, desktop: app.getVersion() });
-        sendStatus(`Updating the FlowPad engine to ${enginePlan.version}`);
+      // The desktop leads and the engine follows its dependencies: after ANY desktop update — "Restart now",
+      // or installed on quit after "Later" — the newest engine this desktop accepts is installed, without a
+      // question (offline when it was prepared with the desktop download). PyPI unreachable: the version
+      // saved with this update, if there is one; otherwise the normal engine check below.
+      const savedForThis = savedEngine && savedEngine.desktopVersion === app.getVersion() ? savedEngine.engineVersion : null;
+      const engineTarget = desktopUpgraded
+        ? await engineForUpdatedDesktop(uvManager.getInstalledVersionSync(flowBin), savedForThis)
+        : (enginePlan.action === 'install' ? enginePlan.version : null);
+      if (engineTarget) {
+        log.info(`[update] desktop ${app.getVersion()}: installing engine ${engineTarget}${enginePlan.action === 'install' ? ' (agreed before the restart)' : ' (follows the desktop update)'}`);
+        updateTest.event('agreed-engine-install', { version: engineTarget, desktop: app.getVersion(), agreed: enginePlan.action === 'install' });
+        sendStatus(`Updating the FlowPad engine to ${engineTarget}`);
         try {
-          await uvManager.upgrade({ version: enginePlan.version, onProgress: installProgress('Updating the FlowPad engine') });
+          await uvManager.upgrade({ version: engineTarget, onProgress: installProgress('Updating the FlowPad engine') });
           activeBin = uvManager.getInstalledFlowBin() || flowBin;
           backendJustUpgraded = true;
         } catch (upgradeErr) {
-          log.warn(`[uv] installing the agreed engine ${enginePlan.version} failed, starting the current engine: ${upgradeErr.message}`);
+          log.warn(`[uv] installing engine ${engineTarget} after the desktop update failed, starting the current engine: ${upgradeErr.message}`);
         }
       }
 

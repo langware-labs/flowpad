@@ -46,7 +46,7 @@ Electron (main.js)
 | `flow-rs-keychain.js` | Reading keys from the keychain. |
 | `progress-watchdog.js` | Progress guard: 30 s windows, 3 quiet windows in a row = stalled. Gated by `canStall`, async sampling, overlap-safe. |
 | `update-restart.js` | `createRestartApplier` — "Restart now": the window stays up on "Installing the update" (never hidden before the quit begins), stops the backend, installs, and brings the app back if the restart fails. |
-| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
+| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise) plus a desktop-only look at the feed every launch and every hour for every account (`desktopCheckDue`), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
 | `support-bundle.js` | "Send Report" zip: `collectLogs`, `buildSupportZip`, `redact`. |
@@ -101,7 +101,13 @@ Electron (main.js)
   only asks whether a check is due; login/logout/account switch re-evaluate at once (a directory watch on
   the instance dir, re-armed by the tick if it dies). The launch check is skipped while a recent answer said
   "current" (the status is seeded, so engine updates are not held), but a relaunch inside a failure backoff
-  retries for real; recovery panels and the update-cycle harness bypass the schedule. A feed answer that
+  retries for real; recovery panels and the update-cycle harness bypass the schedule.
+  The DESKTOP feed is also looked at on every launch and every hour, whatever the account (a new desktop
+  leads; the engine follows its dependencies): a desktop-only check (`getDesktopUpdateVersion({desktopOnly})`)
+  stamps `lastDesktopCheckAt` and never moves the shared anchor or the backoff, so the engine keeps its
+  cadence. After ANY desktop update — "Restart now", or installed on quit after "Later" — the new desktop
+  installs the newest engine it accepts without a question (`engineForUpdatedDesktop`; offline when it was
+  prepared with the desktop download; PyPI silent → the version saved with the update). A feed answer that
   cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —
   downloaded deferred, installed on the next quit, surfaced by the reminder (`decideDesktopAction`).
   Each channel keeps its own failure streak: a PyPI outage retries engine-only on its backoff without
