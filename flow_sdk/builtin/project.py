@@ -893,6 +893,19 @@ class Project(SetupSkippable, Entity):
             log.warning("project home page failed for %s: %s", self.id, exc)
             return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
+    @action.get(action_name="home-page-typeid")
+    async def home_page_typeid_action(self, reference: str = "") -> "ApiResponse":
+        """`GET /project/<id>/home-page-typeid?reference=` — ``resolve_home_page_typeid`` alone.
+
+        For a surface that only SHOWS the home page (the Customize card): the TypeId
+        ``reference`` (default: the declared one) names in this checkout, or null.
+        Unlike ``home-page`` it never loads the project. The row is indexed when
+        missing, as ``open_home_page`` does, so the caller can read the asset."""
+        typeid = await self.resolve_home_page_typeid(reference or None)
+        if typeid:
+            await self._index_home_page(typeid)
+        return ApiSuccessResponse(data={"typeid": typeid})
+
     # ── setup: is this project ready here, and the wizard that makes it so ─────────
 
     @action.post(action_name="load")
