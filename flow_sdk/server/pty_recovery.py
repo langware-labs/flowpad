@@ -266,6 +266,8 @@ async def run_pty_recovery() -> None:
                     alive = False
             if alive:
                 continue  # genuinely survived (in-process reattach — rare)
+            if proc.start_failure or proc.launch_blocked():  # a respawn shows the same prompt (trust-decline loop)
+                continue
 
             logger.info("pty-recovery: recovering %s (worker dead after restart)", proc.id)
             # Go through the LOCKED public entry (start_pty holds the per-process

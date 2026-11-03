@@ -574,6 +574,9 @@ class Capability(Entity):
         if worker_type is None:
             return None
         result = await get_driver(worker_type).auth_probe()
+        from flow_sdk.builtin.agentic_process.launch_health import CLI_CRASHES  # noqa: PLC0415
+
+        CLI_CRASHES[worker_type] = result.message if (result.details or {}).get("cli_crashed") else ""
         # The mirror saves whatever it changes -- see its docstring.
         await self._mirror_probe_to_login_state(result)
         return result
