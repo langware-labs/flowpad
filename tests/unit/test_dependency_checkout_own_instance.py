@@ -5,12 +5,15 @@
 project collided with stg-1's own ``waha-service`` ("a project named ... already exists").
 """
 
+import dataclasses
+
 import pytest
 
 import flow_sdk.config as config
 import flow_sdk.fs_store.indexer.functions._claude_projects as claude_projects
 from flow_sdk.builtin.project_dependencies import _checkout_for
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.instance_settings import get_instance_settings
 from tests.unit.conftest import git_cmd
 
 URL = "https://github.com/acme/waha-service.git"
@@ -27,6 +30,8 @@ def _clone(path):
 def two_instances(tmp_path, monkeypatch):
     mine = _clone(tmp_path / "instances" / "stg" / "workspace" / "waha-service")
     prod = _clone(tmp_path / "Flowpad workspace" / "waha-service")
+    settings = dataclasses.replace(get_instance_settings(), user_home=tmp_path)  # prod's root: <home>/Flowpad workspace
+    monkeypatch.setattr("flow_sdk.instance_settings.get_instance_settings", lambda: settings)
     monkeypatch.setattr(config, "agent_workspace_root", lambda: mine.parent)
     return mine, prod
 

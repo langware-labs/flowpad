@@ -153,26 +153,23 @@ async def _github_token() -> Optional[str]:
 
 
 def _checkout_for(origin: Any, cached: Optional[str]) -> Optional[Path]:
-    """A local checkout of ``origin``'s repo inside THIS instance's workspace roots: the
-    folder's cached path first (any branch), then one found by URL.
+    """A local checkout of ``origin``'s repo: the folder's cached path first (where the
+    user added it from — any location, any branch), then one found by URL inside THIS
+    instance's workspace roots.
 
     Every instance on the machine sees the same ``~/.claude`` project list, so a URL
     lookup also lists other instances' clones (prod's ``~/Flowpad workspace`` among
-    them). A checkout outside this instance's roots is another instance's, never this
+    them). A checkout in another instance's workspace is that instance's, never this
     instance's dependency — adopting it registers a duplicate-named project here.
     """
     from flow_sdk.config import all_workspace_roots  # noqa: PLC0415
-    from flow_sdk.utils.git import find_local_repo_for_url, find_project_root  # noqa: PLC0415
+    from flow_sdk.utils.git import _in_another_instance, find_local_repo_for_url, find_project_root  # noqa: PLC0415
 
     roots = [root.resolve() for root in all_workspace_roots()]
 
-    def _mine(path: str) -> bool:
-        resolved = Path(path).resolve()
-        return any(resolved.is_relative_to(root) for root in roots)
-
     if cached and Path(cached).is_dir():
         repo = find_project_root(cached)
-        if repo and _mine(repo) and origin.matches_checkout(Path(repo)):
+        if repo and not _in_another_instance(repo) and origin.matches_checkout(Path(repo)):
             return Path(repo)
     local = find_local_repo_for_url(origin.clone_url(), within=roots)
     if local and origin.matches_checkout(Path(local)):

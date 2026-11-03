@@ -175,15 +175,20 @@ def _url_matches(path: str, clone_url: str) -> bool:
 
 
 def _in_another_instance(path: str) -> bool:
-    """Is ``path`` inside ANOTHER Flowpad instance's own folder (``<flow_home>/instances/<other>/``)?
+    """Is ``path`` inside ANOTHER Flowpad instance's own folder (``<flow_home>/instances/<other>/``)
+    or, on any instance but prod, inside prod's workspace (``~/Flowpad workspace``)?
     Such a checkout is that instance's (its workspace), never one to adopt here."""
     from pathlib import Path as _Path
 
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     try:
         settings = get_instance_settings()
         resolved = _Path(path).resolve()
+        prod_root = (settings.user_home / "Flowpad workspace").resolve()
+        if resolved.is_relative_to(prod_root) and agent_workspace_root().resolve() != prod_root:
+            return True
         if not resolved.is_relative_to(settings.instances_root.resolve()):
             return False
         return not resolved.is_relative_to(settings.instance_dir.resolve())
