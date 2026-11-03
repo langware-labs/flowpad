@@ -10,6 +10,7 @@ process, a conversation that is its caller's own, and a request nobody answers y
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 
 import pytest
@@ -303,3 +304,73 @@ async def test_ask_refuses_no_text_and_a_disabled_agent(deployed, bootstrapped_c
     await agent.save()
     off = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "hi"})
     assert off.status_code == 409 and "disabled" in off.text
+
+
+async def _asgi_stream(path: str, body: dict, on_body):
+    """POST *body* to the real app over raw ASGI — each body chunk handed to *on_body* as it is SENT,
+    which an httpx ``ASGITransport`` cannot show (it buffers the whole response)."""
+    import json
+
+    from flow_sdk.server.app import app
+
+    raw = json.dumps(body).encode()
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http",
+             "path": path, "raw_path": path.encode(), "query_string": b"", "root_path": "",
+             "headers": [(b"host", b"testserver"), (b"content-type", b"application/json"),
+                         (b"content-length", str(len(raw)).encode())],
+             "client": ("127.0.0.1", 1), "server": ("testserver", 80)}
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if not sent:
+            sent = True
+            return {"type": "http.request", "body": raw, "more_body": False}
+        await asyncio.Event().wait()  # the client never disconnects mid-turn
+
+    async def send(message):
+        if message["type"] == "http.response.body" and message.get("body"):
+            on_body(message["body"].decode())
+
+    await app(scope, receive, send)
+
+
+async def test_a_streamed_completion_answers_before_the_reply_is_recorded(worker, user, bootstrapped_client):
+    """A turn outlasts any idle-read timeout between caller and box (the desktop's hub proxy gives up
+    after 30s of silence → ``offline``). So a stream opens at once — its first chunk is on the wire
+    before the agent has replied — and the reply follows in the same stream once recorded."""
+    import json
+
+    agent = Agent(name=f"slow-agent-{time.monotonic_ns()}", worker_type="claude", system_prompt="Answer briefly.")
+    await agent.save()
+    deployment = await agent.run_locally()
+    chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")
+    chunks: list[tuple[float, str]] = []
+    loop_started: list[float] = []
+
+    async def answer_later():  # the deployment's loop gets to the message only after the caller is listening
+        while not chunks:
+            await asyncio.sleep(0.05)
+        loop_started.append(time.monotonic())
+        return asyncio.create_task(serve(agent, deployment, poll_every=0.05))
+
+    later = asyncio.create_task(answer_later())
+    try:
+        with contextlib.suppress(TimeoutError):  # a silent stream never ends: nobody answers what never asked
+            await asyncio.wait_for(_asgi_stream(_url(chat, "v1/chat/completions"), _ask("take your time", stream=True),
+                                                lambda b: chunks.append((time.monotonic(), b))), timeout=15)
+    finally:
+        if later.done():
+            await stop_serving(later.result())
+        else:
+            later.cancel()
+        await agent.delete()
+
+    assert loop_started, "the stream sent nothing until the reply was recorded"
+    first_at, first = chunks[0]
+    assert first_at <= loop_started[0] and '"role": "assistant"' in first
+    text = "".join(b for _, b in chunks)
+    events = [line[len("data: "):] for line in text.splitlines() if line.startswith("data: ")]
+    assert events[-1] == "[DONE]"
+    content = "".join(json.loads(e)["choices"][0]["delta"].get("content", "") for e in events[:-1])
+    assert content.startswith("Mock reply")
