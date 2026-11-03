@@ -165,7 +165,11 @@ export class Activity {
 export async function listActivities(subject_entity?: string | null, allSubjects = false): Promise<ActivityProgressSpec[]> {
   try {
     const params = allSubjects ? { all: true } : subject_entity ? { subject_entity } : {};
-    const res: unknown = await apiClient.get(BASE, { params });
+    // Names this tab, so the backend keeps sending it every root listed here until that root ends:
+    // a tab that learns of a run from this list, not from a WS frame, must still hear the run end.
+    const { ConnectionManager } = await import('../websocket');
+    const headers = { 'X-Flow-Connection-Id': ConnectionManager.getInstance().id };
+    const res: unknown = await apiClient.get(BASE, { params, headers });
     return Array.isArray(res) ? (res as ActivityProgressSpec[]) : [];
   } catch {
     return [];
