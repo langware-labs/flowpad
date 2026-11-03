@@ -111,7 +111,8 @@ function ChangeAllocation({ agent, deployment }: { agent: Agent; deployment: Dep
   const save = async () => {
     setBusy(true);
     try {
-      await agent.planDeployment(deployment.environment, deployment.target.provider, value);
+      // Names this deployment: without its id the hub plans a new one and this one keeps its old allocation.
+      await agent.planDeployment(deployment.environment, deployment.target.provider, value, deployment.id);
       notify.success({ title: value ? t`Allocation saved` : t`Back on the owner's default` });
       setEditing(false);
       await queryClient.invalidateQueries({ queryKey: ['deployment', deployment.id, 'funding'] });
@@ -141,6 +142,7 @@ function ChangeAllocation({ agent, deployment }: { agent: Agent; deployment: Dep
         agent={agent}
         environment={deployment.environment}
         provider={deployment.target.provider}
+        deploymentId={deployment.id}
         value={value}
         onChange={setValue}
         disabled={busy}
