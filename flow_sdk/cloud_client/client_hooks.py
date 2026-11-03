@@ -29,6 +29,8 @@ PASSTHROUGH_EXTENSION = "flowpad_passthrough"
 # ``brief``/``submit``). This box's login is neither attached nor consulted -- a lapsed one must
 # not stop a call that never needed it -- and the hub's answer to it can sign no one out here.
 ANONYMOUS_EXTENSION = "flowpad_anonymous"
+# The caller expects this call may fail and handles it: its failure is not shown as a hub warning.
+QUIET_EXTENSION = "flowpad_quiet"
 
 
 def _is_passthrough(response: httpx.Response) -> bool:
@@ -143,8 +145,9 @@ async def _on_response(response: httpx.Response) -> None:
     status_code = response.status_code
     # A proxied response belongs to the caller downstream — inspect status only.
     passthrough = _is_passthrough(response)
-    # No credential went out, so no answer to it says anything about this box's login.
-    anonymous = _is_anonymous(response.request)
+    # No credential went out, so no answer to it says anything about this box's login — whether the
+    # call was anonymous on purpose or simply went out bare (a 401 to a bare call signed boxes out).
+    anonymous = _is_anonymous(response.request) or "Authorization" not in response.request.headers
     if status_code < 400:
         if not passthrough and not anonymous and await _is_auth_failure_envelope(response):
             # HTTP-layer auth failure (envelope status=fail with auth marker).
@@ -179,6 +182,8 @@ async def _on_response(response: httpx.Response) -> None:
     # elsewhere — by an auth-failure envelope on a 2xx (handled above), or
     # by the hub closing the WS with an auth close code (handled in
     # ws_client._handle_closed_connection).
+    if response.request.extensions.get(QUIET_EXTENSION):
+        return
     path = redact(request_path(response.request.url))
     # A large or non-JSON passthrough body stays unread (the proxy streams it); the status
     # still gets reported, and the caller receives the body verbatim.

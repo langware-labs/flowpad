@@ -530,6 +530,8 @@ def test_project_hub_body_override_strips_local_project_state():
         # frontend reads it from the local API; it must never reach the hub.
         "context_roots",
         "include_dirs",
+        # This machine's project status (core/project_status): read from its instance file, never sent.
+        "local_status",
     ]
     assert added == []
     assert "name" in inst._hub_body(), "the hub hosts a project's name verbatim"

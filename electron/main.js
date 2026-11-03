@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor, session, desktopCapturer, systemPreferences } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 const { buildSupportZip, redact } = require('./support-bundle');
@@ -7,6 +7,7 @@ const { redactUrl, installLogRedaction } = require('./log-redact');
 const { offerMoveToApplications } = require('./app-location');
 const { showFailureDialog } = require('./failure-dialog');
 const { createRendererWatchdog } = require('./renderer-watchdog');
+const screenCapture = require('./screen-capture');
 const { bounded, collectFailureReport, writeFailureReport } = require('./hang-report');
 const { decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
 const updateTest = require('./update-test');
@@ -49,6 +50,15 @@ app.setAsDefaultProtocolClient('flowpad');
 // Lets the hang watchdog read a busy renderer's JS call stack for its report (hang-report.js);
 // pages opt in with the Document-Policy header added in `createWindow`.
 app.commandLine.appendSwitch('enable-features', 'DocumentPolicyIncludeJSCallStacksInCrashReports');
+
+// A dev run is started from the repo (`npm run dev:electron`) against a backend the
+// developer already has running: it does NOT own the machine's flowpad install, and must
+// not start, stop or upgrade it — nor share its userData: the single-instance lock below
+// is keyed by that folder, so a dev shell beside the installed app would quit at once.
+const isDev = process.env.MINIHUB_DEV === 'true';
+if (isDev) {
+  app.setPath('userData', `${app.getPath('userData')}-dev`);
+}
 
 // Enforce single-instance so Windows/Linux deep links reach the running app
 // via the 'second-instance' event rather than spawning a second process.
@@ -994,10 +1004,6 @@ function writeDesktopVersion(version) {
 }
 
 // Configuration
-// A dev run is started from the repo (`npm run dev:electron`) against a backend
-// the developer already has running: it does NOT own the machine's flowpad
-// install, and must not start, stop or upgrade it.
-const isDev = process.env.MINIHUB_DEV === 'true';
 // Fixed for a packaged app; in dev it can point at a repo-run backend (e.g. the
 // `oss` instance on 9008). One const feeds the start URL, the `get-backend-url`
 // IPC and the open-externally guard, so they can never disagree.
@@ -1500,6 +1506,10 @@ function cleanRestartWindow({ hung, url: hungUrl }) {
 }
 
 function createWindow() {
+  // Screen recording (the top bar's Record button): without this the renderer's
+  // `getDisplayMedia` is refused. Installed on the default session every window shares.
+  screenCapture.installScreenCapture(session.defaultSession, desktopCapturer, log);
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -2866,6 +2876,15 @@ ipcMain.handle('capture-region', async (event, rawRegion) => {
 
   const image = await win.webContents.capturePage(rect);
   return image.toDataURL();
+});
+
+// Screen recording: the macOS grant the top bar's Record button depends on, and the
+// settings pane to send the person to when it was refused (the app cannot re-prompt).
+ipcMain.handle('screen-capture-status', () => screenCapture.screenCaptureStatus(systemPreferences, process.platform));
+ipcMain.handle('open-screen-recording-settings', async () => {
+  if (process.platform !== 'darwin') return false;
+  await require('electron').shell.openExternal(screenCapture.SCREEN_RECORDING_SETTINGS_URL);
+  return true;
 });
 
 // Quit from the startup-timeout recovery panel's "Quit" button.

@@ -1,5 +1,7 @@
 """Grow the public process usage contract with real files and transcript entries."""
 
+import json
+
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
@@ -165,6 +167,41 @@ async def test_real_claude_loaded_skill_message_is_explicit_usage(tmp_path):
     usage = await process(tmp_path).get_used_assets(transcript=AgentTranscriptFile('claude', history_path))
     assert len(usage) == 1 and usage[0].asset.path == path
     assert usage[0].evidence[0].kind.value == 'skill_invoked'
+
+
+def claude_skill_run(tmp_path, name, body):
+    """The three lines Claude Code writes for a Skill call: call, bare result, injected body."""
+    call = f'toolu_{name}'
+    line = {'sessionId': 'test', 'timestamp': '2026-09-11T00:00:00Z'}
+    rows = [
+        {**line, 'type': 'assistant', 'uuid': f'{name}-call', 'message': {'role': 'assistant', 'content': [
+            {'type': 'tool_use', 'id': call, 'name': 'Skill', 'input': {'skill': name}}]}},
+        {**line, 'type': 'user', 'uuid': f'{name}-result', 'message': {'role': 'user', 'content': [
+            {'type': 'tool_result', 'tool_use_id': call, 'content': f'Launching skill: {name}'}]}},
+        {**line, 'type': 'user', 'uuid': f'{name}-body', 'isMeta': True, 'sourceToolUseID': call,
+         'message': {'role': 'user', 'content': [{'type': 'text', 'text': body}]}},
+    ]
+    path = tmp_path / f'{name}.jsonl'
+    path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+    return AgentTranscriptFile('claude', path)
+
+
+@pytest.mark.asyncio
+async def test_skill_call_resolves_through_its_linked_body(tmp_path):
+    path = skill(tmp_path)
+    history = claude_skill_run(tmp_path, 'probe', f'Base directory for this skill: {path}\n\nInstructions.')
+    usage = await process(tmp_path).get_used_assets(transcript=history)
+    assert [(u.reference, u.resolution) for u in usage] == [('probe', UsageResolution.RESOLVED)]
+    assert usage[0].asset.path == path
+
+
+@pytest.mark.asyncio
+async def test_skill_body_without_a_folder_is_builtin_not_unknown(tmp_path):
+    from flow_sdk.assets.inventory import inventory_payload
+    history = claude_skill_run(tmp_path, 'simplify', '`/simplify` — review the changed code.')
+    usage = await process(tmp_path).get_used_assets(transcript=history)
+    assert [(u.reference, u.resolution) for u in usage] == [('simplify', UsageResolution.BUILTIN)]
+    assert inventory_payload([], usage, assistant_enabled=False)['unresolved_usage'] == []
 
 
 @pytest.mark.asyncio

@@ -11,9 +11,6 @@ import {
   mintInviteLink,
   credentialsService,
   normalizeEmail,
-  oauthService,
-  OAUTH_PROVIDERS,
-  OAuthStatus,
   TypeId,
   type Project,
   type ConversationParticipant,
@@ -26,10 +23,10 @@ import { useInstancePreferences } from '@sdk/react/hooks';
 import { useShareOwnerProject } from '@src/hooks/use-share-owner-project';
 import { useLinkProjectToCloud } from '@src/hooks/use-link-project-to-cloud';
 import { useShareProjectMembership } from '@src/hooks/use-share-project-membership';
+import { ConnectGithubButton } from '@src/components/git/ConnectGithubButton';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { SecretVaultPicker } from '@src/components/credentials/SecretVaultPicker';
 import { usePreShare } from '@src/hooks/use-pre-share';
-import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { errorMessage } from '@src/lib/error-message';
 import { useAuth } from '@sdk/react/hooks';
@@ -381,7 +378,6 @@ export function ShareToConversationDialog({
   const grantRef = sourceRemoved ? undefined : source.accessGrantRef;
   const { data: grantEntity } = useEntity<Project>(grantRef ?? null);
   const [needsGitHub, setNeedsGitHub] = useState(false);
-  const [connecting, setConnecting] = useState(false);
   const retryAfterConnect = useRef<(() => void) | null>(null);
   // Every share carries the git pointer AND a copy when the asset is committed
   // and pushed; each receiver opens it by git if it can, else from the copy.
@@ -397,7 +393,19 @@ export function ShareToConversationDialog({
     if (gitCapable && !preflight.answered) return;
     if (gitCapable && preflight.fix) setStep('changes');
     else linkOrCompose();
-  }, [open, step, owner.loading, preferences.isLoaded, preShare.answered, preShare.answer, preShareDone, gitCapable, preflight.answered, preflight.fix, linkOrCompose]);
+  }, [
+    open,
+    step,
+    owner.loading,
+    preferences.isLoaded,
+    preShare.answered,
+    preShare.answer,
+    preShareDone,
+    gitCapable,
+    preflight.answered,
+    preflight.fix,
+    linkOrCompose,
+  ]);
   const preShareFinished = useCallback(() => {
     setPreShareDone(true);
     // The credential/manifest changed: the project's Git state did too — ask again before composing.
@@ -454,34 +462,13 @@ export function ShareToConversationDialog({
     (skipMembership || (membership.status !== 'loading' && membership.status !== 'error')) &&
     (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
 
-  // Subscribed only while THIS dialog's connect is pending, so an abandoned
-  // flow leaves no listener behind.
-  useOAuthFlowComplete(
-    OAUTH_PROVIDERS.GITHUB,
-    (message) => {
-      setConnecting(false);
-      if (message.status !== OAuthStatus.SUCCESS) {
-        setLocalError(t`GitHub authorization did not complete.`);
-        return;
-      }
-      setNeedsGitHub(false);
-      const retry = retryAfterConnect.current;
-      retryAfterConnect.current = null;
-      retry?.();
-    },
-    connecting,
-  );
-
-  const connectGitHub = async () => {
-    if (connecting) return;
-    setConnecting(true);
+  // The grant landed: finish the share that asked for it.
+  const onGithubConnected = () => {
+    setNeedsGitHub(false);
     setLocalError(null);
-    try {
-      await oauthService.connect(OAUTH_PROVIDERS.GITHUB);
-    } catch (e) {
-      setConnecting(false);
-      setLocalError(errorMessage(e, t`GitHub authorization did not complete.`));
-    }
+    const retry = retryAfterConnect.current;
+    retryAfterConnect.current = null;
+    retry?.();
   };
 
   const doShare = async (
@@ -630,7 +617,9 @@ export function ShareToConversationDialog({
           try {
             setSealOutcome(await credentialsService.sealedSeal(preShare.answer.typeid, convId));
           } catch (sealErr) {
-            setLocalError(errorMessage(sealErr, t`The credential was shared, but its values could not be sent securely.`));
+            setLocalError(
+              errorMessage(sealErr, t`The credential was shared, but its values could not be sent securely.`),
+            );
           }
         }
         if (convId && shareValues && valuesRoute === 'manager' && preShare.answer?.typeid) {
@@ -1011,7 +1000,12 @@ export function ShareToConversationDialog({
                       disabled={busy}
                       multiple
                       value={selectedRoles[recipient]}
-                      onChange={(e) => setRoleChoices((current) => ({ ...current, [recipient]: Array.from(e.target.selectedOptions, option => option.value) }))}
+                      onChange={(e) =>
+                        setRoleChoices((current) => ({
+                          ...current,
+                          [recipient]: Array.from(e.target.selectedOptions, (option) => option.value),
+                        }))
+                      }
                       data-testid="share-project-role"
                     >
                       {membership.roles.map((role) => (
@@ -1095,12 +1089,12 @@ export function ShareToConversationDialog({
               )}
             </div>
             {secureValues && (
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="share-secured-line">
-                    <Lock className="h-3.5 w-3.5 text-green-600" />
-                    <Trans>Secured transfer — only the recipients can open the values.</Trans>
-                  </p>
-                )}
-                {gitCapable && participants.length > 0 && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="share-secured-line">
+                <Lock className="h-3.5 w-3.5 text-green-600" />
+                <Trans>Secured transfer — only the recipients can open the values.</Trans>
+              </p>
+            )}
+            {gitCapable && participants.length > 0 && (
               <p
                 className="text-xs text-muted-foreground"
                 data-testid="share-transfer-mode"
@@ -1171,9 +1165,13 @@ export function ShareToConversationDialog({
                     <span className="text-muted-foreground">
                       <Trans>Connect GitHub to share a project whose files live in a GitHub repository.</Trans>
                     </span>
-                    <Button size="sm" onClick={() => void connectGitHub()} disabled={connecting}>
-                      {connecting ? <Trans>Connecting…</Trans> : <Trans>Connect GitHub</Trans>}
-                    </Button>
+                    <ConnectGithubButton
+                      size="sm"
+                      variant="default"
+                      onConnected={onGithubConnected}
+                      onError={setLocalError}
+                      testId="share-connect-github-button"
+                    />
                   </div>
                 )}
               </div>

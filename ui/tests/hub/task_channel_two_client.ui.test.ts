@@ -131,12 +131,14 @@ async function count(page: Page, text: string): Promise<number> {
   return page.getByText(text, { exact: true }).count();
 }
 
-/** Open a thread and expand it — the stream inbox shows a thread collapsed to its newest message. */
+/**
+ * Open a thread with every message showing. The task thread is projected by the Tasks
+ * source, and a source-backed thread renders flat — every message, no "N earlier"
+ * stack to expand (2f0ae8c0a) — so opening it is enough; wait for its task chips.
+ */
 async function openWholeThread(inst: InstancePage, title: string): Promise<void> {
   await openThread(inst, title);
-  const expand = inst.page.getByTestId('thread-stack-open').first();
-  await expand.waitFor({ state: 'visible', timeout: 20_000 });
-  await expand.click();
+  await inst.page.getByTestId('message-task-chips').first().waitFor({ state: 'visible', timeout: 20_000 });
 }
 
 describe('tasks in conversations — one thread both people read and act on', () => {

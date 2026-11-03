@@ -219,7 +219,12 @@ describe('the new deployment dialog', () => {
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
 
     expect(await screen.findByTestId('deployment-secret-stripe')).toHaveTextContent('flow credentials set stripe');
-    expect(deploy).toHaveBeenCalledWith('production', 'e2b', null);
+    expect(deploy).toHaveBeenCalledWith({
+      environment: 'production',
+      provider: 'e2b',
+      tokenAllocation: null,
+      machineSize: 'sm',
+    });
     expect(screen.getByTestId('new-deployment-launch')).toBeDisabled();
     expect(onLaunched).not.toHaveBeenCalled();
 

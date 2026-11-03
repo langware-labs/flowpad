@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any, Optional
 
 from flow_sdk.core.oauth.provider_registry import OAuthProbeSpec, get_local_provider
@@ -93,9 +93,12 @@ class ProbeResult:
         return asdict(self)
 
 
-async def run_probe(provider: str, token: str) -> ProbeResult:
-    """Execute a provider descriptor's strict verification request."""
+async def run_probe(provider: str, token: str, url: Optional[str] = None) -> ProbeResult:
+    """Execute a provider descriptor's strict verification request (at ``url`` when the reader
+    talks to a host other than the provider's own)."""
     probe = get_probe(provider)
+    if probe is not None and url:
+        probe = replace(probe, url=url, fallback=None)
     if probe is None:
         return ProbeResult(
             ok=None,
@@ -175,7 +178,7 @@ async def run_probe(provider: str, token: str) -> ProbeResult:
     )
 
 
-async def connection_answer(provider: str) -> dict[str, Any]:
+async def connection_answer(provider: str, url: Optional[str] = None) -> dict[str, Any]:
     """Whether ``provider``'s sign-in works for what runs HERE: the token the poller will use (``token_for`` —
     the request's user, else this machine's local user, else the hub), probed for real. ``{"ok": False, "code":
     "missing_token"}`` when there is none. One answer for a source's Verify and its setup step, so the two can
@@ -185,4 +188,4 @@ async def connection_answer(provider: str) -> dict[str, Any]:
     token = await token_for(provider)
     if not token:
         return ProbeResult(ok=False, detail="No token stored for this provider", code="missing_token").as_data()
-    return (await run_probe(provider, token)).as_data()
+    return (await run_probe(provider, token, url)).as_data()

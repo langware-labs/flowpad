@@ -7,6 +7,7 @@ import { useProject } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { StepList } from '@src/components/ui/step-list';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
+import { GitRequiredStrip } from '@src/components/git/GitRequiredStrip';
 import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -112,7 +113,7 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
   const labels: Record<DeployStepId, string> = {
     'cloud-login': t`Signed in to Flowpad cloud`,
     project: t`Project linked to cloud`,
-    version: t`Published version up to date`,
+    version: version?.git_native ? t`Project committed and pushed` : t`Published version up to date`,
   };
 
   const blocker = deployBlocker(states);
@@ -135,6 +136,8 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
         // blocker, so that chip never doubles up with the row's Done marker.
         return project ? <ProjectCloudLinkButton project={project} /> : undefined;
       case 'version':
+        // A git checkout is fixed in git (commit, push), not by a Publish button.
+        if (version?.git_native) return undefined;
         // Publishes, then re-reads the version.
         return (
           <AgentPublishButton
@@ -150,6 +153,15 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
   };
 
   const detailFor = (id: DeployStepId, state: DeployStepState): string | undefined => {
+    if (id === 'version' && state === 'todo' && version?.git_native) {
+      const uncommitted = version.uncommitted ?? 0;
+      const unpushed = version.unpushed ?? 0;
+      if (uncommitted > 0) {
+        const then = version.has_remote ? t`commit and push, then deploy` : t`commit, then deploy`;
+        return uncommitted === 1 ? t`1 change not committed — ${then}` : t`${uncommitted} changes not committed — ${then}`;
+      }
+      return unpushed === 1 ? t`1 commit not pushed — push, then deploy` : t`${unpushed} commits not pushed — push, then deploy`;
+    }
     if (id === 'version' && state === 'todo') {
       return pending === 1 ? t`1 change not published` : t`${pending} changes not published`;
     }
@@ -180,6 +192,10 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
         <Trans>Before you can deploy</Trans>
       </p>
       <StepList steps={steps} testId="agent-deploy-checklist" testIdPrefix="agent-deploy" />
+      {/* No git yet: neither its own checkout nor Flowpad git (the hub repo a linked project gets). */}
+      {project && version?.git_native === false && !projectPublished && (
+        <GitRequiredStrip project={project} className="mt-2" />
+      )}
     </div>
   );
 }

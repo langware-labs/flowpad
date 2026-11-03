@@ -165,6 +165,12 @@ def _proc_create_time(pid: int) -> float | None:
 # it on every category reset makes the fresh backend replay every historical
 # JSONL under ~/.claude and ~/.codex (11K+ on a developer machine), contending
 # with the first desktop-db/clear and re-emitting already-consumed deltas.
+#
+# The worker-history cache is the same kind of file: per-transcript stats keyed
+# and validated by (path, mtime_ns, size) of the user's own ~/.claude / ~/.codex
+# files, so it can never serve a stale row and holds no entity or test data.
+# Wiping it made the first worker-history call after every reset re-parse ~300
+# transcripts (~13s), timing out the first Chats mount.
 _KEEP = {
     "sodot",
     ".secrets_enabled",
@@ -178,6 +184,9 @@ _KEEP = {
     "toplog.json",
     "skill_rules",
     "transcript_cursors.json",
+    "worker_history_cache.sqlite",
+    "worker_history_cache.sqlite-wal",
+    "worker_history_cache.sqlite-shm",
 }
 
 

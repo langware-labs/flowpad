@@ -21,7 +21,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { expect, test } from '@playwright/test';
-import { withViewMode, type QaViewMode } from '../_shared/view-mode';
+import type { QaViewMode } from '../_shared/view-mode';
 import { apiOrigin } from '../_shared/api';
 import { awaitSteerable, flow as runFlow } from '../_shared/control-plane';
 
@@ -40,8 +40,15 @@ const contract = JSON.parse(
   fs.readFileSync(path.join(REPO_ROOT, 'tests/fixtures/dock_address_contract.json'), 'utf8'),
 ) as { url_cases: UrlCase[] };
 
-/** The three shipped surfaces. `dev` is a hidden developer skin, not a path. */
-const MODES: QaViewMode[] = ['vibe', 'standard', 'advanced'];
+/**
+ * Since 2026-10-11 only a session dock carries a view mode (docs/viewmodes.md,
+ * `DockPointer.carriesViewMode`); every other page has one look, `UNSTATED_VIEW_MODE`
+ * = Vibe. A page is therefore swept once and must render as Vibe; a session dock
+ * must render in one of the shipped modes, vibe / standard / advanced (which one is
+ * the session's own memory; `dev` is a hidden developer skin).
+ */
+const SESSION_VIEWS = new Set(['shell', 'vibe']);
+const PAGE_LOOK: QaViewMode = 'vibe';
 
 /**
  * Exceptions this HEADLESS environment produces regardless of app correctness:
@@ -99,12 +106,11 @@ test.describe('dock sweep', () => {
         if (r.status() >= 400 && r.url().includes('/api/v1/')) badResponses.push(`${r.status()} ${r.url()}`);
       });
 
-      for (const mode of MODES) {
-        // Park somewhere neutral IN THE REQUESTED MODE first, so the tab this
-        // navigate steers is the one under test. instance_ctl seeds `vibe`, so
-        // the mode is always set explicitly and never inherited.
-        await page.goto(withViewMode('/dock/desktop', mode));
-        await expect(page.locator('html')).toHaveAttribute('data-view', mode);
+      {
+        // Park somewhere neutral first, so the tab this navigate steers is the
+        // one under test. A page states no mode, so none is put on the address.
+        await page.goto('/dock/desktop');
+        await expect(page.locator('html')).toHaveAttribute('data-view', PAGE_LOOK);
         // `data-view` proves the page rendered, not that the backend can steer
         // it: the navigate targets the tab's WebSocket registration, which lands
         // after first paint (see awaitSteerable for why one 200 is not enough).
@@ -116,18 +122,21 @@ test.describe('dock sweep', () => {
           // The guard, from the outside: an address naming something that does
           // not exist is refused, and the user stays where they were.
           await expect.poll(() => new URL(page.url()).pathname).toContain('/desktop');
-          continue;
+        } else {
+          expect(res.code, `flow navigate view ${address} → ${res.out}`).toBe(0);
+          // The view type is the stable part of the URL; pointers get
+          // canonicalized (scope seeding, redirects), so asserting the whole path
+          // would be brittle.
+          await expect
+            .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
+            .toContain(`/${c.view_type}`);
+          await expect(page.getByTestId('dock-load-error')).toHaveCount(0);
+          if (SESSION_VIEWS.has(c.view_type)) {
+            await expect(page.locator('html')).toHaveAttribute('data-view', /^(vibe|standard|advanced)$/);
+          } else {
+            await expect(page.locator('html')).toHaveAttribute('data-view', PAGE_LOOK);
+          }
         }
-
-        expect(res.code, `flow navigate view ${address} [${mode}] → ${res.out}`).toBe(0);
-        // The view type is the stable part of the URL; pointers get
-        // canonicalized (scope seeding, redirects), so asserting the whole path
-        // would be brittle.
-        await expect
-          .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
-          .toContain(`/${c.view_type}`);
-        await expect(page.getByTestId('dock-load-error')).toHaveCount(0);
-        await expect(page.locator('html')).toHaveAttribute('data-view', mode);
       }
 
       expect(

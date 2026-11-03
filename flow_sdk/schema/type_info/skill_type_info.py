@@ -15,6 +15,7 @@ from flow_sdk.schema.view_mode import ViewMode
 
 SKILL = TypeInfo(
     type_name=EntityType.SKILL,
+    template={"description": "Use when <the situation this skill is for>.", "body": "# {name}\n\n1. <first step>\n2. <next step>\n"},
     process_projection=project_process_asset,
     icon="FileBadge",
     display_name="Skills",

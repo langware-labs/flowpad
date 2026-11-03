@@ -47,7 +47,7 @@ import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import {
   type ChannelOffer,
   channelOffers,
-  isMessageChannel,
+  isListedChannel,
   isMessageDriverSpec,
   sourcesQuery,
   useSourceSpecs,
@@ -88,7 +88,7 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
     () =>
       ownerKey
         ? sources
-            .filter((s) => (ownerOf(s) ?? localKey) === ownerKey && isMessageChannel(s, specFor(s.provider)))
+            .filter((s) => (ownerOf(s) ?? localKey) === ownerKey && isListedChannel(s, specFor(s.provider)))
             .sort((a, b) => (a.name || a.provider).localeCompare(b.name || b.provider))
         : EMPTY,
     [sources, specFor, ownerKey, localKey],
@@ -143,19 +143,26 @@ interface Props {
   specFor: SpecFor;
   /** Channels still to connect, drawn after the attached ones (`useAttachedChannels().offers`). */
   offers?: ChannelOffer[];
-  /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. */
-  selected: ReadonlySet<string>;
-  onSelectedChange: (next: Set<string>) => void;
+  /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. Absent with
+   *  `onSelectedChange` where there is no list to narrow (the agent page). */
+  selected?: ReadonlySet<string>;
+  onSelectedChange?: (next: Set<string>) => void;
+  /** Where there is no list to narrow, a mark press goes here with the channel's key instead of
+   *  toggling the filter — the caller opens the owner's stream inbox on that channel. */
+  onMarkPress?: (key: string) => void;
   className?: string;
 }
+
+const NO_SELECTION: ReadonlySet<string> = new Set();
 
 export function AttachedChannelsBar({
   owner,
   rows,
   specFor,
   offers = NO_OFFERS,
-  selected,
+  selected = NO_SELECTION,
   onSelectedChange,
+  onMarkPress,
   className,
 }: Props) {
   const { t } = useLingui();
@@ -168,10 +175,11 @@ export function AttachedChannelsBar({
   const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
 
   const pick = (key: string) => {
+    if (onMarkPress) return onMarkPress(key);
     const next = new Set(selected);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    onSelectedChange(next);
+    onSelectedChange?.(next);
   };
 
   return (
@@ -204,7 +212,7 @@ export function AttachedChannelsBar({
           variant="ghost"
           size="icon"
           className={cn(CONTROL, 'bg-foreground text-background hover:bg-foreground/85 hover:text-background')}
-          onClick={() => onSelectedChange(new Set())}
+          onClick={() => onSelectedChange?.(new Set())}
           aria-label={t`Show all channels`}
           data-testid="attached-channels-clear"
         >

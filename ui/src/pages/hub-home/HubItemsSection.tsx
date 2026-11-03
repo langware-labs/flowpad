@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { InboundWebhooks } from '@sdk';
+import { InboundWebhooks, PageId, ViewType } from '@sdk';
 import { CHIP_CLASS } from '@src/components/asset-counters/AssetCounterRow';
 import { CounterTable, LiveDot, QuickSearchInput, useQuickSearch } from '@src/components/asset-counters/AssetItems';
 import {
@@ -41,6 +41,8 @@ interface TabDef {
   createLabel?: ReactNode;
   /** Shown only while it has items (Issues). */
   hideWhenEmpty?: boolean;
+  /** The tab opens this hub screen instead of listing its items here (Machines). */
+  opensPage?: ViewType;
 }
 
 const TABS: TabDef[] = [
@@ -51,7 +53,7 @@ const TABS: TabDef[] = [
   },
   {
     group: hubMachineCounterGroup,
-    emptyText: <Trans>No machines yet. Connect this computer or start a sandbox to run agents and terminals.</Trans>,
+    opensPage: ViewType.MACHINES,
   },
   {
     group: hubDeploymentCounterGroup,
@@ -84,7 +86,6 @@ function writePref(key: string, value: string): void {
 
 /** Every tab's counters. `TABS` is a constant list, so the hooks run in the same order every render. */
 function useTabCounters(): AssetCounter<unknown>[][] {
-   
   return TABS.map((tab) => tab.group.useCounters());
 }
 
@@ -152,7 +153,9 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
   const tabs = TABS.map((tab, i) => ({ tab, counters: all[i], total: all[i][0]?.items.length ?? 0 })).filter(
     ({ tab, total }) => !tab.hideWhenEmpty || total > 0,
   );
-  const current = tabs.find(({ tab }) => tab.group.id === tabId) ?? tabs[0];
+  // A tab that opens its own screen is never the one listed here.
+  const listed = tabs.filter(({ tab }) => !tab.opensPage);
+  const current = listed.find(({ tab }) => tab.group.id === tabId) ?? listed[0];
   const { group } = current.tab;
   const counter = current.counters.find((c) => c.key === counterKey) ?? current.counters[0];
   const rows = useQuickSearch(group, counter?.items ?? [], query);
@@ -231,8 +234,12 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
             count={total}
             active={counters.find((c) => c.key === 'active')?.items.length}
             isLoading={!!counters[0]?.isLoading}
-            selected={tab.group.id === group.id}
-            onClick={() => selectTab(tab.group.id)}
+            selected={!tab.opensPage && tab.group.id === group.id}
+            onClick={() => {
+              const page = tab.opensPage;
+              if (page) navigation.openPage(PageId.HUB, page);
+              else selectTab(tab.group.id);
+            }}
             testId={`hub-tab-${tab.group.id}`}
           />
         ))}

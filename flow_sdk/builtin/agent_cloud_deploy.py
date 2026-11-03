@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 
 from pydantic import ConfigDict, field_validator
 
@@ -51,6 +51,9 @@ class AgentDeployRequest(DataSpec):
     provider: str = ""
     environment: Optional[str] = None
     token_allocation: Optional[TokenAllocationSpec] = None
+    #: The cloud box size for THIS deploy (``sm`` | ``md`` | ``lg``); empty: the agent's own ``machine_size``.
+    #: Sent with the deploy, never written into agent.json: a deploy must not dirty the checkout it deploys.
+    machine_size: Optional[Literal["sm", "md", "lg"]] = None
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -87,6 +90,7 @@ class DeployContext:
     environment: Optional[str]
     provider: Optional[str]
     token_allocation: Any
+    machine_size: Optional[str] = None
     deployment: Optional["Deployment"] = None
     ready: Optional["ReadinessSpec"] = None
 
@@ -137,6 +141,21 @@ def funding_warnings(agent: "Agent", ready: "ReadinessSpec") -> list[str]:
     ]
 
 
+def dependency_blockers(data: Any) -> list[str]:
+    """One sentence per required dependency the hub could not fetch, from its refusal's ``data.dependencies``:
+    ``"<name>: <reason> — <fix>"``. Empty when the refusal is not about dependencies."""
+    deps = data.get("dependencies") if isinstance(data, dict) else None
+    out: list[str] = []
+    for dep in deps if isinstance(deps, list) else []:
+        if not isinstance(dep, dict) or not dep.get("required", True) or dep.get("state") == "ready":
+            continue
+        name = str(dep.get("name") or dep.get("source") or "dependency")
+        reason = str(dep.get("reason") or dep.get("state") or "not ready")
+        fix = str(dep.get("fix") or "")
+        out.append(f"{name}: {reason}" + (f" — {fix}" if fix else ""))
+    return out
+
+
 async def _start_machine(ctx: DeployContext) -> None:
     from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud, wait_until_placed  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
@@ -149,6 +168,7 @@ async def _start_machine(ctx: DeployContext) -> None:
             provider=ctx.provider,
             require=ctx.ready.value_names(),
             deployment_id=str(ctx.deployment.id),
+            machine_size=ctx.machine_size,
         )
     except HubError as exc:
         # A transport failure (the load balancer dropped the answer): the hub's push into the local row is the answer.
@@ -156,18 +176,34 @@ async def _start_machine(ctx: DeployContext) -> None:
             logger.warning("deploy of %s lost the hub's answer (%s); waiting for its push", ctx.agent.id, exc)
             await wait_until_placed(str(ctx.deployment.id))
             return
+        if blockers := dependency_blockers(exc.data):
+            # Said as what to do, not as a status code: the person deploying reads this.
+            raise RuntimeError("Cannot deploy: " + "; ".join(blockers)) from exc
         raise
 
 
 DEPLOYMENT_STEPS = [
-    # A deploy names an agent the hub has to already know.
-    DeployStep("publish", "Publish the agent", lambda ctx: ctx.agent.ensure_on_hub(ctx.actor), inline=True),
+    # A deploy names an agent the hub has to already know, at the version being deployed: published every time
+    # (a git-backed project pushes its HEAD — a no-op when the hub has it — or refuses uncommitted/unpushed work).
+    DeployStep("publish", "Publish the agent", lambda ctx: ctx.agent.ensure_on_hub(ctx.actor, force=True), inline=True),
     DeployStep("dependencies", "Share its dependencies", _share_dependencies, inline=True),
     DeployStep("plan", "Plan the deployment", _plan, inline=True),
     # The gate: a missing value refuses the deploy before a machine is paid for, as the request's answer.
     DeployStep("readiness", "Check what it needs", _check_readiness, inline=True),
     DeployStep("machine", "Start a machine", _start_machine),
 ]
+
+
+async def _tell_deploy_failed(agent: "Agent", reason: str) -> None:
+    """A deploy that failed after the request was answered is told to the person, not only logged."""
+    from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
+
+    try:
+        await notify_desktop(
+            "deploy_failed", title=f"Deploy of {agent.name or agent.id} failed", body=reason, level="error"
+        )
+    except Exception:  # noqa: BLE001 -- the activity row still carries the failure
+        logger.warning("could not tell the deploy failure of %s", agent.id, exc_info=True)
 
 
 async def run_deployment_steps(
@@ -177,6 +213,7 @@ async def run_deployment_steps(
     *,
     provider: Optional[str] = None,
     token_allocation: Any = _UNSET,
+    machine_size: Optional[str] = None,
 ) -> dict[str, Any]:
     """``DEPLOYMENT_STEPS`` under *agent*'s ``deploy`` activity, each as its child — running, then done or failed
     with its error — then the activity's end. The ``inline`` steps run first, a failure raised to the caller (and
@@ -199,7 +236,7 @@ async def run_deployment_steps(
     root.label(f"Deploy {agent.name or agent.id}").plan(
         [{"name": step.name, "label": step.label} for step in DEPLOYMENT_STEPS]
     )
-    ctx = DeployContext(agent, actor, environment, provider, token_allocation)
+    ctx = DeployContext(agent, actor, environment, provider, token_allocation, machine_size)
 
     async def run(steps: list[DeployStep]) -> None:
         for step in steps:
@@ -215,8 +252,10 @@ async def run_deployment_steps(
         try:
             await run(steps)
         except BaseException as exc:
-            root.fail(str(exc) or type(exc).__name__)
+            reason = str(exc) or type(exc).__name__
+            root.fail(reason)
             logger.warning("cloud deploy of %s failed: %s", subject, exc)
+            await _tell_deploy_failed(agent, reason)
             return
         root.done()
 
@@ -234,4 +273,11 @@ async def run_deployment_steps(
     }
 
 
-__all__ = ["DEPLOY_ACTIVITY", "DEPLOYMENT_STEPS", "AgentDeployRequest", "DeployRunning", "run_deployment_steps"]
+__all__ = [
+    "DEPLOY_ACTIVITY",
+    "DEPLOYMENT_STEPS",
+    "AgentDeployRequest",
+    "DeployRunning",
+    "dependency_blockers",
+    "run_deployment_steps",
+]

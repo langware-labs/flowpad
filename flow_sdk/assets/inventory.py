@@ -16,12 +16,12 @@ def reconcile_assets(candidates, observations, *, sources=()):
 
 
 def inventory_payload(descriptors, usages, *, assistant_enabled, error=None, scan_issues=()):
-    from flow_sdk.assets.usage import UsageResolution
+    from flow_sdk.assets.usage import SATISFIED_RESOLUTIONS
     used_assets = [usage.model_dump(mode='json') for usage in usages]
     return {
         'assets': [descriptor.to_row() for descriptor in descriptors],
         'used_assets': used_assets,
-        'unresolved_usage': [row for row in used_assets if row['resolution'] != UsageResolution.RESOLVED],
+        'unresolved_usage': [row for row in used_assets if row['resolution'] not in SATISFIED_RESOLUTIONS],
         'assistant_enabled': assistant_enabled,
         'scan_issues': [{'path': str(issue.path), 'message': issue.message, 'type_name': issue.type_name} for issue in scan_issues],
         **({'availability_error': error} if error else {}),

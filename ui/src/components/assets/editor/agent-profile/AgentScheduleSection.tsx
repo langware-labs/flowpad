@@ -420,6 +420,9 @@ export function useAgentSchedules(agentTypeId: TypeId) {
     () => overview.filter((a) => a.kind === 'schedule' && a.agent_type_id === key),
     [overview, key],
   );
+  // Polled only while this agent has schedules: their rows show run state ("ran N×", next run) that a
+  // scheduled fire changes server-side. Same query, so this observer just adds the interval.
+  useAutomations({ enabled: schedules.length > 0 });
   const refetch = useCallback(
     () => client.invalidateQueries({ queryKey: ['automations', 'overview'] }),
     [client],

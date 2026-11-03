@@ -156,7 +156,7 @@ async def test_members_after_share_lists_both_with_roles(hub_base_url, hub_login
     assert alice_id in by_id, f"alice missing from members: {members}"
     assert bob_id in by_id, f"bob missing from members: {members}"
     for m in (by_id[alice_id], by_id[bob_id]):
-        assert m.get("role"), f"participant has no role: {m}"
+        assert m.get("roles"), f"participant has no role: {m}"
         assert "user_email" in m, f"participant missing user_email key: {m}"
         assert "user_name" in m, f"participant missing user_name key: {m}"
 
@@ -244,7 +244,9 @@ async def test_members_action_returns_role_per_participant(hub_base_url, hub_log
     for m in members:
         # Hub-native shape — dispatcher normalizes ``user_email``/``user_name``
         # → ``email``/``name`` on the client side.
-        for key in ("user_id", "user_email", "user_name", "role"):
+        for key in ("user_id", "user_email", "user_name", "roles"):
             assert key in m, f"members entry missing {key!r}: {m}"
-        # Role must be a non-empty string — every member has a hub-side role.
-        assert isinstance(m["role"], str) and m["role"], f"empty/non-string role on member: {m}"
+        # Roles must be a non-empty list of names — every member has a hub-side role set.
+        assert isinstance(m["roles"], list) and m["roles"] and all(isinstance(r, str) for r in m["roles"]), (
+            f"empty/non-list roles on member: {m}"
+        )

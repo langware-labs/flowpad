@@ -48,6 +48,14 @@
         "mockify.control"
       ],
       "description": "Every clickable thing on the screen and its outcome; those with next become data-next, the rest data-dead."
+    },
+    "url": {
+      "shape": "?string",
+      "description": "Test mode: the app route the test navigates to on this screen (the path after {APP_URL}); required on the first step."
+    },
+    "expect": {
+      "shape": "?[string]",
+      "description": "Test mode: what must be true on this screen. Each one becomes a 'validate' line in the test .md. Write it from the captured screen (label, data-testid, state); it may also be a check no screen can show (no 401, no console error, still there after refresh)."
     }
   }
 }

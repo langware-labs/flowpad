@@ -784,6 +784,33 @@ class Conversation(ProjectedFields, Entity):
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets
 
+    async def authored_here(self) -> bool:
+        """Whether this conversation holds something written here: an ask captured for the hub
+        (``origin_project_id``), or a message this machine wrote (``FlowMessage.written_here``).
+
+        Not ``created_by``: rows saved off a request are stamped ``system`` or nothing, so it
+        cannot tell a conversation started here from a hub mirror."""
+        from flow_sdk.builtin.flow_message import DeliveryStatus, FlowMessage  # noqa: PLC0415
+
+        if self.origin_project_id:
+            return True
+        for mine in ({"outbound": True}, {"delivery_status": DeliveryStatus.PENDING_SEND.value}):
+            if await FlowMessage.get_one({"match": {"conversation_id": str(self.id), **mine}}) is not None:
+                return True
+        return False
+
+    async def heal_if_fake_remote(self, why: str) -> bool:
+        """The hub holds no row at this id this account can reach. A conversation written here
+        then carries a wrong ``remote`` (a share that once took a 409 on someone else's row), which
+        made every sync 403 and the list prune delete the person's own conversation: keep it as a
+        local conversation instead. True when it did; a hub mirror is left to the caller."""
+        if not (self.remote and await self.authored_here()):
+            return False
+        self.remote = False
+        await self.save()
+        logging.warning("[conversation] %s: %s — kept as local", (self.id or "?")[:8], why)
+        return True
+
     @property
     def hub_bound(self) -> bool:
         """Whether this conversation's messages are meant for the hub (so the outbox delivers them)."""

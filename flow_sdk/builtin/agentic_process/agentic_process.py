@@ -1749,6 +1749,7 @@ class AgenticProcess(Entity):
             process_assets = await self.prepare_process_assets()
             cmd = self._finalized_restart_cli_options()
             self._apply_process_assets(cmd, process_assets, str(self.id))
+            cmd.prepare_launch(cmd.workdir or self.workdir)
 
             # Fork & CLAUDE_PROJECT_DIR resume-cwd pinning are Claude-only —
             # Codex/Copilot mint their own session and use ``-C <cwd>``, not

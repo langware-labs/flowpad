@@ -64,7 +64,7 @@ export interface AssetDescriptor {
 export interface ProcessAssetUsage {
   asset: { path: string; typeid: string; project_id?: string | null } | null;
   reference: string;
-  resolution: 'resolved' | 'missing' | 'ambiguous' | 'unbound' | 'identity_changed';
+  resolution: 'resolved' | 'missing' | 'ambiguous' | 'unbound' | 'identity_changed' | 'builtin';
   evidence: AssetUsage[];
 }
 

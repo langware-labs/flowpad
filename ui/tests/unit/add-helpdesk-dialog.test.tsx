@@ -16,7 +16,7 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    dataContext: { userTypeId: { type: 'user', id: 'u1' } },
+    dataContext: { userTypeId: { type: 'user', id: 'u1' }, caps: { localFiles: true } },
     dataManager: {
       // `github/status` — not connected, so the browse path stays collapsed and
       // the pasted-URL path (the one under test) is what renders.

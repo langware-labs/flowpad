@@ -6,10 +6,11 @@ import type { Chart, FSRef } from '@sdk';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { Button } from '@src/components/ui/button';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
-import { autoNote, writeChartMermaid } from './chartDoc';
+import { autoNote, chartFolder, writeChartMermaid } from './chartDoc';
 import {
   ChangeWholeChart,
   ChartChangeBox,
+  chartAct,
   ChartTooltip,
   Marks,
   ViewToggle,
@@ -148,11 +149,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
   const openRef = useOpenChart(fsRef, projectId);
   const { openLink, openSchema } = useOpenChartTarget(fsRef);
 
-  const { folderName, dirPath } = useMemo(() => {
-    const parts = (fsRef.path || '').split('/').filter(Boolean);
-    const tail = parts.pop() || 'chart';
-    return { folderName: tail, dirPath: parts.length ? '/' + parts.join('/') : '' };
-  }, [fsRef]);
+  const { folderName, dirPath } = useMemo(() => chartFolder(fsRef), [fsRef]);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,23 +252,7 @@ export function C4ChartView({ fsRef, chart, projectId, changes }: C4ChartViewPro
       }
     },
   });
-  /** A clickable pill or chip inside a picked-able group: it acts, it never picks. */
-  const act = (fn: () => void) => ({
-    className: 'act',
-    tabIndex: 0,
-    role: 'link',
-    onClick: (e: React.MouseEvent) => {
-      e.stopPropagation();
-      fn();
-    },
-    onKeyDown: (e: React.KeyboardEvent) => {
-      e.stopPropagation();
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        fn();
-      }
-    },
-  });
+  const act = (fn: () => void) => chartAct(fn);
   const openChip = (chip: C4Chip) => ('schema' in chip.open ? void openSchema(chip.open.schema) : openLink(chip.open.link));
   // Render functions, not components: a component defined in render remounts its DOM every render.
   const chipNode = (chip: C4Chip, x: number, y: number, key: string | number) => (

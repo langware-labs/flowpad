@@ -51,7 +51,8 @@ async function editorFrame(page: Page): Promise<Frame> {
       for (const f of page.frames()) {
         if (
           await f
-            .locator('[data-testid="dataset-editor-rows"] tr')
+            .locator('[data-testid="dataset-editor-rows"]')
+            .getByTitle('needs a label')
             .count()
             .catch(() => 0)
         )
@@ -63,7 +64,8 @@ async function editorFrame(page: Page): Promise<Frame> {
   for (const f of page.frames()) {
     if (
       await f
-        .locator('[data-testid="dataset-editor-rows"] tr')
+        .locator('[data-testid="dataset-editor-rows"]')
+        .getByTitle('needs a label')
         .count()
         .catch(() => 0)
     )
@@ -120,8 +122,10 @@ test.describe.serial('smart navigation', () => {
     const frame = await editorFrame(page);
     await frame.locator('[data-testid="dataset-editor-filter"]').selectOption('needs-label');
     const unlabelled = (await logRows()).filter((r) => r.output && r.ground_truth == null).length;
-    const correct = frame.locator('[data-testid^="dataset-editor-correct-"]').first();
-    await correct.click();
+    // "Correct": open a row that needs a label, take what the run answered, and save it as the right answer.
+    await frame.locator('[data-testid="dataset-editor-rows"]').getByTitle('needs a label').first().click();
+    await frame.getByRole('button', { name: 'Start from what the run answered' }).click();
+    await frame.getByTestId('dataset-editor-save').click();
     await expect
       .poll(async () => (await logRows()).filter((r) => r.output && r.ground_truth == null).length)
       .toBe(unlabelled - 1);

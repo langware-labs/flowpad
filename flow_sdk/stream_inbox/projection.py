@@ -261,7 +261,10 @@ def channel_of(source) -> str:
     ``"agent"``), but stable, which is what identity needs. Configure
     ``channel`` on the source to fix the badge and the thread key together.
     """
-    return (getattr(source, "channel", "") or getattr(source, "provider", "") or "").strip()
+    from flow_sdk.builtin.data_source import channel_from_driver  # noqa: PLC0415
+
+    stamped = (getattr(source, "channel", "") or "").strip()
+    return stamped or channel_from_driver(source) or (getattr(source, "provider", "") or "").strip()
 
 
 async def conversation_of(item, *, source=None) -> Optional[str]:
@@ -323,6 +326,12 @@ async def project_source_item(
         logger.debug("[stream-inbox] item %s has no DataSource — skipped", item.id)
         return None
 
+    if not (source.channel or "").strip():
+        # The channel names the thread: load the driver, so ``channel_of`` answers what every other
+        # process answers instead of the provider fallback (one email, two threads otherwise).
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        await DataDriver.find(source.provider or "")
     channel = channel_of(source)
     subject = item.name or ""
     key = thread_key_for(item, subject)

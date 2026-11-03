@@ -56,6 +56,9 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
 
   await dismissSetupModal(page);
   await page.goto(`/dock/assets/editor/agent/typeid/agent-${agent.id}`);
+  // The agent's editor, whether it renders under /dock/assets or project-rebased (/dock/project/<id>/editor/…)
+  // once opening it switched the app into its project.
+  const agentEditorUrl = new RegExp(`/dock/(assets|project/${project.id})/editor/agent/typeid/agent-${agent.id}`);
   // Opening an agent of another project switches the app into that project, which
   // re-mounts the editor; act only once the switch has landed, or an open dialog is lost.
   await expect(page.getByRole('button', { name: 'Open project list' })).toContainText(project.name);
@@ -107,14 +110,14 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
 
   // ── clicking the schedule in the menu opens the trigger, which links back ──
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
+  await expect(page).toHaveURL(agentEditorUrl);
   const section = page.getByTestId('navigator-section-schedules');
   if ((await section.getAttribute('aria-expanded')) !== 'true') await section.click();
   await page.getByTestId(`agent-resource-schedule-${trigger!.id}`).click();
   await expect(page).toHaveURL(new RegExp(`/child/schedule/trigger-${trigger!.id}`));
   await expect(page.getByTestId('agent-schedule-detail')).toContainText('Runs agent');
   await page.getByTestId('trigger-runs-agent').click();
-  await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
+  await expect(page).toHaveURL(agentEditorUrl);
   await expect(page).not.toHaveURL(/\/child\//);
 
   // ── edit keeps the trigger ─────────────────────────────────────────────────

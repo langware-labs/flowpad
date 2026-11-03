@@ -22,17 +22,19 @@ test 2: Clicking the rebuild button does NOT open the activity progress modal
 - [browser] validate no element with role="dialog" is visible (modal must NOT auto-open)
 - [browser] wait for the data-testid="rebuild-index" button to become enabled again
 
-test 3: Footer indexing indicator shows an active phase during a rebuild
-# NOTE: data-testid="footer-indexing-indicator" is ALSO the idle/completed
-# surface — at rest it shows "indexed Nm ago" (it is NOT hidden when idle).
-# So the baseline is "text is not an active phase", and a rebuild flips it to a
-# phase verb. Distinguish by TEXT, not visibility.
+test 3: The search view's activity strip shows an active phase during a rebuild
+# The rebuild's progress readout on /dock/search is the activity strip under the
+# search bar (data-testid="activity-indicator-strip", ActivityIndicator variant
+# "strip"). It renders only while an activity runs. (The old footer indicator,
+# behind <AdvancedOnly>, is not on this page any more: pages carry no view mode
+# since 5a67651f9.)
+- [api] wait until GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/activity-status returns data null (indexer idle)
 - [browser] navigate to {APP_URL}/dock/search
 - [browser] wait for page to load
 - [browser] dismiss WelcomeModal if visible
-- [browser] validate the footer-indexing-indicator text does NOT start with an active phase (idle baseline shows e.g. "indexed Nm ago")
+- [browser] validate the activity strip is absent (idle baseline)
 - [browser] click data-testid="rebuild-index"
-- [browser] wait up to 5 seconds for the indicator text to start with one of: "Archiving", "Clearing", "Scanning", "Indexing"
+- [browser] wait up to 5 seconds for the strip's text to start with one of: "Archiving", "Clearing", "Scanning", "Indexing"
 
 test 4: Footer indicator is positioned right of the project path, with a separator
 - [browser] navigate to {APP_URL}/dock/search
@@ -76,13 +78,13 @@ test 8: Refreshing after a rebuild click does not auto-open the modal
 # the activity modal must NOT auto-open on refresh, and manual open still works.
 - [browser] navigate to {APP_URL}/dock/search
 - [browser] click data-testid="rebuild-index"
-- [browser] wait for the indicator text to reach an active phase (rebuild started)
+- [browser] wait for the search view's activity strip text to reach an active phase (rebuild started)
 - [browser] reload the page (Cmd+R / window.location.reload())
 - [browser] wait for the page to load (networkidle)
 - [browser] validate no element with role="dialog" is visible (modal must NOT auto-open after refresh)
 # NOTE: the "click indicator → dialog appears" tail only holds while a job is
 # ACTIVE; on this corpus the rebuild often finishes during the reload, leaving
-# the idle "indexed Nm ago" surface with no progress dialog to open. That tail is
+# no strip and no progress dialog to open. That tail is
 # timing-bound and is flagged rather than asserted; the deterministic invariant
 # above (no modal auto-opens after refresh) is the regression this test guards.
 

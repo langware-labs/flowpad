@@ -66,6 +66,12 @@ class Question:
     #: window's defaults, Send / Cancel.
     submit_label: str = ""
     cancel_label: str = ""
+    #: What each field of a record answer is called where it is typed (``AskOp.labels``).
+    labels: dict = field(default_factory=dict)
+    #: Where the question stands in the sequence the person walks (``AskOp.stage``, as its JSON), or None.
+    stage: Optional[dict] = None
+    #: A check of the typed value the person can run before sending (``AskOp.verify``, as its JSON), or None.
+    verify: Optional[dict] = None
     #: The answer is a secret: whoever draws the field masks it, and nothing echoes it.
     secret: bool = False
     #: The answer is a file's content: whoever draws the field offers a file picker and a paste box.
@@ -118,6 +124,9 @@ class Question:
             "detail": self.detail,
             "submit_label": self.submit_label,
             "cancel_label": self.cancel_label,
+            "labels": dict(self.labels),
+            "stage": self.stage,
+            "verify": self.verify,
             # The declared kind by NAME, when it is one.
             "kind": self.shape if isinstance(self.shape, str) else None,
             "fields": self.fields,
@@ -205,6 +214,9 @@ def open_question(
     detail: str = "",
     submit_label: str = "",
     cancel_label: str = "",
+    labels: Optional[dict] = None,
+    stage: Optional[dict] = None,
+    verify: Optional[dict] = None,
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
@@ -230,6 +242,9 @@ def open_question(
         detail=detail,
         submit_label=submit_label,
         cancel_label=cancel_label,
+        labels=dict(labels or {}),
+        stage=dict(stage) if stage else None,
+        verify=dict(verify) if verify else None,
         secret=secret,
         file=file,
         auto=auto,
@@ -409,6 +424,9 @@ async def ask_person(
     detail: str = "",
     submit_label: str = "",
     cancel_label: str = "",
+    labels: Optional[dict] = None,
+    stage: Optional[dict] = None,
+    verify: Optional[dict] = None,
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
@@ -439,6 +457,9 @@ async def ask_person(
         detail=detail,
         submit_label=submit_label,
         cancel_label=cancel_label,
+        labels=labels,
+        stage=stage,
+        verify=verify,
         secret=secret,
         file=file,
         auto=auto,
@@ -504,6 +525,9 @@ async def ask_through_backend(
     detail: str = "",
     submit_label: str = "",
     cancel_label: str = "",
+    labels: Optional[dict] = None,
+    stage: Optional[dict] = None,
+    verify: Optional[dict] = None,
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
@@ -536,6 +560,9 @@ async def ask_through_backend(
         "detail": detail,
         "submit_label": submit_label,
         "cancel_label": cancel_label,
+        "labels": dict(labels or {}),
+        "stage": stage,
+        "verify": verify,
         "secret": secret,
         "file": file,
         "auto": auto,

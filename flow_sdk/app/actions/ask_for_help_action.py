@@ -268,7 +268,7 @@ async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
 async def _opening_message(conv: Conversation) -> Optional[FlowMessage]:
     """The request's first message, when an earlier send of the same request already wrote it --
     the first of mine, since a diagnosis may follow it."""
-    return next((fm for fm in await conv.messages() if fm.outbound), None)
+    return next((fm for fm in await conv.messages() if fm.written_here), None)
 
 
 async def _write_opening_message(conv, task, ask: AskForHelpRequest, files, someone):

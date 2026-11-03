@@ -23,9 +23,13 @@ class FakeHubStore:
         self.funding: dict[str, dict] = {}
 
     def deployment(self, agent_typeid: str, environment: str) -> dict:
-        return {"id": self._ids.setdefault((agent_typeid, environment), str(uuid.uuid4())), "name": f"agent ({environment})",
-                "parent_type_id": agent_typeid, "environment": environment,
-                "target": {"provider": "e2b", "scope": agent_typeid}}
+        return {
+            "id": self._ids.setdefault((agent_typeid, environment), str(uuid.uuid4())),
+            "name": f"agent ({environment})",
+            "parent_type_id": agent_typeid,
+            "environment": environment,
+            "target": {"provider": "e2b", "scope": agent_typeid},
+        }
 
     _ids: dict = {}
 
@@ -42,8 +46,10 @@ class FakeHubStore:
         if action == "funding":
             return self.funding.get(eid)
         if action == "secrets":
-            return {"secrets": [{"name": n} for n in self.values.get(eid, {})],
-                    "authorizations": [{"provider": p} for p in self.authorized.get(eid, [])]}
+            return {
+                "secrets": [{"name": n} for n in self.values.get(eid, {})],
+                "authorizations": [{"provider": p} for p in self.authorized.get(eid, [])],
+            }
         return None
 
     async def post(self, etype, payload, eid=None, action=None, sub_path=None, **_):
@@ -88,7 +94,9 @@ class FakeHubStore:
         assert method == "DELETE", method
         return await self.delete(etype, eid, action, sub_path)
 
-    async def deploy(self, entity, environment=None, *, provider=None, require=None, deployment_id=None):
+    async def deploy(
+        self, entity, environment=None, *, provider=None, require=None, deployment_id=None, machine_size=None
+    ):
         self.deploys.append({"environment": environment, "provider": provider, "require": list(require or [])})
         self.deploy_ids.append(deployment_id)
         return {"deployment": {}, "secrets": {"placed": sorted(require or []), "failed": {}}}

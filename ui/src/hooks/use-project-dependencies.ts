@@ -184,6 +184,16 @@ export function useProjectDependencies(
     [],
   );
 
+  /** Edit a declared dependency in place; nothing is fetched. */
+  const update = useCallback(
+    async (name: string, patch: Parameters<Project['updateDependency']>[1]) => {
+      const p = projectRef.current;
+      if (!p) return;
+      await p.updateDependency(name, patch);
+    },
+    [],
+  );
+
   /** Fetch an optional dependency that is not installed yet. */
   const install = useCallback(
     async (name: string) => {
@@ -217,6 +227,7 @@ export function useProjectDependencies(
     addPaths,
     pickAndAdd,
     remove,
+    update,
     install,
     resolve,
   } as const;

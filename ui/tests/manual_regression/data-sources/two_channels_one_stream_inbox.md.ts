@@ -17,6 +17,8 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { apiContext } from '../_shared/api';
 
 const PER_SOURCE = 60;
+/** The stream inbox lists one page of conversations at a time (STREAM_INBOX_PAGE_SIZE); 120 fill it. */
+const PAGE = 100;
 const PER_CALL = 20;
 const stamp = Date.now().toString(36);
 
@@ -120,7 +122,7 @@ test('1. the API pages a source\'s items 50 at a time', async () => {
  *  one after the ingest returns; sampled, never hurried — the test's own timeout is the bound. */
 async function projected() {
   await expect(async () => {
-    const convs = await graph<Array<{ channel_source_id?: string; message_count?: number }>>('get', '/graph/conversation?limit=1000');
+    const convs = await graph<Array<{ channel_source_id?: string; message_count?: number }>>('get', `/graph/conversation?filter=${encodeURIComponent(JSON.stringify({ match: {}, limit: 1000 }))}`);
     const ours = convs.filter((c) => [slackId, gmailId].includes(c.channel_source_id ?? '') && (c.message_count ?? 0) > 0);
     expect(ours).toHaveLength(2 * PER_SOURCE);
   }).toPass();
@@ -129,7 +131,8 @@ async function projected() {
 test('2. the stream inbox merges both sources, attributed', async ({ page }) => {
   await projected();
   await openStreamInbox(page);
-  await expect(page.getByTestId('stream-inbox-view-all')).toContainText(String(2 * PER_SOURCE));
+  // The pill counts the rows on this page; 120 fill a 100-row page, so it reads "100+".
+  await expect(page.getByTestId('stream-inbox-view-all')).toContainText('100+');
 
   const bar = page.getByTestId('attached-channels');
   const marks = bar.getByTestId('attached-channel');
@@ -148,18 +151,22 @@ test('2. the stream inbox merges both sources, attributed', async ({ page }) => 
   expect(glyphs[0], 'the two channels wear the same glyph').not.toBe(glyphs[1]);
 
   const rows = page.getByTestId('stream-inbox-conversation-row');
-  await expect(rows).toHaveCount(2 * PER_SOURCE);
+  await expect(rows).toHaveCount(PAGE);
   await expect(rows.filter({ hasText: 'slack message' }).first()).toBeVisible();
   await expect(rows.filter({ hasText: /Subject \d+/ }).first()).toBeVisible();
   // Every row wears ITS source's chip.
-  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(2 * PER_SOURCE);
+  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(PAGE);
+  // The older page holds the rest: both sources, merged, are all 120.
+  await page.getByTestId('stream-inbox-page-older').click();
+  await expect(rows).toHaveCount(2 * PER_SOURCE - PAGE);
+  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(2 * PER_SOURCE - PAGE);
 });
 
 test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   await openStreamInbox(page);
   const bar = page.getByTestId('attached-channels');
   const rows = page.getByTestId('stream-inbox-conversation-row');
-  await expect(rows).toHaveCount(2 * PER_SOURCE);
+  await expect(rows).toHaveCount(PAGE);
 
   const slackMark = bar.locator('[data-testid="attached-channel"][aria-label*="Support slack"]');
   await expect(slackMark).toHaveCount(1);
@@ -178,7 +185,7 @@ test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   await expect(rows.filter({ hasText: /Subject \d+/ })).toHaveCount(0);
 
   await bar.getByTestId('attached-channels-clear').click();
-  await expect(rows).toHaveCount(2 * PER_SOURCE);
+  await expect(rows).toHaveCount(PAGE);
   await expect(slackMark).toHaveAttribute('aria-pressed', 'false');
   await expect(mailMark).toHaveAttribute('aria-pressed', 'false');
 });

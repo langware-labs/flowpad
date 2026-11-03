@@ -3,9 +3,11 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type { ProjectSetupRequirement, SetupNodeResult, SetupTreeResult } from '@sdk';
-import { ArrowLeft, Loader2, Pencil, Play, RotateCw, Square, Undo2, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, XCircle, Pencil, Play, RotateCw, Square, Undo2, type LucideIcon } from 'lucide-react';
 import { AskForm } from '@src/components/ask/AskForm';
 import { CredentialDialog } from '@src/components/credentials/CredentialDialog';
+import { CredentialEditDialog } from '@src/components/credentials/CredentialEditDialog';
+import { CredentialTestButton } from '@src/components/credentials/CredentialTestButton';
 import { editDraft } from '@src/components/credentials/credential-draft';
 import { useCredentials } from '@src/components/credentials/use-credentials';
 import { Badge, type BadgeProps } from '@src/components/ui/badge';
@@ -257,6 +259,21 @@ export function ProjectSetupPage({ projectId, projectName }: { projectId: string
                 running={running}
                 busy={busy.has(rowKey(req))}
                 onEdit={() => edit(req)}
+                test={
+                  req.kind === 'pack' && req.has_test ? (
+                    <CredentialTestButton
+                      typeid={req.typeid}
+                      name={req.name}
+                      title={req.title || req.name}
+                      projectId={projectId}
+                      hasTest
+                      result={req.test_result}
+                      onChanged={load}
+                      size="xs"
+                      testId={`project-setup-step-test-${rowId(req)}`}
+                    />
+                  ) : null
+                }
                 onRun={req.node ? () => startAt(req.node) : undefined}
                 onUndo={() => void unskip(req, t`Could not undo the skip of ${req.name}`)}
               />
@@ -278,6 +295,7 @@ export function ProjectSetupPage({ projectId, projectName }: { projectId: string
             setEditing(null);
             void load();
           }}
+          onRefreshed={() => void load()}
         />
       )}
     </div>
@@ -290,17 +308,36 @@ function EditCredential({
   projectId,
   onClose,
   onSaved,
+  onRefreshed,
 }: {
   req: ProjectSetupRequirement;
   projectId: string;
   onClose: () => void;
   onSaved: () => void;
+  /** A key was set or tested: the page's steps re-read. */
+  onRefreshed: () => void;
 }) {
   const { t } = useLingui();
   const { status, ready, refresh } = useCredentials(projectId);
+  // Keys first; the full definition form opens from Instructions → Edit.
+  const [definition, setDefinition] = useState(false);
   const row = status.credentials.find((c) => c.typeid === req.typeid);
   const draft = useMemo(() => (row ? editDraft(row) : null), [row]);
-  if (!ready || !draft) return null;
+  if (!ready || !row || !draft) return null;
+  if (!definition)
+    return (
+      <CredentialEditDialog
+        row={row}
+        status={status}
+        projectId={projectId}
+        onClose={onSaved}
+        onChanged={async () => {
+          await refresh();
+          onRefreshed();
+        }}
+        onEditDefinition={() => setDefinition(true)}
+      />
+    );
   return (
     <CredentialDialog
       draft={draft}
@@ -324,6 +361,7 @@ function StepRow({
   running,
   busy,
   onEdit,
+  test,
   onRun,
   onUndo,
 }: {
@@ -334,6 +372,8 @@ function StepRow({
   running: boolean;
   busy: boolean;
   onEdit: () => void;
+  /** A credential's Test, when it declares one. */
+  test?: ReactNode;
   onRun?: () => void;
   onUndo: () => void;
 }) {
@@ -365,6 +405,19 @@ function StepRow({
             <Chip variant={STATUS_CHIP[status].variant}>{i18n._(STATUS_CHIP[status].label)}</Chip>
           )}
         </span>
+        {req.test_result?.state === 'ok' ? (
+          <span title={req.test_result.detail || t`Tested ${req.test_result.at}`}>
+            <Chip variant="success" icon={CheckCircle2} testId={`project-setup-step-tested-${id}`}>
+              <Trans>Tested</Trans>
+            </Chip>
+          </span>
+        ) : req.test_result ? (
+          <span title={req.test_result.detail}>
+            <Chip variant="danger" icon={XCircle} testId={`project-setup-step-tested-${id}`}>
+              <Trans>Test failed</Trans>
+            </Chip>
+          </span>
+        ) : null}
         <div className="flex-1" />
         {busy && <Loader2 className="size-3 animate-spin" />}
         {status === 'skipped' ? (
@@ -379,6 +432,7 @@ function StepRow({
             <StepAction icon={Pencil} testId={`project-setup-step-edit-${id}`} onClick={onEdit}>
               <Trans>Edit</Trans>
             </StepAction>
+            {test}
             {onRun && (
               <StepAction icon={Play} testId={`project-setup-step-run-${id}`} disabled={running} onClick={onRun}>
                 <Trans>Run</Trans>

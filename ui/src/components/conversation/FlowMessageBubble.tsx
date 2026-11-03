@@ -48,7 +48,6 @@ import { valueKindMeta } from '@src/components/value-viewer/useValueKind';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
-import { MessageSessionChip } from './MessageSessionChip';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { CredentialValueLock } from './CredentialValueLock';
@@ -778,9 +777,6 @@ export function FlowMessageBubble({
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
-      {session && fm.conversation_id && (
-        <MessageSessionChip session={session} messageId={messageId} conversationId={fm.conversation_id} />
-      )}
     </>
   );
 

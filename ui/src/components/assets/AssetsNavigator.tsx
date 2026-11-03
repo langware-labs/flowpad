@@ -2,10 +2,10 @@ import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { AssetTypeCountsContext } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
-import { InputDialog } from '@src/components/ui/input-dialog';
 import { useAssetsModel } from './useAssetsModel';
 import { useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
+import { NewOfTypeDialog } from '@src/components/quick-create';
 
 /**
  * Assets left-menu — the navigator (Zone B). The tree (asset types + markdown
@@ -61,14 +61,12 @@ export function AssetsNavigator() {
   return (
     <>
       <NavigatorPanel descriptor={descriptor} legacyKeys={{ width: 'wiki:sidebar-width' }} />
-      <InputDialog
+      <NewOfTypeDialog
+        type={m.newTypeTarget}
         open={m.newTypeDialogOpen}
         onOpenChange={m.setNewTypeDialogOpen}
-        title={t`New ${m.newTypeTarget ?? ''}`}
-        description={t`Enter a name for the new ${m.newTypeTarget ?? 'item'}.`}
-        placeholder={t`Name`}
-        confirmLabel={t`Create`}
-        onConfirm={(name) => void m.handleNewConfirm(name)}
+        projectId={m.scope.mode === 'user' ? null : (m.scopeProjectId ?? null)}
+        onConfirmName={(name) => void m.handleNewConfirm(name)}
       />
       {m.dependencyDialogs}
       {m.fileOpsDialogs}

@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Capture a viewport-relative rectangle from the active BrowserWindow.
   captureRegion: (region) => ipcRenderer.invoke('capture-region', region),
 
+  // Screen recording: the macOS Screen Recording grant ('granted' | 'denied' | 'not-determined' |
+  // 'restricted'; 'granted' on every other OS) and the System Settings pane that holds it.
+  screenCaptureStatus: () => ipcRenderer.invoke('screen-capture-status'),
+  openScreenRecordingSettings: () => ipcRenderer.invoke('open-screen-recording-settings'),
+
   // Platform info
   platform: process.platform,
 

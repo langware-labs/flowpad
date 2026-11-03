@@ -169,6 +169,8 @@ class _Needs:
     oauth: dict[str, _Connection] = field(default_factory=dict)
     gaps: list[SetupRequirementSpec] = field(default_factory=list)
     sources: list[Any] = field(default_factory=list)
+    #: Dependencies Flowpad cloned that are behind their remote — updates waiting, never a to-do.
+    updates: int = 0
 
     def needs_credential(self, spec: Any) -> bool:
         """Whether a root still needs the credential row ``spec`` — what keeps a derived row alive."""
@@ -250,7 +252,7 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
             kind=REQUIREMENT_PACK, credential_kind="oauth", name=row.name, title=row.title, typeid=row.typeid,
             provider=row.provider, scopes=list(row.scopes), help_url=row.help_url, **_why(row),
             satisfied=row.state == "connected", used_by=_names(roots), note=note.get(row.state, ""),
-            skipped=row.setup_skipped, **always,
+            skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
         )
     # Required when any value is MUST or ONE_OF, and then only those are asked (a ONE_OF group as one choice);
     # a credential of OPTIONAL values alone is listed as optional, with those.
@@ -262,7 +264,7 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
         setup_choice=row.setup_choice, ways=dict(row.ways),
         satisfied=row.state == "connected", used_by=_names(roots), required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
-        skipped=row.setup_skipped, **always,
+        skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
     )
 
 
@@ -391,6 +393,7 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
     mount = str(getattr(project, "fs_storage_mount_path", "") or "")
     dependencies = []
     for dep in await project.dependencies():
+        needs.updates += dep.behind > 0
         if dep.state not in ("missing", "unreachable", "not_found"):
             continue
         key = project_dependencies.requirement_key(dep)
@@ -607,7 +610,7 @@ async def readiness_of(project: "Project", deployment_id: str = "", *,
                         for r in requirements]
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
-        project_id=str(project.id), ready=not left, to_do=left,
+        project_id=str(project.id), ready=not left, to_do=left, updates=needs.updates,
         optional=[r for r in requirements if not r.required and r.skipped is None and unsatisfied(r)],
         skipped=[r for r in requirements if r.skipped is not None and r.kind != REQUIREMENT_GAP],
         gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],
@@ -774,6 +777,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         add_detached_done_callback(task, _log_failure)
         add_detached_done_callback(task, functools.partial(_release_control, key, control))
         add_detached_done_callback(task, functools.partial(_forget_load, pid, root))
+        add_detached_done_callback(task, functools.partial(_status_after_run, pid))
         _RUNS[key] = task
     return setup_run_address(pid, root)
 
@@ -909,6 +913,14 @@ def _forget_load(project_id: str, root: str, _task: "asyncio.Task") -> None:
     forget(project_id, root)
 
 
+def _status_after_run(project_id: str, _task: "asyncio.Task") -> None:
+    """A run of the project ended: what it set up (a sign-in among them) is read again."""
+    from flow_sdk.builtin.credential_status import forget_signins  # noqa: PLC0415
+
+    forget_signins()
+    _status_changed(project_id)
+
+
 def _log_failure(task: "asyncio.Task") -> None:
     """A run that raised is recorded nowhere else — say it, rather than let it vanish."""
     if not task.cancelled() and task.exception() is not None:
@@ -1006,6 +1018,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
             raise SkipRefused(req.why_not_always or f"{req.name} cannot be removed from this project")
         await _uninstall(project, req.roots)
         _skip_live(project, req, "removed from the project")
+        _status_changed(str(project.id))
         return
     if scope != SKIP_LOCAL:
         raise SkipRefused(f"skip {scope!r}? it is {SKIP_LOCAL!r} or {SKIP_ALWAYS!r}")
@@ -1015,6 +1028,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
     else:
         await write_setup_skip(await _record_of(req), mark)
     _skip_live(project, req, skip_detail(mark))
+    _status_changed(str(project.id))
 
 
 async def skip_asking(run: str, step: str, *, by: str = "") -> bool:
@@ -1055,6 +1069,14 @@ async def unskip_requirement(project: "Project", typeid: str, *, name: str = "")
         await write_setup_skip(project, {k: v for k, v in (project.setup_skipped or {}).items() if k != key})
     else:
         await write_setup_skip(await _record_of(req), None)
+    _status_changed(str(project.id))
+
+
+def _status_changed(project_id: str) -> None:
+    """What this project's setup status reads changed: its stored answer is refreshed (``core/project_status``)."""
+    from flow_sdk.core.project_status import SETUP, mark_stale  # noqa: PLC0415
+
+    mark_stale(project_id, [SETUP])
 
 
 async def _delete_credential_staged(mount: Path, record: Any) -> None:

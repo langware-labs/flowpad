@@ -8,6 +8,7 @@ Auto-injects CLAUDE_PROJECT_DIR from workdir.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from flow_sdk.api.api_types.identifier import mint_uuid
@@ -17,7 +18,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts
 from flow_sdk.config import PLATFORM_WIN32
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeAgentOptions(AgentOptions):
@@ -160,6 +164,13 @@ class ClaudeAgentOptions(AgentOptions):
                 comspec = os.environ.get("COMSPEC") or "cmd.exe"
                 return [comspec, "/c", resolved]
         return ["claude"]
+
+    def prepare_launch(self, workdir: str | None) -> None:
+        """Claude exits on --worktree in a folder whose workspace trust it has not been given: launch it plainly
+        there so its own trust prompt shows (accepting it is the person's step); then Open in Worktree works."""
+        if self.worktree and not claude_trusts(workdir):
+            logger.info("claude: %s is not trusted yet, launching without --worktree", workdir)
+            self.worktree = False
 
     def _emit_flags(self) -> list[str]:
         """Claude's argv flags (after the binary, before the ``-- <instruction>``).

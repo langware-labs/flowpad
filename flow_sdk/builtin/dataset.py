@@ -440,10 +440,10 @@ class Dataset(ProjectedFields, Entity):
 
     @_on_rows(write=True)
     async def promote(self, item_ids: list[str]) -> list[str]:
-        """Items → row rows (``input/item.json`` + provenance). Returns the
+        """Items → row rows (the item envelope in ``input/`` + provenance). Returns the
         new row ids. Raises ``LookupError`` for an unknown item,
         ``ValueError`` when the dataset cannot take source items."""
-        from flow_sdk.builtin.source_item import SourceItem
+        from flow_sdk.builtin.source_item import SourceItem, row_input_document
         from flow_sdk.schema.data_spec.dataset_spec import FileRef, FolderSpec  # noqa: PLC0415
         from flow_sdk.schema.data_spec.layout import INPUT, dataset_layout_for  # noqa: PLC0415
         from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
@@ -455,6 +455,7 @@ class Dataset(ProjectedFields, Entity):
         rows = {item.id: item for item in await SourceItem.get_all(
             QueryFilter(type=SourceItem.get_type(), match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted]))
         )}   # one IN query, not N lookups
+        doc = row_input_document()
         batch = []
         for item_id in wanted:
             item = rows.get(item_id)
@@ -466,7 +467,7 @@ class Dataset(ProjectedFields, Entity):
             batch.append((
                 ARTIFACT_ROW(
                     kind=RowKind.TRAIN,
-                    input=FolderSpec(path=INPUT, files={"item.json": FileRef(path=f"{INPUT}/item.json")}),
+                    input=FolderSpec(path=INPUT, files={doc: FileRef(path=f"{INPUT}/{doc}")}),
                     metadata={"source": provenance},
                 ),
                 contents,

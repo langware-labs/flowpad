@@ -30,7 +30,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 vi.mock('@sdk/react/hooks/useLazyAsset', () => ({ useLazyAsset: () => ({ isLoading: false, error: null }) }));
-vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: null }) }));
+vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: null }), useProject: () => ({ project: null }) }));
 vi.mock('@src/hooks/use-flow-data-trace', () => ({ useFlowDataTrace: () => [] }));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sdk')>()),

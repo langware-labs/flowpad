@@ -12,17 +12,29 @@ import {
   type SetupNodeResult,
   type SetupTreeResult,
 } from '@sdk';
-import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Square, Undo2, type LucideIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Info,
+  Loader2,
+  Package,
+  Square,
+  Undo2,
+  type LucideIcon,
+} from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AskForm } from '@src/components/ask/AskForm';
 import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
+import { DependencyUpdatesStrip } from './DependencyUpdatesStrip';
 import { useProjectSetupStore } from './project-setup-store';
 import { ROOT_KIND, rowId as rowIdOf, rowKey } from './setup-labels';
 import { countDrawn, SetupTreeView } from './SetupTreeView';
@@ -141,7 +153,16 @@ export function ProjectSetupDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t, i18n } = useLingui();
-  const { readiness, busy, load, skip: skipRows, unskip: unskipRow } = useSetupReadiness(projectId, { enabled: open });
+  const {
+    readiness,
+    busy,
+    load,
+    skip: skipRows,
+    unskip: unskipRow,
+    checking,
+  } = useSetupReadiness(projectId, {
+    enabled: open,
+  });
   const [selected, setSelected] = useState(NONE);
   /** The one row whose own Skip is open inline (Locally | Always | Cancel). */
   const [skipping, setSkipping] = useState<string | null>(null);
@@ -149,7 +170,8 @@ export function ProjectSetupDialog({
   const assistant = useOptionalFloatingChat();
 
   // When the run ends, re-read the project — the answer goes here and to the footer.
-  const setup = useSetupRun(projectId, '', load);
+  // The last run is read only while the dialog is open: a closed dialog asks nothing.
+  const setup = useSetupRun(open ? projectId : '', '', load);
 
   const start = () => withNotify(() => setup.start(), t`Could not start the setup`);
   const stop = () => withNotify(async () => setup.stop?.(), t`Could not stop the setup`);
@@ -263,8 +285,17 @@ export function ProjectSetupDialog({
           </DialogTitle>
           <DialogDescription>
             <Trans>Needed to run {projectName} on this computer.</Trans>
+            {checking && readiness && (
+              <Loader2
+                className="ms-2 inline size-3 animate-spin align-middle"
+                data-testid="project-setup-rechecking"
+                aria-label={t`Checking again`}
+              />
+            )}
           </DialogDescription>
         </DialogHeader>
+
+        <DependencyUpdatesStrip projectId={projectId} />
 
         {selecting && (
           <div
@@ -287,7 +318,12 @@ export function ProjectSetupDialog({
           </div>
         )}
 
-        {readiness?.ready ? (
+        {!readiness ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="project-setup-loading">
+            <Loader2 className="size-4 animate-spin" />
+            <Trans>Checking…</Trans>
+          </p>
+        ) : readiness.ready ? (
           <p className="flex items-center gap-2 text-sm text-emerald-600" data-testid="project-setup-ready">
             <CheckCircle2 className="size-4" />
             <Trans>Everything required is set up.</Trans>
@@ -305,9 +341,9 @@ export function ProjectSetupDialog({
         )}
 
         {!!readiness?.skipped?.length && (
-          <Section title={t`Skipped on this machine`} testId="project-setup-skipped">
+          <SkippedSection title={t`Skipped on this machine (${readiness.skipped.length})`}>
             {readiness.skipped.map((req) => row(req, true))}
-          </Section>
+          </SkippedSection>
         )}
 
         {!!readiness?.gaps?.length && (
@@ -325,13 +361,15 @@ export function ProjectSetupDialog({
           </ul>
         )}
 
-        <SetupStatusLine
-          tree={setup.tree}
-          running={running}
-          canStart={!!readiness && !readiness.ready}
-          onStart={() => void start()}
-          onStop={setup.stop && (() => void stop())}
-        />
+        {readiness && (
+          <SetupStatusLine
+            tree={setup.tree}
+            running={running}
+            canStart={!readiness.ready}
+            onStart={() => void start()}
+            onStop={setup.stop && (() => void stop())}
+          />
+        )}
 
         {running && (
           <div className="border-t pt-3" data-testid="project-setup-running">
@@ -347,7 +385,7 @@ export function ProjectSetupDialog({
         )}
 
         {/* The steps are for watching a run; while a question is open the question is the screen. */}
-        {setup.tree && !questionId && (
+        {readiness && setup.tree && !questionId && (running || setup.tree.state !== 'done' || readiness.ready) && (
           <div className="border-t pt-3" data-testid="project-setup-steps">
             <SetupTreeView tree={setup.tree} hideRoot />
           </div>
@@ -447,6 +485,28 @@ function Section({ title, testId, children }: { title: string; testId: string; c
         {children}
       </ul>
     </section>
+  );
+}
+
+/** The skipped rows, folded by default; the header names how many. */
+function SkippedSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Collapsible asChild>
+      <section className="group flex flex-col gap-1">
+        <CollapsibleTrigger
+          className="flex items-center gap-1 text-start text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          data-testid="project-setup-skipped-toggle"
+        >
+          <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90 rtl:rotate-180 rtl:group-data-[state=open]:rotate-90" />
+          {title}
+        </CollapsibleTrigger>
+        <CollapsibleContent asChild>
+          <ul className="flex flex-col gap-1" data-testid="project-setup-skipped">
+            {children}
+          </ul>
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }
 

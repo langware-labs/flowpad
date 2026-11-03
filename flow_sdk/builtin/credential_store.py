@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Iterable, Optional
 
 from pydantic import SecretStr
 
+from flow_sdk.core.project_status import changes_status
 from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
@@ -221,6 +222,7 @@ def project_vault(project: Optional["Project"], name: str) -> SecretStore:
     return store_for(vaults[name])
 
 
+@changes_status
 async def write_value(
     spec: "Credential", scope: CredentialScope, env_var: str, value: str, placement: Placement
 ) -> None:
@@ -253,6 +255,7 @@ async def read_values(
     return out
 
 
+@changes_status
 async def forget_in(refs: Iterable[SecretStoreRef], names: Iterable[str]) -> list[StoreForgottenSpec]:
     """Remove ``names`` from every store in ``refs`` (each place once), one report per store.
 

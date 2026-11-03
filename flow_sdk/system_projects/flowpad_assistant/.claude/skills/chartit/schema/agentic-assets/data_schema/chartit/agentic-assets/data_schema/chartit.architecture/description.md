@@ -1,0 +1,1 @@
+The data of a `format: architecture` Chart — the chart's `architecture.json`: the groups where things run, the tiers inside them, the parts (services, stores, clients) in each tier, the links between them, and the numbered steps of one walk-through.

@@ -717,11 +717,16 @@ class FlowMessage(Entity):
         # ``kind`` is a bare str once validated (use_enum_values), the enum only as an untouched default.
         if self.is_draft or getattr(self.kind, "value", self.kind) == FlowMessageKind.INVITATION.value:
             return False
-        if not (self.outbound or self.delivery_status == DeliveryStatus.PENDING_SEND.value):
+        if not self.written_here:
             return False
         if delivery_rank(self.delivery_status) < delivery_rank(DeliveryStatus.SENT):
             return True
         return self.body_status in (BodyStatus.UPLOADING, BodyStatus.FAILED)
+
+    @property
+    def written_here(self) -> bool:
+        """A message this machine wrote — sent, or composed signed out to send later."""
+        return bool(self.outbound or self.delivery_status == DeliveryStatus.PENDING_SEND.value)
 
     async def mark_sent(self) -> None:
         """The hub took the header: SENT, remote, and no failure left to show."""

@@ -1,0 +1,27 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "title": {
+      "shape": "?string",
+      "description": "What the chart shows, in a few words; defaults to the chart's name."
+    },
+    "groups": {
+      "shape": [
+        "chartit.architecture_group"
+      ],
+      "description": "The outer boxes, left to right: where things run — a machine, a cloud, a tenant, an outside world."
+    },
+    "links": {
+      "shape": [
+        "chartit.architecture_link"
+      ],
+      "description": "The arrows between parts, tiers or groups."
+    },
+    "steps": {
+      "shape": [
+        "chartit.architecture_step"
+      ],
+      "description": "The numbered walk-through; each number sits on the part with that `step`."
+    }
+  }
+}

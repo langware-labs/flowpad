@@ -17,7 +17,7 @@
  * Pure: it only reshapes the tree. What a click does is not decided here.
  */
 import type { InlineCode, Link, Parent, PhrasingContent, Root, Text } from 'mdast';
-import { linkMatches } from './link-matches';
+import { linkMatches, SPACED_ABSOLUTE_FILE } from './link-matches';
 
 const NOT_INTO = new Set(['link', 'linkReference', 'definition']);
 
@@ -51,6 +51,7 @@ function splitText(node: Text): PhrasingContent[] | null {
 
 function wrapCode(node: InlineCode): Link | null {
   const value = node.value.trim();
+  if (value.includes(' ') && SPACED_ABSOLUTE_FILE.test(value)) return link(value, node);
   const [only, ...rest] = linkMatches(value);
   return only && rest.length === 0 && only.text === value ? link(only.text, node) : null;
 }

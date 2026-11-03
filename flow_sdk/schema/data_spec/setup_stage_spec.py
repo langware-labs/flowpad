@@ -37,6 +37,10 @@ class SetupStageSpec(DataSpec):
     label: str = ""
     #: The wizard's name.
     wizard: NonBlank
+    #: What this stage sets up ITSELF, so the target does not need it before the stage: ``credential`` — the
+    #: driver's credential, whose values the wizard's steps write (an app the person creates during the stage,
+    #: whose token exists only once it does). Without this, a credential is set up before the first stage.
+    provides: tuple[str, ...] = ()
 
     @property
     def display_label(self) -> str:

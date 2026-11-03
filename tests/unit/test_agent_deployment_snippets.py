@@ -188,7 +188,7 @@ async def test_5_a_machine_of_its_own(monkeypatch):
     monkeypatch.setattr(HubProxy, "call", staticmethod(plan))
     machine = asyncio.Event()
 
-    async def deploy(entity, environment=None, *, provider=None, require=None, deployment_id=None):
+    async def deploy(entity, environment=None, *, provider=None, require=None, deployment_id=None, machine_size=None):
         machine.set()  # the machine starts after the answer
         return {"deployment_id": deployment_id, "entity": entity.name, "environment": environment or "production"}
 

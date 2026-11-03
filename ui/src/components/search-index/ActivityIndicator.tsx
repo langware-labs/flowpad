@@ -143,6 +143,7 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
         props.className ??
         'flex w-full shrink-0 items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-start text-xs transition-colors hover:bg-muted/60'
       }
+      data-testid="activity-indicator-strip"
     >
       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
       <span className="shrink-0 text-muted-foreground">{phase}</span>

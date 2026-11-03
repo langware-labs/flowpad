@@ -485,7 +485,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'codex');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
@@ -595,7 +595,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
@@ -1345,7 +1345,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
@@ -1363,7 +1363,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { projectId } = await bootstrapIds(rq);
     const { id, shellId } = await createProcess(rq, projectId, 'claude_code');
     await createShell(rq, projectId); // a 2nd tab to switch to
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);

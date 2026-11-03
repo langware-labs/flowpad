@@ -45,16 +45,35 @@ def declared_type_infos(module: Any) -> list[TypeInfo]:
     return out
 
 
+def _shipped_module_names() -> set[str] | None:
+    """The ``type_info`` modules the installed flowpad release ships, or None when that is unknown
+    (a source checkout or an editable install, whose metadata does not list the package files)."""
+    from importlib import metadata  # noqa: PLC0415
+
+    try:
+        files = metadata.files("flowpad") or []
+    except metadata.PackageNotFoundError:
+        return None
+    prefix = "flow_sdk/schema/type_info/"
+    names = {
+        str(f)[len(prefix):-3] for f in files if str(f).startswith(prefix) and str(f).endswith(".py")
+    }
+    return names if "__init__" in names else None
+
+
 def register_all() -> None:
     """Import every ``*_info`` sibling module and register its ``TypeInfo``s.
 
-    Each module is registered independently: a broken one (a stale
-    ``*_type_info.py`` from a partial upgrade) is logged and SKIPPED, so one
-    missing type never keeps the server from booting.
+    A module that fails fails the whole registration -- unless the installed release
+    does not ship it. That is a file an upgrade left behind (``flow upgrade`` on a box
+    left an older release's ``cron_event_type_info.py``, importing a type that was
+    since removed); it is logged and SKIPPED, so a leftover never keeps the server
+    from booting.
     """
     import flow_sdk.schema.type_info as pkg
 
     failures = []
+    shipped: set[str] | None = None
     for mod in pkgutil.iter_modules(pkg.__path__):
         if mod.name.startswith("_"):
             continue
@@ -65,6 +84,12 @@ def register_all() -> None:
                     info.locations = ["index"]
                 SchemaRegistry.register(info, declared=True)
         except Exception as error:
+            if shipped is None:
+                shipped = _shipped_module_names() or set()
+            if shipped and mod.name not in shipped:
+                logger.warning("register_all: skipping %r, a leftover the installed release does not ship (%s)",
+                               mod.name, error)
+                continue
             failures.append((mod.name, error))
     if failures:
         details = "; ".join(f"{name}: {error}" for name, error in failures)
