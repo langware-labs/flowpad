@@ -817,11 +817,11 @@ async def requirement_step(project_id: str, which: str, *, check: bool) -> tuple
         need = await connection_need(provider)
         if need is not None:
             return False, need.detail
-        from flow_sdk.core.oauth.provider_registry import missing_granted  # noqa: PLC0415
+        from flow_sdk.core.oauth.provider_registry import grant_gap, missing_granted  # noqa: PLC0415
 
         # Checked against what the provider GRANTED, when that is known: a read-only grant cannot write back.
         if missing := await missing_granted(provider, [s for s in scopes.split(",") if s]):
-            return False, f"Connected without {', '.join(missing)} — connect again to grant it"
+            return False, grant_gap(missing)
         return True, "Connected"
     if kind != "credential":
         return False, f"unknown requirement step {which!r}"

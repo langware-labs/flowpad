@@ -1084,6 +1084,11 @@ async def missing_granted(provider: str, scopes: "list[str] | tuple[str, ...]", 
     return [s for s in dict.fromkeys(scopes) if granted and s not in granted]
 
 
+def grant_gap(missing: "list[str] | tuple[str, ...]") -> str:
+    """The one sentence for a sign-in that lacks scopes a use needs."""
+    return f"Connected without {', '.join(missing)} — connect again to grant it"
+
+
 async def token_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Optional[str]:
     """The bearer token for ``provider`` — ``credential_for`` unwrapped by
     ``token_from_credential`` (a dict credential yields its ``access_token``).

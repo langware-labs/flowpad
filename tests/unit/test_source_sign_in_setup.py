@@ -190,3 +190,40 @@ async def test_a_sign_in_without_a_needed_scope_is_not_set_up_yet(probe, monkeyp
     assert (await project_setup.requirement_step("", "connection:google::drive.readonly", check=True))[0] is True
     granted.append("drive")
     assert (await project_setup.requirement_step("", "connection:google::drive.readonly,drive", check=True))[0] is True
+
+
+async def test_a_grant_without_the_write_scope_asks_again_and_says_what_writing_is_for(probe, monkeypatch):
+    """The sign-in works but cannot write back: Verify owes the sign-in again, in the write permission's words."""
+    from flow_sdk.core.oauth import provider_registry
+
+    _asked, answer = probe
+    answer.update(ok=True)
+    granted = ["repo:read"]
+
+    async def held(_provider, _user, **_kw):
+        return tuple(granted)
+
+    monkeypatch.setattr(provider_registry, "granted_scopes", held)
+    manifest = DataDriverSpec.model_validate({
+        "schema": 1, "name": PROVIDER, "auth": {"connector": "github"},
+        "permissions": {
+            "permission.github.repo.read": {"mechanism": "oauth", "oauth_scopes": ["repo:read"], "why": "Read the files."},
+            "permission.github.repo.write": {"mechanism": "oauth", "oauth_scopes": ["repo"], "writes": True,
+                                             "why": "Push the files back."},
+        },
+    })
+    DataDriver.register(DataDriver.for_class(_SignedIn, manifest, kind="datasource.test.signin"))
+
+    writer = await _source()
+    await writer.verify()
+    (need,) = writer.setup_needs
+    assert (need.name, need.state, need.why) == ("github", "missing_scopes", "Push the files back.")
+    assert "repo" in need.detail
+
+    reader = await _source(read_only=True)
+    await reader.verify()
+    assert reader.setup_needs == [], "a reader never needs the write scope"
+
+    granted.append("repo")
+    await writer.verify()
+    assert writer.setup_needs == []
