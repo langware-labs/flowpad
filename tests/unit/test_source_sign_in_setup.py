@@ -171,3 +171,22 @@ async def test_the_sign_in_says_what_it_is_for_in_the_drivers_words_before_and_a
     await src.verify()
     (need,) = src.setup_needs
     assert need.why == read
+
+
+async def test_a_sign_in_without_a_needed_scope_is_not_set_up_yet(probe, monkeypatch):
+    """A read-only grant cannot write back: the sign-in step says so, so Setup offers Connect again."""
+    from flow_sdk.core.oauth import provider_registry
+
+    _asked, answer = probe
+    answer.update(ok=True)
+    granted = ["drive.readonly"]
+
+    async def held(_provider, _user, **_kw):
+        return tuple(granted)
+
+    monkeypatch.setattr(provider_registry, "granted_scopes", held)
+    ok, detail = await project_setup.requirement_step("", "connection:google::drive.readonly,drive", check=True)
+    assert ok is False and "drive" in detail and "connect again" in detail
+    assert (await project_setup.requirement_step("", "connection:google::drive.readonly", check=True))[0] is True
+    granted.append("drive")
+    assert (await project_setup.requirement_step("", "connection:google::drive.readonly,drive", check=True))[0] is True

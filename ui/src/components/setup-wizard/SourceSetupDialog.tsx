@@ -126,6 +126,7 @@ export function SourceSetupPanel({
     onGranted: begin,
     onError: (e) => setRefused(errorMessage(e, t`Could not start the ${signIn?.title ?? ''} sign-in.`)),
     listen: !!signIn,
+    source: source.id,
   });
   const done = !running && tree?.state === 'done';
   useEffect(() => onListening?.(done), [done, onListening]);

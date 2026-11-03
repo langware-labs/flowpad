@@ -490,7 +490,8 @@ def compile_setup(
         elif req.is_oauth:
             provider = req.provider or req.name
             scopes = [arg for s in req.scopes for arg in ("--scope", s)]
-            checked_here = {"requirement_step": f"connection:{provider}"}
+            # The scopes ride along: a sign-in that cannot do what its requesters need is not set up yet.
+            checked_here = {"requirement_step": f"connection:{provider}::{','.join(req.scopes)}"}
             add({
                 "name": f"connect-{provider}", "label": f"Connect {req.title or provider}",
                 "description": f"{provider} is connected and its grant covers what {', '.join(req.used_by)} need.",
@@ -814,7 +815,14 @@ async def requirement_step(project_id: str, which: str, *, check: bool) -> tuple
         from flow_sdk.builtin.data_source import connection_need  # noqa: PLC0415
 
         need = await connection_need(provider)
-        return (True, "Connected") if need is None else (False, need.detail)
+        if need is not None:
+            return False, need.detail
+        from flow_sdk.core.oauth.provider_registry import missing_granted  # noqa: PLC0415
+
+        # Checked against what the provider GRANTED, when that is known: a read-only grant cannot write back.
+        if missing := await missing_granted(provider, [s for s in scopes.split(",") if s]):
+            return False, f"Connected without {', '.join(missing)} — connect again to grant it"
+        return True, "Connected"
     if kind != "credential":
         return False, f"unknown requirement step {which!r}"
     try:

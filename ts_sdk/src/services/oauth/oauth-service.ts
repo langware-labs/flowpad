@@ -378,7 +378,7 @@ export class OAuthService {
     provider: string,
     targetEntity?: TypeId,
     sharedEntityVarName?: string,
-    options: { reauthorize?: boolean } = {},
+    options: { reauthorize?: boolean; source?: string; group?: string } = {},
   ): Promise<OauthFlow | null> {
     try {
       // FlowpadCloud is owned by cloudManager — route there instead of going through
@@ -400,6 +400,9 @@ export class OAuthService {
       // Re-authorize runs the provider's consent even when the hub already
       // holds a valid grant it could simply hand back.
       if (options.reauthorize) query.reauthorize = 'true';
+      // The use point this connect is for: its scope group and the scopes it needs come from it.
+      if (options.source) query.source = options.source;
+      if (options.group) query.group = options.group;
       if (Object.keys(query).length) actionInfo.queryParameters = query;
       const raw = await dataManager.callAction<unknown, Record<string, unknown>>(actionInfo);
       if (!raw) {

@@ -118,6 +118,10 @@ class AuthSpec(DataSpec):
     model_config = ConfigDict(frozen=True)
 
     connector: str = ""
+    #: The connector's scope group this source reads through (``drive`` for Google Drive): a group is
+    #: connected separately and keeps its own token. "" — or the provider's default group — is the
+    #: provider's own token, as before.
+    group: str = ""
     scopes: list[str] = Field(default_factory=list)
     env: list[str] = Field(default_factory=list)
     #: ``{value key: machine secret name}`` — ``""`` when only the row supplies it.

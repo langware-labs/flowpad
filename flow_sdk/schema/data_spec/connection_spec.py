@@ -112,6 +112,9 @@ class ConnectionSpec(DataSpec):
     scope: str = "machine"
     credential_ref: str = ""
     scopes: tuple[str, ...] = ()
+    #: What the provider GRANTED the held token (a person may untick a box on the consent screen).
+    #: Empty: never recorded — a grant made before this was kept — so only ``scopes`` can be checked.
+    granted_scopes: tuple[str, ...] = ()
     #: The environment variables an API-key credential is made of. Names only.
     env_vars: tuple[str, ...] = ()
 
@@ -150,6 +153,7 @@ class ConnectionSpec(DataSpec):
             scope=str(value.get("scope") or "machine"),
             credential_ref=str(value.get("credential_ref") or ""),
             scopes=_tuple(value.get("scopes")),
+            granted_scopes=_tuple(value.get("granted_scopes")),
             env_vars=_tuple(value.get("env_vars")),
         )
 
