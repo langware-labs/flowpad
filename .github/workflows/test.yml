@@ -206,6 +206,8 @@ jobs:
       # electron-builder compiles NSIS with warnings as errors, so this fails on any
       # installer.nsh mistake. Unsigned here (no signing credentials in this workflow).
       - name: Build the installer (installer.nsh compiles)
+        # bash: pwsh splits `-c.directories.output=…` into `-c` + a config-file path.
+        shell: bash
         run: npx electron-builder --win nsis --x64 --config electron-builder.config.cjs --publish never -c.directories.output=release-ci
         working-directory: electron
 
