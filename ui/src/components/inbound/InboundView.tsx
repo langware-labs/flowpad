@@ -282,7 +282,8 @@ export function InboundView({ api = InboundWebhooks, pointer }: { api?: InboundA
         open={connectOpen}
         onOpenChange={setConnectOpen}
         optionsFor={numberOptionsFor}
-        agents={agents}
+        // One inbox per agent: only an agent without one can be given one.
+        agents={agents.filter((a) => !mailboxes.some((m) => m.agentId === String(a.id)))}
         onDone={() => {
           void refresh();
           void refreshMailboxes();
@@ -461,8 +462,7 @@ function MailboxRouting({
     setBusy(true);
     try {
       if (!agent) throw new Error(t`This inbox's agent is gone`);
-      await setAllowedSenders(agent, next);
-      onSaved(next);
+      onSaved(await setAllowedSenders(agent, next));
     } catch (e) {
       notify.error({ title: errorMessage(e, String(e)) });
     } finally {

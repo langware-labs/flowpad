@@ -12,7 +12,7 @@ import {
 } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
-import { errorMessage } from '@src/lib/error-message';
+import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -90,7 +90,12 @@ export function ConnectNumberDialog({
       onDone();
       onOpenChange(false);
     } catch (e) {
-      setError(errorMessage(e, String(e)));
+      // 402: the hub's mail plan has no free inbox — a fact about the plan, said plainly.
+      setError(
+        errorStatus(e) === 402
+          ? t`The mail plan has no free inbox left. Remove an inbox you no longer use, or ask whoever runs the hub to upgrade the plan.`
+          : errorMessage(e, String(e)),
+      );
     } finally {
       setBusy(false);
     }
@@ -401,7 +406,7 @@ export function ConnectNumberDialog({
                 onValueChange={(agentId) => setInbox((b) => ({ ...b, agentId }))}
               >
                 <SelectTrigger data-testid="inbound-email-agent">
-                  <SelectValue placeholder={t`No agents yet`} />
+                  <SelectValue placeholder={t`No agent without an inbox`} />
                 </SelectTrigger>
                 <SelectContent>
                   {agents.map((a) => (
@@ -415,7 +420,9 @@ export function ConnectNumberDialog({
                 {agents.length ? (
                   <Trans>One inbox per agent; it answers the senders you allow.</Trans>
                 ) : (
-                  <Trans>No agents yet — an inbox belongs to an agent, so create one first.</Trans>
+                  <Trans>
+                    Every agent already has an inbox — an inbox belongs to one agent, so create another agent first.
+                  </Trans>
                 )}
               </span>
             </label>

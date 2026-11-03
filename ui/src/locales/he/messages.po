@@ -12604,6 +12604,10 @@ msgstr "כל סוכן"
 msgid "Every agent {projectName} can launch"
 msgstr "כל סוכן ש-{projectName} יכול להפעיל"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Every agent already has an inbox — an inbox belongs to one agent, so create another agent first."
+msgstr "לכל הסוכנים כבר יש תיבה — תיבה שייכת לסוכן אחד, אז צור סוכן נוסף קודם."
+
 #: src/components/asset-counters/agent-counters.tsx
 msgid "Every agent on this machine"
 msgstr "כל סוכן במחשב הזה"
@@ -19989,12 +19993,16 @@ msgstr "לא הוגדרו וו-וצקי סוכן"
 #~ msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "No agents yet"
-msgstr "אין סוכנים עדיין"
+msgid "No agent without an inbox"
+msgstr "אין סוכן בלי תיבה"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "No agents yet — an inbox belongs to an agent, so create one first."
-msgstr "אין סוכנים עדיין — תיבה שייכת לסוכן, אז צור סוכן קודם."
+#~ msgid "No agents yet"
+#~ msgstr "אין סוכנים עדיין"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+#~ msgid "No agents yet — an inbox belongs to an agent, so create one first."
+#~ msgstr "אין סוכנים עדיין — תיבה שייכת לסוכן, אז צור סוכן קודם."
 
 #: src/pages/hub-home/HubItemsSection.tsx
 msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
@@ -32604,6 +32612,10 @@ msgstr "ההתנתקות לא הושלמה."
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "The machine reads this environment's credentials."
 msgstr "המכונה קוראת את פרטי ההתחברות של הסביבה הזו."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The mail plan has no free inbox left. Remove an inbox you no longer use, or ask whoever runs the hub to upgrade the plan."
+msgstr "לא נשארו תיבות פנויות בתוכנית המייל. הסר תיבה שאתה לא משתמש בה, או בקש ממי שמפעיל את ה-hub לשדרג את התוכנית."
 
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/pages/discover-page/discover-page.tsx

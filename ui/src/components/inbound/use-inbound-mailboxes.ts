@@ -69,15 +69,15 @@ async function readMailbox(agent: Agent): Promise<InboundMailbox | null> {
   return toRow(agent, (await agent.mailboxState()).mailbox);
 }
 
-/** Set an inbox's allowlist (full addresses; the hub normalizes them). */
-export async function setAllowedSenders(agent: Agent, allowedSenders: string[]): Promise<void> {
+/** Set an inbox's allowlist (full addresses). Answers the list as the hub stored it — normalized, de-duplicated. */
+export async function setAllowedSenders(agent: Agent, allowedSenders: string[]): Promise<string[]> {
   if (isHubOnly()) {
-    await dataManager.callAction(
+    const saved = await dataManager.callAction<unknown, MailboxDescriptor>(
       hubMailboxCall(String(agent.id), 'configure', 'POST', { allowed_senders: allowedSenders }),
     );
-    return;
+    return saved?.allowed_senders ?? allowedSenders;
   }
-  await agent.configureMailbox({ allowed_senders: allowedSenders });
+  return (await agent.configureMailbox({ allowed_senders: allowedSenders })).mailbox?.allowed_senders ?? allowedSenders;
 }
 
 /** Mint the inbox on the hub page. A desktop allocates through `useAllocateAgentMailbox` (it wires the source). */

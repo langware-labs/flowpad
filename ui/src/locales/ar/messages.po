@@ -12604,6 +12604,10 @@ msgstr "كل وكيل"
 msgid "Every agent {projectName} can launch"
 msgstr "كل الوكلاء التي يمكن لـ {projectName} تشغيلها"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Every agent already has an inbox — an inbox belongs to one agent, so create another agent first."
+msgstr "لكل الوكلاء صندوق بريد بالفعل — الصندوق يتبع وكيلًا واحدًا، لذا أنشئ وكيلًا آخر أولًا."
+
 #: src/components/asset-counters/agent-counters.tsx
 msgid "Every agent on this machine"
 msgstr "كل الوكلاء على هذا الجهاز"
@@ -19989,12 +19993,16 @@ msgstr "لم يتم تكوين أي خطاطيف للوكيل"
 #~ msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "No agents yet"
-msgstr "لا يوجد وكلاء بعد"
+msgid "No agent without an inbox"
+msgstr "لا يوجد وكيل بلا صندوق بريد"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "No agents yet — an inbox belongs to an agent, so create one first."
-msgstr "لا يوجد وكلاء بعد — صندوق البريد يتبع وكيلًا، لذا أنشئ وكيلًا أولًا."
+#~ msgid "No agents yet"
+#~ msgstr "لا يوجد وكلاء بعد"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+#~ msgid "No agents yet — an inbox belongs to an agent, so create one first."
+#~ msgstr "لا يوجد وكلاء بعد — صندوق البريد يتبع وكيلًا، لذا أنشئ وكيلًا أولًا."
 
 #: src/pages/hub-home/HubItemsSection.tsx
 msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
@@ -32608,6 +32616,10 @@ msgstr "لم يكتمل تسجيل الخروج."
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "The machine reads this environment's credentials."
 msgstr "يقرأ الجهاز بيانات اعتماد هذه البيئة."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The mail plan has no free inbox left. Remove an inbox you no longer use, or ask whoever runs the hub to upgrade the plan."
+msgstr "لم يتبقَّ صندوق بريد متاح في خطة البريد. أزل صندوقًا لم تعد تستخدمه، أو اطلب ممن يدير الـ hub ترقية الخطة."
 
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/pages/discover-page/discover-page.tsx

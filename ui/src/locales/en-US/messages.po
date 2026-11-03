@@ -12680,6 +12680,10 @@ msgstr "every agent"
 msgid "Every agent {projectName} can launch"
 msgstr "Every agent {projectName} can launch"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Every agent already has an inbox — an inbox belongs to one agent, so create another agent first."
+msgstr "Every agent already has an inbox — an inbox belongs to one agent, so create another agent first."
+
 #: src/components/asset-counters/agent-counters.tsx
 msgid "Every agent on this machine"
 msgstr "Every agent on this machine"
@@ -20139,12 +20143,16 @@ msgstr "No agent hooks configured"
 #~ msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "No agents yet"
-msgstr "No agents yet"
+msgid "No agent without an inbox"
+msgstr "No agent without an inbox"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "No agents yet — an inbox belongs to an agent, so create one first."
-msgstr "No agents yet — an inbox belongs to an agent, so create one first."
+#~ msgid "No agents yet"
+#~ msgstr "No agents yet"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+#~ msgid "No agents yet — an inbox belongs to an agent, so create one first."
+#~ msgstr "No agents yet — an inbox belongs to an agent, so create one first."
 
 #: src/pages/hub-home/HubItemsSection.tsx
 msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
@@ -32849,6 +32857,10 @@ msgstr "The logout did not complete."
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "The machine reads this environment's credentials."
 msgstr "The machine reads this environment's credentials."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The mail plan has no free inbox left. Remove an inbox you no longer use, or ask whoever runs the hub to upgrade the plan."
+msgstr "The mail plan has no free inbox left. Remove an inbox you no longer use, or ask whoever runs the hub to upgrade the plan."
 
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/pages/discover-page/discover-page.tsx
