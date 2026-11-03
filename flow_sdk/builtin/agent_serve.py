@@ -415,18 +415,21 @@ async def _settle(ap) -> None:
 
     if getattr(ap, "pty_mode", False) or getattr(ap, "hub_route", False) or getattr(ap, "shell_id", None):
         return
+    if getattr(ap, "id", None) is None:  # a runner that answered without a process row: nothing to settle
+        return
     pid = str(ap.id)
-    if prompt_worker_parked(pid):
-        return
-    task = _PROMPT_TASKS.get(pid)
-    if task is not None and task is not asyncio.current_task():
-        await asyncio.gather(task, return_exceptions=True)
-    if ap.status != ProcessStatus.RUNNING.value or prompt_worker_parked(pid):
-        return
-    ap.status = ProcessStatus.STOPPED.value
+    # The answer stands: nothing in settling the run's status may turn it into a failed turn.
     try:
+        if prompt_worker_parked(pid):
+            return
+        task = _PROMPT_TASKS.get(pid)
+        if task is not None and task is not asyncio.current_task():
+            await asyncio.gather(task, return_exceptions=True)
+        if getattr(ap, "status", None) != ProcessStatus.RUNNING.value or prompt_worker_parked(pid):
+            return
+        ap.status = ProcessStatus.STOPPED.value
         await ap.save()
-    except Exception:  # noqa: BLE001 — the answer stands; a stale status does not undo it
+    except Exception:  # noqa: BLE001 — a stale status does not undo the answer
         logger.warning("agent turn: could not settle process %s", pid, exc_info=True)
 
 
