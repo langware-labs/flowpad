@@ -888,7 +888,8 @@ async def _agent_placement(deployment_typeid: str):
 
 
 async def expose_project_endpoints(project, deployment_typeid: str) -> list:
-    """Bring up every webapp asset of *project* on the hub's placement, and report ALL it serves.
+    """Bring up every webapp asset of *project* — and of its required dependency projects — on the hub's
+    placement, and report ALL it serves.
 
     Run on the machine a placement landed on (a cloud box, asked by the hub).
     The project's local placement is first re-keyed to the hub's id
@@ -906,8 +907,7 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
     deployment = await _agent_placement(deployment_typeid) or await adopt_project_placement(project, deployment_typeid)
-    apps = await WebApp.get_all({"match": {"project_id": project.id}})
-    for app in apps:
+    for app in await _placed_apps(project, WebApp):
         if not app.asset_ref:
             continue
         for mount in app_mounts(app):
@@ -915,6 +915,21 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
         for service in app.services or []:
             await set_service_endpoint(deployment, app, service, await _started(app, service.serving))
     return await ServiceEndpoint.of_deployment(deployment_typeid)
+
+
+async def _placed_apps(project, webapp_type) -> list:
+    """The webapps a placement of *project* serves: its own, then each resolved required dependency's.
+
+    A dependency project is part of what the deployed project runs (a WhatsApp bridge it
+    depends on is its WhatsApp), so its apps come up on the same placement. The project's
+    own apps are placed first, so a declared root path stays theirs.
+    """
+    from flow_sdk.builtin.project_dependencies import required_projects  # noqa: PLC0415
+
+    apps = list(await webapp_type.get_all({"match": {"project_id": project.id}}))
+    for provider in await required_projects(project):
+        apps.extend(await webapp_type.get_all({"match": {"project_id": provider.id}}))
+    return apps
 
 
 def service_endpoint_name(app, service) -> str:

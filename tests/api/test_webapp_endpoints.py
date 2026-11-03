@@ -247,6 +247,34 @@ def _wait_for_port(port: int) -> None:
     raise AssertionError(f"service on {port} never came up")
 
 
+async def test_a_dependency_projects_apps_come_up_on_the_deployed_projects_placement(client, tmp_path):
+    """A deployed project that depends on another (a WhatsApp bridge) serves that project's apps too."""
+    project = await _project(tmp_path / "shop")
+    bridge = await _project(tmp_path / "bridge", name="bridge")
+    (tmp_path / "shop").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "shop" / "flow.json").write_text(
+        json.dumps({"dependencies": {"bridge": f"file:{tmp_path / 'bridge'}"}})
+    )
+    own = await _webapp(project, tmp_path / "shop" / "site", name="site", mounts=[{"audience": "admin", "path": ""}])
+    dep = await _webapp(
+        bridge, tmp_path / "bridge" / "admin", name="bridge-admin", mounts=[{"audience": "admin", "path": ""}]
+    )
+    unrelated = await _project(tmp_path / "other", name="other")
+    await _webapp(unrelated, tmp_path / "other" / "x", name="x")
+    placement = _deployment_typeid()
+
+    resp = await client.post(
+        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": placement}
+    )
+
+    assert resp.status_code == 200, resp.text
+    [admin] = [e for e in resp.json()["data"]["endpoints"] if e["name"] == "admin"]
+    routes = admin["backend"]["routes"]
+    assert routes[""]["webapp_id"] == own.id, "the deployed project's own app keeps the root it declared"
+    assert [r["webapp_id"] for r in routes.values()].count(dep.id) == 1, "the dependency's app is served once"
+    assert {e["name"] for e in resp.json()["data"]["endpoints"]} == {"admin"}, "an unrelated project is not"
+
+
 @pytest.mark.parametrize("bad", ["", "project-x", "deployment-not-a-uuid", "deployment"])
 async def test_expose_needs_a_placement_typeid(client, tmp_path, bad):
     project = await _project(tmp_path)
