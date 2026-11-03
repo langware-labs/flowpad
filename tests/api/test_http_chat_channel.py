@@ -374,3 +374,27 @@ async def test_a_streamed_completion_answers_before_the_reply_is_recorded(worker
     assert events[-1] == "[DONE]"
     content = "".join(json.loads(e)["choices"][0]["delta"].get("content", "") for e in events[:-1])
     assert content.startswith("Mock reply")
+
+
+async def test_a_finished_chat_turn_leaves_its_run_stopped_not_running(deployed, bootstrapped_client, worker):
+    """A headless turn's worker is gone once it answers: the run ends ``stopped`` (headless-idle), and the
+    next message still continues the same process. It used to stay ``running`` forever on the deployment."""
+    _agent, deployment, chat = deployed
+    first = (await bootstrapped_client.post(_url(chat, "v1/chat/completions"), json=_ask("one"))).json()
+    conversation = first["flowpad"]["conversation_id"]
+
+    async def settled() -> list[str]:
+        for _ in range(100):
+            statuses = [p.status for p in await deployment.runs()]
+            if statuses and "running" not in statuses:
+                return statuses
+            await asyncio.sleep(0.05)
+        return statuses
+
+    assert await settled() == ["stopped"]
+    second = await bootstrapped_client.post(
+        _url(chat, "v1/chat/completions"), json=_ask("two", metadata={"conversation_id": conversation})
+    )
+    assert second.status_code == 200 and second.json()["choices"][0]["message"]["content"].startswith("Mock reply")
+    assert worker.received_prompts == ["one", "two"]
+    assert await settled() == ["stopped"], "one process, settled again after its second turn"

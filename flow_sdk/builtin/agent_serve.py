@@ -394,7 +394,40 @@ class TurnEngine:
                 # Why it failed (e.g. the hub's 429 "limit ... exceeded") is kept: the health check names it.
                 failed = {**done_record(started, text or "", FAILED), ERROR: _line(str(answer.detail or ""), 300)}
                 await stamp_turn(ap, turn.key, failed)
+            await _settle(ap)
             yield done(answer)
+
+
+async def _settle(ap) -> None:
+    """End the lifecycle of a headless process whose turn is over: ``stopped``, its session kept.
+
+    A headless turn sets the process ``running`` and nothing on the turn's tail sets it back --
+    the worker is per turn, so once it answered nothing is live, yet the run read ``running``
+    forever. ``stopped`` with a session is headless-idle: the next turn starts it again
+    (``process_for`` reuses it). The turn's task is joined first, so its own tail (broadcast,
+    reindex, naming) is not raced. A worker parked on background work is still live, and a PTY
+    or hub-routed process has its own lifecycle owner: those are left alone."""
+    from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+        _PROMPT_TASKS,
+        prompt_worker_parked,
+    )
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus  # noqa: PLC0415
+
+    if getattr(ap, "pty_mode", False) or getattr(ap, "hub_route", False) or getattr(ap, "shell_id", None):
+        return
+    pid = str(ap.id)
+    if prompt_worker_parked(pid):
+        return
+    task = _PROMPT_TASKS.get(pid)
+    if task is not None and task is not asyncio.current_task():
+        await asyncio.gather(task, return_exceptions=True)
+    if ap.status != ProcessStatus.RUNNING.value or prompt_worker_parked(pid):
+        return
+    ap.status = ProcessStatus.STOPPED.value
+    try:
+        await ap.save()
+    except Exception:  # noqa: BLE001 — the answer stands; a stale status does not undo it
+        logger.warning("agent turn: could not settle process %s", pid, exc_info=True)
 
 
 def _transcript_file(ap):
