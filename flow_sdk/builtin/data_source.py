@@ -2426,7 +2426,7 @@ class DataSource(SetupSkippable, Entity):
 
         if get_probe(provider) is None:
             return None  # no probe defined — not a failure, just unverifiable
-        return await connection_need(provider, driver.cls.connection_probe_url(self.config or {}))
+        return await connection_need(provider, driver.cls.connection_probe_url(self.config or {}), why=_read_why(manifest))
 
     async def _verify_credentials(self) -> Optional[SetupNeedSpec]:
         """For a source that holds datasets' rows (asked only for those: a feed's values may live in a
@@ -2549,12 +2549,19 @@ def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
         return None
     from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
 
-    # What reading through it lets the source do: its first read permission's own reason.
-    why = next((m.why for m in (manifest.permissions or {}).values() if m.why and not m.writes and not m.rows), "")
-    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified", why=why)
+    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified",
+                         why=_read_why(manifest))
 
 
-async def connection_need(provider: str, url: Optional[str] = None) -> Optional[SetupNeedSpec]:
+def _read_why(manifest) -> str:
+    """What reading through a driver's sign-in lets a source do: its first read permission's own reason."""
+    from flow_sdk import permissions  # noqa: PLC0415
+
+    name = getattr(manifest, "name", "") or ""
+    return next((need.why for need in permissions.needs_of_driver(name, writes=False) if need.why), "")
+
+
+async def connection_need(provider: str, url: Optional[str] = None, why: str = "") -> Optional[SetupNeedSpec]:
     """None when ``provider``'s sign-in works for what runs here (``provider_probe.connection_answer``);
     otherwise the need it is — the answer a source's Verify and its setup step's sign-in node both give."""
     from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
@@ -2568,7 +2575,7 @@ async def connection_need(provider: str, url: Optional[str] = None) -> Optional[
     state = "missing" if code == "missing_token" else (code or "refused")
     title = await _provider_title(provider)
     detail = "" if state == "missing" else str(data.get("detail") or f"{title} did not accept the sign-in")
-    return _sign_in_need(provider, title, state, detail)
+    return _sign_in_need(provider, title, state, detail, why)
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:

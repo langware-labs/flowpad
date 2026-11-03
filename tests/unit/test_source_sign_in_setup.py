@@ -150,7 +150,7 @@ async def test_a_setup_that_fell_short_stays_the_record_after_the_load_pass(tmp_
     assert core_setup.read_setup(root).state is SetupState.FAILED
 
 
-async def test_the_declared_sign_in_says_what_it_is_for_in_the_drivers_words():
+async def test_the_sign_in_says_what_it_is_for_in_the_drivers_words_before_and_after_verify(probe):
     from types import SimpleNamespace
 
     from flow_sdk.builtin.data_source import _declared_sign_in
@@ -164,5 +164,10 @@ async def test_the_declared_sign_in_says_what_it_is_for_in_the_drivers_words():
                                             "why": "Read the repository's files."},
         },
     })
-    need = _declared_sign_in(SimpleNamespace(manifest=manifest))
-    assert need.why == "Read the repository's files."  # the read reason, never the write-back one
+    DataDriver.register(DataDriver.for_class(_SignedIn, manifest, kind="datasource.test.signin"))
+    read = "Read the repository's files."  # the read reason, never the write-back one
+    assert _declared_sign_in(SimpleNamespace(manifest=manifest)).why == read
+    src = await _source()
+    await src.verify()
+    (need,) = src.setup_needs
+    assert need.why == read
