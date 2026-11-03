@@ -21,10 +21,12 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from flow_sdk import toplog
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.user import User
@@ -742,6 +744,7 @@ async def _try_send_reply_via_hub(
         logger.warning("[append_conversation] hub add_message failed: %s", e, exc_info=True)
         return None
     fm_payload = (resp or {}).get("data") or {}
+    t_hub = time.monotonic()  # the WS round trip itself is the `hub` tag's `ws add_message` line
 
     hub_fm_id = fm_payload.get("id")
     if not hub_fm_id:
@@ -778,8 +781,16 @@ async def _try_send_reply_via_hub(
     except Exception as e:
         logger.warning("[append_conversation] hub-side reply materialize failed: %s", e, exc_info=True)
         # Hub got the message; local UI will pick it up on the next refetch.
+    t_mat = time.monotonic()
 
     conv_after = await Conversation.get_one({"id": conv_id})
+    toplog.log(
+        "conversation.send",
+        "send conv=%s materialize ms=%.0f reread ms=%.0f",
+        conv_id[:8],
+        (t_mat - t_hub) * 1000,
+        (time.monotonic() - t_mat) * 1000,
+    )
     message_count = conv_after.message_count if conv_after else 0
     _notify_ui_conversation_updated(conv_id, "", hub_fm_id)
     # Spread the hub-confirmed FlowMessage fields into the response — see
