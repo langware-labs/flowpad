@@ -1109,7 +1109,9 @@ async def ensure_tab_created(
                     dirty = True
         if dirty:
             await existing.save()
-        if reopened:
+        # An explicit opener also moves an already-open tab: a show from another
+        # session lands beside that session. User opens never pass an opener.
+        if reopened or after_tab_id:
             await _place_reopened(existing, after_tab_id)
         if left_host and existing.pointer == pointer:
             await _carry_children_out(existing)

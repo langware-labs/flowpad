@@ -1154,6 +1154,11 @@ msgstr "سيغادر {0} الفريق {1} وستُفقد الميزانية ال
 msgid "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 msgstr "لن يتمكن {0} من الإنفاق من {1} بعد الآن. المال المُنفق بالفعل لن يتأثر."
 
+#. placeholder {0}: signIn.why
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{0} You stay signed in."
+msgstr "{0} ستبقون مسجّلي الدخول."
+
 #. placeholder {0}: m[1]
 #. placeholder {1}: rungWord(i18n, m[2])
 #: src/components/assets/editor/wizard/wizard-texts.ts
@@ -1874,6 +1879,10 @@ msgstr "{title} › رقم Flowpad"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "{title} › Your own number"
 msgstr "{title} › رقمك الخاص"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "{title} › Your own WhatsApp"
+msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "{title} sign-in needs renewing"
@@ -10860,6 +10869,7 @@ msgstr "العرض الشامل للنشر"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
@@ -23128,6 +23138,10 @@ msgstr "فتح جلسة تحليل النسخة"
 msgid "Open the watched file"
 msgstr "فتح الملف المراقَب"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Open the WhatsApp bridge again"
+msgstr ""
+
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open the worker session already started for this spec/plan in this conversation"
 msgstr "فتح جلسة العمل المبدوءة بالفعل لهذه المواصفات/الخطة في هذه المحادثة"
@@ -23641,6 +23655,10 @@ msgstr "ترقيم الصفحات"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Paid by your Flowpad account"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Pair your own phone with this deployment's WhatsApp bridge by scanning a QR code. The bridge connects the number to the hub."
 msgstr ""
 
 #: src/components/graph-workflows/panels/PaletteTab.tsx
@@ -30522,8 +30540,8 @@ msgstr "مؤجّل"
 
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
-msgid "So {name} can read your {0} messages and send your replies as you. You stay signed in."
-msgstr "لكي يتمكن {name} من قراءة رسائل {0} الخاصة بكم وإرسال ردودكم باسمكم. ستبقون مسجّلي الدخول."
+msgid "So {name} can use your {0} account. You stay signed in."
+msgstr "لكي يتمكن {name} من استخدام حساب {0} الخاص بكم. ستبقون مسجّلي الدخول."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
@@ -32754,6 +32772,10 @@ msgstr ""
 #: src/components/assets/editor/GitShareBar.tsx
 msgid "The version that was shared with you"
 msgstr "النسخة التي شوركت معكم"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The WhatsApp bridge opened in a new tab. Add a number there, scan its QR code with WhatsApp on your phone (Linked devices), then connect it to the hub. The number appears here once it connects."
+msgstr ""
 
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
@@ -36922,6 +36944,10 @@ msgstr ""
 
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Your own provider key. Usage is billed to your provider account."
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Your own WhatsApp (scan QR)"
 msgstr ""
 
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx

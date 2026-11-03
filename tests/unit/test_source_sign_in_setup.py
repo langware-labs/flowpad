@@ -148,3 +148,21 @@ async def test_a_setup_that_fell_short_stays_the_record_after_the_load_pass(tmp_
     await asyncio.wait_for(project_setup._RUNS[(project.id, root)], 10)
 
     assert core_setup.read_setup(root).state is SetupState.FAILED
+
+
+async def test_the_declared_sign_in_says_what_it_is_for_in_the_drivers_words():
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.data_source import _declared_sign_in
+
+    manifest = DataDriverSpec.model_validate({
+        "schema": 1, "name": PROVIDER, "auth": {"connector": "github"},
+        "permissions": {
+            "permission.github.repo.write": {"mechanism": "oauth", "oauth_scopes": ["repo"], "writes": True,
+                                             "why": "Push the files back."},
+            "permission.github.repo.read": {"mechanism": "oauth", "oauth_scopes": ["repo"],
+                                            "why": "Read the repository's files."},
+        },
+    })
+    need = _declared_sign_in(SimpleNamespace(manifest=manifest))
+    assert need.why == "Read the repository's files."  # the read reason, never the write-back one

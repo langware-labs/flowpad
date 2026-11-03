@@ -103,10 +103,12 @@ describe('Unreadable definition', () => {
     render(<MemoryRouter><TooltipProvider><AgentProfileEditor agent={agent} mainRef={mainRef} /></TooltipProvider></MemoryRouter>);
     const alert = await screen.findByTestId('agent-definition-error');
     expect(alert).toHaveTextContent('document is not implemented on the hub');
-    expect(screen.getByTestId('agent-places')).toBeInTheDocument();
     // The header carries the agent's channels line (the stream inbox header's bar), definition or not.
     expect(screen.getByTestId('agent-header-channels')).toContainElement(screen.getByTestId('attached-channels'));
     expect(screen.getByTestId('agent-more')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'System prompt' })).toBeDisabled();
+    // Deployments sit on their own tab and stay reachable with no definition.
+    fireEvent.mouseDown(screen.getByTestId('agent-tab-deployments'));
+    expect(await screen.findByTestId('agent-places')).toBeInTheDocument();
   });
 });

@@ -514,6 +514,8 @@ export interface SetupNeed {
   /** `missing`, `needs_reauth`, `refused`. */
   state?: string;
   detail?: string;
+  /** What the sign-in lets the source do, in the driver's own words. */
+  why?: string;
 }
 
 /** What `DataSource.verify` answers — the same shape the stream inbox's attention bar shows in place. */

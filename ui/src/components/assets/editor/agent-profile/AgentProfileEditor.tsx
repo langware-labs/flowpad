@@ -356,9 +356,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
       </div>
 
       {/* ── body: the definition on the left, where it runs on the right ── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_36rem] lg:overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col">
         <section
-          className="flex min-h-0 flex-col gap-5 px-6 py-5 lg:overflow-y-auto"
+          className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
           aria-labelledby="agent-definition"
         >
           {/* On the hub this is the PUBLISHED definition: read it here, edit it on the author's computer. */}
@@ -394,8 +394,19 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               <TabsTrigger value="settings" data-testid="agent-tab-settings">
                 <Trans>Settings</Trans>
               </TabsTrigger>
+              <TabsTrigger value="deployments" data-testid="agent-tab-deployments">
+                <Trans>Deployments</Trans>
+                {places && places.length > 0 && (
+                  <span
+                    className="ms-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold leading-none tabular-nums text-primary-foreground"
+                    data-testid="agent-tab-deployments-count"
+                  >
+                    {places.length}
+                  </span>
+                )}
+              </TabsTrigger>
             </TabsList>
-            <TabsContent value="instructions" className="mt-3 flex min-h-0 flex-1 flex-col">
+            <TabsContent value="instructions" className="mt-3 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden">
               <span className="mb-1 text-xs text-muted-foreground">
                 <Trans>Behaviour — who this agent is, its system prompt</Trans>
               </span>
@@ -637,12 +648,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 )}
               </div>
             </TabsContent>
+            <TabsContent value="deployments" className="mt-3">
+              <AgentPlacesColumn agent={agent} />
+            </TabsContent>
           </Tabs>
         </section>
-
-        <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
-          <AgentPlacesColumn agent={agent} />
-        </aside>
       </div>
       {!hub && <AgentRequestLine agent={agent} displayName={title || (agent.name ?? '')} />}
     </div>

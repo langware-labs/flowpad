@@ -1157,6 +1157,11 @@ msgstr "{0} will leave {1} and lose the budget it gave them. Money already spent
 msgid "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 msgstr "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 
+#. placeholder {0}: signIn.why
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{0} You stay signed in."
+msgstr "{0} You stay signed in."
+
 #. placeholder {0}: m[1]
 #. placeholder {1}: rungWord(i18n, m[2])
 #: src/components/assets/editor/wizard/wizard-texts.ts
@@ -1886,6 +1891,10 @@ msgstr "{title} › Flowpad's number"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "{title} › Your own number"
 msgstr "{title} › Your own number"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "{title} › Your own WhatsApp"
+msgstr "{title} › Your own WhatsApp"
 
 #: src/components/data-sources/source-attention.ts
 msgid "{title} sign-in needs renewing"
@@ -10922,6 +10931,7 @@ msgstr "Deployment WorldView"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
@@ -23304,6 +23314,10 @@ msgstr "Open the transcript analysis session"
 msgid "Open the watched file"
 msgstr "Open the watched file"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Open the WhatsApp bridge again"
+msgstr "Open the WhatsApp bridge again"
+
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open the worker session already started for this spec/plan in this conversation"
 msgstr "Open the worker session already started for this spec/plan in this conversation"
@@ -23821,6 +23835,10 @@ msgstr "pagination"
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Paid by your Flowpad account"
 msgstr "Paid by your Flowpad account"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Pair your own phone with this deployment's WhatsApp bridge by scanning a QR code. The bridge connects the number to the hub."
+msgstr "Pair your own phone with this deployment's WhatsApp bridge by scanning a QR code. The bridge connects the number to the hub."
 
 #: src/components/graph-workflows/panels/PaletteTab.tsx
 msgid "palette"
@@ -30747,8 +30765,8 @@ msgstr "Snoozed"
 
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
-msgid "So {name} can read your {0} messages and send your replies as you. You stay signed in."
-msgstr "So {name} can read your {0} messages and send your replies as you. You stay signed in."
+msgid "So {name} can use your {0} account. You stay signed in."
+msgstr "So {name} can use your {0} account. You stay signed in."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
@@ -32999,6 +33017,10 @@ msgstr "The vault holds no value for it yet — ask the owner to publish it."
 #: src/components/assets/editor/GitShareBar.tsx
 msgid "The version that was shared with you"
 msgstr "The version that was shared with you"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The WhatsApp bridge opened in a new tab. Add a number there, scan its QR code with WhatsApp on your phone (Linked devices), then connect it to the hub. The number appears here once it connects."
+msgstr "The WhatsApp bridge opened in a new tab. Add a number there, scan its QR code with WhatsApp on your phone (Linked devices), then connect it to the hub. The number appears here once it connects."
 
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
@@ -37196,6 +37218,10 @@ msgstr "Your own provider key"
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Your own provider key. Usage is billed to your provider account."
 msgstr "Your own provider key. Usage is billed to your provider account."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Your own WhatsApp (scan QR)"
+msgstr "Your own WhatsApp (scan QR)"
 
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "Your project is behind on {branch}. Pull to bring the shared version in."

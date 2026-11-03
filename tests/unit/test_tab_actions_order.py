@@ -121,6 +121,19 @@ async def test_reopen_keeps_slot() -> None:
     assert await _order(P1) == before == [a.id, b.id, c.id]
 
 
+async def test_open_tab_moves_beside_an_explicit_opener() -> None:
+    # A show of an already-open tab from a second session lands beside that session.
+    first = await ensure_tab("m/first-session", project_id=P1)
+    await ensure_tab("m/filler", project_id=P1)
+    second = await ensure_tab("m/second-session", project_id=P1)
+    shown = await ensure_tab("m/shown", project_id=P1, after_tab_id=first.id)
+    await ensure_tab("m/shown", project_id=P1, after_tab_id=second.id)
+    order = await _order(P1)
+    assert order.index(shown.id) == order.index(second.id) + 1
+    await ensure_tab("m/shown", project_id=P1)  # no opener: keeps its slot
+    assert await _order(P1) == order
+
+
 async def test_order_action_reorders_globally() -> None:
     a = await ensure_tab("d/a", project_id=P1)
     b = await ensure_tab("d/b", project_id=P1)

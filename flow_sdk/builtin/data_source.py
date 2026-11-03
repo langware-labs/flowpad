@@ -2535,10 +2535,10 @@ _NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
 
 
 
-def _sign_in_need(provider: str, title: str, state: str, detail: str = "") -> SetupNeedSpec:
+def _sign_in_need(provider: str, title: str, state: str, detail: str = "", why: str = "") -> SetupNeedSpec:
     """The one shape of "this source needs <title> sign-in" — at create, from Verify and from a setup step alike."""
     return SetupNeedSpec(kind=NEED_CONNECTION, name=provider, title=title, state=state,
-                         detail=detail or f"Needs {title} sign-in")
+                         detail=detail or f"Needs {title} sign-in", why=why)
 
 
 def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
@@ -2549,7 +2549,9 @@ def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
         return None
     from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
 
-    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified")
+    # What reading through it lets the source do: its first read permission's own reason.
+    why = next((m.why for m in (manifest.permissions or {}).values() if m.why and not m.writes and not m.rows), "")
+    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified", why=why)
 
 
 async def connection_need(provider: str, url: Optional[str] = None) -> Optional[SetupNeedSpec]:
