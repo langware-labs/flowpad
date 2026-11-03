@@ -158,3 +158,68 @@ async def test_conversation_default_and_explicit_role_sets(hub):
         "invitation_targets": [{"typeid": str(conv.typeid), "roles": ["runner"]}]
     })
     assert _invitations(hub)[-1]["invitation_targets"][0] == {"typeid": str(conv.typeid), "roles": ["runner"]}
+
+
+def _hub_answering(monkeypatch, calls: _Hub, create_data: dict, fail_on: str | None = None):
+    """Re-point the fake hub: the create answers ``create_data``; a ``/members`` body
+    naming ``fail_on`` is refused."""
+
+    async def fake_send(method, url, **kwargs):
+        url = str(url)
+        calls.append((method, url))
+        calls.bodies.append((url, kwargs.get("json")))
+        body = kwargs.get("json") or {}
+        if fail_on and url.endswith("/members") and body.get("recipient_email") == fail_on:
+            return httpx.Response(403, text=json.dumps({"detail": "no"}), request=httpx.Request(method, url))
+        data = create_data if url.rstrip("/").endswith("/conversation") else {}
+        return httpx.Response(
+            200, text=json.dumps({"status": "success", "data": data}), request=httpx.Request(method, url)
+        )
+
+    monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
+
+
+def _paths(calls: _Hub) -> list[str]:
+    return [p.rstrip("/").rsplit("/", 1)[-1] for _m, p in calls]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_create_that_stamps_the_owner_needs_no_join(hub, monkeypatch):
+    _hub_answering(monkeypatch, hub, {"initiated_by": SHARER})
+    conv = await _conversation()
+
+    await conv.share(recipients=["a@example.com", "b@example.com"])
+
+    assert "join" not in _paths(hub)
+    assert sorted(b["recipient_email"] for b in _invitations(hub)) == ["a@example.com", "b@example.com"]
+    assert conv.initiated_by == SHARER
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_hub_that_does_not_stamp_the_owner_still_gets_the_join(hub, monkeypatch):
+    _hub_answering(monkeypatch, hub, {})
+    conv = await _conversation()
+
+    await conv.share(recipients=["a@example.com"])
+
+    paths = _paths(hub)
+    assert paths.index("join") < paths.index("members")
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_one_refused_invitation_fails_the_share_after_all_were_sent(hub, monkeypatch):
+    from flow_sdk.cloud_client.shared.errors import HubError
+
+    _hub_answering(monkeypatch, hub, {"initiated_by": SHARER}, fail_on="a@example.com")
+    conv = await _conversation()
+
+    with pytest.raises(HubError):
+        await conv.share(recipients=["a@example.com", "b@example.com"])
+
+    assert len(_invitations(hub)) == 2

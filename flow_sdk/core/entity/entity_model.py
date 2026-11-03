@@ -2309,7 +2309,8 @@ class Entity(DBEntity):
         body = self._hub_body()
 
         try:
-            await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
+            created = await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
+            self._adopt_hub_created(created if isinstance(created, dict) else {})
         except HubError as e:
             # A 409 says only that SOME row holds this id — the hub answers it whoever owns
             # that row. Ours (``Conversation.share`` re-runs ``super().share()`` on every
@@ -2332,6 +2333,9 @@ class Entity(DBEntity):
         if recursive:
             await self._share_children()
         return self
+
+    def _adopt_hub_created(self, created: dict) -> None:
+        """Take what the hub stamped on the row it just created (its create answer). No-op here."""
 
     async def confirm_hub_row_is_ours(self, *, remedy: str = "") -> None:
         """After a create answered 409: check the row at this id is one this account can reach.

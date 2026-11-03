@@ -13,6 +13,12 @@ vi.mock('@src/components/stream-inbox-view/AttachedChannelsBar', () => ({
 }));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => <div data-testid="agent-places" /> }));
 vi.mock('@src/components/assets/editor/agent-profile/use-agent-mcp-sync', () => ({ useAgentMcpSync: () => undefined }));
+// Milkdown needs a real browser; a textarea stands in for the markdown editor.
+vi.mock('@src/components/milkdown-editor/MilkdownEditor', () => ({
+  MilkdownEditor: ({ content, onChange, editorMode }: { content: string; onChange: (v: string) => void; editorMode: string }) => (
+    <textarea aria-label="System prompt" value={content} disabled={editorMode === 'view'} onChange={(e) => onChange(e.target.value)} />
+  ),
+}));
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 

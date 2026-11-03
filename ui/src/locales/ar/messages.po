@@ -10901,8 +10901,8 @@ msgstr "وصف التطبيق المنطقي أو الخدمة أو المورد
 #~ msgstr "وصف المطلوب — ما الذي حدث، وما كان متوقعاً، وما جرى تجربته حتى الآن."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Describe who this agent is, what it does, and what it must never do…"
-msgstr "صِفوا هوية هذا الوكيل وما يقوم به وما يجب ألّا يفعله أبداً…"
+#~ msgid "Describe who this agent is, what it does, and what it must never do…"
+#~ msgstr "صِفوا هوية هذا الوكيل وما يقوم به وما يجب ألّا يفعله أبداً…"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
@@ -16394,6 +16394,7 @@ msgstr "تعليمات (مطالبة الوكيل)"
 msgid "instruction ref"
 msgstr "مرجع التعليمات"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -19084,7 +19085,6 @@ msgstr "شهريًا"
 msgid "more"
 msgstr "المزيد"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/connections-manager.tsx
@@ -19266,8 +19266,8 @@ msgid "Name — the app's folder name, used to address it"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields"
-msgstr "الاسم · الوصف · المقدمة · الموجّه التلقائي · التشغيل التلقائي · مساعد Flowpad · الحقول المعلنة"
+#~ msgid "name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields"
+#~ msgstr "الاسم · الوصف · المقدمة · الموجّه التلقائي · التشغيل التلقائي · مساعد Flowpad · الحقول المعلنة"
 
 #~ msgid "name · description · intro · auto-launch · Flowpad assistant · declared fields"
 #~ msgstr ""
@@ -25465,6 +25465,10 @@ msgstr "جارٍ قراءة المشاريع…"
 #~ msgid "Reading setup/recovery.md first · {toolCount} steps so far"
 #~ msgstr ""
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "Reading the current allocation…"
+msgstr ""
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Reading the data model…"
 msgstr "جارٍ قراءة نموذج البيانات…"
@@ -29301,6 +29305,7 @@ msgstr "جاري إعداد المشروع…"
 msgid "Setting up…"
 msgstr "جارٍ الإعداد…"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceSetupButton.tsx

@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
-from pydantic import computed_field, field_validator, model_validator
+from pydantic import PrivateAttr, computed_field, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
@@ -171,6 +171,7 @@ class Conversation(ProjectedFields, Entity):
     # conversation that never left this machine (its owner is this machine's user: ``remote`` is false)
     # and for hub rows without one (share/diagnostics). ``created_by`` stays the row's own attribution.
     initiated_by: Optional[str] = APIField(default=None, sharing=Sharing.HUB_READ)
+    _owner_stamped_by_create: bool = PrivateAttr(default=False)
     # Whose stream inbox lists this conversation — the local user's or an Agent's. Not
     # ``initiated_by`` (the hub's owner, a bare user uuid) and not the
     # roster's ``owner`` role (hub-side authz): this is the LOCAL partition key
@@ -531,6 +532,12 @@ class Conversation(ProjectedFields, Entity):
                 return proj
         return fallback
 
+    def _adopt_hub_created(self, created: dict) -> None:
+        owner = created.get("initiated_by")
+        if owner:
+            self.initiated_by = owner
+            self._owner_stamped_by_create = True
+
     async def share(
         self,
         recipients: Optional[List[str]] = None,
@@ -593,6 +600,9 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
+        # Set only when THIS call's create answer says the hub already stamped us
+        # owner (``initiated_by``) — then the ``join`` below would be a no-op round trip.
+        self._owner_stamped_by_create = False
         if getattr(self, "remote", False) is not True:
             await super().share()  # a row already on the hub needs no second create (or file upload)
         if not recipients and not recipient_user_ids and not principals:
@@ -610,7 +620,10 @@ class Conversation(ProjectedFields, Entity):
         # row. Local context linking, pending-message delivery, and asset
         # sharing can all block or fail, so none may sit in this ownership
         # gap and leave an undeletable conversation behind.
-        await HubProxy.call("POST", self.type, self.id, "join", payload={}, strict=True)
+        # A hub whose create stamps the owner (``on_api_created``) says so in its answer;
+        # an older hub does not, and still needs the join.
+        if not self._owner_stamped_by_create:
+            await HubProxy.call("POST", self.type, self.id, "join", payload={}, strict=True)
 
         # Link each shared-context doc to this conversation locally (the hub
         # doesn't host doc types). This makes the doc effective-remote so a
@@ -661,31 +674,27 @@ class Conversation(ProjectedFields, Entity):
             body.update(extra)  # message, expiration_at, transfer fields, a caller's callback_override
             return body
 
-        # One invitation per recipient.
+        # One invitation per person/group. They are independent of each other, so they
+        # go out together; every one is awaited and the first refusal is raised.
+        bodies: list[dict] = []
         for email in recipients or []:
-            if not email or not isinstance(email, str):
-                continue
-            email = normalize_email(email)
-            if not email:
-                continue
-            await HubProxy.call(
-                "POST", self.type, self.id, "members", payload=_membership_body(recipient_email=email), strict=True
-            )
-
-        # One invitation per contact we can only name by hub id.
+            email = normalize_email(email) if email and isinstance(email, str) else ""
+            if email:
+                bodies.append(_membership_body(recipient_email=email))
         for value in recipient_user_ids or []:
             user_id = recipient_user_id(value)
-            if not user_id:
-                continue
-            await HubProxy.call(
-                "POST", self.type, self.id, "members", payload=_membership_body(recipient_user_id=user_id), strict=True
-            )
-        # One grant per group principal (a team).
+            if user_id:
+                bodies.append(_membership_body(recipient_user_id=user_id))
         for principal in principals or []:
             if principal:
-                await HubProxy.call(
-                    "POST", self.type, self.id, "members", payload=_membership_body(principal=principal), strict=True
-                )
+                bodies.append(_membership_body(principal=principal))
+        results = await asyncio.gather(
+            *(HubProxy.call("POST", self.type, self.id, "members", payload=b, strict=True) for b in bodies),
+            return_exceptions=True,
+        )
+        failure = next((r for r in results if isinstance(r, BaseException)), None)
+        if failure is not None:
+            raise failure
         return self
 
     async def _link_context_to_conversation(self, refs=None, someone_typeid: str | None = None) -> None:

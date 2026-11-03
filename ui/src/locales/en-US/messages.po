@@ -10964,8 +10964,8 @@ msgstr "Describe the logical application, service, resource, or content and its 
 #~ msgstr "Describe what you need — what happened, what you expected, and anything you have already tried."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Describe who this agent is, what it does, and what it must never do…"
-msgstr "Describe who this agent is, what it does, and what it must never do…"
+#~ msgid "Describe who this agent is, what it does, and what it must never do…"
+#~ msgstr "Describe who this agent is, what it does, and what it must never do…"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
@@ -16507,6 +16507,7 @@ msgstr "instruction (agent prompt)"
 msgid "instruction ref"
 msgstr "instruction ref"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -19226,7 +19227,6 @@ msgstr "Monthly"
 msgid "more"
 msgstr "more"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/connections-manager.tsx
@@ -19410,8 +19410,8 @@ msgid "Name — the app's folder name, used to address it"
 msgstr "Name — the app's folder name, used to address it"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields"
-msgstr "name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields"
+#~ msgid "name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields"
+#~ msgstr "name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields"
 
 #~ msgid "name · description · intro · auto-launch · Flowpad assistant · declared fields"
 #~ msgstr "name · description · intro · auto-launch · Flowpad assistant · declared fields"
@@ -25655,6 +25655,10 @@ msgstr "Reading projects…"
 #~ msgid "Reading setup/recovery.md first · {toolCount} steps so far"
 #~ msgstr "Reading setup/recovery.md first · {toolCount} steps so far"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+msgid "Reading the current allocation…"
+msgstr "Reading the current allocation…"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Reading the data model…"
 msgstr "Reading the data model…"
@@ -29521,6 +29525,7 @@ msgstr "Setting up your project…"
 msgid "Setting up…"
 msgstr "Setting up…"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceSetupButton.tsx
