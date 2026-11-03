@@ -5527,6 +5527,7 @@ msgid "Browse…"
 msgstr "استعراض…"
 
 #: src/components/links/LinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
 msgstr "المتصفح"
@@ -31583,6 +31584,7 @@ msgstr "نظام"
 msgid "System"
 msgstr "نظام التشغيل"
 
+#: src/components/links/LinkMenu.tsx
 #: src/components/links/LinkMenu.tsx
 msgid "System default"
 msgstr "افتراضي النظام"

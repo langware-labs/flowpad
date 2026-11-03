@@ -204,4 +204,22 @@ describe('approval before running', () => {
     await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId('command-confirm')).toBeNull();
   });
+
+  it('shows the remembered browser profile, and Run opens the pages there', async () => {
+    mocks.prefs.set(PrefKey.COMMAND_LINK_BROWSER, { browser: 'chrome', profile: 'Profile 1' });
+    render(<Harness />);
+    click();
+    expect((await screen.findByTestId('command-confirm-browser')).textContent).toContain('Work — me@work.test');
+    fireEvent.click(screen.getByTestId('command-confirm-confirm'));
+    await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledWith('BROWSER=x gcloud auth login'));
+    expect(mocks.prefs.get(PrefKey.COMMAND_LINK_BROWSER)).toEqual({ browser: 'chrome', profile: 'Profile 1' });
+  });
+
+  it('with nothing remembered, the picker reads System default and the command runs as written', async () => {
+    render(<Harness />);
+    click();
+    expect((await screen.findByTestId('command-confirm-browser')).textContent).toContain('System default');
+    fireEvent.click(screen.getByTestId('command-confirm-confirm'));
+    await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledWith('gcloud auth login'));
+  });
 });

@@ -5527,6 +5527,7 @@ msgid "Browse…"
 msgstr "דפדפו…"
 
 #: src/components/links/LinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
 msgstr "דפדפן"
@@ -31579,6 +31580,7 @@ msgstr "מערכת"
 msgid "System"
 msgstr "מערכת"
 
+#: src/components/links/LinkMenu.tsx
 #: src/components/links/LinkMenu.tsx
 msgid "System default"
 msgstr "ברירת המחדל של המערכת"

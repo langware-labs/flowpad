@@ -5565,6 +5565,7 @@ msgid "Browse…"
 msgstr "Browse…"
 
 #: src/components/links/LinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
 msgstr "Browser"
@@ -31816,6 +31817,7 @@ msgstr "system"
 msgid "System"
 msgstr "System"
 
+#: src/components/links/LinkMenu.tsx
 #: src/components/links/LinkMenu.tsx
 msgid "System default"
 msgstr "System default"
