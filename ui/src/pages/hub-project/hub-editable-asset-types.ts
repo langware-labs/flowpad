@@ -13,10 +13,15 @@ type LegacyAssetSchema = JSONSchemaProperty & {
   };
 };
 
-/** Registry-owned editable Git assets, plus the old Hub schema compatibility shape. */
+/**
+ * Registry-owned editable Git assets, plus the old Hub schema compatibility shape.
+ *
+ * The schemas are read from each TypeInfo's own `schema`. `legacySchemas` (bootstrap `schemas`)
+ * is only for an older hub that ships no `types` — a current hub no longer sends that copy.
+ */
 export function hubEditableAssetTypes(
-  typeInfos: Array<Pick<TypeInfo, 'type_name' | 'cloud_file_transport'>>,
-  schemas: JSONSchemaProperty[] = [],
+  typeInfos: Array<Pick<TypeInfo, 'type_name' | 'cloud_file_transport'> & { schema?: JSONSchemaProperty | null }>,
+  legacySchemas: JSONSchemaProperty[] = [],
 ): string[] {
   const types = new Set(
     typeInfos
@@ -24,6 +29,8 @@ export function hubEditableAssetTypes(
       .map((info) => info.type_name),
   );
 
+  const fromTypes = typeInfos.flatMap((info) => (info.schema ? [info.schema] : []));
+  const schemas = fromTypes.length > 0 ? fromTypes : legacySchemas;
   for (const schema of schemas as LegacyAssetSchema[]) {
     const type = schema.properties?.type?.const;
     // Legacy Hub schemas predate TypeInfo transport metadata and are deltas:

@@ -128,46 +128,24 @@ describe('assets tab chip title follows scope', () => {
 });
 
 describe('content tab entity location icons', () => {
+  // The tab icon carries no local/cloud marker for now (7289d585f): wherever the entity lives,
+  // inactive or focused, the icon is the plain type icon. The tooltip still says where it is.
   it.each([
-    [true, 'cloud'],
-    [false, 'local'],
-    [undefined, 'unknown'],
-  ] as const)('renders inactive target_remote=%s as %s', (remote, expected) => {
-    const { tab } = contentTab(remote);
-    render(<Strip tabs={[tab]} />);
+    [true, undefined],
+    [false, undefined],
+    [undefined, undefined],
+    [true, false],
+    [false, true],
+  ] as const)('target_remote=%s, focus remote=%s: the icon has no location marker', (targetRemote, focusRemote) => {
+    const { tab, dock } = contentTab(targetRemote, focusRemote);
+    render(<Strip tabs={[tab]} initialEntry={focusRemote === undefined ? undefined : dock.toUrl()} />);
 
     const chip = screen.getByTestId(`tab-content-${tab.dockPointer?.tabHash}`);
     const icon = chip.querySelector('[data-entity-location]');
-    expect(icon).toHaveAttribute('data-entity-location', expected);
-    expect(chip).not.toHaveAttribute('aria-label');
-
-    const type = icon?.querySelector('[data-entity-type-icon]');
-    expect(type).toBeTruthy();
-    expect(icon?.firstElementChild).toBe(
-      expected === 'unknown'
-        ? type
-        : icon?.querySelector('[data-location-glyph]'),
-    );
+    expect(icon).toHaveAttribute('data-entity-location', 'unknown');
+    expect(icon?.querySelector('[data-location-glyph]')).toBeNull();
+    expect(icon?.firstElementChild).toBe(icon?.querySelector('[data-entity-type-icon]'));
   });
-
-  it.each([
-    [true, false, 'local'],
-    [false, true, 'cloud'],
-    [true, undefined, 'cloud'],
-    [undefined, undefined, 'unknown'],
-  ] as const)(
-    'active focus remote=%s takes precedence over target_remote=%s',
-    (targetRemote, focusRemote, expected) => {
-      const { tab, dock } = contentTab(targetRemote, focusRemote);
-      render(<Strip tabs={[tab]} initialEntry={dock.toUrl()} />);
-
-      const chip = screen.getByTestId(`tab-content-${tab.dockPointer?.tabHash}`);
-      expect(chip.querySelector('[data-entity-location]')).toHaveAttribute(
-        'data-entity-location',
-        expected,
-      );
-    },
-  );
 
   it('keeps one host tooltip with exact known location copy', async () => {
     setDev(true); // Advanced UI == developer mode
