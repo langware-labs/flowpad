@@ -5,19 +5,19 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
-from pydantic import PrivateAttr, computed_field, field_validator, model_validator
+from pydantic import computed_field, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
-from flow_sdk.sources.values.items import MessageMarkSpec
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.schema.data_spec.channel_spec import ChannelSpec
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
+from flow_sdk.sources.values.items import MessageMarkSpec
 from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.tags.envelope import parse_target
 
@@ -171,7 +171,6 @@ class Conversation(ProjectedFields, Entity):
     # conversation that never left this machine (its owner is this machine's user: ``remote`` is false)
     # and for hub rows without one (share/diagnostics). ``created_by`` stays the row's own attribution.
     initiated_by: Optional[str] = APIField(default=None, sharing=Sharing.HUB_READ)
-    _owner_stamped_by_create: bool = PrivateAttr(default=False)
     # Whose stream inbox lists this conversation — the local user's or an Agent's. Not
     # ``initiated_by`` (the hub's owner, a bare user uuid) and not the
     # roster's ``owner`` role (hub-side authz): this is the LOCAL partition key
@@ -536,7 +535,6 @@ class Conversation(ProjectedFields, Entity):
         owner = created.get("initiated_by")
         if owner:
             self.initiated_by = owner
-            self._owner_stamped_by_create = True
 
     async def share(
         self,
@@ -600,10 +598,8 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        # Set only when THIS call's create answer says the hub already stamped us
-        # owner (``initiated_by``) — then the ``join`` below would be a no-op round trip.
-        self._owner_stamped_by_create = False
-        if getattr(self, "remote", False) is not True:
+        created_here = getattr(self, "remote", False) is not True
+        if created_here:
             await super().share()  # a row already on the hub needs no second create (or file upload)
         if not recipients and not recipient_user_ids and not principals:
             # Link each shared-context doc to this conversation locally (the hub
@@ -622,7 +618,8 @@ class Conversation(ProjectedFields, Entity):
         # gap and leave an undeletable conversation behind.
         # A hub whose create stamps the owner (``on_api_created``) says so in its answer;
         # an older hub does not, and still needs the join.
-        if not self._owner_stamped_by_create:
+        # A local conversation has no ``initiated_by`` until this create's answer sets it.
+        if not (created_here and self.initiated_by):
             await HubProxy.call("POST", self.type, self.id, "join", payload={}, strict=True)
 
         # Link each shared-context doc to this conversation locally (the hub
@@ -678,8 +675,7 @@ class Conversation(ProjectedFields, Entity):
         # go out together; every one is awaited and the first refusal is raised.
         bodies: list[dict] = []
         for email in recipients or []:
-            email = normalize_email(email) if email and isinstance(email, str) else ""
-            if email:
+            if isinstance(email, str) and (email := normalize_email(email)):
                 bodies.append(_membership_body(recipient_email=email))
         for value in recipient_user_ids or []:
             user_id = recipient_user_id(value)
