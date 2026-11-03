@@ -118,12 +118,6 @@ export function claimTitle(claim: InboundClaim): string {
   return claim.claim?.key ?? '';
 }
 
-/** The "HH:MM" a live counter counts from. */
-export function clockTime(epochSeconds: number): string {
-  const d = new Date(epochSeconds * 1000);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
 /** The vendors the hub chains (`webhook/@<provider>`), in the order the screen offers them. */
 export const INBOUND_PROVIDERS = ['whatsapp', 'telegram', 'slack'] as const;
 export type InboundProvider = (typeof INBOUND_PROVIDERS)[number];

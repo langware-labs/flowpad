@@ -1,4 +1,4 @@
-import { type Agent, type AgentMailboxState } from '@sdk';
+import { type Agent, type AgentMailboxState, type MailboxAllocation } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 
@@ -14,15 +14,18 @@ import { notify } from '@src/notifications';
  * The one allocation path for every surface that offers "create an email" — the agent
  * mailbox settings and the add-channel picker — so they cannot drift on the login gate or the error.
  */
-export function useAllocateAgentMailbox(): (agent: Agent) => Promise<AgentMailboxState | null> {
+export function useAllocateAgentMailbox(): (
+  agent: Agent,
+  options?: MailboxAllocation,
+) => Promise<AgentMailboxState | null> {
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
   return useCallback(
-    async (agent: Agent) => {
+    async (agent: Agent, options: MailboxAllocation = {}) => {
       try {
         const gate = await ensureCloudLogin();
         if (!gate.ok) throw new Error(gate.error);
-        return await agent.allocateMailbox();
+        return await agent.allocateMailbox(options);
       } catch (error) {
         // `forceToast` because this is a button the person just pressed: an alert-level
         // notification is otherwise filed into the footer popover and never shown outside

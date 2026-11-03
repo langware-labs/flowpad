@@ -1,3 +1,4 @@
+import { canonicalChannelsDockPath } from '@src/navigation/channels-dock-canonicalization';
 import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
 import { canonicalProcessDockPath, canonicalVibeHostPath } from '@src/navigation/process-dock-canonicalization';
 import { canonicalWorkspaceDisplayPath } from '@src/navigation/workspace-display-canonicalization';
@@ -17,6 +18,7 @@ type Canonicalizer = (pathname: string, search: string) => string | null;
  *  - the workspace display host only exists with the display pane on screen
  *  - retired WorldView spellings → the WorldView dock
  *  - retired credential views (environment / connections / api-keys) → credentials/<subview>
+ *  - retired Data sources › Channels → the one Channels screen (inbound)
  */
 const CANONICALIZERS: readonly Canonicalizer[] = [
   canonicalProcessDockPath,
@@ -24,6 +26,7 @@ const CANONICALIZERS: readonly Canonicalizer[] = [
   canonicalWorkspaceDisplayPath,
   canonicalWorldViewDockPath,
   canonicalCredentialsDockPath,
+  canonicalChannelsDockPath,
 ];
 
 export function canonicalizeDockUrl(pathname: string, search: string): string | null {

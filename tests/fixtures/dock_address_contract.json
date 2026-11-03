@@ -1283,6 +1283,25 @@
       "page": "desk",
       "view_type": "llm-sources",
       "pointer": "endpoints"
+    },
+    {
+      "name": "hub channels list",
+      "view_type": "inbound",
+      "page": "hub",
+      "url": "/dock/hub/inbound"
+    },
+    {
+      "name": "hub channel routing",
+      "view_type": "inbound",
+      "page": "hub",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/hub/inbound/550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "desk channel routing (an inbox)",
+      "view_type": "inbound",
+      "pointer": "mailbox-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/inbound/mailbox-550e8400-e29b-41d4-a716-446655440000"
     }
   ]
 }

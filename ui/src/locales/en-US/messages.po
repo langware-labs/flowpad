@@ -577,6 +577,11 @@ msgstr "{0} added, {1} updated in {teamName}."
 msgid "{0} allocation"
 msgstr "{0} allocation"
 
+#. placeholder {0}: m.allowedSenders.length
+#: src/components/inbound/InboundView.tsx
+msgid "{0} allowed senders"
+msgstr "{0} allowed senders"
+
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #~ msgid "{0} already has a cloud machine"
 #~ msgstr "{0} already has a cloud machine"
@@ -1037,6 +1042,11 @@ msgstr "{0} restarted"
 #: src/components/data-sources/HostedDatasets.tsx
 #~ msgid "{0} rows"
 #~ msgstr "{0} rows"
+
+#. placeholder {0}: n.rules.length
+#: src/components/inbound/InboundView.tsx
+msgid "{0} rules"
+msgstr "{0} rules"
 
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
@@ -1561,8 +1571,8 @@ msgid "{messageCount} msgs"
 msgstr "{messageCount} msgs"
 
 #: src/components/inbound/InboundView.tsx
-msgid "{misroutes} misroutes"
-msgstr "{misroutes} misroutes"
+#~ msgid "{misroutes} misroutes"
+#~ msgstr "{misroutes} misroutes"
 
 #: src/components/automations/automation-words.ts
 msgid "{ms} ms"
@@ -1893,8 +1903,8 @@ msgid "{title} › Your own number"
 msgstr "{title} › Your own number"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "{title} › Your own WhatsApp"
-msgstr "{title} › Your own WhatsApp"
+#~ msgid "{title} › Your own WhatsApp"
+#~ msgstr "{title} › Your own WhatsApp"
 
 #: src/components/data-sources/source-attention.ts
 msgid "{title} sign-in needs renewing"
@@ -2060,6 +2070,10 @@ msgstr "← All sources"
 msgid "← Back"
 msgstr "← Back"
 
+#: src/components/inbound/InboundView.tsx
+msgid "← Channels"
+msgstr "← Channels"
+
 #. placeholder {0}: el.absRow
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "→ {0} (drifted)"
@@ -2087,6 +2101,10 @@ msgstr "+ Add note"
 #: src/components/inbound/InboundView.tsx
 msgid "+ Add rule"
 msgstr "+ Add rule"
+
+#: src/components/inbound/InboundView.tsx
+msgid "+ Add sender"
+msgstr "+ Add sender"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "+ Allocate"
@@ -2276,6 +2294,10 @@ msgstr "${cost} · {sessions} sessions · {duration} active · {prompts} prompts
 msgid "$/day"
 msgstr "$/day"
 
+#: src/components/inbound/InboundView.tsx
+msgid "1 allowed sender"
+msgstr "1 allowed sender"
+
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "1 change not applied"
 msgstr "1 change not applied"
@@ -2322,6 +2344,10 @@ msgstr "1 problem"
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "1 row"
 msgstr "1 row"
+
+#: src/components/inbound/InboundView.tsx
+msgid "1 rule"
+msgstr "1 rule"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "1 week"
@@ -2389,8 +2415,8 @@ msgid "3 days"
 msgstr "3 days"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "3. Each message goes to the rule that matches it, or to the fallback below. Replies go out through your server with the same token."
-msgstr "3. Each message goes to the rule that matches it, or to the fallback below. Replies go out through your server with the same token."
+#~ msgid "3. Each message goes to the rule that matches it, or to the fallback below. Replies go out through your server with the same token."
+#~ msgstr "3. Each message goes to the rule that matches it, or to the fallback below. Replies go out through your server with the same token."
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "3. Your browser will show a code — paste it here"
@@ -2574,6 +2600,10 @@ msgstr "A project with that name exists"
 #~ msgid "A public desk needs no connection. Connect GitHub to browse your own repos."
 #~ msgstr "A public desk needs no connection. Connect GitHub to browse your own repos."
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "A real email address the hub creates for one of your agents. Nothing to set up."
+msgstr "A real email address the hub creates for one of your agents. Nothing to set up."
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "A request just failed because {name} isn't signed in on this machine."
 #~ msgstr "A request just failed because {name} isn't signed in on this machine."
@@ -2658,8 +2688,8 @@ msgid "a wizard name"
 msgstr "a wizard name"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours."
-msgstr "A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours."
+#~ msgid "A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours."
+#~ msgstr "A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours."
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A workspace is a folder of related projects. It starts empty."
@@ -3038,6 +3068,8 @@ msgid "Add Bookmark"
 msgstr "Add Bookmark"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "Add channel"
 msgstr "Add channel"
 
@@ -3464,6 +3496,7 @@ msgstr "agent"
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -3643,7 +3676,7 @@ msgstr "all"
 msgid "All"
 msgstr "All"
 
-#. placeholder {0}: numbers.length
+#. placeholder {0}: numbers.length + mailboxes.length
 #: src/components/inbound/InboundView.tsx
 msgid "All {0}"
 msgstr "All {0}"
@@ -3880,6 +3913,10 @@ msgstr "Allowed Domains"
 msgid "Allowed senders"
 msgstr "Allowed senders"
 
+#: src/components/inbound/InboundView.tsx
+msgid "Allowed senders — empty means nobody"
+msgstr "Allowed senders — empty means nobody"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -4018,6 +4055,14 @@ msgstr "An agent is repairing the app"
 #: src/components/automations/KindGallery.tsx
 msgid "An agent reads the task and tells you if it needs you."
 msgstr "An agent reads the task and tells you if it needs you."
+
+#: src/components/inbound/InboundView.tsx
+msgid "An allowed sender"
+msgstr "An allowed sender"
+
+#: src/components/inbound/InboundView.tsx
+msgid "An email address"
+msgstr "An email address"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
@@ -4217,6 +4262,11 @@ msgstr "Answer or ask the agent…"
 msgid "Answered by"
 msgstr "Answered by"
 
+#. placeholder {0}: m.agentName
+#: src/components/inbound/InboundView.tsx
+msgid "answered by {0}"
+msgstr "answered by {0}"
+
 #~ msgid "Answered by {answeringName}"
 #~ msgstr "Answered by {answeringName}"
 
@@ -4273,6 +4323,11 @@ msgstr "Any time"
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "anyone"
 msgstr "anyone"
+
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
+msgid "Anyone else"
+msgstr "Anyone else"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see it; launching still needs the project shared with them."
@@ -5263,6 +5318,7 @@ msgstr "AWS region for Bedrock"
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/journey/JourneyTray.tsx
@@ -5733,6 +5789,10 @@ msgstr "Bullet list"
 
 #~ msgid "Bundle ready — download started."
 #~ msgstr "Bundle ready — download started."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Business Settings › System users › Generate token — never expires, with whatsapp_business_messaging. Stored write-only."
+msgstr "Business Settings › System users › Generate token — never expires, with whatsapp_business_messaging. Stored write-only."
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "By"
@@ -7737,9 +7797,8 @@ msgstr "Connect a data source for me and help me define what I want out of each 
 #~ msgstr "Connect a data source to make it available here"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-#: src/components/inbound/InboundView.tsx
-msgid "Connect a number"
-msgstr "Connect a number"
+#~ msgid "Connect a number"
+#~ msgstr "Connect a number"
 
 #: src/components/account/settings-section.tsx
 msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
@@ -9646,8 +9705,8 @@ msgid "Count: {counter}"
 msgstr "Count: {counter}"
 
 #: src/components/inbound/InboundView.tsx
-msgid "Counted live while this page is open — not stored"
-msgstr "Counted live while this page is open — not stored"
+#~ msgid "Counted live while this page is open — not stored"
+#~ msgstr "Counted live while this page is open — not stored"
 
 #: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
 msgid "Country code"
@@ -9773,6 +9832,10 @@ msgstr "Create File"
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 msgid "Create Folder"
 msgstr "Create Folder"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Create inbox"
+msgstr "Create inbox"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Create it"
@@ -10295,6 +10358,10 @@ msgstr "default"
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Default"
 msgstr "Default"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Default — dropped unless a rule matches"
+msgstr "Default — dropped unless a rule matches"
 
 #: src/components/inbound/use-inbound.ts
 msgid "Default — the number's fallback"
@@ -11452,6 +11519,10 @@ msgstr "Display"
 msgid "Display history"
 msgstr "Display history"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Display name"
+msgstr "Display name"
+
 #: src/components/ui/sidebar.tsx
 msgid "Displays the mobile sidebar."
 msgstr "Displays the mobile sidebar."
@@ -12059,10 +12130,23 @@ msgstr "Effort"
 msgid "Element"
 msgstr "Element"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "Email"
 msgstr "Email"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Email › Flowpad inbox"
+msgstr "Email › Flowpad inbox"
+
+#. placeholder {0}: mailboxes.length
+#: src/components/inbound/InboundView.tsx
+msgid "Email {0}"
+msgstr "Email {0}"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Email {0} an invitation to {teamName}"
@@ -12769,8 +12853,8 @@ msgstr "Everyone's budget inside {0} is deleted with it. This cannot be undone."
 #~ msgstr "Everything available is already connected."
 
 #: src/components/inbound/InboundView.tsx
-msgid "Everything else to this number"
-msgstr "Everything else to this number"
+#~ msgid "Everything else to this number"
+#~ msgstr "Everything else to this number"
 
 #: src/components/automations/BusView.tsx
 msgid "Everything Flowpad announces, who listens, and what they do. Counts are since the app started."
@@ -12916,6 +13000,10 @@ msgstr "exit {0} · {1}"
 #: src/components/code-editor/SnippetView.tsx
 #~ msgid "exit {0} · {1}s"
 #~ msgstr "exit {0} · {1}s"
+
+#: src/components/ui/full-screen.tsx
+msgid "Exit full screen"
+msgstr "Exit full screen"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Exit local"
@@ -13557,16 +13645,16 @@ msgid "Failure"
 msgstr "Failure"
 
 #: src/components/inbound/InboundView.tsx
-msgid "fallback"
-msgstr "fallback"
+#~ msgid "fallback"
+#~ msgstr "fallback"
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "Fallback — everything else"
 msgstr "Fallback — everything else"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Fallback — everything no rule matches goes to"
-msgstr "Fallback — everything no rule matches goes to"
+#~ msgid "Fallback — everything no rule matches goes to"
+#~ msgstr "Fallback — everything no rule matches goes to"
 
 #: src/components/llm-endpoints/ChainTree.tsx
 msgid "Fallback order under its parent"
@@ -14290,6 +14378,16 @@ msgstr "FlowPad didn't open? Install it, then come back to this page."
 msgid "Flowpad git"
 msgstr "Flowpad git"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/InboundView.tsx
+msgid "Flowpad inbox"
+msgstr "Flowpad inbox"
+
+#. placeholder {0}: routedMailbox.agentName
+#: src/components/inbound/InboundView.tsx
+msgid "Flowpad inbox · only allowed senders reach {0}"
+msgstr "Flowpad inbox · only allowed senders reach {0}"
+
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -14648,6 +14746,14 @@ msgstr "Full environment variable dictionary"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Full path to the plan .md file written by the agent"
 msgstr "Full path to the plan .md file written by the agent"
+
+#: src/components/ui/full-screen.tsx
+msgid "Full screen"
+msgstr "Full screen"
+
+#: src/components/ui/full-screen.tsx
+msgid "Full screen (Esc to exit)"
+msgstr "Full screen (Esc to exit)"
 
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Full Trust"
@@ -15098,6 +15204,7 @@ msgid "Go up"
 msgstr "Go up"
 
 #: src/components/inbound/AddRuleDialog.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "Goes to"
 msgstr "Goes to"
 
@@ -15180,13 +15287,13 @@ msgstr "Graph Workflows"
 msgid "Grid view"
 msgstr "Grid view"
 
-#: src/components/inbound/InboundView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "group"
 msgstr "group"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
 #: src/components/inbound/AddRuleDialog.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/i18n/type-labels.ts
 msgid "Group"
 msgstr "Group"
@@ -15951,9 +16058,10 @@ msgstr "If your browser asks, choose Open. FlowPad then carries on from here."
 msgid "ignore"
 msgstr "ignore"
 
-#: src/components/assets/editor/app-profile/AppSetupTab.tsx
-#~ msgid "Ignore"
-#~ msgstr "Ignore"
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
+msgid "Ignore"
+msgstr "Ignore"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "ignore patterns"
@@ -16523,6 +16631,10 @@ msgstr "instruction ref"
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Instructions"
 msgstr "Instructions"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Instructions — the agent's system prompt"
+msgstr "Instructions — the agent's system prompt"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -17164,7 +17276,6 @@ msgid "Language"
 msgstr "Language"
 
 #: src/components/data-sources/MessageChannelsList.tsx
-#: src/components/inbound/InboundView.tsx
 msgid "lapsed"
 msgstr "lapsed"
 
@@ -17221,10 +17332,9 @@ msgstr "Last attempt"
 #~ msgid "Last check found {0} error(s) · {1}"
 #~ msgstr "Last check found {0} error(s) · {1}"
 
-#. placeholder {0}: clockTime(last)
 #: src/components/inbound/InboundView.tsx
-msgid "last delivery {0}"
-msgstr "last delivery {0}"
+#~ msgid "last delivery {0}"
+#~ msgstr "last delivery {0}"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Last Indexed"
@@ -17292,6 +17402,10 @@ msgstr "Last run {0} · {lastRunState}"
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "last session: {lastSession}"
 msgstr "last session: {lastSession}"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Last step, in your Meta app: WhatsApp › Configuration › Webhook — paste the Callback URL and Verify token below, Verify and save, then subscribe the messages field."
+msgstr "Last step, in your Meta app: WhatsApp › Configuration › Webhook — paste the Callback URL and Verify token below, Verify and save, then subscribe the messages field."
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last success"
@@ -17754,8 +17868,8 @@ msgstr "Live — speak now"
 #~ msgstr "Live · {guest}'s session"
 
 #: src/components/inbound/InboundView.tsx
-msgid "live · {received} received since {since}"
-msgstr "live · {received} received since {since}"
+#~ msgid "live · {received} received since {since}"
+#~ msgstr "live · {received} received since {since}"
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "live · stale"
@@ -18980,6 +19094,14 @@ msgid "messages on"
 msgstr "messages on"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Meta app › App settings › Basic. Checks every delivery came from Meta. Stored write-only."
+msgstr "Meta app › App settings › Basic. Checks every delivery came from Meta. Stored write-only."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Meta app › WhatsApp › API Setup — the number's id, not the phone number itself."
+msgstr "Meta app › WhatsApp › API Setup — the number's id, not the phone number itself."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta official Cloud API"
 msgstr "Meta official Cloud API"
 
@@ -19384,6 +19506,7 @@ msgstr "name"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -20015,6 +20138,14 @@ msgstr "No agent hooks configured"
 #~ msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
 #~ msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "No agents yet"
+msgstr "No agents yet"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "No agents yet — an inbox belongs to an agent, so create one first."
+msgstr "No agents yet — an inbox belongs to an agent, so create one first."
+
 #: src/pages/hub-home/HubItemsSection.tsx
 msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
 msgstr "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
@@ -20164,6 +20295,10 @@ msgstr "No channel links to this agent yet"
 msgid "No channel reaches this Agent yet. Give it an email address to start."
 msgstr "No channel reaches this Agent yet. Give it an email address to start."
 
+#: src/components/inbound/InboundView.tsx
+msgid "No channels yet. Add one: messages arrive at the hub and go where its rules say — anything else is ignored."
+msgstr "No channels yet. Add one: messages arrive at the hub and go where its rules say — anything else is ignored."
+
 #: src/components/assets/editor/chart/useOpenChart.ts
 msgid "No chart named “{ref}” in this project"
 msgstr "No chart named “{ref}” in this project"
@@ -20294,8 +20429,8 @@ msgid "no dataset"
 msgstr "no dataset"
 
 #: src/components/inbound/InboundView.tsx
-msgid "no delivery yet"
-msgstr "no delivery yet"
+#~ msgid "no delivery yet"
+#~ msgstr "no delivery yet"
 
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "No deployments observed yet"
@@ -20780,8 +20915,8 @@ msgid "No notes yet"
 msgstr "No notes yet"
 
 #: src/components/inbound/InboundView.tsx
-msgid "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
-msgstr "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
+#~ msgid "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
+#~ msgstr "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
 
 #: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "No older conversations"
@@ -22171,7 +22306,6 @@ msgid "Now using {0}"
 msgstr "Now using {0}"
 
 #: src/components/data-sources/MessageChannelsList.tsx
-#: src/components/inbound/InboundView.tsx
 msgid "Nowhere yet"
 msgstr "Nowhere yet"
 
@@ -22399,6 +22533,10 @@ msgstr "One decision, nothing runs."
 #: src/components/inbound/AddRuleDialog.tsx
 msgid "One group"
 msgstr "One group"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "One inbox per agent; it answers the senders you allow."
+msgstr "One inbox per agent; it answers the senders you allow."
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "One line: what this project uses it for"
@@ -23315,8 +23453,8 @@ msgid "Open the watched file"
 msgstr "Open the watched file"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Open the WhatsApp bridge again"
-msgstr "Open the WhatsApp bridge again"
+#~ msgid "Open the WhatsApp bridge again"
+#~ msgstr "Open the WhatsApp bridge again"
 
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open the worker session already started for this spec/plan in this conversation"
@@ -23837,8 +23975,8 @@ msgid "Paid by your Flowpad account"
 msgstr "Paid by your Flowpad account"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Pair your own phone with this deployment's WhatsApp bridge by scanning a QR code. The bridge connects the number to the hub."
-msgstr "Pair your own phone with this deployment's WhatsApp bridge by scanning a QR code. The bridge connects the number to the hub."
+#~ msgid "Pair your own phone with this deployment's WhatsApp bridge by scanning a QR code. The bridge connects the number to the hub."
+#~ msgstr "Pair your own phone with this deployment's WhatsApp bridge by scanning a QR code. The bridge connects the number to the hub."
 
 #: src/components/graph-workflows/panels/PaletteTab.tsx
 msgid "palette"
@@ -24242,8 +24380,8 @@ msgid "Pick a contacts group or people"
 msgstr "Pick a contacts group or people"
 
 #: src/components/inbound/InboundView.tsx
-msgid "Pick a fallback — until then nothing no rule matches is delivered"
-msgstr "Pick a fallback — until then nothing no rule matches is delivered"
+#~ msgid "Pick a fallback — until then nothing no rule matches is delivered"
+#~ msgstr "Pick a fallback — until then nothing no rule matches is delivered"
 
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "Pick a flow from the left menu, or create one with “+ New flow”."
@@ -25214,16 +25352,20 @@ msgstr "Prove and connect"
 #~ msgstr "Proved by"
 
 #: src/components/inbound/InboundView.tsx
-msgid "proven"
-msgstr "proven"
+#~ msgid "proven"
+#~ msgstr "proven"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Proves the bot (getMe). Stored write-only."
 msgstr "Proves the bot (getMe). Stored write-only."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
-msgstr "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
+msgid "Proves the number on your server. Stored write-only."
+msgstr "Proves the number on your server. Stored write-only."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+#~ msgid "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
+#~ msgstr "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
@@ -26225,6 +26367,10 @@ msgstr "Remove {0} from {1}?"
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Remove {0} from {teamName}"
 #~ msgstr "Remove {0} from {teamName}"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Remove {a}"
+msgstr "Remove {a}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
@@ -27385,6 +27531,11 @@ msgstr "roots"
 msgid "Roots talk to a provider with a stored key; chains are fed from other endpoints in fallback order and narrow what passes with filters and limits. Usage is accumulated along the chain."
 msgstr "Roots talk to a provider with a stored key; chains are fed from other endpoints in fallback order and narrow what passes with filters and limits. Usage is accumulated along the chain."
 
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
+msgid "Routing"
+msgstr "Routing"
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Row index within the currently visible viewport (0 = top visible row). viewportTopRow shows the absolute buffer row at the top of the viewport."
 msgstr "Row index within the currently visible viewport (0 = top visible row). viewportTopRow shows the absolute buffer row at the top of the viewport."
@@ -27434,8 +27585,8 @@ msgid "Rules"
 msgstr "Rules"
 
 #: src/components/inbound/InboundView.tsx
-msgid "Rules — the most specific wins: sender › group › everything else"
-msgstr "Rules — the most specific wins: sender › group › everything else"
+#~ msgid "Rules — the most specific wins: sender › group › everything else"
+#~ msgstr "Rules — the most specific wins: sender › group › everything else"
 
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
@@ -28651,8 +28802,8 @@ msgid "Secrets"
 msgstr "Secrets"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Secrets are stored write-only on the hub — nobody can read them back."
-msgstr "Secrets are stored write-only on the hub — nobody can read them back."
+#~ msgid "Secrets are stored write-only on the hub — nobody can read them back."
+#~ msgstr "Secrets are stored write-only on the hub — nobody can read them back."
 
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
@@ -29032,8 +29183,8 @@ msgid "Send without the session"
 msgstr "Send without the session"
 
 #: src/components/inbound/InboundView.tsx
-msgid "sender"
-msgstr "sender"
+#~ msgid "sender"
+#~ msgstr "sender"
 
 #: src/components/inbound/AddRuleDialog.tsx
 msgid "Sender"
@@ -29796,8 +29947,8 @@ msgid "Shared"
 msgstr "Shared"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Shared by every place"
-msgstr "Shared by every place"
+#~ msgid "Shared by every place"
+#~ msgstr "Shared by every place"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Shared by Git — click to open the version that was shared"
@@ -30506,8 +30657,12 @@ msgid "Signing out…"
 msgstr "Signing out…"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Signs every delivery (x-hub-signature-256). Stored write-only."
-msgstr "Signs every delivery (x-hub-signature-256). Stored write-only."
+#~ msgid "Signs every delivery (x-hub-signature-256). Stored write-only."
+#~ msgstr "Signs every delivery (x-hub-signature-256). Stored write-only."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Signs every delivery. Stored write-only."
+msgstr "Signs every delivery. Stored write-only."
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
@@ -32626,8 +32781,12 @@ msgid "The hub refused this client."
 msgstr "The hub refused this client."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "The id Meta's API uses for the number (not the phone number itself)."
-msgstr "The id Meta's API uses for the number (not the phone number itself)."
+#~ msgid "The id Meta's API uses for the number (not the phone number itself)."
+#~ msgstr "The id Meta's API uses for the number (not the phone number itself)."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The id your server's API uses for the number (not the phone number itself)."
+msgstr "The id your server's API uses for the number (not the phone number itself)."
 
 #: src/components/ui/media-lightbox.tsx
 msgid "The image could not be copied to the clipboard."
@@ -32704,6 +32863,10 @@ msgstr "The member tasks were created; {messageFailures} notification message(s)
 msgid "The message you came from — or paste any message"
 msgstr "The message you came from — or paste any message"
 
+#: src/components/inbound/InboundView.tsx
+msgid "The most specific rule wins: in a group the group, else the sender, else everything else"
+msgstr "The most specific rule wins: in a group the group, else the sender, else everything else"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "The new budget takes over at once; the current one is closed. What was spent stays spent."
 msgstr "The new budget takes over at once; the current one is closed. What was spent stays spent."
@@ -32741,6 +32904,10 @@ msgstr "The page loads and reports its errors; each is matched against the handl
 #: src/components/webapp-display/PageCheckPanel.tsx
 #~ msgid "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
 #~ msgstr "The page reported — Flowpad is matching its errors against setup/webapp_errors.json · {seconds}s (shown anyway at 8s)"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The part before the @. Permanent once created."
+msgstr "The part before the @. Permanent once created."
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
@@ -33019,8 +33186,8 @@ msgid "The version that was shared with you"
 msgstr "The version that was shared with you"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "The WhatsApp bridge opened in a new tab. Add a number there, scan its QR code with WhatsApp on your phone (Linked devices), then connect it to the hub. The number appears here once it connects."
-msgstr "The WhatsApp bridge opened in a new tab. Add a number there, scan its QR code with WhatsApp on your phone (Linked devices), then connect it to the hub. The number appears here once it connects."
+#~ msgid "The WhatsApp bridge opened in a new tab. Add a number there, scan its QR code with WhatsApp on your phone (Linked devices), then connect it to the hub. The number appears here once it connects."
+#~ msgstr "The WhatsApp bridge opened in a new tab. Add a number there, scan its QR code with WhatsApp on your phone (Linked devices), then connect it to the hub. The number appears here once it connects."
 
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
@@ -33262,6 +33429,10 @@ msgstr "This budget is not available to you"
 msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
 
+#: src/components/inbound/InboundView.tsx
+msgid "This channel is not yours, or it is gone."
+msgstr "This channel is not yours, or it is gone."
+
 #. placeholder {0}: chart?.format
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 msgid "This chart is a “{0}” chart, which needs a newer Flowpad to open."
@@ -33441,6 +33612,10 @@ msgstr "This hub has no help desk — pick a person to ask."
 #: src/pages/hub-home/HubHome.tsx
 msgid "This hub isn't configured to run sandboxes"
 msgstr "This hub isn't configured to run sandboxes"
+
+#: src/components/inbound/InboundView.tsx
+msgid "This inbox's agent is gone"
+msgstr "This inbox's agent is gone"
 
 #: src/lib/content-install.ts
 msgid "This install link has an invalid content branch."
@@ -35588,8 +35763,8 @@ msgid "Verify the setup first."
 msgstr "Verify the setup first."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Verify token"
-msgstr "Verify token"
+#~ msgid "Verify token"
+#~ msgstr "Verify token"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Verify token: when you save the URL, your server calls it once with this word and the hub echoes back a challenge only if the word matches. It proves you own the URL; it is not a password for messages — those are checked with the app secret."
@@ -35868,6 +36043,7 @@ msgstr "Waiting for sign-in"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "waiting for the code"
 msgstr "waiting for the code"
 
@@ -35926,8 +36102,8 @@ msgid "Waiting for your message…"
 msgstr "Waiting for your message…"
 
 #: src/components/inbound/InboundView.tsx
-msgid "waiting to be proven"
-msgstr "waiting to be proven"
+#~ msgid "waiting to be proven"
+#~ msgstr "waiting to be proven"
 
 #: src/components/ask/AskForm.tsx
 #: src/journey/JourneyTray.tsx
@@ -36113,8 +36289,8 @@ msgid "What happened, what you expected, what you already tried (optional)"
 msgstr "What happened, what you expected, what you already tried (optional)"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "What happens"
-msgstr "What happens"
+#~ msgid "What happens"
+#~ msgstr "What happens"
 
 #. placeholder {0}: tile.label
 #: src/components/quick-create/QuickCreatePanel.tsx
@@ -36211,6 +36387,10 @@ msgstr "What it runs"
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What it worked on"
 msgstr "What it worked on"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "What people see in their mail app."
+msgstr "What people see in their mail app."
 
 #: src/components/assets/editor/PublishedToggle.tsx
 #~ msgid "What Published does"
@@ -36391,6 +36571,10 @@ msgstr "When something happens in Flowpad"
 #: src/components/diagnose/SendOnceDoneDialog.tsx
 msgid "When the diagnosis finishes, Flowpad sends the results to <0>{to}</0> in a new conversation — even if you close this window."
 msgstr "When the diagnosis finishes, Flowpad sends the results to <0>{to}</0> in a new conversation — even if you close this window."
+
+#: src/components/inbound/InboundView.tsx
+msgid "When the message is from"
+msgstr "When the message is from"
 
 #~ msgid "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
 #~ msgstr "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
@@ -37220,8 +37404,8 @@ msgid "Your own provider key. Usage is billed to your provider account."
 msgstr "Your own provider key. Usage is billed to your provider account."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
-msgid "Your own WhatsApp (scan QR)"
-msgstr "Your own WhatsApp (scan QR)"
+#~ msgid "Your own WhatsApp (scan QR)"
+#~ msgstr "Your own WhatsApp (scan QR)"
 
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "Your project is behind on {branch}. Pull to bring the shared version in."
@@ -37317,19 +37501,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/ui/full-screen.tsx
-msgid "Full screen"
-msgstr "Full screen"
-
-#: src/components/ui/full-screen.tsx
-msgid "Exit full screen"
-msgstr "Exit full screen"
-
-#: src/components/ui/full-screen.tsx
-msgid "Full screen (Esc to exit)"
-msgstr "Full screen (Esc to exit)"
-
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Instructions — the agent's system prompt"
-msgstr "Instructions — the agent's system prompt"

@@ -19,13 +19,11 @@ import type { DestinationLabels, InboundChannel } from './inbound-model';
 const INBOUND_POLL_MS = 5000;
 
 /**
- * The caller's hub claims, re-read every 5 s while mounted and the tab is visible. `openedAt` (epoch seconds) is
- * when the screen opened: the live counters count `recent[]` from there, client-side — nothing is stored.
+ * The caller's hub claims, re-read every 5 s while mounted and the tab is visible.
  */
 export function useInboundClaims(api: InboundApi = InboundWebhooks, pollMs: number = INBOUND_POLL_MS) {
   const [claims, setClaims] = useState<InboundClaim[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const openedAt = useRef(Date.now() / 1000).current;
   const last = useRef('');
   const busy = useRef(false);
 
@@ -61,7 +59,7 @@ export function useInboundClaims(api: InboundApi = InboundWebhooks, pollMs: numb
   }, [refresh, pollMs]);
 
   const numbers = useMemo(() => inboundTree(claims ?? []), [claims]);
-  return { numbers, error, loading: claims === null && error === null, refresh, openedAt };
+  return { numbers, error, loading: claims === null && error === null, refresh };
 }
 
 const agentsQuery = new QueryRequest({ type: Agent.type, scope: [], name: 'inbound:agents' });
