@@ -5,7 +5,7 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional, Sequence, Tuple
 
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
@@ -191,8 +191,11 @@ def _in_another_instance(path: str) -> bool:
         return False
 
 
-def find_local_repo_for_url(clone_url: str) -> Optional[str]:
+def find_local_repo_for_url(clone_url: str, within: Optional[Sequence[Path]] = None) -> Optional[str]:
     """Find a local repo whose origin URL matches clone_url.
+
+    ``within``: when given, only a checkout inside one of these roots counts (a
+    candidate elsewhere is skipped and the search goes on).
 
     Pass 1: Claude-registered projects (fast, authoritative).
     Pass 2: Immediate siblings of those projects — covers repos that exist
@@ -208,11 +211,18 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
 
     from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
+    roots = [_Path(r).resolve() for r in within] if within is not None else None
+
+    def _eligible(path: str) -> bool:
+        if _in_another_instance(path):
+            return False
+        return roots is None or any(_Path(path).resolve().is_relative_to(r) for r in roots)
+
     claude_paths = [p for p in iter_claude_project_paths() if not _in_another_instance(str(p))]
 
     # Pass 1: Claude-registered projects
     for project_root in claude_paths:
-        if _url_matches(str(project_root), clone_url):
+        if _eligible(str(project_root)) and _url_matches(str(project_root), clone_url):
             return str(project_root)
 
     # Pass 2: siblings — scan one level inside each unique parent directory
@@ -227,7 +237,7 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
                 if not sibling.is_dir() or sibling == _Path(project_root):
                     continue
                 if (sibling / ".git").exists() and _url_matches(str(sibling), clone_url):
-                    if _in_another_instance(str(sibling)):
+                    if not _eligible(str(sibling)):
                         continue
                     return str(sibling)
         except OSError:
