@@ -196,14 +196,13 @@ async def test_a_declared_dev_server_is_started_and_a_service_is_an_endpoint_of_
                     self.wfile.write(body)
                 def log_message(self, *a): pass
             srv = http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H)
-            srv.timeout = 5
-            for _ in range(3):
-                srv.handle_request()
+            srv.timeout = 30
+            srv.serve_forever()
             """
         )
     )
     project = await _project(tmp_path)
-    await _webapp(
+    app = await _webapp(
         project,
         tmp_path / "apps" / "shop",
         mounts=[{"path": "site"}],
@@ -219,32 +218,31 @@ async def test_a_declared_dev_server_is_started_and_a_service_is_an_endpoint_of_
         ],
     )
 
-    resp = await client.post(
-        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": _deployment_typeid()}
-    )
+    try:
+        resp = await client.post(
+            f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": _deployment_typeid()}
+        )
 
-    by_name = {e["name"]: e for e in resp.json()["data"]["endpoints"]}
-    assert set(by_name) == {"app", "shop-api"}
-    assert list(by_name["app"]["backend"]["routes"]) == ["site"]
-    api = by_name["shop-api"]
-    assert (api["subkind"], api["protocol"]["spec_kind"]) == ("service", "api.rest")
-    assert api["supports_direct_access"] is True, "a process has an address of its own"
-    port = api["backend"]["port"]
-    assert str(port) in api["backend"]["start_cmd"], "the assigned port is substituted into the command"
+        by_name = {e["name"]: e for e in resp.json()["data"]["endpoints"]}
+        assert set(by_name) == {"app", "shop-api"}
+        assert list(by_name["app"]["backend"]["routes"]) == ["site"]
+        api = by_name["shop-api"]
+        assert (api["subkind"], api["protocol"]["spec_kind"]) == ("service", "api.rest")
+        assert api["supports_direct_access"] is True, "a process has an address of its own"
+        port = api["backend"]["port"]
+        assert str(port) in api["backend"]["start_cmd"], "the assigned port is substituted into the command"
 
-    _wait_for_port(port)
-    answered = await client.get(f"/api/v1/graph/service_endpoint/{api['id']}/service/")
-    assert (answered.status_code, answered.text) == (200, "api-ok")
-
-
-def _wait_for_port(port: int) -> None:
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline:
-        with socket.socket() as probe:
-            if probe.connect_ex(("127.0.0.1", port)) == 0:
-                return
-        time.sleep(0.02)
-    raise AssertionError(f"service on {port} never came up")
+        # Brought up in the background (``coordinator.bring_up``): the endpoint then names where it landed.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            row = await ServiceEndpoint.get_by_id(api["id"])
+            answered = await client.get(f"/api/v1/graph/service_endpoint/{api['id']}/service/")
+            if answered.status_code == 200:
+                break
+            await asyncio.sleep(0.2)
+        assert (answered.status_code, answered.text) == (200, "api-ok"), row.backend
+    finally:
+        await _stop(app)
 
 
 async def test_a_dependency_projects_apps_come_up_on_the_deployed_projects_placement(client, tmp_path):
@@ -273,6 +271,45 @@ async def test_a_dependency_projects_apps_come_up_on_the_deployed_projects_place
     assert routes[""]["webapp_id"] == own.id, "the deployed project's own app keeps the root it declared"
     assert [r["webapp_id"] for r in routes.values()].count(dep.id) == 1, "the dependency's app is served once"
     assert {e["name"] for e in resp.json()["data"]["endpoints"]} == {"admin"}, "an unrelated project is not"
+
+
+async def test_an_exposed_app_is_installed_before_it_is_started(client, tmp_path):
+    """A box brings an app up the one way an app comes up: what it needs installed first, then its start.
+
+    The WAHA bridge's start command names the runtime its install makes. Exposing ran the bare start
+    command — ``/bin/sh: ../../../.flow/waha-runtime/venv/bin/python: not found`` — and the admin page
+    stayed down until somebody opened it by hand."""
+    from flow_sdk.builtin import webapp_setup
+
+    port = _unused_port()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "bridge"
+    install = "import pathlib; pathlib.Path('runtime').mkdir(); pathlib.Path('runtime/index.html').write_text('up')"
+    serving = {
+        "type": "proxy",
+        "install_cmd": f"{shlex.quote(sys.executable)} -c {shlex.quote(install)}",
+        "install_check": "runtime/index.html",
+        # Only answers once the install made its folder: `--directory runtime` fails before.
+        "start_cmd": f"{shlex.quote(sys.executable)} -m http.server {{port}} --bind 127.0.0.1 --directory runtime",
+        "ports": {"local": {"port": port, "required": True}},
+    }
+    app = await _webapp(project, folder, name="bridge", mounts=[{"audience": "admin", "path": "", "serving": serving}])
+    (folder / "index.html").write_text("page")
+    try:
+        resp = await client.post(
+            f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": _deployment_typeid()}
+        )
+        assert resp.status_code == 200, resp.text
+        [admin] = [e for e in resp.json()["data"]["endpoints"] if e["name"] == "admin"]
+        assert admin["backend"]["routes"][""]["backend"]["port"] == port
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not webapp_setup.health_answers(port):
+            await asyncio.sleep(0.2)
+        assert (folder / "runtime" / "index.html").is_file(), "the app's install ran"
+        assert webapp_setup.health_answers(port), "the app came up after its install"
+    finally:
+        await _stop(app)
 
 
 @pytest.mark.parametrize("bad", ["", "project-x", "deployment-not-a-uuid", "deployment"])
