@@ -13,6 +13,7 @@ runs these through ``asyncio.to_thread``.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import signal
@@ -24,6 +25,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Literal, Optional
 
 from flow_sdk.core.dev_server import LOOPBACKS, dev_command, port_open
+
+logger = logging.getLogger(__name__)
 
 #: Programs that hold a port FOR something else (a container's published port, a tunnel). Who is
 #: behind such a port cannot be read from the process table, so it is judged like a holder that
@@ -326,18 +329,48 @@ def decide(
     return PortAnswer("conflict", port, holder, f"port {port} is held by another program{who}")
 
 
-def kill_trees(pids: Iterable[int]) -> None:
+def kill_trees(pids: Iterable[int], *, allow_protected: bool = False) -> list[int]:
     """End each process and everything started under it — its whole process group on POSIX, never this
     process's own — and return once they are gone, so their ports are free. The group is signalled too
     because a member whose leader already died is no longer anyone's child. Each process is also ended
     directly: on Windows there is no group, and ``taskkill /T`` (which asks WMI for the tree) was seen to
     stall for over 30 s. Only what was signalled is waited for — one that could not be ended (another
-    user's) would be waited on forever."""
+    user's) would be waited on forever.
+
+    ``allow_protected`` left False (the default) applies the FLOWPAD-2112 port guard: a root whose
+    subtree holds the live backend (the backend, or a live ancestor above it — in practice the monitor)
+    is skipped WHOLE — its tree and its process group are never collected — so freeing a port cannot take
+    down the FlowPad this process runs inside, nor the backend's siblings in that tree. No production
+    caller passes True today; it exists for a deliberate teardown that means to reap its own backend.
+
+    Returns the sorted roots that were **refused** (spared by the guard). A caller that reports success
+    must check this: an empty list means every root was collected; a non-empty one means at least one
+    target is still running (it was the live backend, or an ancestor of it) and the kill did NOT happen.
+    """
     import psutil  # noqa: PLC0415
+
+    roots = list(pids)
+    refused: set[int] = set()
+    backend_pid: int | None = None
+    backend_group: int | None = None
+    if not allow_protected:
+        from flow_sdk.core import port_guard  # noqa: PLC0415
+
+        refused = port_guard.protected(roots)
+        backend_pid = port_guard.live_backend_pid()
+        if refused:
+            logger.warning("[port_guard] kill_trees sparing protected FlowPad tree(s) %s", sorted(refused))
+        if backend_pid is not None and sys.platform != "win32":
+            try:
+                backend_group = os.getpgid(backend_pid)
+            except OSError:
+                backend_group = None
 
     doomed: dict[int, "psutil.Process"] = {}
     groups: set[int] = set()
-    for pid in pids:
+    for pid in roots:
+        if pid in refused:
+            continue  # skip a protected root whole — its tree AND its group
         doomed.update((member.pid, member) for member in _tree(pid))
         if sys.platform == "win32":
             continue
@@ -345,9 +378,22 @@ def kill_trees(pids: Iterable[int]) -> None:
             group = os.getpgid(pid)
         except OSError:
             continue
-        if group != os.getpgrp():
-            groups.add(group)
-            doomed.update((member.pid, member) for member in _tree(group))
+        if group == os.getpgrp():
+            continue
+        if group == backend_group:
+            # The target shares the LIVE backend's process group (e.g. a worker that did not get its
+            # own session). Expanding or signalling that group would sweep in the backend AND the
+            # target's siblings (other workers) — exactly what the invariant forbids. Kill only the
+            # target's own subtree, already in `doomed`; leave the backend's group untouched.
+            continue
+        groups.add(group)
+        doomed.update((member.pid, member) for member in _tree(group))
+    # Backstop (defense in depth): even if a group slipped through above, never killpg the live
+    # backend's group and never kill the backend pid directly.
+    if backend_pid is not None and sys.platform != "win32":
+        if backend_group is not None:
+            groups.discard(backend_group)
+        doomed.pop(backend_pid, None)
     for group in groups:
         try:
             os.killpg(group, signal.SIGKILL)
@@ -361,11 +407,13 @@ def kill_trees(pids: Iterable[int]) -> None:
         except (psutil.Error, OSError):
             continue
     psutil.wait_procs(ended)
+    return sorted(refused)
 
 
-def stop(found: Iterable[Listener]) -> None:
-    """End each listener and everything started with it (``kill_trees``)."""
-    kill_trees(one.pid for one in found)
+def stop(found: Iterable[Listener]) -> list[int]:
+    """End each listener and everything started with it (``kill_trees``). Returns the pids the guard
+    refused (spared as the live FlowPad backend / its ancestor) — empty when everything was stopped."""
+    return kill_trees(one.pid for one in found)
 
 
 __all__ = ["Declared", "Listener", "PortAnswer", "decide", "free_port", "kill_trees", "launched_by", "listeners", "listening_under", "of_app", "stop", "stranger_on"]

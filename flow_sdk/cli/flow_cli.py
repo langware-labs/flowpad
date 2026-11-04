@@ -33,6 +33,7 @@ cli_init()
 _EXTRA = {"context_settings": {"allow_extra_args": True, "ignore_unknown_options": True}}
 LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "compat": ("flow_sdk.cli.commands.compat_cmd", "compat_check", None),
+    "proc": ("flow_sdk.cli.commands.proc_cmd", "proc_app", None),
     "connect": ("flow_sdk.cli.commands.connect_cmd", "connect", {}),
     "navigate": ("flow_sdk.cli.commands.navigate_cmd", "navigate_app", None),
     "artifact": ("flow_sdk.cli.commands.artifact_cmd", "artifact_app", None),

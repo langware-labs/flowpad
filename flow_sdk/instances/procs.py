@@ -14,6 +14,7 @@ a minutes-long one. This mirrors the batching already proven in
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ from pathlib import Path
 
 from .liveness import ProcInfo, ProcTable
 from .model import ProcRef, Role
+
+logger = logging.getLogger(__name__)
 
 #: Seconds to wait after SIGTERM before escalating, and after SIGKILL before
 #: declaring a survivor. These are escalation steps in a shutdown ladder, not
@@ -39,7 +42,9 @@ class KillResult:
 
     @property
     def ok(self) -> bool:
-        return not self.survivors
+        # A refusal is NOT success: a protected process the guard spared is still running,
+        # so a caller must not read `ok` as "nothing of it is left". Both lists must be empty.
+        return not self.survivors and not self.refused
 
     def to_json(self) -> dict:
         return {
@@ -56,6 +61,7 @@ def kill_owned(
     *,
     roles: frozenset[Role] | None = None,
     extra: list[ProcInfo] | None = None,
+    allow_protected: bool = False,
 ) -> KillResult:
     """Terminate every process ownership-verified as ``name``'s.
 
@@ -63,6 +69,12 @@ def kill_owned(
     which also carries ``FLOW_INSTANCE``). Processes with no role — an
     instance's spawned workers — are only swept when no role filter is given,
     since they belong to the instance as a whole rather than to one half of it.
+
+    ``allow_protected`` passes through to ``terminate_tree`` for enforcement: left False
+    (the default) the FLOWPAD-2112 port guard spares this instance's own live backend (and
+    its ancestor chain), recording each spared pid in ``result.refused`` so the refusal is
+    visible and not mistaken for success. A user-requested restart/reset passes True so the
+    backend can actually be reaped.
     """
     import psutil
 
@@ -85,24 +97,52 @@ def kill_owned(
         except gone:
             continue
 
-    result.killed, result.survivors = terminate_tree(list(targets.values()))
+    # terminate_tree applies the guard and reports back which roots it spared, so the guard
+    # runs ONCE (not a separate protected() pre-call here) and a refusal reaches the result.
+    result.killed, result.survivors, refused = terminate_tree(
+        list(targets.values()), allow_protected=allow_protected
+    )
+    for pid in refused:
+        result.refused.append(
+            f"pid {pid} is (or contains) this instance's live backend — refused by the "
+            f"self-protection guard"
+        )
     return result
 
 
-def terminate_tree(roots: list) -> tuple[list[int], list[int]]:
+def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[int], list[int], list[int]]:
     """The shutdown ladder over *roots* (``psutil.Process``) and every descendant: SIGTERM all,
-    wait once, SIGKILL the survivors. ``(killed, survivors)`` pids. Never this process.
+    wait once, SIGKILL the survivors. ``(killed, survivors, refused)`` pids. Never this process.
 
     The caller has already decided the roots are its own; this only reaps them — batched,
     because a degraded tree can hold dozens of children and one-at-a-time takes minutes.
+
+    ``allow_protected`` left False (the default) applies the FLOWPAD-2112 port guard: a ROOT
+    whose subtree holds the live backend (the backend, or an ancestor above it) is spared
+    WHOLE — it is dropped before its tree is expanded, so the backend's own children (workers,
+    MCP servers, web apps) are never swept along with it, and its pid is returned in ``refused``
+    so the caller does NOT read a spared process as stopped. A user-requested restart/reset
+    passes True to reap its own backend.
     """
     import psutil
 
     gone = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
     self_pid = os.getpid()
-    targets = {p.pid: p for p in roots if p.pid != self_pid}
+    roots = [p for p in roots if p.pid != self_pid]
+    refused_pids: list[int] = []
+    if not allow_protected and roots:
+        from flow_sdk.core import port_guard  # noqa: PLC0415
+
+        refused = port_guard.protected([p.pid for p in roots])
+        if refused:
+            logger.warning("[port_guard] terminate_tree sparing protected FlowPad tree(s) %s", sorted(refused))
+            roots = [p for p in roots if p.pid not in refused]
+            refused_pids = sorted(refused)
+
+    targets = {p.pid: p for p in roots}
     # Descend the tree as well: children spawned after the roots were found (a
-    # backend that forked a worker a moment ago) are still ours to reap.
+    # backend that forked a worker a moment ago) are still ours to reap. A root whose
+    # subtree held the backend was already dropped above, so no expansion reaches it.
     for pid in list(targets):
         try:
             for child in targets[pid].children(recursive=True):
@@ -124,7 +164,7 @@ def terminate_tree(roots: list) -> tuple[list[int], list[int]]:
         except gone:
             pass
     _, survivors = psutil.wait_procs(alive, timeout=_KILL_GRACE)
-    return sorted(targets), sorted(p.pid for p in survivors)
+    return sorted(targets), sorted(p.pid for p in survivors), refused_pids
 
 
 def kill_port_if_owned(
@@ -133,6 +173,7 @@ def kill_port_if_owned(
     table: ProcTable,
     *,
     roles: frozenset[Role] | None = None,
+    allow_protected: bool = False,
 ) -> KillResult:
     """Kill the listener on ``port`` only if it is verifiably ``name``'s.
 
@@ -140,6 +181,9 @@ def kill_port_if_owned(
     happened to hold, which on a machine with a recycled port band meant
     terminating a stranger. Refusals are recorded rather than silently skipped,
     so the collision is visible in the result.
+
+    ``allow_protected`` passes through to ``kill_owned`` so a user-requested
+    restart/reset can reap this instance's own backend listener.
     """
     from .ports import kill_allowed
 
@@ -152,7 +196,9 @@ def kill_port_if_owned(
                 f"port {port} is held by {owner}, not '{name}' — refusing to signal it"
             )
         return result
-    return kill_owned(name, table, roles=roles, extra=table.listeners(port))
+    return kill_owned(
+        name, table, roles=roles, extra=table.listeners(port), allow_protected=allow_protected
+    )
 
 
 def spawn_detached(
@@ -175,6 +221,11 @@ def spawn_detached(
 
     import psutil
 
+    from flow_sdk.utils.environment import without_worker_signal
+
+    # FLOWPAD-2112: a detached instance process (a backend) is never a worker — strip the worker
+    # signal here too, so this path matches start_detached_process and no spawn leaks it.
+    env = without_worker_signal(env)
     log.parent.mkdir(parents=True, exist_ok=True)
     with open(log, "ab") as fh:
         kwargs: dict = {
