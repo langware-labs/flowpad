@@ -135,7 +135,8 @@ test('2. the stream inbox merges both sources, attributed', async ({ page }) => 
   await expect(page.getByTestId('stream-inbox-view-all')).toContainText(2 * PER_SOURCE >= PAGE ? `${PAGE}+` : String(2 * PER_SOURCE));
 
   const bar = page.getByTestId('attached-channels');
-  const marks = bar.getByTestId('attached-channel');
+  // (The system's own Tasks source wears a mark on the user's line too; it is not one of the two channels.)
+  const marks = bar.locator('[data-testid="attached-channel"]:not([data-provider="task_manager"])');
   await expect(marks).toHaveCount(2);
   for (const mark of await marks.all()) {
     await expect(mark).toHaveAttribute('data-provider', 'agent');

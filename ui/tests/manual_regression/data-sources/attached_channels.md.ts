@@ -253,7 +253,8 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   await expect(agentBar.getByTestId('attached-channel'), "a mark of the user's on the agent's line").toHaveCount(0);
 
   await agentBar.getByTestId('attached-channels-add').click();
-  const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^Data sources$/ }) });
+  // An agent's line opens the same picker under its own first crumb: "Add a channel".
+  const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('step-crumb-0').filter({ hasText: /^(Data sources|Add a channel)$/ }) });
   await expect(dialog).toBeVisible();
   // Slack is a group (Flow — no setup / your own Slack app): the tile asks which, then the member opens its form.
   await dialog.getByTestId('provider-group-Slack').click();
@@ -268,6 +269,10 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
   }
   await dialog.locator('#ds-channel').fill(AGENT_CHANNEL);
   await dialog.getByRole('button', { name: 'Add source' }).click();
+  // The source has a setup step (Slack owes a Verify): the dialog stays on the Setup panel until "Finish later" / "Done".
+  const finish = dialog.getByRole('button', { name: /^(Done|Finish later)$/ });
+  await expect.poll(async () => !(await dialog.isVisible()) || (await finish.isVisible()), { timeout: 15_000 }).toBe(true);
+  if (await finish.isVisible()) await finish.click();
   await expect(dialog).toBeHidden();
 
   // The stream inbox header line: the agent's own mark, parked on its Verify.

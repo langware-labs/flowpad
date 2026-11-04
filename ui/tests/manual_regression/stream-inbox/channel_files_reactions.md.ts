@@ -134,8 +134,8 @@ CHANNELS.forEach((channel, i) => {
     await sync(sourceId);
 
     await open(page, '/dock/stream_inbox');
-    // The newest conversation is this cell's (its source was made for it); the thread inside names the nonce.
-    const row = page.getByTestId('stream-inbox-conversation-row').first();
+    // This cell's conversation: its source was made for it and its messages carry the nonce.
+    const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce }).first();
     await expect(row).toBeVisible();
     await row.click();
     await expect(page.getByText(`is it bad ${nonce}?`)).toBeVisible();

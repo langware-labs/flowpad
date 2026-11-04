@@ -202,7 +202,7 @@ for (const [i, channel] of WANTED.entries()) {
     // A channel's thread IS its conversation (`flatThreadIdsOf`): its messages stay flat in the feed,
     // so there is no stack to open and no `?thread=` view — only native threads stack.
     await expect(page.getByTestId('thread-stack-open')).toHaveCount(0);
-    const bodyOf = (t: string) => page.locator('[data-testid^="message-bubble-"] .whitespace-pre-wrap', { hasText: t }).first();
+    const bodyOf = (t: string) => page.locator('[data-testid^="message-bubble-"] p', { hasText: t }).first();
     for (const t of [`root ${nonce}`, `second ${nonce}`, `third ${nonce}`]) await expect(bodyOf(t)).toBeVisible();
     if (spec.quotesInbound) {
       await expect(page.getByTestId('message-quote').filter({ hasText: `root ${nonce}` }).first()).toBeVisible();

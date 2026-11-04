@@ -33,7 +33,9 @@ class Double:
         self.slack.channels = {channel: []}
         self.config: dict = {"channel": channel}
         self.fields: dict = {"account_key": TEAM}
-        self.secrets: dict = {"token": "xoxb-test"}
+        # ``token`` is the in-process connector stand-in; ``SLACK_BOT_TOKEN`` is the manifest's credential
+        # variable, which is what the e2e channel doubles plant into the vault.
+        self.secrets: dict = {"token": "xoxb-test", "SLACK_BOT_TOKEN": "xoxb-test"}
         self._server = None
 
     def __enter__(self) -> "Double":
