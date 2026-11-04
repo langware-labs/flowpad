@@ -1,0 +1,13 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "n": {
+      "shape": "int",
+      "description": "The number, as on the part's badge."
+    },
+    "text": {
+      "shape": "string",
+      "description": "What happens at that step, in one sentence."
+    }
+  }
+}

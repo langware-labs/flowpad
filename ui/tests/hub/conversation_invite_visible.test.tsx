@@ -71,7 +71,7 @@ describe('hub: assigned conversation is visible immediately (SDK + hook)', () =>
     //    roster row carries hub fields `user_email` + `status` that the lossy
     //    `Participant` type doesn't declare, so read them off the raw object.)
     const roster = (await getMembers(convTypeId)) as Array<
-      { email?: string | null; user_email?: string | null; role?: string | null; status?: string | null }
+      { email?: string | null; user_email?: string | null; roles?: string[] | null; status?: string | null }
     >;
     const inviteeRow = roster.find((m) => {
       const e = (m.user_email ?? m.email ?? '').toLowerCase();
@@ -79,7 +79,8 @@ describe('hub: assigned conversation is visible immediately (SDK + hook)', () =>
     });
     expect(inviteeRow).toBeTruthy();
     expect(inviteeRow?.status).toBe('approved');
-    expect(inviteeRow?.role).toBe('member');
+    // Role sets (965962b14): a conversation "member" is the canonical ['reader', 'runner'].
+    expect([...(inviteeRow?.roles ?? [])].sort()).toEqual(['reader', 'runner']);
 
     // 3. The conversation is *seen*: useEntity — the hook the conversation UI
     //    uses to load its conversation — resolves THIS conversation by id.

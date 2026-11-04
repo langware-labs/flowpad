@@ -3,7 +3,7 @@ import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
-import { errorMessage } from '@src/lib/error-message';
+import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
 /**
@@ -27,9 +27,14 @@ export function useAllocateAgentMailbox(): (agent: Agent) => Promise<AgentMailbo
         // `forceToast` because this is a button the person just pressed: an alert-level
         // notification is otherwise filed into the footer popover and never shown outside
         // Dev mode, so the click appeared to do nothing.
+        // 503 is the hub's one answer for "the mailbox capability is off" — a fact about that hub, not this
+        // request — so it gets the sentence a person can act on, not the hub's own.
+        const offered = errorStatus(error) !== 503;
         notify.error({
-          title: t`Could not allocate a mailbox`,
-          message: errorMessage(error, t`Email settings could not be saved.`),
+          title: offered ? t`Could not allocate a mailbox` : t`This hub does not offer agent email`,
+          message: offered
+            ? errorMessage(error, t`Email settings could not be saved.`)
+            : t`Ask whoever runs the hub to turn agent mailboxes on, or use another channel.`,
           forceToast: true,
         });
         return null;

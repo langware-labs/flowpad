@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { markdownToPlain } from '@src/components/conversation/message-markdown';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import {
   Archive,
   Inbox as InboxIcon,
@@ -609,6 +609,8 @@ export function StreamInboxView({
   agentId,
   sourceId,
   embedded = false,
+  initialChannel,
+  emptyHint,
   onOpenConversation,
 }: {
   agentId?: string;
@@ -618,6 +620,11 @@ export function StreamInboxView({
   /** Inside another page: no stream-inbox-wide verbs (New, New group, Mark all read, Archive all), no channel bar, no
    *  membership invitations — those belong to an owner's stream inbox, not to one source. */
   embedded?: boolean;
+  /** The channel mark (`channelKeyOf` key) the list opens narrowed to — an agent's stream inbox opens on its email.
+   *  The mark's × clears it like any filter; remount (key the view) to open on another. */
+  initialChannel?: string;
+  /** What the empty list says instead of offering channels to connect (an agent whose mailbox admits nobody yet). */
+  emptyHint?: ReactNode;
 } = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
@@ -664,9 +671,12 @@ export function StreamInboxView({
     ) => attributionForOrigin(origin, originLocal ?? null, channelSpec),
     [attributionForOrigin],
   );
-  const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
+  const [channelFilter, setChannelFilter] = useState<Set<string>>(
+    () => new Set(initialChannel ? [initialChannel] : []),
+  );
   // The picked channels that are not listening: the strip above the list explains each one.
   const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
+  // The query already narrows to the picked sources; this also hides rows pushed live from other channels.
   const channelMatch = useMemo(
     () =>
       channelFilter.size
@@ -775,11 +785,22 @@ export function StreamInboxView({
   const { navigation, currentDock } = useDockNavigation();
   const pageBefore = currentDock?.pageBefore ?? null;
   const ownerKey = channelsOwner?.toString() ?? '';
-  const scope = useMemo<ConversationScope | null>(
-    () => (sourceId ? { sourceId } : channelsOwner ? { owner: channelsOwner } : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
-    [ownerKey, sourceId],
+  // The channel marks narrow the QUERY to the picked marks' sources: a page is then rows of those
+  // sources, and Older / Newer page through them, rather than the latest page thinned out in the browser.
+  const pickedSources = useMemo(
+    () =>
+      channelFilter.size
+        ? ownerChannels.filter((s) => s.id && channelFilter.has(channelKeyOf(s))).map((s) => s.id as string)
+        : [],
+    [ownerChannels, channelFilter],
   );
+  const pickedKey = [...pickedSources].sort().join(','); // a refreshed channel list with the same picks keeps the scope
+  const scope = useMemo<ConversationScope | null>(() => {
+    if (sourceId) return { sourceId };
+    if (!channelsOwner) return null;
+    return pickedSources.length ? { owner: channelsOwner, sourceIds: pickedSources } : { owner: channelsOwner };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's and the picks' string forms
+  }, [ownerKey, sourceId, pickedKey]);
   const request = useMemo(() => {
     if (!scope) return null;
     if (searchActive) return conversationsByIdsRequest(scope, [...matchIds]);
@@ -1561,9 +1582,18 @@ export function StreamInboxView({
                       ? t`No messages from this channel yet`
                       : t`No conversations`}
             </span>
-            {/* An owner with no channel connected: the empty list is where connecting one is offered. */}
-            {channelsOwner && !embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
-              <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+            {/* An owner with no channel connected: the empty list is where connecting one is offered —
+                unless the caller knows better what is missing (an allowlist, not a channel). */}
+            {!embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
+              emptyHint ? (
+                <span className="text-sm" data-testid="stream-inbox-empty-hint">
+                  {emptyHint}
+                </span>
+              ) : (
+                // Narrowed to one channel, the list is empty for want of mail on IT: offering other channels
+                // here answers a question nobody asked.
+                channelsOwner && channelFilter.size === 0 && <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+              )
             )}
             {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>

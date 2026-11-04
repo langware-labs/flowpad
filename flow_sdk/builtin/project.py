@@ -34,6 +34,7 @@ from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
+from flow_sdk.core.project_status import changes_status as _changes_status
 from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -597,6 +598,21 @@ class Project(SetupSkippable, Entity):
                 roots.append(canonical)
         return roots
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def local_status(self) -> Optional[dict[str, Any]]:
+        """This project's status on this machine (``core/project_status``), read from its instance file on every
+        serialization and never checked here — so a GET and every push carry the stored answer. Never stored on the
+        row, never sent to the hub."""
+        if not getattr(self, "id", None):
+            return None
+        from flow_sdk.core.project_status import read_stored  # noqa: PLC0415
+
+        try:
+            return read_stored(str(self.id)).model_dump(mode="json")
+        except Exception:  # noqa: BLE001 — a status that cannot be read is no status, never a failed row
+            return None
+
     @computed_field
     @property
     def customization(self) -> dict[str, Any]:
@@ -877,6 +893,19 @@ class Project(SetupSkippable, Entity):
             log.warning("project home page failed for %s: %s", self.id, exc)
             return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
+    @action.get(action_name="home-page-typeid")
+    async def home_page_typeid_action(self, reference: str = "") -> "ApiResponse":
+        """`GET /project/<id>/home-page-typeid?reference=` — ``resolve_home_page_typeid`` alone.
+
+        For a surface that only SHOWS the home page (the Customize card): the TypeId
+        ``reference`` (default: the declared one) names in this checkout, or null.
+        Unlike ``home-page`` it never loads the project. The row is indexed when
+        missing, as ``open_home_page`` does, so the caller can read the asset."""
+        typeid = await self.resolve_home_page_typeid(reference or None)
+        if typeid:
+            await self._index_home_page(typeid)
+        return ApiSuccessResponse(data={"typeid": typeid})
+
     # ── setup: is this project ready here, and the wizard that makes it so ─────────
 
     @action.post(action_name="load")
@@ -1024,18 +1053,17 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"added": added.model_dump(mode="json"), "file": str(handlings.file_of(one.asset_ref))})
 
     @action.get(action_name="setup-requirements")
-    async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":
-        """`GET /project/<id>/setup-requirements?include_ready=` — ``ready``, what is left to set up, and the gaps.
-        Every MUST value and needed connection counts; OPTIONAL values never do. Names only. ``include_ready``
-        (the Project setup page) also lists what is set up and each step's tree node."""
-        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+    async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":  # noqa: ARG002
+        """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps. Every MUST value
+        and needed connection counts; OPTIONAL values never do. Names only. The stored ``setup`` part of this project's
+        status (``core/project_status``), refreshed first when it is due; it always lists what is set up and each
+        step's tree node too, so ``include_ready`` is accepted for old callers and changes nothing."""
+        from flow_sdk.core.project_status import SETUP, fresh  # noqa: PLC0415
 
-        try:
-            readiness = await readiness_of(self, include_ready=include_ready)
-            return ApiSuccessResponse(data=readiness.model_dump(mode="json"))
-        except Exception as exc:  # noqa: BLE001 — the caller shows why, not a bare 500
-            log.warning("project setup requirements failed for %s: %s", self.id, exc, exc_info=True)
-            return ApiFailResponse(message=f"Couldn't check what this project needs here: {exc}")
+        part = await fresh(str(self.id), SETUP)
+        if part.value is None:  # never answered here; a failed recheck still has its last answer
+            return ApiFailResponse(message=f"Couldn't check what this project needs here: {part.error or 'no answer'}")
+        return ApiSuccessResponse(data=part.value)
 
     @action.post(action_name="setup")
     async def setup_action(self, root: str = "") -> "ApiResponse":
@@ -1084,6 +1112,14 @@ class Project(SetupSkippable, Entity):
         except SkipRefused as exc:
             return ApiFailResponse(message=str(exc), status_code=409)
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @action.get(action_name="status")
+    async def status_action(self, parts: str = "") -> "ApiResponse":
+        """`GET /project/<id>/status?parts=setup,...` — this project's stored status, at once. Every asked part that
+        is missing, old or stale starts refreshing behind the answer and is pushed on the Project row when it lands."""
+        from flow_sdk.core.project_status import read  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=read(str(self.id), parts.split(",") if parts else None).model_dump(mode="json"))
 
     @action.get(action_name="setup-run")
     async def setup_run_action(self, root: str = "") -> "ApiResponse":
@@ -1593,6 +1629,7 @@ class Project(SetupSkippable, Entity):
             "include_dirs",
             "context_roots",
             "context_dir_infos",
+            "local_status",
         ):
             body.pop(local_only, None)
         return body
@@ -1611,38 +1648,6 @@ class Project(SetupSkippable, Entity):
         self.remote = True
         await self.save()
         return True
-
-    async def _assert_hub_row_is_reachable(self, client) -> None:
-        """Check that the row a 409 collided with is one this account can reach.
-
-        Treating the conflict as a no-op is right when the row is OURS — a Project
-        published from another instance, or one whose local publication markers
-        were lost while the hub kept the row. It is wrong when the id came from
-        someone else's checkout: a Project id lives in the folder's ``.flow/id``,
-        so cloning a repo carries the ORIGINAL author's id, and silently adopting
-        that row would mark this Project published against an entity we cannot
-        write — every later push would fail with no hint why.
-
-        A GET settles it without leaking anything, because the hub answers it only
-        for a caller holding a role on the row. Note what a refusal does and does
-        not prove: the hub deliberately does not distinguish "no such row" from
-        "not yours", so this reports only what is certain — publishing from here
-        cannot work — and does not diagnose which.
-        """
-
-        try:
-            await client.get(build_hub_url(self))
-        # ``get`` reports any non-200 as ValueError (``FlowpadClient._unwrap``).
-        # Narrow on purpose: a transport failure raises httpx's own error and an
-        # expired session raises ``HubAuthExpiredError``, and both must propagate
-        # as themselves — answering a hub outage with "it isn't yours" would be a
-        # fabricated diagnosis.
-        except ValueError as unreachable:
-            raise RuntimeError(
-                f"A project already exists in the cloud at id {self.id}, and this account "
-                "cannot reach it, so this folder cannot be linked from here. Link it from "
-                "the account that owns it, or give this folder a new project id."
-            ) from unreachable
 
     async def share(
         self,
@@ -1700,7 +1705,10 @@ class Project(SetupSkippable, Entity):
             # remediation the UI offers is the same POST that just 409'd.
             created = await client.post(build_hub_url(self.get_type()), body, idempotent=True)
             if created is None:
-                await self._assert_hub_row_is_reachable(client)
+                await self.confirm_hub_row_is_ours(
+                    remedy="A project's id lives in its folder's .flow/id, so a cloned repo carries the "
+                    "original author's id: link it from the account that owns it, or give this folder a new project id."
+                )
             if "remote" in type(self).model_fields:
                 self.remote = True
             # Publication marker. Receiver materialization also sets ``remote``,
@@ -2837,7 +2845,12 @@ class Project(SetupSkippable, Entity):
         becomes a timeout in practice the fix is 202-and-poll on the node's
         ``ops/status``, which already exists, not a longer client timeout.
         """
-        from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
+        from flow_sdk.builtin.cloud_deploy import (  # noqa: PLC0415
+            DEFAULT_CLOUD_ENVIRONMENT,
+            DEFAULT_CLOUD_PROVIDER,
+            deploy_entity_to_cloud,
+        )
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
@@ -2846,8 +2859,15 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
             body = (await request_info.get_post_data()) or {}
+            provider = str(body.get("provider") or "").strip() or None
+            # The hub makes a new placement (and box) for a deploy that names none: a redeploy names the one it has.
+            existing = await Deployment.find_existing(
+                str(self.typeid), provider or DEFAULT_CLOUD_PROVIDER, environment=DEFAULT_CLOUD_ENVIRONMENT
+            )
             await self.ensure_on_hub()
-            data = await deploy_entity_to_cloud(self, provider=str(body.get("provider") or "").strip() or None)
+            data = await deploy_entity_to_cloud(
+                self, provider=provider, deployment_id=str(existing.id) if existing else None
+            )
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"project_id": self.id, **data})
@@ -2953,6 +2973,13 @@ class Project(SetupSkippable, Entity):
 
         return await project_dependencies.resolve(self, fetch=True, update=update)
 
+    async def check_dependency_updates(self) -> "list[DependencyState]":
+        """Fetch the remotes of the clones Flowpad made, so their ``behind`` counts are current."""
+        from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
+
+        return await project_dependencies.check_updates(self)
+
+    @_changes_status
     async def add_dependency(
         self,
         source: str,
@@ -3048,6 +3075,7 @@ class Project(SetupSkippable, Entity):
             next(s for s in states if s.name == dep.name and s.via is None)
         )
 
+    @_changes_status
     async def remove_dependency(self, name: str, *, asset: str | None = None) -> "list[DependencyState]":
         """Drop ``name`` from ``flow.json``; its folder leaves the context. The folder on
         disk is never touched."""
@@ -3060,6 +3088,41 @@ class Project(SetupSkippable, Entity):
             return []
         if not project_dependencies.drop_local_package(str(self.id), name):
             flow_json.drop_dependency(Path(self.fs_storage_mount_path), name)
+        return await self.dependencies()
+
+    async def update_dependency(
+        self,
+        name: str,
+        *,
+        source: str | None = None,
+        optional: bool | None = None,
+        label: str | None = None,
+        description: str | None = None,
+    ) -> "list[DependencyState]":
+        """Edit ``name``'s entry in ``flow.json`` in place — only the fields given change
+        (``""`` clears a label/description). Nothing is fetched or installed: a required
+        package that is now missing shows up as a warning, like any other."""
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.flow_json_spec import parse_source  # noqa: PLC0415
+
+        if not self.fs_storage_mount_path:
+            raise ValueError("this project has no folder to hold a flow.json")
+        root = Path(self.fs_storage_mount_path)
+        dep = flow_json.read(root).find(name)
+        if dep is None:
+            raise ValueError(f"{name!r} is not declared in flow.json")
+        patch: dict = {}
+        if source is not None and source.strip() != dep.source:
+            patch["source"] = source.strip()
+            parse_source(patch["source"])
+        if optional is not None:
+            patch["required"] = not optional
+        if label is not None:
+            patch["label"] = label or None
+        if description is not None:
+            patch["description"] = description or None
+        if patch:
+            flow_json.write_dependency(root, dep.model_copy(update=patch))
         return await self.dependencies()
 
     async def install_dependency(self, name: str) -> "DependencyState":
@@ -3179,9 +3242,33 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
 
+    @action.post(action_name="update-dependency")
+    async def update_dependency_action(
+        self,
+        name: str = "",
+        source: str | None = None,
+        optional: bool | None = None,
+        label: str | None = None,
+        description: str | None = None,
+    ) -> "ApiResponse":
+        if not name:
+            return ApiFailResponse(message="name is required", status_code=400)
+        try:
+            states = await self.update_dependency(
+                name, source=source, optional=optional, label=label, description=description
+            )
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
+
     @action.post(action_name="resolve-dependencies")
     async def resolve_dependencies_action(self, update: bool = False) -> "ApiResponse":
         states = await self.resolve_dependencies(update=update)
+        return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
+
+    @action.post(action_name="check-dependency-updates")
+    async def check_dependency_updates_action(self) -> "ApiResponse":
+        states = await self.check_dependency_updates()
         return ApiSuccessResponse(data={"dependencies": self._states(states), **self._context_payload()})
 
     @action.post(action_name="install-dependency")

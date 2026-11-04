@@ -82,6 +82,15 @@ export interface AskQuestion {
   /** The op's words for the two buttons. Empty: the defaults, Send / Cancel. */
   submit_label?: string;
   cancel_label?: string;
+  /** What each field of a record answer is called where it is typed; a field without one shows its key. */
+  labels?: Record<string, string>;
+  /** Where this question stands in the sequence the person walks ("Set up on Slack · 1 of 2"). */
+  stage?: { label?: string; index: number; total: number } | null;
+  /** A check of the typed value before it is sent: the source setup step that judges it (`AskForm` runs it
+   *  through the host's `verifyWith`). Null: nothing to verify. */
+  verify?: { label?: string; source_step: string } | null;
+  /** Closes by itself once its goal holds (a phone sends a code): nothing to Send, only to watch. */
+  auto?: boolean;
   /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */
   fields: Shape;
   /** The answer is a secret (an API key): drawn masked. */

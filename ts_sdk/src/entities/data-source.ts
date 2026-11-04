@@ -14,6 +14,7 @@ import { IEntity, EntityMerge } from '../IEntity';
 import type { SetupStageState } from './data-driver';
 import type { ProjectSetupRun } from './project';
 import type { ChannelRouteClaim } from './inbound-webhook';
+import type { ReturnedValue } from '../models/ReturnedValue';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';
@@ -331,6 +332,12 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    */
   async pollNow(): Promise<{ status: string; health: SourceHealth; detail: string }> {
     return this.post('poll_now');
+  }
+
+  /** Run one setup step of this source's driver (what its wizard calls). `check` only asks whether the step
+   *  already holds; `probe` judges the typed `values` without keeping them (a question's Verify). */
+  async step(name: string, body: { check?: boolean; probe?: boolean; values?: Record<string, string> } = {}): Promise<ReturnedValue> {
+    return this.post('step', { step: name, ...body });
   }
 
   /** The setup wizards this source's driver declares, each as it stands for THIS source. */

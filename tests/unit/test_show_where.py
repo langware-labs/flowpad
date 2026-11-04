@@ -20,14 +20,9 @@ async def _app_and_process(tmp_path, same_project: bool):
     return app, process
 
 
-async def test_a_web_app_from_another_project_says_which_project_its_tab_is_in(tmp_path):
+async def test_an_app_from_another_project_opens_beside_the_session(tmp_path):
+    """The tab is presented in the session's project (``presentedIn``), so no other project is named."""
     app, process = await _app_and_process(tmp_path, same_project=False)
     answer = await show_target(await resolve_display_target(typeid=str(app.typeid)), process=process)
     assert answer.delivered
-    assert str(app.project_id) in answer.detail and "not switched" in answer.detail
-
-
-async def test_a_target_in_the_session_project_names_no_project(tmp_path):
-    app, process = await _app_and_process(tmp_path, same_project=True)
-    answer = await show_target(await resolve_display_target(typeid=str(app.typeid)), process=process)
     assert str(app.project_id) not in answer.detail and "not switched" in answer.detail

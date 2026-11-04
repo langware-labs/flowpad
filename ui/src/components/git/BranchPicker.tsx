@@ -23,7 +23,7 @@ interface BranchPickerProps {
   onBack: () => void;
 }
 
-/** Move the default branch to the top of the list (mirrors GitHubConnectionDialog.sortBranches).
+/** Move the default branch to the top of the list.
  *  Everything below it stays in the backend's order, which is most-recently-changed first. */
 function pinDefault(branches: BranchSummary[], defaultName: string): BranchSummary[] {
   const i = branches.findIndex((b) => b.name === defaultName);

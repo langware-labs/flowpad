@@ -71,6 +71,7 @@ describe('React launched-instance isolation source policy', () => {
       'chats-open-recency.test.ts',
       'conversation-load-older.test.tsx',
       'dock-dead-scope-tab-setup.test.tsx',
+      'home-customization-path-home-page.test.tsx',
       'hub-records-paging.test.tsx',
       'project-context-locale-follows.test.ts',
       'project-locale-memory.test.ts',

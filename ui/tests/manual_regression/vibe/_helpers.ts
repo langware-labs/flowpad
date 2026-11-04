@@ -1,5 +1,7 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -166,6 +168,52 @@ export async function registerWebappArtifact(
   return String((data.artifact as { id: string }).id);
 }
 
+/**
+ * Serve `html` from `folder` as a REAL child process whose cwd is that folder.
+ *
+ * `register-webapp-artifact` checks a handed-in port against what listens on it
+ * (`app_ports.stranger_on`): a listener whose cwd is outside the app folder is
+ * "another program", and the registration is refused. A server inside the test
+ * process (cwd = the runner) can never pass that check, so an app fixture must be
+ * the folder's own server, the way a real dev server is.
+ */
+export async function serveFolderApp(
+  folder: string,
+  html: string,
+): Promise<{ port: number; close: () => Promise<void> }> {
+  writeFileSync(path.join(folder, 'index.html'), html, 'utf8');
+  const port = await new Promise<number>((resolve, reject) => {
+    const probe = createNetServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      probe.close(() => (address && typeof address !== 'string' ? resolve(address.port) : reject(new Error('no port'))));
+    });
+  });
+  const child = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], {
+    cwd: folder,
+    stdio: 'ignore',
+  });
+  await expect
+    .poll(async () => {
+      try {
+        return (await fetch(`http://127.0.0.1:${port}/`)).status;
+      } catch {
+        return 0;
+      }
+    })
+    .toBe(200);
+  return {
+    port,
+    close: () =>
+      new Promise<void>((resolve) => {
+        if (child.exitCode !== null) return resolve();
+        child.once('exit', () => resolve());
+        child.kill();
+      }),
+  };
+}
+
 /** `flow show app <artifact-id>` over the wire. */
 export async function showApp(
   request: APIRequestContext,
@@ -179,14 +227,23 @@ export async function showApp(
   );
 }
 
+export interface TabRow {
+  id: string;
+  pointer?: string;
+  target_id?: string;
+  parent_tab_id?: string | null;
+}
+
+/** Every tab row on the instance (`tab/list_all`). */
+export async function listTabs(request: APIRequestContext): Promise<TabRow[]> {
+  return (await (await request.get(`${API}/api/v1/graph/tab/list_all`)).json()).data?.tabs ?? [];
+}
+
 /**
- * The tab-identity hash of a workspace's ACTIVE DISPLAY.
- *
- * Mirrors `ACTIVE_DISPLAY_HASH_NS` (`ui/src/navigation/DockPointer.ts`). Spelled
- * once here because the namespace's whole design note is that it must not be
- * respelled — and because a test filtering on the bare namespace would also count
- * rows left by other fixtures on a shared instance.
+ * The child tabs of a workspace's process tab: each shown target is an ordinary
+ * child of it.
  */
-export function activeDisplayHash(processId: string): string {
-  return `workspaceActive|agentic_process-${processId}`;
+export function displayChildren(tabs: TabRow[], processId: string): TabRow[] {
+  const host = tabs.find((t) => t.target_id === processId && !t.parent_tab_id);
+  return host ? tabs.filter((t) => t.parent_tab_id === host.id) : [];
 }

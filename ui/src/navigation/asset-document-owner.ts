@@ -1,5 +1,4 @@
-import { dataManager, isContentSubPointer, Project, tabOwnerProject, type AnyEntity, type TabProjectTarget } from '@sdk';
-import { isHubOnly } from '@src/navigation/hub-runtime';
+import { dataContext, dataManager, isContentSubPointer, Project, tabOwnerProject, type AnyEntity, type TabProjectTarget } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 
@@ -15,7 +14,8 @@ import { DockPointer } from './DockPointer';
  * does it pay one network `getEntityByPath` (a file whose row isn't cached yet).
  */
 export async function assetDocumentAtOwner(dock: DockPointer): Promise<DockPointer | null> {
-  if (dock.viewType !== ViewType.ASSETS || dock.scopeFilter || dock.hostProcessId || isHubOnly()) return null;
+  // Owners are project mounts on this backend's disk: a backend without one (the hub) rebases nothing.
+  if (dock.viewType !== ViewType.ASSETS || dock.scopeFilter || dock.hostProcessId || !dataContext.caps.localFiles) return null;
   if (!isContentSubPointer(dock.pointer)) return null;
   const typeId = dock.targetTypeId;
   const machinePath = dock.vfsPath?.machinePath;

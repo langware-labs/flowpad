@@ -108,9 +108,19 @@ describe('context folder reaches a real worker', () => {
 
     // Attach the folder via the real HTTP action; the server-computed
     // include_dirs (derived from the Folder context link) must carry it.
+    // add-dependency answers at once and links the folder in the background
+    // (edd1f5a13), so wait for the SDK's own "dependency loaded" announcement.
     const project = await new sdk.Project({ name: workdir }).save();
+    const loaded = new Promise<void>((resolve) => {
+      const off = sdk.onDependencyLoaded((_dep: unknown, consumerProjectId: string) => {
+        if (consumerProjectId === project.id) {
+          off();
+          resolve();
+        }
+      });
+    });
     await project.addDependency(contextDir);
-    expect(project.include_dirs).toContain(contextDir);
+    await loaded;
     const reloaded = await sdk.Project.getById(project.id);
     expect(reloaded?.include_dirs ?? []).toContain(contextDir);
 

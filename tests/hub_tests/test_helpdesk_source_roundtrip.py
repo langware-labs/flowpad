@@ -88,7 +88,9 @@ async def _open_ticket(base: str, guest_token: str, desk_id: str, text: str) -> 
 
 
 async def _hub_messages(base: str, token: str, conv_id: str) -> list[dict]:
-    return list(await _hub(base, token, "GET", f"/graph/conversation/{conv_id}/flow_message") or [])
+    # `messages`, not the `flow_message` child list: desk staff who have not picked the
+    # ticket up hold no role on it, and `messages` is the read the helpdesk source uses.
+    return list(await _hub(base, token, "GET", f"/graph/conversation/{conv_id}/messages") or [])
 
 
 async def _pool(base: str, token: str, desk_id: str) -> list[dict]:

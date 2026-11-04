@@ -16,6 +16,8 @@ export interface IDockPointer {
    */
   /** Tab natural key (== `Tab.pointer`); null when this dock has no tab (home, bare shell). */
   readonly tabHash?: string | null;
+  /** The project this dock is presented in, when not its target's own. */
+  readonly presentedIn?: string | null;
   /** The entity this dock targets (`…/typeid/<type>-<id>`, `shell-<id>`, `project-<id>`), or null. */
   readonly targetTypeId?: TypeId | null;
   /** The vfs path an asset-editor dock addresses (`…/vfs/<path>`), or null. */

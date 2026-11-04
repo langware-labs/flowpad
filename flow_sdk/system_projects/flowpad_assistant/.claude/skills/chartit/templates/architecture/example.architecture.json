@@ -1,0 +1,51 @@
+{
+  "title": "Flowpad — services, stores, clients",
+  "groups": [
+    {"id": "clients", "label": "Clients", "sublabel": "on the person's machine", "tiers": [
+      {"id": "desktop", "label": "Desktop shell", "parts": [
+        {"id": "electron", "label": "Electron app", "sublabel": "desktop window", "role": "client", "step": 1},
+        {"id": "ui", "label": "Flowpad UI", "sublabel": "React · Vite", "role": "client", "step": 2}]},
+      {"id": "terminal", "label": "Terminal", "parts": [
+        {"id": "cli", "label": "flow CLI", "sublabel": "per instance", "role": "client"},
+        {"id": "agentshell", "label": "Agent shell", "sublabel": "Claude Code · Codex", "role": "client"}]}]},
+    {"id": "backend", "label": "Local backend", "sublabel": "one per instance · ~/.flow/instances/<name>", "tiers": [
+      {"id": "server", "label": "Server", "parts": [
+        {"id": "api", "label": "API server", "sublabel": "FastAPI · REST", "role": "service", "step": 3},
+        {"id": "ws", "label": "Event bus", "sublabel": "WebSocket", "role": "service", "step": 7},
+        {"id": "indexer", "label": "Indexer", "sublabel": "files → rows", "role": "worker"}]},
+      {"id": "stores", "label": "Stores", "parts": [
+        {"id": "sqlite", "label": "SQLite DB", "sublabel": "entities · index", "role": "db", "step": 4},
+        {"id": "fs", "label": "Workspace", "sublabel": "agentic-assets/", "role": "files"},
+        {"id": "keyring", "label": "Keyring", "sublabel": "hub token", "role": "db"}]},
+      {"id": "workers", "label": "Workers", "parts": [
+        {"id": "agents", "label": "Agent workers", "sublabel": "agentic processes", "role": "worker", "step": 5},
+        {"id": "pty", "label": "PTY shells", "sublabel": "terminals", "role": "worker"},
+        {"id": "sync", "label": "Sync engine", "sublabel": "data sources", "role": "worker"}]}]},
+    {"id": "hub", "label": "Flowpad hub", "sublabel": "cloud", "tiers": [
+      {"id": "hubsvc", "label": "Hub services", "cols": 2, "parts": [
+        {"id": "hubapi", "label": "Hub API", "sublabel": "auth · share", "role": "service"},
+        {"id": "hubdb", "label": "Hub DB", "sublabel": "Postgres", "role": "db"},
+        {"id": "llm", "label": "LLM gateway", "sublabel": "OpenRouter · Claude", "role": "service", "step": 6},
+        {"id": "channels", "label": "Channels", "sublabel": "WhatsApp · Slack", "role": "service"}]},
+      {"id": "sandboxes", "label": "Sandboxes", "parts": [
+        {"id": "e2b", "label": "E2B", "sublabel": "remote exec", "role": "external"}]}]}
+  ],
+  "links": [
+    {"from": "electron", "to": "ui", "label": "loads"},
+    {"from": "desktop", "to": "server", "label": "REST + WS", "both": true},
+    {"from": "terminal", "to": "server", "label": "HTTP"},
+    {"from": "server", "to": "stores", "label": "read / write", "both": true},
+    {"from": "server", "to": "workers", "label": "spawns"},
+    {"from": "backend", "to": "hub", "label": "login · share · LLM", "both": true},
+    {"from": "hubapi", "to": "hubdb"}
+  ],
+  "steps": [
+    {"n": 1, "text": "Electron opens the Flowpad UI in its window."},
+    {"n": 2, "text": "The UI loads the bootstrap and entities over REST."},
+    {"n": 3, "text": "The API server reads and writes through dataManager."},
+    {"n": 4, "text": "SQLite holds every entity row and the file index."},
+    {"n": 5, "text": "A chat turn spawns an agent worker (Claude Code / Codex)."},
+    {"n": 6, "text": "The worker's model calls go out through the hub's LLM gateway."},
+    {"n": 7, "text": "Its output streams back to the UI over the WebSocket bus."}
+  ]
+}

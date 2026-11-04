@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { withViewMode } from '../_shared/view-mode';
 import { apiBase, waitForIndexerIdle } from '../_shared/api';
 
 const API_URL = apiBase();
@@ -59,38 +58,24 @@ test.describe('Search Scan Info Stats', () => {
     expect(Number(match![1])).toBeGreaterThanOrEqual(0);
   });
 
-  // ── Test 4: Home inline search stats shows "indexed" ──────────────────────
-  test('home inline search stats line shows indexed after a search', async ({ page }) => {
+  // ── Test 4: Search view stats line shows "indexed" after a search ────────
+  // The home's inline search panel is gone: since 2026-10-11 the home is always
+  // the tabless Vibe hero (docs/viewmodes.md). A search runs in the search view,
+  // whose header carries the stats line (latency once a search ran, N indexed).
+  test('search view stats line shows indexed after a search', async ({ page }) => {
     await dismissSetupModal(page);
-  // The home search surfaces asserted here (`record-search-bar`, `search-input`)
-// exist only on the Standard HomeLanding — Vibe renders the creator homepage,
-// which has neither. The app legitimately ends up in Vibe (the project-open path
-// opens home `.withViewMode(ViewMode.Vibe)` and the dock sync persists that
-// instance-wide), so a test wanting Standard must pin it on the ADDRESS rather
-// than inherit whatever the instance was last left in.
-  await page.goto(withViewMode('/dock/home', 'standard'));
+    await page.goto('/dock/search');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
-    const input = page.locator('[data-testid="search-input"]').first();
+    const input = page.locator('[data-testid="search-input"]:visible').first();
     await expect(input).toBeVisible({ timeout: 10_000 });
     await input.click();
-    // Use type() to trigger React onChange events character by character (more reliable than fill for controlled inputs)
-    await input.type('test');
-    // Wait briefly for React to process the input and debounce to settle (300ms debounce + buffer)
-    await page.waitForTimeout(600);
+    await input.fill('test');
 
-    // Wait for inline results panel header to appear — either loading or results
-    // Accept: "Searching…", "N results · ...", "Ready", "No results"
-    const inlineHeader = page.locator('text=/Searching|result|Ready|No results/').first();
-    await expect(inlineHeader).toBeVisible({ timeout: 10_000 });
-
-    // Wait for loading to finish
-    await expect(page.locator('text=Searching')).not.toBeVisible({ timeout: 8_000 }).catch(() => {});
-
-    // Stats line should now contain "indexed" (if LanceDB has indexed docs)
-    // Accept: "N indexed" or just validate results are shown
-    const finalStats = page.locator('text=/\\d+ result/').first();
-    await expect(finalStats).toBeVisible({ timeout: 5_000 });
+    const view = page.locator('[data-testid="search-view"]');
+    // The latency readout renders only after a search completed.
+    await expect(view.locator('text=/\\d+ ms/').first()).toBeVisible({ timeout: 10_000 });
+    await expect(view.locator('text=/\\d[\\d,]* indexed/').first()).toBeVisible({ timeout: 8_000 });
   });
 
   // ── Test 5: index-status endpoint returns expected shape ───────────────────

@@ -33,6 +33,8 @@ export interface TokenAllocationFieldProps {
   environment: string;
   /** The hub provider the deployment lands on — its placement is per provider. */
   provider: CloudDeployProvider;
+  /** The existing deployment whose allocation this changes; `null` = a new deployment (Configure plans a new one). */
+  deploymentId: string | null;
   /** `null` = unchecked: the agent spends its owner's capped default. */
   value: AgentTokenAllocation | null;
   onChange: (next: AgentTokenAllocation | null) => void;
@@ -49,6 +51,7 @@ export function TokenAllocationField({
   agent,
   environment,
   provider,
+  deploymentId,
   value,
   onChange,
   disabled,
@@ -159,6 +162,7 @@ export function TokenAllocationField({
               agent={agent}
               environment={environment}
               provider={provider}
+              deploymentId={deploymentId}
               value={value}
               disabled={disabled}
             />
@@ -295,12 +299,14 @@ function ConfigureButton({
   agent,
   environment,
   provider,
+  deploymentId,
   value,
   disabled,
 }: {
   agent: Agent;
   environment: string;
   provider: CloudDeployProvider;
+  deploymentId: string | null;
   value: AgentTokenAllocation;
   disabled?: boolean;
 }) {
@@ -311,7 +317,7 @@ function ConfigureButton({
   const configure = async () => {
     setConfiguring(true);
     try {
-      const planned = await agent.planDeployment(environment, provider, value);
+      const planned = await agent.planDeployment(environment, provider, value, deploymentId ?? undefined);
       const allocation = planned.deployment?.llm_endpoint_typeid;
       if (allocation) openLlmEndpoint(navigation, allocation);
     } catch (e) {

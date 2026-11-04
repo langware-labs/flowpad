@@ -108,7 +108,14 @@ async function createSource(
   const submit = dialog.getByRole('button', { name: 'Add source' });
   await expect(submit).toBeEnabled();
   await submit.click();
-  await expect(dialog).toBeHidden();
+  // A source the backend parks in setup (a driver with a verify step: folder, git, gdrive) opens
+  // its setup step in place of closing (afb341f78); close that step, the source is already added.
+  const setupStep = page.getByRole('dialog').filter({ has: page.getByRole('link', { name: 'Setup' }) });
+  await expect(async () => {
+    expect((await setupStep.isVisible()) || !(await dialog.isVisible())).toBe(true);
+  }).toPass();
+  if (await setupStep.isVisible()) await setupStep.getByRole('button', { name: 'Close' }).first().click();
+  await expect(page.getByRole('dialog')).toBeHidden();
 
   const card = page.locator(`[data-testid="source-card"][data-provider="${provider}"]`).filter({
     hasText: name,

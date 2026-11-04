@@ -477,15 +477,23 @@ export class Agent extends APIEntity<Agent> {
    * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
    * back to the owner's capped default; omitted leaves it as it is.
    */
-  async deploy(
-    environment?: string,
-    provider?: 'local' | CloudDeployProvider,
-    tokenAllocation?: AgentTokenAllocation | null,
-  ): Promise<AgentDeployResult> {
+  async deploy({
+    environment,
+    provider,
+    tokenAllocation,
+    machineSize,
+  }: {
+    environment?: string;
+    provider?: 'local' | CloudDeployProvider;
+    tokenAllocation?: AgentTokenAllocation | null;
+    machineSize?: string;
+  } = {}): Promise<AgentDeployResult> {
     const body = {
       ...(environment ? { environment } : {}),
       ...(provider ? { provider } : {}),
       ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+      // This deploy's box size; never written into agent.json (that would dirty the checkout it deploys).
+      ...(machineSize ? { machine_size: machineSize } : {}),
     };
     return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
   }
@@ -495,17 +503,20 @@ export class Agent extends APIEntity<Agent> {
    * (default `production`), before it
    * has a machine, and whether it is ready: each missing value can be filled ("use mine",
    * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
-   * `deploy`, which is refused (409 `not_ready`) until it is.
+   * `deploy`, which is refused (409 `not_ready`) until it is. `deploymentId` plans the existing deployment it
+   * names again (changing its allocation); omitted, the hub makes a new one.
    */
   async planDeployment(
     environment?: string,
     provider?: CloudDeployProvider,
     tokenAllocation?: AgentTokenAllocation | null,
+    deploymentId?: string,
   ): Promise<AgentPlannedDeployment> {
     const body = {
       ...(environment ? { environment } : {}),
       ...(provider ? { provider } : {}),
       ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+      ...(deploymentId ? { deployment_id: deploymentId } : {}),
     };
     return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
   }
@@ -822,4 +833,10 @@ export interface AgentVersionState {
   published_commit: string;
   has_repo: boolean;
   pending_changes: number;
+  /** The project is a git checkout: its commits are what deploys, so `uncommitted`/`unpushed` block a deploy. */
+  git_native?: boolean;
+  /** That checkout has a remote of its own (then `unpushed` counts commits no remote holds). */
+  has_remote?: boolean;
+  uncommitted?: number;
+  unpushed?: number;
 }

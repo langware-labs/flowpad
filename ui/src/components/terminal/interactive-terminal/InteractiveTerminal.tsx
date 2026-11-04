@@ -1,4 +1,4 @@
-import { registerTerminalLinks } from './terminal-links';
+import { registerJoinedCopy, registerTerminalLinks, selectionText } from './terminal-links';
 import { useLinks } from '@src/components/links/LinkMenu';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
@@ -926,7 +926,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
         if (event.type === 'keydown' && (event.ctrlKey || event.metaKey)) {
           if (event.key === 'c' && term.hasSelection()) {
-            navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+            // Written here, so the browser's own copy (and the copy listener) must not run again.
+            event.preventDefault();
+            navigator.clipboard.writeText(selectionText(term)).catch(() => {});
             term.clearSelection();
             return false;
           }
@@ -946,6 +948,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       try {
         term.open(container);
         registerTerminalLinks(term, terminalLinks.handlers);
+        registerJoinedCopy(term);
         // Stamp the RTL/bidi contract on THIS container. The vendor-keyed
         // effect below re-decides when worker_type resolves, but it cannot be
         // the only writer: the container is conditionally mounted

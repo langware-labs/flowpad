@@ -523,7 +523,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
               </p>
             )}
 
-            {/* Machines — hidden until the summary line's Machines chip is clicked. */}
+            {/* Machines — reached from the home page's Machines tab (HubItemsSection). */}
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-medium text-muted-foreground">
                 <Trans>Machines</Trans>

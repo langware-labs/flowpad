@@ -27,13 +27,19 @@ class Double:
     #: The stranger who writes in: a member id.
     sender = "U0ALICE01"
 
-    def __init__(self, *, channel: str = CHANNEL):
+    def __init__(self, *, channel: str = CHANNEL, everything: bool = False):
+        """One channel read as a bot, or — ``everything`` — every conversation the person is in through
+        their own app (a user token; the row names no channel)."""
         self.channel = channel
         self.slack = _FakeSlack()
         self.slack.channels = {channel: []}
-        self.config: dict = {"channel": channel}
+        self.config: dict = {"team_id": TEAM, "user_id": _FakeSlack.me} if everything else {"channel": channel}
         self.fields: dict = {"account_key": TEAM}
-        self.secrets: dict = {"token": "xoxb-test"}
+        # Keyed as the manifest's `auth.vars` (the `slack_channel` credential): what a planted
+        # credential carries, and what the driver reads as the token it acts with.
+        self.secrets: dict = (
+            {"SLACK_USER_TOKEN": "xoxp-test"} if everything else {"SLACK_BOT_TOKEN": "xoxb-test"}
+        )
         self._server = None
 
     def __enter__(self) -> "Double":
@@ -47,15 +53,17 @@ class Double:
             server.__exit__(*exc)
 
     async def credentials(self, _row) -> ResolvedSecrets:
-        """The in-process stand-in for ``DataDriver.credentials_for``: the connector token."""
-        return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(self.secrets["token"]))
+        """The in-process stand-in for ``DataDriver.credentials_for``: the bot token, as the credential holds it."""
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
 
-    def deliver(self, text: str, *, sender: str, thread: str | None = None, files=(), reactions: dict | None = None) -> dict:
+    def deliver(self, text: str, *, sender: str, thread: str | None = None, files=(), reactions: dict | None = None, channel: str = "") -> dict:
         """A message ``sender`` writes into the channel now (its ts is the wall clock, later than any
         ts handed out so far): the next ``conversations.history`` returns it. ``files`` are paths or
-        ``(name, bytes)`` pairs it carries; ``reactions`` is ``{slack name: [user, ...]}`` already on it."""
+        ``(name, bytes)`` pairs it carries; ``reactions`` is ``{slack name: [user, ...]}`` already on it.
+        ``channel`` is another conversation of the person's (a DM ``D…``, a group ``G…``) — everything mode."""
         pairs = tuple((Path(f).name, Path(f).read_bytes()) if isinstance(f, (str, Path)) else tuple(f) for f in files)
-        message = self.slack.arrive(self.channel, text, user=sender, thread_ts=thread, files=pairs, reactions=reactions)
+        self.slack.channels.setdefault(channel or self.channel, [])
+        message = self.slack.arrive(channel or self.channel, text, user=sender, thread_ts=thread, files=pairs, reactions=reactions)
         return {
             "external_id": message["ts"],
             "thread": message.get("thread_ts") or message["ts"],
@@ -77,6 +85,14 @@ class Double:
     def reactions(self, external_id: str) -> dict[str, list[str]]:
         """``{slack name: [user, ...]}`` on a message now — ours are the bot's (``_FakeSlack.me``)."""
         return {r["name"]: list(r["users"]) for r in self.slack.message(self.channel, external_id).get("reactions") or ()}
+
+    def push(self, external_id: str, *, channel: str = "") -> dict:
+        """What the hub hands this row for a message Slack posted to the person's app: ``{"team_id", "event"}``,
+        the event as Slack sends it (``channel_type`` by the conversation's kind)."""
+        where = channel or self.channel
+        message = self.slack.message(where, external_id)
+        kind = {"D": "im", "G": "mpim"}.get(where[0], "channel")
+        return {"team_id": TEAM, "event": {**message, "channel": where, "channel_type": kind}}
 
     def sent(self) -> list[dict]:
         """Every ``chat.postMessage`` and completed upload the double accepted, oldest first; an

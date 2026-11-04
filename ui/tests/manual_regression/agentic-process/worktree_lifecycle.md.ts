@@ -58,6 +58,21 @@ test.describe('worktree lifecycle', () => {
   test.beforeAll(async () => { PROJECT_DIR = await resolveProjectDir(); });
   test.afterEach(() => { if (PROJECT_DIR) cleanGit(PROJECT_DIR); });
 
+  /**
+   * A fresh folder is not trusted by Claude yet, and Claude refuses --worktree there; the plain session shows its
+   * own "Is this a project you created or one you trust?" prompt (No, exit selected). Answer it as a person
+   * does — Yes, I trust this folder — so Open in Worktree can then start a real worktree session.
+   */
+  async function acceptFolderTrust(page: import('@playwright/test').Page) {
+    const rows = page.locator('.xterm-rows:visible').first();
+    await expect(rows).toContainText(/I trust this folder|❯/, { timeout: 15_000 });
+    if (!(await rows.textContent())?.includes('I trust this folder')) return;
+    await rows.click();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(rows).not.toContainText('I trust this folder', { timeout: 15_000 });
+  }
+
   test('test 1: OpenInWorktree spawns a worktree sibling; CommitMerge appears in it', async ({ page }) => {
     // --worktree is claude-only (getWorkerCliCapabilities reports worktree:false
     // for codex/copilot/opencode), so the Open-in-Worktree affordance correctly
@@ -72,6 +87,7 @@ test.describe('worktree lifecycle', () => {
     await startClaude(page);
     const pid = processIdFromUrl(page);
     await waitForRunningSession(page, apiBase(), pid);
+    await acceptFolderTrust(page);
 
     // Parent (non-worktree): OpenInWorktree enabled, no CommitMerge button.
     await expect(await worktreeItem(page)).not.toHaveAttribute('data-disabled', /.*/, { timeout: 15_000 });

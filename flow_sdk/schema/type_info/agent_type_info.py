@@ -26,6 +26,7 @@ async def _agent_document_edit(path, patch, *, project_id=None):
 
 AGENT = TypeInfo(
     type_name=EntityType.AGENT,
+    template={"system_prompt": "You are {name}.\n\nYour job: <what you do>.\nNever: <what you must not do>.\n"},
     display_name="Agents",
     # Not Bot — that is SUBAGENT's; Brain/BrainCircuit are claude_memory/graph_context.
     icon="BrainCog",

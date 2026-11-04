@@ -15,6 +15,7 @@ export function AskValueInput({
   value,
   onChange,
   onEnter,
+  onPaste,
 }: {
   id: string;
   testId: string;
@@ -24,6 +25,8 @@ export function AskValueInput({
   value: string;
   onChange: (value: string) => void;
   onEnter: () => void;
+  /** A value was pasted (the change with it follows): a form that verifies does so once, by itself. */
+  onPaste?: () => void;
 }) {
   if (file) return <FileValueInput id={id} testId={testId} secret={secret} value={value} onChange={onChange} />;
   return (
@@ -36,6 +39,7 @@ export function AskValueInput({
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onPaste={onPaste}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onEnter();
       }}

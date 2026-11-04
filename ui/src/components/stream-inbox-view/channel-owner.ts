@@ -83,14 +83,26 @@ export type StreamInboxViewMode = 'all' | 'unread' | 'archived';
 /** How many conversations one page of a stream inbox shows. */
 export const STREAM_INBOX_PAGE_SIZE = 100;
 
-/** Which conversations a page lists: an owner's stream inbox, or one data source's. */
-export type ConversationScope = { owner: TypeId } | { sourceId: string };
+/** Which conversations a page lists: an owner's stream inbox — narrowed to some of its sources when the
+ *  channel marks pick them — or one data source's. The narrowing is part of the query, so a filtered page
+ *  is N rows of those sources, never N rows the browser then thins out. */
+export type ConversationScope = { owner: TypeId; sourceIds?: readonly string[] } | { sourceId: string };
 
 /** A scope as a string: what keys a memo or a request on it. */
-export const scopeKey = (scope: ConversationScope) => ('owner' in scope ? scope.owner.toString() : scope.sourceId);
+export const scopeKey = (scope: ConversationScope) =>
+  'owner' in scope
+    ? scope.sourceIds?.length
+      ? `${scope.owner.toString()}|${[...scope.sourceIds].sort().join(',')}`
+      : scope.owner.toString()
+    : scope.sourceId;
 
-const scopeClauses = (scope: ConversationScope): ExpressionNode[] =>
-  'owner' in scope ? [ownerMatch(scope.owner)] : [sourceMatch(scope.sourceId)];
+const scopeClauses = (scope: ConversationScope): ExpressionNode[] => {
+  if (!('owner' in scope)) return [sourceMatch(scope.sourceId)];
+  const clauses = [ownerMatch(scope.owner)];
+  if (scope.sourceIds?.length)
+    clauses.push(new ExpressionNode({ op: '$IN', operands: ['channel_source_id', [...scope.sourceIds]] }));
+  return clauses;
+};
 
 const notArchived = () =>
   new ExpressionNode({

@@ -10,7 +10,7 @@ const API = apiBase();
 const created: Array<{ id: string; assetRef: string }> = [];
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   const board = { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -20,15 +20,15 @@ async function createWhiteboard(request: APIRequestContext, name: string) {
 
 const UUID_V4_V5 = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[45][0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-/** The `id:` in WHITE_BOARD.md's frontmatter — the whiteboard's identity carrier. */
+/** The `id:` in CHART.md's frontmatter — the whiteboard's identity carrier. */
 function frontmatterId(md: string): string | null {
   const fm = md.match(/^---\n([\s\S]*?)\n---/);
   return fm?.[1].match(/^id:\s*['"]?([^'"\s]+)/m)?.[1] ?? null;
 }
 
 async function openEditor(page: Page, id: string) {
-  await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-  await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
   // Wait for the excalidraw dev hooks to populate.
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
@@ -71,7 +71,7 @@ const TWO_BOXES_ARROW = [
 test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   test.afterEach(async ({ request }) => {
     for (const { id, assetRef } of created.splice(0)) {
-      await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+      await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
       fs.rmSync(assetRef, { recursive: true, force: true });
     }
   });
@@ -89,9 +89,9 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     // renders a curated root set — agent/skill/markdown/spec — and does not offer
     // a whiteboard quick-create toolbar entry). Create then open the editor.
     const { id } = await createWhiteboard(request, `c1-board-${Math.floor(1000 + Math.random() * 9000)}`);
-    await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-    await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 15_000 });
-    expect(page.url()).toContain('/dock/assets/editor/whiteboard/');
+    await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: 15_000 });
+    expect(page.url()).toContain('/dock/assets/editor/chart/');
   });
 
   test('C2–C3: files on disk + frontmatter id present (after first save)', async ({ page, request }) => {
@@ -106,36 +106,36 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     const { id, assetRef } = await createWhiteboard(request, `c2-board-${Date.now() % 10000}`);
     await openEditor(page, id);
     // Folder materializes lazily on first save — trigger one. The save writes
-    // board.json, then WHITE_BOARD.md, then the SVG thumbnail sequentially, so
-    // poll for WHITE_BOARD.md (the last markdown write) rather than fixed-sleeping.
+    // board.json, then CHART.md, then the SVG thumbnail sequentially, so
+    // poll for CHART.md (the last markdown write) rather than fixed-sleeping.
     await injectAndSave(page, TWO_BOXES_ARROW);
     for (let i = 0; i < 10; i++) {
       await page.waitForTimeout(1_000);
-      if (fs.existsSync(`${assetRef}/WHITE_BOARD.md`) && fs.existsSync(`${assetRef}/board.json`)) break;
+      if (fs.existsSync(`${assetRef}/CHART.md`) && fs.existsSync(`${assetRef}/board.json`)) break;
     }
 
-    expect(fs.existsSync(`${assetRef}/WHITE_BOARD.md`), 'WHITE_BOARD.md exists after save').toBe(true);
+    expect(fs.existsSync(`${assetRef}/CHART.md`), 'CHART.md exists after save').toBe(true);
     expect(fs.existsSync(`${assetRef}/board.json`), 'board.json exists after save').toBe(true);
 
-    // C3: the whiteboard's identity carrier is WHITE_BOARD.md's frontmatter
+    // C3: the whiteboard's identity carrier is CHART.md's frontmatter
     // (TypeInfo `identity_carrier=frontmatter_identity()`; the folder-capsule and
     // folder-name id forms were retired in 835d68760). The id is minted at create,
     // so it is already there right after the first save, next to the mermaid block
     // the autosave splices in.
-    const md = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
-    expect(md).toContain('<!-- BEGIN whiteboard:auto -->');
-    expect(md).toContain('<!-- END whiteboard:auto -->');
+    const md = fs.readFileSync(`${assetRef}/CHART.md`, 'utf8');
+    expect(md).toContain('<!-- BEGIN chart:auto -->');
+    expect(md).toContain('<!-- END chart:auto -->');
     const savedId = frontmatterId(md);
     expect(savedId ?? '', 'frontmatter id is a valid v4/v5 UUID').toMatch(UUID_V4_V5);
     expect(savedId, 'frontmatter id is the entity id assigned at create').toBe(id);
 
     // An index pass keeps the same id and the mermaid markers.
-    const idx = await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
+    const idx = await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=chart`);
     expect(idx.status()).toBe(200);
-    const mdAfterIndex = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
+    const mdAfterIndex = fs.readFileSync(`${assetRef}/CHART.md`, 'utf8');
     expect(frontmatterId(mdAfterIndex), 'index pass keeps the frontmatter id').toBe(id);
-    expect(mdAfterIndex).toContain('<!-- BEGIN whiteboard:auto -->');
-    expect(mdAfterIndex).toContain('<!-- END whiteboard:auto -->');
+    expect(mdAfterIndex).toContain('<!-- BEGIN chart:auto -->');
+    expect(mdAfterIndex).toContain('<!-- END chart:auto -->');
   });
 
   test('C4: draw + autosave writes board.json (>=2 elements) + thumbnail', async ({ page, request }) => {
@@ -164,7 +164,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     }
     expect(elementCount, 'board.json data.elements length').toBeGreaterThanOrEqual(2);
 
-    // The thumbnail is the LAST write in persist (board.json → WHITE_BOARD.md →
+    // The thumbnail is the LAST write in persist (board.json → CHART.md →
     // exportToSvg → thumbnail.svg), so it lands a couple seconds after board.json.
     // Poll for it rather than single-shot — same wait budget, just the right file.
     const thumb = `${assetRef}/thumbnail.svg`;

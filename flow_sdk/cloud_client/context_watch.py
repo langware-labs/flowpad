@@ -152,7 +152,9 @@ class BrowserContextWatch:
         except Exception:  # noqa: BLE001 — unknown type → nothing to watch
             return
         try:
-            await HubProxy.call("POST", et, eid, action, payload={"connection_id": cid})
+            # Quiet: a watch is best effort and this swallows its failure -- the one that surfaced was the
+            # unwatch of an agent just deleted ("Target entity not found"), shown as hub errors.
+            await HubProxy.call("POST", et, eid, action, payload={"connection_id": cid}, quiet=True)
             logger.debug("[browser-context-watch] hub %s %s via conn %s", action, key, cid)
         except Exception as e:  # noqa: BLE001
             logger.debug("[browser-context-watch] hub %s failed for %s: %s", action, key, e)

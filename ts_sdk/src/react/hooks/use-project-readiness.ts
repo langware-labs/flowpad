@@ -17,3 +17,10 @@ export function useProjectSetupLeft(projectId: string | null | undefined): numbe
     ? readiness.to_do.length
     : 0;
 }
+
+/** How many of `projectId`'s dependencies Flowpad cloned are behind their remote — updates waiting,
+ *  never "setup required". 0 when none, unknown, or the answer is another project's. */
+export function useProjectUpdatesPending(projectId: string | null | undefined): number {
+  const readiness = useProjectReadiness();
+  return readiness && projectId && readiness.project_id === String(projectId) ? (readiness.updates ?? 0) : 0;
+}

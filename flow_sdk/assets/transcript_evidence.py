@@ -1,21 +1,39 @@
 """Filesystem path evidence carried by normalized worker transcript entries."""
 from flow_sdk.transcript_analyzer.entry import EntryKind
 
+_SKILL_DIR = 'Base directory for this skill:'
+
+
+def _skill_dir(text):
+    """The directory a loaded skill body names on its first line, else None."""
+    head = (text or '').lstrip()
+    if not head.startswith(_SKILL_DIR):
+        return None
+    return head.partition('\n')[0][len(_SKILL_DIR):].strip() or None
+
+
+def linked_skill_dirs(entries):
+    """Skill call id → the directory its injected body names (None: a harness built-in).
+
+    Claude Code links the body to its call with ``source_tool_use_id``; that id
+    is the only correlation — never adjacency or a folder-name guess.
+    """
+    calls = {e.tool_use_id for e in entries if e.kind == EntryKind.SKILL_CALL and getattr(e, 'tool_use_id', None)}
+    result = {}
+    for entry in entries:
+        source = getattr(entry, 'source_tool_use_id', None)
+        if entry.kind == EntryKind.USER_MESSAGE and source in calls:
+            result[source] = result.get(source) or _skill_dir(entry.text)
+    return result
+
 
 def skill_result_paths(entries):
-    """A native Skill result can explicitly identify its loaded directory.
-
-    Correlate by the tool call ID, never adjacency or a folder-name guess.
-    """
+    """A native Skill result can explicitly identify its loaded directory."""
     result = {}
     for entry in entries:
         if entry.kind != EntryKind.TOOL_RESULT or getattr(entry, 'is_error', False):
             continue
-        path = getattr(entry, 'file_path', None)
-        first = (getattr(entry, 'tool_output', '') or '').strip().splitlines()
-        prefix = 'Base directory for this skill:'
-        if first and first[0].startswith(prefix):
-            path = first[0][len(prefix):].strip()
+        path = _skill_dir(getattr(entry, 'tool_output', '')) or getattr(entry, 'file_path', None)
         if path and getattr(entry, 'tool_use_id', None):
             result[entry.tool_use_id] = path
     return result
@@ -48,18 +66,17 @@ def recognizable_asset_reference(path):
     return False
 
 
-def injected_skill_paths(entries):
+def injected_skill_paths(entries, linked=()):
     """Native loaded-skill messages carry an explicit directory independently
     of whether the preceding invocation included a resolvable name.
+
+    A body linked to its Skill call (``linked``) is that call's evidence, not a second usage.
     """
     result = {}
-    prefix = 'Base directory for this skill:'
     for entry in entries:
-        if entry.kind != EntryKind.USER_MESSAGE:
+        if entry.kind != EntryKind.USER_MESSAGE or getattr(entry, 'source_tool_use_id', None) in linked:
             continue
-        first = (getattr(entry, 'text', '') or '').lstrip().splitlines()
-        if first and first[0].startswith(prefix):
-            path = first[0][len(prefix):].strip()
-            if path:
-                result[id(entry)] = path
+        path = _skill_dir(entry.text)
+        if path:
+            result[id(entry)] = path
     return result

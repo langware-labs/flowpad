@@ -266,9 +266,9 @@ async def handle_delete_by_id():
         else:
             is_deleted = await entity_model.delete_by_id(target_typeid.id)
     except HubError as e:
-        raise HTTPException(
-            status_code=502, detail=f"{e.reason} ({e.status_code}); it is kept here so the delete can be retried"
-        ) from e
+        # By kind: a hub refusal keeps its status (403, 401), signed out 401, no hub 503, and
+        # offline or a hub 5xx 502. The local row is kept, so the delete can be retried.
+        raise HTTPException(status_code=e.http_status, detail=e.user_message()) from e
     # Removing the hub row above fans ``child_deleted`` back to this instance, which can drop the
     # local mirror before ``delete_by_id`` reaches it. A row that existed and is gone now was
     # deleted — by this request — so that is success, not a refusal.

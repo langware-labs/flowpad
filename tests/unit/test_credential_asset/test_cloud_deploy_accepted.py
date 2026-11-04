@@ -51,7 +51,7 @@ async def test_an_unfunded_deploy_is_placed_and_the_readiness_step_says_so(agent
     planned = await agent.plan_deployment("production", provider="e2b")
     hub.funding[str(planned.id)] = {"kind": "default", "name": "my default", "exhausted": EXHAUSTED}
 
-    final = await deploy_ended(agent, "user-1", "production", provider="e2b")
+    final = await deploy_ended(agent, "user-1", "production", provider="e2b", deployment_id=str(planned.id))
 
     readiness_step = next(c for c in final.children if c.name == "readiness")
     assert readiness_step.message == (
@@ -72,9 +72,10 @@ async def test_a_deploy_answers_once_ready_and_before_its_machine_starts(agent, 
     finally:
         stop()
 
+    (planned,) = hub.planned(str(agent.typeid), "production")
     assert accepted == {
         "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": str(agent.typeid)},
-        "deployment_id": str(hub.deployment(str(agent.typeid), "production")["id"]),
+        "deployment_id": planned["id"],
     }
     assert [(c.name, c.state) for c in answered.children] == [
         ("publish", ActivityState.COMPLETED),
@@ -87,7 +88,7 @@ async def test_a_deploy_answers_once_ready_and_before_its_machine_starts(agent, 
 
 
 async def test_a_step_refused_before_the_answer_is_the_answer_and_ends_the_deploy(agent, hub, monkeypatch):
-    async def refused(self, environment=None, *, provider=None, token_allocation=None):
+    async def refused(self, environment=None, *, provider=None, token_allocation=None, deployment_id=None):
         raise RuntimeError("the hub refused")
 
     monkeypatch.setattr(Agent, "plan_deployment", refused)
@@ -113,7 +114,7 @@ async def test_a_step_refused_before_the_answer_is_the_answer_and_ends_the_deplo
 
 
 async def test_the_machine_failing_after_the_answer_is_told_only_on_the_activity(agent, hub, monkeypatch):
-    async def refused(entity, environment=None, *, provider=None, require=None):
+    async def refused(entity, environment=None, *, provider=None, require=None, deployment_id=None, machine_size=None):
         raise HubError(500, "the provider is out of machines")
 
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", refused)
@@ -130,42 +131,40 @@ async def test_the_machine_failing_after_the_answer_is_told_only_on_the_activity
 DROPPED = "Server disconnected without sending a response."
 
 
-def _dropped_answer(monkeypatch, hub, agent, *, placed: bool) -> dict:
-    """The hub's deploy answer lost on the way (status 0) while the hub pushes the placement over its socket:
-    once as it is being worked on, then — when *placed* — with its machine, after the answer was lost. The
-    placement's row."""
-    planned = hub.deployment(f"agent-{agent.id}", "production")
+def _dropped_answer(monkeypatch, hub, *, placed: bool) -> None:
+    """The hub's deploy answer lost on the way (status 0) while the hub pushes the placement the deploy names
+    over its socket: once as it is being worked on, then — when *placed* — with its machine, after the answer
+    was lost."""
 
-    def row(seconds: int, **fields) -> dict:
-        return {**planned, "updated_date": f"2099-01-01T00:00:{seconds:02d}Z", **fields}
-
-    async def push(pushed: dict) -> None:
+    async def push(planned: dict, seconds: int, **fields) -> None:
+        pushed = {**planned, "updated_date": f"2099-01-01T00:00:{seconds:02d}Z", **fields}
         await hub_ws_bridge._handle_deployment_op("update", planned["id"], pushed)
 
-    async def dropped(entity, environment=None, *, provider=None, require=None):
-        await push(row(1))
+    async def dropped(entity, environment=None, *, provider=None, require=None, deployment_id=None, machine_size=None):
+        planned = hub.rows[deployment_id]  # the row its plan made
+        await push(planned, 1)
         if placed:
             machine = {"kind": "e2b", "provider": "e2b", "external_id": "compute_node-box"}
-            later.append(asyncio.create_task(push(row(2, origin=machine, status={"provider_state": "running"}))))
+            later.append(asyncio.create_task(push(planned, 2, origin=machine, status={"provider_state": "running"})))
         raise HubError(0, DROPPED)
 
     later: list[asyncio.Task] = []
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", dropped)
-    return planned
 
 
 async def test_a_dropped_hub_answer_is_not_a_failure_the_machine_pushed_over_the_socket_is(agent, hub, monkeypatch):
-    planned = _dropped_answer(monkeypatch, hub, agent, placed=True)
+    _dropped_answer(monkeypatch, hub, placed=True)
 
     final = await deploy_ended(agent, "user-1", "production", provider="e2b")
 
     assert final.state == ActivityState.COMPLETED
+    (planned,) = hub.planned(str(agent.typeid), "production")
     mirrored = await Deployment.get_by_id(planned["id"])
     assert mirrored.origin.external_id == "compute_node-box" and mirrored.status.provider_state == "running"
 
 
 async def test_a_dropped_hub_answer_with_no_machine_pushed_in_time_fails_the_deploy(agent, hub, monkeypatch):
-    _dropped_answer(monkeypatch, hub, agent, placed=False)
+    _dropped_answer(monkeypatch, hub, placed=False)
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.PLACED_WITHIN_S", 0)
 
     final = await deploy_ended(agent, "user-1", "production", provider="e2b")

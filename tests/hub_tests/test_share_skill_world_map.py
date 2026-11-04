@@ -110,7 +110,7 @@ async def test_shared_skill_on_world_map_of_owner_and_reader(hub_base_url, hub_l
 
     # Grant bob a durable reader edge on the skill (the asset target an invite
     # carries alongside the conversation member target).
-    await _invite(hub_base_url, alice_token, "skill", skill_id, bob_email, role="reader")
+    await _invite(hub_base_url, alice_token, "skill", skill_id, bob_email, roles=("reader",))
     await assert_auto_assigned(
         hub_base_url,
         bob_token,
@@ -136,4 +136,4 @@ async def test_shared_skill_on_world_map_of_owner_and_reader(hub_base_url, hub_l
     members = r.json().get("data") or []
     by_id = {m.get("user_id"): m for m in members if isinstance(m, dict)}
     assert bob_id in by_id, f"bob not in skill members after assignment: {members}"
-    assert by_id[bob_id].get("role") == "reader", f"bob's role on skill is not reader: {by_id[bob_id]}"
+    assert by_id[bob_id].get("roles") == ["reader"], f"bob's role on skill is not reader: {by_id[bob_id]}"

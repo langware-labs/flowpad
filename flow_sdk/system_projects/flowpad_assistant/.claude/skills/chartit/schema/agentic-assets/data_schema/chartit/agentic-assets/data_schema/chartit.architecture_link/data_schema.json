@@ -1,0 +1,33 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "?string",
+      "description": "Unique id; defaults to its position."
+    },
+    "from": {
+      "shape": "string",
+      "description": "A part, tier or group id."
+    },
+    "to": {
+      "shape": "string",
+      "description": "A part, tier or group id."
+    },
+    "label": {
+      "shape": "?string",
+      "description": "What travels: REST, events, files."
+    },
+    "style": {
+      "shape": "?enum:solid|dashed",
+      "description": "dashed: async, optional or a callback."
+    },
+    "both": {
+      "shape": "?bool",
+      "description": "Arrow heads at both ends."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Shown on hover."
+    }
+  }
+}

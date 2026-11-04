@@ -139,6 +139,10 @@ export interface DependencyState {
   description?: string | null;
   /** A required, not-ready dependency whose warning was dismissed until the next restart. */
   dismissed: boolean;
+  /** A git checkout Flowpad cloned: commits behind its remote, as of the last fetch. */
+  behind?: number;
+  /** Why the last "pull to latest" left this checkout where it was. */
+  pull_error?: string | null;
 }
 
 /** A project's visual identity, from the `brand` block of

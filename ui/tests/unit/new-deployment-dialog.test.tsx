@@ -38,19 +38,10 @@ const radios = () => screen.getAllByRole('radio').map((r) => r.getAttribute('dat
 function renderDialog() {
   const agent = new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
   const deploy = vi.spyOn(agent, 'deploy').mockResolvedValue({ deployment: { id: 'dep-1' } } as never);
-  const onMachineSize = vi.fn().mockResolvedValue(true);
   const onLaunched = vi.fn();
   const onOpenChange = vi.fn();
-  renderInQuery(
-    <NewDeploymentDialog
-      agent={agent}
-      open
-      onOpenChange={onOpenChange}
-      onMachineSize={onMachineSize}
-      onLaunched={onLaunched}
-    />,
-  );
-  return { deploy, onMachineSize, onLaunched, onOpenChange };
+  renderInQuery(<NewDeploymentDialog agent={agent} open onOpenChange={onOpenChange} onLaunched={onLaunched} />);
+  return { deploy, onLaunched, onOpenChange };
 }
 
 describe('New deployment', () => {
@@ -101,40 +92,46 @@ describe('New deployment', () => {
   });
 
   it('this computer needs no publish checklist and no environment — Launch deploys it here', async () => {
-    const { deploy, onMachineSize, onLaunched } = renderDialog();
+    const { deploy, onLaunched } = renderDialog();
     expect(screen.getByTestId('new-deployment-local-details')).toBeInTheDocument();
     expect(screen.queryByTestId('mock-checklist')).toBeNull();
     expect(screen.queryByTestId('new-deployment-environment')).toBeNull();
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith(undefined, 'local'));
-    expect(onMachineSize).not.toHaveBeenCalled();
+    await waitFor(() => expect(deploy).toHaveBeenCalledWith({ provider: 'local' }));
     await waitFor(() => expect(onLaunched).toHaveBeenCalledWith('dep-1'));
   });
 
-  it('a cloud machine shows the checklist and environment, and saves its size before deploying', async () => {
-    const order: string[] = [];
-    const { deploy, onMachineSize } = renderDialog();
-    onMachineSize.mockImplementation(async () => order.push('size'));
-    deploy.mockImplementation(async () => {
-      order.push('deploy');
-      return { deployment: { id: 'dep-2' } } as never;
-    });
+  it('a cloud machine shows the checklist and environment, and sends its size with the deploy', async () => {
+    const { deploy } = renderDialog();
+    deploy.mockResolvedValue({ deployment: { id: 'dep-2' } } as never);
     fireEvent.click(screen.getByTestId('new-deployment-type-e2b-md'));
     expect(screen.getByTestId('mock-checklist')).toBeInTheDocument();
     expect(screen.getByTestId('new-deployment-environment')).toHaveValue('production');
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
     // Unchecked "Token allocation" = the owner's default: `null` releases any earlier allocation.
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', 'e2b', null));
-    expect(onMachineSize).toHaveBeenCalledWith('md');
-    expect(order).toEqual(['size', 'deploy']);
+    // The size travels with the deploy; nothing is written into agent.json (it would dirty the checkout).
+    await waitFor(() =>
+      expect(deploy).toHaveBeenCalledWith({
+        environment: 'production',
+        provider: 'e2b',
+        tokenAllocation: null,
+        machineSize: 'md',
+      }),
+    );
   });
 
   it('a monthly machine deploys on its own provider, at its size', async () => {
-    const { deploy, onMachineSize } = renderDialog();
+    const { deploy } = renderDialog();
     fireEvent.click(screen.getByTestId('new-deployment-type-gcp_vm-lg'));
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', 'gcp_vm', null));
-    expect(onMachineSize).toHaveBeenCalledWith('lg');
+    await waitFor(() =>
+      expect(deploy).toHaveBeenCalledWith({
+        environment: 'production',
+        provider: 'gcp_vm',
+        tokenAllocation: null,
+        machineSize: 'lg',
+      }),
+    );
   });
 
   it('a cloud deploy taken on closes on the answer and says it runs in the background', async () => {

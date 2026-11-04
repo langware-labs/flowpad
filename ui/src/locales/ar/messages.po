@@ -382,6 +382,15 @@ msgstr ""
 msgid "{0, plural, one {# backlink} other {# backlinks}}"
 msgstr "{0, plural, zero {لا روابط خلفية} one {رابط خلفي واحد} two {رابطان خلفيان} few {# روابط خلفية} many {# رابطًا خلفيًا} other {# رابط خلفي}}"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#~ msgid "{0, plural, one {# dependency couldn't be pulled} other {# dependencies couldn't be pulled}}"
+#~ msgstr ""
+
+#. placeholder {0}: rows.length
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "{0, plural, one {# dependency is behind} other {# dependencies are behind}}"
+msgstr ""
+
 #. placeholder {0}: rows.length
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "{0, plural, one {# entity in this context} other {# entities in this context}}"
@@ -1165,6 +1174,12 @@ msgstr ""
 msgid "{0}: {1} participants, {2} messages"
 msgstr "{0}: {1} مشاركين، {2} رسائل"
 
+#. placeholder {0}: value.title || t`Architecture chart`
+#. placeholder {1}: value.links.length
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "{0}: {partCount} parts, {1} links"
+msgstr "{0}: {partCount} مكوّنات، {1} روابط"
+
 #. placeholder {0}: m[1]
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: agent, again"
@@ -1205,6 +1220,10 @@ msgstr "{baseTitle} · {0}"
 #~ msgid "{baseTitle} · {environment}"
 #~ msgstr ""
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#~ msgid "{behind, plural, one {# dependency is behind} other {# dependencies are behind}}"
+#~ msgstr ""
+
 #: src/components/status-bar/GitPullButton.tsx
 msgid "{behind} new changes in the cloud — pull them"
 msgstr "{behind} تغييرات جديدة في السحابة — يمكن سحبها"
@@ -1216,6 +1235,10 @@ msgstr "{changedCount} معدّل"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "{completedCount}/{totalCount} completed"
 msgstr "{completedCount}/{totalCount} مكتملة"
+
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "{count, plural, one {# commit behind} other {# commits behind}}"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "{count, plural, one {# issue} other {# issues}}"
@@ -1652,6 +1675,12 @@ msgstr "{openDisplayCount, plural, one {خطأ مفتوح مجمَّع خلال 
 msgid "{openDisplayCount, plural, one {open error in the last 24 hours} other {open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {خطأ مفتوح خلال آخر 24 ساعة} other {أخطاء مفتوحة خلال آخر 24 ساعة}}"
 
+#. placeholder {0}: value.links.length
+#. placeholder {1}: value.steps.length
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "{partCount} parts · {0} links · {1} steps"
+msgstr "{partCount} مكوّنات · {0} روابط · {1} خطوات"
+
 #: src/components/conversation/ConversationParticipants.tsx
 msgid "{participantCount, plural, one {# participant} other {# participants}}"
 msgstr "{participantCount, plural, zero {لا مشاركين} one {مشارك واحد} two {مشاركان} few {# مشاركين} many {# مشاركاً} other {# مشارك}}"
@@ -1915,6 +1944,10 @@ msgstr "تمت إضافة {trimmed} إلى {parentLabel}."
 msgid "{typeLabel} invitation"
 msgstr "دعوة {typeLabel}"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "{uncommitted} changes not committed — {then}"
+msgstr "{uncommitted} تغييرات غير محفوظة في commit — {then}"
+
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "{unfinished} did not finish"
 msgstr "لم يكتمل {unfinished}"
@@ -1923,6 +1956,10 @@ msgstr "لم يكتمل {unfinished}"
 msgid "{unopened} new"
 msgstr "{unopened} جديد"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "{unpushed} commits not pushed — push, then deploy"
+msgstr "{unpushed} commits لم تُدفع — نفّذ push ثم انشر"
+
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "{unpushedCount} unpushed — Improve runs only on a clean-git asset."
 msgstr "{unpushedCount} غير مدفوعة — يعمل Improve فقط على أصل ذي git نظيف."
@@ -1930,6 +1967,10 @@ msgstr "{unpushedCount} غير مدفوعة — يعمل Improve فقط على �
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "{until} (closed)"
 msgstr "{until} (مغلق)"
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "{updates, plural, one {# dependency has updates} other {# dependencies have updates}}"
+msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{used} of {limit} {windowText}"
@@ -2217,9 +2258,17 @@ msgid "1 change not applied"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "1 change not committed — {then}"
+msgstr "تغيير واحد غير محفوظ في commit — {then}"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "1 change not published"
 msgstr "تغيير واحد غير منشور"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "1 commit not pushed — push, then deploy"
+msgstr "commit واحد لم يُدفع — نفّذ push ثم انشر"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 #~ msgid "1 data source"
@@ -2499,8 +2548,8 @@ msgid "A project with that name exists"
 msgstr "يوجد مشروع بهذا الاسم بالفعل"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "A public desk needs no connection. Connect GitHub to browse your own repos."
-msgstr "لا يحتاج المكتب العام إلى اتصال. يلزم ربط GitHub لتصفح المستودعات الخاصة."
+#~ msgid "A public desk needs no connection. Connect GitHub to browse your own repos."
+#~ msgstr "لا يحتاج المكتب العام إلى اتصال. يلزم ربط GitHub لتصفح المستودعات الخاصة."
 
 #~ msgid "A request just failed because {name} isn't signed in on this machine."
 #~ msgstr "فشل طلب للتو لأن {name} غير مسجّل الدخول على هذا الجهاز."
@@ -3027,6 +3076,11 @@ msgstr "إضافة ملف أو مجلد"
 msgid "Add folder"
 msgstr "إضافة مجلد"
 
+#: src/components/git/GitRequiredStrip.tsx
+#: src/components/git/GitSetupWizard.tsx
+msgid "Add git"
+msgstr "أضف Git"
+
 #: src/components/project-home/ProjectGitChip.tsx
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Add Git"
@@ -3326,6 +3380,7 @@ msgstr ""
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/data-sources/SourceMenu.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/i18n/pref-labels.ts
@@ -4438,6 +4493,18 @@ msgstr "التطبيقات والوكلاء"
 msgid "Apps in {projectName} with a deployment"
 msgstr "التطبيقات في {projectName} التي لديها نشر"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "architecture"
+msgstr "البنية"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Architecture"
+msgstr "البنية"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Architecture chart"
+msgstr "مخطط البنية"
+
 #: src/components/account/system-log.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
@@ -4623,6 +4690,10 @@ msgstr "طرح سؤال على هذا الفهرس…"
 msgid "Ask to link an unlinked project to cloud before sharing its assets."
 msgstr "يُسأل عن ربط المشروع غير المرتبط بالسحابة قبل مشاركة أصوله."
 
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Ask whoever runs the hub to turn agent mailboxes on, or use another channel."
+msgstr ""
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Ask whoever shared it to start it, or to send a new link."
 msgstr "يُرجى الطلب من الشخص الذي شاركه بدء تشغيله أو إرسال رابط جديد."
@@ -4786,6 +4857,10 @@ msgstr "المساعدات والمفاتيح"
 #: src/components/assets/editor/chart/C4ChartView.tsx
 msgid "async"
 msgstr ""
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "async / optional"
+msgstr "غير متزامن / اختياري"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "At"
@@ -5138,6 +5213,7 @@ msgstr "منطقة AWS لخدمة Bedrock"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -5377,8 +5453,8 @@ msgid "Branch"
 msgstr "الفرع"
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Branch:"
-msgstr "الفرع:"
+#~ msgid "Branch:"
+#~ msgstr "الفرع:"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Brand this project's home ({HOME_CUSTOMIZATION_DIR}). Applies on every home surface when this is the active project."
@@ -5433,8 +5509,8 @@ msgid "Browse folder"
 msgstr "تصفح المجلد"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
-msgid "Browse GitHub"
-msgstr "تصفح GitHub"
+#~ msgid "Browse GitHub"
+#~ msgstr "تصفح GitHub"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Browse the watched folder"
@@ -5795,8 +5871,8 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/data-sources/ReplayDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/favorites/FavoriteStar.tsx
+#: src/components/git/GitSetupWizard.tsx
 #: src/components/git/GitTargetDialog.tsx
-#: src/components/GitHubConnectionDialog.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
@@ -5830,6 +5906,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/project-home/ProjectHomeMenu.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
@@ -6087,6 +6164,10 @@ msgstr "معدّل"
 msgid "Changed since publish"
 msgstr "تغيّر منذ النشر"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Changed since use"
+msgstr "تغيّر منذ الاستخدام"
+
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/assets/editor/changes/useDocChanges.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6099,6 +6180,10 @@ msgstr "التغييرات"
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Changes apply to new sessions."
 msgstr "تُطبَّق التغييرات على الجلسات الجديدة."
+
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Changes are written to the project's flow.json."
+msgstr ""
 
 #~ msgid "Changes committed and pushed"
 #~ msgstr "تم تثبيت التغييرات ودفعها"
@@ -6173,6 +6258,7 @@ msgid "Charts"
 msgstr "المخططات"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/i18n/pref-labels.ts
@@ -6307,6 +6393,10 @@ msgstr "جارٍ فحص {0}"
 msgid "Checking access…"
 msgstr "جارِ التحقق من الوصول…"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Checking again"
+msgstr ""
+
 #~ msgid "Checking FlowPad status…"
 #~ msgstr ""
 
@@ -6372,6 +6462,7 @@ msgid "checking…"
 msgstr "جارٍ التحقق…"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "جاري التحقق…"
@@ -6454,8 +6545,8 @@ msgid "Choose avatar image"
 msgstr "اختيار الصورة الرمزية"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Choose branch"
-msgstr "اختيار الفرع"
+#~ msgid "Choose branch"
+#~ msgstr "اختيار الفرع"
 
 #: src/components/credentials/FileValueInput.tsx
 msgid "Choose file"
@@ -6477,6 +6568,14 @@ msgstr "اختر نوع كل صف"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
 msgstr "تحديد المشروع الذي سيتم تحميله، وأي حزم أصول لإرفاقها معه."
+
+#: src/components/git/GitSetupWizard.tsx
+msgid "Choose where <0>{path}</0> keeps its git repository."
+msgstr "اختر أين يحتفظ <0>{path}</0> بمستودع git الخاص به."
+
+#: src/components/git/GitSetupWizard.tsx
+msgid "Choose where this project keeps its git repository."
+msgstr "اختر أين يحتفظ هذا المشروع بمستودع git الخاص به."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Choose which model each tier uses, or add your own — per assistant and provider."
@@ -6675,13 +6774,12 @@ msgid "Clear all past chats?"
 msgstr "مسح جميع المحادثات السابقة؟"
 
 #: src/components/git/GitRemoteField.tsx
-#: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Clear branch (uses default)"
 msgstr "مسح الفرع (استخدام الافتراضي)"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Clear branch (uses the default)"
-msgstr "مسح الفرع (يُستخدم الفرع الافتراضي)"
+#~ msgid "Clear branch (uses the default)"
+#~ msgstr "مسح الفرع (يُستخدم الفرع الافتراضي)"
 
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -6804,8 +6902,8 @@ msgid "Click Restart to spawn a fresh PTY."
 msgstr "اضغطوا «إعادة التشغيل» لإنشاء PTY جديد."
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Click the button below to connect your GitHub account and continue with the repository cloning."
-msgstr "يُرجى النقر على الزر أدناه لربط حسابكم في GitHub ومتابعة عملية استنساخ المستودع."
+#~ msgid "Click the button below to connect your GitHub account and continue with the repository cloning."
+#~ msgstr "يُرجى النقر على الزر أدناه لربط حسابكم في GitHub ومتابعة عملية استنساخ المستودع."
 
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Click the pencil or right-click to rename"
@@ -6913,6 +7011,7 @@ msgid "Cloning…"
 msgstr "جارِ الاستنساخ…"
 
 #: src/components/assets/editor/chart/chartControls.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -7020,6 +7119,10 @@ msgstr "إغلاق اللوحة"
 #: src/components/top-nav-bar/AddressSearchField.tsx
 msgid "Close search"
 msgstr "إغلاق البحث"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Close steps"
+msgstr "إغلاق الخطوات"
 
 #: src/components/tabs/TabStrip.tsx
 msgid "Close tab"
@@ -7332,6 +7435,7 @@ msgstr "التعليقات"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Commit"
 msgstr "إيداع"
 
@@ -7347,6 +7451,14 @@ msgstr "الالتزام والدمج"
 msgid "Commit & share"
 msgstr "إيداع ومشاركة"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit all"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit all changes (no push)"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "الالتزام بجميع التغييرات ودمج الفرع الحالي مع الفرع الأصل. سيغادر Claude بيئة العمل عند الانتهاء."
@@ -7354,6 +7466,10 @@ msgstr "الالتزام بجميع التغييرات ودمج الفرع ال�
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Commit and push this file"
 #~ msgstr "نفّذ commit و push لهذا الملف"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "commit and push, then deploy"
+msgstr "نفّذ commit و push ثم انشر"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Commit Attribution"
@@ -7364,6 +7480,10 @@ msgstr "إسناد الالتزام"
 msgid "Commit failed"
 msgstr "فشل الإيداع"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Commit just this file (no push)"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "Commit or discard first"
 msgstr "يجب حفظ التغييرات أو تجاهلها أولاً"
@@ -7371,6 +7491,10 @@ msgstr "يجب حفظ التغييرات أو تجاهلها أولاً"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Commit your changes to share them"
 msgstr "يجب تثبيت التغييرات لمشاركتها"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "commit, then deploy"
+msgstr "نفّذ commit ثم انشر"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit/clean this asset first — Improve runs only on a clean-git asset."
@@ -7510,9 +7634,7 @@ msgstr "تأكيد: {0}"
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/git/GitRemoteField.tsx
-#: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
-#: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -7520,7 +7642,6 @@ msgstr "تأكيد: {0}"
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/HubHome.tsx
-#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "اتصال"
 
@@ -7571,11 +7692,8 @@ msgstr "اربطوا مصدر LLM، ثم ثبّتوا الأدوات التي ي
 msgid "Connect Flow to {0}"
 msgstr ""
 
+#: src/components/git/ConnectGithubButton.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
-#: src/pages/entry/InstallLanding.tsx
-#: src/pages/entry/OpenSandboxLanding.tsx
-#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub"
 msgstr "ربط GitHub"
 
@@ -7597,8 +7715,8 @@ msgstr "يلزم ربط GitHub في سحابة FlowPad أولًا:"
 #~ msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
-msgid "Connect GitHub to pick from your repos, including private ones."
-msgstr "الاتصال بـ GitHub للاختيار من مستودعاتكم، بما في ذلك الخاصة منها."
+#~ msgid "Connect GitHub to pick from your repos, including private ones."
+#~ msgstr "الاتصال بـ GitHub للاختيار من مستودعاتكم، بما في ذلك الخاصة منها."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Connect GitHub to share a project whose files live in a GitHub repository."
@@ -7622,8 +7740,8 @@ msgstr "الاتصال بعنوان URL"
 
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Connect to GitHub"
-msgstr "ربط حساب GitHub"
+#~ msgid "Connect to GitHub"
+#~ msgstr "ربط حساب GitHub"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
@@ -7671,8 +7789,8 @@ msgid "Connected to {hostName}'s machine."
 msgstr "تم الاتصال بجهاز {hostName}."
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Connected to GitHub"
-msgstr "تم الاتصال بـ GitHub"
+#~ msgid "Connected to GitHub"
+#~ msgstr "تم الاتصال بـ GitHub"
 
 #. placeholder {0}: credential.missingScopes.join(', ')
 #: src/components/connections-manager.tsx
@@ -7686,9 +7804,7 @@ msgstr "جارٍ الاتصال"
 
 #: src/components/account/user-info.tsx
 #: src/components/assets/editor/AssetEditorRouter.tsx
-#: src/components/git/RepoPicker.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/voice/CallControls.tsx
 msgid "Connecting…"
 msgstr "جارٍ الاتصال…"
@@ -7794,7 +7910,6 @@ msgid "context tokens"
 msgstr "رموز السياق"
 
 #: src/components/ask/AskChoiceBlock.tsx
-#: src/components/GitHubConnectionDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/survey/SurveyView.tsx
@@ -8990,6 +9105,14 @@ msgstr "تعذّر حفظ المفتاح"
 msgid "Could not save the override"
 msgstr "تعذّر حفظ التجاوز"
 
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Could not save the package"
+msgstr ""
+
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Could not save the recording"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not save the rule code"
 msgstr "تعذّر حفظ كود القاعدة"
@@ -9000,6 +9123,10 @@ msgstr "تعذّر حفظ المقطع البرمجي"
 
 #: src/components/credentials/SecretVaultPicker.tsx
 msgid "Could not save the vault."
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Could not save to the project"
 msgstr ""
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
@@ -9026,6 +9153,11 @@ msgstr "تعذّر إرسال التشخيص"
 msgid "Could not send the install"
 msgstr "تعذّر إرسال طلب التثبيت"
 
+#. placeholder {0}: v.envVar
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Could not set {0}"
+msgstr "تعذّر تعيين {0}"
+
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Could not set the token allocation"
 msgstr "تعذّر تعيين تخصيص الرموز"
@@ -9038,6 +9170,10 @@ msgstr "تعذر إعداد Git"
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "Could not set up the budget"
 #~ msgstr "تعذّر إعداد الميزانية"
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Could not set up vault {vault}"
+msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -9410,10 +9546,10 @@ msgid "Couldn't start a sandbox."
 msgstr "تعذّر بدء تشغيل بيئة معزولة."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
-msgid "Couldn't start GitHub connection."
-msgstr "تعذر بدء الاتصال بـ GitHub."
+#~ msgid "Couldn't start GitHub connection."
+#~ msgstr "تعذر بدء الاتصال بـ GitHub."
 
-#: src/pages/entry/OpenSandboxLanding.tsx
+#: src/components/git/ConnectGithubButton.tsx
 msgid "Couldn't start the GitHub connection."
 msgstr "تعذّر بدء الاتصال بـ GitHub."
 
@@ -9467,8 +9603,6 @@ msgstr "استخدام المعالج (%)"
 msgid "CPU:"
 msgstr "المعالج:"
 
-#: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -9483,6 +9617,7 @@ msgstr "المعالج:"
 #: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -9496,7 +9631,7 @@ msgstr "إنشاء"
 msgid "Create {0}"
 msgstr "إنشاء {0}"
 
-#: src/components/git/GitTargetDialog.tsx
+#: src/components/git/GitRepoPicker.tsx
 msgid "Create a brand-new repository"
 msgstr "إنشاء مستودع جديد من الصفر"
 
@@ -9576,7 +9711,7 @@ msgstr "إنشاء"
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
-#: src/pages/home-landing/HomeLanding.tsx
+#: src/components/quick-create/QuickCreateNewSection.tsx
 msgid "Create new"
 msgstr "إنشاء جديد"
 
@@ -10649,6 +10784,10 @@ msgstr "تبعية"
 #~ msgid "Dependency removed"
 #~ msgstr ""
 
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Dependency updates available"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
 msgstr "نشر"
@@ -10776,6 +10915,7 @@ msgstr "صِفوا هوية هذا الوكيل وما يقوم به وما يج
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "الوصف"
@@ -11353,6 +11493,7 @@ msgstr "تم"
 #: src/components/conversation/ContactPermissionsDialog.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -11689,6 +11830,7 @@ msgstr "الحواف حسب النوع"
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/credentials-view/CredentialView.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -11700,6 +11842,7 @@ msgstr "تعديل"
 #. placeholder {0}: d.title
 #. placeholder {0}: entry.app.displayName
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/components/top-nav-bar/AppButton.tsx
@@ -11757,6 +11900,16 @@ msgstr "تعديل الرابط"
 #: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "تعديل الاسم"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Edit package"
+msgstr ""
+
+#. placeholder {0}: dependency.name
+#: src/components/project-home/EditDependencyDialog.tsx
+msgid "Edit package {0}"
+msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
@@ -12056,8 +12209,8 @@ msgstr "يُرجى التأكد من تثبيت Claude CLI والمصادقة ع
 msgid "Enter a name and choose a parent folder for the new project."
 msgstr "يُرجى إدخال اسم واختيار المجلد الأب للمشروع الجديد."
 
-#. placeholder {0}: m.newTypeTarget ?? 'item'
-#: src/components/assets/AssetsNavigator.tsx
+#. placeholder {0}: type ?? 'item'
+#: src/components/quick-create/NewOfTypeDialog.tsx
 msgid "Enter a name for the new {0}."
 msgstr "يُرجى إدخال اسم للـ {0} الجديد."
 
@@ -12207,8 +12360,8 @@ msgid "Error Loading App"
 msgstr "خطأ في تحميل التطبيق"
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Error loading branches"
-msgstr "خطأ في تحميل الفروع"
+#~ msgid "Error loading branches"
+#~ msgstr "خطأ في تحميل الفروع"
 
 #. placeholder {0}: diffError.message || 'Checkpoint not found'
 #: src/components/code-editor/DiffViewer.tsx
@@ -12646,7 +12799,7 @@ msgstr "عمليات تنفيذ هذا العنصر، تُعرض دون مغاد
 msgid "existing"
 msgstr "موجود"
 
-#: src/components/git/GitTargetDialog.tsx
+#: src/components/git/GitRepoPicker.tsx
 msgid "Existing repo"
 msgstr "مستودع موجود"
 
@@ -13041,8 +13194,8 @@ msgid "Failed to load backlinks: {error}"
 msgstr "تعذر تحميل الروابط الخلفية: {error}"
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Failed to load branches from the repository."
-msgstr "فشل تحميل الفروع من المستودع."
+#~ msgid "Failed to load branches from the repository."
+#~ msgstr "فشل تحميل الفروع من المستودع."
 
 #: src/components/git/BranchPicker.tsx
 msgid "Failed to load branches: {errorMessage}"
@@ -13240,9 +13393,9 @@ msgstr ""
 msgid "Failed to set project"
 msgstr "تعذر تعيين المشروع"
 
-#: src/components/project-selector/NewProjectFromGitDialog.tsx
-msgid "Failed to start GitHub connection"
-msgstr "فشل في بدء الاتصال بـ GitHub"
+#: src/components/git/GitRemoteField.tsx
+#~ msgid "Failed to start GitHub connection"
+#~ msgstr "فشل في بدء الاتصال بـ GitHub"
 
 #: src/components/assets/editor/changes/useDocChangesWorker.ts
 #: src/components/conversation/useConversationSession.ts
@@ -13409,6 +13562,10 @@ msgstr "جلب الحزم الناقصة"
 #: src/components/assets/dependency-sources.tsx
 msgid "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
 msgstr "يُجلب تلقائياً أينما فُتح هذا المشروع — وينبّه Flowpad عند تعذّر ذلك."
+
+#: src/components/project-home/EditDependencyDialog.tsx
+#~ msgid "Fetched only when you press Install, never on its own."
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Fetching"
@@ -14024,6 +14181,10 @@ msgstr "لم يُفتح FlowPad؟ ثبّتوه ثم عودوا إلى هذه ا�
 #~ msgid "Flowpad found an error in the page, so the app is not usable yet. Recovery started on its own."
 #~ msgstr ""
 
+#: src/components/git/GitRepoPicker.tsx
+msgid "Flowpad git"
+msgstr "Flowpad git"
+
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
@@ -14058,6 +14219,10 @@ msgstr ""
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad isn't installed on this computer"
 msgstr ">>>>>>> aea919ba5"
+
+#: src/components/git/GitRepoPicker.tsx
+msgid "Flowpad keeps the repository for you. No GitHub account needed."
+msgstr "يحتفظ Flowpad بالمستودع نيابةً عنك. لا حاجة إلى حساب GitHub."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Flowpad runs this one itself. You can check it, run it and see its runs, not change it."
@@ -14229,7 +14394,8 @@ msgid "Format"
 msgstr "التنسيق"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -14283,6 +14449,7 @@ msgstr "JSON حر لمفاتيح الميزات التجريبية. لا يتم 
 msgid "from"
 msgstr "من"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -14581,13 +14748,18 @@ msgid "Git changes"
 msgstr "تغييرات Git"
 
 #: src/components/assets/editor/GitConnectionRequiredCard.tsx
-msgid "Git connection required"
-msgstr ""
+#~ msgid "Git connection required"
+#~ msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Git could not commit or push this file."
 msgstr "تعذّر على Git تنفيذ commit أو push لهذا الملف."
+
+#: src/components/assets/editor/GitConnectionRequiredCard.tsx
+#: src/components/git/GitRequiredStrip.tsx
+msgid "Git is required"
+msgstr "Git مطلوب"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
@@ -14596,9 +14768,13 @@ msgstr "Git مطلوب لمشاركة الملفات"
 #~ msgid "Git is set up"
 #~ msgstr "تم إعداد Git"
 
+#: src/components/git/GitSetupWizard.tsx
+msgid "Git is set up."
+msgstr "تم إعداد Git."
+
 #: src/components/status-bar/GitPushButton.tsx
-msgid "git push"
-msgstr "git push"
+#~ msgid "git push"
+#~ msgstr "git push"
 
 #: src/components/status-bar/GitPushButton.tsx
 msgid "git push — {ahead} commits to push"
@@ -14611,6 +14787,10 @@ msgstr "git push — إيداع واحد بانتظار الدفع"
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Git readiness"
 msgstr "جاهزية Git"
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Git repo"
+msgstr "مستودع Git"
 
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "git repo — checking…"
@@ -14630,6 +14810,10 @@ msgstr "طلب وصول Git"
 
 #~ msgid "Git setup cancelled"
 #~ msgstr "تم إلغاء إعداد Git"
+
+#: src/components/git/GitSetupWizard.tsx
+msgid "Git setup failed"
+msgstr "فشل إعداد Git"
 
 #~ msgid "Git setup failed."
 #~ msgstr "فشل إعداد Git."
@@ -14651,44 +14835,43 @@ msgid "Git tooling installed"
 msgstr "تم تثبيت أدوات Git"
 
 #: src/components/conversation/asset-review/ProjectPreview.tsx
-#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Git URL"
 msgstr "عنوان Git URL"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "GitHub authorization did not complete."
-msgstr "لم تكتمل عملية التفويض مع GitHub."
+#~ msgid "GitHub authorization did not complete."
+#~ msgstr "لم تكتمل عملية التفويض مع GitHub."
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "GitHub connected"
 msgstr "تم ربط GitHub"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-msgid "GitHub connected — no private repos visible to this token."
-msgstr "تم الاتصال بـ GitHub — لا تظهر أي مستودعات خاصة لهذا الرمز."
+#~ msgid "GitHub connected — no private repos visible to this token."
+#~ msgstr "تم الاتصال بـ GitHub — لا تظهر أي مستودعات خاصة لهذا الرمز."
 
 #: src/components/git/GitRemoteField.tsx
 msgid "GitHub connected — pick a repository below."
 msgstr "تم ربط GitHub — اختاروا مستودعًا من القائمة أدناه."
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-msgid "GitHub connected — private repos included."
-msgstr "تم الاتصال بـ GitHub — المستودعات الخاصة متضمّنة."
+#~ msgid "GitHub connected — private repos included."
+#~ msgstr "تم الاتصال بـ GitHub — المستودعات الخاصة متضمّنة."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-msgid "GitHub connected."
-msgstr "تم الاتصال بـ GitHub."
+#~ msgid "GitHub connected."
+#~ msgstr "تم الاتصال بـ GitHub."
 
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
-msgid "GitHub connection failed."
-msgstr "فشل الاتصال بـ GitHub."
+#~ msgid "GitHub connection failed."
+#~ msgstr "فشل الاتصال بـ GitHub."
 
 #: src/pages/entry/InstallLanding.tsx
-msgid "GitHub connection failed. Please try again."
-msgstr "فشل الاتصال بـ GitHub. يُرجى المحاولة مرة أخرى."
+#~ msgid "GitHub connection failed. Please try again."
+#~ msgstr "فشل الاتصال بـ GitHub. يُرجى المحاولة مرة أخرى."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "GitHub unavailable"
@@ -14697,10 +14880,9 @@ msgstr "GitHub غير متاح"
 #~ msgid "gitignore"
 #~ msgstr "gitignore"
 
-#. placeholder {0}: project.fs_storage_mount_path
 #: src/components/project-home/ProjectHome.tsx
-msgid "Give <0>{0}</0> a Git remote so this project can be shared."
-msgstr "يلزم تعيين مستودع Git بعيد للمجلد <0>{0}</0> ليتسنى مشاركة هذا المشروع."
+#~ msgid "Give <0>{0}</0> a Git remote so this project can be shared."
+#~ msgstr "يلزم تعيين مستودع Git بعيد للمجلد <0>{0}</0> ليتسنى مشاركة هذا المشروع."
 
 #~ msgid "Give <0>{projectPath}</0> a Git remote so this project can be shared."
 #~ msgstr ""
@@ -14714,8 +14896,8 @@ msgid "Give this deployment its own model budget, drawn from an LLM endpoint you
 msgstr "امنحوا هذا النشر ميزانية نماذج خاصة به، تُقتطع من نقطة نهاية LLM تُدار من قِبلكم: سقف يومي ونموذج واحد يعمل به. عند عدم التحديد يستهلك الوكيل الميزانية الافتراضية المحدودة. تُحذف الميزانية مع النشر."
 
 #: src/components/project-home/ProjectHome.tsx
-msgid "Give this project a Git remote so it can be shared."
-msgstr "يلزم إضافة مستودع Git بعيد لهذا المشروع كي يمكن مشاركته."
+#~ msgid "Give this project a Git remote so it can be shared."
+#~ msgstr "يلزم إضافة مستودع Git بعيد لهذا المشروع كي يمكن مشاركته."
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Give this project access"
@@ -14924,8 +15106,6 @@ msgstr "الضيف"
 #~ msgstr ""
 
 #: src/components/git/GitRemoteField.tsx
-#: src/components/helpdesk/AddHelpdeskDialog.tsx
-#: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Guided setup"
 msgstr "الإعداد الموجّه"
 
@@ -15369,6 +15549,10 @@ msgstr "الخطاطيف:"
 msgid "Host"
 msgstr "المضيف"
 
+#: src/components/git/GitRepoPicker.tsx
+msgid "Hosted by Flowpad — use it when you have no GitHub"
+msgstr "مستضاف لدى Flowpad — استخدمه عندما لا يكون لديك GitHub"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Hosts"
 msgstr "يستضيف"
@@ -15484,8 +15668,8 @@ msgid "https://github.com/owner/help-desk"
 msgstr "https://github.com/owner/help-desk"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
-msgid "https://github.com/owner/repo"
-msgstr "https://github.com/owner/repo"
+#~ msgid "https://github.com/owner/repo"
+#~ msgstr "https://github.com/owner/repo"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "https://github.com/owner/repo.git"
@@ -15773,6 +15957,10 @@ msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "In Telegram, message @BotFather and send /newbot."
+msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "in the project under recordings/"
 msgstr ""
 
 #: src/components/links/LinkMenu.tsx
@@ -16205,6 +16393,7 @@ msgstr "تعليمات (مطالبة الوكيل)"
 msgid "instruction ref"
 msgstr "مرجع التعليمات"
 
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Instructions"
@@ -16676,6 +16865,10 @@ msgstr "أُبقيت (لا يمكن أو لا يجب إزالتها): {0}"
 msgid "kept current as a package"
 msgstr "يُحافَظ على تحديثه كحزمة"
 
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "kept in Flowpad's temp folder until you save it"
+msgstr ""
+
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Kept in the project"
 msgstr "تم الاحتفاظ بها في المشروع"
@@ -16739,6 +16932,10 @@ msgstr "يلزم الوصول إلى Keychain لإنهاء عملية تسجيل
 #: src/components/account/secrets-section.tsx
 msgid "Keychain approval was not granted"
 msgstr "لم يتم منح موافقة Keychain"
+
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Keys"
+msgstr "المفاتيح"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Keys & endpoints"
@@ -16815,6 +17012,7 @@ msgstr "التسمية"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 msgid "Label"
 msgstr "التسمية"
 
@@ -17283,6 +17481,12 @@ msgstr "السطر الاحتياطي"
 msgid "Lines"
 msgstr "الأسطر"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "link"
+msgstr "رابط"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Link"
@@ -17308,6 +17512,10 @@ msgstr "ربط المشروع بالسحابة لإدارة الأصول الم�
 #: src/components/assets/editor/markdown/LinkSuggestDialog.tsx
 msgid "Link target not found"
 msgstr ""
+
+#: src/components/git/GitSetupWizard.tsx
+msgid "Link the project to Flowpad cloud — Flowpad hosts its repository."
+msgstr "اربط المشروع بسحابة Flowpad — يستضيف Flowpad مستودعه."
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Link the project to the cloud first: its members are the cloud project's members."
@@ -17582,8 +17790,8 @@ msgid "Loading backlinks…"
 msgstr "جارٍ تحميل الروابط الخلفية…"
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Loading branches..."
-msgstr "جاري تحميل الفروع..."
+#~ msgid "Loading branches..."
+#~ msgstr "جاري تحميل الفروع..."
 
 #: src/components/git/BranchPicker.tsx
 msgid "Loading branches…"
@@ -17597,6 +17805,7 @@ msgstr "جارٍ تحميل الميزانيات…"
 msgid "Loading capabilities…"
 msgstr "جارٍ تحميل القدرات…"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
@@ -18102,6 +18311,10 @@ msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Machines that are running"
+msgstr ""
+
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
 msgstr ""
 
 #: src/notifications/error-detail.ts
@@ -18992,7 +19205,7 @@ msgstr "تطبيق الويب الخاص بي"
 msgid "my-awesome-project"
 msgstr "my-awesome-project"
 
-#: src/components/git/GitTargetDialog.tsx
+#: src/components/git/GitRepoPicker.tsx
 msgid "my-context"
 msgstr "السياق-الخاص-بي"
 
@@ -19008,8 +19221,6 @@ msgstr "الاسم"
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/assets/AssetsNavigator.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
@@ -19030,6 +19241,7 @@ msgstr "الاسم"
 #: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/DatasetCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/token-plan/RenameButton.tsx
@@ -19250,20 +19462,20 @@ msgstr "جديد"
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreateNewSection.tsx
 #: src/components/quick-create/QuickCreateTile.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/pages/home-landing/HomeLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr "جديد"
 
-#. placeholder {0}: m.newTypeTarget ?? ''
 #. placeholder {0}: t(descriptor.label)
+#. placeholder {0}: type ?? ''
 #. placeholder {0}: type.label
-#: src/components/assets/AssetsNavigator.tsx
 #: src/components/browseable-tree/adapters/assetTypeRoot.tsx
 #: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
+#: src/components/quick-create/NewOfTypeDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "New {0}"
 msgstr "{0} جديد"
@@ -19445,7 +19657,7 @@ msgstr "موجه جديد"
 msgid "New reply"
 msgstr "رد جديد"
 
-#: src/components/git/GitTargetDialog.tsx
+#: src/components/git/GitRepoPicker.tsx
 msgid "New repo"
 msgstr "مستودع جديد"
 
@@ -20274,8 +20486,8 @@ msgid "No machine yet"
 msgstr ""
 
 #: src/pages/hub-home/HubItemsSection.tsx
-msgid "No machines yet. Connect this computer or start a sandbox to run agents and terminals."
-msgstr ""
+#~ msgid "No machines yet. Connect this computer or start a sandbox to run agents and terminals."
+#~ msgstr ""
 
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
@@ -20525,8 +20737,12 @@ msgid "No projects found"
 msgstr "لم يتم العثور على مشاريع"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
-msgid "No projects to choose from — use GitHub or a git URL."
-msgstr "لا توجد مشاريع متاحة — يمكن استخدام GitHub أو رابط Git."
+msgid "No projects to choose from — use a git repo."
+msgstr "لا توجد مشاريع للاختيار — استخدم مستودع Git."
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+#~ msgid "No projects to choose from — use GitHub or a git URL."
+#~ msgstr "لا توجد مشاريع متاحة — يمكن استخدام GitHub أو رابط Git."
 
 #~ msgid "No projects yet"
 #~ msgstr "لا توجد مشاريع بعد"
@@ -20763,6 +20979,10 @@ msgstr "لم يتم تحميل أي إعدادات."
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "No settings match your search."
 msgstr "لا توجد إعدادات تطابق بحثكم."
+
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "No setup instructions yet."
+msgstr "لا توجد تعليمات إعداد بعد."
 
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "No shared sessions yet. Executing a prompt starts one."
@@ -21026,6 +21246,10 @@ msgstr "لم تُخصَّص ميزانية لأي عضو في هذا الفري�
 msgid "Nobody here."
 msgstr ""
 
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Nobody may write to this agent yet — add their address under Allowed senders."
+msgstr ""
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Nobody yet"
 msgstr "لا أحد بعد"
@@ -21209,6 +21433,10 @@ msgstr "غير موجودة"
 msgid "Not found"
 msgstr "غير موجود"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Not found on disk"
+msgstr "غير موجود على القرص"
+
 #~ msgid "Not funded"
 #~ msgstr "بدون تمويل"
 
@@ -21357,6 +21585,10 @@ msgstr "غير محفوظ"
 #~ msgid "Not saved: {0}"
 #~ msgstr "لم يُحفظ: {0}"
 
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Not saved."
+msgstr "لم يُحفظ."
+
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -21371,8 +21603,9 @@ msgstr "لم تُرسَل بعد"
 msgid "not set"
 msgstr "غير معدّ"
 
-#~ msgid "Not set"
-#~ msgstr "غير مضبوط"
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Not set"
+msgstr "غير مضبوط"
 
 #: src/lib/publish-state.ts
 msgid "Not set up for publishing"
@@ -22129,6 +22362,7 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/runs/RunPreviewRoot.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
 #: src/components/wiki-tip/WikiLabel.tsx
 #: src/components/workers/ContextWorkerToolbar.tsx
 #: src/notifications/ingest.ts
@@ -22141,6 +22375,7 @@ msgstr "فتح"
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
 #. placeholder {0}: item.label
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
@@ -22202,6 +22437,7 @@ msgstr "فتح {vendorLabel} في طرفية النظام هنا"
 msgid "Open {workerName} terminal"
 msgstr "فتح طرفية {workerName}"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
@@ -22401,6 +22637,8 @@ msgstr "فتح المجلد: {path}"
 msgid "Open folder: {projectPath}"
 msgstr "فتح المجلد: {projectPath}"
 
+#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 msgid "Open from git"
 msgstr "فتح من Git"
@@ -22693,6 +22931,15 @@ msgstr "فتح المواصفات"
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open Spec Session"
 msgstr "فتح جلسة المواصفات"
+
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+msgid "Open stream inbox"
+msgstr ""
+
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Open System Settings"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Open tabs"
@@ -23440,6 +23687,10 @@ msgstr "موقوف مؤقتًا"
 
 #~ msgid "Parked: the scheduler skips it until you pull"
 #~ msgstr ""
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Part"
+msgstr "مكوّن"
 
 #: src/components/ask/AskView.tsx
 msgid "Part of a setup — see its progress"
@@ -24457,6 +24708,10 @@ msgstr "أصول المشروع"
 msgid "Project Commands (.claude/commands/)"
 msgstr "أوامر المشروع (.claude/commands/)"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Project committed and pushed"
+msgstr "المشروع محفوظ في commit ومدفوع"
+
 #: src/i18n/pref-labels.ts
 msgid "Project create"
 msgstr "عند إنشاء المشروع"
@@ -24960,6 +25215,10 @@ msgstr "سحب التغييرات الآن"
 msgid "Pull changes now from {0}"
 msgstr "سحب التغييرات الآن من {0}"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "Pull dependencies to latest"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
 msgstr "فشل السحب."
@@ -24975,6 +25234,8 @@ msgstr "للسحب فقط: لا تُرسَل التعديلات على النس�
 msgid "pulled, but arrived short"
 msgstr "تم سحبه، لكنه وصل ناقصًا"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pulling…"
 msgstr "جاري السحب…"
@@ -25219,6 +25480,10 @@ msgstr "جارٍ قراءة السجل…"
 msgid "Reading the setup…"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+msgid "Reading the threads…"
+msgstr ""
+
 #~ msgid "Reading this team's people…"
 #~ msgstr ""
 
@@ -25444,6 +25709,14 @@ msgstr "تم إعادة الاتصال."
 msgid "Record id"
 msgstr "معرّف السجل"
 
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "Record screen"
+msgstr ""
+
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "Record screen (video only)"
+msgstr ""
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Record updated"
 msgstr "تم تحديث السجل"
@@ -25451,6 +25724,10 @@ msgstr "تم تحديث السجل"
 #: src/components/account/system-diagnoses.tsx
 msgid "Recorded"
 msgstr "وقت التسجيل"
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Recording ready"
+msgstr ""
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -25646,6 +25923,7 @@ msgstr "المراقبون المسجَّلون: <0>{registeredCount}</0>"
 msgid "Reject"
 msgstr "رفض"
 
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/harness-login/funding-pill.ts
 msgid "Rejected"
 msgstr "مرفوض"
@@ -25673,6 +25951,7 @@ msgstr "تم إعادة الإطلاق."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Reload"
 msgstr "إعادة تحميل"
 
@@ -25684,7 +25963,7 @@ msgstr "إعادة تحميل قائمة MarkdownIndex."
 msgid "Remember this decision"
 msgstr "تذكّر هذا القرار"
 
-#: src/components/project-home/ProjectHome.tsx
+#: src/components/git/GitSetupWizard.tsx
 msgid "Remote repository"
 msgstr "المستودع البعيد"
 
@@ -25900,8 +26179,8 @@ msgid "Remove service"
 msgstr ""
 
 #: src/components/conversation/MessageSessionChip.tsx
-msgid "Remove session from this message"
-msgstr "إزالة الجلسة من هذه الرسالة"
+#~ msgid "Remove session from this message"
+#~ msgstr "إزالة الجلسة من هذه الرسالة"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #~ msgid "Remove the image"
@@ -26153,7 +26432,8 @@ msgstr "تم الرد"
 msgid "Replies:"
 msgstr "الردود:"
 
-#: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 msgid "Reply"
 msgstr "رد"
 
@@ -26166,7 +26446,8 @@ msgstr "رد بانتظار مراجعتكم"
 msgid "Reply in {0}"
 msgstr "الرد في {0}"
 
-#: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 msgid "Reply in thread"
 msgstr "الرد في السلسلة"
 
@@ -26244,7 +26525,7 @@ msgid "Repository and remote configured"
 msgstr "تم تكوين المستودع والخادم البعيد"
 
 #: src/components/git/CreatePrivateRepoForm.tsx
-#: src/components/git/GitTargetDialog.tsx
+#: src/components/git/GitRepoPicker.tsx
 msgid "Repository name"
 msgstr "اسم المستودع"
 
@@ -26254,8 +26535,8 @@ msgid "Repository URL"
 msgstr "عنوان المستودع"
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Repository URL:"
-msgstr "رابط المستودع:"
+#~ msgid "Repository URL:"
+#~ msgstr "رابط المستودع:"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/notifications/error-detail.ts
@@ -26808,6 +27089,7 @@ msgstr ""
 msgid "Right-to-left paragraph"
 msgstr "فقرة من اليمين إلى اليسار"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/organization/invite-row.tsx
@@ -27459,6 +27741,7 @@ msgstr "تمت ترقية البيئة المعزولة"
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -27514,6 +27797,10 @@ msgstr "فشل الحفظ"
 #~ msgid "Save failed."
 #~ msgstr "فشل الحفظ."
 
+#: src/components/project-home/EditDependencyDialog.tsx
+#~ msgid "Save package"
+#~ msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
 msgstr "يُرجى حفظ تعديلات الأصل الحالية كنسخة قبل تشغيل التحسين."
@@ -27525,6 +27812,10 @@ msgstr "يُرجى حفظ هذا المفتاح الآن، فلن يكون با�
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Save this task into the project as a folder, where git tracks it"
 msgstr "حفظ هذه المهمة في المشروع كمجلد يتتبّعه Git"
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Save to project"
+msgstr ""
 
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Save version"
@@ -27570,6 +27861,10 @@ msgstr "السياقات المحفوظة"
 msgid "Saved to My project"
 msgstr ""
 
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Saved to project"
+msgstr ""
+
 #~ msgid "Saved to this machine's encrypted store. Available to every project here, and never written to a file or sent anywhere."
 #~ msgstr ""
 
@@ -27582,6 +27877,10 @@ msgstr "يُحفظ مع النموذج. يتطلب خيار «واحد من مج
 
 #: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
 msgid "Saving moves this schedule: it is deleted where it runs now and created on the new place."
+msgstr ""
+
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "Saving the recording"
 msgstr ""
 
 #~ msgid "Saving..."
@@ -27598,6 +27897,7 @@ msgstr ""
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/top-nav-bar/RecordScreenButton.tsx
 msgid "Saving…"
 msgstr "جارٍ الحفظ…"
 
@@ -27805,6 +28105,11 @@ msgstr "النطاق: المستخدم + {0} مشروع{1}"
 msgid "scope: user only"
 msgstr "النطاق: المستخدم فقط"
 
+#: src/components/top-nav-bar/use-screen-recorder.ts
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Screen recording is not allowed"
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Script"
 msgstr "نص برمجي"
@@ -27816,6 +28121,10 @@ msgstr "التمرير إلى الأسفل"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "scroll to navigate"
 msgstr "التمرير للتنقل"
+
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Scroll to zoom · drag to pan · click a number for the steps"
+msgstr "مرّر للتكبير · اسحب للتحريك · انقر على رقم لعرض الخطوات"
 
 #. placeholder {0}: changes ? ' · click an element to change it' : ''
 #: src/components/assets/editor/chart/C4ChartView.tsx
@@ -28152,8 +28461,8 @@ msgid "See what went wrong"
 msgstr "عرض تفاصيل الخطأ"
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
-msgstr "يبدو أن هناك محاولة لاستنساخ مستودع Git خاص. يجب الاتصال بـ GitHub لإتمام العملية."
+#~ msgid "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
+#~ msgstr "يبدو أن هناك محاولة لاستنساخ مستودع Git خاص. يجب الاتصال بـ GitHub لإتمام العملية."
 
 #: src/components/automations/BusView.tsx
 msgid "Seen"
@@ -28192,8 +28501,8 @@ msgid "Select {name}"
 msgstr "تحديد {name}"
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Select a branch"
-msgstr "اختيار الفرع"
+#~ msgid "Select a branch"
+#~ msgstr "اختيار الفرع"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Select a context."
@@ -28632,6 +28941,10 @@ msgstr "الخدمة غير متاحة"
 msgid "Services"
 msgstr "الخدمات"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "services, databases and clients in grouped boxes, with numbered steps"
+msgstr "خدمات وقواعد بيانات وعملاء في مربعات مجمّعة، مع خطوات مرقّمة"
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -28807,6 +29120,11 @@ msgstr "الجلسات: {sessions}"
 msgid "set"
 msgstr "مضبوط"
 
+#: src/components/credentials/CredentialEditDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Set"
+msgstr "تعيين"
+
 #. placeholder {0}: v.env_var
 #: src/components/credentials-view/CredentialView.tsx
 msgid "Set {0}"
@@ -28840,6 +29158,8 @@ msgstr "جعله عامًا"
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/credentials-view/SecretVaultPanel.tsx
+#: src/components/git/GitSetupWizard.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -28886,8 +29206,8 @@ msgstr "إعداد الميزانية"
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/project-home/ProjectHome.tsx
-msgid "Set up Git"
-msgstr "إعداد Git"
+#~ msgid "Set up Git"
+#~ msgstr "إعداد Git"
 
 #~ msgid "Set up Git for cloud linking"
 #~ msgstr "إعداد Git للربط السحابي"
@@ -28895,7 +29215,7 @@ msgstr "إعداد Git"
 #~ msgid "Set up Git for deploying"
 #~ msgstr "إعداد Git للنشر"
 
-#: src/components/project-home/ProjectHome.tsx
+#: src/components/git/GitSetupWizard.tsx
 msgid "Set up Git for project sharing"
 msgstr "إعداد Git لمشاركة المشروع"
 
@@ -28958,6 +29278,10 @@ msgstr "جارٍ إعداد {0}"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Setting up {name} on a new sandbox…"
 msgstr "جارٍ إعداد {name} على بيئة معزولة جديدة…"
+
+#: src/components/git/GitSetupWizard.tsx
+msgid "Setting up git…"
+msgstr "جارٍ إعداد git…"
 
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Setting up the controller"
@@ -29079,6 +29403,10 @@ msgstr "الإعداد مطلوب"
 msgid "Several contacts match — pick one from the list"
 msgstr "تطابق عدة جهات اتصال — يُرجى الاختيار من القائمة"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Several matches"
+msgstr "عدة تطابقات"
+
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
@@ -29091,6 +29419,7 @@ msgstr "تطابق عدة جهات اتصال — يُرجى الاختيار م
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/top-nav-bar/PageShareButton.tsx
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share"
 msgstr "مشاركة"
@@ -29161,6 +29490,10 @@ msgstr ""
 
 #~ msgid "Share the agent with someone first — the link only works for people it's shared with."
 #~ msgstr ""
+
+#: src/components/top-nav-bar/RecordingReadyDialog.tsx
+msgid "Share the recording or save it to the project."
+msgstr ""
 
 #: src/components/diagnose/ShareWithRow.tsx
 msgid "Share the results with"
@@ -29755,8 +30088,8 @@ msgid "Sign in to the hub to deploy to a cloud machine."
 msgstr "يلزم تسجيل الدخول إلى المركز للنشر على جهاز سحابي."
 
 #: src/components/credentials-view/SecretVaultPanel.tsx
-msgid "Sign in to the secret manager first (the project setup), then fetch again."
-msgstr ""
+#~ msgid "Sign in to the secret manager first (the project setup), then fetch again."
+#~ msgstr ""
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Sign in to view access."
@@ -30109,10 +30442,14 @@ msgstr "تم التخطي"
 msgid "Skipped — setup goes on without it."
 msgstr "تم التخطي — يستمر الإعداد بدونه."
 
-#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Skipped on this machine"
 msgstr "تم تخطّيه على هذا الجهاز"
+
+#. placeholder {0}: readiness.skipped.length
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Skipped on this machine ({0})"
+msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "Skipped: it fired too often in one minute"
@@ -30312,6 +30649,7 @@ msgstr "الصوت"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/components/project-home/EditDependencyDialog.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Source"
@@ -30767,6 +31105,15 @@ msgstr "الحالة: {0}"
 #~ msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
 #~ msgstr "يبقى على هذا الجهاز فقط — لا يُرسل المجلد إلى أي شخص، حتى الأشخاص الذين يُشارَك معهم هذا المشروع."
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Step"
+msgstr "خطوة"
+
+#. placeholder {0}: p.step
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
+msgid "Step {0}"
+msgstr "الخطوة {0}"
+
 #. placeholder {0}: at + 1
 #. placeholder {1}: WIZARD.length
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -30777,6 +31124,7 @@ msgstr ""
 #~ msgstr "الخطوة: {0}ms · إلغاء الاهتزاز: {1}ms"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "الخطوات"
@@ -30847,6 +31195,11 @@ msgstr "خطافات التوقف"
 #: src/components/credentials-view/EnvFilesChip.tsx
 msgid "Stop reading {0}"
 msgstr "إيقاف قراءة {0}"
+
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "Stop recording"
+msgstr ""
 
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -31516,6 +31869,7 @@ msgstr "تجريبي"
 #: src/components/automations/BusView.tsx
 #: src/components/automations/TestPanel.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/credentials/CredentialTestButton.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
@@ -31533,6 +31887,7 @@ msgstr ""
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/llm-sources/LlmKeysSection.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Test failed"
 msgstr "فشل الاختبار"
 
@@ -31564,8 +31919,15 @@ msgid "Test with a recent event"
 msgstr "تجربة بحدث حديث"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Tested"
 msgstr "تم الاختبار"
+
+#. placeholder {0}: req.test_result.at
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Tested {0}"
+msgstr "تم الاختبار {0}"
 
 #: src/components/conversation/CredentialValueLock.tsx
 #~ msgid "Tested here: the provider accepts the key."
@@ -31765,6 +32127,10 @@ msgstr ""
 msgid "The backend may have restarted. Click to reattach."
 msgstr "ربما أُعيد تشغيل الخادم. اضغطوا لإعادة الاتصال."
 
+#: src/components/top-nav-bar/use-screen-recorder.ts
+#~ msgid "The browser refused screen capture. Allow it for this site and try again."
+#~ msgstr ""
+
 #: src/components/voice/CallControls.tsx
 msgid "The call failed."
 msgstr "فشلت المكالمة."
@@ -31921,7 +32287,7 @@ msgstr "السبب الكامل، يظهر خلف أيقونة المعلوما�
 msgid "The funding picture is only available on a desktop instance."
 msgstr "صورة التمويل متاحة فقط على نسخة سطح المكتب."
 
-#: src/pages/entry/OpenSandboxLanding.tsx
+#: src/components/git/ConnectGithubButton.tsx
 msgid "The GitHub connection didn't complete."
 msgstr "لم يكتمل الاتصال بـ GitHub."
 
@@ -32208,6 +32574,10 @@ msgstr "الشاشة نفسها كما في المركز: تعرض مطالبا�
 #~ msgid "The schemas could not be read."
 #~ msgstr "تعذّرت قراءة المخططات."
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "The secret manager is not installed on this computer — Set up installs it, signs in, then fetches."
+msgstr ""
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The secret_token you pass to setWebhook; Telegram sends it with every delivery. Stored write-only."
 msgstr ""
@@ -32240,6 +32610,10 @@ msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "The sender's upload didn't complete. Ask {firstName} to resend."
+msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -32647,6 +33021,10 @@ msgstr ""
 msgid "This computer (fetches its own)"
 msgstr "هذا الكمبيوتر (يجلب رسائله بنفسه)"
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "This computer is not signed in to the secret manager yet — Set up signs in, then fetches."
+msgstr ""
+
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "This context is empty."
 msgstr "هذا السياق فارغ."
@@ -32773,6 +33151,10 @@ msgstr "يحتوي هذا المجلد على ملفات"
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This folder-backed asset has no main file metadata."
 msgstr "هذا الأصل المستند إلى مجلد لا يحتوي على بيانات وصفية للملف الرئيسي."
+
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "This hub does not offer agent email"
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "This hub has no help desk — pick a person to ask."
@@ -33498,8 +33880,8 @@ msgid "Times this event happened since Flowpad started"
 msgstr "عدد مرات وقوع هذا الحدث منذ بدء تشغيل Flowpad"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-msgid "Tip: connect GitHub to clone private repos."
-msgstr "نصيحة: الاتصال بـ GitHub يتيح استنساخ المستودعات الخاصة."
+#~ msgid "Tip: connect GitHub to clone private repos."
+#~ msgstr "نصيحة: الاتصال بـ GitHub يتيح استنساخ المستودعات الخاصة."
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
@@ -33512,6 +33894,7 @@ msgstr "العنوان"
 msgid "to"
 msgstr "إلى"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
@@ -34053,8 +34436,8 @@ msgid "uid"
 msgstr "uid"
 
 #: src/components/GitHubConnectionDialog.tsx
-msgid "Unable to fetch branches. Please check your repository permissions."
-msgstr "تعذر جلب الفروع. يُرجى التحقق من صلاحيات المستودع."
+#~ msgid "Unable to fetch branches. Please check your repository permissions."
+#~ msgstr "تعذر جلب الفروع. يُرجى التحقق من صلاحيات المستودع."
 
 #: src/components/token-plan/TokenPlanView.tsx
 #~ msgid "unallocated {0}"
@@ -34159,6 +34542,11 @@ msgstr "غير معروف"
 msgid "Unknown · {unknown}"
 msgstr "غير معروف · {unknown}"
 
+#. placeholder {0}: unknownUsage.length
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unknown assets ({0})"
+msgstr "أصول غير معروفة ({0})"
+
 #: src/components/git/BranchPicker.tsx
 msgid "unknown error"
 msgstr "خطأ غير معروف"
@@ -34191,6 +34579,10 @@ msgstr "نوع Lens غير معروف"
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Unknown list"
 msgstr "قائمة غير معروفة"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unknown name"
+msgstr "اسم غير معروف"
 
 #. placeholder {0}: draft.provider
 #: src/components/data-sources/source-form.ts
@@ -34328,6 +34720,7 @@ msgid "Up, with problems: {0}"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Update"
 msgstr "تحديث"
@@ -34348,6 +34741,7 @@ msgstr "تحديث متاح"
 msgid "Update channel for auto-updates"
 msgstr "قناة التحديث للتحديثات التلقائية"
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
@@ -34553,7 +34947,7 @@ msgstr "يمكن استخدام \"Send to Expert\" لإنشاء مهمة"
 msgid "Use a different provider"
 msgstr "استخدام مزوّد آخر"
 
-#: src/components/git/GitTargetDialog.tsx
+#: src/components/git/GitRepoPicker.tsx
 msgid "Use a repository that already exists"
 msgstr "استخدام مستودع موجود مسبقًا"
 
@@ -34645,8 +35039,8 @@ msgid "Used by: {usedBy}"
 msgstr "مستخدَم من: {usedBy}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Used in transcript"
-msgstr "مستخدم في النص"
+#~ msgid "Used in transcript"
+#~ msgstr "مستخدم في النص"
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "user"
@@ -34762,13 +35156,16 @@ msgstr "نمط التحقق"
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Value"
 msgstr "القيمة"
 
+#. placeholder {0}: v.envVar
 #. placeholder {0}: v.envVar || 'variable'
 #: src/components/credentials/CredentialDialog.tsx
+#: src/components/credentials/CredentialEditDialog.tsx
 msgid "Value for {0}"
 msgstr "قيمة {0}"
 
@@ -34862,6 +35259,14 @@ msgstr "المتغيرات"
 msgid "Vault"
 msgstr ""
 
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Vault {vault} is not readable yet"
+msgstr ""
+
+#: src/components/credentials-view/SecretVaultPanel.tsx
+msgid "Vault {vault} is set up on this computer"
+msgstr ""
+
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 msgid "Vault name"
@@ -34884,6 +35289,7 @@ msgid "Verified"
 msgstr "تم التحقق"
 
 #: src/components/account/user-info.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/data-sources/source-parts.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
@@ -34904,6 +35310,10 @@ msgstr "رمز التحقق: عند حفظ العنوان يستدعيه الخ�
 
 #~ msgid "Verify: {0}"
 #~ msgstr "التحقق: {0}"
+
+#: src/components/data-sources/source-parts.tsx
+msgid "Verifying…"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -35699,6 +36109,7 @@ msgstr "عند حدوث هذا"
 msgid "When you are signed out, ask whether to sign in so the search line can open screens directly."
 msgstr "عند تسجيل الخروج، يُسأل المستخدم إن كان يريد تسجيل الدخول حتى يتمكن شريط البحث من فتح الشاشات مباشرة."
 
+#: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/automations/AutomationPage.tsx
 msgid "Where"
 msgstr ""
@@ -35985,6 +36396,10 @@ msgstr "يعمل…"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Working…"
 msgstr "قيد المعالجة…"
+
+#: src/components/credentials/CredentialEditDialog.tsx
+msgid "Works"
+msgstr "يعمل"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/workspace/workspace-switcher.tsx

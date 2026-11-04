@@ -24,7 +24,11 @@ import { useDeployProviders } from '@src/hooks/use-deploy-providers';
 import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeploymentSecretsGate } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
-import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES, AGENT_MONTHLY_MACHINE_SIZE_LABELS } from './agent-vocabularies';
+import {
+  AGENT_MACHINE_SIZE_LABELS,
+  AGENT_MACHINE_SIZES,
+  AGENT_MONTHLY_MACHINE_SIZE_LABELS,
+} from './agent-vocabularies';
 
 /** A cloud machine's credential environment when nobody names one. */
 const DEFAULT_CLOUD_ENVIRONMENT = 'production';
@@ -68,8 +72,6 @@ interface NewDeploymentDialogProps {
   agent: Agent;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Saves the cloud machine size into agent.json (the hub sizes the box from it). Resolves once written. */
-  onMachineSize?: (size: string) => Promise<unknown>;
   /** Called with the new deployment's id once launched. */
   onLaunched: (deploymentId?: string) => void | Promise<void>;
 }
@@ -79,13 +81,7 @@ interface NewDeploymentDialogProps {
  * what launching that type needs, and Launch. Only a cloud machine needs the publish checklist
  * (it runs the published definition) and a credential environment; this computer needs neither.
  */
-export function NewDeploymentDialog({
-  agent,
-  open,
-  onOpenChange,
-  onMachineSize,
-  onLaunched,
-}: NewDeploymentDialogProps) {
+export function NewDeploymentDialog({ agent, open, onOpenChange, onLaunched }: NewDeploymentDialogProps) {
   const { t } = useLingui();
   const [type, setType] = useState<DeploymentType>('local');
   const [launching, setLaunching] = useState(false);
@@ -127,12 +123,16 @@ export function NewDeploymentDialog({
     try {
       let data;
       if (!machine) {
-        data = await agent.deploy(undefined, 'local');
+        data = await agent.deploy({ provider: 'local' });
         notify.success({ title: t`${agent.name} now runs on this computer` });
       } else {
-        // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
-        await onMachineSize?.(machine.size);
-        data = await agent.deploy(environment, machine.provider, tokenAllocation);
+        // The size travels with the deploy: writing it into agent.json would dirty the checkout being deployed.
+        data = await agent.deploy({
+          environment,
+          provider: machine.provider,
+          tokenAllocation,
+          machineSize: machine.size,
+        });
         // Taken on: the machine is placed in the background, after this answer.
         notify.info({ title: t`Deployment running in the background` });
       }
@@ -243,6 +243,7 @@ export function NewDeploymentDialog({
                 agent={agent}
                 environment={environment}
                 provider={machine.provider}
+                deploymentId={null}
                 value={tokenAllocation}
                 onChange={setTokenAllocation}
                 disabled={launching}

@@ -174,6 +174,22 @@ describe('asset evidence presentation', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 
+  it('has no unknown section when every usage resolved', () => {
+    renderBoard({ assets: assets([own], { workerScoped: true }) });
+    expect(screen.queryByTestId('asset-manager-section-unknown')).toBeNull();
+  });
+
+  it('shows a counted unknown section with the skill folder name and why', () => {
+    renderBoard({ assets: assets([own], { workerScoped: true,
+      unresolvedUsage: [{ asset: null, reference: '/repo/.github/skills/deploy-pypi/SKILL.md', resolution: 'missing', evidence: [] }],
+    }) });
+    expect(screen.getByTestId('asset-manager-section-unknown')).toHaveTextContent('Unknown assets (1)');
+    const row = screen.getByTestId('asset-unresolved-usage');
+    expect(row).toHaveTextContent('deploy-pypi');
+    expect(row).not.toHaveTextContent('SKILL.md');
+    expect(row).toHaveTextContent('Not found on disk');
+  });
+
   it('retains catalog rows without claiming failed worker verification as availability', () => {
     renderBoard({ assets: assets([{ ...own, available: false, present: true }], { workerScoped: true, error: true }) });
     expect(screen.getByTestId('asset-manager-section-other')).toHaveTextContent('Other assets');

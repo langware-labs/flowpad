@@ -19,6 +19,12 @@ class UsageResolution(str, Enum):
     AMBIGUOUS = 'ambiguous'
     UNBOUND = 'unbound'
     IDENTITY_CHANGED = 'identity_changed'
+    # A harness skill (Claude Code's ``simplify``): loaded, but it has no folder to find.
+    BUILTIN = 'builtin'
+
+
+#: Outcomes that are not a problem; everything else is listed as an unknown asset.
+SATISFIED_RESOLUTIONS = frozenset({UsageResolution.RESOLVED.value, UsageResolution.BUILTIN.value})
 
 
 class InvocationBinding(DataSpec):
@@ -42,11 +48,14 @@ def resolve_usage(entries, *, workdir: str | Path | None = None,
     """
     from flow_sdk.assets.transcript_evidence import (
         injected_skill_paths,
+        linked_skill_dirs,
         recognizable_asset_reference,
         skill_result_paths,
     )
-    result_paths = skill_result_paths(entries)
-    injected_paths = injected_skill_paths(entries)
+    linked = linked_skill_dirs(entries)
+    result_paths = {**{call: path for call, path in linked.items() if path}, **skill_result_paths(entries)}
+    injected_paths = injected_skill_paths(entries, linked)
+    builtin_calls = {call for call, path in linked.items() if path is None}
     grouped = {}
     evidence_by_occurrence = defaultdict(list)
     seen = set()
@@ -107,6 +116,8 @@ def resolve_usage(entries, *, workdir: str | Path | None = None,
                     resolution = UsageResolution.MISSING
                 else:
                     resolution = UsageResolution.RESOLVED
+            elif tool_id in builtin_calls:
+                resolution = UsageResolution.BUILTIN
         evidence = AssetEvidence(kind=kind, path=str(path) if path else None,
                                  entry_id=entry_id, timestamp=str(timestamp) if timestamp else None,
                                  label='Read in transcript' if kind == AssetUsageKind.TRANSCRIPT_FILE_READ else f'Invoked via /{reference}')

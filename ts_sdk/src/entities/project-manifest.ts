@@ -15,7 +15,12 @@ export class ProjectManifest extends APIEntity<ProjectManifest> {
 
   /** The project this manifest belongs to. */
   project_id?: string;
-  /** The declared home page — an asset TypeId (an agent, or a web app), or null for the default home. */
+  /**
+   * The declared home page, or null for the default home. Either an asset TypeId
+   * (an agent, or a web app) or a `./path` inside the project
+   * (docs/navigation/project-home-page.md). The path form is not a TypeId, so
+   * never pass the raw value to `new TypeId()`.
+   */
   home_page?: string | null;
 
   constructor(entity: Partial<ProjectManifest> = {}) {

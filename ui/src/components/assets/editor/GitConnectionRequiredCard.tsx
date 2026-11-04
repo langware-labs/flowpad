@@ -10,7 +10,7 @@ export function GitConnectionRequiredCard({ name, onRetry }: { name: string; onR
         <GitBranch className="h-6 w-6 text-muted-foreground" />
         <div className="text-center">
           <div className="font-medium">
-            <Trans>Git connection required</Trans>
+            <Trans>Git is required</Trans>
           </div>
           <div className="mt-1 break-all text-xs text-muted-foreground">{name}</div>
           <div className="mt-2 text-xs text-muted-foreground">

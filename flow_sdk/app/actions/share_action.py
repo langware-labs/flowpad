@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from flow_sdk.actions import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.project import Project, ProjectInviteRoleError
+from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.flowpad_types.enums.auth_enums import ROLE_GRANTS, ROLE_ORDER
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -227,6 +228,8 @@ async def share_entity() -> ApiResponse:
                 message="The Hub could not publish this Project",
                 data={"code": "hub_publish_failed"},
             )
+        if isinstance(exc, HubError):  # a typed hub answer (e.g. ``id_taken``) reaches the caller as itself
+            return exc.fail_response("Could not share")
         raise
 
     # Send-side address-book reconcile (rule 4): learn every recipient — for ANY

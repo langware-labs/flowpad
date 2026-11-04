@@ -78,6 +78,8 @@ _TASKS: dict[str, "asyncio.Task"] = {}
 #: nothing new to say about a dependency it did not try to fetch, so it repeats what the
 #: last fetch found ("repository not found") instead of a vaguer "not here yet".
 _LAST_FAILURE: dict[tuple[str, str, Optional[str]], tuple[str, str]] = {}
+#: ``(project_id, name, via)`` → why the last "pull to latest" left a checkout behind, until a pull succeeds.
+_LAST_PULL_ERROR: dict[tuple[str, str, Optional[str]], Optional[str]] = {}
 
 #: ``(project_id, dependency name)`` whose missing-dependency warning was dismissed.
 #: Process memory on purpose: "don't show again until Flowpad restarts".
@@ -104,8 +106,31 @@ class _Found:
     transportable: bool
     cloned: bool = False
     note: Optional[str] = None
+    #: Why an update left the checkout where it was.
+    pull_error: Optional[str] = None
     #: An id entry: what it resolved to (its TypeId, and where its own flow.json lives).
     resolved: Optional["Resolved"] = None
+
+
+#: A failed pull, said the way the person reads it.
+_PULL_ERRORS = {
+    "conflict": "Has local changes — can't pull without losing them",
+    "no_remote": "The checkout has no remote to pull from",
+}
+
+
+async def _checkout_status(path: "str | Path"):
+    """The checkout's git status: ``behind`` as of the last fetch (cached refs, no network) and its
+    edited files. ``None`` when git cannot say."""
+    from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+    status = await (await GitRepo.local(str(path))).get_status()
+    return None if status.error else status
+
+
+def _has_local_changes(status) -> bool:
+    """Tracked files edited in the checkout (untracked files are not the person's edits to lose)."""
+    return bool(status) and any(f.status != "?" for f in status.files)
 
 
 class _NotReady(Exception):
@@ -160,18 +185,32 @@ async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, updat
         cached_root = folder.path
     repo = await asyncio.to_thread(_checkout_for, origin, cached_root)
     made = False
+    pull_error = None
     if repo is None:
         if not fetch:
             raise _NotReady("missing", "not on this machine yet — sync to fetch it")
         target = await asyncio.to_thread(origin.next_clone_target)
-        result = await git_clone(origin.clone_url(), str(target), branch=branch or None, token=await _github_token())
-        if not result.ok:
-            raise _NotReady("unreachable", f"could not clone {origin.clone_url()}: {result.detail}")
-        repo, made = target, True
+        if target.exists() and await asyncio.to_thread(origin.matches_checkout, target, require_branch=True):
+            # Already here: the hub delivered it with the project (a deployed machine never clones a
+            # dependency itself), or an earlier clone that no project registered yet.
+            repo = target
+        else:
+            result = await git_clone(
+                origin.clone_url(), str(target), branch=branch or None, token=await _github_token()
+            )
+            if not result.ok:
+                raise _NotReady("unreachable", f"could not clone {origin.clone_url()}: {result.detail}")
+            repo, made = target, True
     elif update and cloned:
-        pulled = await (await GitRepo.local(str(repo))).pull(branch=branch or None)
-        if not pulled.ok:
-            logger.info("[deps] pull %s for %s: %s", pulled.kind, repo, pulled.message)
+        if _has_local_changes(await _checkout_status(repo)):
+            # ``pull --autostash`` would replay them onto the new commits and leave conflict markers in
+            # the person's edits. A dependency is kept as they left it; the row says why.
+            pull_error = _PULL_ERRORS["conflict"]
+        else:
+            pulled = await (await GitRepo.local(str(repo))).pull(branch=branch or None)
+            if not pulled.ok and pulled.kind != "nothing":
+                logger.info("[deps] pull %s for %s: %s", pulled.kind, repo, pulled.message)
+                pull_error = _PULL_ERRORS.get(pulled.kind) or (pulled.message or pulled.kind).strip().splitlines()[0]
     root = safe_join(repo, dep.path) if dep.path != "." else repo
     if root is None or not root.is_dir():
         raise _NotReady("invalid", f"{dep.path!r} is not a folder in {origin.clone_url()}")
@@ -184,7 +223,7 @@ async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, updat
     if folder.path != path:
         folder.path = path
         await folder.save()
-    return _Found(folder, path, "git", True, cloned=made or cloned, note=note)
+    return _Found(folder, path, "git", True, cloned=made or cloned, note=note, pull_error=pull_error)
 
 
 async def _file(target: str, base: Path) -> _Found:
@@ -618,6 +657,26 @@ def schedule_resolve(project: "Project") -> None:
     _TASKS[pid] = create_detached_task(run(), name=f"deps-resolve:{pid}")
 
 
+async def check_updates(project: "Project") -> list[DependencyState]:
+    """Fetch the remote of every git checkout Flowpad cloned, so each one's ``behind`` is current,
+    then answer with the states. The fetches run together as git subprocesses, off the event loop;
+    a fetch that fails leaves that checkout's last known count."""
+    from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+    states = await resolve(project, fetch=False)
+
+    async def fetched(state: DependencyState) -> DependencyState:
+        if not (state.state == "ready" and state.local_path and parse_source(state.source).kind == "git"
+                and _was_cloned(project, state.name, state.via)):
+            return state
+        status = await (await GitRepo.local(state.local_path)).fetch()
+        if status.error:
+            logger.info("[deps] update check for %s: %s", state.local_path, status.error)
+        return state.model_copy(update={"behind": status.behind})
+
+    return list(await asyncio.gather(*(fetched(s) for s in states)))
+
+
 async def settled(project_id: str) -> None:
     """Wait for the background resolve / add running for a project, if any."""
     running = _TASKS.get(str(project_id))
@@ -761,8 +820,15 @@ async def _resolve(
         if found.resolved is None and is_path_under(found.path, root_canon):
             states.append(state("invalid", reason="a dependency cannot be inside the project itself"))
             continue
+        # Only a checkout Flowpad cloned is Flowpad's to keep current; one the person made is theirs.
+        checkout = await _checkout_status(found.path) if source.kind == "git" and found.cloned and found.path else None
+        behind = checkout.behind if checkout else 0
+        if fetch and update:
+            # The last pull's answer outlives the request: a listing (no git pull) still says why it stayed.
+            _LAST_PULL_ERROR[key] = found.pull_error
         states.append(state(
             "ready", local_path=found.path, reason=found.note, typeid=found.resolved.typeid if found.resolved else None,
+            behind=behind, pull_error=_LAST_PULL_ERROR.get(key) if behind else None,
         ))
         if found.folder is not None:
             desired[str(found.folder.typeid)] = (found.folder, _sidecar(found, dep, via, own))

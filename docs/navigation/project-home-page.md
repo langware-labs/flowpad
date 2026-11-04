@@ -41,6 +41,11 @@ Opening invokes the provider's [Load lifecycle](../dependency-lifecycle.md): mis
 returns `setup_required`; approval runs setup and then operational `on_load`. The home
 remains addressable while setup is pending. Long setup work runs in the background.
 
+`GET /api/v1/graph/project/<id>/home-page-typeid?reference=` returns `{typeid}`: only the
+resolved local TypeId (`Project.resolve_home_page_typeid`), or null. It never loads the project,
+so a surface that only shows the home page uses it (the Home card, through
+`Project.resolveHomePageTypeId`). A `./path` is never joined or parsed on the client.
+
 A dependency's Open uses its provider's home, with provider and consumer project identities
 carried separately in the tab URL. Reload retains the consuming project used to configure
 connections and agent bindings; opening the provider's admin does not change asset ownership.

@@ -40,6 +40,14 @@ Reserve `flow navigate` for an explicit "take me there" — it moves the tab the
 is looking at. The **flowpad-navigation** skill owns that rule and every
 open/show/navigate recipe.
 
+## When you need the user — bring it into focus
+
+Inside the app the way in is `flow show` (`url`, `file`, `entity`, `view`, `snippet`): it puts the
+page, file or screen right beside the user and marks your chip, so a sign-in page, a form to
+submit or a file to review is one click away — in a vibe session it pins the display pane. Only
+something that lives outside Flowpad (a vendor login that must stay in their own browser profile)
+gets the `! open "<url>"` link instead. `flow navigate` only when they asked to be taken there.
+
 ## What to build
 
 Route every build request through the **building-deliverables** skill — it owns the

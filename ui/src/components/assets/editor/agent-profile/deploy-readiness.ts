@@ -44,6 +44,8 @@ export type DeployReadiness = Record<DeployStepId, DeployStepState>;
 export interface DeployVersionInput {
   published: boolean;
   pending_changes: number;
+  /** A git-checkout project: uncommitted/unpushed work blocks a deploy even before a first publish. */
+  git_native?: boolean;
 }
 
 export interface DeployReadinessInput {
@@ -67,6 +69,8 @@ function fromAnswer(value: boolean | null): DeployStepState {
  */
 function versionState(version: DeployVersionInput | null): DeployStepState {
   if (!version) return 'checking';
+  // A git checkout deploys its commits: work not committed (or not pushed) is refused by the deploy itself.
+  if (version.git_native) return version.pending_changes > 0 ? 'todo' : 'done';
   if (!version.published) return 'done';
   return version.pending_changes > 0 ? 'todo' : 'done';
 }

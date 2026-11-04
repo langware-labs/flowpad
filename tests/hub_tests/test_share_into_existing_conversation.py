@@ -97,7 +97,7 @@ async def test_message_into_existing_conversation_preserves_assignment(
     await conv.add_message("second reply")
     after_msgs = await _member_rows(hub_base_url, headers_b, conv.id, bob_id)
     assert len(after_msgs) == 1, f"messages duplicated Bob's membership: {after_msgs}"
-    assert (after_msgs[0].get("role"), after_msgs[0].get("status")) == (
-        after_share[0].get("role"),
+    assert (after_msgs[0].get("roles"), after_msgs[0].get("status")) == (
+        after_share[0].get("roles"),
         after_share[0].get("status"),
     ), f"messages into an existing conversation changed Bob's assignment ({after_share} → {after_msgs})"

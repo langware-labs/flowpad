@@ -30,6 +30,7 @@ from . import (  # noqa: F401
     prompt_pin_action,
     rag_index_action,
     report_action,
+    screen_recording_action,
     share_action,
     task_assign_action,
     task_receive_action,

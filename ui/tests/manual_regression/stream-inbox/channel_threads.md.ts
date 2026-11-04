@@ -172,6 +172,20 @@ async function sentWith(channel: string, text: string): Promise<Record<string, u
   return [...(await sentTo(channel))].reverse().find((m) => JSON.stringify(m).includes(text)) ?? {};
 }
 
+/** The MessageThread holding the message whose words are `text` (its FlowMessage's thread). */
+async function threadOf(text: string): Promise<string> {
+  let found = '';
+  await expect
+    .poll(async () => {
+      const fms = await graphCall<Array<Record<string, unknown>>>(api, 'get', '/graph/flow_message');
+      const hit = fms.find((m) => JSON.stringify(m).includes(text) && m.thread_id);
+      found = String(hit?.thread_id ?? '');
+      return found;
+    }, { message: `no thread holds "${text}"` })
+    .not.toBe('');
+  return found;
+}
+
 /** A provider id is sometimes namespaced (`<chat>/<id>`); the provider itself carries the last part. */
 const bare = (id: string) => id.split('/').pop() ?? id;
 
@@ -197,19 +211,25 @@ for (const [i, channel] of WANTED.entries()) {
     const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce }).first();
     await expect(row).toBeVisible();
     await row.click();
-    await expect(page.locator('[data-testid^="message-bubble-"]', { hasText: `third ${nonce}` }).first()).toBeVisible();
-    const stackOpen = page.getByTestId('thread-stack-open');
-    await expect(stackOpen).toContainText('2 earlier in this thread');
-    if (shots) await page.screenshot({ path: `${shots}/${channel}-1-packed.png`, fullPage: true });
+    // A channel's thread IS its conversation, so the feed lays it out flat (2f0ae8c0a): every message
+    // shows, no "N earlier in this thread" stack.
+    for (const t of [`root ${nonce}`, `second ${nonce}`, `third ${nonce}`]) {
+      await expect(page.locator('[data-testid^="message-bubble-"]', { hasText: t }).first()).toBeVisible();
+    }
+    await expect(page.getByTestId('thread-stack-open')).toHaveCount(0);
+    if (shots) await page.screenshot({ path: `${shots}/${channel}-1-flat.png`, fullPage: true });
 
-    // Open the thread: a navigation (?thread=) with a header naming and counting it.
-    await stackOpen.click();
+    // Open the thread by URL (?thread=): a header naming and counting it.
+    const threadId = await threadOf(`root ${nonce}`);
+    const threadUrl = new URL(page.url());
+    threadUrl.searchParams.set('thread', threadId);
+    await page.goto(threadUrl.toString());
     await expect(page).toHaveURL(/[?&]thread=/);
     await expect(page.getByTestId('thread-header')).toBeVisible();
     await expect(page.getByTestId('thread-header-count')).toContainText('3 messages');
     for (const t of [`root ${nonce}`, `second ${nonce}`, `third ${nonce}`]) {
       // The bubble's own body (a quote block repeats its parent's words).
-      await expect(page.locator('[data-testid^="message-bubble-"] .whitespace-pre-wrap', { hasText: t }).first()).toBeVisible();
+      await expect(page.locator('[data-testid^="message-bubble-"] p', { hasText: t }).first()).toBeVisible();
     }
     if (spec.quotesInbound) {
       await expect(page.getByTestId('message-quote').filter({ hasText: `root ${nonce}` }).first()).toBeVisible();
@@ -251,7 +271,8 @@ for (const [i, channel] of WANTED.entries()) {
     await page.getByTestId('thread-header-all').click();
     await expect(page).not.toHaveURL(/[?&]thread=/);
     await expect(page.getByTestId('thread-header')).toHaveCount(0);
-    await expect(page.getByTestId('thread-stack-open')).toContainText('earlier in this thread');
+    await expect(page.getByTestId('thread-stack-open')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="message-bubble-"]', { hasText: `answer ${nonce}` }).first()).toBeVisible();
 
     if (!agentOnly) {
       await api.delete(`/api/v1/graph/data_source/${sourceId}`);

@@ -258,11 +258,20 @@ async def test_version_counts_what_is_not_published(tmp_path):
     git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A")
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "agent")
     state = version_state(agent)
-    assert state["has_repo"] is True and state["published"] is False
-    assert state["pending_changes"] == 1  # one commit, never published
+    # A git checkout deploys its own commits: committed with no remote of its own is nothing pending.
+    assert state["has_repo"] is True and state["published"] is False and state["git_native"] is True
+    assert state["pending_changes"] == 0 and state["has_remote"] is False
 
     (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
-    assert version_state(agent)["pending_changes"] == 2
+    state = version_state(agent)
+    assert (state["pending_changes"], state["uncommitted"], state["unpushed"]) == (1, 1, 0)
+
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "more")
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    git("remote", "add", "origin", str(bare))
+    state = version_state(agent)
+    assert (state["has_remote"], state["unpushed"], state["pending_changes"]) == (True, 2, 2)
 
 
 @pytest.mark.asyncio
@@ -275,7 +284,7 @@ async def test_version_of_an_agent_published_into_its_hub_repo(tmp_path, monkeyp
 
     state = version_state(agent)
     assert not (folder.parents[2] / ".git").exists()
-    assert state == {"published": True, "published_commit": synced.head_commit, "has_repo": True, "pending_changes": 0}
+    assert state == {"published": True, "published_commit": synced.head_commit, "has_repo": True, "git_native": False, "pending_changes": 0}
 
     (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
     assert version_state(agent)["pending_changes"] == 1

@@ -79,3 +79,10 @@ export async function writeChartMermaid(
     ...(setFields ? { set_fields: setFields } : {}),
   });
 }
+
+/** A chart folder's name and the directory it sits in, for the editor header. */
+export function chartFolder(fsRef: FSRef): { folderName: string; dirPath: string } {
+  const parts = (fsRef.path || '').split('/').filter(Boolean);
+  const tail = parts.pop() || 'chart';
+  return { folderName: tail, dirPath: parts.length ? '/' + parts.join('/') : '' };
+}

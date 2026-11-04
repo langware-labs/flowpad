@@ -1,0 +1,27 @@
+{
+  "type": "compute_op",
+  "id": "8f458b4e-3fe9-4e6c-97cc-4219598586bf",
+  "name": "slack-manifest",
+  "label": "Your app's blueprint",
+  "description": "The link that creates your Slack app with everything filled in: what it may read, what it listens to, where it sends.",
+  "subkind": "cli",
+  "output_spec_kind": "source.setup_shown",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" manifest --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" manifest --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE manifest --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300,
+    "source_step": "manifest"
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" manifest --check --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" manifest --check --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE manifest --check --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30,
+    "source_step": "manifest"
+  }
+}
