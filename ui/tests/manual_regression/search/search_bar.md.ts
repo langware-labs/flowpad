@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 // Helper: dismiss the DesktopSetupModal by setting localStorage before page load
 async function dismissSetupModal(page: import('@playwright/test').Page) {
@@ -14,14 +15,14 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 async function gotoHome(page: import('@playwright/test').Page) {
   await dismissSetupModal(page);
   await page.goto('/');
-  await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-  await page.locator('[data-testid="top-nav-search-open"]').waitFor({ timeout: 20_000 });
+  await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
+  await page.locator('[data-testid="top-nav-search-open"]').waitFor({ timeout: adjusted(20_000) });
 }
 
 async function openTopNavSearch(page: import('@playwright/test').Page) {
   await page.locator('[data-testid="top-nav-search-open"]').click();
   const input = page.locator('[data-testid="top-nav-search-input"]');
-  await expect(input).toBeVisible({ timeout: 10_000 });
+  await expect(input).toBeVisible({ timeout: adjusted(10_000) });
   return input;
 }
 
@@ -29,7 +30,7 @@ test.describe('Record Search Bar', () => {
   // ── Test 1: Home page has search bar ──────────────────────────────────────
   test('home page has a search bar', async ({ page }) => {
     await gotoHome(page);
-    await expect(page.locator('[data-testid="top-nav-search-open"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="top-nav-search-open"]')).toBeVisible({ timeout: adjusted(10_000) });
     await openTopNavSearch(page);
   });
 
@@ -38,17 +39,17 @@ test.describe('Record Search Bar', () => {
     await gotoHome(page);
     const input = await openTopNavSearch(page);
     await input.fill('quarterly review');
-    await expect(page.locator('[data-testid="top-nav-search-results"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="top-nav-search-results"]')).toBeVisible({ timeout: adjusted(10_000) });
   });
 
   // ── Test 3: URL query param pre-populates the search input ────────────────
   test('navigating to /dock/search?q=hello pre-populates the search input', async ({ page }) => {
     await page.goto('/dock/search?q=hello');
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
 
     const input = page.locator('[data-testid="search-input"]').first();
-    await expect(input).toBeVisible({ timeout: 10_000 });
-    await expect(input).toHaveValue('hello', { timeout: 5_000 });
+    await expect(input).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(input).toHaveValue('hello', { timeout: adjusted(5_000) });
   });
 
   // ── Test 4: Compact home bar has no Tools button / filter panel ───────────
@@ -69,18 +70,18 @@ test.describe('Record Search Bar', () => {
   // ── Test 5: Search results area renders in search view ────────────────────
   test('search view shows results area', async ({ page }) => {
     await page.goto('/dock/search?q=test');
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
 
     const results = page.locator('[data-testid="search-results"]');
-    await expect(results).toBeVisible({ timeout: 10_000 });
+    await expect(results).toBeVisible({ timeout: adjusted(10_000) });
   });
 
   // ── Test 6: Search view exists at /dock/search (empty query) ─────────────
   test('search view is accessible without a query', async ({ page }) => {
     await page.goto('/dock/search');
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
 
     const searchView = page.locator('[data-testid="search-view"]');
-    await expect(searchView).toBeVisible({ timeout: 10_000 });
+    await expect(searchView).toBeVisible({ timeout: adjusted(10_000) });
   });
 });

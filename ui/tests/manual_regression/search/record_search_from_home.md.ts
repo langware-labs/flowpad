@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 // Helper: dismiss the DesktopSetupModal by setting localStorage before page load
 async function dismissSetupModal(page: import('@playwright/test').Page) {
@@ -14,14 +15,14 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 async function gotoHome(page: import('@playwright/test').Page) {
   await dismissSetupModal(page);
   await page.goto('/');
-  await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-  await page.locator('[data-testid="top-nav-search-open"]').waitFor({ timeout: 20_000 });
+  await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
+  await page.locator('[data-testid="top-nav-search-open"]').waitFor({ timeout: adjusted(20_000) });
 }
 
 async function openTopNavSearch(page: import('@playwright/test').Page) {
   await page.locator('[data-testid="top-nav-search-open"]').click();
   const input = page.locator('[data-testid="top-nav-search-input"]');
-  await expect(input).toBeVisible({ timeout: 10_000 });
+  await expect(input).toBeVisible({ timeout: adjusted(10_000) });
   return input;
 }
 
@@ -37,7 +38,7 @@ test.describe('Record Search From Home', () => {
     await gotoHome(page);
     const input = await openTopNavSearch(page);
     await input.fill('quarterly review');
-    await expect(page.locator('[data-testid="top-nav-search-results"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="top-nav-search-results"]')).toBeVisible({ timeout: adjusted(10_000) });
   });
 
   // ── Test 3: Home search bar does NOT expose the Tools toggle ────────────

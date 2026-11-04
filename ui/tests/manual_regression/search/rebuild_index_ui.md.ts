@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 import { waitForIndexerIdle, apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -34,7 +35,7 @@ async function openSearch(page: Page) {
   // There is no global view mode any more (the home is Vibe-only and Advanced == the dev
   // switch), so the URL no longer carries one: the dev switch below is the only lever.
   await page.goto('/dock/search');
-  await page.waitForFunction(() => typeof (window as any).setDev === 'function', undefined, { timeout: 20_000 });
+  await page.waitForFunction(() => typeof (window as any).setDev === 'function', undefined, { timeout: adjusted(20_000) });
   // Since host tabs (71e9272c6) <AdvancedOnly> follows the developer switch
   // (`useIsAdvanced() === useIsDev()`), which the URL's `viewMode` no longer
   // turns on. Flip it through the app's own `window.setDev`, the call the
@@ -57,14 +58,14 @@ async function indicatorText(page: Page): Promise<string> {
 test.describe('Search — rebuild-index UI', () => {
   test('1: rebuild-index button is visible in the search-view header', async ({ page }) => {
     await openSearch(page);
-    await expect(page.locator('[data-testid="search-view"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="search-view"]')).toBeVisible({ timeout: adjusted(15_000) });
     const btn = rebuildBtn(page);
     await expect(btn).toBeVisible();
     // It wraps a PackageSearch (lucide-package-search) glyph.
     await expect(btn.locator('svg.lucide-package-search')).toHaveCount(1);
     // Tooltip on hover.
     await btn.hover();
-    await expect(page.getByText('Refresh search data', { exact: false })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Refresh search data', { exact: false })).toBeVisible({ timeout: adjusted(5_000) });
   });
 
   test('2: clicking rebuild does NOT auto-open the activity progress modal', async ({ page }) => {
@@ -85,7 +86,7 @@ test.describe('Search — rebuild-index UI', () => {
     await rebuildBtn(page).click();
     // A rebuild flips the indicator text to an active phase.
     await expect
-      .poll(() => indicatorText(page), { timeout: 5_000 })
+      .poll(() => indicatorText(page), { timeout: adjusted(5_000) })
       .toMatch(ACTIVE_PHASE);
   });
 
@@ -95,7 +96,7 @@ test.describe('Search — rebuild-index UI', () => {
     await openSearch(page);
     await rebuildBtn(page).click();
     // Confirm the rebuild actually started (active phase), then reload right away.
-    await expect.poll(() => indicatorText(page), { timeout: 5_000 }).toMatch(ACTIVE_PHASE);
+    await expect.poll(() => indicatorText(page), { timeout: adjusted(5_000) }).toMatch(ACTIVE_PHASE);
 
     // Reload — whether the rebuild is still running or just finished, the modal
     // must NOT auto-open on load. (The rebuild duration is corpus-dependent and
@@ -103,7 +104,7 @@ test.describe('Search — rebuild-index UI', () => {
     // closed and any indicator state is restored from /activity-status, not a
     // popped dialog.) This is the actual regression this test guards.
     await page.reload();
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
     await page.waitForTimeout(1_000);
     expect(await page.getByRole('dialog').count(), 'no modal auto-opens after refresh').toBe(0);
     // NOTE: the manual-open-dialog tail (clicking the footer to open the progress
