@@ -1249,9 +1249,22 @@ function startLaunchDesktopCheck() {
   log.info(`[update] launch check not due (${plan.reason})${plan.seed ? '; reusing the last answer' : ''} — the desktop feed is checked in the background`);
   if (plan.seed) setDesktopStatus(plan.seed);
   void getDesktopUpdateVersion({ desktopOnly: true })
-    .then((version) => { if (version) return runScheduledUpdateCheck({ launchDesktop: version }); return undefined; })
+    .then((version) => offerDesktopFoundAtLaunch(version))
     .catch((err) => log.warn(`[update] background desktop check failed: ${err.message}`));
   return Promise.resolve(null);
+}
+// A newer desktop the launch's background look found before the app was up: offered once it is (the
+// post-boot hook), never in the middle of the start — the pre-start flow knows nothing of this look.
+let desktopFoundAtLaunch = null;
+function offerDesktopFoundAtLaunch(version) {
+  if (!version) return undefined;
+  if (!backendReady) {
+    desktopFoundAtLaunch = version;
+    log.info(`[update] desktop ${version} found while FlowPad starts — offered once it is up`);
+    return undefined;
+  }
+  desktopFoundAtLaunch = null;
+  return runScheduledUpdateCheck({ launchDesktop: version });
 }
 /** The recovery panels' check: runs for real if the scheduled one was skipped. */
 function forcedLaunchDesktopCheck() {
@@ -2831,6 +2844,11 @@ async function startApp() {
   // Through the same mutex as the periodic check, so this dialog cannot stack
   // with a desktop "update ready" prompt (a desktop download may already be
   // running from the pre-start flow).
+  // A desktop the launch's background look found while the app started goes first (the engine follows it).
+  if (desktopFoundAtLaunch) {
+    void offerDesktopFoundAtLaunch(desktopFoundAtLaunch)
+      .catch((err) => log.warn(`[update] offering the desktop found at launch failed: ${err.message}`));
+  }
   checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
 }
 // Anything that escapes to the top level must reach the user with "Send Report" — an unhandled rejection in

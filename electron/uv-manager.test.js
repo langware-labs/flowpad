@@ -2464,13 +2464,24 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       const base = fs.mkdtempSync(path.join(tmp, 'base-'));
       p.m._stageBase = async () => base;
       p.m._newStageRoot = UvManager.prototype._newStageRoot;
-      fs.mkdirSync(path.join(base, 'flowpad-staging-dead1', 'tools'), { recursive: true });
+      const mk = (name, ageMs = 0) => {
+        const dir = path.join(base, name);
+        fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
+        if (ageMs) { const t = (Date.now() - ageMs) / 1000; fs.utimesSync(dir, t, t); }
+      };
+      mk('flowpad-staging-999999-dead');             // its process is gone
+      mk(`flowpad-staging-${process.pid}-mine`);     // this process's own, from a run that never finished
+      mk(`flowpad-staging-${process.ppid}-live`);    // another live process's (a dev build beside the app)
+      mk('flowpad-staging-legacyold', 2 * 24 * 60 * 60 * 1000); // no owner in the name, two days old
+      mk('flowpad-staging-legacynew');               // no owner, fresh: maybe in use
       fs.mkdirSync(path.join(base, 'not-ours'));
+      p.m._pidAlive = (pid) => pid === process.ppid;
       let syncRm = 0;
       const realRmSync = fs.rmSync;
       fs.rmSync = (...a) => { if (String(a[0]).includes('flowpad-staging-')) syncRm++; return realRmSync(...a); };
       try { await p.m.prepareEngine(); } finally { fs.rmSync = realRmSync; }
-      eq(fs.readdirSync(base).sort(), ['not-ours'], 'prepare: the leftover and its own staging dir are gone, nothing else');
+      eq(fs.readdirSync(base).sort(), ['flowpad-staging-legacynew', `flowpad-staging-${process.ppid}-live`, 'not-ours'].sort(),
+        'prepare: orphans and its own staging dir are gone — a live process\'s and a fresh unowned one stay');
       eq(syncRm, 0, 'prepare: no synchronous removal of a staged venv');
     }
 

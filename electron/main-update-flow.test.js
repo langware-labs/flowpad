@@ -23,7 +23,8 @@ const EXPOSE = `
 module.exports.__t = {
   offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
-  runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer, prepareDeferredEngineUpdate,
+  runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer, prepareDeferredEngineUpdate, offerDesktopFoundAtLaunch,
+  getFoundAtLaunch: () => desktopFoundAtLaunch, getFollowUpDesktop: () => followUpDesktop,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
   disarmAccountWatch: () => { accountWatcher = { close() {} }; },
@@ -579,6 +580,34 @@ const HOUR = 60 * 60 * 1000;
     eq(env.t.getDesktopStatus().state, 'available', 'the background look found the newer desktop');
     ok(env.dialogCalls.some((d) => /0\.2\.48/.test(d.detail || d.message || '')), 'and offered it, like the hourly look');
     eq(env.readSchedule().lastResult, { state: 'available', version: '0.2.48' }, 'its answer is kept for a follow-up and the next launch');
+  }
+  {
+    // Found by the launch's background look BEFORE the app is up: nothing mid-start — it is offered by the
+    // post-boot hook (which calls offerDesktopFoundAtLaunch with what was kept).
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    await load({ userDataDir }).t.startLaunchDesktopCheck();
+    const env = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1], backendReady: false });
+    env.t.setupElectronAutoUpdater();
+    await env.t.startLaunchDesktopCheck(); for (let i = 0; i < 8; i++) await tick();
+    eq(env.dialogCalls.length, 0, 'still starting: no update screen in the middle of the start');
+    eq(env.t.getFoundAtLaunch(), '0.2.48', 'the version is kept for the post-boot hook');
+    eq(env.t.getDesktopStatus().state, 'available', 'and the engine is held behind it meanwhile');
+    env.t.setBackendReady(true);
+    await env.t.offerDesktopFoundAtLaunch(env.t.getFoundAtLaunch()); for (let i = 0; i < 6; i++) await tick();
+    ok(env.dialogCalls.some((d) => /0\.2\.48/.test(d.detail || d.message || '')), 'up: the post-boot hook offers it');
+    eq(env.t.getFoundAtLaunch(), null, 'and it is spent');
+  }
+  {
+    // Found while a pass is already running (autoCheckInFlight): owed as a follow-up, from the kept answer.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47' });
+    env.t.setupElectronAutoUpdater();
+    env.writeSchedule({ lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(25 * HOUR), lastResult: { state: 'current', version: null }, failureCount: 0 });
+    let release;
+    env.autoUpdater.checkForUpdates = () => new Promise((r) => { release = () => r({ updateInfo: { version: '0.2.47' } }); });
+    const running = env.t.runScheduledUpdateCheck(); await tick();
+    await env.t.offerDesktopFoundAtLaunch('0.2.48');
+    eq(env.t.getFollowUpDesktop(), true, 'a pass is in flight: the found desktop is owed to the next tick');
+    release(); await running;
   }
   {
     // "Restart now" before the app is up (the recovery panel, the desktop-first install): the window is
