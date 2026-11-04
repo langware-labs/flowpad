@@ -19,6 +19,7 @@
  * written straight into the project's manifest, the way a cloned repo would
  * carry them.
  */
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -85,6 +86,13 @@ const declaredHomePage = () => readManifest(home.root)?.home_page;
 function writeManifestText(text: string): void {
   mkdirSync(manifestDir(home.root), { recursive: true });
   writeFileSync(manifestFile(home.root), text, 'utf8');
+  // The card reads the indexed ProjectManifest row, which nothing watches the file for:
+  // index it the way the machine indexes a changed asset folder (`flow record index`).
+  execFileSync(
+    'curl',
+    ['-s', '-X', 'POST', '--max-time', '20', `${GRAPH}/compute_node/@local/fs-records/index?${new URLSearchParams({ type: 'project_manifest', path: manifestDir(home.root) })}`],
+    { stdio: 'ignore' },
+  );
 }
 
 /**
@@ -236,8 +244,10 @@ test.describe('project home page', () => {
     const src = await page.getByTestId('vibe-app-frame').first().getAttribute('src');
     expect(src ?? '').not.toContain('scope-');
 
-    // Home from the app steps off it; the card still names the app after a reload.
+    // Home asks for the home page on every click (there is no stepping off by Home): the app again.
     await clickHome(page);
+    await expect(page).toHaveURL(new RegExp(`/dock/app/${appTypeId}\\?.*scope-activeProjectId=${home.id}`));
+    await page.goto('/');
     await expectDefaultHome(page);
     const reloaded = await openCustomize(page, home.id);
     await expect(reloaded.getByTestId('home-page-picker')).toContainText(appName);
@@ -258,11 +268,14 @@ test.describe('project home page', () => {
     const firstProcess = SESSION_URL.exec(page.url())?.[1];
     expect(firstProcess).toBeTruthy();
 
-    // 3. Home from the home page itself → the default home (the way out).
+    // 3. Home from the home page itself → the same chat again (Home always asks for the home page).
     await clickHome(page);
-    await expectDefaultHome(page);
+    await expect(page).toHaveURL(SESSION_URL);
+    expect(SESSION_URL.exec(page.url())?.[1]).toBe(firstProcess);
 
-    // 4. Home again → the SAME chat, resumed rather than a new one.
+    // 4. Off to the plain root, then Home → the SAME chat, resumed rather than a new one.
+    await page.goto('/');
+    await expectDefaultHome(page);
     await clickHome(page);
     await expect(page).toHaveURL(SESSION_URL);
     expect(SESSION_URL.exec(page.url())?.[1]).toBe(firstProcess);
