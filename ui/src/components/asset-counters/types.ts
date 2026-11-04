@@ -1,5 +1,6 @@
 import type { IDockPointer } from '@sdk';
 import type { ReactNode } from 'react';
+import type { AxisOption } from './axes';
 
 /**
  * One counter's value: the LIST behind the number. The home box shows
@@ -12,12 +13,9 @@ export interface AssetCounter<T> {
   description: ReactNode;
   items: T[];
   isLoading: boolean;
-  /** The scope this counter counts within (home chips switch between scopes). Absent → one scope. */
-  scope?: { key: string; label: ReactNode };
-  /** The chip's label inside its scope ("Running", "All"); defaults to `label`. */
-  chipLabel?: ReactNode;
-  /** `live` lights the count green while it is above zero. */
-  tone?: 'live';
+  /** The scope and status this counter is the cross of (`axes.tsx`). Absent → that axis is not offered. */
+  scope?: AxisOption;
+  status?: AxisOption;
 }
 
 export interface AssetColumn<T> {

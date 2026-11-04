@@ -1,6 +1,9 @@
+import { Trans } from '@lingui/react/macro';
 import { Skeleton } from '@src/components/ui/skeleton';
 import { cn } from '@src/lib/utils';
-import type { ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
+import { type AxisOption, type AxisSelection, axesOf, counterKey } from './axes';
+import type { AssetCounter } from './types';
 
 /**
  * The stat chip kit, shared by the desktop home and the hub home:
@@ -78,44 +81,105 @@ export function StatChip({
   );
 }
 
-/** The scope switch: a track whose selected segment is clearly raised and outlined. */
-export function ScopeTabs<K extends string>({
-  value,
+/** One axis: a label and a track of options, each with its count; the selected one is raised. */
+export function AxisToggle({
+  label,
   options,
-  onChange,
+  value,
+  count,
+  isLoading,
+  onSelect,
+  testId,
 }: {
-  value: K;
-  options: { key: K; label: ReactNode }[];
-  onChange: (key: K) => void;
+  label: ReactNode;
+  options: AxisOption[];
+  value?: string;
+  count: (key: string) => number;
+  isLoading?: boolean;
+  onSelect: (key: string) => void;
+  testId: string;
 }) {
   return (
-    <div
-      role="radiogroup"
-      className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-lg bg-foreground/[0.05] p-0.5 ring-1 ring-inset ring-foreground/15"
-      data-testid="scope-tabs"
-    >
-      {options.map((option) => {
-        const selected = option.key === value;
-        return (
-          <button
-            key={option.key}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(option.key)}
-            className={cn(
-              'h-7 max-w-40 truncate rounded-md px-3 text-[13px] transition-colors',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              selected
-                ? 'bg-foreground/[0.16] font-semibold text-foreground shadow-sm ring-1 ring-foreground/25'
-                : 'text-foreground/65 hover:bg-foreground/[0.08] hover:text-foreground',
-            )}
-            data-scope={option.key}
-          >
-            {option.label}
-          </button>
-        );
-      })}
+    <div className="inline-flex shrink-0 items-center gap-2" data-testid={testId}>
+      <span className="text-xs text-foreground/55">{label}</span>
+      <div
+        role="radiogroup"
+        className="inline-flex h-8 items-center gap-0.5 rounded-lg bg-foreground/[0.05] p-0.5 ring-1 ring-inset ring-foreground/15"
+      >
+        {options.map((option) => {
+          const selected = option.key === value;
+          const n = count(option.key);
+          return (
+            <button
+              key={option.key}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onSelect(option.key)}
+              className={cn(
+                'inline-flex h-7 max-w-48 items-center gap-1.5 rounded-md pe-1 ps-2.5 text-[13px] transition-colors',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                selected
+                  ? 'bg-foreground/[0.16] font-semibold text-foreground shadow-sm ring-1 ring-foreground/25'
+                  : 'text-foreground/65 hover:bg-foreground/[0.08] hover:text-foreground',
+              )}
+              data-option={option.key}
+            >
+              {option.tone === 'live' && (
+                <span
+                  className={cn('h-1.5 w-1.5 shrink-0 rounded-full', n > 0 ? 'bg-emerald-500' : 'bg-foreground/30')}
+                />
+              )}
+              <span className="truncate">{option.label}</span>
+              <CountBubble value={n} tone={option.tone ?? 'neutral'} isLoading={isLoading} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** A group's Scope and Status toggles; an axis with one option or none is not shown. */
+export function CounterAxes<T>({
+  counters,
+  selection,
+  onSelect,
+  className,
+}: {
+  counters: AssetCounter<T>[];
+  selection: AxisSelection;
+  onSelect: (next: AxisSelection) => void;
+  className?: string;
+}) {
+  const { scopes, statuses } = useMemo(() => axesOf(counters), [counters]);
+  const sizes = useMemo(() => new Map(counters.map((c) => [c.key, c.items.length])), [counters]);
+  const sizeAt = (scope?: string, status?: string) => sizes.get(counterKey(scope, status)) ?? 0;
+  const isLoading = counters.some((c) => c.isLoading);
+  return (
+    <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-2', className)}>
+      {scopes.length > 1 && (
+        <AxisToggle
+          label={<Trans>Scope</Trans>}
+          options={scopes}
+          value={selection.scope}
+          count={(key) => sizeAt(key, selection.status)}
+          isLoading={isLoading}
+          onSelect={(scope) => onSelect({ ...selection, scope })}
+          testId="axis-scope"
+        />
+      )}
+      {statuses.length > 1 && (
+        <AxisToggle
+          label={<Trans>Status</Trans>}
+          options={statuses}
+          value={selection.status}
+          count={(key) => sizeAt(selection.scope, key)}
+          isLoading={isLoading}
+          onSelect={(status) => onSelect({ ...selection, status })}
+          testId="axis-status"
+        />
+      )}
     </div>
   );
 }

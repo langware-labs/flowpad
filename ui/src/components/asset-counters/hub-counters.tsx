@@ -5,6 +5,8 @@ import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { isLaunched, useSandboxes } from '@src/hooks/use-sandboxes';
 import { ALL_DEPLOYMENTS, DeploymentBadges, deploymentsByAgent, toAgentRows, type AgentRow } from './agent-counters';
+import { crossCounters } from './axes';
+import { isLiveDeployment, isRunning, runPauseStatuses } from './placement';
 import { StatusDot } from './AssetItems';
 import type { AssetCounterGroup } from './types';
 import { FundedBy } from '@src/components/assets/editor/agent-profile/deployment/DeploymentFunding';
@@ -16,16 +18,6 @@ import { FundedBy } from '@src/components/assets/editor/agent-profile/deployment
 
 const HUB_AGENTS = new QueryRequest({ type: Agent.type, scope: [], query: null, name: 'hubCounters:agents' });
 
-/** A deployment is live unless its provider paused it — the rule `DeploymentBadges` paints. */
-export function isLiveDeployment(deployment: Deployment): boolean {
-  return deployment.status.provider_state !== 'paused';
-}
-
-/** An active agent has at least one live deployment. */
-export function isActiveAgent(row: AgentRow): boolean {
-  return row.deployments.some(isLiveDeployment);
-}
-
 /** A machine plus its probed status (absent until probed, or never launched). */
 export interface MachineRow {
   node: ComputeNode;
@@ -35,6 +27,8 @@ export interface MachineRow {
 export function isActiveMachine(row: MachineRow): boolean {
   return row.status === ExecutionEnvironmentStatus.READY;
 }
+
+const isPausedMachine = (row: MachineRow) => row.status === ExecutionEnvironmentStatus.PAUSED;
 
 const MACHINE_STATUS_LABEL: Record<ExecutionEnvironmentStatus, ReactNode> = {
   [ExecutionEnvironmentStatus.READY]: <Trans>Running</Trans>,
@@ -58,25 +52,13 @@ export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
     const { data: deployments = [], isLoading: deploymentsLoading } = useEntitiesQuery<Deployment>(ALL_DEPLOYMENTS);
     const rows = useMemo(() => toAgentRows(agents, deploymentsByAgent(deployments)), [agents, deployments]);
     return useMemo(
-      () => [
-        {
-          key: 'all',
-          chipLabel: <Trans>All</Trans>,
+      () =>
+        crossCounters({
           label: <Trans>Agents</Trans>,
-          description: <Trans>Every agent you can reach</Trans>,
           items: rows,
           isLoading,
-        },
-        {
-          key: 'active',
-          chipLabel: <Trans>Active</Trans>,
-          tone: 'live' as const,
-          label: <Trans>Active</Trans>,
-          description: <Trans>Agents with a live deployment</Trans>,
-          items: rows.filter(isActiveAgent),
-          isLoading: isLoading || deploymentsLoading,
-        },
-      ],
+          statuses: runPauseStatuses<AgentRow>(isRunning, null, deploymentsLoading),
+        }),
       [rows, isLoading, deploymentsLoading],
     );
   },
@@ -84,7 +66,7 @@ export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
   searchText: ({ agent }) => [agent.displayName, agent.description].filter(Boolean).join(' '),
   itemPointer: (row) => row.agent.dockPointer,
   card: (row) => {
-    const active = isActiveAgent(row);
+    const active = isRunning(row);
     return {
       title: row.agent.displayName,
       description: row.agent.description,
@@ -104,9 +86,7 @@ export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
       key: 'status',
       header: <Trans>Status</Trans>,
       cell: (row) => (
-        <StatusDot active={isActiveAgent(row)}>
-          {isActiveAgent(row) ? <Trans>Active</Trans> : <Trans>Idle</Trans>}
-        </StatusDot>
+        <StatusDot active={isRunning(row)}>{isRunning(row) ? <Trans>Active</Trans> : <Trans>Idle</Trans>}</StatusDot>
       ),
     },
     {
@@ -127,25 +107,13 @@ export const hubMachineCounterGroup: AssetCounterGroup<MachineRow> = {
       [sandboxes, details],
     );
     return useMemo(
-      () => [
-        {
-          key: 'all',
-          chipLabel: <Trans>All</Trans>,
+      () =>
+        crossCounters({
           label: <Trans>Machines</Trans>,
-          description: <Trans>Every machine you can reach</Trans>,
           items: rows,
           isLoading,
-        },
-        {
-          key: 'active',
-          chipLabel: <Trans>Active</Trans>,
-          tone: 'live' as const,
-          label: <Trans>Active</Trans>,
-          description: <Trans>Machines that are running</Trans>,
-          items: rows.filter(isActiveMachine),
-          isLoading,
-        },
-      ],
+          statuses: runPauseStatuses(isActiveMachine, isPausedMachine),
+        }),
       [rows, isLoading],
     );
   },
@@ -177,16 +145,13 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
   useCounters: () => {
     const { data: deployments = [], isLoading } = useEntitiesQuery<Deployment>(ALL_DEPLOYMENTS);
     return useMemo(
-      () => [
-        {
-          key: 'all',
-          chipLabel: <Trans>All</Trans>,
+      () =>
+        crossCounters({
           label: <Trans>Deployments</Trans>,
-          description: <Trans>Every deployment you can reach</Trans>,
           items: deployments,
           isLoading,
-        },
-      ],
+          statuses: runPauseStatuses(isLiveDeployment, (d: Deployment) => !isLiveDeployment(d)),
+        }),
       [deployments, isLoading],
     );
   },

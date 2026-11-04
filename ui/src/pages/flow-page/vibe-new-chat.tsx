@@ -6,6 +6,7 @@ import { AssetCounterChips, AssetCounterRow } from '@src/components/asset-counte
 import { agentCounterGroup } from '@src/components/asset-counters/agent-counters';
 import { IssuesSummaryChip } from '@src/components/asset-counters/issue-counters';
 import { appCounterGroup } from '@src/components/asset-counters/app-counters';
+import { skillCounterGroup } from '@src/components/asset-counters/skill-counters';
 import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
 import { QuickCreateNewSection } from '@src/components/quick-create';
@@ -76,6 +77,7 @@ export function VibeNewChat() {
           fallback={<AssetCounterRow group={agentCounterGroup} />}
         />
         <AssetCounterRow group={appCounterGroup} />
+        <AssetCounterRow group={skillCounterGroup} />
         <div className="flex w-full self-start">
           <IssuesSummaryChip />
         </div>

@@ -104,6 +104,7 @@ export const hubIssueCounterGroup: AssetCounterGroup<Issue> = {
       () => [
         {
           key: 'all',
+          status: { key: 'all', label: <Trans>All</Trans> },
           label: <Trans>Issues</Trans>,
           description: <Trans>Everything open that needs fixing</Trans>,
           items: open,
@@ -111,6 +112,7 @@ export const hubIssueCounterGroup: AssetCounterGroup<Issue> = {
         },
         {
           key: 'errors',
+          status: { key: 'errors', label: <Trans>Errors</Trans> },
           label: <Trans>Errors</Trans>,
           description: <Trans>Open issues that stop something from working</Trans>,
           items: open.filter((i) => i.severity === 'error'),
@@ -118,6 +120,7 @@ export const hubIssueCounterGroup: AssetCounterGroup<Issue> = {
         },
         {
           key: 'warnings',
+          status: { key: 'warnings', label: <Trans>Warnings</Trans> },
           label: <Trans>Warnings</Trans>,
           description: <Trans>Open issues that will stop something soon</Trans>,
           items: open.filter((i) => i.severity === 'warning'),

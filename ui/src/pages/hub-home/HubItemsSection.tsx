@@ -1,6 +1,8 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { InboundWebhooks, PageId, ViewType } from '@sdk';
-import { CountBubble, StatChip } from '@src/components/asset-counters/StatChips';
+import { counterAt, counterKey, selectionOf } from '@src/components/asset-counters/axes';
+import { CountBubble, CounterAxes } from '@src/components/asset-counters/StatChips';
+import { hubSkillCounterGroup } from '@src/components/asset-counters/skill-counters';
 import { CounterTable, QuickSearchInput, useQuickSearch } from '@src/components/asset-counters/AssetItems';
 import {
   hubAgentCounterGroup,
@@ -51,6 +53,7 @@ const TABS: TabDef[] = [
     emptyText: <Trans>No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram.</Trans>,
     createLabel: <Trans>Make an agent</Trans>,
   },
+  { group: hubSkillCounterGroup, emptyText: <Trans>No skills yet.</Trans> },
   {
     group: hubMachineCounterGroup,
     opensPage: ViewType.MACHINES,
@@ -92,7 +95,6 @@ function useTabCounters(): AssetCounter<unknown>[][] {
 function TabButton({
   label,
   count,
-  active,
   isLoading,
   selected,
   onClick,
@@ -100,7 +102,6 @@ function TabButton({
 }: {
   label: ReactNode;
   count: number;
-  active?: number;
   isLoading: boolean;
   selected: boolean;
   onClick: () => void;
@@ -122,12 +123,6 @@ function TabButton({
     >
       {label}
       <CountBubble value={count} isLoading={isLoading} />
-      {active !== undefined && (
-        <span className="flex items-center gap-1.5 text-xs text-foreground/75">
-          <Trans>Active</Trans>
-          <CountBubble value={active} tone="live" isLoading={isLoading} />
-        </span>
-      )}
     </button>
   );
 }
@@ -144,30 +139,33 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
 
   const [tabId, setTabId] = useState(() => readPref(TAB_KEY) ?? hubAgentCounterGroup.id);
   const [view, setView] = useState<View>(() => (readPref(VIEW_KEY) === 'list' ? 'list' : 'grid'));
-  const [counterKey, setCounterKey] = useState('all');
+  const [selectedKey, setSelectedKey] = useState('all');
   const [query, setQuery] = useState('');
   const [shown, setShown] = useState(PAGE_SIZE);
 
-  const tabs = TABS.map((tab, i) => ({ tab, counters: all[i], total: all[i][0]?.items.length ?? 0 })).filter(
-    ({ tab, total }) => !tab.hideWhenEmpty || total > 0,
-  );
+  const tabs = TABS.map((tab, i) => ({
+    tab,
+    counters: all[i],
+    total: counterAt(all[i], selectionOf(all[i]))?.items.length ?? 0,
+  })).filter(({ tab, total }) => !tab.hideWhenEmpty || total > 0);
   // A tab that opens its own screen is never the one listed here.
   const listed = tabs.filter(({ tab }) => !tab.opensPage);
   const current = listed.find(({ tab }) => tab.group.id === tabId) ?? listed[0];
   const { group } = current.tab;
-  const counter = current.counters.find((c) => c.key === counterKey) ?? current.counters[0];
+  const selection = selectionOf(current.counters, selectedKey);
+  const counter = counterAt(current.counters, selection);
   const rows = useQuickSearch(group, counter?.items ?? [], query);
 
   // Every change of what is listed starts again from the first page.
   const selectTab = (id: string) => {
     setTabId(id);
-    setCounterKey('all');
+    setSelectedKey('all');
     setQuery('');
     setShown(PAGE_SIZE);
     writePref(TAB_KEY, id);
   };
   const selectCounter = (key: string) => {
-    setCounterKey(key);
+    setSelectedKey(key);
     setShown(PAGE_SIZE);
   };
   const search = (value: string) => {
@@ -230,7 +228,6 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
             key={tab.group.id}
             label={counters[0]?.label}
             count={total}
-            active={counters.find((c) => c.key === 'active')?.items.length}
             isLoading={!!counters[0]?.isLoading}
             selected={!tab.opensPage && tab.group.id === group.id}
             onClick={() => {
@@ -273,19 +270,11 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
         <>
           <div className="flex flex-wrap items-center gap-2 py-3">
             <QuickSearchInput value={query} onChange={search} className="w-64" testId="hub-items-search" />
-            {current.counters.length > 1 &&
-              current.counters.map((c) => (
-                <StatChip
-                  key={c.key}
-                  label={c.chipLabel ?? c.label}
-                  selected={c.key === counter?.key}
-                  onClick={() => selectCounter(c.key)}
-                  data-testid="hub-items-filter"
-                  data-counter={c.key}
-                >
-                  <CountBubble value={c.items.length} tone={c.tone} isLoading={c.isLoading} />
-                </StatChip>
-              ))}
+            <CounterAxes
+              counters={current.counters}
+              selection={selection}
+              onSelect={(next) => selectCounter(counterKey(next.scope, next.status))}
+            />
             <div role="radiogroup" className={cn(SEGMENTED_GROUP, 'ml-auto')}>
               {(
                 [
