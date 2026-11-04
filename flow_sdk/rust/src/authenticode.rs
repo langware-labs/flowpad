@@ -1,5 +1,7 @@
-//! Authenticode verification (Windows): the launcher checks the installer it downloaded; the
-//! uninstaller checks its own deferred-cleanup copy and a legacy repaired runtime's interpreter.
+//! Authenticode verification (Windows): the uninstaller checks its own deferred-cleanup copy and
+//! a legacy repaired runtime's interpreter. The launcher (`bin/flowpad-install.rs`) keeps its own
+//! copy of the same check: its source stays frozen with its pinned, signed binary
+//! (electron/signing/LAUNCHER.md).
 
 use std::ffi::c_void;
 use std::iter::once;
