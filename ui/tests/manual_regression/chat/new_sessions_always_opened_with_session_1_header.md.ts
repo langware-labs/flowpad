@@ -38,7 +38,7 @@ test.describe('incremented tab names', () => {
 
     const tabsBefore = await page.locator('[data-testid^="tab-shell|"]').count();
     await addTerminalTab(page);
-    await expect(page.locator('[data-testid^="tab-shell|"]')).toHaveCount(tabsBefore + 1, { timeout: 15_000 });
+    await expect(page.locator('[data-testid^="tab-shell|"]')).toHaveCount(tabsBefore + 1, { timeout: adjusted(15_000) });
 
     // The two tabs have distinct, incremented names (e.g. "Tab 1" + "Tab 2").
     await expect(async () => {
@@ -46,6 +46,6 @@ test.describe('incremented tab names', () => {
       expect(names.length).toBeGreaterThanOrEqual(2);
       expect(new Set(names).size).toBe(names.length); // all distinct
       expect(names.filter((n) => n === firstName).length).toBe(1); // first not duplicated
-    }).toPass({ timeout: 10_000 });
+    }).toPass({ timeout: adjusted(10_000) });
   });
 });

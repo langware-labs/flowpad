@@ -29,17 +29,17 @@ test.describe('File explorer is accessible and shows directory contents (FLOWPAD
     });
 
     await page.goto('/dock/explorer');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
 
     // The file explorer surface is visible.
-    await expect(page.locator('[data-testid="file-manager-download-button"]')).toBeAttached({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="file-manager-download-button"]')).toBeAttached({ timeout: adjusted(15_000) });
 
     // Navigate to the VFS root, which lists directory contents.
     await page.locator('[data-testid="file-manager-home-button"]').click();
     await page.waitForTimeout(2_500);
 
     const rows = page.locator('table tbody tr');
-    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    await expect(rows.first()).toBeVisible({ timeout: adjusted(15_000) });
     const rowCount = await rows.count();
     expect(rowCount, 'No directory/file items shown in explorer').toBeGreaterThan(0);
 

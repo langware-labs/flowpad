@@ -35,9 +35,9 @@ async function pickProject(request: APIRequestContext): Promise<{ id: string; mo
 
 async function materialize(page: Page, id: string, assetRef: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
   // First save materializes the folder + board.json on disk.
   await page.evaluate(() => {

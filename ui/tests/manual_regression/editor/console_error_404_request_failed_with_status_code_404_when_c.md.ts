@@ -30,9 +30,9 @@ test.describe('Code editor — no 404 console errors (FLOWPAD-1686)', () => {
     });
 
     await page.goto('/dock/editor');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
     // The editor dock renders inside the content panel.
-    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: adjusted(15_000) });
     await page.waitForTimeout(3_000);
 
     const status404 = errors.filter((e) => /404/.test(e));

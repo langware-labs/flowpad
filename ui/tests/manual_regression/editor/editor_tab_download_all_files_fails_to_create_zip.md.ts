@@ -30,11 +30,11 @@ test.describe('File explorer download control is present (FLOWPAD-1605)', () => 
     });
 
     await page.goto('/dock/explorer');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
 
     // Download control is present in the DOM (may be disabled with nothing selected — that's fine).
     const downloadBtn = page.locator('[data-testid="file-manager-download-button"]');
-    await expect(downloadBtn).toBeAttached({ timeout: 15_000 });
+    await expect(downloadBtn).toBeAttached({ timeout: adjusted(15_000) });
 
     // The control carries the Lucide Download icon (the "Download" tooltip wraps this same button).
     const hasDownloadIcon = await downloadBtn

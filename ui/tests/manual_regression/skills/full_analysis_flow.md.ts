@@ -97,7 +97,7 @@ test.describe('Full analysis flow', () => {
 
       // Step 6 — OPEN THE ANALYSIS in real Chrome; the AgentTrace editor renders.
       await page.goto(`/dock/assets/editor/agent_trace/typeid/agent_trace-${first.id}`);
-      await expect(page.getByTestId('agent-trace-editor')).toBeVisible({ timeout: 25_000 });
+      await expect(page.getByTestId('agent-trace-editor')).toBeVisible({ timeout: adjusted(25_000) });
 
       // Steps 7–9 — improve→diff→version loop. Converge on cycle 3 (clean analysis).
       const params = { workdir: skillDir, file: 'SKILL.md' };

@@ -189,7 +189,7 @@ test('2. browser mic + speakers — a live call the agent answers, heard back, w
   const before = await rowIds(page);
   await page.locator('[data-testid="voice-call-button"][data-calls="webrtc"]').click();
   await page.getByTestId('voice-call-start').click();
-  await expect(page.getByTestId('voice-call-state')).toHaveAttribute('data-state', 'live', { timeout: 30_000 });
+  await expect(page.getByTestId('voice-call-state')).toHaveAttribute('data-state', 'live', { timeout: adjusted(30_000) });
   await page.keyboard.press('Escape');
 
   await openNewConversation(page, before);
@@ -242,7 +242,7 @@ test('2. browser mic + speakers — a live call the agent answers, heard back, w
   await page.goto(conversationUrl);
   const unpack = page.getByTestId('thread-stack-open');
   if (await unpack.count()) await unpack.first().click();
-  await expect(page.locator('body')).toContainText('Call ended', { timeout: 30_000 });
+  await expect(page.locator('body')).toContainText('Call ended', { timeout: adjusted(30_000) });
 });
 
 test('3. phone (Twilio) — the agent calls a person, who asks it on the line; watched live', async ({ page }) => {

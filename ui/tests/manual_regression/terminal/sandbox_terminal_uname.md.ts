@@ -33,7 +33,7 @@ test.describe('Sandbox terminal — uname -a', () => {
 
     // Wait for the new sandbox tab to render.
     await expect
-      .poll(async () => terminalTabChips(page).count(), { timeout: 15_000 })
+      .poll(async () => terminalTabChips(page).count(), { timeout: adjusted(15_000) })
       .toBeGreaterThan(tabsBefore);
 
     const sandboxTab = terminalTabChips(page).last();
@@ -46,15 +46,15 @@ test.describe('Sandbox terminal — uname -a', () => {
     // Explicitly click the new tab — Cloud-button openShell may leave focus on
     // a previously-active tab during the first navigation roundtrip.
     await sandboxTab.click();
-    await expect(sandboxTab).toHaveAttribute('data-active', 'true', { timeout: 10_000 });
+    await expect(sandboxTab).toHaveAttribute('data-active', 'true', { timeout: adjusted(10_000) });
 
     // Scope the active-panel locator to the NEW sandbox tab so we don't read
     // from a still-visible local tab that happens to still be data-active.
     const sandboxPanel = page.locator(
       `[data-testid="terminal-panel"][data-session-id="shell-${shellId}"]`,
     );
-    await expect(sandboxPanel).toHaveAttribute('data-active', 'true', { timeout: 10_000 });
-    await sandboxPanel.locator('.xterm-rows').first().waitFor({ state: 'attached', timeout: 20_000 });
+    await expect(sandboxPanel).toHaveAttribute('data-active', 'true', { timeout: adjusted(10_000) });
+    await sandboxPanel.locator('.xterm-rows').first().waitFor({ state: 'attached', timeout: adjusted(20_000) });
 
     // Wait for the sandbox prompt (`user@e2b` or any Linux-y prompt) — this
     // confirms E2B finished booting and bash is ready before we type.
@@ -64,7 +64,7 @@ test.describe('Sandbox terminal — uname -a', () => {
         expect(txt.length).toBeGreaterThan(0);
         // E2B images may expose either a user prompt or the root bash prompt.
         expect(txt).toMatch(/user@|[$#]\s*$/);
-      }).toPass({ timeout: 30_000 });
+      }).toPass({ timeout: adjusted(30_000) });
     } catch (e) {
       const xtermTxt = (await sandboxPanel.locator('.xterm-rows').first().textContent().catch(() => null)) ?? '<none>';
       const panelHtml = await sandboxPanel.evaluate((el) => el.outerHTML.slice(0, 2000)).catch(() => '<none>');
@@ -86,7 +86,7 @@ test.describe('Sandbox terminal — uname -a', () => {
     await expect(async () => {
       const txt = await sandboxPanel.locator('.xterm-rows').first().textContent();
       expect(txt).toContain('Linux');
-    }).toPass({ timeout: 20_000 });
+    }).toPass({ timeout: adjusted(20_000) });
 
     // Grab the latest non-empty line that looks like `uname -a` output — it
     // contains "Linux" and is the line AFTER the one that echoed the command.

@@ -25,7 +25,7 @@ test.describe('Web App view accessibility', () => {
     const hasContent = await page
       .locator('button, input, iframe, [role="main"], h1, h2, p')
       .first()
-      .isVisible({ timeout: 5_000 })
+      .isVisible({ timeout: adjusted(5_000) })
       .catch(() => false);
     expect(hasContent, 'Web app view rendered nothing — possible crash or 404').toBe(true);
 

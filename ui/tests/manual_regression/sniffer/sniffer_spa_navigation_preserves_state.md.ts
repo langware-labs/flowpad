@@ -35,11 +35,11 @@ test.describe('Sniffer — default-off survives SPA navigation', () => {
 
     // home → shell → home, waiting for the app shell to render at each stop.
     await page.goto('/dock/home');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
     await page.goto('/dock/shell');
-    await page.locator('[data-testid="agent-layout"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="agent-layout"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
     await page.goto('/dock/home');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
 
     // The per-instance gate is still off after all the routing.
     expect(await snifferHook(request), 'SPA navigation never enables the sniffer gate').toBeNull();

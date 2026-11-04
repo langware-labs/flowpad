@@ -28,7 +28,7 @@ test.describe('Skills view', () => {
     const hasButton = await page
       .locator('button')
       .first()
-      .isVisible({ timeout: 5_000 })
+      .isVisible({ timeout: adjusted(5_000) })
       .catch(() => false);
     expect(hasButton, 'No button found — skills view may be stuck loading').toBe(true);
 

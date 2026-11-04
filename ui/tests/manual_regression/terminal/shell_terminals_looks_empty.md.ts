@@ -51,8 +51,8 @@ test.describe('Shell terminals looks empty', () => {
     // the previously-typed output after a no-reload nav round-trip.
     await page.locator(`[data-testid="tab-shell|${markerSid}"]`).click();
     const restored = page.locator(`[data-testid="terminal-panel"][data-session-id="${markerSid}"]`);
-    await expect(restored).toBeVisible({ timeout: 15_000 });
-    await expect(restored.locator('.xterm-rows').first()).toBeAttached({ timeout: 15_000 });
+    await expect(restored).toBeVisible({ timeout: adjusted(15_000) });
+    await expect(restored.locator('.xterm-rows').first()).toBeAttached({ timeout: adjusted(15_000) });
 
     // The restored terminal's content is non-empty (PTY replay restored it)...
     await expect
@@ -61,7 +61,7 @@ test.describe('Shell terminals looks empty', () => {
           const txt = (await restored.locator('.xterm-rows').first().textContent()) ?? '';
           return txt.trim().length;
         },
-        { timeout: 15_000 },
+        { timeout: adjusted(15_000) },
       )
       .toBeGreaterThan(0);
 

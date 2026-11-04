@@ -22,9 +22,9 @@ async function openBoard(page: Page, id: string) {
     }
   });
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
 }
 
@@ -36,7 +36,7 @@ async function injectRect(page: Page, label: string) {
   await page.waitForFunction(
     () => typeof (window as any).__chartApi === 'object' && !!(window as any).__chartApi
       && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
-    null, { timeout: 15_000 },
+    null, { timeout: adjusted(15_000) },
   );
   await page.evaluate((text) => {
     const lib = (window as any).__excalidrawLib;
@@ -83,7 +83,7 @@ test.describe('Whiteboard — Multi-tab (X1)', () => {
 
     // Tab A injects "A" and saves past the debounce (board.json holds rect+label).
     await injectRect(tabA, 'A');
-    await expect.poll(() => fileLabels(boardPath), { timeout: 10_000 }).toContain('A');
+    await expect.poll(() => fileLabels(boardPath), { timeout: adjusted(10_000) }).toContain('A');
 
     // Tab B does NOT auto-update with A's element (no WS sync between tabs).
     await tabB.waitForTimeout(1_500);
@@ -92,13 +92,13 @@ test.describe('Whiteboard — Multi-tab (X1)', () => {
 
     // Tab B injects a DIFFERENT element "B" and saves — B is the last writer.
     await injectRect(tabB, 'B');
-    await expect.poll(() => fileLabels(boardPath), { timeout: 10_000 }).toContain('B');
+    await expect.poll(() => fileLabels(boardPath), { timeout: adjusted(10_000) }).toContain('B');
 
     // Reload tab A — it re-reads board.json, which (last-write-wins) now holds
     // tab B's scene ("B"), not tab A's "A".
     await tabA.reload();
-    await tabA.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
-    await tabA.waitForFunction(() => (window as any).__chartApi, null, { timeout: 15_000 });
+    await tabA.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+    await tabA.waitForFunction(() => (window as any).__chartApi, null, { timeout: adjusted(15_000) });
     await tabA.waitForTimeout(1_500);
     const aLabelsAfterReload = await boardLabels(tabA);
     expect(aLabelsAfterReload, "reloaded tab A shows tab B's last write").toContain('B');

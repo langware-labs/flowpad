@@ -24,7 +24,7 @@ test.describe('Flow Shell tab location', () => {
 
     // Record the first tab's testid — this is the Flow shell tab.
     const tabSelector = '[data-testid^="tab-shell|"]';
-    await expect(page.locator(tabSelector).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(tabSelector).first()).toBeVisible({ timeout: adjusted(15_000) });
     const flowTabId = await page.locator(tabSelector).first().getAttribute('data-testid');
     expect(flowTabId, 'first (Flow) tab testid').toBeTruthy();
     const initialCount = await page.locator(tabSelector).count();
@@ -34,7 +34,7 @@ test.describe('Flow Shell tab location', () => {
     await addTerminalTab(page);
     await addTerminalTab(page);
     await expect
-      .poll(async () => page.locator(tabSelector).count(), { timeout: 15_000 })
+      .poll(async () => page.locator(tabSelector).count(), { timeout: adjusted(15_000) })
       .toBe(initialCount + 3);
 
     // The Flow shell must still be the first tab before refresh.
@@ -44,9 +44,9 @@ test.describe('Flow Shell tab location', () => {
     await page.reload();
 
     // Step 4: Flow shell should remain the first tab.
-    await expect(page.locator(tabSelector).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(tabSelector).first()).toBeVisible({ timeout: adjusted(30_000) });
     await expect
-      .poll(async () => page.locator(tabSelector).first().getAttribute('data-testid'), { timeout: 15_000 })
+      .poll(async () => page.locator(tabSelector).first().getAttribute('data-testid'), { timeout: adjusted(15_000) })
       .toBe(flowTabId);
   });
 });

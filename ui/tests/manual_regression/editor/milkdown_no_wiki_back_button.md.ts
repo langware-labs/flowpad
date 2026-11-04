@@ -23,7 +23,7 @@ async function openFirstMarkdownDoc(page: Page) {
   // here: the chosen editor mode is persisted across docs (PrefKey.EDITOR_MODE), so a
   // doc can restore in Review mode (ReviewSurface, no `.ProseMirror`) — the view chip
   // is rendered in every mode, making it a mode-agnostic open signal.
-  await expect(page.locator('[data-testid="editor-mode-chip-view"]')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-testid="editor-mode-chip-view"]')).toBeVisible({ timeout: adjusted(20_000) });
   // The review/markdown mode chips are Advanced-only surfaces. View mode is now a
   // prefMan-owned pref (`preferences.ui.view_mode`) whose backend value wins over the
   // legacy localStorage `viewMode` seed, so setting localStorage alone no longer
@@ -31,7 +31,7 @@ async function openFirstMarkdownDoc(page: Page) {
   // does (window.setView, exposed by view-mode-context), then wait for the
   // Advanced-only review chip to render.
   await page.evaluate(() => window.setDev(true));
-  await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: adjusted(10_000) });
 }
 
 test.describe('Markdown editor header has no "Wiki" back button', () => {
@@ -48,11 +48,11 @@ test.describe('Markdown editor header has no "Wiki" back button', () => {
 
     // Mode toggle group is present in the editor header.
     for (const mode of ['view', 'review', 'editor', 'markdown']) {
-      await expect(page.locator(`[data-testid="editor-mode-chip-${mode}"]`)).toBeVisible({ timeout: 10_000 });
+      await expect(page.locator(`[data-testid="editor-mode-chip-${mode}"]`)).toBeVisible({ timeout: adjusted(10_000) });
     }
 
     // The copy-path / reveal control (ExternalLink icon) is present.
-    await expect(page.locator('[data-testid="markdown-editor-open-external"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="markdown-editor-open-external"]')).toBeVisible({ timeout: adjusted(10_000) });
 
     // There must be NO button whose text is "Wiki".
     const wikiButtons = page.getByRole('button', { name: /^Wiki$/ });

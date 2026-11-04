@@ -17,16 +17,16 @@ const DB = path.join(os.homedir(), '.flow/instances', FLOW_INSTANCE, 'flowpad.db
 
 async function materialize(page: Page, id: string, assetRef: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
   // Re-wait for the live hooks right before use: the editor can remount (a
   // data-load re-render) and clear window.__chartApi. Concrete-signal wait.
   await page.waitForFunction(
     () => typeof (window as any).__chartApi === 'object' && !!(window as any).__chartApi
       && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
-    null, { timeout: 15_000 },
+    null, { timeout: adjusted(15_000) },
   );
   await page.evaluate(() => {
     const lib = (window as any).__excalidrawLib;

@@ -21,7 +21,7 @@ test.describe('Ctrl+C in shell tab does not copy to clipboard', () => {
 
     // Focus the active terminal panel (.last() handles stacked sessions from previous test runs)
     const terminalPanel = page.locator('[data-testid="terminal-panel"][data-active="true"]').last();
-    await terminalPanel.waitFor({ state: 'attached', timeout: 10_000 });
+    await terminalPanel.waitFor({ state: 'attached', timeout: adjusted(10_000) });
     await terminalPanel.click({ force: true });
 
     // Type some text in the terminal

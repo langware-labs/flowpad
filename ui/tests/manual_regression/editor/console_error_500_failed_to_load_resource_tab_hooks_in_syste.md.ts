@@ -28,8 +28,8 @@ test.describe('System profile — no 500 console errors (FLOWPAD-1659)', () => {
     });
 
     await page.goto('/dock/system_profile');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: adjusted(15_000) });
     await page.waitForTimeout(3_000);
 
     const status500 = errors.filter((e) => /\b500\b/.test(e));

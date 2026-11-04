@@ -28,8 +28,8 @@ test.describe('Execute flow view loads without theme errors (FLOWPAD-1668)', () 
     });
 
     await page.goto('/dock/execute-flow');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: adjusted(15_000) });
     await page.waitForTimeout(3_000);
 
     const themeErrors = errors.filter((e) => /vs-dark|theme.*not found|need to load.*theme/i.test(e));

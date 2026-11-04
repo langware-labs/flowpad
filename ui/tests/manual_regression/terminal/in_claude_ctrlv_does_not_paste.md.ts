@@ -25,7 +25,7 @@ test.describe('Ctrl+V in Claude terminal', () => {
       .last()
       .locator('.xterm-rows')
       .first();
-    await xtermRows.waitFor({ state: 'attached', timeout: 10_000 });
+    await xtermRows.waitFor({ state: 'attached', timeout: adjusted(10_000) });
     await xtermRows.click({ force: true });
     await page.keyboard.press('Control+v');
     await page.waitForTimeout(500);

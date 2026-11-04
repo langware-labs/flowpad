@@ -46,9 +46,9 @@ test.describe('Send Multiple Messages', () => {
     await page.goto(withViewMode('/dock/shell', 'advanced'));
 
     // Terminal panels should be visible
-    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: adjusted(10_000) });
 
     // Active terminal tab is still visible in the tab bar
-    await expect(page.locator('[data-testid^="tab-"]').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid^="tab-"]').first()).toBeVisible({ timeout: adjusted(5_000) });
   });
 });

@@ -24,10 +24,10 @@ test.describe('Landing to New Chat', () => {
     await submitFromLanding(page, 'Hello, can you help me?');
 
     // Step 3: validate URL changed to the session's Vibe tab
-    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-/, { timeout: adjusted(15_000) });
 
     // Step 4: validate terminal tab bar is visible
     const terminalArea = page.locator('.xterm, .xterm-screen, [class*="terminal"]').first();
-    await expect(terminalArea).toBeVisible({ timeout: 15_000 });
+    await expect(terminalArea).toBeVisible({ timeout: adjusted(15_000) });
   });
 });

@@ -25,7 +25,7 @@ test.describe('Skills list — no FLOWPAD-1665 plan 404', () => {
     });
 
     await page.goto('/dock/assets/list/skill');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     await expect(page.locator('#root')).not.toBeEmpty();
     expect(page.url()).toContain('/dock/assets/list/skill');
     await page.waitForTimeout(3_000);

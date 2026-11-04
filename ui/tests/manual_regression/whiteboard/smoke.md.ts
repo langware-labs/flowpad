@@ -51,7 +51,7 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
     );
     // AssetDocPointer grammar requires an explicit typeid/ method segment.
     await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-    await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
+    await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
     await page.waitForTimeout(1_500);
 
     // Excalidraw container healthy height (CSS-missing regression inflates to 33,554,432).

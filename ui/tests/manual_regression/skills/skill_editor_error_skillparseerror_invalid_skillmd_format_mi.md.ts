@@ -26,7 +26,7 @@ test.describe('Skill editor — no SkillParseError', () => {
     });
 
     await page.goto('/dock/assets/list/skill');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     await expect(page.locator('#root')).not.toBeEmpty();
     expect(page.url()).toContain('/dock/assets/list/skill');
     await page.waitForTimeout(2_000);
@@ -35,16 +35,16 @@ test.describe('Skill editor — no SkillParseError', () => {
     const createBtn = page
       .getByRole('button', { name: /new skill|new|add|create/i })
       .first();
-    if (await createBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    if (await createBtn.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) {
       await createBtn.click().catch(() => {});
       await page.waitForTimeout(2_000);
     }
 
     // Round-trip: home -> back to skills list.
     await page.goto('/dock/home');
-    await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 25_000 });
+    await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: adjusted(25_000) });
     await page.goto('/dock/assets/list/skill');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     await expect(page.locator('#root')).not.toBeEmpty();
     await page.waitForTimeout(2_000);
 

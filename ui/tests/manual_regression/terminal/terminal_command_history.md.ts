@@ -41,7 +41,7 @@ test.describe('Terminal Command History', () => {
         .first()
         .textContent();
       expect(content).toContain('echo three');
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: adjusted(5_000) });
 
     // Step 4: press Up again for "echo two"
     await page.keyboard.press('ArrowUp');
@@ -53,7 +53,7 @@ test.describe('Terminal Command History', () => {
         .first()
         .textContent();
       expect(content).toContain('echo two');
-    }).toPass({ timeout: 5_000 });
+    }).toPass({ timeout: adjusted(5_000) });
 
     // Step 5: press Down to go back to "echo three"
     await page.keyboard.press('ArrowDown');

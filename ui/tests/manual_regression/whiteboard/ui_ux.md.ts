@@ -29,9 +29,9 @@ async function pickProjectId(request: APIRequestContext): Promise<string> {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
 }
 
@@ -50,9 +50,9 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
     'advanced',
   );
   await page.goto(scopedList);
-  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
   await expect
-    .poll(() => page.evaluate(() => document.documentElement.getAttribute('data-view')), { timeout: 10_000 })
+    .poll(() => page.evaluate(() => document.documentElement.getAttribute('data-view')), { timeout: adjusted(10_000) })
     .toBe('advanced');
   // Since host tabs (71e9272c6) "Advanced" is a surface, not a tier: the types
   // that are `browseable_by=advanced` follow the developer switch
@@ -60,7 +60,7 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
   // through the app's own `window.setDev`, the call the avatar double-click makes.
   await page.evaluate(() => (window as any).setDev(true));
   const chevron = page.getByTestId('browseable-chevron-asset-type:whiteboard');
-  await expect(chevron).toBeVisible({ timeout: 15_000 });
+  await expect(chevron).toBeVisible({ timeout: adjusted(15_000) });
   // The row's delete button is its stable handle, but a row toolbar is
   // `invisible` until the row is hovered (a807f58ee) — so "the row is listed"
   // means the handle is ATTACHED, not visible.
@@ -68,7 +68,7 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
   if ((await createdRow.count()) === 0) {
     await chevron.click();
   }
-  await expect(createdRow).toBeAttached({ timeout: 15_000 });
+  await expect(createdRow).toBeAttached({ timeout: adjusted(15_000) });
   return createdRow;
 }
 

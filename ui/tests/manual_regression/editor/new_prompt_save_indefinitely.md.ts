@@ -28,15 +28,15 @@ test.describe('Execute flow view is accessible and does not hang (FLOWPAD-1657)'
     });
 
     await page.goto('/dock/execute-flow');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: adjusted(15_000) });
     await page.waitForTimeout(3_000);
 
     // The view exposes interactive controls (buttons/inputs) — not an indefinite spinner.
     const hasControl = await page
       .locator('[data-testid="content-panel"] button, [data-testid="content-panel"] input, [data-testid="content-panel"] textarea')
       .first()
-      .isVisible({ timeout: 10_000 })
+      .isVisible({ timeout: adjusted(10_000) })
       .catch(() => false);
     expect(hasControl, 'No interactive control found in execute-flow view').toBe(true);
 

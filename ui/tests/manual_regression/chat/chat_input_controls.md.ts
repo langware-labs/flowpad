@@ -52,9 +52,9 @@ test.describe('Chat Input Controls', () => {
     // Inline opener buttons (opener-inline-claude, opener-plus-button)
     // only render once the user has pinned that opener.
     const plus = page.getByTestId('opener-plus-button');
-    await expect(plus).toBeVisible({ timeout: 5_000 });
+    await expect(plus).toBeVisible({ timeout: adjusted(5_000) });
     await plus.click();
-    await expect(page.getByTestId('opener-menu-row-claude')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByTestId('opener-menu-row-terminal')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('opener-menu-row-claude')).toBeVisible({ timeout: adjusted(5_000) });
+    await expect(page.getByTestId('opener-menu-row-terminal')).toBeVisible({ timeout: adjusted(5_000) });
   });
 });

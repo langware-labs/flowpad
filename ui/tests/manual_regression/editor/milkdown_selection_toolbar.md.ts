@@ -27,7 +27,7 @@ async function openFirstMarkdownDoc(page: Page) {
   // doc can restore in Review mode (ReviewSurface, no `.ProseMirror`) — the view chip
   // is rendered in every mode, making it a mode-agnostic open signal. Each test then
   // drives setMode() to the mode it needs.
-  await expect(page.locator('[data-testid="editor-mode-chip-view"]')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-testid="editor-mode-chip-view"]')).toBeVisible({ timeout: adjusted(20_000) });
   // The review/markdown mode chips are Advanced-only surfaces. View mode is now a
   // prefMan-owned pref (`preferences.ui.view_mode`) whose backend value wins over the
   // legacy localStorage `viewMode` seed, so setting localStorage alone no longer
@@ -35,7 +35,7 @@ async function openFirstMarkdownDoc(page: Page) {
   // does (window.setView, exposed by view-mode-context), then wait for the
   // Advanced-only review chip to render.
   await page.evaluate(() => window.setDev(true));
-  await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: adjusted(10_000) });
 }
 
 async function setMode(page: Page, mode: 'view' | 'review' | 'editor' | 'markdown') {
@@ -45,10 +45,10 @@ async function setMode(page: Page, mode: 'view' | 'review' | 'editor' | 'markdow
   // surface exists is a silent no-op. Wait for the editor body (read-only
   // .ProseMirror or the review surface) and for the mode-chip strip to be
   // interactive, then click once and confirm the chip flipped active.
-  await page.locator('.ProseMirror, [data-testid="review-surface"]').first().waitFor({ state: 'visible', timeout: 15_000 });
-  await expect(chip).toBeEnabled({ timeout: 10_000 });
+  await page.locator('.ProseMirror, [data-testid="review-surface"]').first().waitFor({ state: 'visible', timeout: adjusted(15_000) });
+  await expect(chip).toBeEnabled({ timeout: adjusted(10_000) });
   await chip.click();
-  await expect(chip).toHaveAttribute('data-mode-active', 'true', { timeout: 10_000 });
+  await expect(chip).toHaveAttribute('data-mode-active', 'true', { timeout: adjusted(10_000) });
   await page.waitForTimeout(300);
 }
 
@@ -106,14 +106,14 @@ test.describe('Milkdown selection toolbar', () => {
     await page.addInitScript(() => { localStorage.setItem('llm-setup-modal-seen', 'true'); localStorage.setItem('viewMode', 'advanced'); });
     await openFirstMarkdownDoc(page);
     await setMode(page, 'editor');
-    await expect(page.locator('.ProseMirror[contenteditable="true"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.ProseMirror[contenteditable="true"]')).toBeVisible({ timeout: adjusted(10_000) });
 
     const selected = await selectFirstChars(page, 6);
     expect(selected.length, 'No text was selected').toBeGreaterThan(0);
     await page.waitForTimeout(150); // selectionUpdated listener flush (setTimeout 0 + render)
 
     const toolbar = page.locator('[data-testid="selection-toolbar"]');
-    await expect(toolbar).toBeVisible({ timeout: 5_000 });
+    await expect(toolbar).toBeVisible({ timeout: adjusted(5_000) });
 
     // Exactly 5 buttons with these titles (the wand "Change this…" sits after the format buttons).
     const titles = await toolbar.locator('button').evaluateAll((els) => els.map((b) => b.getAttribute('title')));
@@ -144,7 +144,7 @@ test.describe('Milkdown selection toolbar', () => {
     const selected = await selectFirstChars(page, 6);
     await page.waitForTimeout(150);
     const toolbar = page.locator('[data-testid="selection-toolbar"]');
-    await expect(toolbar).toBeVisible({ timeout: 5_000 });
+    await expect(toolbar).toBeVisible({ timeout: adjusted(5_000) });
 
     // mousedown drives the format command (the button's onMouseDown handler).
     await toolbar.locator('button[title="Bold"]').dispatchEvent('mousedown');
@@ -176,7 +176,7 @@ test.describe('Milkdown selection toolbar', () => {
     await selectFirstChars(page, 6);
     await page.waitForTimeout(150);
     const toolbar = page.locator('[data-testid="selection-toolbar"]');
-    await expect(toolbar).toBeVisible({ timeout: 5_000 });
+    await expect(toolbar).toBeVisible({ timeout: adjusted(5_000) });
 
     // Collapse the selection.
     await page.evaluate(() => window.getSelection()!.collapseToEnd());
@@ -196,14 +196,14 @@ test.describe('Milkdown selection toolbar', () => {
     // View mode (default after open) — read-only .ProseMirror; selecting text
     // must not surface the editor-only selection toolbar.
     await setMode(page, 'view');
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: adjusted(10_000) });
     await selectFirstChars(page, 6, '.ProseMirror');
     await page.waitForTimeout(250);
     await expect(toolbar).toHaveCount(0);
 
     // Review mode renders the ReviewSurface (no editor) — same expectation.
     await setMode(page, 'review');
-    await expect(page.locator('[data-testid="review-surface"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="review-surface"]')).toBeVisible({ timeout: adjusted(10_000) });
     await selectFirstChars(page, 6, '[data-testid="review-surface"]');
     await page.waitForTimeout(250);
     await expect(toolbar).toHaveCount(0);
@@ -219,12 +219,12 @@ test.describe('Milkdown selection toolbar', () => {
     await selectFirstChars(page, 6);
     await page.waitForTimeout(150);
     const toolbar = page.locator('[data-testid="selection-toolbar"]');
-    await expect(toolbar).toBeVisible({ timeout: 5_000 });
+    await expect(toolbar).toBeVisible({ timeout: adjusted(5_000) });
 
     // Open the link popup from the selection toolbar.
     await toolbar.locator('[data-testid="milkdown-toolbar-link"]').dispatchEvent('mousedown');
     const linkPopup = page.locator('[data-testid="milkdown-link-popup"][data-mode="new"]');
-    await expect(linkPopup).toBeVisible({ timeout: 5_000 });
+    await expect(linkPopup).toBeVisible({ timeout: adjusted(5_000) });
 
     // While the popup is open, the selection toolbar is not present.
     await expect(toolbar).toHaveCount(0);
@@ -232,7 +232,7 @@ test.describe('Milkdown selection toolbar', () => {
     // Closing the popup with Escape restores the selection toolbar.
     await page.keyboard.press('Escape');
     await page.waitForTimeout(200);
-    await expect(toolbar).toBeVisible({ timeout: 5_000 });
+    await expect(toolbar).toBeVisible({ timeout: adjusted(5_000) });
   });
 
   // ── Test 6 ──────────────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ test.describe('Milkdown selection toolbar', () => {
     await selectFirstChars(page, 6);
     await page.waitForTimeout(150);
     const toolbar = page.locator('[data-testid="selection-toolbar"]');
-    await expect(toolbar).toBeVisible({ timeout: 5_000 });
+    await expect(toolbar).toBeVisible({ timeout: adjusted(5_000) });
 
     const popupBoldClass = await toolbar.locator('button[title="Bold"]').getAttribute('class');
     // The static toolbar lives in the editor chrome (border-b bg-muted/20 cluster);

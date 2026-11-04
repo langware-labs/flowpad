@@ -12,18 +12,18 @@ test.describe('Terminal PTY No Duplicates (Claude CLI)', () => {
 
     // Navigate to a new shell, then start a Claude session via the tab-opener menu.
     await page.goto('/dock/shell/new_terminal');
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(10_000) });
     await startClaudeSession(page);
 
     // Wait for URL to settle (new_terminal redirects to /dock/shell/agentic_process-<id>)
-    await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: 60_000 });
+    await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: adjusted(60_000) });
 
     // Wait for terminal to be visible
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(10_000) });
     await page
       .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
       .first()
-      .waitFor({ state: 'attached', timeout: 10_000 });
+      .waitFor({ state: 'attached', timeout: adjusted(10_000) });
 
     // Wait for Claude CLI to start and produce output
     // The startup involves: PTY init → send "claude --session-id ..." command → Claude banner

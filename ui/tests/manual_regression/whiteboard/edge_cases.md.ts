@@ -15,9 +15,9 @@ async function createWhiteboard(request: APIRequestContext, name: string) {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
 }
 
@@ -155,8 +155,8 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
     // Hard reload (full page reload, simulating a crash + reopen).
     await page.reload();
-    await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
-    await page.waitForFunction(() => (window as any).__chartApi, null, { timeout: 15_000 });
+    await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+    await page.waitForFunction(() => (window as any).__chartApi, null, { timeout: adjusted(15_000) });
     await page.waitForTimeout(2_000);
 
     const sceneLen = await page.evaluate(() => (window as any).__chartApi.getSceneElements().length);

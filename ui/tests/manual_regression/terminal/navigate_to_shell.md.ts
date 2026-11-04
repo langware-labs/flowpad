@@ -18,7 +18,7 @@ test.describe('Navigate to Shell', () => {
 
     // Step 3: validate terminal tab bar has at least one tab
     const tabs = page.locator('[data-testid^="tab-"]');
-    await expect(tabs.first()).toBeVisible({ timeout: 10_000 });
+    await expect(tabs.first()).toBeVisible({ timeout: adjusted(10_000) });
 
     // Step 4: validate terminal content area is visible
     const terminalPanels = page.locator('[data-testid="terminal-panels"]');

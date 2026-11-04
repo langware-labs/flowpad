@@ -29,7 +29,7 @@ test.describe('File explorer shows files and directories correctly (FLOWPAD-1671
     });
 
     await page.goto('/dock/explorer');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
 
     // Navigate to the VFS root, which lists top-level directories.
     await page.locator('[data-testid="file-manager-home-button"]').click();
@@ -37,16 +37,16 @@ test.describe('File explorer shows files and directories correctly (FLOWPAD-1671
 
     // Row elements are present in the file list area.
     const rows = page.locator('table tbody tr');
-    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    await expect(rows.first()).toBeVisible({ timeout: adjusted(15_000) });
     const rowCount = await rows.count();
     expect(rowCount, 'No file/directory rows rendered at VFS root').toBeGreaterThan(0);
 
     // At least one directory entry is visible (root is all directories on a Unix host).
     const dirRow = rows.filter({ hasText: /Users|System|Library|bin|usr/ }).first();
-    await expect(dirRow).toBeVisible({ timeout: 10_000 });
+    await expect(dirRow).toBeVisible({ timeout: adjusted(10_000) });
 
     // The download control is wired up, even when disabled for the empty-selection state.
-    await expect(page.locator('[data-testid="file-manager-download-button"]')).toBeAttached({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="file-manager-download-button"]')).toBeAttached({ timeout: adjusted(10_000) });
 
     const real = realConsoleErrors(errors);
     expect(real, `Console errors: ${real.join('\n')}`).toHaveLength(0);

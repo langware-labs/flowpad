@@ -38,14 +38,14 @@ async function openAtlas(page: Page) {
   });
   await page.goto(ATLAS_URL);
   const skip = page.getByRole('button', { name: /Skip( for now)?/ });
-  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
-  await page.locator('.kb-atlas .node.doc').first().waitFor({ state: 'visible', timeout: 30_000 });
+  if (await skip.isVisible({ timeout: adjusted(2_000) }).catch(() => false)) await skip.click();
+  await page.locator('.kb-atlas .node.doc').first().waitFor({ state: 'visible', timeout: adjusted(30_000) });
 }
 
 async function rescan(page: Page) {
   await page.locator('button[title="Rescan docs"]').click();
   // the rescan replaces the node set; wait for the canvas to settle
-  await page.locator('.kb-atlas .node.doc').first().waitFor({ state: 'visible', timeout: 15_000 });
+  await page.locator('.kb-atlas .node.doc').first().waitFor({ state: 'visible', timeout: adjusted(15_000) });
 }
 
 test.describe('Knowledge Atlas — status + real-fs change detection + diff', () => {
@@ -63,7 +63,7 @@ test.describe('Knowledge Atlas — status + real-fs change detection + diff', ()
 
       // ── T2: stamp baseline — badges clear, vault stays untouched ───────────
       await page.locator(stampBtn).click();
-      await expect(page.locator(badge)).toHaveCount(0, { timeout: 20_000 });
+      await expect(page.locator(badge)).toHaveCount(0, { timeout: adjusted(20_000) });
       expect(fs.existsSync(`${TMP_DOCS}/index.md.json`)).toBe(false);
       expect(fs.existsSync(`${TMP_DOCS}/sub/index.md.json`)).toBe(false);
       // idempotent: a second stamp writes nothing
@@ -101,20 +101,20 @@ test.describe('Knowledge Atlas — status + real-fs change detection + diff', ()
       await expect(page.locator('.kb-atlas .drawer.open')).toBeVisible();
       await page.locator(changesTab).click();
       await expect(page.locator(diffPanel)).toBeVisible();
-      await expect(page.locator(diffPanel)).toContainText('NEW LINE appended', { timeout: 15_000 });
+      await expect(page.locator(diffPanel)).toContainText('NEW LINE appended', { timeout: adjusted(15_000) });
       await page.keyboard.press('Escape');
 
       // removed doc: drawer lands on Changes directly, old content visible
       await page.locator('.kb-atlas .node.ghost', { hasText: 'Beta' }).click();
       await expect(page.locator(diffPanel)).toBeVisible();
-      await expect(page.locator(diffPanel)).toContainText('Will be removed', { timeout: 15_000 });
+      await expect(page.locator(diffPanel)).toContainText('Will be removed', { timeout: adjusted(15_000) });
       await page.keyboard.press('Escape');
 
       // ── T5: no false positives; stamping again clears everything ────────────
       await rescan(page);
       await expect(page.locator(changedChip)).toContainText('5 changed'); // unchanged count
       await page.locator(stampBtn).click();
-      await expect(page.locator(badge)).toHaveCount(0, { timeout: 20_000 });
+      await expect(page.locator(badge)).toHaveCount(0, { timeout: adjusted(20_000) });
       await expect(page.locator(changedChip)).toHaveCount(0);
     } finally {
       fs.rmSync(TMP_DOCS, { recursive: true, force: true });

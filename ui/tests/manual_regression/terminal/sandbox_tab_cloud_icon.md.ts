@@ -30,7 +30,7 @@ test.describe('Sandbox tab — provider icon', () => {
     // Step 4: a new sandbox tab must appear. Match on the provider-icon test id
     //         so we pick up the new tab regardless of pre-existing ones.
     await expect
-      .poll(async () => terminalTabChips(page).count(), { timeout: 15_000 })
+      .poll(async () => terminalTabChips(page).count(), { timeout: adjusted(15_000) })
       .toBeGreaterThan(tabsBefore);
 
     // Step 5: validate the most-recently-created sandbox tab carries the Shell

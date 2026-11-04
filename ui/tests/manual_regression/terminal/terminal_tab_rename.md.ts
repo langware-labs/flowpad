@@ -33,7 +33,7 @@ test.describe('Terminal Tab Rename', () => {
       const newIds = currentIds.filter((id) => id && !existingTabIds.has(id));
       expect(newIds.length).toBeGreaterThan(0);
       newTabTestId = newIds[0]; // pick the first new tab
-    }).toPass({ timeout: 10_000 });
+    }).toPass({ timeout: adjusted(10_000) });
 
     expect(newTabTestId).toBeTruthy();
     const newTab = page.locator(`[data-testid="${newTabTestId}"]`);
@@ -51,7 +51,7 @@ test.describe('Terminal Tab Rename', () => {
 
     // Step 6: validate the rename input appears
     const renameInput = newTab.locator('input[type="text"]');
-    await expect(renameInput).toBeVisible({ timeout: 5_000 });
+    await expect(renameInput).toBeVisible({ timeout: adjusted(5_000) });
     await expect(renameInput).toBeFocused();
     await expect(async () => {
       const selection = await renameInput.evaluate((input: HTMLInputElement) => ({
@@ -61,7 +61,7 @@ test.describe('Terminal Tab Rename', () => {
       }));
       expect(selection.start).toBe(0);
       expect(selection.end).toBe(selection.length);
-    }).toPass({ timeout: 2_000 });
+    }).toPass({ timeout: adjusted(2_000) });
 
     // Step 7: type new name; the selected tab text should be replaced.
     await renameInput.type('My Custom Shell');
@@ -73,6 +73,6 @@ test.describe('Terminal Tab Rename', () => {
     await expect(async () => {
       const text = await newTab.locator('span.font-medium').textContent();
       expect(text?.trim()).toBe('My Custom Shell');
-    }).toPass({ timeout: 15_000 });
+    }).toPass({ timeout: adjusted(15_000) });
   });
 });

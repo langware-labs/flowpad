@@ -163,11 +163,11 @@ test.describe('doc-chat per type', () => {
         expect(target!, `target for ${type} should be ${type}-<uuid>`).toMatch(
           new RegExp(`^${type}-[0-9a-f-]{36}$`),
         );
-      }).toPass({ timeout: 20_000 });
+      }).toPass({ timeout: adjusted(20_000) });
 
       // Composer textarea is visible and NOT disabled (target resolved → send ungated).
       const ta = page.locator(`${TEXTAREA}:visible`).first();
-      await expect(ta).toBeVisible({ timeout: 10_000 });
+      await expect(ta).toBeVisible({ timeout: adjusted(10_000) });
       await expect(ta).not.toBeDisabled();
 
       // Fresh editor: no active-process status (visible), history present-but-disabled.

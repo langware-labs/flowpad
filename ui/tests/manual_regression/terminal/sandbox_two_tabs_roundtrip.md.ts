@@ -25,7 +25,7 @@ test.describe('Sandbox — two tabs roundtrip', () => {
     const initialTabs = await terminalTabChips(page).count();
     await openTabViaMenu(page, 'sandbox');
     await expect
-      .poll(() => terminalTabChips(page).count(), { timeout: 15_000 })
+      .poll(() => terminalTabChips(page).count(), { timeout: adjusted(15_000) })
       .toBeGreaterThan(initialTabs);
     await page.waitForTimeout(5_000); // e2b cold-boot
 
@@ -37,7 +37,7 @@ test.describe('Sandbox — two tabs roundtrip', () => {
 
     await openTabViaMenu(page, 'sandbox');
     await expect
-      .poll(() => terminalTabChips(page).count(), { timeout: 15_000 })
+      .poll(() => terminalTabChips(page).count(), { timeout: adjusted(15_000) })
       .toBeGreaterThan(initialTabs + 1);
     await page.waitForTimeout(5_000);
 

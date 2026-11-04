@@ -31,6 +31,6 @@ test.describe('home prompt navigates to a session', () => {
     // stable, view-mode-independent signal that home submit opened the seeded
     // chat session. Multiple entity-execution toolbars mount (inactive panels
     // keep a hidden copy), so scope to the visible one.
-    await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible({ timeout: adjusted(30_000) });
   });
 });

@@ -15,9 +15,9 @@ async function createWhiteboard(request: APIRequestContext, name: string) {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
-    timeout: 15_000,
+    timeout: adjusted(15_000),
   });
 }
 
@@ -167,7 +167,7 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
 
     await page.locator('[data-testid="open-import-mermaid"]').click();
     const ta = page.locator('[data-testid="mermaid-import-textarea"]');
-    await expect(ta).toBeVisible({ timeout: 10_000 });
+    await expect(ta).toBeVisible({ timeout: adjusted(10_000) });
     await ta.fill('flowchart TD\n  X[Foo] --> Y[Bar]');
     await page.locator('[data-testid="confirm-import-mermaid"]').click();
     await page.waitForTimeout(2_000);

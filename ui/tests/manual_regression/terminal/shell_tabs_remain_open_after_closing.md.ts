@@ -37,7 +37,7 @@ test.describe('Shell tabs remain open after closing', () => {
     await expect(async () => {
       added = (await tabIds(page)).filter((id) => !beforeAdds.has(id));
       expect(added.length).toBe(5);
-    }).toPass({ timeout: 20_000 });
+    }).toPass({ timeout: adjusted(20_000) });
 
     // Step 3: close 3 of the newly-opened terminals via their X buttons.
     const toClose = added.slice(0, 3);
@@ -46,25 +46,25 @@ test.describe('Shell tabs remain open after closing', () => {
       const tab = page.locator(`[data-testid="${id}"]`);
       await tab.hover(); // X appears on hover
       await tab.locator('button[aria-label="Close tab"]').click();
-      await expect(page.locator(`[data-testid="${id}"]`)).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.locator(`[data-testid="${id}"]`)).toHaveCount(0, { timeout: adjusted(15_000) });
     }
 
     // Step 4: refresh the page.
     await page.reload();
-    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: adjusted(30_000) });
 
     // Step 5: only the 2 un-closed additional terminals remain (closed ones
     // stay closed; kept ones survive). The original Flow shell also remains.
     for (const id of toKeep) {
-      await expect(page.locator(`[data-testid="${id}"]`)).toHaveCount(1, { timeout: 15_000 });
+      await expect(page.locator(`[data-testid="${id}"]`)).toHaveCount(1, { timeout: adjusted(15_000) });
     }
     for (const id of toClose) {
-      await expect(page.locator(`[data-testid="${id}"]`)).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.locator(`[data-testid="${id}"]`)).toHaveCount(0, { timeout: adjusted(15_000) });
     }
 
     // Exactly the baseline (Flow shell) + 2 kept additional tabs.
     await expect
-      .poll(async () => (await tabIds(page)).length, { timeout: 15_000 })
+      .poll(async () => (await tabIds(page)).length, { timeout: adjusted(15_000) })
       .toBe(beforeAdds.size + 2);
   });
 });

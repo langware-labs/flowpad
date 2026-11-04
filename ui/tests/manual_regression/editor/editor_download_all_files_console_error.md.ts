@@ -28,8 +28,8 @@ test.describe('Code editor loads without console errors (FLOWPAD-1669)', () => {
     });
 
     await page.goto('/dock/editor');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
+    await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: adjusted(15_000) });
     await page.waitForTimeout(3_000);
 
     const real = realConsoleErrors(errors);
