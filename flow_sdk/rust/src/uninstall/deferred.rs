@@ -147,6 +147,10 @@ fn win_same(a: &Path, b: &Path) -> bool {
     a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
 }
 
+/// `deferred-cleanup` exit code when the pending state had expired: dropped, nothing deleted (0 is
+/// "nothing left pending", 20 "still pending, tried again by the next trigger").
+pub const EXIT_EXPIRED: i32 = 30;
+
 /// Who started the cleanup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trigger {
@@ -190,15 +194,16 @@ fn root_path(layout: &Layout, root: RootId, pinned: super::Identity) -> PathBuf 
     }
 }
 
-/// The root will not be deleted as it is now: a junction or symlink (at it or above it), a file
-/// where the folder was, or a folder that cannot be opened for a reason that does not pass (its
-/// ACL). Only "in use right now" (a sharing or lock violation) is worth another run — and that
-/// too ends: the state expires (state.rs), and an expired state is cleaned up.
+/// The root will never be deleted as it is: a junction or symlink (at it or above it), or a file
+/// where the folder was. A folder that cannot be opened right now — in use, delete-pending, denied
+/// during a scan, or denied for good by its ACL: nothing tells these apart reliably — stays
+/// pending and is tried again by the next trigger, until the state expires (state.rs); an expired
+/// state is dropped and reported (see `run`).
 fn refused_for_good(e: &super::delete::Refused) -> bool {
     use super::delete::Refused::*;
     match e {
-        ReparsePoint | Redirected { .. } | NotADirectory | Unreadable(_) => true,
-        Busy(_) | Missing => false,
+        ReparsePoint | Redirected { .. } | NotADirectory => true,
+        Busy(_) | Unreadable(_) | Missing => false,
     }
 }
 
@@ -269,10 +274,24 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         Err(state::Rejected::Expired) => {
             // The ceiling on retries: past its lifetime the state can never authorize anything, so
             // the pending cleanup ends here — its key, state and helper go; nothing is deleted.
-            status(layout, "expired: nothing deleted; the pending cleanup is dropped");
-            log.line("deferred cleanup state expired: dropped, nothing deleted");
+            // What it still listed is reported (read only to name it: an expired state proves nothing).
+            let left: Vec<String> = serde_json::from_str::<state::Signed>(&text)
+                .map(|s| s.body.entries)
+                .unwrap_or_default()
+                .iter()
+                .map(|e| root_path(layout, e.root, super::Identity { volume: e.volume, file_id: e.file_id }))
+                .filter(|p| p.exists())
+                .map(|p| p.display().to_string())
+                .collect();
+            let msg = if left.is_empty() {
+                "expired: the pending cleanup is dropped; nothing it listed is left".to_string()
+            } else {
+                format!("expired: the pending cleanup is dropped, nothing deleted; still on disk, remove by hand if not needed: {}", left.join("; "))
+            };
+            status(layout, &msg);
+            log.line(&msg);
             finish(layout);
-            return 20;
+            return EXIT_EXPIRED;
         }
         Err(e) => {
             status(layout, &format!("refused: {e}; nothing deleted"));
@@ -299,6 +318,18 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         })
         .collect();
     let venv_goes = removable.iter().any(|(i, _)| body.entries[*i].root == RootId::Venv);
+    // The venv is KEPT for good (and its runtime with it) only when it is provably not to be
+    // removed: another folder now, a link, or no longer FlowPad's. One that cannot be opened right
+    // now (in use, a scan) is still pending: its runtime waits behind it.
+    let venv_kept = body.entries.iter().any(|e| {
+        e.root == RootId::Venv && {
+            let path = root_path(layout, e.root, pinned_of(e));
+            match Root::open(&path) {
+                Ok(r) => r.identity() != pinned_of(e) || still_owned(layout, e.root, &path).is_err(),
+                Err(err) => refused_for_good(&err),
+            }
+        }
+    });
     let owned: Vec<PathBuf> = removable.iter().map(|(_, p)| p.clone()).collect();
     super::run::stop_processes(layout, &gathered, venv_goes, &owned, &mut Ledger::default(), log);
 
@@ -329,7 +360,7 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
                 continue;
             }
             Err(e) => {
-                // Cannot be opened right now (an antivirus scan, a sharing violation): still pending.
+                // Cannot be opened now (in use, delete-pending, a scan, an ACL): still pending.
                 status(layout, &format!("{:?}: waits, the folder {e}", entry.root));
                 continue;
             }
@@ -344,7 +375,7 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
             // The runtime waits only behind an engine this cleanup is removing (and could not yet).
             // An engine it keeps (no longer proven, another folder now), or one it never had to
             // remove, stays for good, and so does its runtime.
-            let venv_pending = venv_goes;
+            let venv_pending = !venv_kept && body.entries.iter().any(|e| e.root == RootId::Venv);
             if venv_pending {
                 status(layout, &format!("{:?}: waits, the engine is still there", entry.root));
             } else {

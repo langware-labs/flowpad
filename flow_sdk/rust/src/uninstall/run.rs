@@ -205,12 +205,12 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     s.push_str(&format!("remove={}\n", engine.remove_by_default as u8));
     s.push_str(&format!("offer={}\n", engine.opt_in_offered as u8));
     s.push_str(&format!("reason={}\n", ini_escape(&engine.reasons.join("; "))));
-    // The app data, then every offered instance, each with what is left less the minimum held back
-    // for the ones after it (PageBudget).
+    // The user's data first (the instances: what they decide on), then the app data; each may use
+    // what is left less the minimum held back for the ones after it (PageBudget), so a large
+    // instance is measured whole and the app data still gets its share.
     let measured = instances.iter().filter(|i| !matches!(i.offer, DataOffer::NotOffered(_))).count() + 1;
     let mut budget = PageBudget::new(SIZE_WALK_ENTRIES, SIZE_WALK_TIME, measured);
     let app = layout.app_data();
-    let app_size = budget.size_text(&app);
     let mut offered = Vec::new();
     let mut warn = false;
     let mut kept = Vec::new();
@@ -225,6 +225,7 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
             DataOffer::NotOffered(r) => kept.push(format!("{} — kept: {r}", i.name)),
         }
     }
+    let app_size = budget.size_text(&app);
     s.push_str("[appdata]\n");
     s.push_str(&format!(
         "text={}\n",
@@ -450,6 +451,19 @@ mod tests {
         let mut page = PageBudget::new(40, Duration::from_secs(60), 2);
         assert_eq!(page.size_text(&dir.join("small")), "0.3 MB");
         assert_eq!(page.size_text(&dir.join("big")), "8.5 MB");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_large_instance_then_a_large_app_data_are_both_measured_as_far_as_the_page_allows() {
+        let dir = std::env::temp_dir().join(format!("flowrs-order-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        folders(&dir, &[("instance", 29), ("appdata", 4)]);
+        // 40 entries for 2 folders: the instance (30) is measured whole; the app data (5) fits in
+        // the 10 left — its minimum (5) was held back for it.
+        let mut page = PageBudget::new(40, Duration::from_secs(60), 2);
+        assert_eq!(page.size_text(&dir.join("instance")), "8.5 MB");
+        assert_eq!(page.size_text(&dir.join("appdata")), "1.2 MB");
         fs::remove_dir_all(&dir).unwrap();
     }
 

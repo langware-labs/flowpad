@@ -277,7 +277,13 @@ pub fn random_bytes<const N: usize>() -> Result<[u8; N], String> {
 
 /// Seconds since the Unix epoch.
 pub fn now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    // Debug builds only (the end-to-end tests): move the clock forward to reach a state's expiry.
+    #[cfg(debug_assertions)]
+    if let Some(ahead) = std::env::var("FLOWRS_TEST_CLOCK_AHEAD_SECS").ok().and_then(|v| v.parse::<u64>().ok()) {
+        return t + ahead;
+    }
+    t
 }
 
 pub fn path_wide(p: &Path) -> Vec<u16> {

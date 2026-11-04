@@ -97,12 +97,13 @@ function Invoke-Uninstall($r, [string[]]$extra) {
   } finally { Remove-Item Env:FLOWRS_TEST_LAYOUT_ROOT, Env:FLOWRS_TEST_ALLOW_UNSIGNED -ErrorAction SilentlyContinue }
 }
 
-function Invoke-Deferred($r) {
+function Invoke-Deferred($r, [int64]$clockAheadSecs = 0) {
   $env:FLOWRS_TEST_LAYOUT_ROOT = $r
+  if ($clockAheadSecs) { $env:FLOWRS_TEST_CLOCK_AHEAD_SECS = "$clockAheadSecs" }
   try {
     & "$r\local\Flowpad\fc\flow-rs.exe" deferred-cleanup --trigger manual --log "$r\deferred.log" | Out-Null
     return $LASTEXITCODE
-  } finally { Remove-Item Env:FLOWRS_TEST_LAYOUT_ROOT -ErrorAction SilentlyContinue }
+  } finally { Remove-Item Env:FLOWRS_TEST_LAYOUT_ROOT, Env:FLOWRS_TEST_CLOCK_AHEAD_SECS -ErrorAction SilentlyContinue }
 }
 
 # Waits for a condition instead of a fixed time; $false if it never holds within the ceiling.
@@ -112,14 +113,16 @@ function Wait-Until([scriptblock]$cond, [int]$secs = 30) {
   return $true
 }
 
-# True only while another process holds the file (a sharing violation). A missing path, a folder,
-# or any other error is "not held": never a crash of the whole run.
+# True only while another process holds the file (a sharing violation). Anything else is "not
+# held", never a crash of the whole run; the reason is kept for the check that reports it.
+$script:heldWhy = ''
 function Test-Held($path) {
-  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
-  try { $x = [IO.File]::Open($path, 'Open', 'ReadWrite', 'ReadWrite,Delete'); $x.Close(); return $false }
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $script:heldWhy = 'no such file'; return $false }
+  try { $x = [IO.File]::Open($path, 'Open', 'ReadWrite', 'ReadWrite,Delete'); $x.Close(); $script:heldWhy = 'the file is free'; return $false }
   catch {
     $ex = $_.Exception; if ($ex.InnerException) { $ex = $ex.InnerException }  # a .NET call's error comes wrapped
-    return (($ex.HResult -band 0xFFFF) -eq 32)  # ERROR_SHARING_VIOLATION
+    if (($ex.HResult -band 0xFFFF) -eq 32) { return $true }  # ERROR_SHARING_VIOLATION
+    $script:heldWhy = $ex.Message; return $false
   }
 }
 
@@ -128,7 +131,7 @@ function Lock-File($path) {
   $h = Start-Process powershell -ArgumentList '-NoProfile', '-Command', "`$f=[IO.File]::Open('$path','Open','Read','Read'); Start-Sleep 120" -PassThru -WindowStyle Hidden
   $script:holders += $h
   $ok = Wait-Until { Test-Held $path } 10
-  Check $ok "the test holds $path"
+  Check $ok "the test holds $path$(if (-not $ok) { " (not held: $script:heldWhy)" })"
   return $h
 }
 
@@ -400,7 +403,7 @@ try {
     Release @($p)
   }
 
-  Write-Host '== a pending folder its ACL now blocks: kept, the cleanup finishes'
+  Write-Host '== a pending folder that cannot be opened stays pending until the state expires, then is reported'
   if (-not $credentials) {
     Skip 'the Credential Manager is not available in this session'
   } else {
@@ -412,10 +415,16 @@ try {
     Release @($h)
     $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     icacls $venv /deny "${me}:(RD)" | Out-Null
-    try { $dcode = Invoke-Deferred $r } finally { icacls $venv /remove:d $me | Out-Null }
-    Check ($dcode -eq 0) "deferred-cleanup exit 0 (nothing left pending), got $dcode"
-    Check (Test-Path "$venv\uv-receipt.toml") 'the folder it cannot open is kept, nothing deleted'
-    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the cleanup finished: the helper removed itself'
+    try {
+      $dcode = Invoke-Deferred $r
+      Check ($dcode -eq 20) "cannot be opened (ACL, in use, delete-pending alike): still pending (exit 20), got $dcode"
+      Check (Test-Path "$r\local\Flowpad\fc\state.json") 'the pending state is kept for the next trigger'
+      $dcode = Invoke-Deferred $r (15 * 86400)
+      Check ($dcode -eq 30) "past the state's lifetime: dropped (exit 30), got $dcode"
+    } finally { icacls $venv /remove:d $me | Out-Null }
+    Check (Test-Path "$venv\uv-receipt.toml") 'nothing deleted'
+    Check ((Get-Content "$r\deferred.log" -Raw) -match [regex]::Escape($venv)) 'what is left on disk is named'
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the dropped cleanup removed its helper'
   }
 
   Write-Host '== a tampered cleanup state: refused, nothing deleted'

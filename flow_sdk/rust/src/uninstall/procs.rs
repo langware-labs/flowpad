@@ -254,9 +254,11 @@ pub fn select(procs: &[Proc], ctx: &Context) -> Selection {
         }
     }
 
-    // What a process running from a removed venv started runs from it too: a verified FlowPad
-    // process, or one running the engine's interpreter or an executable of the removed venv (a
-    // multiprocessing child has a bare `python -c` command line), created after its parent.
+    // What a process running from a removed venv started runs from it too, when it is FlowPad's:
+    // a verified FlowPad process, an executable of the removed venv, or the engine's interpreter
+    // running FlowPad code — `flow_sdk`, the venv's path, or a multiprocessing child of it (whose
+    // command line is a bare `python -c "from multiprocessing.spawn import ..."`). A script of the
+    // user's on the same interpreter is not FlowPad's, and is left alone.
     let mut stack: Vec<u32> = sel.from_owned_venv.iter().copied().collect();
     while let Some(parent) = stack.pop() {
         let parent_created = by_pid.get(&parent).and_then(|p| p.created);
@@ -264,7 +266,15 @@ pub fn select(procs: &[Proc], ctx: &Context) -> Selection {
             if c.pid == parent || !matches!((parent_created, c.created), (Some(a), Some(b)) if b >= a) {
                 continue;
             }
-            let runs_engine = verified.contains_key(&c.pid) || is_interpreter(c) || c.image.as_deref().is_some_and(in_owned);
+            let flowpad_code = c.cmdline.as_deref().is_some_and(|cl| {
+                let l = cl.to_lowercase();
+                l.contains("flow_sdk")
+                    || l.contains("multiprocessing.spawn")
+                    || l.contains("--multiprocessing-fork")
+                    || ctx.owned_venvs.iter().any(|v| l.contains(&v.to_lowercase()))
+            });
+            let runs_engine =
+                verified.contains_key(&c.pid) || c.image.as_deref().is_some_and(in_owned) || (is_interpreter(c) && flowpad_code);
             if runs_engine && sel.from_owned_venv.insert(c.pid) {
                 verified.entry(c.pid).or_insert(Role::VenvExecutable);
                 sel.orphans.retain(|&o| o != c.pid);
@@ -582,6 +592,21 @@ mod tests {
         let s = select(&w, &c);
         assert!(s.from_owned_venv.contains(&703), "the spawned interpreter holds the copy's files too");
         assert!(!s.from_owned_venv.contains(&704) && !s.verified.iter().any(|v| v.pid == 704), "not a FlowPad process");
+    }
+
+    /// A user's script run with the same shared interpreter, started from a removed copy's process:
+    /// not FlowPad's, never force-stopped.
+    #[test]
+    fn a_users_script_on_the_shared_interpreter_is_left_alone() {
+        const ASIDE: &str = r"C:\Users\u\AppData\Roaming\uv\tools\flowpad.pre-repair";
+        let mut w = world();
+        w.push(p(700, 1, &format!(r"{ASIDE}\Scripts\python.exe"), 1050.0, "python -m something"));
+        w.push(p(701, 700, BASE, 1051.0, "python -m something"));
+        w.push(p(705, 701, BASE, 1052.0, r"python C:\Users\u\my_tool.py"));
+        let mut c = ctx(info(Some(Some("desktop"))));
+        c.owned_venvs = vec![ASIDE.into()];
+        let s = select(&w, &c);
+        assert!(!s.from_owned_venv.contains(&705) && !s.verified.iter().any(|v| v.pid == 705));
     }
 
     #[test]
