@@ -89,6 +89,13 @@ impl Layout {
     pub fn ownership_record(&self) -> PathBuf {
         self.local_flowpad().join("engine-ownership.json")
     }
+    /// The record of the venv a runtime repair set aside (electron/engine-ownership.js).
+    pub fn aside_ownership_record(&self) -> PathBuf {
+        self.local_flowpad().join("engine-ownership.pre-repair.json")
+    }
+    pub fn pre_repair_venv(&self) -> PathBuf {
+        self.uv_tools().join("flowpad.pre-repair")
+    }
     pub fn runtime(&self) -> PathBuf {
         self.local_flowpad().join("runtime")
     }

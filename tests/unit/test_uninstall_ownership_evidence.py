@@ -124,11 +124,12 @@ def test_stamping_marker_is_written_once(instance):
     assert json.loads(first)["version"]
 
 
-def test_stamping_marker_names_instances_that_predate_it(instance, tmp_path):
-    """An instance an older engine may have driven from the command line stays "unknown"."""
+def test_stamping_marker_names_instances_an_older_engine_ran_against(instance):
+    """An instance an older engine used may have been driven from the command line unrecorded."""
     root = instance.global_dir.parent / "instances"
     (root / "old").mkdir(parents=True, exist_ok=True)
-    started = time.time() + 60  # every directory made so far predates this "process"
+    (root / "old" / "flowpad.db").write_bytes(b"db")
+    started = time.time() + 60  # the database predates this "process"
 
     cli_use.ensure_stamping_marker(instance.global_dir, started=started)
 
@@ -136,11 +137,24 @@ def test_stamping_marker_names_instances_that_predate_it(instance, tmp_path):
     assert "old" in marker["preexisting"]
 
 
-def test_stamping_marker_leaves_out_instances_this_process_created(instance):
-    """The desktop's first server creates `prod`, then writes the marker: `prod` is new, not preexisting."""
+def test_a_clean_install_has_no_preexisting_instance(instance):
+    """The desktop creates instances/prod (and its logs) at launch, before any engine runs; the
+    first server then creates the database. Nothing there predates stamping."""
     root = instance.global_dir.parent / "instances"
-    started = time.time() - 60  # the process started before any directory below was made
+    (root / "prod" / "logs" / "server").mkdir(parents=True, exist_ok=True)  # the desktop, at launch
+    started = time.time() + 60  # the folder predates the server process...
+
+    cli_use.ensure_stamping_marker(instance.global_dir, started=started)
+
+    marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
+    assert "prod" not in marker["preexisting"], "...but no engine had run against it"
+
+
+def test_a_database_this_process_created_is_not_preexisting(instance):
+    root = instance.global_dir.parent / "instances"
+    started = time.time() - 60  # the process started before the database below was made
     (root / "fresh").mkdir(parents=True, exist_ok=True)
+    (root / "fresh" / "flowpad.db").write_bytes(b"db")
 
     cli_use.ensure_stamping_marker(instance.global_dir, started=started)
 

@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::classify::{decide_engine, decide_instance, decide_runtime, DataOffer, EngineDecision, InstanceDecision};
 use super::deferred;
@@ -87,34 +87,47 @@ fn ini_escape(s: &str) -> String {
 }
 
 /// The page's sizes are only for display, and the page has to appear inside the classify
-/// deadline: stop counting after this many entries and say "more than".
-const SIZE_WALK_LIMIT: usize = 100_000;
+/// deadline: one budget for ALL the folders on the page, in entries and in time. Past it, a
+/// folder's size is what was counted, shown as "more than".
+const SIZE_WALK_ENTRIES: usize = 200_000;
+const SIZE_WALK_TIME: Duration = Duration::from_secs(15);
 
-/// A folder's size in MB, as the page shows it.
-fn size_text(path: &Path) -> String {
-    size_text_within(path, SIZE_WALK_LIMIT)
+struct SizeBudget {
+    entries_left: usize,
+    until: Instant,
 }
 
-fn size_text_within(path: &Path, limit: usize) -> String {
-    fn walk(p: &Path, seen: &mut usize, limit: usize) -> u64 {
-        if *seen >= limit {
+impl SizeBudget {
+    fn new(entries: usize, time: Duration) -> Self {
+        SizeBudget { entries_left: entries, until: Instant::now() + time }
+    }
+    fn spent(&self) -> bool {
+        self.entries_left == 0 || Instant::now() >= self.until
+    }
+}
+
+/// A folder's size in MB, as the page shows it.
+fn size_text(path: &Path, budget: &mut SizeBudget) -> String {
+    fn walk(p: &Path, budget: &mut SizeBudget, cut: &mut bool) -> u64 {
+        if budget.spent() {
+            *cut = true;
             return 0;
         }
-        *seen += 1;
+        budget.entries_left -= 1;
         let Ok(md) = fs::symlink_metadata(p) else { return 0 };
         if md.file_type().is_symlink() {
             return 0;
         }
         if md.is_dir() {
-            fs::read_dir(p).map(|rd| rd.flatten().map(|e| walk(&e.path(), seen, limit)).sum()).unwrap_or(0)
+            fs::read_dir(p).map(|rd| rd.flatten().map(|e| walk(&e.path(), budget, cut)).sum()).unwrap_or(0)
         } else {
             md.len()
         }
     }
-    let mut seen = 0;
-    let bytes = walk(path, &mut seen, limit);
+    let mut cut = false;
+    let bytes = walk(path, budget, &mut cut);
     let mb = format!("{:.1} MB", bytes as f64 / 1_048_576.0);
-    if seen >= limit {
+    if cut {
         format!("more than {mb}")
     } else {
         mb
@@ -130,6 +143,7 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     s.push_str(&format!("remove={}\n", engine.remove_by_default as u8));
     s.push_str(&format!("offer={}\n", engine.opt_in_offered as u8));
     s.push_str(&format!("reason={}\n", ini_escape(&engine.reasons.join("; "))));
+    let mut budget = SizeBudget::new(SIZE_WALK_ENTRIES, SIZE_WALK_TIME);
     let app = layout.app_data();
     s.push_str("[appdata]\n");
     s.push_str(&format!(
@@ -137,7 +151,7 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
         ini_escape(&format!(
             "{} ({}), {}",
             app.display(),
-            size_text(&app),
+            size_text(&app, &mut budget),
             layout.flow_home().join("logs").join("main_desktop").display()
         ))
     ));
@@ -148,10 +162,10 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     for i in instances {
         let dir = layout.instances().join(&i.name);
         match &i.offer {
-            DataOffer::Offered => offered.push(format!("{} ({})", dir.display(), size_text(&dir))),
+            DataOffer::Offered => offered.push(format!("{} ({})", dir.display(), size_text(&dir, &mut budget))),
             DataOffer::OfferedWithWarning => {
                 warn = true;
-                offered.push(format!("{} ({})", dir.display(), size_text(&dir)))
+                offered.push(format!("{} ({})", dir.display(), size_text(&dir, &mut budget)))
             }
             DataOffer::NotOffered(r) => kept.push(format!("{} — kept: {r}", i.name)),
         }
@@ -330,15 +344,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn size_text_stops_at_the_limit_and_says_more_than() {
+    fn the_size_budget_is_shared_by_every_folder_on_the_page() {
         let dir = std::env::temp_dir().join(format!("flowrs-size-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        for i in 0..5 {
-            fs::write(dir.join(format!("f{i}")), vec![0u8; 1024]).unwrap();
+        for f in ["a", "b"] {
+            fs::create_dir_all(dir.join(f)).unwrap();
+            for i in 0..5 {
+                fs::write(dir.join(f).join(format!("f{i}")), vec![0u8; 1024]).unwrap();
+            }
         }
-        assert_eq!(size_text_within(&dir, 100), "0.0 MB");
-        assert!(size_text_within(&dir, 3).starts_with("more than "));
+        let mut roomy = SizeBudget::new(100, Duration::from_secs(60));
+        assert_eq!(size_text(&dir.join("a"), &mut roomy), "0.0 MB");
+        // 8 entries: the first folder (6) fits, the second runs out.
+        let mut tight = SizeBudget::new(8, Duration::from_secs(60));
+        assert!(!size_text(&dir.join("a"), &mut tight).starts_with("more than "));
+        assert!(size_text(&dir.join("b"), &mut tight).starts_with("more than "));
+        let mut timed_out = SizeBudget::new(100, Duration::ZERO);
+        assert!(size_text(&dir.join("a"), &mut timed_out).starts_with("more than "));
         fs::remove_dir_all(&dir).unwrap();
     }
 }

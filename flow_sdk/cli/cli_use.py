@@ -8,10 +8,11 @@ leaves a stamp:
   ``flow`` that the desktop did not run. ``last`` is refreshed at most once an hour.
 * ``<flow_home>/global/cli-stamp-since`` — ``{"version", "since", "preexisting"}``: written once,
   by the first engine that stamps. Without it, a missing ``.cli_used`` means "unknown" (an older
-  engine never stamped), not "never used". ``preexisting`` names the instances that existed before
-  the process that wrote it started: an older engine may have driven them from the command line
-  unrecorded, so for them a missing stamp stays "unknown". An instance this process created (the
-  desktop's first ``prod``) is not in it.
+  engine never stamped), not "never used". ``preexisting`` names the instances an older engine
+  already ran against — a file only the engine writes (``ENGINE_TRACES``) predates the process
+  that wrote the marker: that engine may have driven them from the command line unrecorded, so
+  for them a missing stamp stays "unknown". The folder itself proves nothing: the desktop creates
+  ``instances/prod`` at launch, before any engine runs.
 
 Not stamped: a process with ``FLOWPAD_DESKTOP=1`` (the desktop's own ``flow`` calls, its backend,
 and every worker the backend spawns — they inherit it), and the ``hooks`` group (the Claude Code
@@ -59,22 +60,34 @@ def _process_started() -> float:
     return psutil.Process().create_time()
 
 
+#: Files only an engine writes into an instance (the desktop creates the folder and its logs).
+ENGINE_TRACES = ("flowpad.db", "server.json", "records")
+
+
 def _created(path: Path) -> float:
     st = path.stat()
     # Windows' st_ctime is the creation time; st_birthtime where the platform has it.
     return getattr(st, "st_birthtime", st.st_ctime)
 
 
+def _engine_ran_before(instance_dir: Path, started: float) -> bool:
+    for name in ENGINE_TRACES:
+        trace = instance_dir / name
+        try:
+            if trace.exists() and _created(trace) < started:
+                return True
+        except OSError:
+            return True  # unreadable: assume it is old
+    return False
+
+
 def instances_before(instances_root: Path, started: float) -> list[str]:
-    """The instance directories created before ``started``. Never raises."""
+    """The instances an engine ran against before ``started``. Never raises."""
     names = []
     try:
         for p in instances_root.iterdir():
-            try:
-                if p.is_dir() and _created(p) < started:
-                    names.append(p.name)
-            except OSError:
-                names.append(p.name)  # unreadable: assume it is old
+            if p.is_dir() and _engine_ran_before(p, started):
+                names.append(p.name)
     except OSError:
         pass
     return sorted(names)

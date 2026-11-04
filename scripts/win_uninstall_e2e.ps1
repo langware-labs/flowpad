@@ -155,6 +155,18 @@ try {
   Check (Test-Path "$r\roaming\uv\tools\flowpad.pre-repair\x") 'the set-aside copy is kept'
   Check ((Result $r) -match 'interrupted repair') 'and reported'
 
+  Write-Host '== a set-aside engine whose record proves the desktop made it: removed'
+  $r = New-Layout 'pre-repair-ours'
+  $aside = "$r\roaming\uv\tools\flowpad.pre-repair"
+  W "$aside\uv-receipt.toml" 'receipt of the previous engine'
+  $aid = [FileIdentity]::Of($aside)
+  $asha = (Get-FileHash "$aside\uv-receipt.toml" -Algorithm SHA256).Hash.ToLower()
+  W "$r\local\Flowpad\engine-ownership.pre-repair.json" (@{ schema = 1; origin = 'desktop'; venv = "$r\roaming\uv\tools\flowpad"; venvVolume = $aid[0]; venvFileId = $aid[1]; receiptSha256 = $asha; desktopVersion = '0.2.59'; installedAt = 'T' } | ConvertTo-Json)
+  $code = Invoke-Uninstall $r @()
+  Check ($code -eq 0) "exit 0 (complete), got $code"
+  Check (-not (Test-Path $aside)) 'the set-aside copy is removed'
+  Check (-not (Test-Path "$r\local\Flowpad\engine-ownership.pre-repair.json")) 'with its record'
+
   Write-Host '== an instance that predates CLI-use stamping: the engine is kept unless the user opts in'
   $r = New-Layout 'predates'
   W "$r\profile\.flow\global\cli-stamp-since" '{"version":"0.2.60","since":1.0,"preexisting":["prod"]}'
@@ -197,6 +209,7 @@ try {
     Check ($dcode -eq 0) "deferred-cleanup exit 0, got $dcode"
     Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'engine gone after the deferred run'
     Check (-not (Test-Path "$r\profile\.flow\instances\prod")) 'prod gone after the deferred run'
+    Check (-not (Test-Path "$r\profile\.flow\global")) 'and the shared global/ with it: no instance is left'
     Check ((Invoke-Quiet { & $FlowRs get_key Flowpad.ai.sod_key.debug prod.flow-rs }) -ne 0) "and its key with it"
     Check (-not (Test-Path "$r\local\Flowpad\runtime")) 'runtime gone after the engine'
     Check (-not (Test-Path "$r\profile\.flow\desktop-runtime.json")) 'runtime record gone'

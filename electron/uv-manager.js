@@ -1681,7 +1681,8 @@ class UvManager {
     if (!this._engineOwnershipPath()) return null;
     const io = this._ownershipFs();
     const live = engineOwnership.snapshotVenv(io, this._toolVenvDir());
-    if (live.exists || !this._repairSetAside) return live;
+    // A repair after a blocked FIRST install set aside that install's half-built venv, not an engine.
+    if (live.exists || !this._repairSetAside || this._hadEngineBeforeRepair === false) return live;
     return engineOwnership.snapshotVenv(io, this._preRepairVenvDir());
   }
 
@@ -1705,31 +1706,42 @@ class UvManager {
     }
   }
 
-  /** The ownership record as text, or null (none, or not on Windows). */
-  _readOwnershipRecordText() {
+  /** `engine-ownership.pre-repair.json`: the record of the venv set aside by a repair. */
+  _asideRecordPath() {
     const recordPath = this._engineOwnershipPath();
-    if (!recordPath) return null;
-    try { return fs.readFileSync(recordPath, 'utf8'); } catch { return null; }
+    return recordPath && path.join(path.dirname(recordPath), engineOwnership.ASIDE_RECORD_FILE);
   }
 
-  /**
-   * Put back the record that described a venv the rollback restored (the repair's install rewrote
-   * it for the venv it made, now deleted). No record before the repair → none now. Never throws.
-   */
-  _restoreOwnershipRecord(text) {
+  /** Before the repair sets the venv aside: its record goes aside with it (none → none). Never throws. */
+  _setAsideOwnershipRecord() {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath || !fs.existsSync(this._toolVenvDir())) return; // nothing is set aside
+    try {
+      const record = engineOwnership.readRecord((p) => fs.readFileSync(p, 'utf8'), recordPath);
+      if (record) this._writeOwnershipRecord(this._asideRecordPath(), record);
+      else fs.rmSync(this._asideRecordPath(), { force: true });
+    } catch (e) {
+      this.log.warn(`[runtime-repair] could not set the engine ownership record aside: ${e.message}`);
+    }
+  }
+
+  /** The set-aside venv is back in place: so is its record (none aside → none now). Never throws. */
+  _restoreAsideOwnershipRecord() {
     const recordPath = this._engineOwnershipPath();
     if (!recordPath) return;
     try {
-      if (text == null) {
-        fs.rmSync(recordPath, { force: true });
-      } else {
-        fs.writeFileSync(`${recordPath}.tmp`, text, 'utf8');
-        fs.renameSync(`${recordPath}.tmp`, recordPath);
-      }
+      const aside = this._asideRecordPath();
+      if (fs.existsSync(aside)) fs.renameSync(aside, recordPath);
+      else fs.rmSync(recordPath, { force: true });
       this.log.info('[runtime-repair] engine ownership record restored with the engine');
     } catch (e) {
       this.log.warn(`[runtime-repair] could not restore the engine ownership record: ${e.message}`);
     }
+  }
+
+  _dropAsideOwnershipRecord() {
+    const aside = this._asideRecordPath();
+    if (aside) fs.rmSync(aside, { force: true });
   }
 
   _writeOwnershipRecord(recordPath, record) {
@@ -3540,11 +3552,13 @@ class UvManager {
     // `markFirstInstallBlocked()`: the app knows the blocked install was the FIRST — whatever is in the venv
     // (a block during --compile-bytecode comes after it was populated, and `_version.py` is readable) is not an engine.
     this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
-    // The rollback puts the set-aside venv back; its ownership record goes back with it.
-    this._preRepairOwnershipRecord = this._readOwnershipRecordText();
+    // The venv's ownership record goes aside with it: the rollback puts both back, and the
+    // uninstaller removes a leftover set-aside venv only when its record proves it was the desktop's.
+    this._setAsideOwnershipRecord();
     try {
       this._setAsidePreRepairVenv();
     } catch (e) {
+      this._dropAsideOwnershipRecord();
       // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
       // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
       const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
@@ -3586,6 +3600,7 @@ class UvManager {
     const aside = this._preRepairVenvDir();
     try {
       fs.rmSync(aside, { recursive: true, force: true });
+      this._dropAsideOwnershipRecord();
       this.log.info('[runtime-repair] previous engine removed (repair finalized)');
     } catch (e) {
       this.log.warn(`[runtime-repair] could not remove ${aside}: ${e.message}`);
@@ -3612,13 +3627,14 @@ class UvManager {
       // environment of that install, not an engine), and reinstalling one on the blocked interpreter would only fail again.
       this.log.warn('[runtime-repair] there was no engine before the repair: nothing to roll back');
       fs.rmSync(aside, { recursive: true, force: true });
+      this._dropAsideOwnershipRecord();
       return;
     }
     if (fs.existsSync(aside)) {
       this.log.warn('[runtime-repair] restoring the set-aside engine');
       fs.rmSync(venvDir, { recursive: true, force: true });
       fs.renameSync(aside, venvDir);
-      this._restoreOwnershipRecord(this._preRepairOwnershipRecord);
+      this._restoreAsideOwnershipRecord();
       this._flowBin = await this._resolveFlowBin();
       return;
     }

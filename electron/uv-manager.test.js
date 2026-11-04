@@ -1694,13 +1694,15 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   {
     // The engine ownership record around a runtime repair (FLOWPAD-2250). A leftover `.pre-repair`
     // folder outside a repair must not stand in for a missing venv (a fresh install would read as
-    // "adopted"), and a rollback must put back the record of the venv it restores.
+    // "adopted"); the repair sets the venv's record aside with it, and a rollback puts it back.
     const os = require('os');
     const fs = require('fs');
     const path = require('path');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-own-'));
     const venv = path.join(tmp, 'flowpad');
     const recordPath = path.join(tmp, 'engine-ownership.json');
+    const asideRecord = path.join(tmp, 'engine-ownership.pre-repair.json');
+    const rec = (origin) => JSON.stringify({ schema: 1, origin, venv, venvVolume: '1', venvFileId: '2', receiptSha256: origin, desktopVersion: '1', installedAt: 'T' });
     const m = new UvManager(silentLog);
     m._toolVenvDir = () => venv;
     m._engineOwnershipPath = () => recordPath;
@@ -1714,23 +1716,40 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
 
     fs.mkdirSync(venv, { recursive: true });
     fs.writeFileSync(path.join(venv, 'OLD'), '');
-    fs.writeFileSync(recordPath, 'RECORD-OF-OLD');
+    fs.writeFileSync(recordPath, rec('desktop'));
     let snapshotInRepair = null;
+    let asideDuringRepair = null;
     m._uvToolInstallForce = async () => {
       snapshotInRepair = m._ownershipSnapshotBeforeInstall();
+      asideDuringRepair = fs.existsSync(asideRecord) ? JSON.parse(fs.readFileSync(asideRecord, 'utf8')).origin : null;
       fs.mkdirSync(venv, { recursive: true });
-      fs.writeFileSync(recordPath, 'RECORD-OF-NEW'); // what _recordEngineOwnership writes after the install
+      fs.writeFileSync(recordPath, rec('repair-made')); // what _recordEngineOwnership writes after the install
     };
     await m._installEngineOn('C:\\p\\python.exe');
     ok(snapshotInRepair && snapshotInRepair.exists, 'during the repair, the set-aside venv stands in for the live one');
+    eq(asideDuringRepair, 'desktop', 'the set-aside venv\'s record is kept beside it (the uninstaller proves the copy with it)');
     await m._rollbackEngine();
-    eq(fs.readFileSync(recordPath, 'utf8'), 'RECORD-OF-OLD', 'the rollback restores the ownership record with the venv');
+    eq(JSON.parse(fs.readFileSync(recordPath, 'utf8')).origin, 'desktop', 'the rollback restores the ownership record with the venv');
+    ok(!fs.existsSync(asideRecord), 'and no set-aside record is left');
     ok(!m._repairSetAside, 'the repair flag is cleared after the install');
+
+    await m._installEngineOn('C:\\p\\python.exe');
+    ok(fs.existsSync(asideRecord), 'a repair in progress keeps the set-aside record');
+    await m._finalizeEngine();
+    ok(!fs.existsSync(asideRecord) && !fs.existsSync(`${venv}.pre-repair`), 'finalize drops the set-aside venv and its record');
 
     fs.rmSync(recordPath, { force: true });
     await m._installEngineOn('C:\\p\\python.exe');
     await m._rollbackEngine();
     ok(!fs.existsSync(recordPath), 'no record before the repair → none after its rollback');
+
+    // A repair after a BLOCKED FIRST install: what is set aside is that install's half-built venv, not an engine.
+    fs.rmSync(venv, { recursive: true, force: true });
+    fs.mkdirSync(venv, { recursive: true });
+    m.markFirstInstallBlocked();
+    m.getInstalledVersionSync = () => null;
+    await m._installEngineOn('C:\\p\\python.exe');
+    ok(snapshotInRepair && !snapshotInRepair.exists, 'after a blocked first install, the half-built venv set aside does not make the repair "adopted"');
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   {

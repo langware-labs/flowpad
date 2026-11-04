@@ -255,6 +255,10 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         match Root::open(&path) {
             Err(super::delete::Refused::Missing) => {
                 status(layout, &format!("{:?}: already gone", entry.root));
+                if entry.root == RootId::InstanceProd {
+                    // The user chose to delete prod; its keys go even when the folder went some other way.
+                    ops::remove_instance_credentials("prod", log);
+                }
                 continue;
             }
             Err(e) => {
@@ -309,6 +313,10 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
             if !layout.runtime().exists() {
                 let _ = ops::remove_children(&mut ledger, log, "runtime record", &layout.flow_home(), &[ops::RUNTIME_STATE_FILE.to_string()]);
             }
+        }
+        if body.entries.iter().any(|e| e.root == RootId::InstanceProd) {
+            // As in the uninstaller: `global/` and `~/.flow` go once no instance is left.
+            ops::remove_flow_home_if_unused(layout, &mut ledger, log);
         }
         finish(layout);
         0

@@ -154,11 +154,12 @@ pub fn decide_engine(f: &Facts) -> EngineDecision {
     if record.origin == "legacy-inferred" {
         return offer(LegacyInferred, vec!["FlowPad cannot confirm nothing else uses this engine".into()]);
     }
-    if !f.stamping_active || f.instances.iter().any(|i| i.predates_stamping) {
-        return offer(StampingUnknown, vec!["FlowPad cannot confirm nothing else uses this engine".into()]);
-    }
+    // Recorded use is the concrete reason; "unknown" only when nothing was recorded.
     if !cli.is_empty() {
         return offer(DesktopOriginCliUsed, vec![format!("the flow command line also uses it ({})", cli.join(", "))]);
+    }
+    if !f.stamping_active || f.instances.iter().any(|i| i.predates_stamping) {
+        return offer(StampingUnknown, vec!["FlowPad cannot confirm nothing else uses this engine".into()]);
     }
     EngineDecision { category: DesktopExclusive, remove_by_default: true, opt_in_offered: false, reasons: vec![] }
 }
@@ -408,6 +409,13 @@ mod tests {
         let d = decide_engine(&f);
         assert_eq!(d.category, EngineCategory::StampingUnknown);
         assert!(!d.removed(false) && d.removed(true));
+
+        // Recorded CLI use is reported as such, even when the instance also predates the stamping.
+        let mut f = facts();
+        f.instances = vec![InstanceFacts { predates_stamping: true, cli_used: true, ..prod() }];
+        let d = decide_engine(&f);
+        assert_eq!(d.category, EngineCategory::DesktopOriginCliUsed);
+        assert!(d.reasons[0].contains("prod"), "{:?}", d.reasons);
 
         // Stamping is active now, but the instance is older than it: CLI use before the upgrade left no trace.
         let mut f = facts();

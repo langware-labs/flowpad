@@ -34,6 +34,13 @@ const SCHEMA = 1;
 const RECORD_FILE = 'engine-ownership.json';
 const RECEIPT_FILE = 'uv-receipt.toml';
 
+/**
+ * The record of the venv a runtime repair set aside as `<venv>.pre-repair`, kept beside the live
+ * one: the rollback puts it back with the venv, and the uninstaller removes the set-aside copy only
+ * when this record proves the desktop made it.
+ */
+const ASIDE_RECORD_FILE = 'engine-ownership.pre-repair.json';
+
 function ownershipRecordPath(localAppData) {
   return path.join(localAppData, 'Flowpad', RECORD_FILE);
 }
@@ -182,6 +189,7 @@ function writeRecord({ mkdir, writeText, rename }, recordPath, record) {
 module.exports = {
   SCHEMA,
   RECORD_FILE,
+  ASIDE_RECORD_FILE,
   RECEIPT_FILE,
   ownershipRecordPath,
   fileIdentity,
