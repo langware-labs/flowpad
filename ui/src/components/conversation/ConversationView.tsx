@@ -976,18 +976,23 @@ export function ConversationView({
   // The composer's live-session icon: open the conversation's session — the backend
   // starts one (and asks the host) when none is open — and land in its view.
   const ensureCloudLogin = useCloudLoginGate();
+  // A second click while the first start is in flight is ignored.
+  const startingLiveSession = useRef(false);
   const startLiveSession = useCallback(async () => {
-    if (!conversationId) return;
-    const gate = await ensureCloudLogin();
-    if (!gate.ok) {
-      notify.error({ title: gate.error, forceToast: true });
-      return;
-    }
+    if (!conversationId || startingLiveSession.current) return;
+    startingLiveSession.current = true;
     try {
+      const gate = await ensureCloudLogin();
+      if (!gate.ok) {
+        notify.error({ title: gate.error, forceToast: true });
+        return;
+      }
       const session = await RemoteWorkerSession.start(conversationId);
       openLiveSession(session.id);
     } catch (e) {
       notify.error({ title: t`Could not start the live session`, message: String(e), forceToast: true });
+    } finally {
+      startingLiveSession.current = false;
     }
   }, [conversationId, ensureCloudLogin, openLiveSession, t]);
 

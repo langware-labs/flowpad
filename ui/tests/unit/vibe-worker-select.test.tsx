@@ -133,7 +133,7 @@ describe('VibeWorkerSelect — unavailable harness', () => {
     return { onChange, seen };
   }
 
-  it('badges the harness, blocks the move, and opens Capabilities for that kind', async () => {
+  it('badges the harness, and lets the launch refusal explain it', async () => {
     const user = userEvent.setup();
     const { onChange, seen } = renderWithCopilotMissing();
 
@@ -146,11 +146,9 @@ describe('VibeWorkerSelect — unavailable harness', () => {
 
     await user.click(copilot);
 
-    // The move never happens...
-    expect(onChange).not.toHaveBeenCalled();
-    // ...the user lands on Capabilities, scoped so it re-probes THIS harness.
-    expect(seen.pathname).toBe('/dock/capabilities');
-    expect(seen.search).toContain('capability=harness.copilot.cli');
+    // Still pickable: the launch is refused later with the launch-failure card.
+    expect(onChange).toHaveBeenCalledWith('copilot');
+    expect(seen.pathname).toBe('/dock/shell');
   });
 
   it('leaves an available harness switchable', async () => {

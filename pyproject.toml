@@ -136,6 +136,8 @@ include = ["flow_sdk*"]
     "rag/vcruntime/**/*",
     # The UI actions the smart navigator can pick (flow_sdk/core/navigator.py).
     "core/ui_actions.json",
+    # The recovery handlings every web app falls back to (flow_sdk/core/webapp/handling.py).
+    "core/webapp/default_handlings.json",
     # Desktop <-> backend version-compatibility declaration (flow_sdk/utils/compat.py).
     # Plain data in the wheel, so a staged install's floor can be read without running code.
     "compat.json",

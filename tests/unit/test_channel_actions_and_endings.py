@@ -136,8 +136,8 @@ async def test_an_action_the_channel_does_not_have_or_not_in_this_state_fails_an
         on_ended = await _post(str(chat.id), {"action": "approve"})
         gone = await _post(str(uuid.uuid4()), {"action": "approve"})
     # A refusal is a 4xx carrying the channel's words — a 500 reaches the person without them.
-    assert (unknown.status_code, unknown.message) == (422, "no action merge on this channel")
-    assert (on_ended.status_code, on_ended.message) == (422, "this action is not available on an ended conversation")
+    assert (unknown.status_code, unknown.message) == (422, "Data source error: no action merge on this channel")
+    assert (on_ended.status_code, on_ended.message) == (422, "Data source error: this action is not available on an ended conversation")
     assert gone.status_code == 404 and "no conversation" in gone.message
     assert script.acted == []
 

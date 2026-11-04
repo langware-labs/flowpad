@@ -42,7 +42,7 @@ describe('ConnectGithubButton', () => {
     expect(h.enabled).toBe(false); // no listener until a connect is pending
 
     await userEvent.click(screen.getByTestId('c'));
-    expect(h.connect).toHaveBeenCalledWith('github');
+    expect(h.connect.mock.calls[0]?.[0]).toBe('github');
     expect(screen.getByTestId('c')).toBeDisabled();
     expect(h.enabled).toBe(true);
 

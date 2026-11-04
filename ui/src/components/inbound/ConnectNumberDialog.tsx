@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
+  type Agent,
   type ChannelRouteTarget,
   type InboundApi,
   type InboundClaim,
@@ -16,7 +17,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@src/components/ui/input';
 import { cn } from '@src/lib/utils';
 import { Chip } from './Chip';
-import { DestinationPicker } from './DestinationPicker';
+import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import {
   type DestinationOption,
   INBOUND_PROVIDERS,
@@ -26,13 +28,13 @@ import {
   VENDOR,
 } from './inbound-model';
 
-type Step = 'choose' | 'link' | 'own' | 'connected';
+type Step = 'choose' | 'link' | 'own' | 'connected' | 'email';
 
 /** How often a pending claim (a code waiting to be sent, a URL waiting for its first delivery) is re-read. */
 const WAIT_POLL_MS = 3000;
 
 /** The own-account form: the account's key at the vendor, its credential, and how deliveries are signed. */
-const EMPTY_FORM = { key: '', token: '', graphUrl: '', appSecret: '', verifyToken: '' };
+const EMPTY_FORM = { key: '', token: '', graphUrl: '', appSecret: '', businessAccount: '' };
 
 /**
  * Connect a number or bot: through Flowpad's own account on the vendor (a code proves the caller's account), or the
@@ -42,6 +44,7 @@ export function ConnectNumberDialog({
   open,
   onOpenChange,
   optionsFor,
+  agents = [],
   onDone,
   api = InboundWebhooks,
 }: {
@@ -50,12 +53,16 @@ export function ConnectNumberDialog({
   /** Where a number of `provider` can send what no rule matches (no "default": a number has no parent place).
    *  On a desktop the first "This computer" place is preselected. */
   optionsFor: (provider: string) => DestinationOption[];
+  /** The person's own agents — whom a mailbox can belong to (the screen already read them). */
+  agents?: Agent[];
   onDone: () => void;
   api?: InboundApi;
 }) {
   const { t } = useLingui();
   const [step, setStep] = useState<Step>('choose');
-  const [provider, setProvider] = useState<InboundProvider>('whatsapp');
+  const [tab, setTab] = useState<InboundProvider | 'email'>('whatsapp');
+  const email = tab === 'email';
+  const provider: InboundProvider = email ? 'whatsapp' : tab;
   const [route, setRoute] = useState<OwnRoute | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const field = (name: keyof typeof EMPTY_FORM) => (value: string) => setForm((f) => ({ ...f, [name]: value }));
@@ -63,10 +70,36 @@ export function ConnectNumberDialog({
   const [made, setMade] = useState<InboundClaim | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mailboxForm, setMailboxForm] = useState({ agentId: '', username: '', displayName: '' });
+  const [verifyToken, setVerifyToken] = useState('');
+  const allocateMailbox = useAllocateAgentMailbox();
+  const mailboxAgent = agents.find((a) => String(a.id) === mailboxForm.agentId) ?? agents[0] ?? null;
+
+  /** One mailbox per agent, minted by the hub (billable, permanent) — through the one shared allocation path on both
+   *  pages; it tells the person why when it fails (sign-in, no agent email, a full mail plan). */
+  const createMailbox = async () => {
+    if (!mailboxAgent) return;
+    const body = {
+      username: mailboxForm.username.trim() || undefined,
+      display_name: mailboxForm.displayName.trim() || undefined,
+    };
+    setBusy(true);
+    setError(null);
+    try {
+      if (!(await allocateMailbox(mailboxAgent, body))) return;
+      onDone();
+      onOpenChange(false);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
     setStep('choose');
+    setTab('whatsapp');
+    setMailboxForm({ agentId: '', username: '', displayName: '' });
+    setVerifyToken('');
     setMade(null);
     setError(null);
     setForm(EMPTY_FORM);
@@ -114,7 +147,10 @@ export function ConnectNumberDialog({
   };
 
   const linkAgent = () => void run(linkChainBody(provider, fallback ?? undefined), 'link');
-  const connectOwn = () =>
+  const connectOwn = () => {
+    // The verify token is ours to invent: generated here, shown on the next step to paste beside the URL.
+    const token = route?.verifyToken ? verifyToken || newVerifyToken() : '';
+    setVerifyToken(token);
     void run(
       accountChainBody({
         provider,
@@ -122,11 +158,13 @@ export function ConnectNumberDialog({
         credential: form.token,
         appSecret: form.appSecret,
         graphUrl: route?.ownServer ? form.graphUrl : '',
-        verifyToken: route?.verifyToken ? form.verifyToken : '',
-        target: fallback ?? undefined,
+        businessAccount: route?.id === 'meta' ? form.businessAccount : '',
+        verifyToken: token,
+        // No fallback asked: anything no rule matches is ignored until a rule says otherwise.
       }),
       'connected',
     );
+  };
 
   const title = PROVIDER_TITLE[provider];
   /** The words for one own-account route: what the vendor calls the account, its credential and its signing secret. */
@@ -154,11 +192,17 @@ export function ConnectNumberDialog({
       prove: t`1. The hub proves the number is yours: it asks your server for this phone number ID using the access token. Only an answer naming the same ID passes.`,
       deliver: t`2. You get a webhook URL. Your server sends every message there, signed with the app secret — unsigned messages are refused.`,
       key: t`Phone number ID`,
-      keyHint: t`The id Meta's API uses for the number (not the phone number itself).`,
+      keyHint: generic
+        ? t`The id your server's API uses for the number (not the phone number itself).`
+        : t`Meta app › WhatsApp › API Setup — the number's id, not the phone number itself.`,
       credential: t`Access token`,
-      credentialHint: t`Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only.`,
+      credentialHint: generic
+        ? t`Proves the number on your server. Stored write-only.`
+        : t`Business Settings › System users › Generate token — never expires, with whatsapp_business_messaging. Stored write-only.`,
       secret: t`App secret`,
-      secretHint: t`Signs every delivery (x-hub-signature-256). Stored write-only.`,
+      secretHint: generic
+        ? t`Signs every delivery. Stored write-only.`
+        : t`Meta app › App settings › Basic. Checks every delivery came from Meta. Stored write-only.`,
     };
   };
 
@@ -174,11 +218,14 @@ export function ConnectNumberDialog({
       >
         <DialogHeader>
           <DialogTitle className="text-base font-normal text-muted-foreground">
-            <Trans>Connect a number</Trans> ›{' '}
+            <Trans>Add channel</Trans> ›{' '}
             <b className="text-foreground">
               {step === 'choose'
-                ? title
+                ? email
+                  ? t`Email`
+                  : title
                 : {
+                    email: t`Email › Flowpad mailbox`,
                     link: t`${title} › Flowpad's number`,
                     own: t`${title} › Your own number`,
                     connected: t`${title} › Connected`,
@@ -191,57 +238,56 @@ export function ConnectNumberDialog({
           <div className="flex flex-col gap-3 text-sm">
             <div className="flex gap-2">
               {INBOUND_PROVIDERS.map((p) => (
-                <Chip key={p} active={provider === p} testId={`inbound-provider-${p}`} onClick={() => setProvider(p)}>
+                <Chip key={p} active={tab === p} testId={`inbound-provider-${p}`} onClick={() => setTab(p)}>
                   {PROVIDER_TITLE[p]}
                 </Chip>
               ))}
+              <Chip active={email} testId="inbound-provider-email" onClick={() => setTab('email')}>
+                <Trans>Email</Trans>
+              </Chip>
             </div>
-            <p className="text-muted-foreground">
-              <Trans>How do messages reach the hub?</Trans>
-            </p>
-            <Choice
-              testId="inbound-choice-agent"
-              title={t`Flowpad agent`}
-              detail={t`Message Flowpad's own ${title} account. Nothing to set up — link your phone once with a code.`}
-              onClick={linkAgent}
-              disabled={busy}
-            />
-            {VENDOR[provider].own.map((r) => {
-              const c = ownText(r.id);
-              return (
+            {email && (
+              <Choice
+                testId="inbound-choice-mailbox"
+                title={t`Flowpad mailbox`}
+                detail={t`A real email address the hub creates for one of your agents. Nothing to set up.`}
+                onClick={() => setStep('email')}
+              />
+            )}
+            {!email && (
+              <>
+                <p className="text-muted-foreground">
+                  <Trans>How do messages reach the hub?</Trans>
+                </p>
                 <Choice
-                  key={r.id}
-                  testId={`inbound-choice-${r.id}`}
-                  title={c.choice}
-                  detail={c.choiceDetail}
-                  onClick={() => {
-                    setRoute(r);
-                    setStep('own');
-                  }}
+                  testId="inbound-choice-agent"
+                  title={t`Flowpad agent`}
+                  detail={t`Message Flowpad's own ${title} account. Nothing to set up — link your phone once with a code.`}
+                  onClick={linkAgent}
+                  disabled={busy}
                 />
-              );
-            })}
+                {VENDOR[provider].own.map((r) => {
+                  const c = ownText(r.id);
+                  return (
+                    <Choice
+                      key={r.id}
+                      testId={`inbound-choice-${r.id}`}
+                      title={c.choice}
+                      detail={c.choiceDetail}
+                      onClick={() => {
+                        setRoute(r);
+                        setStep('own');
+                      }}
+                    />
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
 
         {step === 'own' && route && text && (
           <div className="flex flex-col gap-3 text-sm">
-            <div className="space-y-1 rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground">
-              <div className="text-sm font-medium text-foreground">
-                <Trans>What happens</Trans>
-              </div>
-              <div>{text.prove}</div>
-              <div>{text.deliver}</div>
-              <div>
-                <Trans>
-                  3. Each message goes to the rule that matches it, or to the fallback below. Replies go out through
-                  your server with the same token.
-                </Trans>
-              </div>
-              <div>
-                <Trans>Secrets are stored write-only on the hub — nobody can read them back.</Trans>
-              </div>
-            </div>
             <Field
               testId="inbound-field-phone-id"
               label={text.key}
@@ -275,19 +321,15 @@ export function ConnectNumberDialog({
               secret
               hint={text.secretHint}
             />
-            {route.verifyToken && (
+            {route.id === 'meta' && (
               <Field
-                testId="inbound-field-verify-token"
-                label={t`Verify token`}
-                value={form.verifyToken}
-                onChange={field('verifyToken')}
-                hint={t`A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours.`}
+                testId="inbound-field-business-account"
+                label={t`WhatsApp account ID (optional)`}
+                value={form.businessAccount}
+                onChange={field('businessAccount')}
+                hint={t`Meta app › WhatsApp › API Setup, under the number. Needed only when Meta has not linked the account to your app yet.`}
               />
             )}
-            <div className="font-medium">
-              <Trans>Fallback — everything no rule matches goes to</Trans>
-            </div>
-            <DestinationPicker options={options} value={fallback} onChange={setFallback} />
           </div>
         )}
 
@@ -327,20 +369,29 @@ export function ConnectNumberDialog({
                 <Trans>the token acts as {made.claim?.key}</Trans>
               </span>
             </div>
-            <p>
-              <Trans>Now send your messages to the hub. Paste these into your server's webhook settings:</Trans>
-            </p>
-            <CopyRow testId="inbound-connected-url" value={made.url} />
-            {form.verifyToken.trim() && (
-              <CopyRow testId="inbound-connected-verify-token" value={form.verifyToken.trim()} />
+            {route?.id === 'meta' ? (
+              <p data-testid="inbound-connected-registered">
+                <Trans>
+                  ✓ Webhook set at Meta for you — Meta now sends this number's messages here. Removing the channel
+                  removes it from Meta too.
+                </Trans>
+              </p>
+            ) : (
+              <>
+                <p>
+                  <Trans>Now send your messages to the hub. Paste these into your server's webhook settings:</Trans>
+                </p>
+                <CopyRow testId="inbound-connected-url" value={made.url} />
+                {verifyToken && <CopyRow testId="inbound-connected-verify-token" value={verifyToken} />}
+                <p className="text-xs text-muted-foreground">
+                  <Trans>
+                    Verify token: when you save the URL, your server calls it once with this word and the hub echoes
+                    back a challenge only if the word matches. It proves you own the URL; it is not a password for
+                    messages — those are checked with the app secret.
+                  </Trans>
+                </p>
+              </>
             )}
-            <p className="text-xs text-muted-foreground">
-              <Trans>
-                Verify token: when you save the URL, your server calls it once with this word and the hub echoes back a
-                challenge only if the word matches. It proves you own the URL; it is not a password for messages — those
-                are checked with the app secret.
-              </Trans>
-            </p>
             <StatusPill waiting={!made.deliveries}>
               {made.deliveries ? (
                 <Trans>first delivery received</Trans>
@@ -348,6 +399,54 @@ export function ConnectNumberDialog({
                 <Trans>waiting for the first signed delivery…</Trans>
               )}
             </StatusPill>
+          </div>
+        )}
+
+        {step === 'email' && (
+          <div className="flex flex-col gap-3 text-sm" data-testid="inbound-email-step">
+            <label className="flex flex-col gap-1">
+              <span className="font-medium">
+                <Trans>Agent</Trans>
+              </span>
+              <Select
+                value={mailboxAgent ? String(mailboxAgent.id) : undefined}
+                onValueChange={(agentId) => setMailboxForm((b) => ({ ...b, agentId }))}
+              >
+                <SelectTrigger data-testid="inbound-email-agent">
+                  <SelectValue placeholder={t`No agent without a mailbox`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((a) => (
+                    <SelectItem key={String(a.id)} value={String(a.id)}>
+                      {a.name || String(a.id)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground" data-testid="inbound-email-agent-hint">
+                {agents.length ? (
+                  <Trans>One mailbox per agent; it answers the senders you allow.</Trans>
+                ) : (
+                  <Trans>
+                    Every agent already has a mailbox — a mailbox belongs to one agent, so create another agent first.
+                  </Trans>
+                )}
+              </span>
+            </label>
+            <Field
+              testId="inbound-email-name"
+              label={t`Name`}
+              value={mailboxForm.username}
+              onChange={(v) => setMailboxForm((b) => ({ ...b, username: v }))}
+              hint={t`The part before the @. Permanent once created.`}
+            />
+            <Field
+              testId="inbound-email-display"
+              label={t`Display name`}
+              value={mailboxForm.displayName}
+              onChange={(v) => setMailboxForm((b) => ({ ...b, displayName: v }))}
+              hint={t`What people see in their mail app.`}
+            />
           </div>
         )}
 
@@ -371,6 +470,21 @@ export function ConnectNumberDialog({
               <Button data-testid="inbound-connect-submit" disabled={!ownReady || busy} onClick={connectOwn}>
                 {busy && <Loader2 className="size-4 animate-spin" />}
                 <Trans>Prove and connect</Trans>
+              </Button>
+            </>
+          )}
+          {step === 'email' && (
+            <>
+              <Button variant="ghost" onClick={() => setStep('choose')}>
+                <Trans>Back</Trans>
+              </Button>
+              <Button
+                data-testid="inbound-email-create"
+                disabled={!mailboxAgent || busy}
+                onClick={() => void createMailbox()}
+              >
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                <Trans>Create mailbox</Trans>
               </Button>
             </>
           )}
@@ -469,4 +583,9 @@ function StatusPill({ waiting, children }: { waiting: boolean; children: ReactNo
       </span>
     </div>
   );
+}
+
+/** A verify token for a webhook handshake: ours to invent, never typed by the person. */
+function newVerifyToken(): string {
+  return `fp-${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
 }

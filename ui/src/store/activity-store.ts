@@ -158,6 +158,10 @@ export async function replay(): Promise<void> {
   // store simply stays empty.
   if (isHubOnly()) return;
   const rows = await lazyAssets.refresh(LazyAsset.Activities);
+  // The list is every live root. A running row it lacks ended while this tab was not listening
+  // (a socket gap, a backend restart): its end will never arrive, so it goes now.
+  const live = new Set(rows.map(key));
+  for (const [k, held] of specs) if (!isTerminal(held) && !live.has(k)) forget(k);
   for (const row of rows) handleActivitySnapshot(row);
 }
 

@@ -37,7 +37,7 @@ async def resolve_credentials(auth: Optional[AuthSpec], row: Any) -> ResolvedSec
     if auth is None:
         return ResolvedSecrets()
     if auth.connector:
-        return await _connector(str(getattr(row, "connection", "") or "") or auth.connector)
+        return await _connector(str(getattr(row, "connection", "") or "") or auth.connector, auth.group)
     if auth.credential:
         return await _declared(auth, row)
     stored = await _stored_values(row, list(auth.env) if auth.env else list(auth.secrets))
@@ -99,7 +99,9 @@ async def _way(spec: Any, held: set[str]) -> tuple[str, Optional[ResolvedSecrets
     for way in way_order(vars, chosen, grouped):
         oauth = next((vars[m] for m in grouped[way] if vars[m].is_oauth), None)
         if oauth is not None:
-            if (grant := await _connector(oauth.provider)).token is not None:
+            # A token held for the provider is not enough: it must carry this way's scopes (a Drive grant
+            # cannot read mail). Unknown grants (never recorded) are taken as covering, as before.
+            if (grant := await _connector(oauth.provider)).token is not None and await _covers(oauth):
                 identity = await _identity(oauth.provider, grant.token.get_secret_value())
                 return way, grant.model_copy(update={"identity": identity})
         elif way == chosen or all(m in held for m in grouped[way]):
@@ -137,9 +139,23 @@ async def _stored_values(row: Any, names: list[str]) -> dict[str, str]:
     return {name: text for name, value in loaded.items() if (text := value.get_secret_value().strip())}
 
 
-async def _connector(provider: str) -> ResolvedSecrets:
+async def _covers(oauth: Any) -> bool:
+    """Whether the provider's held grant carries every scope ``oauth`` (a credential's sign-in way) needs."""
+    from flow_sdk.core.oauth.provider_registry import missing_granted  # noqa: PLC0415
+
+    return not await missing_granted(oauth.provider, list(getattr(oauth, "scopes", None) or []))
+
+
+async def _connector(provider: str, group: str = "") -> ResolvedSecrets:
     from flow_sdk.core.oauth.provider_registry import app_credentials_name, token_for  # noqa: PLC0415
 
+    if group:
+        # A non-default scope group reads its own token; the default group's is the provider's own.
+        from flow_sdk.core.oauth.hub_oauth import resolve_group  # noqa: PLC0415
+
+        if (names := await resolve_group(provider, group)).sent:
+            token = await token_for(provider, name=names.local_name)
+            return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else ResolvedSecrets()
     app = app_credentials_name(provider)
     token = (await token_for(provider, name=app) if app else None) or await token_for(provider)
     return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else ResolvedSecrets()

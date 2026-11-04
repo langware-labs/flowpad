@@ -3,8 +3,6 @@ import { cn } from '@src/lib/utils';
 import { LAUNCHABLE_WORKERS, normalizeWorkerType, type WorkerType } from './worker-types';
 import { useHarnessAvailability } from './harness-availability';
 import { OpenerWarningBadge } from '@src/components/terminal/openers/OpenerWarningBadge';
-import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { providerMetaFor } from '@src/tabs/provider-meta';
 import { useLingui } from '@lingui/react/macro';
@@ -37,21 +35,13 @@ export function WorkerTypeSelect({
   testId = 'vibe-worker-select',
 }: WorkerTypeSelectProps) {
   const { t } = useLingui();
-  const { navigation } = useDockNavigation();
   const { warnings } = useHarnessAvailability();
   const selected = normalizeWorkerType(value);
   const { Icon: SelectedIcon, iconClassName: selectedTint } = providerMetaFor(selected);
 
-  // Same enforcement point as `TerminalOpenerToolbar.activate`: a warned choice
-  // can't be honored, so send the user where they can fix it. The kind rides
-  // along so that view re-probes THIS harness on arrival — the warning may be
-  // stale, since discovery only sweeps at backend start.
+  // A warned harness stays pickable: its launch is refused with the launch-failure card, which installs it.
   const handleValueChange = (next: string) => {
     const worker = normalizeWorkerType(next);
-    if (warnings[worker]) {
-      openCapabilitiesForWorker(navigation, worker);
-      return;
-    }
     void onChange(worker);
   };
 

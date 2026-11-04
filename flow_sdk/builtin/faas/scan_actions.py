@@ -129,7 +129,7 @@ def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse)
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
         worker_capability_kind,
     )
-    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth, launch_refusal
     from flow_sdk.core.capabilities.registry import get_capability_registry
 
     exc = reason if isinstance(reason, BaseException) else RuntimeError(str(reason))
@@ -139,10 +139,13 @@ def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse)
     # The capability spec is the SSOT for what a harness is *called*; the worker
     # type (``claude_code``) is an internal token and reads like one in a toast.
     name = get_capability_registry().get(worker_capability_kind(worker_type)).spec.name
-    return ApiFailResponse(
-        message=f"{name} is not available on this machine.",
-        status_code=400,
-    )
+    return launch_refusal(f"{name} is not available on this machine.", verdict.wire(evidence=str(exc)))
+
+
+def _refuse(code, worker_type: str, message: str, facts=None) -> ApiFailResponse:
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, code_for_refusal, launch_refusal
+
+    return launch_refusal(message, LaunchError.of(code_for_refusal(code), message, worker_type).wire("preflight", evidence=message, facts=facts))
 
 
 class ScanActionsMixin:
@@ -622,10 +625,7 @@ class ScanActionsMixin:
                 # The capability spec's name, not the internal ``claude_code``
                 # token — this string is shown to the user verbatim.
                 harness_name = get_capability_registry().get(worker_capability_kind(worker_type.value)).spec.name
-                return ApiFailResponse(
-                    message=f"{harness_name} is not installed on this machine.",
-                    status_code=400,
-                )
+                return _refuse("not_installed", worker_type.value, f"{harness_name} is not installed on this machine.")
 
             # And the same gate for the OTHER thing a spawn needs: something to
             # run on. Installed is not enough — a harness with no eligible
@@ -665,6 +665,11 @@ class ScanActionsMixin:
             # refusing it -- funding never presumes a login works.
             await check_unchecked_login(worker_type.value)
             funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
+            if getattr(funding, "blocked_code", "") == "budget_not_ready":  # signed in, budget list never fetched: fetch once
+                from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
+
+                await fetch_hub_llm_endpoints()
+                funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
             toplog.log(
                 "agentic_process.load",
                 "createProcess preflight done (is_installed + llm_picker_view) ms=%.0f",
@@ -687,9 +692,11 @@ class ScanActionsMixin:
                 # Capabilities, which can only offer to install a harness they
                 # already have.
                 reason = funding.blocked or "no source is configured"
-                return ApiFailResponse(
-                    message=f"{worker_type.value} has no usable LLM source: {reason}",
-                    status_code=400,
+                rejected = next((c for c in funding.offers if c.source.reason_code == "key_rejected"), None)
+                facts = {"provider": rejected.endpoint.provider, "key_hint": rejected.source.detail} if rejected else {}
+                facts["source_name"] = reason.partition("requires endpoint ")[2]
+                return _refuse(getattr(funding, "blocked_code", ""), worker_type.value,
+                               f"{worker_type.value} has no usable LLM source: {reason}", facts=facts,
                 )
 
             model = context_data.pop("model", None) or None

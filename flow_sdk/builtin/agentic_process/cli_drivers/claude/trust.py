@@ -34,5 +34,6 @@ def claude_trusts(workdir: str | None) -> bool:
     count: Claude refuses --worktree there even with ``/`` trusted."""
     if not workdir:
         return False
-    entry = _projects().get(str(Path(workdir).expanduser().resolve())) or {}
-    return bool(entry.get("hasTrustDialogAccepted"))
+    resolved, projects = Path(workdir).expanduser().resolve(), _projects()
+    # Claude keys a Windows folder with forward slashes (C:/x); str(Path) uses backslashes.
+    return any((projects.get(key) or {}).get("hasTrustDialogAccepted") for key in (str(resolved), resolved.as_posix()))

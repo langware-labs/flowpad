@@ -276,9 +276,9 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     const mailboxAddress = (await page.getByTestId('agent-mailbox-address').textContent())?.trim() ?? '';
     expect(mailboxAddress).toContain('@');
 
-    await page.getByTestId('agent-email-allowed-senders').fill(ready.gmail_address);
-    await page.getByTestId('agent-mailbox-settings').getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Mailbox settings saved')).toBeVisible();
+    await page.getByTestId('agent-email-allowed-senders-add-input').fill(ready.gmail_address);
+    await page.getByTestId('agent-email-allowed-senders-add').click();
+    await expect(page.getByTestId('agent-email-allowed-senders-senders')).toContainText(ready.gmail_address);
 
     harness.send(`SEND ${mailboxAddress}`);
     expect((await harness.next()).kind).toBe('deployed');

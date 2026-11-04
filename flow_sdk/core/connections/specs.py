@@ -52,11 +52,12 @@ async def _list_connection_specs_local() -> list[ConnectionSpec]:
     """Return exactly the providers visible in the canonical Connections table."""
     from flow_sdk.core.oauth import get_oauth_providers_as_env_table  # noqa: PLC0415
 
-    from flow_sdk.core.oauth.wanted_scopes import wanted_extra_scopes  # noqa: PLC0415
+    user = await _connection_user()
+    table = await get_oauth_providers_as_env_table(user)
+    rows = [row for row in table.values if row.name and row.ref_name]
+    import asyncio  # noqa: PLC0415
 
-    table = await get_oauth_providers_as_env_table(await _connection_user())
-    # What a connect consents to: the provider's base scopes, plus what a source here needs now.
-    extra = {row.name: await wanted_extra_scopes(row.name) for row in table.values if row.name and row.ref_name}
+    granted = dict(zip((r.name for r in rows), await asyncio.gather(*(_granted_scopes(r, user) for r in rows))))
     return [
         ConnectionSpec(
             provider=row.name,
@@ -66,12 +67,22 @@ async def _list_connection_specs_local() -> list[ConnectionSpec]:
             credential_ref=row.ref_name or "",
             connected=_oauth_state(row) is ConnectionState.CONNECTED,
             identity="",
-            scopes=tuple(dict.fromkeys([*(row.oauth_scopes or ()), *extra.get(row.name, ())])),
+            scopes=tuple(row.oauth_scopes or ()),
+            granted_scopes=granted[row.name],
             icon=row.icon or "",
         )
-        for row in table.values
-        if row.name and row.ref_name
+        for row in rows
     ]
+
+
+async def _granted_scopes(row, user) -> tuple[str, ...]:
+    """What the provider granted the token this row holds, as stored with the local copy (a local grant's
+    token response, or the hub's record kept on a mirrored copy). Empty when unknown or not held."""
+    if row.var_status != EnvStatusEnum.AVAILABLE:
+        return ()
+    from flow_sdk.core.oauth.provider_registry import granted_scopes  # noqa: PLC0415
+
+    return await granted_scopes(row.name, user)
 
 
 async def _fetch_rows(client, path: str, key: str, what: str) -> list[ConnectionSpec]:

@@ -154,14 +154,24 @@ async def _github_token() -> Optional[str]:
 
 def _checkout_for(origin: Any, cached: Optional[str]) -> Optional[Path]:
     """A local checkout of ``origin``'s repo: the folder's cached path first (where the
-    user added it from — any location, any branch), then one found by URL."""
-    from flow_sdk.utils.git import find_local_repo_for_url, find_project_root  # noqa: PLC0415
+    user added it from — any location, any branch), then one found by URL inside THIS
+    instance's workspace roots.
+
+    Every instance on the machine sees the same ``~/.claude`` project list, so a URL
+    lookup also lists other instances' clones (prod's ``~/Flowpad workspace`` among
+    them). A checkout in another instance's workspace is that instance's, never this
+    instance's dependency — adopting it registers a duplicate-named project here.
+    """
+    from flow_sdk.config import all_workspace_roots  # noqa: PLC0415
+    from flow_sdk.utils.git import _in_another_instance, find_local_repo_for_url, find_project_root  # noqa: PLC0415
+
+    roots = [root.resolve() for root in all_workspace_roots()]
 
     if cached and Path(cached).is_dir():
         repo = find_project_root(cached)
-        if repo and origin.matches_checkout(Path(repo)):
+        if repo and not _in_another_instance(repo) and origin.matches_checkout(Path(repo)):
             return Path(repo)
-    local = find_local_repo_for_url(origin.clone_url())
+    local = find_local_repo_for_url(origin.clone_url(), within=roots)
     if local and origin.matches_checkout(Path(local)):
         return Path(local)
     return None
@@ -187,13 +197,14 @@ async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, updat
     made = False
     pull_error = None
     if repo is None:
-        if not fetch:
-            raise _NotReady("missing", "not on this machine yet — sync to fetch it")
         target = await asyncio.to_thread(origin.next_clone_target)
         if target.exists() and await asyncio.to_thread(origin.matches_checkout, target, require_branch=True):
             # Already here: the hub delivered it with the project (a deployed machine never clones a
-            # dependency itself), or an earlier clone that no project registered yet.
+            # dependency itself), or an earlier clone that no project registered yet. Adopting it
+            # needs no network, so a status read finds it too.
             repo = target
+        elif not fetch:
+            raise _NotReady("missing", "not on this machine yet — sync to fetch it")
         else:
             result = await git_clone(
                 origin.clone_url(), str(target), branch=branch or None, token=await _github_token()
@@ -516,6 +527,7 @@ async def _from_link(project: "Project", dep: FlowDependency, via: Optional[str]
     folder is still there and still the same source. No network, no git."""
     from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.utils.git import _in_another_instance  # noqa: PLC0415
 
     link = _link_for(project, dep.name, via)
     if link is None:
@@ -524,6 +536,10 @@ async def _from_link(project: "Project", dep: FlowDependency, via: Optional[str]
     if data.get("source") != dep.source or data.get("subpath", ".") != dep.path or data.get("required") != dep.required:
         return None
     if not data.get("path") or not Path(data["path"]).is_dir():
+        return None
+    if _in_another_instance(data["path"]):
+        # Linked before checkouts were confined to this instance: another instance's clone is
+        # not this dependency — resolve it again.
         return None
     folder = await Folder.get_by_id(TypeId(tid).id)
     if folder is None:

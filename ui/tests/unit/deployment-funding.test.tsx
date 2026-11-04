@@ -11,8 +11,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), open: vi.fn() }));
 vi.mock('@src/notifications', () => ({ notify: { error: h.error, success: h.success, info: vi.fn() } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: {} }) }));
-vi.mock('@src/components/llm-endpoints/llm-endpoints-pointer', () => ({ openLlmEndpoint: h.open }));
-vi.mock('@src/components/assets/editor/agent-profile/TokenAllocationField', () => ({
+vi.mock('@src/components/llm-endpoints/llm-endpoints-pointer', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  openLlmEndpoint: h.open,
+}));
+// The editor seeds from the allocation's endpoint chain: answered at once, so Save is live.
+vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useLlmEndpointChain: () => ({ data: { entry: { id: 'llm_endpoint-55555555-5555-4555-8555-555555555555' }, hops: [], paths: [] }, error: null }),
+}));
+vi.mock('@src/components/assets/editor/agent-profile/TokenAllocationField', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   TokenAllocationField: () => <div data-testid="allocation-field" />,
   tokenAllocationComplete: () => true,
 }));

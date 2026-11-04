@@ -42,6 +42,7 @@ export type {
   AgenticProcessReportEventResult,
   DisplayContextState,
   IAgenticProcess,
+  LaunchFailureValue,
   MarkdownDoc,
   ProcessState,
   SessionNameState,

@@ -2447,7 +2447,6 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     """
     from flow_sdk.app.actions.notification_action import (
         _append_message_to_conversation,
-        _notify_ui_conversation_updated,
         _send_conversation_message_header,
     )
     from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
@@ -2507,8 +2506,6 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         fm_id=fm.id,
         someone_typeid=someone_typeid,
     )
-
-    _notify_ui_conversation_updated(conv.id, "", fm.id)
 
     if is_remote_send:
         conv.kick_delivery()  # the body, if it has one — owed on the row until the hub has it
@@ -3834,14 +3831,11 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     if not hub_auth_available():
         return await _local_only_conversation_list(auth_required=True, user_id=user_id)
 
-    # Bulk-read the entire local mirror ONCE as the reconcile cache. This is the
-    # only consumer of ``local_index`` — the returned list is the separate,
-    # unfiltered ``merged`` below, so output is unaffected. (Must NOT filter by
-    # ``created_by``: remote conversations carry the hub owner's id, not the local
-    # user's, so a ``created_by`` filter returns nothing — emptying the cache and
-    # forcing a per-row get_one + a spurious "stale" verdict for every conv.)
-    local_list = await Conversation.get_all({})
-    local_index = {c.id: c for c in local_list if c.id}
+    # The reconcile cache: conv id -> the local row. Filled batch by batch by ``reconcile_rows``
+    # (``Conversation.mirror_batch`` reads each batch's rows under the writer lock), which is every
+    # row ``reconcile`` looks up — a bulk read of the whole mirror up front was replaced by those
+    # reads before ``reconcile`` ever saw it, and cost a full hydration of every conversation.
+    local_index: dict[str, Conversation] = {}
 
     # The conversation list is walked page by page (the hub pages every list); ``invitation/pending``
     # is an action answering one plain list.
@@ -4015,13 +4009,13 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # a pending invitation) means it was deleted hub-side (or the local
     # user lost access). Reconcile by hard-deleting locally so the next
     # render reflects reality.
-    async def prune() -> list[str]:
+    async def prune(local_rows: Optional[list] = None) -> list[str]:
         pruned: list[str] = []
         seen_ids = {c.get("id") for c in hub_convs if c.get("id") and not c.get("deleted_at")}
         seen_ids.update(invitation_conv_ids)
-        # Re-read local state because the upsert + invitation steps may have
-        # added rows that didn't exist when we snapshotted earlier.
-        for c in await Conversation.get_all({}):
+        # The local state AFTER the upsert + invitation steps (they may have added rows): the
+        # caller's read of it when it has one, a fresh read otherwise (the deferred reconcile).
+        for c in local_rows if local_rows is not None else await Conversation.get_all({}):
             # A row a data source feeds (a help-desk ticket staff returned) is the source's to keep:
             # out of the hub list means "not in it", not "gone".
             if c.remote and c.id and c.id not in seen_ids and not c.channel_source_id:
@@ -4034,17 +4028,21 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
                     logger.warning("[conv-list] prune %s failed: %s", (c.id or "?")[:8], e)
         return pruned
 
+    # ONE read of the local mirror after the upserts and invitations serves the prune and the
+    # response: the prune deletes rows (dropped below) and heals others in place (the same objects).
+    current = await Conversation.get_all({})
     pruned_ids: list[str] = []
     can_prune = hub_reachable and hub_list_complete
     if can_prune and not deferred:
-        pruned_ids = await prune()
+        pruned_ids = await prune(current)
 
     # (f) one unread reconcile for the whole batch — invitations materialized
     # in (d) and conversations pruned in (e) both change the projection.
     stream_inbox.touch("conversation-list")
 
     # return the freshly-merged list.
-    merged = await Conversation.get_all({})
+    gone = set(pruned_ids)
+    merged = [c for c in current if c.id not in gone]
     response = ApiSuccessResponse(
         data={
             "conversations": [c.model_dump(mode="json") for c in merged],
@@ -4796,9 +4794,8 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             logger.warning("[invitation-accept] bundle download failed: %s", e)
 
     # Live UI refresh: fire an explicit ``OperationType.UPDATE`` for the
-    # Conversation entity. The per-step sniffer EVENTs logged above as
-    # ``[hook_op] Unhandled event`` don't invalidate the UI's
-    # ``useEntity<Conversation>`` React-Query cache. ``notify_updated``
+    # Conversation entity so the UI's ``useEntity<Conversation>`` React-Query
+    # cache refreshes. ``notify_updated``
     # dispatches a ``DataOpMessage(op=UPDATE)`` which IS what useEntity
     # listens for.
     # The per-step events fired above (materialize, sync) don't all carry the

@@ -65,9 +65,20 @@ def set_lm_api(key: str, provider: LMApiProvider | str) -> None:
     if provider is LMApiProvider.FLOWPAD:
         raise ValueError("flowpad is bound by the hub login; there is no key to store")
     write_secret(_sod_name(provider), key)
+    mark_key_rejected(provider.value, None)  # a replaced/removed key is not the refused one
     from flow_sdk.core.status.push import publish_status_changed  # noqa: PLC0415
 
     publish_status_changed()  # a stored key is a status fact
+
+
+KEY_REJECTIONS: dict[str, dict] = {}  # provider → {reason, hint}: refused (401/403), funds nothing until replaced
+
+
+def mark_key_rejected(provider: str, reason: str | None, hint: str = "") -> None:
+    if reason:
+        KEY_REJECTIONS[provider] = {"reason": reason, "hint": hint}
+    else:
+        KEY_REJECTIONS.pop(provider, None)
 
 
 def get_lm_api(provider: LMApiProvider | str) -> str | None:
@@ -128,6 +139,7 @@ async def delete_lm_api(provider: LMApiProvider | str) -> None:
     if provider is LMApiProvider.FLOWPAD:
         return
     await delete_secret(_sod_name(provider))
+    mark_key_rejected(provider.value, None)  # a replaced/removed key is not the refused one
     from flow_sdk.core.status.push import publish_status_changed  # noqa: PLC0415
 
     publish_status_changed()
@@ -181,7 +193,7 @@ async def validate_lm_api(provider: LMApiProvider | str, key: str | None = None)
     if resp.status_code == 200:
         return {"valid": True, "message": "Key is valid"}
     if resp.status_code in (401, 403):
-        return {"valid": False, "message": f"{provider.value} rejected the key ({resp.status_code})"}
+        return {"valid": False, "status": resp.status_code, "message": f"{provider.value} rejected the key ({resp.status_code})"}
     return {"valid": False, "message": f"{provider.value} returned {resp.status_code}"}
 
 

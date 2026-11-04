@@ -256,7 +256,7 @@ class TestTheFence:
         from flow_sdk.builtin.flow_message import FlowMessage
 
         assert FlowMessage._icon == "flowpad.message"
-        for role, arrow in (("sent", "lucide.arrow-up-right"), ("received", "lucide.arrow-down-left")):
+        for role, arrow in (("sent", "lucide.circle-arrow-up"), ("received", "lucide.circle-arrow-down")):
             res = icons.resolve(f"flowpad.message.{role}")
             assert res and res.exact and res.sub_tag == arrow
 

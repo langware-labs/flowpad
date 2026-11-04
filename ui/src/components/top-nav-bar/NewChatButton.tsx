@@ -8,8 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { usePrimaryWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openNewChat } from '@src/navigation/open-new-chat';
-import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
+import { openNewChatOrExplain } from '@src/navigation/open-new-chat';
 
 /**
  * Quick launch: one glyph in the navigation bar that starts a fresh agentic
@@ -41,14 +40,8 @@ export function NewChatButton() {
     // it still leaves a trace if a launch promise never settles).
     if (starting) return;
     setStarting(true);
-    void openNewChat(navigation, { workerType: worker })
-      .catch((err) => {
-        console.error('[NewChatButton] new chat failed', err);
-        // A failed create is almost always the harness missing from this
-        // machine; Capabilities re-probes the kind it arrives with.
-        openCapabilitiesForWorker(navigation, worker);
-      })
-      .finally(() => setStarting(false));
+    // A refused launch shows the one launch-failure card, in place of a jump elsewhere.
+    void openNewChatOrExplain(navigation, { workerType: worker }).finally(() => setStarting(false));
   }, [starting, worker, navigation]);
 
   return (

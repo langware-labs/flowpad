@@ -29,6 +29,7 @@ vi.mock('@src/components/assets/editor/agent-profile/deployment/use-deployment-t
 }));
 vi.mock('@src/components/assets/editor/agent-profile/deployment/DeploymentFunding', () => ({
   DeploymentFundingCard: () => null,
+  useDeploymentFunding: () => ({ data: undefined }),
 }));
 vi.mock('@src/components/assets/editor/agent-profile/deployment/DeploymentHealth', () => ({
   DeploymentHealth: () => null,

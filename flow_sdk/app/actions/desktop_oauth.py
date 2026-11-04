@@ -248,7 +248,9 @@ def _build_authorize_url(
     return f"{provider.endpoints.authorize_url}?{urlencode(params)}"
 
 
-async def get_desktop_oauth_auth_url(provider: str, user_id: str, initiator_connection_id: str = "") -> ApiResponse:
+async def get_desktop_oauth_auth_url(
+    provider: str, user_id: str, initiator_connection_id: str = "", *, extra_scopes: "list[str] | None" = None
+) -> ApiResponse:
     """Start a desktop OAuth flow for ``provider``, driven by its descriptor.
 
     Which grant runs comes from ``LocalOAuthProvider.kind``; where it goes comes
@@ -263,11 +265,11 @@ async def get_desktop_oauth_auth_url(provider: str, user_id: str, initiator_conn
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
     if p.kind is OAuthFlowKind.DEVICE:
         return await _start_device_flow(p, user_id)
-    return await _start_loopback_flow(p, user_id, initiator_connection_id)
+    return await _start_loopback_flow(p, user_id, initiator_connection_id, extra_scopes or [])
 
 
 async def _start_loopback_flow(
-    provider: LocalOAuthProvider, user_id: str, initiator_connection_id: str = ""
+    provider: LocalOAuthProvider, user_id: str, initiator_connection_id: str = "", extra_scopes: "list[str] | None" = None
 ) -> ApiResponse:
     """Authorization code (+ PKCE when the descriptor asks) against a loopback port.
 
@@ -279,9 +281,8 @@ async def _start_loopback_flow(
         return ApiFailResponse(message=f"No client id configured for {provider.display_name}")
     from dataclasses import replace  # noqa: PLC0415
 
-    from flow_sdk.core.oauth.wanted_scopes import wanted_extra_scopes  # noqa: PLC0415
-
-    if extra := await wanted_extra_scopes(provider.name):
+    # The use point's own extra scopes, within what the provider may add.
+    if extra := [s for s in (extra_scopes or []) if s in provider.optional_scopes and s not in provider.scopes]:
         provider = replace(provider, scopes=(*provider.scopes, *extra))
 
     code_verifier = ""

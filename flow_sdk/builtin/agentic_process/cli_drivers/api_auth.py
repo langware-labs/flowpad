@@ -17,6 +17,7 @@ because ``ApiAuthSpec`` references :class:`LMApiProvider`.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
 logger = logging.getLogger(__name__)
+_FETCHES: set = set()  # in-flight budget-list fetches, kept alive
 
 
 @dataclass(frozen=True)
@@ -493,8 +495,10 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
         LLMSourceError,
+        _hub_budget_pending,
         resolve_llm_endpoint,
     )
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
 
     worker_type = getattr(process.driver, "name", None)
     if not worker_type or driver_api_auth_spec(worker_type) is None:
@@ -503,6 +507,10 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     try:
         candidate = await resolve_llm_endpoint(process)
     except LLMSourceError as exc:
+        exc.budget_not_ready = _hub_budget_pending()
+        if exc.budget_not_ready:  # fetch the list once, without holding the refusal; the card's retry finds it
+            _FETCHES.add(task := asyncio.create_task(fetch_hub_llm_endpoints()))
+            task.add_done_callback(_FETCHES.discard)
         raise WorkerSpawnError(worker_type, str(exc)) from exc
 
     model = (process.cli_config or {}).get("model")

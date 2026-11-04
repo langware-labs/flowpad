@@ -58,6 +58,10 @@ export function AutomationsList() {
   };
   const yours = automations.filter((a) => a.group !== 'builtin');
   const failing = yours.filter((a) => a.last_run?.status === 'failed');
+  // The one failing automation, and what its run said (a data source's own words, a script's last error line).
+  const lone = failing.length === 1 ? failing[0] : undefined;
+  const loneName = lone?.name;
+  const loneWhy = lone?.last_run?.error;
   const builtinFailing = groups.builtin.filter((a) => a.last_run?.status === 'failed');
 
   const open = (a: AutomationSummary) => navigation.openDock(DockPointer.forAutomations({ trigger: a.id }));
@@ -189,8 +193,12 @@ export function AutomationsList() {
           >
             <AlertTriangle className="size-4 shrink-0" aria-hidden />
             <span className="min-w-0 flex-1">
-              {failing.length === 1 ? (
-                <Trans>{failing[0].name} failed last time it ran.</Trans>
+              {loneWhy ? (
+                <Trans>
+                  {loneName} failed: {loneWhy}
+                </Trans>
+              ) : lone ? (
+                <Trans>{loneName} failed last time it ran.</Trans>
               ) : (
                 <Trans>{failing.length} automations failed last time they ran.</Trans>
               )}

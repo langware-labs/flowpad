@@ -91,6 +91,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.help_request_spec  # noqa: F401  — registers ``help.recipient`` / ``help.request``
     import flow_sdk.schema.data_spec.hub_failure_spec  # noqa: F401  — registers ``hub.failure``
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
+    import flow_sdk.schema.data_spec.launch_failure_spec  # noqa: F401  — registers ``agent.launch_failure``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``

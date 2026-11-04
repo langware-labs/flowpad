@@ -12,6 +12,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -98,6 +100,7 @@ export function AppButton({ project }: { project?: Project | null }) {
         </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="min-w-56">
+        {apps.length > 0 && <DropdownMenuLabel>{t`Apps`}</DropdownMenuLabel>}
         {apps.map((entry) => (
             <DropdownMenuItem
               key={entry.app.id}
@@ -132,6 +135,8 @@ export function AppButton({ project }: { project?: Project | null }) {
               </button>
             </DropdownMenuItem>
         ))}
+        {apps.length > 0 && agents.length > 0 && <DropdownMenuSeparator />}
+        {agents.length > 0 && <DropdownMenuLabel>{t`Agents`}</DropdownMenuLabel>}
         {agents.map((agent) => {
           const Icon = iconForType(agent.type);
           return (

@@ -251,6 +251,14 @@ async def _send(spec: ActivityProgressSpec) -> None:
 _heard: "dict[tuple[str, str, str], set[str]]" = {}
 
 
+def keep_hearing(spec: ActivityProgressSpec, connection_id: str) -> None:
+    """*connection_id* was shown *spec* outside a frame (the list a tab replays on connect): send it
+    every later frame of that root, its end included, as if it had heard one — else it shows the
+    root running forever."""
+    if spec.subject_entity and connection_id and not spec.is_terminal:
+        _heard.setdefault((spec.subject_entity, spec.path, spec.activity_id), set()).add(connection_id)
+
+
 #: The one emitter. ``install()`` it from server startup.
 emitter = ActivityEmitter()
 
@@ -269,4 +277,5 @@ __all__ = [
     "emitter",
     "envelope",
     "install",
+    "keep_hearing",
 ]

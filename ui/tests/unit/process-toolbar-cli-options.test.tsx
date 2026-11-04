@@ -213,6 +213,7 @@ describe('ProcessToolbar — one bar for every surface', () => {
       'process-toolbar-restart',
       'session-action-terminal',
       'session-action-worktree',
+      'session-action-chain',
       'entity-actions-export',
     ]);
   });

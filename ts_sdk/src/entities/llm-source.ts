@@ -78,6 +78,9 @@ export enum LLMSourceRefusal {
   EndpointDisabled = 'endpoint_disabled',
   /** Another source is required (a process or project pin) or chosen (a stated preference). */
   PinnedElsewhere = 'pinned_elsewhere',
+  KeyRejected = 'key_rejected',
+  CliCrashed = 'cli_crashed',
+  BudgetNotReady = 'budget_not_ready',
 }
 
 /** What a person can DO about a refusal — one table, so every surface offers the same fix. */
@@ -90,6 +93,7 @@ export function remedyFor(code: string | null | undefined): LLMSourceRemedy {
     case LLMSourceRefusal.LoginFailed:
       return 'sign_in';
     case LLMSourceRefusal.NoKey:
+    case LLMSourceRefusal.KeyRejected:
       return 'add_key';
     default:
       // Not installed, a pin elsewhere, a disabled endpoint: none is fixed by signing in.

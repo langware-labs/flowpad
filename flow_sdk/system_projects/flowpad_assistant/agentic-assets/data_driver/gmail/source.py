@@ -1,8 +1,7 @@
 """``GmailSource`` — a Gmail mailbox over IMAP and SMTP, standard library only.
 
-The row stores only the address; the way in reaches the source as the ``gmail`` credential, never as
-configuration — one of two ways, the one the person set up (``credentials.choice``): a Google sign-in
-(``GMAIL_GOOGLE``: the grant's token, logged in with XOAUTH2) or an app password (``GMAIL_APP_PASSWORD``). IMAP is blocking, so every mailbox call runs in a worker thread and a cancellation
+The row stores only the address; the app password reaches the source as the ``gmail`` credential
+(``GMAIL_APP_PASSWORD``), never as configuration. IMAP is blocking, so every mailbox call runs in a worker thread and a cancellation
 settles before it propagates.
 
 **The cursor is the UID pair.** IMAP UIDs are monotonic within one UIDVALIDITY, so the resume
@@ -60,8 +59,6 @@ SMTP_HOST = "smtp.gmail.com"
 SMTP_SSL_PORT = 465
 #: A host here is reached in the clear: a test double on this machine, never Google.
 INBOX = "INBOX"
-#: The ``gmail`` credential's sign-in way (its other way is ``app_password``).
-GOOGLE_WAY = "google"
 ALL_MAIL = "[Gmail]/All Mail"
 #: One bounded prefix per page; the UID cursor resumes at the next message.
 PAGE_LIMIT = 50
@@ -137,7 +134,7 @@ class GmailSource(EmailAddressing, MessageSource):
             mailbox = self._mailbox()
             await self._imap(check_login, mailbox)
         except (AccessDenied, Rejected) as exc:
-            return Verdict(ready=False, detail=f"{exc}")
+            return Verdict(ready=False, detail=exc.message)
         return Verdict(ready=True, detail=f"Reading {mailbox.address}.")
 
     @classmethod
@@ -155,14 +152,11 @@ class GmailSource(EmailAddressing, MessageSource):
 
     @property
     def address(self) -> str:
-        """The row's own address (so aliases are explicit), else the operator's ``GMAIL_ADDRESS``, else the
-        Google account that signed in (``credentials.identity``)."""
+        """The row's own address (so aliases are explicit), else the operator's ``GMAIL_ADDRESS``."""
         fallback = self.credentials.values.get("GMAIL_ADDRESS")
-        address = str(
-            self.config.get("address") or (fallback.get_secret_value() if fallback else "") or self.credentials.identity or ""
-        ).strip()
+        address = str(self.config.get("address") or (fallback.get_secret_value() if fallback else "")).strip()
         if not address:
-            raise Rejected("config.address, GMAIL_ADDRESS or a Google sign-in is required")
+            raise Rejected("config.address or GMAIL_ADDRESS is required")
         return address
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
@@ -329,14 +323,8 @@ class GmailSource(EmailAddressing, MessageSource):
 
     # ── transport ───────────────────────────────────────────────────────────
     def _mailbox(self, host: Any = None) -> "Mailbox":
-        """The account and the way in: the Google sign-in's token when that is the way handed
-        (``credentials.choice``), else the app password. ``host`` is the server (default: the IMAP one)."""
+        """The account and its app password. ``host`` is the server (default: the IMAP one)."""
         host = str((self.config.get("imap_host") if host is None else host) or "")
-        if self.credentials.choice == GOOGLE_WAY:
-            token = self.credentials.token.get_secret_value() if self.credentials.token is not None else ""
-            if not token:
-                raise AccessDenied("Not signed in with Google — sign in again, or add an app password instead")
-            return Mailbox(self.address, "", host, token=token)
         return Mailbox(self.address, self._password(), host)
 
     def _password(self) -> str:
@@ -345,7 +333,7 @@ class GmailSource(EmailAddressing, MessageSource):
         secret = self.credentials.values.get("GMAIL_APP_PASSWORD")
         password = "".join(secret.get_secret_value().split()) if secret is not None else ""
         if not password:
-            raise AccessDenied("Sign in with Google or add an app password")
+            raise AccessDenied("Add an app password")
         return password
 
     async def _imap(self, fn: Any, *args: Any) -> Any:
@@ -375,17 +363,11 @@ class GmailSource(EmailAddressing, MessageSource):
 
 @dataclass(frozen=True)
 class Mailbox:
-    """One login: the account, its secret and where its server is (``""`` is Google's). ``token``, when set, is a
-    Google sign-in's access token and the login is XOAUTH2; else ``password`` is an app password."""
+    """One login: the account, its app password and where its server is (``""`` is Google's)."""
 
     address: str
     password: str
     host: str = ""
-    token: str = ""
-
-    def xoauth2(self) -> str:
-        """Google's SASL XOAUTH2 initial response, unencoded (the client libraries base64 it)."""
-        return f"user={self.address}\x01auth=Bearer {self.token}\x01\x01"
 
 
 def endpoint(spec: str, default_host: str, default_port: int) -> tuple[str, int, bool]:
@@ -494,12 +476,9 @@ def mailbox_arg(name: str) -> str:
 
 
 def login(client: imaplib.IMAP4, account: Mailbox) -> None:
-    """Authenticate ``client`` as ``account`` — XOAUTH2 with a sign-in's token, else the app password."""
+    """Authenticate ``client`` as ``account`` with its app password."""
     try:
-        if account.token:
-            client.authenticate("XOAUTH2", lambda _challenge: account.xoauth2().encode())
-        else:
-            client.login(account.address, account.password)
+        client.login(account.address, account.password)
     except imaplib.IMAP4.abort:
         raise
     except imaplib.IMAP4.error as exc:
@@ -604,11 +583,7 @@ def check_login(account: Mailbox) -> None:
 
 def send_smtp(account: Mailbox, message: EmailMessage) -> None:
     with smtp_client(account.host) as client:
-        if account.token:
-            client.ehlo()
-            client.auth("XOAUTH2", lambda challenge=None: account.xoauth2(), initial_response_ok=True)
-        else:
-            client.login(account.address, account.password)
+        client.login(account.address, account.password)
         client.send_message(message)
 
 

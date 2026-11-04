@@ -5,6 +5,7 @@ import type { AgenticProcess } from '../process/agentic-process';
 import { lastChatQuery, recencyOf } from '../process/last-chat';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
+import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
 import type { PromptResult } from '../models/ReturnedValue';
@@ -170,6 +171,9 @@ export class Agent extends APIEntity<Agent> {
   enabled: boolean;
   /** Absolute on-disk path to the agent's folder (`agent.json` sits inside). */
   asset_ref?: string;
+  /** One of Flowpad's own agents (ships inside a system project) — backend-computed, read-only.
+   *  Absent on hub rows, which reads as not shipped. */
+  shipped?: boolean;
   /** Where the hub keeps this agent's files. A published agent lives in its project's
    *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
    *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
@@ -238,6 +242,7 @@ export class Agent extends APIEntity<Agent> {
 
     this.enabled = entity.enabled ?? true;
     this.asset_ref = entity.asset_ref;
+    this.shipped = entity.shipped;
     this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
@@ -621,6 +626,10 @@ export class Agent extends APIEntity<Agent> {
   }
 
   async mailboxState(): Promise<AgentMailboxState> {
+    if (isHubOnly()) {
+      const data = await this.hubMailbox<{ mailbox?: HubMailboxDescriptor | null }>('', 'GET');
+      return this.hubMailboxState(data?.mailbox ?? null);
+    }
     return normalizeAgentMailboxState(await this.get<AgentMailboxStateWire>('mailbox_state'));
   }
 
@@ -632,6 +641,9 @@ export class Agent extends APIEntity<Agent> {
    * on — there is no separate "enable".
    */
   async allocateMailbox(options: MailboxAllocation = {}): Promise<AgentMailboxState> {
+    // The hub page has no local source to wire: `enable` provisions when absent and reactivates when disabled.
+    if (isHubOnly())
+      return this.hubMailboxState(await this.hubMailbox<HubMailboxDescriptor>('enable', 'POST', options));
     return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('allocate_mailbox', { ...options }));
   }
 
@@ -641,12 +653,38 @@ export class Agent extends APIEntity<Agent> {
   }
 
   async configureMailbox(options: MailboxConfiguration): Promise<AgentMailboxState> {
+    if (isHubOnly()) {
+      const { allowed_senders, filters } = options; // poll_interval_seconds is a desktop fact
+      return this.hubMailboxState(
+        await this.hubMailbox<HubMailboxDescriptor>('configure', 'POST', { allowed_senders, filters }),
+      );
+    }
     return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('configure_mailbox', { ...options }));
   }
 
   /** Release the address for good. Distinct from disabling, on purpose. */
   async releaseMailbox(): Promise<{ agent_id: string; released: boolean }> {
     return this.post<{ agent_id: string; released: boolean }>('release_mailbox');
+  }
+
+  /** The hub's own `agent/<id>/mailbox[/<verb>]` door — the hub page's transport. */
+  private hubMailbox<T>(verb: string, method: 'GET' | 'POST', body?: object): Promise<T> {
+    const info = new ActionInfo(verb ? `mailbox/${verb}` : 'mailbox', 'agent', String(this.id), method);
+    if (body) info.bodyParameters = body as Record<string, unknown>;
+    return dataManager.callAction<unknown, T>(info);
+  }
+
+  /** A hub descriptor as an `AgentMailboxState` — no local source on the hub page. */
+  private hubMailboxState(mailbox: HubMailboxDescriptor | null): AgentMailboxState {
+    return normalizeAgentMailboxState({
+      agent_id: String(this.id),
+      enabled: mailbox?.status === 'active',
+      mailbox: mailbox
+        ? { ...mailbox, agent_typeid: mailbox.agent_typeid ?? new TypeId(Agent.type, String(this.id)) }
+        : null,
+      source: null,
+      sources: [],
+    });
   }
 
   async streamInboxScope(): Promise<AgentStreamInboxScope> {
@@ -668,6 +706,12 @@ export interface MailboxAllocation {
   display_name?: string;
   username?: string;
 }
+
+/** What the hub's `mailbox` door answers (`AgentMailbox.descriptor()`). */
+type HubMailboxDescriptor = Omit<Partial<IAgentMailbox>, 'agent_typeid'> & {
+  typeid?: string;
+  agent_typeid?: TypeId | string;
+};
 
 interface AgentMailboxStateWire {
   agent_id: string;

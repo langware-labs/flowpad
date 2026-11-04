@@ -193,6 +193,22 @@ generally useful, say so and ask — don't decide by committing it.
 **Why:** a rig is sized to one change and rots the moment the code moves (the
 host-tabs A/B rig was 1,454 lines against \~157 lines of product code).
 
+## We don't take a dump on the source code (non-negotiable)
+
+Every line that lands in the tree is a line someone maintains forever. Before you
+commit, once everything passes, **clean up after yourself**:
+
+* **Tests stay proportional to the change.** Keep the few durable tests that pin the
+  behavior; cut duplicates, near-identical cases and scaffolding. Thousands of test
+  lines for a ~1k-line feature is a dump, not coverage.
+* **No rigs, fakes, stress suites or temp files** in the tree (`*_tmp*`, `zz_*`,
+  repro scripts, one-off harnesses). They live in your scratchpad.
+* **Report your footprint.** Say how many lines you added, split into product and
+  tests, and what you removed.
+
+**Why:** on 2026-11-03 one feature left ~6,800 uncommitted lines on agent-sharing-5,
+of which ~970 were product code and ~3,500 were tests and one-off rigs.
+
 ## Entity id policy (non-negotiable)
 
 **UUID v4 is the entity id. The one exception is a READ-ONLY asset, whose id may be v5 derived from its file path.** An id is a name, not a fact about the thing — it does not encode which account a source serves or which record a row mirrors. Anything that needs *that* is a **lookup on the natural key**, not id arithmetic.

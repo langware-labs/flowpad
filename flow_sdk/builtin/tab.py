@@ -940,7 +940,8 @@ async def ensure_tab_created(
 
     On reopen (same pointer) the existing row is reused and re-shown
     (``visible=True``); the denormalized target/project/name hints are refreshed
-    but identity and ``tab_order`` never change (reopen keeps its slot). On a
+    but identity never changes and the tab keeps its slot — unless an opener
+    (``after_tab_id``) is given, which moves it right after the opener. On a
     fresh create the new tab is placed **immediately after ``after_tab_id``** (the
     opener / current active tab) in the global order, else appended last. Models
     ``ensure_file_entity``.
@@ -1109,8 +1110,10 @@ async def ensure_tab_created(
                     dirty = True
         if dirty:
             await existing.save()
-        if reopened:
-            await _place_reopened(existing, after_tab_id)
+        # An explicit opener also moves an already-open tab: a show from another
+        # session lands beside that session. User opens never pass an opener.
+        if reopened or after_tab_id:
+            await _place_reopened(existing, after_tab_id, revive=reopened)
         if left_host and existing.pointer == pointer:
             await _carry_children_out(existing)
         await existing.reconcile_target_name()
@@ -1201,14 +1204,15 @@ async def _move_block(visible: list[Tab], moving: list[str], after_id: str | Non
     await _persist_global_order(order[:at] + moving + order[at:], {t.id: t for t in visible})
 
 
-async def _place_reopened(tab: Tab, after_tab_id: str | None) -> None:
-    """A hidden row was just reopened. With an explicit opener it lands right
-    after it (a session reopened from inside a tab opens beside that tab); the
-    children that closed WITH it (``closed_with_parent``) come back, placed right
-    after it. Without an opener and with no children it keeps its old slot."""
+async def _place_reopened(tab: Tab, after_tab_id: str | None, *, revive: bool = True) -> None:
+    """Place a tab that was just reopened (``revive``) or asked for again with an
+    explicit opener. With an opener it lands right after it (a session shown from
+    inside a tab opens beside that tab); on a reopen the children that closed WITH
+    it (``closed_with_parent``) come back, placed right after it. Without an opener
+    and with no children it keeps its old slot."""
     revived = _in_tab_order(
         await Tab.get_all({"parent_tab_id": tab.id, "visible": False, "closed_with_parent": True})
-    )
+    ) if revive else []
     for child in revived:
         child.visible = True
         child.closed_with_parent = False
@@ -1864,7 +1868,7 @@ async def _http_new_tab(
     parent_tab_id: str | None = None,
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
-    right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
+    right after ``after_tab_id`` (the opener); a reopen keeps its slot unless an opener is given. Returns the
     updated project-filtered list, and ``created`` — whether this call minted the
     row, which the client's view-mode memory policy keys ``TabCreate`` on."""
     tab, created = await ensure_tab_created(

@@ -8,7 +8,7 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { CHIP_CLASS } from './AssetCounterRow';
+import { CountBubble, StatChip } from './StatChips';
 import type { AssetCounterGroup } from './types';
 
 /** Every issue the caller can see; the open ones are picked here so the count and the table agree. */
@@ -104,6 +104,7 @@ export const hubIssueCounterGroup: AssetCounterGroup<Issue> = {
       () => [
         {
           key: 'all',
+          status: { key: 'all', label: <Trans>All</Trans> },
           label: <Trans>Issues</Trans>,
           description: <Trans>Everything open that needs fixing</Trans>,
           items: open,
@@ -111,6 +112,7 @@ export const hubIssueCounterGroup: AssetCounterGroup<Issue> = {
         },
         {
           key: 'errors',
+          status: { key: 'errors', label: <Trans>Errors</Trans> },
           label: <Trans>Errors</Trans>,
           description: <Trans>Open issues that stop something from working</Trans>,
           items: open.filter((i) => i.severity === 'error'),
@@ -118,6 +120,7 @@ export const hubIssueCounterGroup: AssetCounterGroup<Issue> = {
         },
         {
           key: 'warnings',
+          status: { key: 'warnings', label: <Trans>Warnings</Trans> },
           label: <Trans>Warnings</Trans>,
           description: <Trans>Open issues that will stop something soon</Trans>,
           items: open.filter((i) => i.severity === 'warning'),
@@ -186,28 +189,14 @@ export function IssuesSummaryChip() {
   const counts = useMemo(() => countIssues(issues), [issues]);
   if (!showIssuesChip(counts)) return null;
   return (
-    <button
-      type="button"
+    <StatChip
+      label={<Trans>Issues</Trans>}
       onClick={() => navigation.openAssetList(hubIssueCounterGroup.id, 'all')}
-      className={CHIP_CLASS}
       data-testid={`summary-chip-${hubIssueCounterGroup.id}`}
     >
-      <span className="truncate text-muted-foreground group-hover:text-foreground">
-        <Trans>Issues</Trans>
-      </span>
-      {counts.errors > 0 && (
-        <span className="flex items-center gap-1" data-testid="issues-chip-errors">
-          <SeverityDot severity="error" />
-          <span className="font-semibold tabular-nums text-foreground">{counts.errors}</span>
-        </span>
-      )}
-      {counts.warnings > 0 && (
-        <span className="flex items-center gap-1" data-testid="issues-chip-warnings">
-          <SeverityDot severity="warning" />
-          <span className="font-semibold tabular-nums text-foreground">{counts.warnings}</span>
-        </span>
-      )}
-    </button>
+      {counts.errors > 0 && <CountBubble value={counts.errors} tone="error" testId="issues-chip-errors" />}
+      {counts.warnings > 0 && <CountBubble value={counts.warnings} tone="warning" testId="issues-chip-warnings" />}
+    </StatChip>
   );
 }
 

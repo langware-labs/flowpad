@@ -488,8 +488,9 @@ def new_conversation(
     if not wanted:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "name at least one person to talk to")
     port = _discover_port()
-    listing = _post_json(_graph_url(port, "conversation-list"), {})
-    if listing.get("auth_required"):
+    # The local sign-in check, not `conversation-list`: that route answers the same flag but runs a full
+    # hub sync first (seconds), only for the result to be thrown away.
+    if not _signed_in():
         _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
     from flow_sdk.cli.commands.contacts_cmd import load_contacts  # noqa: PLC0415
 

@@ -21,6 +21,7 @@ hub is ``server/routes/_hub_reflect.py``'s job, not this module's.
 from __future__ import annotations
 
 import logging
+import time
 import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Mapping, Optional
@@ -30,6 +31,7 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
+from flow_sdk import toplog
 from flow_sdk.cloud_client.client_hooks import (
     ANONYMOUS_EXTENSION,
     PASSTHROUGH_EXTENSION,
@@ -214,7 +216,16 @@ class HubProxy:
                     extensions=extensions or None,
                 )
                 logger.info("[hub] %s %s", request.method, request.url)
+                t0 = time.monotonic()
                 resp = await client.send(request, stream=stream)
+                toplog.log(
+                    "hub",
+                    "http %s %s status=%s ms=%.0f",
+                    request.method,
+                    request.url.path,
+                    resp.status_code,
+                    (time.monotonic() - t0) * 1000,
+                )
         except HubAuthExpiredError as e:
             logger.warning("[hub] %s %s auth expired: %s", method, url, e)
             raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e

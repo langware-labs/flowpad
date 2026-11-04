@@ -6,7 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { SearchRow } from '@src/hooks/search-row';
 import { DockPointer } from './DockPointer';
 import { subjectEditorPointer } from './subject-editor';
-import { openNewChat } from './open-new-chat';
+import { openNewChatOrExplain } from './open-new-chat';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
 import {
@@ -443,7 +443,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
           const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
           const cwd = record?.cwd ?? undefined;
           // Forking starts a new chat, so it opens in the user's chat mode.
-          void openNewChat(navigation, cwd ? { cwd } : {});
+          void openNewChatOrExplain(navigation, cwd ? { cwd } : {});
         },
       },
     ],

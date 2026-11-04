@@ -63,6 +63,8 @@ import logging
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
+from flow_sdk.builtin.agentic_process.launch_health import CLI_CRASHES
+from flow_sdk.cli.auth.lm_api_keys import KEY_REJECTIONS
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.llm_source_spec import (
     LLMScope,
@@ -184,6 +186,8 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
             code=LLMSourceRefusal.NOT_INSTALLED,
             authority=LLMSourceAuthority.PROVEN,
         )
+    if crashed := CLI_CRASHES.get(worker_type):
+        return verdict(reason=f"{worker_type} crashed on start: {crashed[:200]}", code=LLMSourceRefusal.CLI_CRASHED)
     if login is LoginState.SIGNED_IN:
         return verdict()
     refusals = {
@@ -232,6 +236,9 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
         # An ``OPENROUTER_API_KEY`` in the environment is a convenience for in-process calls,
         # not a statement about what this box is configured to spend, so it is not consulted.
         has_key = provider.value in stored
+        rejected = KEY_REJECTIONS.get(provider.value) if has_key else None
+        reason, code = ((f"{provider.value} rejected the stored key: {rejected['reason']}", "key_rejected")
+                        if rejected else ("", "") if has_key else (f"no {provider.value} key is stored on this machine", "no_key"))
         out.append(
             Candidate(
                 endpoint,
@@ -242,12 +249,12 @@ def _key_sources(spec, rows: dict, stored: set[str], hints: dict[str, str] | Non
                     # WHICH key funds this; nothing for a slot with no key.
                     detail=(hints or {}).get(provider.value, "") if has_key else "",
                     rank=_rank("api_key"),
-                    eligible=has_key,
-                    auto=has_key,
+                    eligible=not reason,
+                    auto=not reason,
                     # CACHED, not PROVEN: a key's NAME was listed, its value was never tried.
                     authority=LLMSourceAuthority.CACHED,
-                    reason="" if has_key else f"no {provider.value} key is stored on this machine",
-                    reason_code="" if has_key else LLMSourceRefusal.NO_KEY.value,
+                    reason=reason,
+                    reason_code=code,
                 ),
             )
         )
@@ -678,6 +685,7 @@ class PickerView(NamedTuple):
     #: effect. Saying it is the difference between "your setting is being ignored, here is
     #: why" and a box that appears to disobey its own configuration.
     note: str = ""
+    blocked_code: str = ""  # ``blocked`` as an LLMSourceRefusal code, for the launch card
 
 
 async def llm_picker_view(worker_type: str, scope: LLMScope = LLMScope()) -> PickerView:
@@ -705,12 +713,29 @@ async def picker_view_for(worker_type: str, constraint: tuple[str, LLMSourceOrig
         return PickerView([], None, "")
     overlaid = _overlay(inventory, cap, worker_type, constraint)
     chosen = pick_llm_candidate(overlaid)
+    top = None if chosen else next((c.source for c in overlaid if c.source.reason), None)
     return PickerView(
         offers=sorted(inventory, key=lambda c: c.source.rank),
         chosen=chosen,
-        blocked="" if chosen else next((c.source.reason for c in overlaid if c.source.reason), ""),
+        blocked=top.reason if top else "",
         note=_ignored_preference_note(worker_type, cap, constraint),
+        blocked_code=_blocked_code(top, overlaid, worker_type) if not chosen else "",
     )
+
+
+def _blocked_code(top: LLMSource | None, overlaid: list[Candidate], worker_type: str) -> str:
+    # The top refusal — but a rejected key wins, and signed in with no budget list yet is budget_not_ready.
+    code, spec = (top.reason_code if top else ""), driver_api_auth_spec(worker_type)
+    if code in ("not_installed", "cli_crashed", "pinned_elsewhere"):
+        return code
+    if any(c.source.reason_code == "key_rejected" for c in overlaid):
+        return "key_rejected"
+    return "budget_not_ready" if spec and spec.hub_endpoint_binding and _hub_budget_pending() else code
+
+
+def _hub_budget_pending() -> bool:  # signed in to the hub, endpoint list never fetched this run
+    from flow_sdk.instance_settings.llm_endpoint import _list_cache, get_instance_settings  # noqa: PLC0415
+    return _hub_has_token() and get_instance_settings().instance_name not in _list_cache
 
 
 def _ignored_preference_note(worker_type: str, cap, constraint) -> str:

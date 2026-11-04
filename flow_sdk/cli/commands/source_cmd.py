@@ -5,7 +5,7 @@ A thin HTTP caller over the SAME local-server actions the TS SDK and the UI call
 
     flow source types                                  — the data source assets this instance can run
     flow source list                                   — configured sources
-    flow source create <provider> --name N [--config k=v ...] [--account-key K]
+    flow source create <provider> --name N [--config k=v ...] [--account-key K] [--project P]
     flow source verify <id>                            — finish setup
     flow source choices <provider> <field> [--config k=v ...]
     flow source sync <id>                              — one sync cycle now, reported
@@ -102,6 +102,10 @@ def create(
     account_key: Annotated[str, typer.Option("--account-key", help="Which remote account this row serves.")] = "",
     reflect: Annotated[str, typer.Option("--reflect", help="How a file source lands its files: none | copy | symlink.")] = "",
     window_days: Annotated[int, typer.Option("--window-days", help="How far back a sync reads.")] = 0,
+    project: Annotated[
+        str,
+        typer.Option("--project", help="Project id the source belongs to. Default: the working directory's, else the last active one."),
+    ] = "",
 ) -> None:
     payload: dict = {"provider": provider, "name": name or provider, "config": parse_config_pairs(config, "INVALID_ARG", "--config expects key=value")}
     if account_key:
@@ -110,7 +114,7 @@ def create(
         payload["reflect"] = reflect
     if window_days:
         payload["window_days"] = window_days
-    row = _post(data_source_create_path(discover_port()), payload) or {}
+    row = _post(data_source_create_path(discover_port(), project or None), payload) or {}
     ok({"source": {k: row.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "setup_detail", "asset_ref")}})
 
 

@@ -138,6 +138,7 @@ class CopilotDriver:
     # "Interactive \u00b7 Allow All \u00b7 / commands \u00b7 ? help" instead (cut after
     # "/ commands" at 80 columns), and the trust dialog's footer
     # ("\u2191/\u2193 to navigate \u00b7 enter to select") matches neither.
+    launch_screen = None
     pty_composer_ready_pattern = re.compile(
         r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used|\u00b7[ \t\u00a0]*/ commands"
     )
