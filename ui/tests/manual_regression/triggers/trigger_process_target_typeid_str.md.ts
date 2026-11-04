@@ -10,6 +10,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { dismissSetupModal, gotoAutomation } from './helpers';
 import { apiBase, apiContext } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -73,11 +74,11 @@ test('trigger fire attaches process via target_typeid_str + panel shows invocati
       const rows = await processesForTrigger(rq, tid);
       expect(rows.length).toBeGreaterThan(0);
       expect(rows.some((p) => p.target_typeid_str === `trigger-${tid}`)).toBe(true);
-    }).toPass({ timeout: 15_000 });
+    }).toPass({ timeout: adjusted(15_000) });
 
     // 5. UI (soft): the automation's Runs tab shows a "Scheduled" run.
     await gotoAutomation(page, tid);
-    await page.getByText('Scheduled').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+    await page.getByText('Scheduled').first().waitFor({ state: 'visible', timeout: adjusted(10_000) }).catch(() => {});
   } finally {
     // 6. Cleanup.
     await rq.delete(`${API}/api/v1/graph/trigger/${tid}`);

@@ -10,6 +10,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, sessionPopover, sessionAction, debugMenuButton, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const popover = sessionPopover;
 
@@ -28,7 +29,7 @@ function rowCopyButton(page: Page, label: RegExp) {
 
 async function openInfo(page: Page) {
   await (await sessionAction(page, 'session-action-info')).click();
-  await expect(popover(page)).toBeVisible({ timeout: 10_000 });
+  await expect(popover(page)).toBeVisible({ timeout: adjusted(10_000) });
 }
 
 // Grant clipboard so CopyRow's navigator.clipboard.writeText resolves (the
@@ -78,9 +79,9 @@ test.describe('session info popover', () => {
     const copyBtn = rowCopyButton(page, /Session ID$/);
     await copyBtn.click();
     // Transient confirmation: the copy icon swaps to a green check for ~1.5s.
-    await expect(copyBtn.locator('svg.lucide-check')).toBeVisible({ timeout: 2_000 });
+    await expect(copyBtn.locator('svg.lucide-check')).toBeVisible({ timeout: adjusted(2_000) });
     // Reverts to the copy icon.
-    await expect(copyBtn.locator('svg.lucide-check')).toHaveCount(0, { timeout: 3_000 });
+    await expect(copyBtn.locator('svg.lucide-check')).toHaveCount(0, { timeout: adjusted(3_000) });
   });
 
   test('test 3: Command row reflects CLI flags (--chrome appears after toggle)', async ({ page }) => {
@@ -106,7 +107,7 @@ test.describe('session info popover', () => {
     await page.keyboard.press('Escape');
 
     await openInfo(page);
-    await expect(rowValue(page, /^Command$/)).toContainText('--chrome', { timeout: 10_000 });
+    await expect(rowValue(page, /^Command$/)).toContainText('--chrome', { timeout: adjusted(10_000) });
     await expect(rowValue(page, /^Chrome$/)).toHaveText('enabled');
   });
 });

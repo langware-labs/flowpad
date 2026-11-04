@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { apiBase, apiContext } from '../_shared/api';
 import { clickPrintedLink, printLink, printedLinkPoint, sdkModule } from '../_shared/xterm';
 import { openVibe } from '../vibe/_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 /** A solid red 4×4 PNG, so the lightbox has real bytes to show. */
@@ -329,7 +330,7 @@ async function openAssistant(page: Page): Promise<void> {
   const chat = page.getByTestId('assistant-chat');
   // The panel remembers it was open and comes back on its own after a load; clicking
   // before it does would toggle it shut.
-  const reopened = await chat.waitFor({ state: 'visible', timeout: 3_000 }).then(
+  const reopened = await chat.waitFor({ state: 'visible', timeout: adjusted(3_000) }).then(
     () => true,
     () => false,
   );

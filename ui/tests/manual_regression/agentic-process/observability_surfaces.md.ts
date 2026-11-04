@@ -13,6 +13,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionAction, debugMenuButton, waitForAssistantTurnOrSkip } from './_ap_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('observability surfaces', () => {
   test('test 1: PTY Viewer opens from the debug menu (no dev gate)', async ({ page }) => {
@@ -31,10 +32,10 @@ test.describe('observability surfaces', () => {
 
     // Modal mounts with the "PTY Viewer" title and raw-stream stats.
     const dialog = page.getByRole('dialog').filter({ hasText: 'PTY Viewer' });
-    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await expect(dialog).toBeVisible({ timeout: adjusted(10_000) });
     // Raw-stream stats line. Was "Replay: ..." until the replay buffer was
     // removed (4466d9bc) — the summary now reports xterm memory chunks.
-    await expect(dialog.getByText(/xterm memory:/)).toBeVisible({ timeout: 15_000 });
+    await expect(dialog.getByText(/xterm memory:/)).toBeVisible({ timeout: adjusted(15_000) });
 
     // Close (Esc) → modal unmounts, terminal view unaffected.
     await page.keyboard.press('Escape');
@@ -67,11 +68,11 @@ test.describe('observability surfaces', () => {
     await waitForAssistantTurnOrSkip(page, apiBase(), pid);
 
     transcriptBtn = await sessionAction(page, 'session-action-transcript');
-    await expect(transcriptBtn).not.toHaveAttribute('data-disabled', /.*/, { timeout: 15_000 });
+    await expect(transcriptBtn).not.toHaveAttribute('data-disabled', /.*/, { timeout: adjusted(15_000) });
     await transcriptBtn.click();
 
     // URL navigates to the transcript lens for this session.
-    await page.waitForURL(/\/dock\/lens\/claude\/transcript\//, { timeout: 15_000 });
+    await page.waitForURL(/\/dock\/lens\/claude\/transcript\//, { timeout: adjusted(15_000) });
   });
 
   test('test 3: Open Transcript icon is hidden until a session exists', async ({ page }) => {
@@ -87,6 +88,6 @@ test.describe('observability surfaces', () => {
     await waitForRunningSession(page, apiBase(), pid);
 
     // Now rendered (hasSession=true), even though disabled until a turn exists.
-    await expect(await sessionAction(page, 'session-action-transcript')).toBeVisible({ timeout: 15_000 });
+    await expect(await sessionAction(page, 'session-action-transcript')).toBeVisible({ timeout: adjusted(15_000) });
   });
 });

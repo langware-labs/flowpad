@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('LLM configuration view', () => {
   test.beforeEach(async ({ page }) => {
@@ -27,7 +28,7 @@ test.describe('LLM configuration view', () => {
     const hasContent = await page
       .locator('button, input, select, [role="option"]')
       .first()
-      .isVisible({ timeout: 10_000 })
+      .isVisible({ timeout: adjusted(10_000) })
       .catch(() => false);
     expect(hasContent, 'AI config view appears empty or stuck').toBe(true);
 
@@ -46,7 +47,7 @@ test.describe('LLM configuration view', () => {
     await page.goto('/dock/home');
     // Wait for the home page to finish loading — the AgentLayout may take several seconds
     // to initialize (especially if SDK bootstrap is in progress).
-    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
     await page.waitForTimeout(2_000);
 
     // Home landing should be visible and functional
@@ -56,7 +57,7 @@ test.describe('LLM configuration view', () => {
     const hasInteractiveElement = await page
       .locator('input, button, textarea')
       .first()
-      .isVisible({ timeout: 10_000 })
+      .isVisible({ timeout: adjusted(10_000) })
       .catch(() => false);
     expect(hasInteractiveElement, 'Home page appears broken after returning from AI config').toBe(true);
   });

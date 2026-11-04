@@ -17,6 +17,7 @@ import { homedir, tmpdir } from 'os';
 import path from 'path';
 import { expect, type Page } from '@playwright/test';
 import { apiOrigin } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 export const INSTANCE = process.env.FLOW_INSTANCE || 'dlm-7';
 export const BACKEND = apiOrigin();
@@ -74,7 +75,7 @@ export async function createWorld(label: string): Promise<World> {
       // (which the cold-open case grows past 10 MB) once more per poll.
       async () => (await ptyText(opened.shell_id)).includes(MOCK_MARKER),
       {
-        timeout: 15_000,
+        timeout: adjusted(15_000),
         message: 'the mock worker never printed its marker — is the instance launched with mock_worker_bin on PATH?',
       },
     )
@@ -296,7 +297,7 @@ export async function awaitSteerable(page: Page): Promise<void> {
         lastUrl = urlBefore;
         return settled;
       },
-      { timeout: 15_000 },
+      { timeout: adjusted(15_000) },
     )
     .toBe(true);
 }
@@ -315,14 +316,14 @@ export async function navigateTo(page: Page, address: string, expectPath: string
   // A NavigateResult in the standard envelope: shown is exit_code 0, handed to a tab.
   const verdict = ((await res.json()) as { data?: { exit_code?: number; delivered?: boolean } }).data;
   expect(verdict?.exit_code === 0 && verdict.delivered, `navigate view ${address} → ${JSON.stringify(verdict)}`).toBe(true);
-  await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: 15_000 }).toContain(expectPath);
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: adjusted(15_000) }).toContain(expectPath);
   if (committedBefore === null) return; // tab_switch tracing is off on this page: the URL is all there is
   await expect
     .poll(
       async () =>
         ((await committedPaths(page)) ?? []).slice(committedBefore.length).some((p) => p.includes(expectPath)),
       {
-        timeout: 15_000,
+        timeout: adjusted(15_000),
         message: `the router never committed ${expectPath}`,
       },
     )

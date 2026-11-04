@@ -15,6 +15,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { REPO_ROOT, apiContext, apiOrigin, configuredFileEnv } from '../_shared/api';
 import { graphCall, sendButton, skipLlmSetup } from '../_shared/conversation';
+import { adjusted } from '../../adjustableTimeout';
 
 const INSTANCE = process.env.FLOW_INSTANCE || '';
 
@@ -232,7 +233,7 @@ for (const [i, channel] of WANTED.entries()) {
       expect(intoThread.thread ?? null, `${channel}: a plain thread send must quote nobody`).toBeFalsy();
     }
     // Our copy joins the thread.
-    await expect(page.getByTestId('thread-header-count')).toContainText('4 messages', { timeout: 15_000 });
+    await expect(page.getByTestId('thread-header-count')).toContainText('4 messages', { timeout: adjusted(15_000) });
 
     // Reply on the root (⋮ → Reply): the provider sees a reply to the root.
     const rootBubble = page.locator('[data-testid^="message-bubble-"]').filter({ hasText: `root ${nonce}` }).first();
@@ -244,7 +245,7 @@ for (const [i, channel] of WANTED.entries()) {
     const answering = await sentWith(channel, `answer ${nonce}`);
     const namesRoot = [root.external_id, root.thread].filter(Boolean).some((id) => JSON.stringify(answering).includes(bare(id!)));
     expect(namesRoot, `${channel}: the reply does not name the root: ${JSON.stringify(answering)}`).toBe(true);
-    await expect(page.getByTestId('thread-header-count')).toContainText('5 messages', { timeout: 15_000 });
+    await expect(page.getByTestId('thread-header-count')).toContainText('5 messages', { timeout: adjusted(15_000) });
     if (shots) await page.screenshot({ path: `${shots}/${channel}-3-replied.png`, fullPage: true });
 
     // Back to every message: the thread packs again.

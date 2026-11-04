@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { apiContext } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const SCREEN = '/dock/data-sources';
 
@@ -112,7 +113,7 @@ async function createSource(
   // panel — "<name> is listening · 1 of 1 set up" — until the person presses Done; one with none closes.
   // A setup that cannot finish (Drive has no token yet) offers "Finish later" instead.
   const done = dialog.getByRole('button', { name: /^(Done|Finish later)$/ });
-  await expect.poll(async () => !(await dialog.isVisible()) || (await done.isVisible()), { timeout: 15_000 }).toBe(true);
+  await expect.poll(async () => !(await dialog.isVisible()) || (await done.isVisible()), { timeout: adjusted(15_000) }).toBe(true);
   if (await done.isVisible()) await done.click();
   await expect(dialog).toBeHidden();
 

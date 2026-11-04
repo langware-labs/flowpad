@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Execute Flow view', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,7 +18,7 @@ test.describe('Execute Flow view', () => {
 
     await page.goto('/dock/execute-flow');
     // Wait for the React app root to mount; retry if HMR is still settling
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 25_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(25_000) });
 
     // View should be visible and not stuck in a loading state
     await expect(page.locator('body')).toBeVisible();
@@ -26,7 +27,7 @@ test.describe('Execute Flow view', () => {
     const hasInteractiveControl = await page
       .locator('button, input, [role="listitem"], [role="button"]')
       .first()
-      .isVisible({ timeout: 10_000 })
+      .isVisible({ timeout: adjusted(10_000) })
       .catch(() => false);
     expect(hasInteractiveControl, 'No interactive control found in execute-flow view').toBe(true);
 

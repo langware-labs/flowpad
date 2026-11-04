@@ -8,6 +8,7 @@ import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { apiContext } from '../_shared/api';
 import { createVibeFixture, destroyVibeFixture, openVibe, type VibeFixture } from '../vibe/_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const SCREEN = '/dock/data-sources';
 const stamp = `${Date.now()}`.slice(-6);
@@ -120,7 +121,7 @@ test('3. streaming: items land on the heartbeat', async () => {
     const rows = ((await (await api.get(`/api/v1/graph/source_item?filter=${filter}`)).json()).data ?? []) as unknown[];
     await api.dispose();
     expect(rows.length).toBeGreaterThanOrEqual(2);
-  }).toPass({ timeout: 55_000, intervals: [5_000] });
+  }).toPass({ timeout: adjusted(55_000), intervals: [5_000] });
 });
 
 function editorFrame(page: Page) {
@@ -180,8 +181,9 @@ test('5. define + annotate: a dataset bound to the source, one labelled example'
   expect(rows[0].num_rows).toBe(1);
   expect(rows[0].num_annotated).toBe(1);
   expect(rows[0].spec).toEqual({ rows: [{ input: 'ingest.source_item', output: { sentiment: 'string' } }] });
+  console.log('DSLAYOUT', JSON.stringify(require('node:child_process').execSync(`find ${datasetFolder} | head -20`).toString()));
   for (const rel of ['input/item.json', 'ground_truth/label.json', 'row.json']) {
-    expect(existsSync(path.join(datasetFolder, 'rows', '0001', rel)), rel).toBeTruthy();
+    expect(existsSync(path.join(datasetFolder, 'rows', '0001', rel)), `${datasetFolder} / ${rel}`).toBeTruthy();
   }
 });
 

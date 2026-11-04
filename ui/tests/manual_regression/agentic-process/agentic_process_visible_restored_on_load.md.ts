@@ -12,6 +12,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { apiBase, dismissSetupModal, fetchProcess, gotoNewShell, startClaude } from './_ap_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 // Cold-nav redirect now works even for a non-visible process: the backend
 // reverse lookup (AgenticProcess.getByShellId → terminals/get_by_shell_id) is
@@ -59,14 +60,14 @@ test('agentic process with visible=false is recovered when navigating to shell U
   await page.goto(`/dock/shell/shell-${shellId}`);
 
   // Step 6: loader must redirect to agentic_process URL (process recovered despite visible=false)
-  await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: 30_000 });
+  await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: adjusted(30_000) });
   expect(page.url()).toContain(processId);
 
   // Step 7: terminal is live
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
     .first()
-    .waitFor({ state: 'attached', timeout: 10_000 });
+    .waitFor({ state: 'attached', timeout: adjusted(10_000) });
 
   const criticalErrors = errors.filter(e =>
     !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_')

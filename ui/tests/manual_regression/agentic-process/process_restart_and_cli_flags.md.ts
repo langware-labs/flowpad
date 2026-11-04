@@ -17,6 +17,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, fetchProcess, sessionAction, debugMenuButton, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 // Restart is an item of the session actions menu, and on the terminal surface
 // also a button beside the debug menu. That button carries the restart-required
@@ -53,7 +54,7 @@ test.describe('process restart and CLI flags', () => {
 
     // After restart the session returns to RUNNING and the button is enabled again.
     await waitForRunningSession(page, apiBase(), pid);
-    await expectRestartEnabled(page, { timeout: 30_000 });
+    await expectRestartEnabled(page, { timeout: adjusted(30_000) });
     // xterm still mounted/attached (banner re-renders into the same panel).
     await expect(page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first()).toBeAttached();
 
@@ -84,15 +85,15 @@ test.describe('process restart and CLI flags', () => {
     await expect(async () => {
       const proc = await fetchProcess(page, apiBase(), pid);
       expect(proc.cli_config?.chrome).toBe(true);
-    }).toPass({ timeout: 10_000 });
+    }).toPass({ timeout: adjusted(10_000) });
 
     // Restart now flagged as required (glow).
-    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: 10_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: adjusted(10_000) });
 
     // Click Restart → respawn → glow clears.
     await clickRestart(page);
     await waitForRunningSession(page, apiBase(), pid);
-    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: 30_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: adjusted(30_000) });
   });
 
   test('test 3: out-of-band entity mutation lights the glow; reverting or a Restart clears it', async ({ page }) => {
@@ -123,7 +124,7 @@ test.describe('process restart and CLI flags', () => {
     }, pid);
 
     // Glow appears.
-    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: 10_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: adjusted(10_000) });
 
     // Reverting Chrome OFF in the dropdown returns cli_config to the running
     // worker's started hash, so the glow CLEARS: the restart-required contract
@@ -133,7 +134,7 @@ test.describe('process restart and CLI flags', () => {
     await cliOptions(page).click();
     await page.getByRole('menuitemcheckbox', { name: /Chrome browser/ }).click();
     await page.keyboard.press('Escape');
-    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: 10_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: adjusted(10_000) });
 
     // Re-drift out-of-band so there is a real pending change again, then prove a
     // Restart clears it.
@@ -147,12 +148,12 @@ test.describe('process restart and CLI flags', () => {
       p.cli_config = { ...(p.cli_config ?? {}), chrome: true };
       await p.save();
     }, pid);
-    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: 10_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: adjusted(10_000) });
 
     // Restart clears the glow.
     await clickRestart(page);
     await waitForRunningSession(page, apiBase(), pid);
-    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: 30_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: adjusted(30_000) });
   });
 
   test('test 4: ProcessToolbar gating (no toolbar on plain shell; gated buttons once running)', async ({ page }) => {

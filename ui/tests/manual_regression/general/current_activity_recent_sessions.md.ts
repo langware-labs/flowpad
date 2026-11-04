@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -14,7 +15,7 @@ async function gotoHome(page: import('@playwright/test').Page) {
   // behind the Vibe branch, so it can never be the surface a person sees.
   await page.goto('/dock/home');
   // Wait for the React app root to mount (handles HMR settling)
-  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 90_000 });
+  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(90_000) });
 }
 
 // What a person sees on Home is the Vibe landing: the greeting and the prompt box.
@@ -24,8 +25,8 @@ const prompt = (page: import('@playwright/test').Page) => page.locator('textarea
 test.describe('Home landing — what is on screen after load', () => {
   test('home page shows the landing greeting and the prompt box', async ({ page }) => {
     await gotoHome(page);
-    await expect(landing(page)).toBeVisible({ timeout: 10_000 });
-    await expect(prompt(page)).toBeVisible({ timeout: 10_000 });
+    await expect(landing(page)).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(prompt(page)).toBeVisible({ timeout: adjusted(10_000) });
   });
 
   test('home landing renders without console errors on fresh load', async ({ page }) => {
@@ -35,7 +36,7 @@ test.describe('Home landing — what is on screen after load', () => {
     });
 
     await gotoHome(page);
-    await expect(landing(page)).toBeVisible({ timeout: 10_000 });
+    await expect(landing(page)).toBeVisible({ timeout: adjusted(10_000) });
 
     // Wait for the page to settle
     await page.waitForTimeout(2_000);
@@ -53,10 +54,10 @@ test.describe('Home landing — what is on screen after load', () => {
 
   test('home landing is still there after a reload', async ({ page }) => {
     await gotoHome(page);
-    await expect(landing(page)).toBeVisible({ timeout: 10_000 });
+    await expect(landing(page)).toBeVisible({ timeout: adjusted(10_000) });
     await page.reload();
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 90_000 });
-    await expect(landing(page)).toBeVisible({ timeout: 10_000 });
-    await expect(prompt(page)).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(90_000) });
+    await expect(landing(page)).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(prompt(page)).toBeVisible({ timeout: adjusted(10_000) });
   });
 });

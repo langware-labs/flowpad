@@ -11,6 +11,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -37,12 +38,12 @@ test.describe('Project view = asset browser', () => {
 
     const pid = await firstProjectId();
     await page.goto(`/dock/project/${pid}`);
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     expect(page.url()).toMatch(/\/dock\/project\/[0-9a-f-]{36}/);
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
     // Project identity is URL-owned and projected by the pressed scope control;
     // ProjectChip is a content-header component, not a ProjectHome affordance.
-    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: adjusted(15_000) });
     await expect(page.getByRole('button', { name: /^Current project/ }).first()).toHaveAttribute('aria-pressed', 'true');
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));
@@ -52,18 +53,18 @@ test.describe('Project view = asset browser', () => {
   test('test 2: The asset browser exposes a project-scope filter chip (no Project tree node)', async ({ page }) => {
     test.setTimeout(60_000);
     await page.goto('/dock/assets');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
 
     // The BrowseableTree groups by editable type; project has no asset editor,
     // so the project surface here is the project-scope filter control. That
     // control is the ScopeFilterIconBar "Project" toggle, whose accessible name
     // (its title) is "Current project: <name>" when a project is active.
-    await expect(page.getByRole('button', { name: /Current project/i }).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: /Current project/i }).first()).toBeVisible({ timeout: adjusted(20_000) });
 
     // Type roots with zero rows are omitted after a database clear. Project
     // home is the stable structural root regardless of corpus size.
     const tree = page.getByRole('tree');
-    await expect(tree).toBeVisible({ timeout: 15_000 });
+    await expect(tree).toBeVisible({ timeout: adjusted(15_000) });
     await expect(tree.getByRole('treeitem', { name: 'Project home' })).toBeVisible();
     // No Project entity-type root; "Project home" is navigation, not a type.
     await expect(page.locator('[data-testid^="browseable-chevron-asset-type:project:"]')).toHaveCount(0);
@@ -72,9 +73,9 @@ test.describe('Project view = asset browser', () => {
   test('test 3: Project rows in /dock/assets/list/project are NOT row-click targets', async ({ page }) => {
     test.setTimeout(60_000);
     await page.goto('/dock/assets/list/project');
-    await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     const firstRow = page.locator('tr:has(td)').first();
-    await expect(firstRow).toBeVisible({ timeout: 20_000 });
+    await expect(firstRow).toBeVisible({ timeout: adjusted(20_000) });
     // hasEditor('project') is false → AssetsPage leaves onRowClick undefined → no cursor-pointer.
     await expect(firstRow).not.toHaveClass(/cursor-pointer/);
   });
