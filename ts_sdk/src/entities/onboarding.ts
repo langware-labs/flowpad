@@ -8,6 +8,7 @@ import { ActionInfo } from '../models/ActionInfo';
 import type { HttpMethod } from '../models/ApiUrl';
 import { dataManager } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
+import type { HubMailboxDescriptor } from './agent';
 
 export type OnboardingChannel = 'email' | 'whatsapp' | 'telegram' | 'slack';
 /** `flowpad`: Flowpad's own bot/number/app; `own`: the person's own. */
@@ -19,7 +20,7 @@ export interface CreatedAgent {
   rel_path: string;
   data_source_id: string | null;
   /** The agent's own mailbox, when it was made on the email channel (its address and who may write). */
-  mailbox?: { typeid: string; address: string; status: string; allowed_senders: string[] } | null;
+  mailbox?: HubMailboxDescriptor | null;
 }
 
 export interface DeployedAgent {
@@ -47,9 +48,19 @@ export interface ChannelSetupBody {
   items?: boolean;
 }
 
-function call<R>(verb: string, type: string, id: string | null, method: HttpMethod, body?: object): Promise<R> {
+function call<R>(
+  verb: string,
+  type: string | null,
+  id: string | null,
+  method: HttpMethod,
+  body?: object,
+  subpath?: string,
+): Promise<R> {
   const info = new ActionInfo(verb, type, id, method);
   if (body) info.bodyParameters = body as Record<string, unknown>;
+  if (subpath) info.subpath = subpath;
+  // Every onboarding call is the hub's: through a desktop (dev mode) it must be forwarded, not answered there.
+  info.hubReflect = true;
   return dataManager.callAction<unknown, R>(info);
 }
 
@@ -71,24 +82,17 @@ export const Onboarding = {
 
   /** Attach the owner's connection of `provider` to a project (what "use in this project" does). */
   attachConnection(projectId: string, provider: string): Promise<unknown> {
-    const info = new ActionInfo('oauth', 'project', projectId, 'POST');
-    info.subpath = `${provider}/attach`;
-    return dataManager.callAction<unknown, unknown>(info);
+    return call('oauth', 'project', projectId, 'POST', undefined, `${provider}/attach`);
   },
 
   /** Whether the owner holds a connection of `provider` (checked against a project). */
   async connectionStatus(projectId: string, provider: string): Promise<{ has_token: boolean; is_attached: boolean }> {
-    const info = new ActionInfo('oauth', 'project', projectId, 'GET');
-    info.subpath = `${provider}/status`;
-    return dataManager.callAction<unknown, { has_token: boolean; is_attached: boolean }>(info);
+    return call('oauth', 'project', projectId, 'GET', undefined, `${provider}/status`);
   },
 
   /** Start connecting `provider`: the vendor's consent URL to open. */
   async startConnection(provider: string): Promise<string> {
-    const info = new ActionInfo('oauth', null, null, 'GET');
-    info.subpath = `${provider}/auth`;
-    const data = await dataManager.callAction<unknown, { auth_url: string }>(info);
-    return data.auth_url;
+    return (await call<{ auth_url: string }>('oauth', null, null, 'GET', undefined, `${provider}/auth`)).auth_url;
   },
 
   /** Let this deployment's sandbox use the owner's connection of `provider`. */

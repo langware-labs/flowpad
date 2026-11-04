@@ -8029,7 +8029,7 @@ msgstr "الاستهلاك"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Contact <0>{SUPPORT_EMAIL}</0> to enable"
-msgstr ""
+msgstr "تواصل مع <0>{SUPPORT_EMAIL}</0> للتفعيل"
 
 #: src/i18n/type-labels.ts
 msgid "Contact Permission"
@@ -14942,7 +14942,7 @@ msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Get its address"
-msgstr ""
+msgstr "احصل على عنوانه"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #~ msgid "Get my link code"
@@ -16998,7 +16998,7 @@ msgstr "مائل"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Its address"
-msgstr ""
+msgstr "عنوانه"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Its agent"
@@ -22659,7 +22659,7 @@ msgstr "الخطوات أدناه فقط"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Only these people can make it act. Anyone else's mail is kept but not answered."
-msgstr ""
+msgstr "هؤلاء الأشخاص فقط يمكنهم تشغيله. بريد أي شخص آخر يُحفظ ولا يُردّ عليه."
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Only this device"
@@ -29621,7 +29621,7 @@ msgstr "إعداد GitHub"
 #. placeholder {1}: made?.mailbox?.address
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Set up in {0}s. Email it at <0>{1}</0> — it answers there."
-msgstr ""
+msgstr "تم الإعداد خلال {0} ثانية. راسله على <0>{1}</0> — يردّ هناك."
 
 #. placeholder {0}: elapsed.toFixed(0)
 #. placeholder {1}: CHANNEL_TITLE[channel]

@@ -117,8 +117,23 @@ export interface AgentPlannedDeployment {
   readiness: AgentReadiness;
 }
 
+/** Agents known to live only on the hub (made there, no row on this computer): their mailbox is the hub's door. */
+const hubHeld = new WeakSet<Agent>();
+
 @registerEntity
 export class Agent extends APIEntity<Agent> {
+  /** An agent the hub holds and this computer does not — e.g. one the hub just made for the hub page. */
+  static onHub(data: ConstructorParameters<typeof Agent>[0]): Agent {
+    const agent = new Agent(data);
+    hubHeld.add(agent);
+    return agent;
+  }
+
+  /** Its mailbox is answered by the hub: on the hub page, or when only the hub holds it. */
+  private get mailboxOnHub(): boolean {
+    return isHubOnly() || hubHeld.has(this);
+  }
+
   static type: string = 'agent';
 
   // ── identity / presentation ────────────────────────────────────────────
@@ -626,7 +641,7 @@ export class Agent extends APIEntity<Agent> {
   }
 
   async mailboxState(): Promise<AgentMailboxState> {
-    if (isHubOnly()) {
+    if (this.mailboxOnHub) {
       const data = await this.hubMailbox<{ mailbox?: HubMailboxDescriptor | null }>('', 'GET');
       return this.hubMailboxState(data?.mailbox ?? null);
     }
@@ -642,7 +657,7 @@ export class Agent extends APIEntity<Agent> {
    */
   async allocateMailbox(options: MailboxAllocation = {}): Promise<AgentMailboxState> {
     // The hub page has no local source to wire: `enable` provisions when absent and reactivates when disabled.
-    if (isHubOnly())
+    if (this.mailboxOnHub)
       return this.hubMailboxState(await this.hubMailbox<HubMailboxDescriptor>('enable', 'POST', options));
     return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('allocate_mailbox', { ...options }));
   }
@@ -653,7 +668,7 @@ export class Agent extends APIEntity<Agent> {
   }
 
   async configureMailbox(options: MailboxConfiguration): Promise<AgentMailboxState> {
-    if (isHubOnly()) {
+    if (this.mailboxOnHub) {
       const { allowed_senders, filters } = options; // poll_interval_seconds is a desktop fact
       return this.hubMailboxState(
         await this.hubMailbox<HubMailboxDescriptor>('configure', 'POST', { allowed_senders, filters }),
@@ -671,6 +686,7 @@ export class Agent extends APIEntity<Agent> {
   private hubMailbox<T>(verb: string, method: 'GET' | 'POST', body?: object): Promise<T> {
     const info = new ActionInfo(verb ? `mailbox/${verb}` : 'mailbox', 'agent', String(this.id), method);
     if (body) info.bodyParameters = body as Record<string, unknown>;
+    info.hubReflect = true; // the hub's mailbox: through a desktop it is forwarded, never answered there
     return dataManager.callAction<unknown, T>(info);
   }
 
@@ -708,7 +724,7 @@ export interface MailboxAllocation {
 }
 
 /** What the hub's `mailbox` door answers (`AgentMailbox.descriptor()`). */
-type HubMailboxDescriptor = Omit<Partial<IAgentMailbox>, 'agent_typeid'> & {
+export type HubMailboxDescriptor = Omit<Partial<IAgentMailbox>, 'agent_typeid'> & {
   typeid?: string;
   agent_typeid?: TypeId | string;
 };
