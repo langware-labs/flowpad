@@ -25,7 +25,7 @@ too, and a person typing ``flow`` there uses the engine by hand — a command ru
 with an interactive stdin is stamped (an agent's tool calls run without one). Stamping never
 raises: it must not break a CLI command.
 
-Both files are ``DataSpec`` values (``CliUseStamp``, ``CliStampSince``); the uninstaller (Rust)
+Both files are ``DataSpec`` values (``flow_sdk/core/cli_use_evidence.py``); the uninstaller (Rust)
 reads the same keys.
 """
 
@@ -40,9 +40,9 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from flow_sdk._version import __version__
+from flow_sdk.core.cli_use_evidence import CliStampSince, CliUseStamp
 from flow_sdk.instance_settings.base_settings import ENV_FLOWPAD_DESKTOP
 from flow_sdk.instances.atomic import read_json, write_json_atomic
-from flow_sdk.schema.data_spec.spec import DataSpec
 
 logger = logging.getLogger(__name__)
 
@@ -56,21 +56,6 @@ NOT_INDEPENDENT_USE = frozenset({"hooks"})
 #: Set by the backend on every in-app terminal (``compute/providers/desktop/provider.py``).
 ENV_PTY_SESSION_ID = "FLOWPAD_PTY_SESSION_ID"
 
-
-class CliUseStamp(DataSpec):
-    """``<instance_dir>/.cli_used``: this instance was driven by ``flow`` outside the desktop."""
-
-    first: float
-    last: float
-    version: str
-
-
-class CliStampSince(DataSpec):
-    """``<flow_home>/global/cli-stamp-since``: the first engine that stamps CLI use."""
-
-    version: str
-    since: float
-    preexisting: list[str]
 
 
 def _process_started() -> float:
