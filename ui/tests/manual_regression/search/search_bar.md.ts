@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { withViewMode } from '../_shared/view-mode';
 
 // Helper: dismiss the DesktopSetupModal by setting localStorage before page load
 async function dismissSetupModal(page: import('@playwright/test').Page) {
@@ -9,44 +8,37 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 }
 
 // Helper: navigate to home and wait for the page to settle
+// The home is Vibe-only (UNSTATED_VIEW_MODE; the standard HomeLanding with `record-search-bar` /
+// `search-input` stays mounted but `display:none`), so home search is the address bar's search
+// pill: `top-nav-search-open` -> `top-nav-search-input`, with a results popover (no Enter -> /dock/search).
 async function gotoHome(page: import('@playwright/test').Page) {
   await dismissSetupModal(page);
-// The home search surfaces asserted here (`record-search-bar`, `search-input`)
-// exist only on the Standard HomeLanding — Vibe renders the creator homepage,
-// which has neither. The app legitimately ends up in Vibe (the project-open path
-// opens home `.withViewMode(ViewMode.Vibe)` and the dock sync persists that
-// instance-wide), so a test wanting Standard must pin it on the ADDRESS rather
-// than inherit whatever the instance was last left in.
-  await page.goto(withViewMode('/', 'standard'));
-  // Wait for initial render — look for something stable
+  await page.goto('/');
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+  await page.locator('[data-testid="top-nav-search-open"]').waitFor({ timeout: 20_000 });
+}
+
+async function openTopNavSearch(page: import('@playwright/test').Page) {
+  await page.locator('[data-testid="top-nav-search-open"]').click();
+  const input = page.locator('[data-testid="top-nav-search-input"]');
+  await expect(input).toBeVisible({ timeout: 10_000 });
+  return input;
 }
 
 test.describe('Record Search Bar', () => {
   // ── Test 1: Home page has search bar ──────────────────────────────────────
   test('home page has a search bar', async ({ page }) => {
     await gotoHome(page);
-    const searchBar = page.locator('[data-testid="record-search-bar"]');
-    await expect(searchBar).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="top-nav-search-open"]')).toBeVisible({ timeout: 10_000 });
+    await openTopNavSearch(page);
   });
 
   // ── Test 2: Enter navigates to search view ────────────────────────────────
-  test('pressing Enter from home search bar navigates to search view', async ({ page }) => {
+  test('typing in the home search bar opens the results popover', async ({ page }) => {
     await gotoHome(page);
-
-    const input = page.locator('[data-testid="search-input"]').first();
-    await expect(input).toBeVisible({ timeout: 10_000 });
-
-    await input.click();
+    const input = await openTopNavSearch(page);
     await input.fill('quarterly review');
-    await input.press('Enter');
-
-    // URL should contain /dock/search
-    await expect(page).toHaveURL(/\/dock\/search/, { timeout: 10_000 });
-
-    // Search view element should appear
-    const searchView = page.locator('[data-testid="search-view"]');
-    await expect(searchView).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="top-nav-search-results"]')).toBeVisible({ timeout: 10_000 });
   });
 
   // ── Test 3: URL query param pre-populates the search input ────────────────
@@ -63,8 +55,7 @@ test.describe('Record Search Bar', () => {
   test('compact home search bar has no Tools button and no filter panel', async ({ page }) => {
     await gotoHome(page);
 
-    const searchBar = page.locator('[data-testid="record-search-bar"]');
-    await expect(searchBar).toBeVisible({ timeout: 10_000 });
+    await openTopNavSearch(page);
 
     // Home bar is rendered with default showTools=false → no Tools button
     const toolsBtn = page.locator('[data-testid="search-tools-btn"]');

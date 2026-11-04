@@ -114,13 +114,14 @@ test.describe('Milkdown selection toolbar', () => {
     const toolbar = page.locator('[data-testid="selection-toolbar"]');
     await expect(toolbar).toBeVisible({ timeout: 5_000 });
 
-    // Exactly 4 buttons with these titles.
+    // Exactly 5 buttons with these titles (the wand "Change this…" sits after the format buttons).
     const titles = await toolbar.locator('button').evaluateAll((els) => els.map((b) => b.getAttribute('title')));
-    expect(titles.length).toBe(4);
+    expect(titles.length).toBe(5);
     expect(titles[0]).toBe('Bold');
     expect(titles[1]).toBe('Italic');
     expect(titles[2]).toBe('Inline code');
     expect(['Add link', 'Edit link']).toContain(titles[3]);
+    expect(titles[4]).toBe('Change this…');
 
     // Toolbar floats above the selection (smaller y than the selection rect).
     const tbBox = await toolbar.boundingBox();

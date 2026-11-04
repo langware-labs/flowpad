@@ -1,7 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 import { waitForIndexerIdle, apiBase } from '../_shared/api';
-import { withViewMode } from '../_shared/view-mode';
 
 const API = apiBase();
 
@@ -32,8 +31,10 @@ async function openSearch(page: Page) {
   // paint. A localStorage seed or a `window.setView()` after load does not hold —
   // preferences.json lands after networkidle and its stored mode (a previous
   // file's Standard) wins over the device seed, by design.
-  await page.goto(withViewMode('/dock/search', 'advanced'));
-  await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
+  // There is no global view mode any more (the home is Vibe-only and Advanced == the dev
+  // switch), so the URL no longer carries one: the dev switch below is the only lever.
+  await page.goto('/dock/search');
+  await page.waitForFunction(() => typeof (window as any).setDev === 'function', undefined, { timeout: 20_000 });
   // Since host tabs (71e9272c6) <AdvancedOnly> follows the developer switch
   // (`useIsAdvanced() === useIsDev()`), which the URL's `viewMode` no longer
   // turns on. Flip it through the app's own `window.setDev`, the call the
