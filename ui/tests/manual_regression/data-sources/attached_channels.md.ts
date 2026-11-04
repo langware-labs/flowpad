@@ -202,7 +202,8 @@ test('3. the details popover is where on/off and delete live', async ({ page }) 
 
   await bar.getByTestId('attached-channels-details').click();
   const list = page.getByRole('dialog').filter({ has: page.getByTestId('attached-channel-row') });
-  const row = list.getByTestId('attached-channel-row');
+  // The system's own task source is listed too (it is left out of the marks above): pick the user's row by name.
+  const row = list.getByTestId('attached-channel-row').filter({ hasText: USER_SOURCE });
   await expect(row).toHaveCount(1);
   await expect(row.getByTestId('attached-channel-switch')).toBeVisible();
   await expect(row.getByTestId('attached-channel-delete')).toBeVisible();
@@ -236,7 +237,7 @@ test('3. the details popover is where on/off and delete live', async ({ page }) 
 
   // The trash asks first — cancel keeps the source.
   await back.bar.getByTestId('attached-channels-details').click();
-  await page.getByTestId('attached-channel-row').getByTestId('attached-channel-delete').click();
+  await page.getByTestId('attached-channel-row').filter({ hasText: USER_SOURCE }).getByTestId('attached-channel-delete').click();
   const confirm = page.getByRole('alertdialog');
   await expect(confirm).toContainText('Delete this data source?');
   await confirm.getByRole('button', { name: 'Cancel' }).click();

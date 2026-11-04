@@ -74,11 +74,10 @@ test('a VFS editor URL selects the real file in the Files tree', async ({ page, 
     await expect(editorHeader.getByTestId('milkdown-toolbar-table')).toBeVisible();
     await expect(page.locator('[data-testid="milkdown-toolbar"][data-embedded="false"]')).toHaveCount(0);
     const assetsTree = page.getByTestId('navigator-panel-assets').getByRole('tree');
-    const filesRoot = assetsTree.locator('[data-browseable-id^="fs-root:"]');
-    await expect(filesRoot.getByRole('treeitem', { name: /interface\.md/i })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    // The file is an indexed entity by now, so the tree highlights it where the entity lives (under
+    // Documents) rather than on its plain Files row: the selected row is the file, wherever it sits.
+    await expect(assetsTree.locator('[role="treeitem"][aria-selected="true"]')).toContainText(/interface\.md/i);
+    await expect(assetsTree.locator('[data-browseable-id^="fs-root:"]').getByRole('treeitem', { name: /interface\.md/i })).toBeVisible();
   } finally {
     await request.delete(`${API}/api/v1/graph/project/${projectId}`).catch(() => undefined);
     await fs.rm(root, { recursive: true, force: true });

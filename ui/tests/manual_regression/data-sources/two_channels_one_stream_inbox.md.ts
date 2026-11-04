@@ -17,6 +17,9 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { apiContext } from '../_shared/api';
 
 const PER_SOURCE = 60;
+// The inbox shows one page (STREAM_INBOX_PAGE_SIZE = 100) of the merged 2 × 60 and badges a full page "100+".
+const PAGE = 100;
+const ALL_SHOWN = Math.min(2 * PER_SOURCE, PAGE);
 const PER_CALL = 20;
 const stamp = Date.now().toString(36);
 
@@ -129,7 +132,7 @@ async function projected() {
 test('2. the stream inbox merges both sources, attributed', async ({ page }) => {
   await projected();
   await openStreamInbox(page);
-  await expect(page.getByTestId('stream-inbox-view-all')).toContainText(String(2 * PER_SOURCE));
+  await expect(page.getByTestId('stream-inbox-view-all')).toContainText(2 * PER_SOURCE >= PAGE ? `${PAGE}+` : String(2 * PER_SOURCE));
 
   const bar = page.getByTestId('attached-channels');
   const marks = bar.getByTestId('attached-channel');
@@ -148,18 +151,18 @@ test('2. the stream inbox merges both sources, attributed', async ({ page }) => 
   expect(glyphs[0], 'the two channels wear the same glyph').not.toBe(glyphs[1]);
 
   const rows = page.getByTestId('stream-inbox-conversation-row');
-  await expect(rows).toHaveCount(2 * PER_SOURCE);
+  await expect(rows).toHaveCount(ALL_SHOWN);
   await expect(rows.filter({ hasText: 'slack message' }).first()).toBeVisible();
   await expect(rows.filter({ hasText: /Subject \d+/ }).first()).toBeVisible();
   // Every row wears ITS source's chip.
-  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(2 * PER_SOURCE);
+  expect(await rows.locator('[data-chip-type="source"]').count()).toBe(ALL_SHOWN);
 });
 
 test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   await openStreamInbox(page);
   const bar = page.getByTestId('attached-channels');
   const rows = page.getByTestId('stream-inbox-conversation-row');
-  await expect(rows).toHaveCount(2 * PER_SOURCE);
+  await expect(rows).toHaveCount(ALL_SHOWN);
 
   const slackMark = bar.locator('[data-testid="attached-channel"][aria-label*="Support slack"]');
   await expect(slackMark).toHaveCount(1);
@@ -178,7 +181,7 @@ test('3. a mark narrows to ONE source; × restores', async ({ page }) => {
   await expect(rows.filter({ hasText: /Subject \d+/ })).toHaveCount(0);
 
   await bar.getByTestId('attached-channels-clear').click();
-  await expect(rows).toHaveCount(2 * PER_SOURCE);
+  await expect(rows).toHaveCount(ALL_SHOWN);
   await expect(slackMark).toHaveAttribute('aria-pressed', 'false');
   await expect(mailMark).toHaveAttribute('aria-pressed', 'false');
 });

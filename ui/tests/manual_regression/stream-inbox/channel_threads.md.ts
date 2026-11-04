@@ -3,9 +3,9 @@
  *
  * Per channel, the person writes a root and two more messages in its thread (the way that channel
  * continues a thread, quoting the root where it can). From the base stream inbox we open the
- * conversation and check, as receiver: the thread packs into one stack with the right count, opens
- * by URL (`?thread=`) under a header naming it, quotes render where the channel carries them, and
- * "All messages" leads back. As sender: the open thread's composer lands a send in THAT provider
+ * conversation and check, as receiver: the thread's messages stay flat in the conversation (a channel's
+ * thread is its conversation, never a stack), and quotes render where the channel carries them.
+ * As sender: the conversation's composer lands a send in THAT provider
  * thread, and Reply on the root reaches the provider as a reply to the root; our copy joins the thread.
  *
  * Providers are the loopback doubles `tests/e2e/channel_doubles.py` hosts (spawned under the
@@ -199,26 +199,17 @@ for (const [i, channel] of WANTED.entries()) {
     await expect(row).toBeVisible();
     await row.click();
     await expect(page.locator('[data-testid^="message-bubble-"]', { hasText: `third ${nonce}` }).first()).toBeVisible();
-    const stackOpen = page.getByTestId('thread-stack-open');
-    await expect(stackOpen).toContainText('2 earlier in this thread');
-    if (shots) await page.screenshot({ path: `${shots}/${channel}-1-packed.png`, fullPage: true });
-
-    // Open the thread: a navigation (?thread=) with a header naming and counting it.
-    await stackOpen.click();
-    await expect(page).toHaveURL(/[?&]thread=/);
-    await expect(page.getByTestId('thread-header')).toBeVisible();
-    await expect(page.getByTestId('thread-header-count')).toContainText('3 messages');
-    for (const t of [`root ${nonce}`, `second ${nonce}`, `third ${nonce}`]) {
-      // The bubble's own body (a quote block repeats its parent's words).
-      await expect(page.locator('[data-testid^="message-bubble-"] .whitespace-pre-wrap', { hasText: t }).first()).toBeVisible();
-    }
+    // A channel's thread IS its conversation (`flatThreadIdsOf`): its messages stay flat in the feed,
+    // so there is no stack to open and no `?thread=` view — only native threads stack.
+    await expect(page.getByTestId('thread-stack-open')).toHaveCount(0);
+    const bodyOf = (t: string) => page.locator('[data-testid^="message-bubble-"] .whitespace-pre-wrap', { hasText: t }).first();
+    for (const t of [`root ${nonce}`, `second ${nonce}`, `third ${nonce}`]) await expect(bodyOf(t)).toBeVisible();
     if (spec.quotesInbound) {
       await expect(page.getByTestId('message-quote').filter({ hasText: `root ${nonce}` }).first()).toBeVisible();
     }
-    if (shots) await page.screenshot({ path: `${shots}/${channel}-2-thread.png`, fullPage: true });
+    if (shots) await page.screenshot({ path: `${shots}/${channel}-1-flat.png`, fullPage: true });
 
-    // ── sender: the open thread's composer writes into THIS provider thread ──
-    await expect(page.getByTestId('composer-thread-banner')).toBeVisible();
+    // ── sender: the conversation's composer writes into THIS provider thread ──
     const composer = page.getByPlaceholder(/^Reply in /);
     await composer.fill(`in thread ${nonce}`);
     await sendButton(page).click();
@@ -232,8 +223,8 @@ for (const [i, channel] of WANTED.entries()) {
     } else {
       expect(intoThread.thread ?? null, `${channel}: a plain thread send must quote nobody`).toBeFalsy();
     }
-    // Our copy joins the thread.
-    await expect(page.getByTestId('thread-header-count')).toContainText('4 messages', { timeout: adjusted(15_000) });
+    // Our copy joins the conversation.
+    await expect(bodyOf(`in thread ${nonce}`)).toBeVisible({ timeout: adjusted(15_000) });
 
     // Reply on the root (⋮ → Reply): the provider sees a reply to the root.
     const rootBubble = page.locator('[data-testid^="message-bubble-"]').filter({ hasText: `root ${nonce}` }).first();
@@ -245,14 +236,8 @@ for (const [i, channel] of WANTED.entries()) {
     const answering = await sentWith(channel, `answer ${nonce}`);
     const namesRoot = [root.external_id, root.thread].filter(Boolean).some((id) => JSON.stringify(answering).includes(bare(id!)));
     expect(namesRoot, `${channel}: the reply does not name the root: ${JSON.stringify(answering)}`).toBe(true);
-    await expect(page.getByTestId('thread-header-count')).toContainText('5 messages', { timeout: adjusted(15_000) });
-    if (shots) await page.screenshot({ path: `${shots}/${channel}-3-replied.png`, fullPage: true });
-
-    // Back to every message: the thread packs again.
-    await page.getByTestId('thread-header-all').click();
-    await expect(page).not.toHaveURL(/[?&]thread=/);
-    await expect(page.getByTestId('thread-header')).toHaveCount(0);
-    await expect(page.getByTestId('thread-stack-open')).toContainText('earlier in this thread');
+    await expect(bodyOf(`answer ${nonce}`)).toBeVisible({ timeout: adjusted(15_000) });
+    if (shots) await page.screenshot({ path: `${shots}/${channel}-2-replied.png`, fullPage: true });
 
     if (!agentOnly) {
       await api.delete(`/api/v1/graph/data_source/${sourceId}`);
