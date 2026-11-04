@@ -280,6 +280,16 @@ class CollectionResult(ReturnedValue):
         })
 
 
+def last_line(text: str) -> str:
+    """The last thing a failed command said — where its error is. A leading ``error:`` is dropped:
+    the reader already knows it failed."""
+    for line in reversed((text or "").splitlines()):
+        line = line.strip()
+        if line:
+            return line[len("error:"):].strip() if line.lower().startswith("error:") else line
+    return ""
+
+
 class CliResult(ReturnedValue):
     """What a shell one-liner did. ``exit_code`` is the op's verdict;
     ``returncode`` is the process's own, which a caller may branch on."""
@@ -329,7 +339,7 @@ class CliResult(ReturnedValue):
             elif timed_out:
                 detail = f"The command did not finish within {duration_s:.0f}s." if duration_s else "The command timed out."
             elif not reached:
-                detail = f"The command exited {returncode}."
+                detail = last_line(stderr) or last_line(stdout) or f"The command exited {returncode}."
         return cls(
             exit_code=ExitCode.OK if reached else ExitCode.NOT_YET,
             command=command, returncode=returncode, stdout=stdout, stderr=stderr,

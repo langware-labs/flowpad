@@ -321,6 +321,7 @@ def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, perso
         persona=persona or Persona(),
         read_only=bool(getattr(row, "read_only", False)),
         holds_rows=bool(getattr(row, "holds_rows", False)),
+        rate_limit_retries=int(getattr(row, "rate_limit_retries", 0) or 0),
     )
 
 

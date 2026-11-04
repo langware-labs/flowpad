@@ -68,6 +68,7 @@ export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
         },
         {
           key: 'active',
+          tone: 'live' as const,
           label: <Trans>Active</Trans>,
           description: <Trans>Agents with a live deployment</Trans>,
           items: rows.filter(isActiveAgent),
@@ -134,6 +135,7 @@ export const hubMachineCounterGroup: AssetCounterGroup<MachineRow> = {
         },
         {
           key: 'active',
+          tone: 'live' as const,
           label: <Trans>Active</Trans>,
           description: <Trans>Machines that are running</Trans>,
           items: rows.filter(isActiveMachine),

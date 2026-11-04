@@ -1,6 +1,6 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { InboundWebhooks, PageId, ViewType } from '@sdk';
-import { CHIP_CLASS } from '@src/components/asset-counters/AssetCounterRow';
+import { CountBubble, StatChip } from '@src/components/asset-counters/StatChips';
 import { CounterTable, LiveDot, QuickSearchInput, useQuickSearch } from '@src/components/asset-counters/AssetItems';
 import {
   hubAgentCounterGroup,
@@ -121,9 +121,7 @@ function TabButton({
       data-testid={testId}
     >
       {label}
-      <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs font-semibold tabular-nums text-foreground">
-        {isLoading ? '…' : count}
-      </span>
+      <CountBubble value={count} isLoading={isLoading} />
       {active !== undefined && (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <LiveDot active={active > 0} />
@@ -277,17 +275,16 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
             <QuickSearchInput value={query} onChange={search} className="w-64" testId="hub-items-search" />
             {current.counters.length > 1 &&
               current.counters.map((c) => (
-                <button
+                <StatChip
                   key={c.key}
-                  type="button"
+                  label={c.label}
+                  selected={c.key === counter?.key}
                   onClick={() => selectCounter(c.key)}
-                  className={cn(CHIP_CLASS, 'px-3 py-1', c.key === counter?.key && 'border-primary/50 bg-card')}
                   data-testid="hub-items-filter"
                   data-counter={c.key}
                 >
-                  <span className="text-muted-foreground group-hover:text-foreground">{c.label}</span>
-                  <span className="tabular-nums text-foreground">{c.items.length}</span>
-                </button>
+                  <CountBubble value={c.items.length} tone={c.tone} isLoading={c.isLoading} />
+                </StatChip>
               ))}
             <div role="radiogroup" className={cn(SEGMENTED_GROUP, 'ml-auto')}>
               {(

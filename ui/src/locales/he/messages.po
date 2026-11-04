@@ -1361,6 +1361,10 @@ msgstr "{eventCount} אירועים · {executionCount} הרצות"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} מתוך {0} נכשלו במחיקה."
 
+#: src/components/automations/AutomationsList.tsx
+msgid "{failedName} failed: {failedWhy}"
+msgstr ""
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "{files} files need merging — let the assistant merge them"
 msgstr "{files} קבצים דורשים מיזוג — ניתן לתת לעוזר למזג אותם"
@@ -2906,7 +2910,6 @@ msgstr "הפעילו"
 msgid "Activations only"
 msgstr "הפעלות בלבד"
 
-#: src/components/asset-counters/AssetCounterRow.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -3642,6 +3645,10 @@ msgstr "סוכנים"
 msgid "Agents in {projectName} with a deployment"
 msgstr "סוכנים עם פריסה ב-{projectName}"
 
+#: src/components/asset-counters/agent-counters.tsx
+msgid "Agents on this machine with a deployment"
+msgstr ""
+
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Agents with a live deployment"
 msgstr ""
@@ -3691,6 +3698,10 @@ msgstr "יישור ההתחלה (שמאל ב-LTR, ימין ב-RTL)"
 msgid "all"
 msgstr "הכל"
 
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
@@ -3811,6 +3822,8 @@ msgstr "כל הפריסות עדכניות"
 msgid "All owners"
 msgstr "כל הבעלים"
 
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
@@ -4621,6 +4634,10 @@ msgstr "אפליקציות וסוכנים"
 #: src/components/asset-counters/app-counters.tsx
 msgid "Apps in {projectName} with a deployment"
 msgstr "אפליקציות עם פריסה ב-{projectName}"
+
+#: src/components/asset-counters/app-counters.tsx
+msgid "Apps on this machine with a deployment"
+msgstr ""
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 msgid "architecture"
@@ -26511,8 +26528,8 @@ msgid "Removed"
 msgstr "הוסר"
 
 #: src/hooks/favorites-pending-delete.ts
-msgid "Removed “{title}”"
-msgstr "הפריט “{title}” הוסר"
+#~ msgid "Removed “{title}”"
+#~ msgstr "הפריט “{title}” הוסר"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -27774,6 +27791,10 @@ msgid "running"
 msgstr "פועל"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
@@ -27820,6 +27841,11 @@ msgstr "הרצת /context…"
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Running command…"
 msgstr "מריץ פקודה…"
+
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
+msgid "Running everywhere"
+msgstr ""
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."
@@ -34834,7 +34860,6 @@ msgstr ""
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#: src/hooks/favorites-pending-delete.ts
 msgid "Undo"
 msgstr "בטלו"
 

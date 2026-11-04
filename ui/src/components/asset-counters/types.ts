@@ -12,6 +12,12 @@ export interface AssetCounter<T> {
   description: ReactNode;
   items: T[];
   isLoading: boolean;
+  /** The scope this counter counts within (home chips switch between scopes). Absent → one scope. */
+  scope?: { key: string; label: ReactNode };
+  /** The chip's label inside its scope ("Running", "All"); defaults to `label`. */
+  chipLabel?: ReactNode;
+  /** `live` lights the count green while it is above zero. */
+  tone?: 'live';
 }
 
 export interface AssetColumn<T> {

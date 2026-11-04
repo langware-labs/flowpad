@@ -280,6 +280,8 @@ class DataSource(SetupSkippable, Entity):
     #: A thread quiet this long is over: the next message on it starts a new thread (a new
     #: conversation), on top of the driver's own split (a chat, a topic, a call). None = never.
     thread_timeout_seconds: Optional[int] = APIField(default=None, ge=1, description="Seconds of quiet after which a thread ends")
+    #: Times a request waits out the provider's rate limit (its Retry-After) before failing. 0 = fail at once.
+    rate_limit_retries: int = APIField(default=0, ge=0, le=10, description="Rate-limit waits before a request fails")
     next_poll_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
     last_synced_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 

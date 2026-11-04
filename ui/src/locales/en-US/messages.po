@@ -1364,6 +1364,10 @@ msgstr "{eventCount} ev · {executionCount} exec"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} of {0} failed to delete."
 
+#: src/components/automations/AutomationsList.tsx
+msgid "{failedName} failed: {failedWhy}"
+msgstr "{failedName} failed: {failedWhy}"
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "{files} files need merging — let the assistant merge them"
 msgstr "{files} files need merging — let the assistant merge them"
@@ -2925,7 +2929,6 @@ msgstr "Activate"
 msgid "Activations only"
 msgstr "Activations only"
 
-#: src/components/asset-counters/AssetCounterRow.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -3671,6 +3674,10 @@ msgstr "Agents"
 msgid "Agents in {projectName} with a deployment"
 msgstr "Agents in {projectName} with a deployment"
 
+#: src/components/asset-counters/agent-counters.tsx
+msgid "Agents on this machine with a deployment"
+msgstr "Agents on this machine with a deployment"
+
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Agents with a live deployment"
 msgstr "Agents with a live deployment"
@@ -3720,6 +3727,10 @@ msgstr "Align start (left in LTR, right in RTL)"
 msgid "all"
 msgstr "all"
 
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
@@ -3841,6 +3852,8 @@ msgstr "All observed deployments are current"
 msgid "All owners"
 msgstr "All owners"
 
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
@@ -4653,6 +4666,10 @@ msgstr "Apps and agents"
 #: src/components/asset-counters/app-counters.tsx
 msgid "Apps in {projectName} with a deployment"
 msgstr "Apps in {projectName} with a deployment"
+
+#: src/components/asset-counters/app-counters.tsx
+msgid "Apps on this machine with a deployment"
+msgstr "Apps on this machine with a deployment"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 msgid "architecture"
@@ -26708,8 +26725,8 @@ msgid "Removed"
 msgstr "Removed"
 
 #: src/hooks/favorites-pending-delete.ts
-msgid "Removed “{title}”"
-msgstr "Removed “{title}”"
+#~ msgid "Removed “{title}”"
+#~ msgstr "Removed “{title}”"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -27986,6 +28003,10 @@ msgid "running"
 msgstr "running"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
@@ -28032,6 +28053,11 @@ msgstr "Running /context…"
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Running command…"
 msgstr "Running command…"
+
+#: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
+msgid "Running everywhere"
+msgstr "Running everywhere"
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."
@@ -35093,7 +35119,6 @@ msgstr "Under OAuth & Permissions add the bot scopes channels:history, groups:hi
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#: src/hooks/favorites-pending-delete.ts
 msgid "Undo"
 msgstr "Undo"
 

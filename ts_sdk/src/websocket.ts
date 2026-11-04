@@ -428,7 +428,7 @@ export class ConnectionManager extends EventEmitter {
     this.socket?.close(1000, 'connection manager disposed');
     this.removeAllListeners();
     void import('./FlowSync/auth').then(({ authManager }) =>
-      authManager.off('login_status_changed', this.onLoginChanged),
+      authManager?.off('login_status_changed', this.onLoginChanged),
     );
     if (typeof window !== 'undefined') {
       window.removeEventListener('focus', this.onTabBack);
@@ -442,7 +442,8 @@ export class ConnectionManager extends EventEmitter {
     ConnectionManager.instance = this;
     // Lazy: auth reaches APIEntity, which must not be in websocket's static import graph.
     void import('./FlowSync/auth').then(({ authManager }) => {
-      if (!this.disposed) authManager.on('login_status_changed', this.onLoginChanged);
+      // Undefined when this runs inside auth's own import cycle (the api test tier): no listener, no crash.
+      if (!this.disposed) authManager?.on('login_status_changed', this.onLoginChanged);
     });
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', this.onTabBack);

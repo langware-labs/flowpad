@@ -4,12 +4,16 @@ Sources do parsing and mapping, not transport bookkeeping. What is identical acr
 — the request ceiling, a transport failure, a status code — becomes a contract error here, so a
 source's ``fetch`` is about the provider and nothing else.
 
-The timeout is a ceiling on one round-trip, never a retry budget: there is no retry. The
-application decides what a failure means; the next scheduled pass is its retry.
+The timeout is a ceiling on one round-trip, never a retry budget. The one retry is opt-in: a
+request made for a ``source`` whose row sets ``rate_limit_retries`` above 0 waits out a rate limit
+(the provider's ``Retry-After`` / reset time) that many times. Default 0: the application decides
+what a failure means, and the next scheduled pass is its retry.
 """
 from __future__ import annotations
 
+import asyncio
 import re
+import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Callable, Mapping, Optional
 
@@ -20,6 +24,8 @@ from flow_sdk.sources.values.origin import CloudOrigin
 
 #: Ceiling for a single request. Not a retry or backoff budget.
 REQUEST_TIMEOUT_SECONDS = 20
+#: The longest one rate-limit wait: providers' windows are a minute at most.
+RATE_LIMIT_WAIT_CAP_SECONDS = 61.0
 
 
 def client(timeout: float = REQUEST_TIMEOUT_SECONDS) -> httpx.AsyncClient:
@@ -77,17 +83,45 @@ async def request(
     ok_statuses: tuple[int, ...] = (),
     hint: str = "",
     origin: Optional[CloudOrigin] = None,
+    source: Any = None,
     **kwargs: Any,
 ) -> httpx.Response:
     """One request; any failure is a contract error. ``ok_statuses`` names non-2xx codes the
-    caller handles itself (a 304 for a conditional request)."""
+    caller handles itself (a 304 for a conditional request). ``source`` (the calling ``Source``)
+    names the provider on the error and lends its row's ``rate_limit_retries``."""
+    provider = str(getattr(source, "provider", "") or "")
+    binding = getattr(source, "binding", None)
+    retries = int(getattr(binding, "rate_limit_retries", 0) or 0)
+    for attempt in range(retries + 1):
+        try:
+            response = await http.request(method, url, **kwargs)
+        except httpx.HTTPError as exc:
+            raise SourceUnavailable(f"{method} {url}: {exc}", origin=origin, provider=provider) from exc
+        if response.status_code < 400 or response.status_code in ok_statuses:
+            return response
+        error = error_for_status(response.status_code, hint, origin=origin, headers=response.headers)
+        error.provider = provider
+        if attempt < retries and _is_rate_limit(response):
+            await asyncio.sleep(rate_limit_wait(response.headers))
+            continue
+        raise error
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _is_rate_limit(response: httpx.Response) -> bool:
+    return response.status_code == 429 or (response.status_code == 403 and rate_limited(response.headers))
+
+
+def rate_limit_wait(headers: Mapping[str, str]) -> float:
+    """Seconds until a provider's window reopens: its reset time (epoch seconds) when given, else
+    ``Retry-After`` (seconds), else 1 — never more than a minute."""
     try:
-        response = await http.request(method, url, **kwargs)
-    except httpx.HTTPError as exc:
-        raise SourceUnavailable(f"{method} {url}: {exc}", origin=origin) from exc
-    if response.status_code < 400 or response.status_code in ok_statuses:
-        return response
-    raise error_for_status(response.status_code, hint, origin=origin, headers=response.headers)
+        reset = float(headers.get("x-ratelimit-reset") or headers.get("ratelimit-reset") or 0)
+        if reset > time.time():
+            return min(reset - time.time() + 1, RATE_LIMIT_WAIT_CAP_SECONDS)
+        return min(max(float(headers.get("retry-after") or 1), 0.0), RATE_LIMIT_WAIT_CAP_SECONDS)
+    except ValueError:  # a Retry-After given as an HTTP date
+        return 1.0
 
 
 async def request_json(http: httpx.AsyncClient, method: str, url: str, **kwargs: Any) -> Any:

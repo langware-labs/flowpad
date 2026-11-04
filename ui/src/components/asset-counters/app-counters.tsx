@@ -35,12 +35,17 @@ function useAppCounters(): AssetCounter<AppRow>[] {
 
   return useMemo(() => {
     const projectName = project?.name || <Trans>Project</Trans>;
+    const projectScope = { key: 'project', label: projectName };
+    const allScope = { key: 'all', label: <Trans>All projects</Trans> };
     return [
       {
         key: 'running',
         label: <Trans>Running</Trans>,
         description: <Trans>Apps in {projectName} with a deployment</Trans>,
         items: runningRows(projectRows),
+        scope: projectScope,
+        chipLabel: <Trans>Running</Trans>,
+        tone: 'live',
         isLoading: appsLoading || deploymentsLoading,
       },
       {
@@ -48,13 +53,27 @@ function useAppCounters(): AssetCounter<AppRow>[] {
         label: projectName,
         description: <Trans>Every app in {projectName}</Trans>,
         items: projectRows,
+        scope: projectScope,
+        chipLabel: <Trans>All</Trans>,
         isLoading: appsLoading,
+      },
+      {
+        key: 'running-all',
+        label: <Trans>Running everywhere</Trans>,
+        description: <Trans>Apps on this machine with a deployment</Trans>,
+        items: runningRows(allRows),
+        scope: allScope,
+        chipLabel: <Trans>Running</Trans>,
+        tone: 'live',
+        isLoading: appsLoading || deploymentsLoading,
       },
       {
         key: 'total',
         label: <Trans>Total</Trans>,
         description: <Trans>Every app on this machine</Trans>,
         items: allRows,
+        scope: allScope,
+        chipLabel: <Trans>All</Trans>,
         isLoading: appsLoading,
       },
     ];

@@ -88,12 +88,17 @@ function useAgentCounters(): AssetCounter<AgentRow>[] {
 
   return useMemo(() => {
     const projectName = project?.name || <Trans>Project</Trans>;
+    const projectScope = { key: 'project', label: projectName };
+    const allScope = { key: 'all', label: <Trans>All projects</Trans> };
     return [
       {
         key: 'running',
         label: <Trans>Running</Trans>,
         description: <Trans>Agents in {projectName} with a deployment</Trans>,
         items: runningRows(projectRows),
+        scope: projectScope,
+        chipLabel: <Trans>Running</Trans>,
+        tone: 'live',
         isLoading: projectLoading || deploymentsLoading,
       },
       {
@@ -101,13 +106,27 @@ function useAgentCounters(): AssetCounter<AgentRow>[] {
         label: projectName,
         description: <Trans>Every agent {projectName} can launch</Trans>,
         items: projectRows,
+        scope: projectScope,
+        chipLabel: <Trans>All</Trans>,
         isLoading: projectLoading,
+      },
+      {
+        key: 'running-all',
+        label: <Trans>Running everywhere</Trans>,
+        description: <Trans>Agents on this machine with a deployment</Trans>,
+        items: runningRows(allRows),
+        scope: allScope,
+        chipLabel: <Trans>Running</Trans>,
+        tone: 'live',
+        isLoading: allLoading || deploymentsLoading,
       },
       {
         key: 'total',
         label: <Trans>Total</Trans>,
         description: <Trans>Every agent on this machine</Trans>,
         items: allRows,
+        scope: allScope,
+        chipLabel: <Trans>All</Trans>,
         isLoading: allLoading,
       },
     ];
@@ -134,7 +153,9 @@ export function DeploymentBadges({ deployments }: { deployments: Deployment[] })
           <Badge
             key={deployment.id}
             variant="outline"
-            className={paused ? 'text-muted-foreground' : 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400'}
+            className={
+              paused ? 'text-muted-foreground' : 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+            }
             title={deployment.status.provider_state ?? undefined}
           >
             {deployment.target.provider || deployment.name}
@@ -152,13 +173,7 @@ export const agentCounterGroup: AssetCounterGroup<AgentRow> = {
   useCounters: useAgentCounters,
   itemKey: (row) => row.agent.id,
   searchText: ({ agent, deployments }) =>
-    [
-      agent.displayName,
-      agent.name,
-      agent.description,
-      agentSource(agent),
-      ...deployments.map((d) => d.target.provider),
-    ]
+    [agent.displayName, agent.name, agent.description, agentSource(agent), ...deployments.map((d) => d.target.provider)]
       .filter(Boolean)
       .join(' '),
   itemPointer: (row) => row.agent.dockPointer,

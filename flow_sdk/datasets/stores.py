@@ -70,6 +70,8 @@ class Store:
     read_only: bool = False
     #: RECORDS: the store that keeps the rows whole (the project's data store).
     holder: Optional["Store"] = None
+    #: Times a request waits out the provider's rate limit before failing (the row's ``rate_limit_retries``).
+    rate_limit_retries: int = 0
 
     @property
     def files(self) -> "Store":
@@ -384,6 +386,7 @@ async def opened(store: Store, project_id: str = "") -> AsyncIterator[Any]:
 
     driver = await DataDriver.get(store.driver)
     source = driver.create_source(dict(store.config), name=f"rows in {store.label()}",
+                                  rate_limit_retries=store.rate_limit_retries,
                                   **({"project_id": project_id} if project_id else {}))
     async with await source.open() as live:
         yield live.source
