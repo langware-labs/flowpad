@@ -25,6 +25,8 @@ pub enum RootId {
     Updater,
     AppData,
     InstanceProd,
+    /// `flowpad.pre-repair`: the engine a runtime repair set aside, proven the desktop's.
+    PreRepair,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

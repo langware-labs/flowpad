@@ -177,6 +177,7 @@ fn root_path(layout: &Layout, root: RootId, pinned: super::Identity) -> PathBuf 
         RootId::Updater => layout.updater(),
         RootId::AppData => layout.app_data(),
         RootId::InstanceProd => layout.instances().join("prod"),
+        RootId::PreRepair => layout.pre_repair_venv(),
     }
 }
 
@@ -206,6 +207,13 @@ fn still_owned(layout: &Layout, root: RootId, path: &Path) -> Result<(), String>
                 Ok(())
             } else {
                 Err("its ownership marker does not match".into())
+            }
+        }
+        RootId::PreRepair => {
+            if ops::pre_repair_proven(layout) {
+                Ok(())
+            } else {
+                Err("its set-aside record no longer proves the desktop made it".into())
             }
         }
         RootId::InstanceProd => {
@@ -249,6 +257,7 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
 
     let mut ledger = Ledger::default();
     let mut remaining = Vec::new();
+    let mut kept_on_purpose = Vec::new();
     for entry in &body.entries {
         let pinned = super::Identity { volume: entry.volume, file_id: entry.file_id };
         let path = root_path(layout, entry.root, pinned);
@@ -275,16 +284,28 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
             status(layout, &format!("{:?}: waits, the engine is still there", entry.root));
             continue;
         }
-        if ops::waits_for_venv(entry.root) && ops::aside_uses_runtime(layout) {
-            status(layout, &format!("{:?}: kept, a set-aside engine still runs on it", entry.root));
-            continue;
+        if ops::waits_for_venv(entry.root) {
+            let pending_aside = body.entries.iter().any(|e| e.root == RootId::PreRepair);
+            let users = ops::set_aside_copies_on_runtime(layout);
+            if users.iter().any(|n| !(pending_aside && n == "flowpad.pre-repair")) {
+                // A set-aside engine FlowPad keeps on purpose runs on it: kept, not "still in use".
+                let msg = format!("{:?}: kept, a set-aside engine runs on it ({})", entry.root, users.join(", "));
+                status(layout, &msg);
+                log.line(&msg);
+                kept_on_purpose.push(entry.root);
+                continue;
+            }
+            if !users.is_empty() {
+                status(layout, &format!("{:?}: waits, the set-aside engine is still there", entry.root));
+                continue;
+            }
         }
         if let Err(why) = still_owned(layout, entry.root, &path) {
             status(layout, &format!("{:?}: skipped, {why}", entry.root));
             continue;
         }
         let evidence = match entry.root {
-            RootId::Venv => Some(ops::RECEIPT_FILE),
+            RootId::Venv | RootId::PreRepair => Some(ops::RECEIPT_FILE),
             RootId::RuntimePython | RootId::RuntimeDownloads => Some(ops::RUNTIME_SENTINEL),
             RootId::InstanceProd => Some(ops::DESKTOP_MARKER),
             _ => None,
@@ -301,6 +322,7 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
     let still_there: Vec<String> = body
         .entries
         .iter()
+        .filter(|e| !kept_on_purpose.contains(&e.root))
         .filter(|e| {
             let pinned = super::Identity { volume: e.volume, file_id: e.file_id };
             Root::open(&root_path(layout, e.root, pinned)).is_ok_and(|r| r.identity() == pinned)
@@ -309,6 +331,9 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         .collect();
     if still_there.is_empty() {
         status(layout, "verified: every pending item is gone");
+        if body.entries.iter().any(|e| e.root == RootId::PreRepair) && !layout.pre_repair_venv().exists() {
+            ops::remove_file(&mut ledger, log, "set-aside engine record", &layout.aside_ownership_record());
+        }
         if body.entries.iter().any(|e| e.root == RootId::Venv) && !layout.venv().exists() {
             ops::remove_file(&mut ledger, log, "engine ownership record", &layout.ownership_record());
         }

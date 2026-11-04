@@ -1772,6 +1772,17 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     await m._installEngineOn('C:\\p\\python.exe');
     await m._rollbackEngine();
     ok(fs.existsSync(path.join(venv, 'WORKING')), 'after a held first-install repair, a later failed repair restores the working engine');
+    // The blocked first install is followed by a plain retry that WORKS (no repair): a later failed
+    // repair must still find the working engine to put back.
+    m.markFirstInstallBlocked();
+    m._uvToolInstallForceAttempts = async () => ({});
+    const repairInstall = m._uvToolInstallForce;
+    delete m._uvToolInstallForce; // the real one: its success clears the flag
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.202']);
+    m._uvToolInstallForce = repairInstall;
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._rollbackEngine();
+    ok(fs.existsSync(path.join(venv, 'WORKING')), 'after a blocked first install and a successful retry, a failed repair restores the working engine');
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   {

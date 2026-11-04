@@ -235,6 +235,53 @@ try {
     Check (-not (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest) 'RunOnce test value gone'
   }
 
+  Write-Host '== a set-aside engine in use: deferred with its runtime, then both removed'
+  if (-not $credentials) {
+    Skip 'the Credential Manager is not available in this session'
+  } else {
+    $r = New-Layout 'pre-repair-locked'
+    $aside = "$r\roaming\uv\tools\flowpad.pre-repair"
+    W "$aside\uv-receipt.toml" 'receipt of the previous engine'
+    W "$aside\pyvenv.cfg" "home = $r\local\Flowpad\runtime\python-3.11.9`r`n"
+    W "$aside\Lib\held.py" 'x'
+    $aid = [FileIdentity]::Of($aside)
+    $asha = (Get-FileHash "$aside\uv-receipt.toml" -Algorithm SHA256).Hash.ToLower()
+    W "$r\local\Flowpad\engine-ownership.pre-repair.json" (@{ schema = 1; origin = 'desktop'; venv = "$r\roaming\uv\tools\flowpad"; venvVolume = $aid[0]; venvFileId = $aid[1]; receiptSha256 = $asha; desktopVersion = '0.2.59'; installedAt = 'T' } | ConvertTo-Json)
+    $h = Lock-File "$aside\Lib\held.py"
+    $code = Invoke-Uninstall $r @()
+    Check ($code -eq 10) "exit 10 (restart required), got $code"
+    Check (Test-Path "$aside\uv-receipt.toml") 'the set-aside copy waits, its receipt (the proof) kept'
+    Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'its runtime waits behind it'
+    Stop-Process -Id $h.Id -Force; Start-Sleep 1
+    $dcode = Invoke-Deferred $r
+    Check ($dcode -eq 0) "deferred-cleanup exit 0, got $dcode"
+    Check (-not (Test-Path $aside)) 'the set-aside copy gone after the deferred run'
+    Check (-not (Test-Path "$r\local\Flowpad\runtime")) 'and the runtime after it'
+    Check (-not (Test-Path "$r\local\Flowpad\engine-ownership.pre-repair.json")) 'and its record'
+    Start-Sleep 5
+    Check (-not (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest) 'RunOnce test value gone'
+  }
+
+  Write-Host '== the deferred run keeps a runtime a kept set-aside engine runs on, and finishes'
+  if (-not $credentials) {
+    Skip 'the Credential Manager is not available in this session'
+  } else {
+    $r = New-Layout 'deferred-kept'
+    $h = Lock-File "$r\roaming\uv\tools\flowpad\Lib\site-packages\flow_sdk\__init__.py"
+    $code = Invoke-Uninstall $r @()
+    Check ($code -eq 10) "exit 10 (restart required), got $code"
+    Stop-Process -Id $h.Id -Force; Start-Sleep 1
+    # an engine copy nothing proves is FlowPad's appears on the runtime before the deferred run
+    W "$r\roaming\uv\tools\flowpad.pre-repair\pyvenv.cfg" "home = $r\local\Flowpad\runtime\python-3.11.9`r`n"
+    $dcode = Invoke-Deferred $r
+    Check ($dcode -eq 0) "deferred-cleanup exit 0 (nothing left pending), got $dcode"
+    Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'the engine is gone'
+    Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'the runtime the kept copy runs on is kept'
+    Check ((Get-Content "$r\deferred.log" -Raw) -match 'kept, a set-aside engine runs on it') 'reported as kept, not as still in use'
+    Start-Sleep 5
+    Check (-not (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest) 'nothing left scheduled'
+  }
+
   Write-Host '== a tampered cleanup state: refused, nothing deleted'
   if (-not $credentials) {
     Skip 'the Credential Manager is not available in this session'

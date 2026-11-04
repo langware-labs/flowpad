@@ -60,9 +60,14 @@ def _process_started() -> float:
     return psutil.Process().create_time()
 
 
-#: What the desktop and the OS put in an instance folder; anything else there was an engine's
-#: (the desktop only creates the folder, at launch, before any engine runs).
-NOT_ENGINE_TRACES = frozenset({".DS_Store", "desktop.ini", "Thumbs.db"})
+#: What is NOT evidence that an engine used the instance: the OS's files, and what a launch writes
+#: before (or without) using it — logs, locks, the launcher's failure record. The desktop itself
+#: only creates the folder, at launch, before any engine runs. Anything else there was an engine's.
+NOT_ENGINE_TRACES = frozenset({".DS_Store", "desktop.ini", "Thumbs.db", "logs", "server-failure.json"})
+
+
+def _is_trace(path: Path) -> bool:
+    return path.name not in NOT_ENGINE_TRACES and not path.name.endswith(".lock")
 
 
 def _created(path: Path) -> float:
@@ -81,7 +86,7 @@ def _older(path: Path, started: float) -> bool:
 def _engine_ran_before(instance_dir: Path, started: float, elsewhere: list[Path]) -> bool:
     """Something an engine wrote — in the folder, or at an overridden path — predates ``started``."""
     try:
-        entries = [p for p in instance_dir.iterdir() if p.name not in NOT_ENGINE_TRACES]
+        entries = [p for p in instance_dir.iterdir() if _is_trace(p)]
     except OSError:
         return True  # unreadable: assume an engine used it
     return any(_older(p, started) for p in entries) or any(_older(p, started) for p in elsewhere)

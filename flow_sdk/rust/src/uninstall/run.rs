@@ -87,8 +87,9 @@ fn ini_escape(s: &str) -> String {
 }
 
 /// The page's sizes are only for display, and the page has to appear inside the classify
-/// deadline: one budget for ALL the folders on the page, in entries and in time. Past it, a
-/// folder's size is what was counted, shown as "more than".
+/// deadline: one budget for ALL the folders on the page, in entries and in time, shared out
+/// equally so one large folder cannot leave another unmeasured. Past its share, a folder's size
+/// is what was counted, shown as "more than".
 const SIZE_WALK_ENTRIES: usize = 200_000;
 const SIZE_WALK_TIME: Duration = Duration::from_secs(15);
 
@@ -100,6 +101,11 @@ struct SizeBudget {
 impl SizeBudget {
     fn new(entries: usize, time: Duration) -> Self {
         SizeBudget { entries_left: entries, until: Instant::now() + time }
+    }
+    /// One folder's equal share of the page's budget.
+    fn share(folders: usize) -> Self {
+        let n = folders.max(1);
+        SizeBudget::new(SIZE_WALK_ENTRIES / n, SIZE_WALK_TIME / n as u32)
     }
     fn spent(&self) -> bool {
         self.entries_left == 0 || Instant::now() >= self.until
@@ -132,8 +138,8 @@ fn size_text(path: &Path, budget: &mut SizeBudget) -> String {
     let mb = format!("{:.1} MB", bytes as f64 / 1_048_576.0);
     if !cut {
         mb
-    } else if bytes < 104_858 {
-        // Less than "0.1 MB" counted: "more than 0.0 MB" would read as empty.
+    } else if mb == "0.0 MB" {
+        // "more than 0.0 MB" would read as empty.
         "size not measured".into()
     } else {
         format!("more than {mb}")
@@ -149,18 +155,18 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     s.push_str(&format!("remove={}\n", engine.remove_by_default as u8));
     s.push_str(&format!("offer={}\n", engine.opt_in_offered as u8));
     s.push_str(&format!("reason={}\n", ini_escape(&engine.reasons.join("; "))));
-    // The user's data first: if the budget runs out, it is the app's cache that goes unmeasured.
-    let mut budget = SizeBudget::new(SIZE_WALK_ENTRIES, SIZE_WALK_TIME);
+    // Each measured folder (every offered instance, and the app data) gets an equal share.
+    let measured = instances.iter().filter(|i| !matches!(i.offer, DataOffer::NotOffered(_))).count() + 1;
     let mut offered = Vec::new();
     let mut warn = false;
     let mut kept = Vec::new();
     for i in instances {
         let dir = layout.instances().join(&i.name);
         match &i.offer {
-            DataOffer::Offered => offered.push(format!("{} ({})", dir.display(), size_text(&dir, &mut budget))),
+            DataOffer::Offered => offered.push(format!("{} ({})", dir.display(), size_text(&dir, &mut SizeBudget::share(measured)))),
             DataOffer::OfferedWithWarning => {
                 warn = true;
-                offered.push(format!("{} ({})", dir.display(), size_text(&dir, &mut budget)))
+                offered.push(format!("{} ({})", dir.display(), size_text(&dir, &mut SizeBudget::share(measured))))
             }
             DataOffer::NotOffered(r) => kept.push(format!("{} — kept: {r}", i.name)),
         }
@@ -172,7 +178,7 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
         ini_escape(&format!(
             "{} ({}), {}",
             app.display(),
-            size_text(&app, &mut budget),
+            size_text(&app, &mut SizeBudget::share(measured)),
             layout.flow_home().join("logs").join("main_desktop").display()
         ))
     ));
@@ -270,7 +276,7 @@ pub fn run(o: &Options) -> i32 {
         stop_processes(&layout, &g, engine_goes, &mut Ledger::default(), &mut log);
         let mut again: Vec<Leftover> = Vec::new();
         for l in leftovers {
-            if ops::waits_for_venv(l.root) && again.iter().any(|a| a.root == super::state::RootId::Venv) {
+            if ops::waits_for_venv(l.root) && again.iter().any(|a| ops::is_engine_root(a.root)) {
                 again.push(l);
                 continue;
             }
@@ -304,7 +310,7 @@ pub fn run(o: &Options) -> i32 {
 fn evidence_for(root: super::state::RootId) -> Option<&'static str> {
     use super::state::RootId::*;
     match root {
-        Venv => Some(ops::RECEIPT_FILE),
+        Venv | PreRepair => Some(ops::RECEIPT_FILE),
         RuntimePython | RuntimeDownloads => Some(ops::RUNTIME_SENTINEL),
         InstanceProd => Some(ops::DESKTOP_MARKER),
         Bootstrap | Updater | AppData => None,
@@ -327,13 +333,16 @@ fn remove_all(
         leftovers.extend(ops::remove_engine(layout, g.receipt.as_ref(), g.pre_repair_proven, ledger, log));
     } else if engine_absent {
         // No engine, but an interrupted repair may have left the previous one set aside.
-        ops::remove_pre_repair(layout, g.pre_repair_proven, ledger, log);
+        leftovers.extend(ops::remove_pre_repair(layout, g.pre_repair_proven, ledger, log));
     }
-    let venv_pending = leftovers.iter().any(|l| l.root == super::state::RootId::Venv);
-    // A set-aside `.pre-repair` venv still here (kept, not removable, or the engine stays) runs on
-    // the runtime: removing the runtime would break it.
+    // The runtime waits behind an engine environment that is pending (in use): the venv or its set-aside copy.
+    let venv_pending = leftovers.iter().any(|l| ops::is_engine_root(l.root));
+    // A set-aside copy still here that is NOT pending (kept, or the engine stays) runs on the
+    // runtime for good: removing the runtime would break it.
+    let pending_aside = leftovers.iter().any(|l| l.root == super::state::RootId::PreRepair);
     let mut runtime_facts = g.runtime.clone();
-    runtime_facts.used_by_another_environment |= ops::aside_uses_runtime(layout);
+    runtime_facts.used_by_another_environment |=
+        ops::set_aside_copies_on_runtime(layout).iter().any(|n| !(pending_aside && n == "flowpad.pre-repair"));
     let runtime = decide_runtime(&runtime_facts, (engine_goes && (venv_pending || !layout.venv().exists())) || engine_absent);
     if venv_pending {
         leftovers.extend(ops::defer_runtime(layout, &runtime, ledger));
@@ -358,7 +367,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_size_budget_is_shared_by_every_folder_on_the_page() {
+    fn each_folder_gets_an_equal_share_of_the_page_budget() {
+        let one = SizeBudget::share(4);
+        assert_eq!(one.entries_left, SIZE_WALK_ENTRIES / 4);
+        assert!(one.until <= Instant::now() + SIZE_WALK_TIME / 4);
+        assert_eq!(SizeBudget::share(0).entries_left, SIZE_WALK_ENTRIES);
+    }
+
+    #[test]
+    fn a_spent_budget_says_more_than_or_not_measured() {
         let dir = std::env::temp_dir().join(format!("flowrs-size-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         for f in ["a", "b"] {

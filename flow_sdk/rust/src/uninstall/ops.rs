@@ -174,7 +174,7 @@ fn gather_runtime(layout: &Layout) -> RuntimeFacts {
             rd.flatten().any(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
                 // Not the engine's own venv or its set-aside copies: a `.pre-repair` copy is checked
-                // when the runtime is removed, by whether it is still there (`aside_uses_runtime`).
+                // when the runtime is removed, by whether it is still there (`set_aside_copies_on_runtime`).
                 name != "flowpad" && !name.starts_with("flowpad.")
                     && venv_home(&e.path()).is_some_and(|h| procs::under(&h.display().to_string(), &runtime.display().to_string()))
             })
@@ -301,7 +301,7 @@ pub fn remove_if_empty(dir: &Path) -> bool {
 
 /// The `flowpad.pre-repair` venv is one the desktop made: the record set aside with it says
 /// `desktop` and still describes it (the same test as the live engine's record).
-fn pre_repair_proven(layout: &Layout) -> bool {
+pub fn pre_repair_proven(layout: &Layout) -> bool {
     let aside = layout.pre_repair_venv();
     let Some(record) = fs::read_to_string(layout.aside_ownership_record()).ok().and_then(|t| OwnershipRecord::parse(&t)) else {
         return false;
@@ -314,20 +314,31 @@ fn pre_repair_proven(layout: &Layout) -> bool {
     record.origin == "desktop" && record.describes(&identity, &receipt)
 }
 
-/// A `flowpad.pre-repair` venv still on disk runs on the repaired runtime: the runtime must stay.
-pub fn aside_uses_runtime(layout: &Layout) -> bool {
+/// The engine's set-aside copies still on disk (`flowpad.pre-repair`, `flowpad.corrupt-*`) that
+/// run on the repaired runtime: while one is there, removing the runtime would break it.
+pub fn set_aside_copies_on_runtime(layout: &Layout) -> Vec<String> {
     let runtime = layout.runtime().display().to_string();
-    venv_home(&layout.pre_repair_venv()).is_some_and(|h| procs::under(&h.display().to_string(), &runtime))
+    fs::read_dir(layout.uv_tools())
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| n.starts_with("flowpad."))
+                .filter(|n| venv_home(&layout.uv_tools().join(n)).is_some_and(|h| procs::under(&h.display().to_string(), &runtime)))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// A repair renames the engine it replaces to `.pre-repair` and deletes it once the repair holds.
 /// One still here was left by an interrupted repair: it goes only when the record set aside with it
 /// proves the desktop made it (an engine the desktop adopted is set aside the same way); otherwise
 /// it is kept and reported.
-pub fn remove_pre_repair(layout: &Layout, proven: bool, ledger: &mut Ledger, log: &mut Log) {
+pub fn remove_pre_repair(layout: &Layout, proven: bool, ledger: &mut Ledger, log: &mut Log) -> Option<Leftover> {
     let aside = layout.pre_repair_venv();
+    let mut leftover = None;
     if proven {
-        remove_tree(ledger, log, "engine set aside by a repair", &aside, None, Some(RECEIPT_FILE));
+        // In use (a file held open): deferred, with the runtime it runs on waiting behind it.
+        leftover = remove_tree(ledger, log, "engine set aside by a repair", &aside, Some(RootId::PreRepair), Some(RECEIPT_FILE));
     } else if fs::symlink_metadata(&aside).is_ok() {
         ledger.kept(
             "engine set aside by an interrupted repair",
@@ -338,6 +349,7 @@ pub fn remove_pre_repair(layout: &Layout, proven: bool, ledger: &mut Ledger, log
     if fs::symlink_metadata(&aside).is_err() {
         remove_file(ledger, log, "set-aside engine record", &layout.aside_ownership_record());
     }
+    leftover
 }
 
 /// Delete one named file (a record) beside others.
@@ -375,7 +387,7 @@ pub fn remove_engine(layout: &Layout, receipt: Option<&Receipt>, pre_repair_prov
         })
         .unwrap_or_default();
     remove_children(ledger, log, "set-aside engine", &layout.uv_tools(), &siblings);
-    remove_pre_repair(layout, pre_repair_proven, ledger, log);
+    leftovers.extend(remove_pre_repair(layout, pre_repair_proven, ledger, log));
     if !layout.venv().exists() {
         remove_file(ledger, log, "engine ownership record", &layout.ownership_record());
     }
@@ -445,6 +457,11 @@ pub fn defer_runtime(layout: &Layout, decisions: &[RuntimeDecision], ledger: &mu
 /// Runtime roots are removed only once no venv may still run on them.
 pub fn waits_for_venv(root: RootId) -> bool {
     matches!(root, RootId::RuntimePython | RootId::RuntimeDownloads)
+}
+
+/// An engine environment the runtime waits behind: the venv, or a set-aside copy of it.
+pub fn is_engine_root(root: RootId) -> bool {
+    matches!(root, RootId::Venv | RootId::PreRepair)
 }
 
 fn plain_installer_name(n: &str) -> bool {

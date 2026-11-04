@@ -157,8 +157,10 @@ def test_any_file_an_older_cli_left_counts(instance):
     root = instance.global_dir.parent / "instances"
     (root / "cli-only" / "tasks").mkdir(parents=True, exist_ok=True)
     (root / "cli-only" / "config.json").write_text("{}")
-    (root / "empty").mkdir(parents=True, exist_ok=True)
+    (root / "empty" / "logs" / "monitor").mkdir(parents=True, exist_ok=True)  # a launch, not use
     (root / "empty" / ".DS_Store").write_bytes(b"")  # the OS, not an engine
+    (root / "empty" / "server.lock").write_bytes(b"")
+    (root / "empty" / "server-failure.json").write_text("{}")
 
     cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60)
 

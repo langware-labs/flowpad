@@ -1635,6 +1635,8 @@ class UvManager {
     try {
       const result = await this._uvToolInstallForceAttempts(installArgs, { onProgress });
       this._recordEngineOwnership(venvBefore);
+      // An engine is installed now: a later repair has one to put back, whatever blocked the first install.
+      this._firstInstallBlocked = false;
       return result;
     } catch (err) {
       // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
@@ -1729,8 +1731,12 @@ class UvManager {
         return;
       }
       const tmp = `${aside}.${process.pid}.tmp`;
-      fs.copyFileSync(recordPath, tmp);
-      fs.renameSync(tmp, aside);
+      try {
+        fs.copyFileSync(recordPath, tmp);
+        fs.renameSync(tmp, aside);
+      } finally {
+        try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+      }
       this._asideRecordState = 'saved';
     } catch (e) {
       this._asideRecordState = 'unknown';
@@ -3578,22 +3584,27 @@ class UvManager {
     this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
     // The venv's ownership record goes aside with it: the rollback puts both back, and the
     // uninstaller removes a leftover set-aside venv only when its record proves it was the desktop's.
-    try {
-      if (this._hadEngineBeforeRepair === false) {
-        // A blocked FIRST install's half-built venv is not an engine: delete it, never set it aside
-        // (a leftover `.pre-repair` of it would only be hundreds of MB nothing can prove or use).
+    if (this._hadEngineBeforeRepair === false) {
+      // A blocked FIRST install's half-built venv is not an engine: delete it, never set it aside
+      // (a leftover `.pre-repair` of it would only be hundreds of MB nothing can prove or use).
+      // A delete that fails part-way HAS changed the venv: never "nothing changed" here.
+      try {
         fs.rmSync(this._toolVenvDir(), { recursive: true, force: true });
-      } else {
+      } catch (e) {
+        throw new Error(`could not delete the blocked first install's environment (${e.message})`);
+      }
+    } else {
+      try {
         this._setAsideOwnershipRecord();
         this._setAsidePreRepairVenv();
+      } catch (e) {
+        this._dropAsideOwnershipRecord();
+        // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
+        // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
+        const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
+        err.nothingChanged = true;
+        throw err;
       }
-    } catch (e) {
-      this._dropAsideOwnershipRecord();
-      // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
-      // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
-      const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
-      err.nothingChanged = true;
-      throw err;
     }
     this.log.info(`[runtime-repair] installing ${spec} on ${python}`);
     this._repairSetAside = true;

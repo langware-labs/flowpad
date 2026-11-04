@@ -382,7 +382,7 @@ Its progress is in `%LOCALAPPDATA%\Flowpad\fc\status.log`, which reads scheduled
 
 - **Exit 0**, summary "FlowPad was removed."
 - **Removed:**
-  - the venv, `flow.exe` / `flow-sdk-mcp.exe` and set-aside `flowpad.corrupt-*` copies. A `flowpad.pre-repair` left by an interrupted repair goes only when `engine-ownership.pre-repair.json` (written by the repair) proves the desktop made it; otherwise it is kept and reported, and the runtime it uses is kept with it;
+  - the venv, `flow.exe` / `flow-sdk-mcp.exe` and set-aside `flowpad.corrupt-*` copies. A `flowpad.pre-repair` left by an interrupted repair goes only when `engine-ownership.pre-repair.json` (written by the repair) proves the desktop made it (if it is in use, it is deferred and its runtime waits behind it); otherwise it is kept and reported, and the runtime it uses is kept with it, also by the deferred run;
   - `engine-ownership.json`, the repaired runtime and `desktop-runtime.json`;
   - the install marker, the launcher downloads, the updater cache and `%TEMP%\flowpad-*` leftovers.
 - **Untouched:** `uv.exe` / `uvx.exe`, other uv tools, and files in those folders that FlowPad did not create.
