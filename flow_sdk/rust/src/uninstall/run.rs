@@ -124,13 +124,19 @@ fn size_text(path: &Path, budget: &mut SizeBudget) -> String {
             md.len()
         }
     }
+    if budget.spent() {
+        return "size not measured".into();
+    }
     let mut cut = false;
     let bytes = walk(path, budget, &mut cut);
     let mb = format!("{:.1} MB", bytes as f64 / 1_048_576.0);
-    if cut {
-        format!("more than {mb}")
-    } else {
+    if !cut {
         mb
+    } else if bytes < 104_858 {
+        // Less than "0.1 MB" counted: "more than 0.0 MB" would read as empty.
+        "size not measured".into()
+    } else {
+        format!("more than {mb}")
     }
 }
 
@@ -143,19 +149,8 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     s.push_str(&format!("remove={}\n", engine.remove_by_default as u8));
     s.push_str(&format!("offer={}\n", engine.opt_in_offered as u8));
     s.push_str(&format!("reason={}\n", ini_escape(&engine.reasons.join("; "))));
+    // The user's data first: if the budget runs out, it is the app's cache that goes unmeasured.
     let mut budget = SizeBudget::new(SIZE_WALK_ENTRIES, SIZE_WALK_TIME);
-    let app = layout.app_data();
-    s.push_str("[appdata]\n");
-    s.push_str(&format!(
-        "text={}\n",
-        ini_escape(&format!(
-            "{} ({}), {}",
-            app.display(),
-            size_text(&app, &mut budget),
-            layout.flow_home().join("logs").join("main_desktop").display()
-        ))
-    ));
-    s.push_str("[instances]\n");
     let mut offered = Vec::new();
     let mut warn = false;
     let mut kept = Vec::new();
@@ -170,6 +165,18 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
             DataOffer::NotOffered(r) => kept.push(format!("{} — kept: {r}", i.name)),
         }
     }
+    let app = layout.app_data();
+    s.push_str("[appdata]\n");
+    s.push_str(&format!(
+        "text={}\n",
+        ini_escape(&format!(
+            "{} ({}), {}",
+            app.display(),
+            size_text(&app, &mut budget),
+            layout.flow_home().join("logs").join("main_desktop").display()
+        ))
+    ));
+    s.push_str("[instances]\n");
     s.push_str(&format!("offer={}\n", (!offered.is_empty()) as u8));
     s.push_str(&format!("warn={}\n", warn as u8));
     s.push_str(&format!("text={}\n", ini_escape(&offered.join(", "))));
@@ -275,7 +282,7 @@ pub fn run(o: &Options) -> i32 {
         leftovers = again;
     }
     if engine_goes && !layout.venv().exists() {
-        ops::remove_children(&mut ledger, &mut log, "engine ownership record", &layout.local_flowpad(), &["engine-ownership.json".to_string()]);
+        ops::remove_file(&mut ledger, &mut log, "engine ownership record", &layout.ownership_record());
         if !leftovers.iter().any(|l| ops::waits_for_venv(l.root)) && !layout.runtime().exists() {
             ops::remove_children(&mut ledger, &mut log, "runtime record", &layout.flow_home(), &[ops::RUNTIME_STATE_FILE.to_string()]);
         }
@@ -317,10 +324,17 @@ fn remove_all(
 ) -> Vec<Leftover> {
     let mut leftovers = Vec::new();
     if engine_goes {
-        leftovers.extend(ops::remove_engine(layout, g.receipt.as_ref(), ledger, log));
+        leftovers.extend(ops::remove_engine(layout, g.receipt.as_ref(), g.pre_repair_proven, ledger, log));
+    } else if engine_absent {
+        // No engine, but an interrupted repair may have left the previous one set aside.
+        ops::remove_pre_repair(layout, g.pre_repair_proven, ledger, log);
     }
     let venv_pending = leftovers.iter().any(|l| l.root == super::state::RootId::Venv);
-    let runtime = decide_runtime(&g.runtime, (engine_goes && (venv_pending || !layout.venv().exists())) || engine_absent);
+    // A set-aside `.pre-repair` venv still here (kept, not removable, or the engine stays) runs on
+    // the runtime: removing the runtime would break it.
+    let mut runtime_facts = g.runtime.clone();
+    runtime_facts.used_by_another_environment |= ops::aside_uses_runtime(layout);
+    let runtime = decide_runtime(&runtime_facts, (engine_goes && (venv_pending || !layout.venv().exists())) || engine_absent);
     if venv_pending {
         leftovers.extend(ops::defer_runtime(layout, &runtime, ledger));
     } else {
@@ -350,17 +364,18 @@ mod tests {
         for f in ["a", "b"] {
             fs::create_dir_all(dir.join(f)).unwrap();
             for i in 0..5 {
-                fs::write(dir.join(f).join(format!("f{i}")), vec![0u8; 1024]).unwrap();
+                fs::write(dir.join(f).join(format!("f{i}")), vec![0u8; 300 * 1024]).unwrap();
             }
         }
         let mut roomy = SizeBudget::new(100, Duration::from_secs(60));
-        assert_eq!(size_text(&dir.join("a"), &mut roomy), "0.0 MB");
+        assert_eq!(size_text(&dir.join("a"), &mut roomy), "1.5 MB");
         // 8 entries: the first folder (6) fits, the second runs out.
         let mut tight = SizeBudget::new(8, Duration::from_secs(60));
-        assert!(!size_text(&dir.join("a"), &mut tight).starts_with("more than "));
-        assert!(size_text(&dir.join("b"), &mut tight).starts_with("more than "));
+        assert_eq!(size_text(&dir.join("a"), &mut tight), "1.5 MB");
+        assert_eq!(size_text(&dir.join("b"), &mut tight), "more than 0.3 MB");
+        assert_eq!(size_text(&dir.join("b"), &mut tight), "size not measured", "nothing counted: never \"0.0 MB\"");
         let mut timed_out = SizeBudget::new(100, Duration::ZERO);
-        assert!(size_text(&dir.join("a"), &mut timed_out).starts_with("more than "));
+        assert_eq!(size_text(&dir.join("a"), &mut timed_out), "size not measured");
         fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -149,10 +149,12 @@ try {
   Write-Host '== an interrupted repair left the previous engine set aside: kept and reported'
   $r = New-Layout 'pre-repair'
   W "$r\roaming\uv\tools\flowpad.pre-repair\x" 'previous engine'
+  W "$r\roaming\uv\tools\flowpad.pre-repair\pyvenv.cfg" "home = $r\local\Flowpad\runtime\python-3.11.9`r`n"
   $code = Invoke-Uninstall $r @()
   Check ($code -eq 20) "partial (exit 20), got $code"
   Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'the desktop-installed engine is still removed'
   Check (Test-Path "$r\roaming\uv\tools\flowpad.pre-repair\x") 'the set-aside copy is kept'
+  Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'and the runtime it runs on is kept with it'
   Check ((Result $r) -match 'interrupted repair') 'and reported'
 
   Write-Host '== a set-aside engine whose record proves the desktop made it: removed'
@@ -166,6 +168,20 @@ try {
   Check ($code -eq 0) "exit 0 (complete), got $code"
   Check (-not (Test-Path $aside)) 'the set-aside copy is removed'
   Check (-not (Test-Path "$r\local\Flowpad\engine-ownership.pre-repair.json")) 'with its record'
+
+  Write-Host '== no engine, but a repair was interrupted: the proven set-aside copy goes, then its runtime'
+  $r = New-Layout 'pre-repair-no-engine'
+  Remove-Tree "$r\roaming\uv\tools\flowpad"; Remove-Item "$r\local\Flowpad\engine-ownership.json"
+  $aside = "$r\roaming\uv\tools\flowpad.pre-repair"
+  W "$aside\uv-receipt.toml" 'receipt of the previous engine'
+  W "$aside\pyvenv.cfg" "home = $r\local\Flowpad\runtime\python-3.11.9`r`n"
+  $aid = [FileIdentity]::Of($aside)
+  $asha = (Get-FileHash "$aside\uv-receipt.toml" -Algorithm SHA256).Hash.ToLower()
+  W "$r\local\Flowpad\engine-ownership.pre-repair.json" (@{ schema = 1; origin = 'desktop'; venv = "$r\roaming\uv\tools\flowpad"; venvVolume = $aid[0]; venvFileId = $aid[1]; receiptSha256 = $asha; desktopVersion = '0.2.59'; installedAt = 'T' } | ConvertTo-Json)
+  $code = Invoke-Uninstall $r @()
+  Check ($code -eq 0) "exit 0 (complete), got $code"
+  Check (-not (Test-Path $aside)) 'the set-aside copy is removed'
+  Check (-not (Test-Path "$r\local\Flowpad\runtime")) 'and the runtime, which nothing runs on any more'
 
   Write-Host '== an instance that predates CLI-use stamping: the engine is kept unless the user opts in'
   $r = New-Layout 'predates'

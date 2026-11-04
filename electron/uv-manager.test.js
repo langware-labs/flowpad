@@ -1743,13 +1743,35 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     await m._rollbackEngine();
     ok(!fs.existsSync(recordPath), 'no record before the repair → none after its rollback');
 
-    // A repair after a BLOCKED FIRST install: what is set aside is that install's half-built venv, not an engine.
+    // A record the copy could not set aside (or one of another schema, copied as is): the rollback
+    // never deletes the live record on a guess — a missing record would make the engine unremovable.
+    fs.writeFileSync(recordPath, '{"schema":2,"origin":"desktop"}');
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._rollbackEngine();
+    eq(fs.readFileSync(recordPath, 'utf8'), '{"schema":2,"origin":"desktop"}', 'a record of another schema is set aside and restored byte for byte');
+    fs.writeFileSync(recordPath, rec('desktop'));
+    const realCopy = fs.copyFileSync;
+    fs.copyFileSync = () => { throw new Error('EBUSY'); };
+    try { await m._installEngineOn('C:\\p\\python.exe'); } finally { fs.copyFileSync = realCopy; }
+    await m._rollbackEngine();
+    ok(fs.existsSync(recordPath), 'a record that could not be set aside is not deleted by the rollback');
+
+    // A repair after a BLOCKED FIRST install: the half-built venv is deleted, not set aside.
     fs.rmSync(venv, { recursive: true, force: true });
     fs.mkdirSync(venv, { recursive: true });
+    fs.writeFileSync(path.join(venv, 'HALF'), '');
     m.markFirstInstallBlocked();
     m.getInstalledVersionSync = () => null;
     await m._installEngineOn('C:\\p\\python.exe');
-    ok(snapshotInRepair && !snapshotInRepair.exists, 'after a blocked first install, the half-built venv set aside does not make the repair "adopted"');
+    ok(snapshotInRepair && !snapshotInRepair.exists, 'after a blocked first install, the repair is the desktop\'s, not "adopted"');
+    ok(!fs.existsSync(`${venv}.pre-repair`), 'the half-built venv is deleted, not set aside');
+    // That repair held; a LATER repair that fails must put the working engine back.
+    await m._finalizeEngine();
+    m.getInstalledVersionSync = () => '0.2.202';
+    fs.writeFileSync(path.join(venv, 'WORKING'), '');
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._rollbackEngine();
+    ok(fs.existsSync(path.join(venv, 'WORKING')), 'after a held first-install repair, a later failed repair restores the working engine');
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   {

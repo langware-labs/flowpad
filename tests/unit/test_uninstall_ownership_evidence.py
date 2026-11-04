@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -138,16 +140,64 @@ def test_stamping_marker_names_instances_an_older_engine_ran_against(instance):
 
 
 def test_a_clean_install_has_no_preexisting_instance(instance):
-    """The desktop creates instances/prod (and its logs) at launch, before any engine runs; the
-    first server then creates the database. Nothing there predates stamping."""
+    """The desktop creates the empty instances/prod at launch (main.js armAccountWatch), before any
+    engine runs; the first engine then fills it. Nothing there predates stamping."""
     root = instance.global_dir.parent / "instances"
-    (root / "prod" / "logs" / "server").mkdir(parents=True, exist_ok=True)  # the desktop, at launch
+    (root / "prod").mkdir(parents=True, exist_ok=True)  # the desktop, at launch
     started = time.time() + 60  # the folder predates the server process...
 
     cli_use.ensure_stamping_marker(instance.global_dir, started=started)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert "prod" not in marker["preexisting"], "...but no engine had run against it"
+
+
+def test_any_file_an_older_cli_left_counts(instance):
+    """A `flow` command that never started a server still leaves files (config.json, tasks/)."""
+    root = instance.global_dir.parent / "instances"
+    (root / "cli-only" / "tasks").mkdir(parents=True, exist_ok=True)
+    (root / "cli-only" / "config.json").write_text("{}")
+    (root / "empty").mkdir(parents=True, exist_ok=True)
+    (root / "empty" / ".DS_Store").write_bytes(b"")  # the OS, not an engine
+
+    cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60)
+
+    marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
+    assert "cli-only" in marker["preexisting"]
+    assert "empty" not in marker["preexisting"]
+
+
+def test_an_overridden_database_counts_for_its_instance(instance, tmp_path, monkeypatch):
+    root = instance.global_dir.parent / "instances"
+    (root / "moved").mkdir(parents=True, exist_ok=True)  # nothing in the folder itself
+    db = tmp_path / "elsewhere.db"
+    db.write_bytes(b"db")
+    monkeypatch.setenv("SQLITE_DATABASE_PATH", str(db))
+
+    cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60, current="moved")
+
+    marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
+    assert "moved" in marker["preexisting"]
+
+
+def test_an_unreadable_entry_counts_and_the_scan_goes_on(instance, monkeypatch):
+    """One unreadable folder must not cut the list short: the marker is written only once."""
+    root = instance.global_dir.parent / "instances"
+    for name in ("a-locked", "b-old"):
+        (root / name).mkdir(parents=True, exist_ok=True)
+    (root / "b-old" / "flowpad.db").write_bytes(b"db")
+    real_is_dir = Path.is_dir
+
+    def is_dir(self):
+        if self.name == "a-locked":
+            raise PermissionError("EACCES")
+        return real_is_dir(self)
+
+    monkeypatch.setattr(Path, "is_dir", is_dir)
+    cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60)
+
+    marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
+    assert {"a-locked", "b-old"} <= set(marker["preexisting"])
 
 
 def test_a_database_this_process_created_is_not_preexisting(instance):
@@ -242,3 +292,31 @@ def test_terminals_inherit_the_desktop_flag(monkeypatch):
     monkeypatch.setenv("FLOWPAD_DESKTOP", "1")
 
     assert _build_interactive_pty_env("session-1")["FLOWPAD_DESKTOP"] == "1"
+
+
+# ---------------------------------------------------------------------------
+# The uninstaller deletes the keys the writers made: same service, same account suffix
+# ---------------------------------------------------------------------------
+
+
+def test_the_uninstaller_deletes_the_key_slots_the_writers_use():
+    """flow-rs's release names (flow_sdk/rust/src/uninstall/ops.rs) must be the ones the engine
+    (Python), the signed flow-rs binary's callers and the desktop write. Read with a pattern, not
+    an exact line, so a formatting change does not break it; a renamed constant does."""
+    from flow_sdk.flow_rs_binary import FLOW_RS_ACCOUNT_SUFFIX
+    from flow_sdk.instance_settings.base_settings import SOD_KEY_KEYCHAIN_SERVICE
+
+    repo = Path(__file__).resolve().parents[2]
+    rust = (repo / "flow_sdk" / "rust" / "src" / "uninstall" / "ops.rs").read_text(encoding="utf-8")
+    desktop = (repo / "electron" / "uv-manager.js").read_text(encoding="utf-8")
+    desktop_rs = (repo / "electron" / "flow-rs-keychain.js").read_text(encoding="utf-8")
+
+    def const(text, name):
+        m = re.search(rf"{name}\s*(?::\s*&str)?\s*=\s*[\"']([^\"']+)[\"']", text)
+        assert m, f"{name} not found"
+        return m.group(1)
+
+    assert const(rust, "RELEASE_INSTANCE_KEY_SERVICE") == SOD_KEY_KEYCHAIN_SERVICE
+    assert const(desktop, "SOD_KEY_KEYCHAIN_SERVICE") == SOD_KEY_KEYCHAIN_SERVICE
+    assert const(rust, "FLOW_RS_ACCOUNT_SUFFIX") == FLOW_RS_ACCOUNT_SUFFIX
+    assert f"}}{FLOW_RS_ACCOUNT_SUFFIX}`" in desktop_rs, "the desktop's flow-rs account is <instance>.flow-rs"

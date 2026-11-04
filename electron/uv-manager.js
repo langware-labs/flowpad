@@ -1712,27 +1712,51 @@ class UvManager {
     return recordPath && path.join(path.dirname(recordPath), engineOwnership.ASIDE_RECORD_FILE);
   }
 
-  /** Before the repair sets the venv aside: its record goes aside with it (none → none). Never throws. */
+  /**
+   * Before the repair sets the venv aside: its record goes aside with it, byte for byte. Remembers
+   * what was there — 'saved', 'none' (no record: none to put back) or 'unknown' (the copy failed) —
+   * so the rollback never deletes a record it could not set aside. Never throws.
+   */
   _setAsideOwnershipRecord() {
+    this._asideRecordState = undefined;
     const recordPath = this._engineOwnershipPath();
     if (!recordPath || !fs.existsSync(this._toolVenvDir())) return; // nothing is set aside
+    const aside = this._asideRecordPath();
     try {
-      const record = engineOwnership.readRecord((p) => fs.readFileSync(p, 'utf8'), recordPath);
-      if (record) this._writeOwnershipRecord(this._asideRecordPath(), record);
-      else fs.rmSync(this._asideRecordPath(), { force: true });
+      if (!fs.existsSync(recordPath)) {
+        fs.rmSync(aside, { force: true });
+        this._asideRecordState = 'none';
+        return;
+      }
+      const tmp = `${aside}.${process.pid}.tmp`;
+      fs.copyFileSync(recordPath, tmp);
+      fs.renameSync(tmp, aside);
+      this._asideRecordState = 'saved';
     } catch (e) {
+      this._asideRecordState = 'unknown';
+      try { fs.rmSync(aside, { force: true }); } catch { /* best effort */ }
       this.log.warn(`[runtime-repair] could not set the engine ownership record aside: ${e.message}`);
     }
   }
 
-  /** The set-aside venv is back in place: so is its record (none aside → none now). Never throws. */
+  /**
+   * The set-aside venv is back in place: so is its record. Without a set-aside record the live one
+   * is deleted only when there was none before the repair; otherwise it stays (it no longer matches
+   * the venv, so the uninstaller keeps the engine — never a guess that removes it). Never throws.
+   */
   _restoreAsideOwnershipRecord() {
     const recordPath = this._engineOwnershipPath();
     if (!recordPath) return;
     try {
       const aside = this._asideRecordPath();
-      if (fs.existsSync(aside)) fs.renameSync(aside, recordPath);
-      else fs.rmSync(recordPath, { force: true });
+      if (fs.existsSync(aside)) {
+        fs.renameSync(aside, recordPath);
+      } else if (this._asideRecordState === 'none') {
+        fs.rmSync(recordPath, { force: true });
+      } else {
+        this.log.warn('[runtime-repair] the engine ownership record was not set aside: the restored engine keeps the current one');
+        return;
+      }
       this.log.info('[runtime-repair] engine ownership record restored with the engine');
     } catch (e) {
       this.log.warn(`[runtime-repair] could not restore the engine ownership record: ${e.message}`);
@@ -3554,9 +3578,15 @@ class UvManager {
     this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
     // The venv's ownership record goes aside with it: the rollback puts both back, and the
     // uninstaller removes a leftover set-aside venv only when its record proves it was the desktop's.
-    this._setAsideOwnershipRecord();
     try {
-      this._setAsidePreRepairVenv();
+      if (this._hadEngineBeforeRepair === false) {
+        // A blocked FIRST install's half-built venv is not an engine: delete it, never set it aside
+        // (a leftover `.pre-repair` of it would only be hundreds of MB nothing can prove or use).
+        fs.rmSync(this._toolVenvDir(), { recursive: true, force: true });
+      } else {
+        this._setAsideOwnershipRecord();
+        this._setAsidePreRepairVenv();
+      }
     } catch (e) {
       this._dropAsideOwnershipRecord();
       // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
@@ -3598,6 +3628,8 @@ class UvManager {
   /** The repair held: drop the set-aside environment. Best effort; a leftover is harmless. */
   async _finalizeEngine() {
     const aside = this._preRepairVenvDir();
+    // The repair held: there is an engine now, so a later repair has one to put back.
+    this._firstInstallBlocked = false;
     try {
       fs.rmSync(aside, { recursive: true, force: true });
       this._dropAsideOwnershipRecord();

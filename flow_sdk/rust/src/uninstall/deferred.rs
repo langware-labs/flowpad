@@ -275,6 +275,10 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
             status(layout, &format!("{:?}: waits, the engine is still there", entry.root));
             continue;
         }
+        if ops::waits_for_venv(entry.root) && ops::aside_uses_runtime(layout) {
+            status(layout, &format!("{:?}: kept, a set-aside engine still runs on it", entry.root));
+            continue;
+        }
         if let Err(why) = still_owned(layout, entry.root, &path) {
             status(layout, &format!("{:?}: skipped, {why}", entry.root));
             continue;
@@ -306,7 +310,7 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
     if still_there.is_empty() {
         status(layout, "verified: every pending item is gone");
         if body.entries.iter().any(|e| e.root == RootId::Venv) && !layout.venv().exists() {
-            let _ = ops::remove_children(&mut ledger, log, "engine ownership record", &layout.local_flowpad(), &["engine-ownership.json".to_string()]);
+            ops::remove_file(&mut ledger, log, "engine ownership record", &layout.ownership_record());
         }
         if body.entries.iter().any(|e| ops::waits_for_venv(e.root)) {
             ops::remove_if_empty(&layout.runtime());

@@ -209,7 +209,8 @@ class FlowServer:
             from flow_sdk.cli.cli_use import ensure_stamping_marker
             from flow_sdk.instance_settings import get_instance_settings
 
-            ensure_stamping_marker(get_instance_settings().global_dir)
+            _settings = get_instance_settings()
+            ensure_stamping_marker(_settings.global_dir, current=_settings.instance_name)
 
             # SOD driver. An explicitly-registered driver (tests / embedders /
             # cloud) wins. Otherwise there is NO desktop driver to install:

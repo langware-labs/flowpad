@@ -46,6 +46,8 @@ pub struct Gathered {
     pub receipt: Option<Receipt>,
     pub servers: Vec<InstanceServer>,
     pub engine_interpreters: Vec<String>,
+    /// `flowpad.pre-repair` is a venv the desktop made (its set-aside record says so): it goes with the engine.
+    pub pre_repair_proven: bool,
 }
 
 fn is_real_dir(p: &Path) -> bool {
@@ -127,7 +129,7 @@ pub fn gather(layout: &Layout, log: &mut Log) -> Gathered {
         independent_server_running: !selection.independent_servers.is_empty(),
     };
     let runtime = gather_runtime(layout);
-    Gathered { facts, runtime, receipt, servers, engine_interpreters }
+    Gathered { facts, runtime, receipt, servers, engine_interpreters, pre_repair_proven: pre_repair_proven(layout) }
 }
 
 fn gather_runtime(layout: &Layout) -> RuntimeFacts {
@@ -171,11 +173,9 @@ fn gather_runtime(layout: &Layout) -> RuntimeFacts {
         .map(|rd| {
             rd.flatten().any(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                // The live venv and the set-aside copies that go with the engine are not "another"
-                // environment; a `.pre-repair` copy that stays (not proven ours) is.
-                name != "flowpad"
-                    && !name.starts_with("flowpad.corrupt-")
-                    && !(name == "flowpad.pre-repair" && pre_repair_proven(layout))
+                // Not the engine's own venv or its set-aside copies: a `.pre-repair` copy is checked
+                // when the runtime is removed, by whether it is still there (`aside_uses_runtime`).
+                name != "flowpad" && !name.starts_with("flowpad.")
                     && venv_home(&e.path()).is_some_and(|h| procs::under(&h.display().to_string(), &runtime.display().to_string()))
             })
         })
@@ -300,24 +300,55 @@ pub fn remove_if_empty(dir: &Path) -> bool {
 }
 
 /// The `flowpad.pre-repair` venv is one the desktop made: the record set aside with it says
-/// `desktop`, and the folder's identity and receipt are still the ones recorded.
-pub fn pre_repair_proven(layout: &Layout) -> bool {
+/// `desktop` and still describes it (the same test as the live engine's record).
+fn pre_repair_proven(layout: &Layout) -> bool {
     let aside = layout.pre_repair_venv();
     let Some(record) = fs::read_to_string(layout.aside_ownership_record()).ok().and_then(|t| OwnershipRecord::parse(&t)) else {
         return false;
     };
-    let Ok(root) = Root::open(&aside) else { return false };
-    let id = root.identity();
+    let identity = Root::open(&aside).ok().map(|r| {
+        let id = r.identity();
+        (id.volume.to_string(), id.file_id.to_string())
+    });
     let receipt = fs::read(aside.join(RECEIPT_FILE)).ok().map(|b| hex(&Sha256::digest(&b)));
-    record.origin == "desktop"
-        && record.venv_volume.as_deref() == Some(id.volume.to_string().as_str())
-        && record.venv_file_id.as_deref() == Some(id.file_id.to_string().as_str())
-        && receipt.is_some()
-        && record.receipt_sha256 == receipt
+    record.origin == "desktop" && record.describes(&identity, &receipt)
+}
+
+/// A `flowpad.pre-repair` venv still on disk runs on the repaired runtime: the runtime must stay.
+pub fn aside_uses_runtime(layout: &Layout) -> bool {
+    let runtime = layout.runtime().display().to_string();
+    venv_home(&layout.pre_repair_venv()).is_some_and(|h| procs::under(&h.display().to_string(), &runtime))
+}
+
+/// A repair renames the engine it replaces to `.pre-repair` and deletes it once the repair holds.
+/// One still here was left by an interrupted repair: it goes only when the record set aside with it
+/// proves the desktop made it (an engine the desktop adopted is set aside the same way); otherwise
+/// it is kept and reported.
+pub fn remove_pre_repair(layout: &Layout, proven: bool, ledger: &mut Ledger, log: &mut Log) {
+    let aside = layout.pre_repair_venv();
+    if proven {
+        remove_tree(ledger, log, "engine set aside by a repair", &aside, None, Some(RECEIPT_FILE));
+    } else if fs::symlink_metadata(&aside).is_ok() {
+        ledger.kept(
+            "engine set aside by an interrupted repair",
+            &aside,
+            "FlowPad cannot confirm it installed this copy; delete the folder if you do not need it",
+        );
+    }
+    if fs::symlink_metadata(&aside).is_err() {
+        remove_file(ledger, log, "set-aside engine record", &layout.aside_ownership_record());
+    }
+}
+
+/// Delete one named file (a record) beside others.
+pub fn remove_file(ledger: &mut Ledger, log: &mut Log, what: &str, path: &Path) {
+    if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
+        remove_children(ledger, log, what, parent, &[name.to_string_lossy().to_string()]);
+    }
 }
 
 /// The engine venv, its shims and leftovers of the desktop's own quarantine and repair.
-pub fn remove_engine(layout: &Layout, receipt: Option<&Receipt>, ledger: &mut Ledger, log: &mut Log) -> Vec<Leftover> {
+pub fn remove_engine(layout: &Layout, receipt: Option<&Receipt>, pre_repair_proven: bool, ledger: &mut Ledger, log: &mut Log) -> Vec<Leftover> {
     let mut leftovers = Vec::new();
     // Shims first, from the receipt read before anything was deleted. Only the two FlowPad entry
     // points, only at the exact path uv put them.
@@ -344,24 +375,9 @@ pub fn remove_engine(layout: &Layout, receipt: Option<&Receipt>, ledger: &mut Le
         })
         .unwrap_or_default();
     remove_children(ledger, log, "set-aside engine", &layout.uv_tools(), &siblings);
-    // A repair renames the engine it replaces to `.pre-repair` and deletes it once the repair
-    // holds. One still here was left by an interrupted repair: it goes only when the record set
-    // aside with it proves the desktop made it (an engine the desktop adopted is set aside the same way).
-    let aside = layout.pre_repair_venv();
-    if pre_repair_proven(layout) {
-        remove_tree(ledger, log, "engine set aside by a repair", &aside, None, Some(RECEIPT_FILE));
-    } else if fs::symlink_metadata(&aside).is_ok() {
-        ledger.kept(
-            "engine set aside by an interrupted repair",
-            &aside,
-            "FlowPad cannot confirm it installed this copy; delete the folder if you do not need it",
-        );
-    }
-    if fs::symlink_metadata(&aside).is_err() {
-        remove_children(ledger, log, "set-aside engine record", &layout.local_flowpad(), &["engine-ownership.pre-repair.json".to_string()]);
-    }
+    remove_pre_repair(layout, pre_repair_proven, ledger, log);
     if !layout.venv().exists() {
-        remove_children(ledger, log, "engine ownership record", &layout.local_flowpad(), &["engine-ownership.json".to_string()]);
+        remove_file(ledger, log, "engine ownership record", &layout.ownership_record());
     }
     leftovers
 }
@@ -518,15 +534,18 @@ pub fn remove_instance(layout: &Layout, name: &str, ledger: &mut Ledger, log: &m
     leftover.into_iter().collect()
 }
 
-/// Where FlowPad keeps an instance's key: the name every writer uses (pinned by a test below).
+/// Where FlowPad keeps an instance's key: the name every writer uses
+/// (tests/unit/test_uninstall_ownership_evidence.py pins it against Python and the desktop).
 pub const RELEASE_INSTANCE_KEY_SERVICE: &str = "Flowpad.ai.sod_key";
+/// The account flow-rs itself writes under: `<instance>.flow-rs` (flow_sdk/flow_rs_binary.py).
+pub const FLOW_RS_ACCOUNT_SUFFIX: &str = ".flow-rs";
 /// Debug builds (the end-to-end tests, whose folders are a scratch tree) use their own name, so a
 /// test run never deletes the real key of the machine's prod.
 pub const INSTANCE_KEY_SERVICE: &str = if cfg!(debug_assertions) { "Flowpad.ai.sod_key.debug" } else { RELEASE_INSTANCE_KEY_SERVICE };
 
 /// An instance's stored keys go once its folder is gone (now, or in the deferred cleanup).
 pub fn remove_instance_credentials(name: &str, log: &mut Log) {
-    for account in [format!("{name}.flow-rs"), name.to_string()] {
+    for account in [format!("{name}{FLOW_RS_ACCOUNT_SUFFIX}"), name.to_string()] {
         if let Ok(entry) = keyring::Entry::new(INSTANCE_KEY_SERVICE, &account) {
             if entry.delete_credential().is_ok() {
                 log.line(&format!("removed stored credential {INSTANCE_KEY_SERVICE}/{account}"));
@@ -566,13 +585,9 @@ pub fn sniffer_hooks_remain(layout: &Layout) -> bool {
 mod tests {
     use super::*;
 
-    /// The uninstaller deletes the keys the engine and the desktop wrote: same service name.
+    /// A test build never touches the machine's real keys.
     #[test]
-    fn the_release_key_service_is_the_one_the_writers_use() {
-        let python = include_str!("../../../instance_settings/base_settings.py");
-        let desktop = include_str!("../../../../electron/uv-manager.js");
-        assert!(python.contains(&format!("SOD_KEY_KEYCHAIN_SERVICE = \"{RELEASE_INSTANCE_KEY_SERVICE}\"")));
-        assert!(desktop.contains(&format!("SOD_KEY_KEYCHAIN_SERVICE = '{RELEASE_INSTANCE_KEY_SERVICE}'")));
-        assert_ne!(INSTANCE_KEY_SERVICE, RELEASE_INSTANCE_KEY_SERVICE, "a test build must not touch the real keys");
+    fn a_test_build_uses_its_own_key_service() {
+        assert_ne!(INSTANCE_KEY_SERVICE, RELEASE_INSTANCE_KEY_SERVICE);
     }
 }

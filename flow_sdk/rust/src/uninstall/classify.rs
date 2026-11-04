@@ -23,6 +23,15 @@ pub struct OwnershipRecord {
 
 pub const RECORD_SCHEMA: u32 = 1;
 
+impl OwnershipRecord {
+    /// The record is about this venv: same directory (volume, file id) and the same uv receipt.
+    pub fn describes(&self, identity: &Option<(String, String)>, receipt_sha256: &Option<String>) -> bool {
+        let same_dir = matches!((&self.venv_volume, &self.venv_file_id, identity), (Some(v), Some(i), Some((cv, ci))) if v == cv && i == ci);
+        let same_receipt = matches!((&self.receipt_sha256, receipt_sha256), (Some(a), Some(b)) if a == b);
+        same_dir && same_receipt
+    }
+}
+
 /// A file saved by an editor (Notepad) may start with a UTF-8 byte-order mark; it changes nothing
 /// about what the file says.
 pub fn strip_bom(text: &str) -> &str {
@@ -130,10 +139,7 @@ pub fn decide_engine(f: &Facts) -> EngineDecision {
     }
 
     let mut shared = Vec::new();
-    let recorded = (record.venv_volume.clone(), record.venv_file_id.clone());
-    let same_dir = matches!((&recorded, &e.identity), ((Some(v), Some(i)), Some((cv, ci))) if v == cv && i == ci);
-    let same_receipt = matches!((&record.receipt_sha256, &e.receipt_sha256), (Some(a), Some(b)) if a == b);
-    if !same_dir || !same_receipt {
+    if !record.describes(&e.identity, &e.receipt_sha256) {
         shared.push("the engine was changed after FlowPad Desktop installed it".into());
     }
     if !e.receipt.as_ref().is_some_and(Receipt::is_plain_flowpad) {
