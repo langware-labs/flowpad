@@ -439,9 +439,11 @@ msgid "{0, plural, one {# layout} other {# layouts}}"
 msgstr "{0, plural, one {פריסה אחת} other {# פריסות}}"
 
 #. placeholder {0}: (g.contacts ?? []).length
+#. placeholder {0}: g.contacts.length
 #. placeholder {0}: team.member_count
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 #: src/components/contact-picker/ContactPicker.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
 msgid "{0, plural, one {# member} other {# members}}"
@@ -888,6 +890,10 @@ msgstr ""
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "{0} left of {1}."
 msgstr ""
+
+#: src/components/contact-picker/ContactsDialog.tsx
+#~ msgid "{0} members"
+#~ msgstr "{0} חברים"
 
 #. placeholder {0}: entry.message_count
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -2925,15 +2931,10 @@ msgstr "פעיל"
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
-#: src/pages/hub-home/HubItemsSection.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/tabs/provider-meta.tsx
 msgid "Active"
@@ -3643,6 +3644,7 @@ msgstr "מזהה ה-AgenticProcess שאליו מקושרת הערת הפרומפ
 msgid "agents"
 msgstr "סוכנים"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
@@ -3652,16 +3654,16 @@ msgid "Agents"
 msgstr "סוכנים"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Agents in {projectName} with a deployment"
-msgstr "סוכנים עם פריסה ב-{projectName}"
+#~ msgid "Agents in {projectName} with a deployment"
+#~ msgstr "סוכנים עם פריסה ב-{projectName}"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Agents on this machine with a deployment"
-msgstr ""
+#~ msgid "Agents on this machine with a deployment"
+#~ msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Agents with a live deployment"
-msgstr ""
+#~ msgid "Agents with a live deployment"
+#~ msgstr ""
 
 #: src/components/ask/AskAssist.tsx
 msgid "AI Assist"
@@ -3708,13 +3710,9 @@ msgstr "יישור ההתחלה (שמאל ב-LTR, ימין ב-RTL)"
 msgid "all"
 msgstr "הכל"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/axes.tsx
+#: src/components/asset-counters/issue-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
@@ -3835,8 +3833,6 @@ msgstr "כל הפריסות עדכניות"
 msgid "All owners"
 msgstr "כל הבעלים"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
@@ -4635,6 +4631,7 @@ msgstr "מאושר לסשן הזה"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr "אישור מאפשר למכונה הזו לפעול בשם המשתמש ב-FlowPad. יש לאשר רק קוד שיצרתם בעצמכם."
 
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/project-home/ProjectApps.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
@@ -4646,12 +4643,12 @@ msgid "Apps and agents"
 msgstr "אפליקציות וסוכנים"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Apps in {projectName} with a deployment"
-msgstr "אפליקציות עם פריסה ב-{projectName}"
+#~ msgid "Apps in {projectName} with a deployment"
+#~ msgstr "אפליקציות עם פריסה ב-{projectName}"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Apps on this machine with a deployment"
-msgstr ""
+#~ msgid "Apps on this machine with a deployment"
+#~ msgstr ""
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 msgid "architecture"
@@ -8024,7 +8021,8 @@ msgstr "צריכה"
 msgid "Contact Permission"
 msgstr "הרשאת אנשי קשר"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Contacts"
 msgstr "אנשי קשר"
 
@@ -9814,8 +9812,8 @@ msgid "Create a brand-new repository"
 msgstr "ליצור מאגר חדש לגמרי"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "Create a contacts group — add its members to any conversation in one click"
-msgstr "יצירת קבוצת אנשי קשר — הוספת חבריה לכל שיחה בלחיצה אחת"
+#~ msgid "Create a contacts group — add its members to any conversation in one click"
+#~ msgstr "יצירת קבוצת אנשי קשר — הוספת חבריה לכל שיחה בלחיצה אחת"
 
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Create a dashboard"
@@ -11681,6 +11679,7 @@ msgstr "הושלם"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactPermissionsDialog.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -12601,6 +12600,7 @@ msgid "errors"
 msgstr "שגיאות"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -12710,32 +12710,32 @@ msgid "every agent"
 msgstr "כל סוכן"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Every agent {projectName} can launch"
-msgstr "כל סוכן ש-{projectName} יכול להפעיל"
+#~ msgid "Every agent {projectName} can launch"
+#~ msgstr "כל סוכן ש-{projectName} יכול להפעיל"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Every agent already has a mailbox — a mailbox belongs to one agent, so create another agent first."
 msgstr "לכל הסוכנים כבר יש תיבת דואר — תיבה שייכת לסוכן אחד, אז צור סוכן נוסף קודם."
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Every agent on this machine"
-msgstr "כל סוכן במחשב הזה"
+#~ msgid "Every agent on this machine"
+#~ msgstr "כל סוכן במחשב הזה"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every agent you can reach"
-msgstr ""
+#~ msgid "Every agent you can reach"
+#~ msgstr ""
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 msgstr "כל הקצאה שניתנה, שונתה או הוסרה כאן ובכל מה שמומן ממנה. לקריאה בלבד."
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Every app in {projectName}"
-msgstr "כל אפליקציה ב-{projectName}"
+#~ msgid "Every app in {projectName}"
+#~ msgstr "כל אפליקציה ב-{projectName}"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Every app on this machine"
-msgstr "כל אפליקציה במחשב הזה"
+#~ msgid "Every app on this machine"
+#~ msgstr "כל אפליקציה במחשב הזה"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Every channel that sends and receives messages, and where its messages arrive. A channel on Flowpad's own accounts arrives through the hub, which only hands each message to the place below."
@@ -12755,8 +12755,8 @@ msgid "Every day at {time}"
 msgstr "כל יום בשעה {time}"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every deployment you can reach"
-msgstr ""
+#~ msgid "Every deployment you can reach"
+#~ msgstr ""
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Every few minutes or hours"
@@ -12775,8 +12775,8 @@ msgstr "לכל שורה בעלת אינדקס יש קובץ מקור בדיסק.
 #~ msgstr "בכל מחשב"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every machine you can reach"
-msgstr ""
+#~ msgid "Every machine you can reach"
+#~ msgstr ""
 
 #~ msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
 #~ msgstr ""
@@ -15338,6 +15338,10 @@ msgstr "משימת קבוצה נוצרה"
 msgid "Group task created with issues"
 msgstr "משימת קבוצה נוצרה עם בעיות"
 
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Groups"
+msgstr "קבוצות"
+
 #: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
@@ -17250,7 +17254,7 @@ msgstr "בסיס ידע"
 msgid "Knowledge Browser"
 msgstr "דפדפן ידע"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "Known by user id only"
 msgstr "מזוהה רק לפי מזהה משתמש"
 
@@ -18568,8 +18572,8 @@ msgid "Machines"
 msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Machines that are running"
-msgstr ""
+#~ msgid "Machines that are running"
+#~ msgstr ""
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
@@ -19119,6 +19123,10 @@ msgstr "דקה שעה יום חודש יום שבוע — או \"30s\" / \"5m\" 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "min: {minLabel}"
 msgstr "מינ׳: {minLabel}"
+
+#: src/components/asset-counters/axes.tsx
+msgid "Mine"
+msgstr ""
 
 #: src/components/automations/AutomationsList.tsx
 msgid "Mine, everywhere"
@@ -19734,7 +19742,6 @@ msgstr "חדש"
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateNewSection.tsx
 #: src/components/quick-create/QuickCreateTile.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
@@ -19810,6 +19817,10 @@ msgstr "סשן Claude חדש"
 msgid "New contacts group"
 msgstr "קבוצת אנשי קשר חדשה"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "New conversation"
+msgstr "שיחה חדשה"
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "New credentials"
 msgstr "אישורים חדשים"
@@ -19872,7 +19883,7 @@ msgstr "תיקייה חדשה"
 msgid "New folder name"
 msgstr "שם תיקייה חדשה"
 
-#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 msgid "New group"
 msgstr "קבוצה חדשה"
 
@@ -20344,7 +20355,7 @@ msgstr "אין חיבורים עדיין"
 msgid "No contact by that name — enter a full email"
 msgstr "אין איש קשר בשם הזה — הזינו כתובת אימייל מלאה"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "No contacts found."
 msgstr "לא נמצאו אנשי קשר."
 
@@ -20609,6 +20620,10 @@ msgstr "אין גישה ל-Git — העותק נפתח"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No GitHub repos linked"
 msgstr "אין ריפוזיטוריים של GitHub מקושרים"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No groups yet."
+msgstr "אין עדיין קבוצות."
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "no guides published"
@@ -21305,6 +21320,10 @@ msgstr "אין כישרונות מותקנים"
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "No skills or sub-agents used yet"
 msgstr "לא נעשה שימוש בכישרונות או בסוכנים משנה עדיין"
+
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No skills yet."
+msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
@@ -24176,6 +24195,7 @@ msgstr "מושהה"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/data-sources/status-style.ts
@@ -24236,6 +24256,7 @@ msgstr "הזמנות ממתינות למאגרים ({invitationCount})"
 msgid "pending_count"
 msgstr "ספירת ממתינים"
 
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "People"
 msgstr "אנשים"
@@ -24942,8 +24963,7 @@ msgstr "התקדמות"
 msgid "project"
 msgstr "פרויקט"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/axes.tsx
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/dependency-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -26091,7 +26111,7 @@ msgstr "מרובט אך לא בטבלת הישויות"
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -27804,13 +27824,8 @@ msgstr ""
 msgid "running"
 msgstr "פועל"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
@@ -27858,8 +27873,8 @@ msgstr "מריץ פקודה…"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
-msgid "Running everywhere"
-msgstr ""
+#~ msgid "Running everywhere"
+#~ msgstr ""
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."
@@ -28261,7 +28276,7 @@ msgstr ""
 msgid "Scan & index complete — {0} records found"
 msgstr "סריקה ואינדקס הושלמו — {0} רשומות נמצאו"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "Scan conversations for new contacts"
 msgstr "סריקת שיחות למציאת אנשי קשר חדשים"
 
@@ -28400,6 +28415,7 @@ msgstr "תזמונים · {0}"
 #~ msgid "Schemas defined here"
 #~ msgstr "סכמות שמוגדרות כאן"
 
+#: src/components/asset-counters/StatChips.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -28516,6 +28532,7 @@ msgid "Search by event, command, matcher, path, scope, or plugin"
 msgstr "חפשו לפי אירוע, פקודה, התאמה, נתיב, היקף, או תוסף"
 
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 msgid "Search by name or email"
 msgstr "חפשו לפי שם או דוא״ל"
 
@@ -28563,6 +28580,10 @@ msgstr "חפשו ב-Flowpad"
 #: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 msgid "Search flows…"
 msgstr "חיפוש זרימות…"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Search groups"
+msgstr "חיפוש קבוצות"
 
 #: src/components/ui/icon-picker.tsx
 msgid "Search icons"
@@ -30639,6 +30660,7 @@ msgstr "sk-…"
 msgid "skill"
 msgstr "כישור"
 
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -30696,6 +30718,8 @@ msgid "skills"
 msgstr "כישורים"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/asset-counters/skill-counters.tsx
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
@@ -30984,6 +31008,7 @@ msgstr "צליל"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/project-home/EditDependencyDialog.tsx
@@ -31393,6 +31418,7 @@ msgstr "סטטוס"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/StatChips.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
 #: src/components/conversation/task-it.tsx
@@ -32967,7 +32993,11 @@ msgid "The sender's upload didn't complete. Ask {firstName} to resend."
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
-msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
+#~ msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
+#~ msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The server now runs v{runningVersion}; this page is still v{pageVersion}."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -34507,8 +34537,6 @@ msgstr "Top-p ≤"
 msgid "total"
 msgstr "סה״כ"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
 msgid "Total"
 msgstr "סה״כ"
@@ -35795,7 +35823,7 @@ msgstr "הצגת התמונה של {title}"
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "צפו בהגדרות Claude Code בין ההיקפים של משתמש, פרויקט, ומקומי"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "View contact details"
 msgstr "הצגת פרטי איש קשר"
 
@@ -36074,6 +36102,7 @@ msgstr "אזהרה"
 msgid "Warning: {warning}"
 msgstr "אזהרה: {warning}"
 
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Warnings"
 msgstr ""
@@ -37428,19 +37457,3 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "Groups"
-msgstr "קבוצות"
-
-#: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "New conversation"
-msgstr "שיחה חדשה"
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "No groups yet."
-msgstr "אין עדיין קבוצות."
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "Search groups"
-msgstr "חיפוש קבוצות"

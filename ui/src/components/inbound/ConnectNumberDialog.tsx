@@ -44,7 +44,7 @@ export function ConnectNumberDialog({
   open,
   onOpenChange,
   optionsFor,
-  agents,
+  agents = [],
   onDone,
   api = InboundWebhooks,
 }: {
@@ -54,7 +54,7 @@ export function ConnectNumberDialog({
    *  On a desktop the first "This computer" place is preselected. */
   optionsFor: (provider: string) => DestinationOption[];
   /** The person's own agents — whom a mailbox can belong to (the screen already read them). */
-  agents: Agent[];
+  agents?: Agent[];
   onDone: () => void;
   api?: InboundApi;
 }) {

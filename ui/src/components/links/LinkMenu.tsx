@@ -39,7 +39,7 @@ import { MediaLightbox } from '@src/components/ui/media-lightbox';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { BrowserProfileItems } from './BrowserProfileItems';
+import { BrowserProfileItems, ProfileLabel } from './BrowserProfileItems';
 import { useBrowserProfiles } from '@src/lib/browser-profiles';
 import { commandOf, lightboxMediaName, linkKind } from '@src/lib/link-kind';
 import { COMMAND_MODES, linkActions, type CommandMode, type LinkActionId, type LinkSurface } from './link-actions';
@@ -66,12 +66,8 @@ const lastMode = (): CommandMode => {
   return COMMAND_MODES.includes(mode) ? mode : 'run-here';
 };
 const DEFAULT_BROWSER = 'default';
-const browserKeyOf = (choice: CommandBrowser): string => (choice ? JSON.stringify([choice.browser, choice.profile]) : DEFAULT_BROWSER);
-const browserOfKey = (key: string): CommandBrowser => {
-  if (key === DEFAULT_BROWSER) return null;
-  const [browser, profile] = JSON.parse(key) as [string, string];
-  return { browser, profile };
-};
+/** A Select value per profile; the default is its own key. */
+const browserKeyOf = (choice: CommandBrowser): string => (choice ? `${choice.browser}/${choice.profile}` : DEFAULT_BROWSER);
 const commandBrowser = (): CommandBrowser => (instancePreferences.get(PrefKey.COMMAND_LINK_BROWSER) as CommandBrowser) ?? null;
 
 /** The source's machine is the user's own (or it names none): its windows and browsers are on this screen. */
@@ -201,7 +197,13 @@ const CommandConfirm = forwardRef<CommandConfirmHandle>(function CommandConfirm(
   // A promise settles once, so the close that follows a confirm leaves its answer standing.
   const answer = (ok: boolean) => {
     if (ok && dontAsk) instancePreferences.set(PrefKey.COMMAND_LINK_CONFIRM, false);
-    if (ok) instancePreferences.set(PrefKey.COMMAND_LINK_BROWSER, browserOfKey(browserKey));
+    if (ok) {
+      // A key no listed profile has (the remembered one is gone) is the system default.
+      const choice = browsers
+        .flatMap((b) => b.profiles.map((p) => ({ browser: b.id, profile: p.id })))
+        .find((c) => browserKeyOf(c) === browserKey);
+      instancePreferences.set(PrefKey.COMMAND_LINK_BROWSER, choice ?? null);
+    }
     state?.resolve(ok);
     setState(null);
   };
@@ -237,7 +239,7 @@ const CommandConfirm = forwardRef<CommandConfirmHandle>(function CommandConfirm(
                       value={browserKeyOf({ browser: browser.id, profile: profile.id })}
                       data-testid={`command-confirm-browser-${browser.id}-${profile.id}`}
                     >
-                      {profile.email && profile.email !== profile.name ? `${profile.name} — ${profile.email}` : profile.name}
+                      <ProfileLabel profile={profile} />
                     </SelectItem>
                   ))}
                 </SelectGroup>

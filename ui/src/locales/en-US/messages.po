@@ -440,9 +440,11 @@ msgid "{0, plural, one {# layout} other {# layouts}}"
 msgstr "{0, plural, one {# layout} other {# layouts}}"
 
 #. placeholder {0}: (g.contacts ?? []).length
+#. placeholder {0}: g.contacts.length
 #. placeholder {0}: team.member_count
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 #: src/components/contact-picker/ContactPicker.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
 msgid "{0, plural, one {# member} other {# members}}"
@@ -891,6 +893,10 @@ msgstr "{0} left of {1}"
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "{0} left of {1}."
 msgstr "{0} left of {1}."
+
+#: src/components/contact-picker/ContactsDialog.tsx
+#~ msgid "{0} members"
+#~ msgstr "{0} members"
 
 #. placeholder {0}: entry.message_count
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -2944,15 +2950,10 @@ msgstr "active"
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
-#: src/pages/hub-home/HubItemsSection.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/tabs/provider-meta.tsx
 msgid "Active"
@@ -3672,6 +3673,7 @@ msgstr "AgenticProcess ID this prompt annotation is linked to"
 msgid "agents"
 msgstr "agents"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
@@ -3681,16 +3683,16 @@ msgid "Agents"
 msgstr "Agents"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Agents in {projectName} with a deployment"
-msgstr "Agents in {projectName} with a deployment"
+#~ msgid "Agents in {projectName} with a deployment"
+#~ msgstr "Agents in {projectName} with a deployment"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Agents on this machine with a deployment"
-msgstr "Agents on this machine with a deployment"
+#~ msgid "Agents on this machine with a deployment"
+#~ msgstr "Agents on this machine with a deployment"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Agents with a live deployment"
-msgstr "Agents with a live deployment"
+#~ msgid "Agents with a live deployment"
+#~ msgstr "Agents with a live deployment"
 
 #: src/components/ask/AskAssist.tsx
 msgid "AI Assist"
@@ -3737,13 +3739,9 @@ msgstr "Align start (left in LTR, right in RTL)"
 msgid "all"
 msgstr "all"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/axes.tsx
+#: src/components/asset-counters/issue-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
@@ -3865,8 +3863,6 @@ msgstr "All observed deployments are current"
 msgid "All owners"
 msgstr "All owners"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
@@ -4667,6 +4663,7 @@ msgstr "Approved for this session"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/project-home/ProjectApps.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
@@ -4678,12 +4675,12 @@ msgid "Apps and agents"
 msgstr "Apps and agents"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Apps in {projectName} with a deployment"
-msgstr "Apps in {projectName} with a deployment"
+#~ msgid "Apps in {projectName} with a deployment"
+#~ msgstr "Apps in {projectName} with a deployment"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Apps on this machine with a deployment"
-msgstr "Apps on this machine with a deployment"
+#~ msgid "Apps on this machine with a deployment"
+#~ msgstr "Apps on this machine with a deployment"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 msgid "architecture"
@@ -8075,7 +8072,8 @@ msgstr "Consumption"
 msgid "Contact Permission"
 msgstr "Contact Permission"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Contacts"
 msgstr "Contacts"
 
@@ -9875,8 +9873,8 @@ msgid "Create a brand-new repository"
 msgstr "Create a brand-new repository"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "Create a contacts group — add its members to any conversation in one click"
-msgstr "Create a contacts group — add its members to any conversation in one click"
+#~ msgid "Create a contacts group — add its members to any conversation in one click"
+#~ msgstr "Create a contacts group — add its members to any conversation in one click"
 
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Create a dashboard"
@@ -11747,6 +11745,7 @@ msgstr "done"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactPermissionsDialog.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -12677,6 +12676,7 @@ msgid "errors"
 msgstr "errors"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -12786,32 +12786,32 @@ msgid "every agent"
 msgstr "every agent"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Every agent {projectName} can launch"
-msgstr "Every agent {projectName} can launch"
+#~ msgid "Every agent {projectName} can launch"
+#~ msgstr "Every agent {projectName} can launch"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Every agent already has a mailbox — a mailbox belongs to one agent, so create another agent first."
 msgstr "Every agent already has a mailbox — a mailbox belongs to one agent, so create another agent first."
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Every agent on this machine"
-msgstr "Every agent on this machine"
+#~ msgid "Every agent on this machine"
+#~ msgstr "Every agent on this machine"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every agent you can reach"
-msgstr "Every agent you can reach"
+#~ msgid "Every agent you can reach"
+#~ msgstr "Every agent you can reach"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 msgstr "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Every app in {projectName}"
-msgstr "Every app in {projectName}"
+#~ msgid "Every app in {projectName}"
+#~ msgstr "Every app in {projectName}"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Every app on this machine"
-msgstr "Every app on this machine"
+#~ msgid "Every app on this machine"
+#~ msgstr "Every app on this machine"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Every channel that sends and receives messages, and where its messages arrive. A channel on Flowpad's own accounts arrives through the hub, which only hands each message to the place below."
@@ -12831,8 +12831,8 @@ msgid "Every day at {time}"
 msgstr "Every day at {time}"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every deployment you can reach"
-msgstr "Every deployment you can reach"
+#~ msgid "Every deployment you can reach"
+#~ msgstr "Every deployment you can reach"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Every few minutes or hours"
@@ -12851,8 +12851,8 @@ msgstr "Every indexed row has a source file on disk."
 #~ msgstr "every machine"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every machine you can reach"
-msgstr "Every machine you can reach"
+#~ msgid "Every machine you can reach"
+#~ msgstr "Every machine you can reach"
 
 #~ msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
 #~ msgstr "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
@@ -15443,6 +15443,10 @@ msgstr "Group task created"
 msgid "Group task created with issues"
 msgstr "Group task created with issues"
 
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Groups"
+msgstr "Groups"
+
 #: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
@@ -17371,7 +17375,7 @@ msgstr "Knowledge Base"
 msgid "Knowledge Browser"
 msgstr "Knowledge Browser"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "Known by user id only"
 msgstr "Known by user id only"
 
@@ -18707,8 +18711,8 @@ msgid "Machines"
 msgstr "Machines"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Machines that are running"
-msgstr "Machines that are running"
+#~ msgid "Machines that are running"
+#~ msgstr "Machines that are running"
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
@@ -19260,6 +19264,10 @@ msgstr "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "min: {minLabel}"
 msgstr "min: {minLabel}"
+
+#: src/components/asset-counters/axes.tsx
+msgid "Mine"
+msgstr "Mine"
 
 #: src/components/automations/AutomationsList.tsx
 msgid "Mine, everywhere"
@@ -19878,7 +19886,6 @@ msgstr "new"
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateNewSection.tsx
 #: src/components/quick-create/QuickCreateTile.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
@@ -19955,6 +19962,10 @@ msgstr "New Claude Session"
 msgid "New contacts group"
 msgstr "New contacts group"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "New conversation"
+msgstr "New conversation"
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "New credentials"
 msgstr "New credentials"
@@ -20017,7 +20028,7 @@ msgstr "New Folder"
 msgid "New folder name"
 msgstr "New folder name"
 
-#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 msgid "New group"
 msgstr "New group"
 
@@ -20495,7 +20506,7 @@ msgstr "No connections yet"
 msgid "No contact by that name — enter a full email"
 msgstr "No contact by that name — enter a full email"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "No contacts found."
 msgstr "No contacts found."
 
@@ -20762,6 +20773,10 @@ msgstr "No Git access — opened the copy"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No GitHub repos linked"
 msgstr "No GitHub repos linked"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No groups yet."
+msgstr "No groups yet."
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "no guides published"
@@ -21463,6 +21478,10 @@ msgstr "No skills installed"
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "No skills or sub-agents used yet"
 msgstr "No skills or sub-agents used yet"
+
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No skills yet."
+msgstr "No skills yet."
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
@@ -24362,6 +24381,7 @@ msgstr "paused"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/data-sources/status-style.ts
@@ -24422,6 +24442,7 @@ msgstr "Pending repo invitations ({invitationCount})"
 msgid "pending_count"
 msgstr "Pending: {0}"
 
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "People"
 msgstr "People"
@@ -25132,8 +25153,7 @@ msgstr "Progress"
 msgid "project"
 msgstr "project"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/axes.tsx
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/dependency-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -26286,7 +26306,7 @@ msgstr "referenced but not in entities table"
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -28016,13 +28036,8 @@ msgstr "Runner"
 msgid "running"
 msgstr "running"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
@@ -28070,8 +28085,8 @@ msgstr "Running command…"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
-msgid "Running everywhere"
-msgstr "Running everywhere"
+#~ msgid "Running everywhere"
+#~ msgstr "Running everywhere"
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."
@@ -28475,7 +28490,7 @@ msgstr "says:"
 msgid "Scan & index complete — {0} records found"
 msgstr "Scan & index complete — {0} records found"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "Scan conversations for new contacts"
 msgstr "Scan conversations for new contacts"
 
@@ -28614,6 +28629,7 @@ msgstr "Schedules · {0}"
 #~ msgid "Schemas defined here"
 #~ msgstr "Schemas defined here"
 
+#: src/components/asset-counters/StatChips.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -28730,6 +28746,7 @@ msgid "Search by event, command, matcher, path, scope, or plugin"
 msgstr "Search by event, command, matcher, path, scope, or plugin"
 
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 msgid "Search by name or email"
 msgstr "Search by name or email"
 
@@ -28778,6 +28795,10 @@ msgstr "Search Flowpad"
 #: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 msgid "Search flows…"
 msgstr "Search flows…"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Search groups"
+msgstr "Search groups"
 
 #: src/components/ui/icon-picker.tsx
 msgid "Search icons"
@@ -30868,6 +30889,7 @@ msgstr "sk-…"
 msgid "skill"
 msgstr "skill"
 
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -30925,6 +30947,8 @@ msgid "skills"
 msgstr "skills"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/asset-counters/skill-counters.tsx
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
@@ -31214,6 +31238,7 @@ msgstr "Sound"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/project-home/EditDependencyDialog.tsx
@@ -31624,6 +31649,7 @@ msgstr "status"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/StatChips.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
 #: src/components/conversation/task-it.tsx
@@ -33212,8 +33238,12 @@ msgid "The sender's upload didn't complete. Ask {firstName} to resend."
 msgstr "The sender's upload didn't complete. Ask {firstName} to resend."
 
 #: src/components/version-popover/version-popover.tsx
-msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
-msgstr "The server now runs v{currentVersion}; this page is still v{pageVersion}."
+#~ msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
+#~ msgstr "The server now runs v{currentVersion}; this page is still v{pageVersion}."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The server now runs v{runningVersion}; this page is still v{pageVersion}."
+msgstr "The server now runs v{runningVersion}; this page is still v{pageVersion}."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
@@ -34764,8 +34794,6 @@ msgstr "Top-p ≤"
 msgid "total"
 msgstr "total"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
 msgid "Total"
 msgstr "Total"
@@ -36056,7 +36084,7 @@ msgstr "View {title} avatar"
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "View Claude Code settings across user, project, and local scopes"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "View contact details"
 msgstr "View contact details"
 
@@ -36336,6 +36364,7 @@ msgstr "Warning"
 msgid "Warning: {warning}"
 msgstr "Warning: {warning}"
 
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Warnings"
 msgstr "Warnings"
@@ -37702,19 +37731,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "Groups"
-msgstr "Groups"
-
-#: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "New conversation"
-msgstr "New conversation"
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "No groups yet."
-msgstr "No groups yet."
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "Search groups"
-msgstr "Search groups"

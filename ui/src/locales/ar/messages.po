@@ -439,9 +439,11 @@ msgid "{0, plural, one {# layout} other {# layouts}}"
 msgstr "{0, plural, zero {لا تخطيطات} one {تخطيط واحد} two {تخطيطان} few {# تخطيطات} many {# تخطيطاً} other {# تخطيط}}"
 
 #. placeholder {0}: (g.contacts ?? []).length
+#. placeholder {0}: g.contacts.length
 #. placeholder {0}: team.member_count
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 #: src/components/contact-picker/ContactPicker.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamsTab.tsx
 msgid "{0, plural, one {# member} other {# members}}"
@@ -888,6 +890,10 @@ msgstr ""
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "{0} left of {1}."
 msgstr ""
+
+#: src/components/contact-picker/ContactsDialog.tsx
+#~ msgid "{0} members"
+#~ msgstr "{0} أعضاء"
 
 #. placeholder {0}: entry.message_count
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -2926,15 +2932,10 @@ msgstr "نشط"
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
-#: src/pages/hub-home/HubItemsSection.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/tabs/provider-meta.tsx
 msgid "Active"
@@ -3643,6 +3644,7 @@ msgstr "معرّف AgenticProcess المرتبط بملاحظة الموجه"
 msgid "agents"
 msgstr "وكلاء"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
@@ -3652,16 +3654,16 @@ msgid "Agents"
 msgstr "الوكلاء"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Agents in {projectName} with a deployment"
-msgstr "الوكلاء في {projectName} الذين لديهم نشر"
+#~ msgid "Agents in {projectName} with a deployment"
+#~ msgstr "الوكلاء في {projectName} الذين لديهم نشر"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Agents on this machine with a deployment"
-msgstr ""
+#~ msgid "Agents on this machine with a deployment"
+#~ msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Agents with a live deployment"
-msgstr ""
+#~ msgid "Agents with a live deployment"
+#~ msgstr ""
 
 #: src/components/ask/AskAssist.tsx
 msgid "AI Assist"
@@ -3708,13 +3710,9 @@ msgstr "محاذاة البداية (يسار في الاتجاه من اليس�
 msgid "all"
 msgstr "الكل"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
-#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/axes.tsx
+#: src/components/asset-counters/issue-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
@@ -3835,8 +3833,6 @@ msgstr "جميع الإطلاقات المُراقَبة حالية"
 msgid "All owners"
 msgstr "كل المالكين"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
@@ -4635,6 +4631,7 @@ msgstr "موافَق عليه لهذه الجلسة"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr "تتيح الموافقة لهذا الجهاز التصرّف باسمك على FlowPad، ولا تُمنح إلا لرمز من إنشائك."
 
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/project-home/ProjectApps.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
@@ -4646,12 +4643,12 @@ msgid "Apps and agents"
 msgstr "التطبيقات والوكلاء"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Apps in {projectName} with a deployment"
-msgstr "التطبيقات في {projectName} التي لديها نشر"
+#~ msgid "Apps in {projectName} with a deployment"
+#~ msgstr "التطبيقات في {projectName} التي لديها نشر"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Apps on this machine with a deployment"
-msgstr ""
+#~ msgid "Apps on this machine with a deployment"
+#~ msgstr ""
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 msgid "architecture"
@@ -8024,7 +8021,8 @@ msgstr "الاستهلاك"
 msgid "Contact Permission"
 msgstr "إذن جهة الاتصال"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Contacts"
 msgstr "جهات الاتصال"
 
@@ -9814,8 +9812,8 @@ msgid "Create a brand-new repository"
 msgstr "إنشاء مستودع جديد من الصفر"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "Create a contacts group — add its members to any conversation in one click"
-msgstr "إنشاء مجموعة جهات اتصال — إضافة أعضائها إلى أي محادثة بنقرة واحدة"
+#~ msgid "Create a contacts group — add its members to any conversation in one click"
+#~ msgstr "إنشاء مجموعة جهات اتصال — إضافة أعضائها إلى أي محادثة بنقرة واحدة"
 
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Create a dashboard"
@@ -11681,6 +11679,7 @@ msgstr "تم"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactPermissionsDialog.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -12601,6 +12600,7 @@ msgid "errors"
 msgstr "الأخطاء"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
@@ -12710,32 +12710,32 @@ msgid "every agent"
 msgstr "كل وكيل"
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Every agent {projectName} can launch"
-msgstr "كل الوكلاء التي يمكن لـ {projectName} تشغيلها"
+#~ msgid "Every agent {projectName} can launch"
+#~ msgstr "كل الوكلاء التي يمكن لـ {projectName} تشغيلها"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Every agent already has a mailbox — a mailbox belongs to one agent, so create another agent first."
 msgstr "لكل الوكلاء صندوق بريد بالفعل — الصندوق يتبع وكيلًا واحدًا، لذا أنشئ وكيلًا آخر أولًا."
 
 #: src/components/asset-counters/agent-counters.tsx
-msgid "Every agent on this machine"
-msgstr "كل الوكلاء على هذا الجهاز"
+#~ msgid "Every agent on this machine"
+#~ msgstr "كل الوكلاء على هذا الجهاز"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every agent you can reach"
-msgstr ""
+#~ msgid "Every agent you can reach"
+#~ msgstr ""
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
 msgstr "كل مخصّص مُنح أو عُدِّل أو أُزيل هنا وفي كل ما يموّله. للقراءة فقط."
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Every app in {projectName}"
-msgstr "كل التطبيقات في {projectName}"
+#~ msgid "Every app in {projectName}"
+#~ msgstr "كل التطبيقات في {projectName}"
 
 #: src/components/asset-counters/app-counters.tsx
-msgid "Every app on this machine"
-msgstr "كل التطبيقات على هذا الجهاز"
+#~ msgid "Every app on this machine"
+#~ msgstr "كل التطبيقات على هذا الجهاز"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Every channel that sends and receives messages, and where its messages arrive. A channel on Flowpad's own accounts arrives through the hub, which only hands each message to the place below."
@@ -12755,8 +12755,8 @@ msgid "Every day at {time}"
 msgstr "كل يوم الساعة {time}"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every deployment you can reach"
-msgstr ""
+#~ msgid "Every deployment you can reach"
+#~ msgstr ""
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Every few minutes or hours"
@@ -12775,8 +12775,8 @@ msgstr "كل صف مفهرس له ملف مصدر على القرص."
 #~ msgstr "كل جهاز"
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Every machine you can reach"
-msgstr ""
+#~ msgid "Every machine you can reach"
+#~ msgstr ""
 
 #~ msgid "Every MCP server in this project is attached to this agent. Each one is resolved and attached when a session starts."
 #~ msgstr ""
@@ -15338,6 +15338,10 @@ msgstr "تم إنشاء مهمة المجموعة"
 msgid "Group task created with issues"
 msgstr "تم إنشاء مهمة المجموعة مع وجود بعض المشاكل"
 
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Groups"
+msgstr "المجموعات"
+
 #: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
@@ -17250,7 +17254,7 @@ msgstr "قاعدة المعرفة"
 msgid "Knowledge Browser"
 msgstr "متصفح المعرفة"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "Known by user id only"
 msgstr "معروف بمعرّف المستخدم فقط"
 
@@ -18568,8 +18572,8 @@ msgid "Machines"
 msgstr ""
 
 #: src/components/asset-counters/hub-counters.tsx
-msgid "Machines that are running"
-msgstr ""
+#~ msgid "Machines that are running"
+#~ msgstr ""
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 msgid "macOS blocks Flowpad from recording the screen. Allow it under Privacy & Security › Screen & System Audio Recording, then try again."
@@ -19119,6 +19123,10 @@ msgstr "الدقيقة والساعة ويوم الشهر والشهر ويوم 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "min: {minLabel}"
 msgstr "الأدنى: {minLabel}"
+
+#: src/components/asset-counters/axes.tsx
+msgid "Mine"
+msgstr ""
 
 #: src/components/automations/AutomationsList.tsx
 msgid "Mine, everywhere"
@@ -19734,7 +19742,6 @@ msgstr "جديد"
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateNewSection.tsx
 #: src/components/quick-create/QuickCreateTile.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
@@ -19810,6 +19817,10 @@ msgstr "جلسة Claude جديدة"
 msgid "New contacts group"
 msgstr "مجموعة متصلين جديدة"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "New conversation"
+msgstr "محادثة جديدة"
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "New credentials"
 msgstr "بيانات اعتماد جديدة"
@@ -19872,7 +19883,7 @@ msgstr "مجلد جديد"
 msgid "New folder name"
 msgstr "اسم المجلد الجديد"
 
-#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 msgid "New group"
 msgstr "مجموعة جديدة"
 
@@ -20344,7 +20355,7 @@ msgstr "لا توجد اتصالات بعد"
 msgid "No contact by that name — enter a full email"
 msgstr "لا توجد جهة اتصال بهذا الاسم — يُرجى إدخال بريد إلكتروني كامل"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "No contacts found."
 msgstr "لم يتم العثور على جهات اتصال."
 
@@ -20609,6 +20620,10 @@ msgstr "لا يوجد وصول إلى Git — تم فتح النسخة"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No GitHub repos linked"
 msgstr "لا توجد مستودعات GitHub مرتبطة"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No groups yet."
+msgstr "لا توجد مجموعات بعد."
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "no guides published"
@@ -21305,6 +21320,10 @@ msgstr "لا توجد مهارات مثبتة"
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "No skills or sub-agents used yet"
 msgstr "لم تُستخدم أي مهارات أو وكلاء فرعيين حتى الآن"
+
+#: src/pages/hub-home/HubItemsSection.tsx
+msgid "No skills yet."
+msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
@@ -24180,6 +24199,7 @@ msgstr "متوقف مؤقتًا"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/data-sources/status-style.ts
@@ -24240,6 +24260,7 @@ msgstr "دعوات المستودعات المعلّقة ({invitationCount})"
 msgid "pending_count"
 msgstr "قيد الانتظار: {0}"
 
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "People"
 msgstr "الأشخاص"
@@ -24946,8 +24967,7 @@ msgstr "التقدم"
 msgid "project"
 msgstr "مشروع"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/axes.tsx
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/dependency-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -26095,7 +26115,7 @@ msgstr "مشار إليه لكنه غير موجود في جدول الكيان�
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -27808,13 +27828,8 @@ msgstr ""
 msgid "running"
 msgstr "قيد التشغيل"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/placement.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
@@ -27862,8 +27877,8 @@ msgstr "ينفّذ الأمر…"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
-msgid "Running everywhere"
-msgstr ""
+#~ msgid "Running everywhere"
+#~ msgstr ""
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."
@@ -28265,7 +28280,7 @@ msgstr ""
 msgid "Scan & index complete — {0} records found"
 msgstr "اكتمل المسح والفهرسة — تم العثور على {0} سجل"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "Scan conversations for new contacts"
 msgstr "فحص المحادثات بحثاً عن جهات اتصال جديدة"
 
@@ -28404,6 +28419,7 @@ msgstr "الجدولة · {0}"
 #~ msgid "Schemas defined here"
 #~ msgstr "المخططات المعرَّفة هنا"
 
+#: src/components/asset-counters/StatChips.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -28520,6 +28536,7 @@ msgid "Search by event, command, matcher, path, scope, or plugin"
 msgstr "ابحثوا حسب الحدث أو الأمر أو المطابق أو المسار أو النطاق أو الملحق"
 
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 msgid "Search by name or email"
 msgstr "البحث بالاسم أو البريد الإلكتروني"
 
@@ -28567,6 +28584,10 @@ msgstr "البحث في Flowpad"
 #: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 msgid "Search flows…"
 msgstr "البحث عن التدفقات…"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Search groups"
+msgstr "البحث في المجموعات"
 
 #: src/components/ui/icon-picker.tsx
 msgid "Search icons"
@@ -30643,6 +30664,7 @@ msgstr "sk-…"
 msgid "skill"
 msgstr "المهارة"
 
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -30700,6 +30722,8 @@ msgid "skills"
 msgstr "المهارات"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/asset-counters/skill-counters.tsx
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
@@ -30988,6 +31012,7 @@ msgstr "الصوت"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/skill-counters.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/project-home/EditDependencyDialog.tsx
@@ -31397,6 +31422,7 @@ msgstr "الحالة"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/StatChips.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
 #: src/components/conversation/task-it.tsx
@@ -32971,7 +32997,11 @@ msgid "The sender's upload didn't complete. Ask {firstName} to resend."
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
-msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
+#~ msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
+#~ msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "The server now runs v{runningVersion}; this page is still v{pageVersion}."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -34511,8 +34541,6 @@ msgstr "Top-p ≤"
 msgid "total"
 msgstr "الإجمالي"
 
-#: src/components/asset-counters/agent-counters.tsx
-#: src/components/asset-counters/app-counters.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
 msgid "Total"
 msgstr "الإجمالي"
@@ -35799,7 +35827,7 @@ msgstr "عرض صورة {title}"
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "عرض إعدادات Claude Code على مستويات المستخدم والمشروع والنطاق المحلي"
 
-#: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/contact-picker/ContactRows.tsx
 msgid "View contact details"
 msgstr "عرض تفاصيل جهة الاتصال"
 
@@ -36078,6 +36106,7 @@ msgstr "تحذير"
 msgid "Warning: {warning}"
 msgstr "تحذير: {warning}"
 
+#: src/components/asset-counters/issue-counters.tsx
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Warnings"
 msgstr ""
@@ -37432,19 +37461,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "Groups"
-msgstr "المجموعات"
-
-#: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "New conversation"
-msgstr "محادثة جديدة"
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "No groups yet."
-msgstr "لا توجد مجموعات بعد."
-
-#: src/components/contact-picker/ContactsDialog.tsx
-msgid "Search groups"
-msgstr "البحث في المجموعات"

@@ -664,8 +664,6 @@ class Conversation(ProjectedFields, Entity):
 
         if created_here and await self._create_with_members(bodies, deliver_messages=deliver_messages):
             return self
-        # False means the row WAS created (an older hub drops the members and creates it alone):
-        # the invitations and messages below go the old way, without creating it a second time.
 
         # Join IMMEDIATELY after create. The hub stamps ``initiated_by`` on
         # this call; until then even the creator cannot owner-delete the
@@ -704,8 +702,9 @@ class Conversation(ProjectedFields, Entity):
         """Create this conversation on the hub with its invitations and its first owed message in
         ONE request (hub ``conversation_create_with_members``) — instead of create, add_message and
         one ``members`` call per person. False when the hub's answer shows it does not take them
-        (an older hub drops the unknown keys and creates the row alone): the caller then sends
-        the rest the old way. A refused invitation fails the whole create on the hub.
+        (an older hub drops the unknown keys and creates the row alone): the row exists either way,
+        so the caller sends the rest the old way without creating it again. A refused invitation
+        fails the whole create on the hub.
         """
         from flow_sdk.app.actions.notification_action import message_header_kwargs  # noqa: PLC0415
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
