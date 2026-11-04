@@ -111,7 +111,9 @@ Electron (main.js)
   `postBootUpdates` waits for the background look (bounded by the launch check's 20 s; the app is usable
   meanwhile), offers a desktop it found first — with a newer engine in the same one screen — and only then
   the engine alone (PyPI comparison, prepared before it asks). A look that gives up defers nothing further; a
-  desktop it finds later still goes first. An engine
+  desktop it finds later still goes first. Not after a failed start (the previous run never got up, per the
+  startup journal, or the error panel's Retry): an engine that does not boot never gets to `postBootUpdates`,
+  so there the engine question is asked pre-start, as before (`engineOfferCanWaitForBoot`). An engine
   prepared in the background is offered only if no desktop update turned up while it prepared. After a desktop
   UPGRADE — "Restart now", or installed on quit after "Later" — the new desktop
   installs the newest engine it accepts without a question (`engineForUpdatedDesktop`; offline when it was

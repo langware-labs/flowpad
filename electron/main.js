@@ -40,6 +40,7 @@ const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 const upgradeCommand = () => UvManager.upgradeCommand(uvManager && uvManager.repairedRuntimePython ? uvManager.repairedRuntimePython() : undefined);
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
+const { isInstallableVersion } = require('./engine-compat');
 
 const isMac = process.platform === 'darwin';
 
@@ -180,8 +181,16 @@ const restartApplier = createRestartApplier({
     });
     // The app stays: apply() stopped the backend and the window shows "Installing" — start the backend
     // again and bring the app back. Pre-start flows (backendReady false) continue on their own.
+    // Not brought back (it logs why): the error panel, as the engine-update path does (onUnrecovered) —
+    // never "restoring Flowpad" with no way out.
     if (uvManager && backendReady) {
       void uvManager._recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl: BACKEND_URL, sendStatus })
+        .then((restored) => {
+          if (restored === false && mainWindow && !mainWindow.isDestroyed()) {
+            return showStartupErrorPanel(describeStartupFailure(new Error('FlowPad could not be started again after the update could not be applied')), { retryable: false });
+          }
+          return undefined;
+        })
         .catch((e) => log.warn(`[update-restart] bringing the app back failed: ${e && e.message}`));
     }
   },
@@ -1259,6 +1268,20 @@ function startLaunchDesktopCheck() {
 }
 // The launch's background look at the desktop feed, when the launch check went to the background (not due).
 let launchDesktopLook = null;
+// A start of this session failed (the error panel was shown): its Retry must not skip the pre-start engine prompt.
+let startFailedThisSession = false;
+// The pre-start engine question was moved to postBootUpdates (which then asks it with the PyPI comparison).
+let engineOfferDeferredToBoot = false;
+/**
+ * May the pre-start engine question wait until FlowPad is up (postBootUpdates)? Only when the last start got
+ * there: an engine that does not boot never reaches postBootUpdates, and a fix on PyPI is its way out — so
+ * after a start that failed (this session's, or the previous run's) the question is asked pre-start, as before.
+ */
+function engineOfferCanWaitForBoot() {
+  if (startFailedThisSession) return false;
+  const previous = journal ? journal.previous() : null;
+  return !previous || (Array.isArray(previous.history) && previous.history.some((h) => h && h.phase === 'backend-healthy'));
+}
 // A newer desktop the launch's background look found before the app was up: offered once it is (the
 // post-boot hook), never in the middle of the start — the pre-start flow knows nothing of this look.
 let desktopFoundAtLaunch = null;
@@ -1966,6 +1989,7 @@ function installProgress(label) {
 // installAndStartBackend). Falls back to the native dialog only if the loading
 // window is already gone; returns whether the panel was rendered.
 async function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false, repairable = false, extras = null } = {}) {
+  startFailedThisSession = true; // the panel's Retry asks the engine question pre-start again (see the pre-start flow)
   const payload = {
     detail,
     retryable,
@@ -2418,10 +2442,12 @@ async function installAndStartBackend({ quiet = false } = {}) {
         });
         if (action === 'announce') await startOffer(desktopLatest); // through the one-window guard, like the tick's offers
         else if (action !== 'ignore') adoptDesktopUpdateSilently(desktopLatest, action);
-      } else if (launchDesktopLook) {
+      } else if (launchDesktopLook && engineOfferCanWaitForBoot()) {
         // The launch check went to the background (not due): asking about the engine here would ask before the
         // desktop feed answers — and a newer desktop goes first. The engine is offered once FlowPad is up, after
-        // that answer (postBootUpdates); the start does not wait for the feed.
+        // that answer (postBootUpdates); the start does not wait for the feed. Not after a failed start: an
+        // engine that does not boot never gets there.
+        engineOfferDeferredToBoot = true;
         log.info('[update] the engine is offered once FlowPad is up: the desktop feed is still being checked (the desktop goes first)');
       } else if (engineChangeAllowed('pre-start engine prompt') === 'allow') {
         // No desktop update (and the check did answer) → the standalone engine prompt handles the "newer on
@@ -2874,9 +2900,9 @@ async function postBootUpdates() {
   }
   // A desktop the launch's background look found while the app started (the engine follows it).
   if (desktopFoundAtLaunch) await offerDesktopFoundAtLaunch(desktopFoundAtLaunch);
-  // When the launch check ran pre-start, the engine question was asked there; when it went to the background the
-  // question moved here, with the pre-start's comparison (any newer release on PyPI).
-  await checkPackageUpdateInBackground({ compareWithPypi: !!look, label: 'post-boot' });
+  // When the engine question was asked pre-start, the cloud policy decides here; when it moved here, it is asked
+  // with the pre-start's comparison (any newer release on PyPI).
+  await checkPackageUpdateInBackground({ compareWithPypi: engineOfferDeferredToBoot, label: 'post-boot' });
 }
 // Anything that escapes to the top level must reach the user with "Send Report" — an unhandled rejection in
 // startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.
@@ -3357,17 +3383,21 @@ function supportFailureRecordText() {
   try { return `\n\nserver-failure.json:\n${fs.readFileSync(fatalFailure.failureRecordPath(INSTANCE_DIR), 'utf8')}`; } catch { return ''; }
 }
 
-ipcMain.handle('upgrade-flowpad', async () => {
+// `version`: the release the version popover names on its button ("Upgrade to vX") — installed exactly, so a
+// release prepared earlier is used only when it IS that one (a newer release since, or a prepared one yanked
+// since, is downloaded instead). Anything that is not a plain version string is ignored (the newest compatible).
+ipcMain.handle('upgrade-flowpad', async (_event, version) => {
   if (!uvManager) return { success: false, error: 'No uv manager' };
+  const target = isInstallableVersion(version) ? version : null;
   // Desktop first: refuse before touching the running server or the window.
   if (engineChangeAllowed('upgrade-flowpad IPC') !== 'allow') {
     return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
   }
-  const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart());
+  const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart(target));
   return guarded.skipped ? { success: false, error: 'the backend is already being started' } : guarded.result;
 });
 
-async function upgradeFlowpadAndRestart() {
+async function upgradeFlowpadAndRestart(version = null) {
   try {
     // Show loading screen
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3381,7 +3411,7 @@ async function upgradeFlowpadAndRestart() {
     uvManager.isShuttingDown = false;
     uvManager._backendProcess = null;
 
-    await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
+    await uvManager.upgrade({ version, onProgress: installProgress('Upgrading Flowpad') });
 
     sendStatus('Starting server');
     await uvManager.start();

@@ -75,7 +75,8 @@ interface VersionCheckResponse {
 
 interface ElectronAPI {
   getAppVersion?: () => Promise<string>;
-  upgradeFlowpad?: () => Promise<{ success: boolean; error?: string }>;
+  /** `version`: the release the button names — installed exactly (a prepared older one is not used instead). */
+  upgradeFlowpad?: (version?: string) => Promise<{ success: boolean; error?: string }>;
   openExternal?: (url: string) => Promise<boolean>;
 }
 
@@ -366,11 +367,11 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     if (!electronApi?.upgradeFlowpad) return;
     setUpgrading(true);
     try {
-      await electronApi.upgradeFlowpad();
+      await electronApi.upgradeFlowpad(data?.pypi?.latest ?? undefined);
     } finally {
       setUpgrading(false);
     }
-  }, [electronApi]);
+  }, [electronApi, data?.pypi?.latest]);
 
   // Wait for the backend to go down and come back healthy, then reload so the
   // (possibly different-version) UI is reloaded fresh. The python monitor restart

@@ -2525,6 +2525,30 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       eq(typeof m._venvPython(), m._venvPython() === null ? 'object' : 'string', 'the zero-arg _venvPython() still answers (no override)');
     }
 
+    // The background bytecode compile and the background prepare are stopped by close() (quit) and by
+    // cancelBackgroundWork() (Restart now, whose quit skips close()) — the manager stays usable after the latter.
+    for (const via of ['cancelBackgroundWork', 'close']) {
+      const m = new UvManager(silentLog);
+      m._bytecodePending = true;
+      m._toolVenvDir = () => path.dirname(process.execPath);
+      m._pythonIn = () => process.execPath; // an existing file
+      const killed = [];
+      m._killChildTree = (child, why) => killed.push([child.tag, why]);
+      let finish;
+      m._runStreaming = (_cmd, _args, o) => { o.onChild({ tag: 'compileall' }); return new Promise((r) => { finish = r; }); };
+      let cancelledPrepare = null;
+      m._preparing = { key: 'k', promise: Promise.resolve() };
+      m.cancelPrepare = (why) => { cancelledPrepare = why; return true; };
+      const compiling = m.compileBytecodeInBackground();
+      await Promise.resolve();
+      if (via === 'close') m.close(); else m.cancelBackgroundWork('restart to install the update');
+      eq(killed.map(([tag]) => tag), ['compileall'], `${via}: the background compile is stopped`);
+      ok(cancelledPrepare, `${via}: and the background prepare`);
+      eq(m.isClosed(), via === 'close', `${via}: ${via === 'close' ? 'closed' : 'the manager stays open (a failed restart keeps the app)'}`);
+      finish({ stdout: '' }); await compiling;
+      eq(m._bytecodeChild, null, `${via}: the child is forgotten once it ends`);
+    }
+
     // The reverse floor is checked for THIS desktop only: another desktop's is not known here.
     {
       const m = new UvManager(silentLog, { appVersion: '0.2.60' });

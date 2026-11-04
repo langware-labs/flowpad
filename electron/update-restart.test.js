@@ -21,7 +21,7 @@ function harness({ stop, quitAndInstall } = {}) {
     failures: [],
   };
   h.applier = createRestartApplier({
-    uvManager: { stop: stop || (async () => { calls.push('stop'); }) },
+    uvManager: { stop: stop || (async () => { calls.push('stop'); }), cancelBackgroundWork: (why) => calls.push(`cancel-bg(${why})`) },
     autoUpdater: { quitAndInstall: quitAndInstall || ((s, f) => { calls.push(`quitAndInstall(${s},${f})`); }) },
     setQuitting: (v) => { h.quitting = v; calls.push(`quitting=${v}`); },
     hideWindow: () => calls.push('hide'),
@@ -38,7 +38,8 @@ function harness({ stop, quitAndInstall } = {}) {
   {
     const h = harness();
     eq(await h.applier.apply(), true, 'apply runs');
-    eq(h.calls, ['quitting=true', 'hide', 'notify', 'stop', 'quitAndInstall(true,true)'], 'order: flag, hide, tell the user, stop the backend, then quitAndInstall(silent, relaunch)');
+    eq(h.calls, ['quitting=true', 'hide', 'notify', 'cancel-bg(restart to install the update)', 'stop', 'quitAndInstall(true,true)'],
+      'order: flag, hide, tell the user, stop the background prepare/compile (the quit skips close()), stop the backend, then quitAndInstall(silent, relaunch)');
     eq(h.applier.busy, true, 'busy until the app actually quits');
   }
 

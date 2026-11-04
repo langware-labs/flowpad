@@ -42,6 +42,9 @@ function createRestartApplier({ uvManager, autoUpdater, setQuitting, hideWindow,
     }
     if (!shown) hideWindow();
     try { if (notifyInstalling) notifyInstalling(); } catch (err) { log.warn(`[update-restart] notification failed: ${err && err.message}`); }
+    // The quit below skips before-quit's uvManager.close() (isQuitting is set): stop the background work here —
+    // a prepare's uv or a bytecode compile must not outlive the app (a failed restart keeps the manager open).
+    try { if (uvManager && uvManager.cancelBackgroundWork) uvManager.cancelBackgroundWork('restart to install the update'); } catch (err) { log.warn(`[update-restart] stopping background work failed: ${err && err.message}`); }
     try {
       // Same stop before-quit's shutdown runs — bounded by the budgets UvManager.stop() carries.
       if (uvManager) await uvManager.stop();

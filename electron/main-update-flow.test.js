@@ -25,6 +25,7 @@ module.exports.__t = {
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
   runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer, prepareDeferredEngineUpdate, offerDesktopFoundAtLaunch, postBootUpdates,
   setLaunchDesktopLook: (p) => { launchDesktopLook = p; },
+  setJournal: (j) => { journal = j; },
   getFoundAtLaunch: () => desktopFoundAtLaunch, getFollowUpDesktop: () => followUpDesktop,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
@@ -132,7 +133,9 @@ function load(opts = {}) {
     deferPackageVersion(v) { uv.deferred.push(v); }
     undeferPackageVersion(v) { uv.undeferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }
-    async _recoverRunningBackendAfterFailedUpgrade() { uv.recovered = (uv.recovered || 0) + 1; return true; }
+    async _recoverRunningBackendAfterFailedUpgrade() { uv.recovered = (uv.recovered || 0) + 1; return !opts.recoverFails; }
+    async _flowStop() {}
+    async _killPort() {}
     deferredPackageVersion() { return opts.deferredEngine || null; }
     async prepareEngine(o) { uv.prepares.push(o); if (opts.prepareThrows) throw new Error(opts.prepareThrows); return { version: o.version }; }
     async checkForUpdatesInBackground(_w, o) { uv.checks++; uv.checkOpts.push(o || {}); return false; }
@@ -655,6 +658,56 @@ const HOUR = 60 * 60 * 1000;
     release(); await post; for (let i = 0; i < 8; i++) await tick();
     eq(env.dialogCalls.filter((d) => /0\.2\.48/.test(d.detail || d.message || '')).length, 1, 'one offer');
     eq(env.uv.checks, 0, 'the engine waits for the desktop');
+  }
+  {
+    // After a FAILED start the engine question is asked pre-start again — an engine that does not boot never
+    // reaches postBootUpdates, and a fix on PyPI is its way out: the panel's Retry in this session...
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    await load({ userDataDir }).t.startLaunchDesktopCheck();
+    const env = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.47', backendReady: false });
+    env.t.setupElectronAutoUpdater();
+    env.t.primeLaunchCheck(); for (let i = 0; i < 4; i++) await tick();
+    await env.t.installAndStartBackend();
+    eq(env.uv.checks, 0, 'a start after a healthy one: asked once FlowPad is up');
+    void env.t.showStartupErrorPanel('the backend did not start', { retryable: true }); await tick();
+    await env.t.installAndStartBackend();
+    eq(env.uv.checkOpts.map((o) => o.beforeBackendStart), [true], 'Retry after a failed start: asked pre-start, as before');
+    // ...and the next launch, when the previous run never got FlowPad up.
+    for (const [history, expect, why] of [
+      [['electron-initialized', 'backend-start', 'startup-failed', 'clean-exit'], 1, 'the previous run never got up: asked pre-start'],
+      [['electron-initialized', 'backend-start', 'backend-healthy', 'clean-exit'], 0, 'the previous run got up: asked once up'],
+    ]) {
+      const next = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.47', backendReady: false });
+      next.t.setupElectronAutoUpdater();
+      next.t.setJournal({ previous: () => ({ phase: 'clean-exit', history: history.map((phase) => ({ phase })) }), mark() {}, phase: () => null });
+      next.t.primeLaunchCheck(); for (let i = 0; i < 4; i++) await tick();
+      await next.t.installAndStartBackend();
+      eq(next.uv.checks, expect, why);
+    }
+  }
+  {
+    // "Restart now" failed and the app could not be brought back: the error panel — never "restoring" forever.
+    for (const [recoverFails, panel, why] of [[true, true, 'not brought back: the error panel'], [false, false, 'brought back: no panel']]) {
+      const env = load({ recoverFails });
+      env.t.setBackendReady(true);
+      await env.t.restartApplier.apply();
+      env.t.restartApplier.failed(new Error('could not restart'));
+      for (let i = 0; i < 8; i++) await tick();
+      eq(env.sent.some(([ch]) => ch === 'startup-error'), panel, why);
+    }
+  }
+  {
+    // The popover's "Upgrade to vX" installs exactly X (a prepared older release is not used instead);
+    // anything that is not a version string is ignored (the newest compatible).
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47' });
+    await env.t.getDesktopUpdateVersion();
+    const realFetch = global.fetch;
+    global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' });
+    try {
+      await env.ipc['upgrade-flowpad']({}, '0.2.181');
+      await env.ipc['upgrade-flowpad']({}, '0.2.181; rm -rf ~');
+    } finally { global.fetch = realFetch; }
+    eq(env.uv.upgrades.map((o) => o.version), ['0.2.181', null], 'the named release exactly; a non-version is ignored');
   }
   {
     // Found while a pass is already running (autoCheckInFlight): owed as a follow-up, from the kept answer.

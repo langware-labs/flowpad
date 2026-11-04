@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Update management
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
-  upgradeFlowpad: () => ipcRenderer.invoke('upgrade-flowpad'),
+  upgradeFlowpad: (version) => ipcRenderer.invoke('upgrade-flowpad', version),
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.

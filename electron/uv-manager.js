@@ -1968,7 +1968,17 @@ class UvManager {
     this._closed = true;
     this.log.info('[uv] closed — nothing new will be started');
     this.abortInstall();
-    this.cancelPrepare('quit');
+    this.cancelBackgroundWork('quit');
+  }
+
+  /**
+   * Stop what runs beside the live engine — the background prepare and the background bytecode compile —
+   * without closing the manager: "Restart now" calls it before the restart (its quit skips close()), and a
+   * restart that fails keeps the app working. Nothing live is touched.
+   */
+  cancelBackgroundWork(why = 'cancelled') {
+    this.cancelPrepare(why);
+    if (this._bytecodeChild) this._killChildTree(this._bytecodeChild, `background bytecode compile ${why} — stopping it`);
   }
 
   isClosed() {
@@ -3264,7 +3274,11 @@ class UvManager {
       const t0 = Date.now();
       // -I: isolated — with -m, Python puts the CURRENT DIR first on sys.path, so a compileall.py there
       // would run instead of the stdlib's; cwd is the venv anyway. -j 1: one worker, in the background.
-      await this._runStreaming(python, ['-I', '-m', 'compileall', '-q', '-j', '1', venv], { shell: false, cwd: venv });
+      try {
+        await this._runStreaming(python, ['-I', '-m', 'compileall', '-q', '-j', '1', venv], { shell: false, cwd: venv, onChild: (child) => { this._bytecodeChild = child; } });
+      } finally {
+        this._bytecodeChild = null;
+      }
       this.log.info(`[uv] engine bytecode compiled in the background (${Math.round((Date.now() - t0) / 1000)}s)`);
       return true;
     } catch (err) {
