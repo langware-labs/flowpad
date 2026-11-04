@@ -16289,6 +16289,7 @@ msgid "Install failed"
 msgstr "ההתקנה נכשלה"
 
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
 msgstr "ההתקנה נכשלה."
 
@@ -34818,7 +34819,7 @@ msgstr "שדרוג FlowPad בסנדבוקס הזה"
 msgid "Upgrade FlowPad on this sandbox?"
 msgstr "לשדרג את FlowPad בסנדבוקס הזה?"
 
-#. placeholder {0}: pypi.latest
+#. placeholder {0}: String(upgradeVersion)
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "שדרגו ל-v{0}"

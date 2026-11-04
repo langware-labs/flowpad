@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Update management
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
   upgradeFlowpad: (version) => ipcRenderer.invoke('upgrade-flowpad', version),
+  // The release the popover offers: the newest THIS desktop runs (a version), false (none newer), null (unknown).
+  getEngineUpgradeTarget: () => ipcRenderer.invoke('engine-upgrade-target'),
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.

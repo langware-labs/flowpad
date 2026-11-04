@@ -142,7 +142,11 @@ let suppressDesktopRestartPrompt = false;
 // "Restart now": stop the backend, then hand over to the installer; if the updater reports it
 // could not restart, undo `isQuitting` and tell the user (see update-restart.js).
 const restartApplier = createRestartApplier({
-  uvManager: { stop: () => (uvManager ? uvManager.stop() : Promise.resolve()) },
+  uvManager: {
+    stop: () => (uvManager ? uvManager.stop() : Promise.resolve()),
+    // The prepare's uv and the bytecode compile: the restart's quit skips before-quit's uvManager.close().
+    cancelBackgroundWork: (why) => { if (uvManager) uvManager.cancelBackgroundWork(why); },
+  },
   // (update-test.js: in the update-cycle harness the relaunch is skipped so the harness can keep the new build's output)
   autoUpdater: { quitAndInstall: (silent, forceRun) => autoUpdater.quitAndInstall(silent, updateTest.forceRunAfter(forceRun)) },
   setQuitting: (v) => { isQuitting = v; },
@@ -3386,6 +3390,23 @@ function supportFailureRecordText() {
 // `version`: the release the version popover names on its button ("Upgrade to vX") — installed exactly, so a
 // release prepared earlier is used only when it IS that one (a newer release since, or a prepared one yanked
 // since, is downloaded instead). Anything that is not a plain version string is ignored (the newest compatible).
+// The release the version popover offers on the desktop: the newest one THIS desktop runs (PyPI's newest may need
+// a newer desktop). A version when it is newer than the installed engine; false when nothing newer runs here;
+// null when it cannot be decided (PyPI unreachable) — the popover then falls back to PyPI's newest, which the
+// upgrade below checks before touching anything.
+ipcMain.handle('engine-upgrade-target', async () => {
+  if (!uvManager) return null;
+  try {
+    const picked = await uvManager.resolveCompatibleEngineVersion();
+    if (!picked) return null;
+    const installed = uvManager.getInstalledVersionSync();
+    return !installed || isNewer(installed, picked.version) ? picked.version : false;
+  } catch (err) {
+    log.info(`[update] no engine release for the version popover: ${String((err && err.message) || err).split('\n')[0]}`);
+    return false; // PyPI answered and nothing is compatible with this desktop
+  }
+});
+
 ipcMain.handle('upgrade-flowpad', async (_event, version) => {
   if (!uvManager) return { success: false, error: 'No uv manager' };
   const target = isInstallableVersion(version) ? version : null;
@@ -3393,11 +3414,21 @@ ipcMain.handle('upgrade-flowpad', async (_event, version) => {
   if (engineChangeAllowed('upgrade-flowpad IPC') !== 'allow') {
     return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
   }
+  if (target) {
+    // Before the server is touched: a release this desktop cannot run is refused here, with the app untouched.
+    try {
+      await uvManager._assertCandidateCompatible(target);
+    } catch (err) {
+      log.warn(`[update] upgrade to ${target} refused: ${String((err && err.message) || err).split('\n')[0]}`);
+      return { success: false, error: err.message };
+    }
+  }
   const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart(target));
   return guarded.skipped ? { success: false, error: 'the backend is already being started' } : guarded.result;
 });
 
 async function upgradeFlowpadAndRestart(version = null) {
+  let serverStopped = false;
   try {
     // Show loading screen
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3406,6 +3437,7 @@ async function upgradeFlowpadAndRestart(version = null) {
     }
 
     sendStatus('Stopping server');
+    serverStopped = true;
     await uvManager._flowStop();
     await uvManager._killPort(9007);
     uvManager.isShuttingDown = false;
@@ -3423,11 +3455,26 @@ async function upgradeFlowpadAndRestart(version = null) {
       mainWindow.loadURL(BACKEND_URL);
     }
     if (ready) void uvManager.compileBytecodeInBackground(); // after a prepared (bytecode-less) upgrade; else a no-op
+    if (!ready) showUpgradeFailurePanel(new Error('the upgraded FlowPad engine did not become healthy'));
 
     return { success: ready };
   } catch (err) {
+    // The server is down and the upgrade failed (the install rolled back what it could): bring the running
+    // version back, as the engine dialog's upgrade does — never the loading screen with no backend.
+    if (serverStopped) {
+      const restored = await uvManager._recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl: BACKEND_URL, sendStatus })
+        .catch(() => false);
+      if (!restored) showUpgradeFailurePanel(err);
+    }
     return { success: false, error: err.message };
   }
+}
+
+/** The popover's upgrade left no working backend: the error panel (its Quit / commands), not a stuck splash. */
+function showUpgradeFailurePanel(err) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  void showStartupErrorPanel(describeStartupFailure(err), { retryable: false })
+    .catch((e) => log.warn(`[update] showing the upgrade failure panel failed: ${e && e.message}`));
 }
 
 /**

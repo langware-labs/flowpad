@@ -128,13 +128,15 @@ function load(opts = {}) {
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.168'; }
     installedPairIssue() { return opts.pairIssue || null; }
-    async resolveCompatibleEngineVersion() { return opts.compatibleRelease || null; }
+    async resolveCompatibleEngineVersion() { if (opts.compatThrows) throw new Error(opts.compatThrows); return opts.compatibleRelease || null; }
+    async _assertCandidateCompatible(v) { uv.asserted = (uv.asserted || []).concat(v); if ((opts.incompatible || []).includes(v)) throw new Error(`flowpad ${v} needs a newer desktop`); }
+    cancelBackgroundWork(why) { uv.cancelled = (uv.cancelled || []).concat(why); }
     async _pypiUpdateStatus() { return opts.engineStatus === undefined ? { currentVersion: '0.2.168', latestVersion: '0.2.180', required: true } : opts.engineStatus; }
     deferPackageVersion(v) { uv.deferred.push(v); }
     undeferPackageVersion(v) { uv.undeferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }
     async _recoverRunningBackendAfterFailedUpgrade() { uv.recovered = (uv.recovered || 0) + 1; return !opts.recoverFails; }
-    async _flowStop() {}
+    async _flowStop() { uv.flowStops = (uv.flowStops || 0) + 1; }
     async _killPort() {}
     deferredPackageVersion() { return opts.deferredEngine || null; }
     async prepareEngine(o) { uv.prepares.push(o); if (opts.prepareThrows) throw new Error(opts.prepareThrows); return { version: o.version }; }
@@ -708,6 +710,44 @@ const HOUR = 60 * 60 * 1000;
       await env.ipc['upgrade-flowpad']({}, '0.2.181; rm -rf ~');
     } finally { global.fetch = realFetch; }
     eq(env.uv.upgrades.map((o) => o.version), ['0.2.181', null], 'the named release exactly; a non-version is ignored');
+  }
+  {
+    // A named release this desktop cannot run is refused BEFORE the server is touched: the app stays as it was.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', incompatible: ['0.2.190'] });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['upgrade-flowpad']({}, '0.2.190');
+    eq([r.success, /newer desktop/.test(r.error)], [false, true], 'refused, with why');
+    eq([env.uv.flowStops || 0, env.uv.upgrades.length], [0, 0], 'the server was not stopped and nothing was installed');
+    eq(env.win.shown.includes('file:loading.html'), false, 'and the app was never replaced by the loading screen');
+  }
+  {
+    // The upgrade fails after the server was stopped: the running version is brought back — and when even that
+    // fails, the error panel, never the loading screen with no backend.
+    for (const [recoverFails, panel, why] of [[false, false, 'brought back: no panel'], [true, true, 'not brought back: the error panel']]) {
+      const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', upgradeThrows: 'uv tool install failed', recoverFails });
+      await env.t.getDesktopUpdateVersion();
+      const r = await env.ipc['upgrade-flowpad']({}, '0.2.181');
+      for (let i = 0; i < 6; i++) await tick();
+      eq(r.success, false, `${why}: the result says it failed`);
+      eq(env.uv.recovered, 1, `${why}: the running version was restarted`);
+      eq(env.sent.some(([ch]) => ch === 'startup-error'), panel, why);
+    }
+  }
+  {
+    // What the popover offers on the desktop: the newest release THIS desktop runs, not PyPI's newest.
+    const ask = async (o) => load({ appVersion: '0.2.47', engine: '0.2.168', ...o }).ipc['engine-upgrade-target']();
+    eq(await ask({ compatibleRelease: { version: '0.2.181' } }), '0.2.181', 'a newer compatible release: offered');
+    eq(await ask({ compatibleRelease: { version: '0.2.168' } }), false, 'the installed one is the newest this desktop runs: nothing offered');
+    eq(await ask({ compatThrows: 'no flowpad release on PyPI is compatible with desktop 0.2.47' }), false, 'nothing compatible: nothing offered');
+    eq(await ask({ compatibleRelease: null }), null, 'undecided (PyPI silent): the popover falls back, and the click is checked');
+  }
+  {
+    // "Restart now" through main.js's applier: the background prepare and bytecode compile are stopped — the
+    // restart's quit skips before-quit's close().
+    const env = load();
+    env.t.setBackendReady(true);
+    await env.t.restartApplier.apply();
+    eq(env.uv.cancelled, ['restart to install the update'], 'the background work is stopped before the restart');
   }
   {
     // Found while a pass is already running (autoCheckInFlight): owed as a follow-up, from the kept answer.

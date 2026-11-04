@@ -195,8 +195,11 @@ On macOS, an app running from a transient location is offered, once per version,
 ## 5. IPC channels
 
 - `handle`: capture-region, close-auth-window, copy-to-clipboard, get-app-version, get-backend-url,
-  get-startup-logs, notify-attention, notify-os, open-auth-window, open-external, open-logs-folder,
-  restart-backend, set-badge, share-logs, upgrade-flowpad.
+  engine-upgrade-target, get-startup-logs, notify-attention, notify-os, open-auth-window, open-external,
+  open-logs-folder, restart-backend, set-badge, share-logs, upgrade-flowpad.
+  The version popover's "Upgrade to vX": `engine-upgrade-target` names the newest release THIS desktop runs
+  (PyPI's newest may need a newer desktop); `upgrade-flowpad(version)` installs exactly it — checked against the
+  desktop before the server is stopped, and a failed install brings the running version back (or the error panel).
 - `on`: quit-app, set-menu-visible, unwatch-startup-logs, watch-startup-logs.
 - `once`: retry-startup.
 - `app` events: activate, before-quit, open-url, second-instance, window-all-closed.

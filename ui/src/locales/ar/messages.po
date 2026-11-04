@@ -16289,6 +16289,7 @@ msgid "Install failed"
 msgstr "فشل التثبيت"
 
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
 msgstr "فشل التثبيت."
 
@@ -34822,7 +34823,7 @@ msgstr "ترقية FlowPad على هذه البيئة المعزولة"
 msgid "Upgrade FlowPad on this sandbox?"
 msgstr "ترقية FlowPad على هذه البيئة المعزولة؟"
 
-#. placeholder {0}: pypi.latest
+#. placeholder {0}: String(upgradeVersion)
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "الترقية إلى الإصدار {0}"
