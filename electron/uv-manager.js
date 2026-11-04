@@ -19,6 +19,8 @@ const NATIVE_DEPS = Object.freeze(require('./native-deps.json').packages);
 const execFileAsync = promisify(execFile);
 
 const IS_WIN = process.platform === 'win32';
+// The throwaway tool dirs an engine prepare stages into (prepareEngine), next to uv's cache.
+const STAGE_PREFIX = 'flowpad-staging-';
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
@@ -550,8 +552,14 @@ class UvManager {
 
   /** The venv's python.exe (Windows), or null when it is not there. */
   _venvPython() {
-    const py = path.join(this._toolVenvDir(), 'Scripts', 'python.exe');
+    const py = this._pythonIn(this._toolVenvDir());
     return fs.existsSync(py) ? py : null;
+  }
+
+  /** The interpreter of the venv at `venvDir` — THE place that knows Scripts\python.exe from bin/python. */
+  _pythonIn(venvDir) {
+    const win = this._isWin !== undefined ? this._isWin : IS_WIN;
+    return win ? path.join(venvDir, 'Scripts', 'python.exe') : path.join(venvDir, 'bin', 'python');
   }
 
   /**
@@ -2832,7 +2840,7 @@ class UvManager {
    */
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null, engineChangeAllowed = () => true }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -2871,6 +2879,11 @@ class UvManager {
         }
         const now = this.getInstalledVersionSync() || null;
         if (now && !isNewer(now, latest)) return false; // upgraded meanwhile (the version panel)
+        // The prepare can take minutes: a newer desktop found meanwhile goes first (the engine follows it).
+        if (!engineChangeAllowed()) {
+          this.log.info(`[uv] not offering engine ${latest} now: a desktop update came first while it was prepared`);
+          return false;
+        }
       }
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -2913,7 +2926,9 @@ class UvManager {
       }
 
       if (sendStatus) sendStatus('Upgrading Flowpad');
-      await this.upgrade();
+      // Exactly the release the dialog named: the prepared one when it is that release (the swap then asks
+      // the network nothing with the backend down), a download of it otherwise.
+      await this.upgrade({ version: latest });
 
       // Pre-start: hand back to startApp's normal start path to boot the
       // upgraded backend — calling start()/loadURL here would double-start the
@@ -3079,16 +3094,20 @@ class UvManager {
   async _upgradeFromPrepared({ version, previousVersion, onProgress }) {
     const prepared = this.preparedEngine();
     if (!prepared) return false;
-    let target = version;
-    if (!target) {
-      // "The newest compatible release" — the prepared one only if it still is.
-      try { target = (await this.resolveCompatibleEngineVersion() || {}).version || null; } catch { target = null; }
-    }
-    if (target !== prepared.version) {
-      this.log.info(`[uv] the prepared ${prepared.version} is not the upgrade target (${target || 'unknown'}) — downloading instead`);
+    // No network from here: the caller has usually stopped the backend already. With no version asked
+    // for, the target is the prepared release — the newest compatible one when it was prepared, checked
+    // against this desktop then (preparedEngine() keeps only this desktop's record); a newer release
+    // since is offered by the next check. The pair check after the install stays the authority.
+    if (version && version !== prepared.version) {
+      this.log.info(`[uv] the prepared ${prepared.version} is not the upgrade target (${version}) — downloading instead`);
       return false;
     }
-    await this._assertCandidateCompatible(prepared.version); // refused here, the download would be refused too
+    // The pin THIS desktop picks for that release, from what was recorded (its floor, this build's pin).
+    const pin = await this._pythonPinForUpgrade(prepared.requiresPython !== undefined ? { requires_python: prepared.requiresPython } : null);
+    if (pin !== prepared.pin) {
+      this.log.info(`[uv] the prepared ${prepared.version} was staged on Python ${prepared.pin}; this desktop pins ${pin} — downloading instead`);
+      return false;
+    }
     try {
       this.log.info(`[uv] Upgrading flowpad to ${prepared.version} from the prepared download (offline)...`);
       await this._uvToolInstallForce(
@@ -3137,6 +3156,7 @@ class UvManager {
       if (installed && !isNewer(installed, target.version)) return null;
       const current = this._readPrepared();
       if (current && current.version === target.version && current.forDesktop === forDesktop) return current;
+      await this._removeStaleStageRoots();
       const stageRoot = await this._newStageRoot();
       try {
         this.log.info(`[uv] preparing flowpad ${target.version} in the background (the running engine keeps serving)`);
@@ -3145,6 +3165,9 @@ class UvManager {
         await this._validateStaged(stageRoot, target.version);
         const prepared = {
           version: target.version, spec: target.spec, pin: target.pin, flags,
+          // The release's own Python floor: the desktop that installs it recomputes the pin offline from
+          // it and ITS bundled pin (another desktop may pin another Python) — see _upgradeFromPrepared.
+          requiresPython: target.requiresPython,
           forDesktop, preparedAt: new Date().toISOString(),
         };
         this._writePrepared(prepared);
@@ -3152,7 +3175,7 @@ class UvManager {
         updateTest.event('engine-prepared', { engine: target.version });
         return prepared;
       } finally {
-        try { fs.rmSync(stageRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+        await this._removeStageRoot(stageRoot);
       }
     };
     const promise = run().finally(() => { if (this._preparing && this._preparing.promise === promise) this._preparing = null; });
@@ -3226,10 +3249,8 @@ class UvManager {
     if (!this._bytecodePending) return false;
     this._bytecodePending = false;
     try {
-      const dirs = await this._uvDirs();
-      if (!dirs) return false;
-      const venv = path.join(dirs.tools, PYPI_PACKAGE);
-      const python = this._venvPython(venv);
+      const venv = this._toolVenvDir();
+      const python = this._pythonIn(venv);
       if (!fs.existsSync(python)) return false;
       const t0 = Date.now();
       // -I: isolated — with -m, Python puts the CURRENT DIR first on sys.path, so a compileall.py there
@@ -3243,17 +3264,38 @@ class UvManager {
     }
   }
 
-  _venvPython(venv) {
-    return process.platform === 'win32' ? path.join(venv, 'Scripts', 'python.exe') : path.join(venv, 'bin', 'python');
-  }
-
-  /** A fresh staging dir per run, next to uv's cache (same volume; not %TEMP%'s long path or a tmpfs /tmp). */
-  async _newStageRoot() {
+  /** Where staging dirs live: next to uv's cache (same volume; not %TEMP%'s long path or a tmpfs /tmp). */
+  async _stageBase() {
     let base = null;
     try { const dirs = await this._uvDirs(); if (dirs && dirs.cache) base = path.dirname(dirs.cache); } catch { /* fall back */ }
-    if (!base) base = os.tmpdir();
+    return base || os.tmpdir();
+  }
+
+  /** A fresh staging dir per run. */
+  async _newStageRoot() {
+    const base = await this._stageBase();
     try { fs.mkdirSync(base, { recursive: true }); } catch { /* mkdtemp reports it */ }
-    return fs.mkdtempSync(path.join(base, 'flowpad-staging-'));
+    return fs.mkdtempSync(path.join(base, STAGE_PREFIX));
+  }
+
+  /**
+   * Staging dirs a run never removed: the app was killed (Task Manager, a logout, the installer taking
+   * the process tree) before its `finally` ran, leaving a whole venv behind. Called before a prepare —
+   * prepares are one at a time and the app is one instance, so none of them is in use.
+   */
+  async _removeStaleStageRoots() {
+    const base = await this._stageBase();
+    let names = [];
+    try { names = await fs.promises.readdir(base); } catch { return; }
+    for (const name of names.filter((n) => n.startsWith(STAGE_PREFIX))) {
+      this.log.info(`[uv] removing a leftover staging dir: ${name}`);
+      await this._removeStageRoot(path.join(base, name));
+    }
+  }
+
+  /** Asynchronous: a staged venv is thousands of files, and a sync rm froze the main process (IPC, windows). */
+  async _removeStageRoot(dir) {
+    try { await fs.promises.rm(dir, { recursive: true, force: true }); } catch { /* best effort */ }
   }
 
   /** The release upgrade() would install — { version, spec, pin } — checked against the desktop it runs on. */
@@ -3269,7 +3311,11 @@ class UvManager {
       throw installFailure('Could not determine which FlowPad engine release to prepare. Your existing installation has been preserved.');
     }
     await this._assertCandidateCompatible(target, { desktopVersion });
-    return { version: target, spec: `${PYPI_PACKAGE}==${target}`, pin: await this._pythonPinForUpgrade(await this._getPypiVersionInfo(target)) };
+    const info = await this._getPypiVersionInfo(target);
+    return {
+      version: target, spec: `${PYPI_PACKAGE}==${target}`, pin: await this._pythonPinForUpgrade(info),
+      requiresPython: (info && info.requires_python) || null,
+    };
   }
 
   _cancelledError() {
@@ -3316,7 +3362,7 @@ class UvManager {
     if (this._prepareCancelled) throw this._cancelledError();
     try {
       // -I: isolated, so nothing from the current directory or the user's site-packages answers for the venv.
-      await this._runStreaming(this._venvPython(venv), ['-I', '-c', check], { shell: false, cwd: venv, onChild: (child) => { this._prepareChild = child; } });
+      await this._runStreaming(this._pythonIn(venv), ['-I', '-c', check], { shell: false, cwd: venv, onChild: (child) => { this._prepareChild = child; } });
     } catch (err) {
       if (this._prepareCancelled) throw this._cancelledError();
       throw new Error(`the staged engine ${version} did not pass its check: ${String((err && err.message) || err).split('\n')[0]}`);
@@ -3344,11 +3390,15 @@ class UvManager {
       );
     }
     const minDesktopVersion = compat ? compat.minDesktopVersion : null;
+    // The reverse direction (the desktop's minimum engine) is baked into each desktop build: this one
+    // knows only its own. For another desktop (the update being downloaded) it is not checked here —
+    // that desktop picks its own target and checks the installed pair itself.
+    const otherDesktop = !!(desktopVersion && desktopVersion !== this._appVersion);
     const verdict = engineCompat.checkPair({
       desktopVersion: desktop,
       engineVersion: version,
       minDesktopVersion,
-      minBackendVersion: engineCompat.desktopMinBackendVersion(),
+      minBackendVersion: otherDesktop ? null : engineCompat.desktopMinBackendVersion(),
     });
     if (!verdict.compatible) {
       this.log.warn(`[compat] refusing engine ${version}: ${verdict.reasons.join('; ')}`);

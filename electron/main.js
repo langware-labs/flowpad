@@ -150,6 +150,10 @@ const restartApplier = createRestartApplier({
   // while isQuitting is set): an update never looks like FlowPad vanished.
   showInstalling: async () => {
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error('no window');
+    // Only over the running app: its failure path brings it back (onFailure). A pre-start caller (the
+    // recovery panel, the desktop-first install) owns its own screen — replacing it would leave the
+    // window on "Installing" with nothing to restore it when the install does not start.
+    if (!backendReady) throw new Error('the app is not up yet: its own screen stays');
     await mainWindow.loadFile(path.join(__dirname, 'loading.html'));
     sendStatus('Installing the update — FlowPad will reopen by itself');
   },
@@ -300,8 +304,13 @@ let autoCheckInFlight = false;
  * Package (PyPI): the upgrade dialog — without this a user who keeps the app open across a backend
  * release never hears about it.
  */
-async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
-  if (autoCheckInFlight) return;
+async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop = null } = {}) {
+  if (autoCheckInFlight) {
+    // `launchDesktop`: the launch's background look found a newer desktop while a pass runs — owe it
+    // (the follow-up works from the answer it recorded).
+    if (launchDesktop) followUpDesktop = true;
+    return;
+  }
   armAccountWatch(); // a watch that died (or never armed on a fresh install) is back within one tick
   const state = scheduleStore.read(); // one read per pass; the record* writers re-read at their write
   // Pass shape: 'scheduled' hits the feed and runs both halves; 'engine-retry' is the ENGINE
@@ -310,7 +319,9 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
   // otherwise every 5-minute tick would inflate a streak the backoff never paced.
   let pass = 'scheduled';
   let feedBackoffOnly = false; // due only to retry the failing FEED: the engine keeps its own cadence
-  if (!bypassSchedule) {
+  if (launchDesktop) {
+    pass = 'desktop'; // already answered by the launch's background look: handled like the hourly one
+  } else if (!bypassSchedule) {
     const check = updateSchedule.shouldAutoCheck({ state, intervalMs: currentIntervalMs(), now: Date.now() });
     if (check.due) {
       feedBackoffOnly = check.reason === 'backoff';
@@ -342,7 +353,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false } = {}) {
     const cached = (pass === 'follow-up' && desktopWasBlocked && last.state === 'available'
       && last.version && isNewer(app.getVersion(), last.version)) ? last.version : null;
     const desktopLatest = pass === 'scheduled' ? await getDesktopUpdateVersion()
-      : pass === 'desktop' ? await getDesktopUpdateVersion({ desktopOnly: true }) : cached;
+      : pass === 'desktop' ? (launchDesktop || await getDesktopUpdateVersion({ desktopOnly: true })) : cached;
     if (desktopLatest) {
       // A newer release than the one on screen / being downloaded: close that
       // prompt (as "Later") or cancel that download, so the user only ever sees
@@ -581,6 +592,8 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
       backendUrl: BACKEND_URL,
       cloudUrl: FLOWPAD_CLOUD_URL,
       compareWithPypi,
+      // Asked again after the background prepare: a desktop found meanwhile goes first.
+      engineChangeAllowed: () => engineChangeAllowed(`${label} package check, after the prepare`) === 'allow',
     });
     return (uvManager.pypiLookupFailures || 0) > lookupFailuresBefore ? 'failed' : 'ran';
   } catch (err) {
@@ -896,7 +909,7 @@ async function getDesktopUpdateVersion({ desktopOnly = false } = {}) {
 }
 
 function recordDesktopOnlyCheck(status) {
-  scheduleStore.write(updateSchedule.recordDesktopCheck(scheduleStore.read(), { at: Date.now() }));
+  scheduleStore.write(updateSchedule.recordDesktopCheck(scheduleStore.read(), { at: Date.now(), result: status }));
   if (status.state === 'unknown') return desktopStatus; // keep the last answer
   return setDesktopStatus(status);
 }
@@ -1230,11 +1243,15 @@ function startLaunchDesktopCheck() {
     ? { run: true, reason: 'update-test' } // the update-cycle harness drives the cadence itself
     : updateSchedule.planLaunchCheck({ state: scheduleStore.read(), intervalMs: currentIntervalMs(), now: Date.now() });
   if (plan.run) return boundedDesktopCheck();
-  // Not due for the shared cadence: the desktop feed is still looked at, every launch (DESKTOP_INTERVAL_MS).
-  log.info(`[update] launch check not due (${plan.reason})${plan.seed ? '; reusing the last answer' : ''} — checking the desktop feed only`);
+  // Not due for the shared cadence: the start goes on from the persisted answer at once (an offline or
+  // slow feed must not hold the launch), and the desktop feed is still looked at, every launch — in the
+  // background. A newer desktop it finds goes down the same road as the hourly look's.
+  log.info(`[update] launch check not due (${plan.reason})${plan.seed ? '; reusing the last answer' : ''} — the desktop feed is checked in the background`);
   if (plan.seed) setDesktopStatus(plan.seed);
-  launchDesktopCheckRan = true;
-  return updateRecovery.boundedCheck(() => getDesktopUpdateVersion({ desktopOnly: true }), { log, ms: updateTest.checkBoundMs() });
+  void getDesktopUpdateVersion({ desktopOnly: true })
+    .then((version) => { if (version) return runScheduledUpdateCheck({ launchDesktop: version }); return undefined; })
+    .catch((err) => log.warn(`[update] background desktop check failed: ${err.message}`));
+  return Promise.resolve(null);
 }
 /** The recovery panels' check: runs for real if the scheduled one was skipped. */
 function forcedLaunchDesktopCheck() {

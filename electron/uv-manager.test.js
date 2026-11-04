@@ -2424,14 +2424,77 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       ok(!installs[1].args.includes('--offline') && installs[1].opts.compileBytecode !== false, 'upgrade: the fallback is the usual download');
     }
     {
+      // No version asked for: the prepared release IS the target — nothing asks the network once the
+      // caller has stopped the backend (no newest-compatible lookup, no wheel metadata read).
       const { m, installs } = await mkUpgrade();
-      m.resolveCompatibleEngineVersion = async () => ({ version: '0.2.42' });
+      let asked = 0;
+      m.resolveCompatibleEngineVersion = async () => { asked++; return { version: '0.2.42' }; };
+      m._assertCandidateCompatible = async () => { asked++; };
       await m.upgrade();
-      ok(installs.length === 1 && !installs[0].args.includes('--offline'), 'upgrade: a newer target than the prepared one downloads');
+      ok(installs.length === 1 && installs[0].args.includes('--offline'), 'upgrade: no version → the prepared release, offline');
+      eq(asked, 0, 'upgrade: nothing was asked of the network for it');
+      // A pin THIS desktop would not pick (another desktop staged it on another Python): download.
+      const p2 = await mkUpgrade();
+      p2.m._pythonPinForUpgrade = async () => '3.13';
+      await p2.m.upgrade();
+      ok(p2.installs.length === 1 && !p2.installs[0].args.includes('--offline'), 'upgrade: a prepared pin this desktop would not pick downloads instead');
       const u2 = await mkUpgrade();
       u2.m._resolveEngineTarget = async (v) => ({ version: v, info: {} });
       await u2.m.upgrade({ version: '0.2.43' });
       ok(!u2.installs[0].args.includes('--offline'), 'upgrade: an explicit other version ignores the prepared one');
+    }
+
+    // The recorded Python floor is what the swap recomputes the pin from (offline).
+    {
+      const p = mkPrep();
+      p.m._resolvePrepareTarget = async (v) => ({ version: '0.2.41', spec: 'flowpad==0.2.41', pin: '3.12', requiresPython: '>=3.12' });
+      const rec = await p.m.prepareEngine();
+      eq(rec.requiresPython, '>=3.12', 'prepare: the release floor is recorded with the pin');
+      let seen;
+      p.m._pythonPinForUpgrade = async (release) => { seen = release; return '3.12'; };
+      p.m._uvToolInstallForce = async () => {}; p.m._ensureShimOnPath = async () => {};
+      p.m._resolveFlowBin = async () => '/x/flow'; p.m._verifyInstalledPairOrRollback = async () => {};
+      await p.m.upgrade();
+      eq(seen, { requires_python: '>=3.12' }, 'upgrade: the pin is recomputed from the recorded floor, not fetched');
+    }
+
+    // Staging dirs: a crash's leftovers are swept before the next prepare; the removal is asynchronous.
+    {
+      const p = mkPrep();
+      const base = fs.mkdtempSync(path.join(tmp, 'base-'));
+      p.m._stageBase = async () => base;
+      p.m._newStageRoot = UvManager.prototype._newStageRoot;
+      fs.mkdirSync(path.join(base, 'flowpad-staging-dead1', 'tools'), { recursive: true });
+      fs.mkdirSync(path.join(base, 'not-ours'));
+      let syncRm = 0;
+      const realRmSync = fs.rmSync;
+      fs.rmSync = (...a) => { if (String(a[0]).includes('flowpad-staging-')) syncRm++; return realRmSync(...a); };
+      try { await p.m.prepareEngine(); } finally { fs.rmSync = realRmSync; }
+      eq(fs.readdirSync(base).sort(), ['not-ours'], 'prepare: the leftover and its own staging dir are gone, nothing else');
+      eq(syncRm, 0, 'prepare: no synchronous removal of a staged venv');
+    }
+
+    // One interpreter-path rule, honoring a simulated platform; the WDAC fallback keeps its zero-arg form.
+    {
+      const m = new UvManager(silentLog);
+      m._isWin = true;
+      eq(m._pythonIn('/v'), path.join('/v', 'Scripts', 'python.exe'), 'Windows: Scripts\\python.exe');
+      m._isWin = false;
+      eq(m._pythonIn('/v'), path.join('/v', 'bin', 'python'), 'POSIX: bin/python');
+      eq(typeof m._venvPython(), m._venvPython() === null ? 'object' : 'string', 'the zero-arg _venvPython() still answers (no override)');
+    }
+
+    // The reverse floor is checked for THIS desktop only: another desktop's is not known here.
+    {
+      const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '0.2.10' });
+      const floorBefore = engineCompatForFixtures.desktopMinBackendVersion;
+      engineCompatForFixtures.desktopMinBackendVersion = () => '0.2.300';
+      try {
+        await assert.rejects(() => m._assertCandidateCompatible('0.2.245'), /preserved/); passed++;
+        await m._assertCandidateCompatible('0.2.245', { desktopVersion: '0.2.61' });
+        ok(true, 'another desktop: its own floor decides, at its own install');
+      } finally { engineCompatForFixtures.desktopMinBackendVersion = floorBefore; }
     }
 
     // The post-boot check prepares BEFORE it asks; a failed prepare still asks, as before.
@@ -2450,6 +2513,17 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
           const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
           await m.checkForUpdatesInBackground(mainWindow, { sendStatus: () => {}, compareWithPypi: true });
           eq(order, ['prepare', 'dialog'], `post-boot check: prepare, then the same question${fails ? ' (prepare failed)' : ''}`);
+        }
+        // A desktop update found while it prepared: the engine waits for it — no question.
+        {
+          order.length = 0;
+          const { m } = mkPrep();
+          m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
+          m.prepareEngine = async () => { order.push('prepare'); return null; };
+          await m.checkForUpdatesInBackground({ isDestroyed: () => false, loadFile: async () => {} }, {
+            sendStatus: () => {}, compareWithPypi: true, engineChangeAllowed: () => false,
+          });
+          eq(order, ['prepare'], 'post-boot check: a desktop found during the prepare goes first — no engine dialog');
         }
         const { m } = mkPrep();
         m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });

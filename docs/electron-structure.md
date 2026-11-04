@@ -104,8 +104,10 @@ Electron (main.js)
   retries for real; recovery panels and the update-cycle harness bypass the schedule.
   The DESKTOP feed is also looked at on every launch and every hour, whatever the account (a new desktop
   leads; the engine follows its dependencies): a desktop-only check (`getDesktopUpdateVersion({desktopOnly})`)
-  stamps `lastDesktopCheckAt` and never moves the shared anchor or the backoff, so the engine keeps its
-  cadence. After ANY desktop update — "Restart now", or installed on quit after "Later" — the new desktop
+  stamps `lastDesktopCheckAt` (and keeps its answer in `lastResult`) and never moves the shared anchor or the
+  backoff, so the engine keeps its cadence. At a launch inside the interval it runs in the background — the
+  start never waits for the feed — and a newer desktop it finds goes down the hourly look's road. An engine
+  prepared in the background is offered only if no desktop update turned up while it prepared. After ANY desktop update — "Restart now", or installed on quit after "Later" — the new desktop
   installs the newest engine it accepts without a question (`engineForUpdatedDesktop`; offline when it was
   prepared with the desktop download; PyPI silent → the version saved with the update). A feed answer that
   cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —

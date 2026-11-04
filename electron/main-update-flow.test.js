@@ -556,11 +556,36 @@ const HOUR = 60 * 60 * 1000;
     const second = load({ userDataDir });
     const anchor = second.readSchedule().lastSuccessAt;
     eq(await second.t.startLaunchDesktopCheck(), null, 'relaunch inside the interval: nothing newer');
-    eq(second.autoUpdater.checks, 1, 'every launch looks at the desktop feed');
+    await tick(); await tick();
+    eq(second.autoUpdater.checks, 1, 'every launch looks at the desktop feed (in the background)');
     eq(second.readSchedule().lastSuccessAt, anchor, 'without resetting the shared interval');
     eq(second.t.getDesktopStatus().state, 'current', 'the status is the fresh answer');
     await second.t.checkPackageUpdateInBackground();
     eq(second.uv.checks, 1, 'so the engine check is not held by the skipped check');
+  }
+  {
+    // A launch inside the interval never waits for the feed: the start goes on from the persisted answer at
+    // once, and a newer desktop the background look finds goes down the hourly look's road (the offer).
+    const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
+    const first = load({ userDataDir });
+    await first.t.startLaunchDesktopCheck();
+    const env = load({ userDataDir, appVersion: '0.2.47', desktopFeed: '0.2.48', dialogResponses: [1] });
+    env.t.setupElectronAutoUpdater();
+    let release;
+    env.autoUpdater.checkForUpdates = () => { env.autoUpdater.checks++; return new Promise((r) => { release = () => r({ updateInfo: { version: '0.2.48' } }); }); };
+    eq(await env.t.startLaunchDesktopCheck(), null, 'the launch is not held by the feed');
+    eq(env.t.getDesktopStatus().state, 'current', 'it starts from the persisted answer');
+    release(); for (let i = 0; i < 8; i++) await tick();
+    eq(env.t.getDesktopStatus().state, 'available', 'the background look found the newer desktop');
+    ok(env.dialogCalls.some((d) => /0\.2\.48/.test(d.detail || d.message || '')), 'and offered it, like the hourly look');
+    eq(env.readSchedule().lastResult, { state: 'available', version: '0.2.48' }, 'its answer is kept for a follow-up and the next launch');
+  }
+  {
+    // "Restart now" before the app is up (the recovery panel, the desktop-first install): the window is
+    // hidden as before — never left on "Installing" with nothing to bring its own screen back.
+    const env = load({ backendReady: false });
+    await env.t.restartApplier.apply();
+    ok(env.win.shown.includes('hidden') && !env.win.shown.includes('file:loading.html'), 'pre-start: hidden, its screen untouched');
   }
   {
     // RESTART with the announced version still the latest: no second screen — deferred silently.

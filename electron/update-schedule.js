@@ -133,9 +133,17 @@ function desktopCheckDue({ state, now }) {
   return seen.length === 0 || now >= Math.max(...seen) + DESKTOP_INTERVAL_MS;
 }
 
-/** A desktop-only check ran: paces the next one, touches nothing the shared cadence or the backoff reads. */
-function recordDesktopCheck(state, { at }) {
-  return { ...state, lastDesktopCheckAt: new Date(at).toISOString() };
+/**
+ * A desktop-only check ran: paces the next one and, when it answered, keeps the answer (a follow-up and
+ * the next launch read it) — never the shared cadence anchor or the backoff.
+ */
+function recordDesktopCheck(state, { at, result = null }) {
+  const answered = result && result.state && result.state !== 'unknown';
+  return {
+    ...state,
+    lastDesktopCheckAt: new Date(at).toISOString(),
+    ...(answered ? { lastResult: { state: result.state, version: result.version || null } } : {}),
+  };
 }
 
 /** An answered check: sets the cadence anchor, keeps what it found, ends any backoff. */
