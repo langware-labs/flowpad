@@ -2292,5 +2292,316 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   }
   engineCompatForFixtures.desktopMinBackendVersion = shippedDesktopFloor;
 
+  // ── the engine update prepared in the background (prepareEngine → upgrade from the prepared download) ──
+  {
+    const fs = require('fs'); const os = require('os'); const path = require('path');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'uvm-prepare-'));
+    const mkPrep = ({ installed = '0.2.40', target = '0.2.41', app = '0.2.60' } = {}) => {
+      const stateDir = fs.mkdtempSync(path.join(tmp, 'state-'));
+      const m = new UvManager(silentLog, { stateDir, appVersion: app });
+      const runs = [];
+      m.getInstalledVersionSync = () => installed;
+      m._resolvePrepareTarget = async () => ({ version: target, spec: `flowpad==${target}`, pin: '3.12' });
+      m._newStageRoot = async () => fs.mkdtempSync(path.join(tmp, 'stage-'));
+      m._runStreaming = async (cmd, args, opts) => { runs.push({ cmd, args, opts }); return { stdout: '' }; };
+      return { m, runs, stateDir, set installed(v) { installed = v; } };
+    };
+
+    // Staged into its OWN tool dir (never the live one), checked, and remembered across a restart.
+    {
+      const { m, runs, stateDir } = mkPrep();
+      const rec = await m.prepareEngine();
+      eq(rec && rec.version, '0.2.41', 'prepare: the target is prepared');
+      const install = runs.find((r) => r.args.includes('install'));
+      ok(install && install.opts.env && install.opts.env.UV_TOOL_DIR && install.opts.env.UV_TOOL_DIR.includes('stage-'), 'prepare: uv installs into the staging tool dir');
+      ok(!install.args.includes('--compile-bytecode'), 'prepare: no bytecode for a throwaway venv');
+      const check = runs.find((r) => r.args[0] === '-I');
+      ok(check && /import sys, uvicorn, multiprocessing\.connection, flow_sdk/.test(check.args[2]) && check.args[2].includes('"0.2.41"'), 'prepare: the staged engine must import and BE the release');
+      eq(check.opts.shell, false, 'prepare: the check never runs through a shell');
+      const again = new UvManager(silentLog, { stateDir, appVersion: '0.2.60' });
+      again.getInstalledVersionSync = () => '0.2.40';
+      eq(again.preparedEngine() && again.preparedEngine().version, '0.2.41', 'prepare: the record survives a restart');
+    }
+
+    // A failed check leaves nothing to install from.
+    {
+      const { m } = mkPrep();
+      m._runStreaming = async (cmd, args) => { if (args[0] === '-I') throw new Error('ModuleNotFoundError: uvicorn'); return { stdout: '' }; };
+      await assert.rejects(() => m.prepareEngine(), /did not pass its check/); passed++;
+      eq(m.preparedEngine(), null, 'prepare: a failed check records nothing');
+    }
+
+    // Nothing newer → nothing staged.
+    {
+      const { m, runs } = mkPrep({ installed: '0.2.41' });
+      eq(await m.prepareEngine(), null, 'prepare: the target is installed → null');
+      eq(runs.length, 0, 'prepare: nothing ran');
+    }
+
+    // A stale record is never used: another desktop prepared it, or the engine already reached it.
+    {
+      const p = mkPrep();
+      await p.m.prepareEngine();
+      const other = new UvManager(silentLog, { stateDir: p.stateDir, appVersion: '0.2.61' });
+      other.getInstalledVersionSync = () => '0.2.40';
+      eq(other.preparedEngine(), null, 'prepare: a record of another desktop is dropped');
+      const q = mkPrep();
+      await q.m.prepareEngine();
+      q.installed = '0.2.41';
+      eq(q.m.preparedEngine(), null, 'prepare: a record the engine already reached is dropped');
+    }
+
+    // Prepared for the NEW desktop (a desktop update downloading): kept on the old one, used by the new one.
+    {
+      const p = mkPrep();
+      let checkedFor = null;
+      p.m._resolvePrepareTarget = async (v, { desktopVersion }) => { checkedFor = desktopVersion; return { version: v, spec: `flowpad==${v}`, pin: '3.12' }; };
+      const rec = await p.m.prepareEngine({ version: '0.2.41', desktopVersion: '0.2.61' });
+      eq(rec && rec.forDesktop, '0.2.61', 'prepare for a desktop update: recorded for the new desktop');
+      eq(checkedFor, '0.2.61', 'prepare for a desktop update: the contract is checked against the new desktop');
+      eq(p.m.preparedEngine(), null, 'the old desktop does not use it');
+      ok(fs.existsSync(path.join(p.stateDir, 'prepared-engine.json')), '…and does not delete it');
+      const next = new UvManager(silentLog, { stateDir: p.stateDir, appVersion: '0.2.61' });
+      next.getInstalledVersionSync = () => '0.2.40';
+      eq(next.preparedEngine() && next.preparedEngine().version, '0.2.41', 'the new desktop finds it after the restart');
+      const newer = new UvManager(silentLog, { stateDir: p.stateDir, appVersion: '0.2.62' });
+      newer.getInstalledVersionSync = () => '0.2.40';
+      eq(newer.preparedEngine(), null, 'a desktop newer than the one it was prepared for drops it');
+    }
+
+    // Quit cancels a running prepare: its uv is killed and it rejects as cancelled.
+    {
+      const { m } = mkPrep();
+      const killed = [];
+      let release;
+      m._runStreaming = (cmd, args, opts) => new Promise((resolve, reject) => {
+        const child = { pid: 1 };
+        if (opts.onChild) opts.onChild(child);
+        release = () => reject(new Error('killed'));
+      });
+      m._killChildTree = (child) => { killed.push(child.pid); release(); };
+      const p = m.prepareEngine();
+      while (!release) await new Promise((r) => setImmediate(r));
+      ok(m.isPreparing(), 'prepare: running');
+      m.close();
+      await assert.rejects(() => p, (e) => e.cancelled === true); passed++;
+      eq(killed, [1], 'prepare: quit killed its uv');
+      eq(m.preparedEngine(), null, 'prepare: a cancelled run records nothing');
+    }
+
+    // upgrade(): the prepared release installs OFFLINE, with the staging run's cut-off, without bytecode.
+    const mkUpgrade = async ({ offlineFails = false } = {}) => {
+      const p = mkPrep();
+      await p.m.prepareEngine();
+      const installs = [];
+      p.m._assertCandidateCompatible = async () => {};
+      p.m.resolveCompatibleEngineVersion = async () => ({ version: '0.2.41' });
+      p.m._getPypiVersionInfo = async () => ({});
+      p.m._pythonPinForUpgrade = async () => '3.12';
+      p.m._uvToolInstallForce = async (args, opts = {}) => {
+        installs.push({ args, opts });
+        if (offlineFails && args.includes('--offline')) throw new Error('No solution found when resolving: not in the cache');
+      };
+      p.m._ensureShimOnPath = async () => {};
+      p.m._resolveFlowBin = async () => '/x/flow';
+      p.m._verifyInstalledPairOrRollback = async () => {};
+      return { ...p, installs };
+    };
+    {
+      const { m, installs } = await mkUpgrade();
+      await m.upgrade();
+      eq(installs.length, 1, 'upgrade: one install');
+      ok(installs[0].args.includes('--offline') && installs[0].args.includes('flowpad==0.2.41'), 'upgrade: offline, the prepared release');
+      eq(installs[0].opts.compileBytecode, false, 'upgrade: no bytecode during the swap');
+      eq(installs[0].opts.strategies, [{ label: 'prepared', flags: [] }], 'upgrade: replays the staging cut-off');
+      ok(m._bytecodePending, 'upgrade: the bytecode is compiled after the engine is up');
+      eq(fs.existsSync(path.join(m._stateDir, 'prepared-engine.json')), false, 'upgrade: the record is spent');
+    }
+    {
+      const { m, installs } = await mkUpgrade({ offlineFails: true });
+      await m.upgrade();
+      eq(installs.length, 2, 'upgrade: a prepared install that cannot apply falls back');
+      ok(!installs[1].args.includes('--offline') && installs[1].opts.compileBytecode !== false, 'upgrade: the fallback is the usual download');
+    }
+    {
+      // No version asked for: the prepared release IS the target — nothing asks the network once the
+      // caller has stopped the backend (no newest-compatible lookup, no wheel metadata read).
+      const { m, installs } = await mkUpgrade();
+      let asked = 0;
+      m.resolveCompatibleEngineVersion = async () => { asked++; return { version: '0.2.42' }; };
+      m._assertCandidateCompatible = async () => { asked++; };
+      await m.upgrade();
+      ok(installs.length === 1 && installs[0].args.includes('--offline'), 'upgrade: no version → the prepared release, offline');
+      eq(asked, 0, 'upgrade: nothing was asked of the network for it');
+      // A pin THIS desktop would not pick (another desktop staged it on another Python): download.
+      const p2 = await mkUpgrade();
+      p2.m._pythonPinForUpgrade = async () => '3.13';
+      await p2.m.upgrade();
+      ok(p2.installs.length === 1 && !p2.installs[0].args.includes('--offline'), 'upgrade: a prepared pin this desktop would not pick downloads instead');
+      const u2 = await mkUpgrade();
+      u2.m._resolveEngineTarget = async (v) => ({ version: v, info: {} });
+      await u2.m.upgrade({ version: '0.2.43' });
+      ok(!u2.installs[0].args.includes('--offline'), 'upgrade: an explicit other version ignores the prepared one');
+    }
+
+    // The recorded Python floor is what the swap recomputes the pin from (offline).
+    {
+      const p = mkPrep();
+      p.m._resolvePrepareTarget = async (v) => ({ version: '0.2.41', spec: 'flowpad==0.2.41', pin: '3.12', requiresPython: '>=3.12' });
+      const rec = await p.m.prepareEngine();
+      eq(rec.requiresPython, '>=3.12', 'prepare: the release floor is recorded with the pin');
+      let seen;
+      p.m._pythonPinForUpgrade = async (release) => { seen = release; return '3.12'; };
+      p.m._uvToolInstallForce = async () => {}; p.m._ensureShimOnPath = async () => {};
+      p.m._resolveFlowBin = async () => '/x/flow'; p.m._verifyInstalledPairOrRollback = async () => {};
+      await p.m.upgrade();
+      eq(seen, { requires_python: '>=3.12' }, 'upgrade: the pin is recomputed from the recorded floor, not fetched');
+    }
+
+    // Staging dirs: a crash's leftovers are swept before the next prepare; the removal is asynchronous.
+    {
+      const p = mkPrep();
+      const base = fs.mkdtempSync(path.join(tmp, 'base-'));
+      p.m._stageBase = async () => base;
+      p.m._newStageRoot = UvManager.prototype._newStageRoot;
+      const mk = (name, ageMs = 0) => {
+        const dir = path.join(base, name);
+        fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
+        if (ageMs) { const t = (Date.now() - ageMs) / 1000; fs.utimesSync(dir, t, t); }
+      };
+      mk('flowpad-staging-999999-dead');             // its process is gone
+      mk(`flowpad-staging-${process.pid}-mine`);     // this process's own, from a run that never finished
+      mk(`flowpad-staging-${process.ppid}-live`);    // another live process's (a dev build beside the app)
+      mk(`flowpad-staging-${process.ppid}-reused`, 2 * 24 * 60 * 60 * 1000); // its pid alive again, two days on: reused
+      mk('flowpad-staging-legacyold', 2 * 24 * 60 * 60 * 1000); // no owner in the name, two days old
+      mk('flowpad-staging-legacynew');               // no owner, fresh: maybe in use
+      fs.mkdirSync(path.join(base, 'not-ours'));
+      p.m._pidAlive = (pid) => pid === process.ppid;
+      let syncRm = 0;
+      const realRmSync = fs.rmSync;
+      fs.rmSync = (...a) => { if (String(a[0]).includes('flowpad-staging-')) syncRm++; return realRmSync(...a); };
+      try { await p.m.prepareEngine(); await p.m._stageCleanup; } finally { fs.rmSync = realRmSync; }
+      eq(fs.readdirSync(base).sort(), ['flowpad-staging-legacynew', `flowpad-staging-${process.ppid}-live`, 'not-ours'].sort(),
+        'prepare: orphans, its own and day-old dirs are gone — a live process\'s fresh one and a fresh unowned one stay');
+      eq(syncRm, 0, 'prepare: no synchronous removal of a staged venv');
+    }
+
+    // A file Windows still holds after the validation: a few brief tries, never awaited by the prepare; still
+    // locked, it is logged and left to the next sweep.
+    {
+      const p = mkPrep();
+      const base = fs.mkdtempSync(path.join(tmp, 'base-'));
+      p.m._stageBase = async () => base;
+      p.m._newStageRoot = UvManager.prototype._newStageRoot;
+      const lines = [];
+      p.m.log = { ...p.m.log, info: (l) => lines.push(String(l)) };
+      const realRm = fs.promises.rm;
+      const seen = [];
+      let unlock;
+      const locked = new Promise((r) => { unlock = r; });
+      fs.promises.rm = async (dir, o) => {
+        if (!String(dir).includes(`flowpad-staging-${process.pid}-`)) return realRm(dir, o);
+        seen.push(o);
+        await locked;
+        const e = new Error('EBUSY: resource busy or locked'); e.code = 'EBUSY'; throw e;
+      };
+      try {
+        const rec = await p.m.prepareEngine();
+        ok(rec && rec.version, 'prepare: the record is ready while its dir is still being removed');
+        unlock(); await p.m._stageCleanup;
+      } finally { fs.promises.rm = realRm; }
+      eq(seen.map((o) => [o.maxRetries, o.retryDelay]), [[2, 250]], 'prepare: 3 tries in all, 250 ms apart (linear)');
+      ok(lines.some((l) => /is still locked \(EBUSY\) — the next sweep removes it/.test(l)), 'prepare: a lock that outlasts them is logged');
+      eq(fs.readdirSync(base).filter((n) => n.startsWith(`flowpad-staging-${process.pid}-`)).length, 1, 'prepare: and the dir is left for the next sweep');
+    }
+
+    // One interpreter-path rule, honoring a simulated platform; the WDAC fallback keeps its zero-arg form.
+    {
+      const m = new UvManager(silentLog);
+      m._isWin = true;
+      eq(m._pythonIn('/v'), path.join('/v', 'Scripts', 'python.exe'), 'Windows: Scripts\\python.exe');
+      m._isWin = false;
+      eq(m._pythonIn('/v'), path.join('/v', 'bin', 'python'), 'POSIX: bin/python');
+      eq(typeof m._venvPython(), m._venvPython() === null ? 'object' : 'string', 'the zero-arg _venvPython() still answers (no override)');
+    }
+
+    // The background bytecode compile and the background prepare are stopped by close() (quit) and by
+    // cancelBackgroundWork() (Restart now, whose quit skips close()) — the manager stays usable after the latter.
+    for (const via of ['cancelBackgroundWork', 'close']) {
+      const m = new UvManager(silentLog);
+      m._bytecodePending = true;
+      m._toolVenvDir = () => path.dirname(process.execPath);
+      m._pythonIn = () => process.execPath; // an existing file
+      const killed = [];
+      m._killChildTree = (child, why) => killed.push([child.tag, why]);
+      let finish;
+      m._runStreaming = (_cmd, _args, o) => { o.onChild({ tag: 'compileall' }); return new Promise((r) => { finish = r; }); };
+      let cancelledPrepare = null;
+      m._preparing = { key: 'k', promise: Promise.resolve() };
+      m.cancelPrepare = (why) => { cancelledPrepare = why; return true; };
+      const compiling = m.compileBytecodeInBackground();
+      await Promise.resolve();
+      if (via === 'close') m.close(); else m.cancelBackgroundWork('restart to install the update');
+      eq(killed.map(([tag]) => tag), ['compileall'], `${via}: the background compile is stopped`);
+      ok(cancelledPrepare, `${via}: and the background prepare`);
+      eq(m.isClosed(), via === 'close', `${via}: ${via === 'close' ? 'closed' : 'the manager stays open (a failed restart keeps the app)'}`);
+      finish({ stdout: '' }); await compiling;
+      eq(m._bytecodeChild, null, `${via}: the child is forgotten once it ends`);
+    }
+
+    // The reverse floor is checked for THIS desktop only: another desktop's is not known here.
+    {
+      const m = new UvManager(silentLog, { appVersion: '0.2.60' });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '0.2.10' });
+      const floorBefore = engineCompatForFixtures.desktopMinBackendVersion;
+      engineCompatForFixtures.desktopMinBackendVersion = () => '0.2.300';
+      try {
+        await assert.rejects(() => m._assertCandidateCompatible('0.2.245'), /preserved/); passed++;
+        await m._assertCandidateCompatible('0.2.245', { desktopVersion: '0.2.61' });
+        ok(true, 'another desktop: its own floor decides, at its own install');
+      } finally { engineCompatForFixtures.desktopMinBackendVersion = floorBefore; }
+    }
+
+    // The post-boot check prepares BEFORE it asks; a failed prepare still asks, as before.
+    {
+      const electronId = require.resolve('electron');
+      const savedElectron = require.cache[electronId];
+      const order = [];
+      require.cache[electronId] = { id: electronId, filename: electronId, loaded: true,
+        exports: { dialog: { showMessageBox: async () => { order.push('dialog'); return { response: 1 }; } } } };
+      try {
+        for (const fails of [false, true]) {
+          order.length = 0;
+          const { m } = mkPrep();
+          m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
+          m.prepareEngine = async () => { order.push('prepare'); if (fails) throw new Error('offline'); return null; };
+          const mainWindow = { isDestroyed: () => false, loadFile: async () => {}, loadURL: () => {} };
+          await m.checkForUpdatesInBackground(mainWindow, { sendStatus: () => {}, compareWithPypi: true });
+          eq(order, ['prepare', 'dialog'], `post-boot check: prepare, then the same question${fails ? ' (prepare failed)' : ''}`);
+        }
+        // A desktop update found while it prepared: the engine waits for it — no question.
+        {
+          order.length = 0;
+          const { m } = mkPrep();
+          m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
+          m.prepareEngine = async () => { order.push('prepare'); return null; };
+          await m.checkForUpdatesInBackground({ isDestroyed: () => false, loadFile: async () => {} }, {
+            sendStatus: () => {}, compareWithPypi: true, engineChangeAllowed: () => false,
+          });
+          eq(order, ['prepare'], 'post-boot check: a desktop found during the prepare goes first — no engine dialog');
+        }
+        const { m } = mkPrep();
+        m._pypiUpdateStatus = async () => ({ currentVersion: '0.2.40', latestVersion: '0.2.41', required: true });
+        order.length = 0;
+        m.prepareEngine = async () => { order.push('prepare'); return null; };
+        await m.checkForUpdatesInBackground({ isDestroyed: () => false, loadFile: async () => {} }, { beforeBackendStart: true });
+        eq(order, ['dialog'], 'pre-start check: no download before the start');
+      } finally {
+        if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
+      }
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
   console.log(`uv-manager.test.js: ${passed} assertions passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

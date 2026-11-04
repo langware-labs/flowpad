@@ -37,6 +37,12 @@ def test_adding_a_file_beside_it_still_counts(tmp_path):
     folder = tmp_path / "driver"
     folder.mkdir()
     (folder / info.shape.main).write_text("{}")
+    # The token is the folder's mtime_ns (the diskio prober): two directory updates can land in the
+    # SAME kernel clock tick on a fast machine (Linux file timestamps move per jiffy, not per ns —
+    # first seen on Blacksmith runners). Pin the first state's stamp one tick back, so the change
+    # below MUST move it: the mechanism under test is "a change moves the stat", not the tick width.
+    st = folder.stat()
+    os.utime(folder, ns=(st.st_atime_ns, st.st_mtime_ns - 1))
     token = info.asset_hash_fn(FSRef(folder))
 
     (folder / "source.py").write_text("")
