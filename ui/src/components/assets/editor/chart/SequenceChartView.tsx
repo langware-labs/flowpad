@@ -39,37 +39,51 @@ import {
 
 const AUTO_NOTE = autoNote('chart.json');
 
+/** Sub-flow block height, and the Open ↗ pill — shared by layout and render. */
+const SUB_H = 130;
+const PILL = { w: 170, h: 58 };
+/** A label's backing plate: its text box plus this padding. */
+const PLATE_PAD = { x: 12, y: 4 };
+
+/** How much larger the text is than the chart's base unit — sized to read at the fit-to-view zoom. */
+const TEXT_SCALE = 3;
+const px = (base: number) => `${base * TEXT_SCALE}px`;
+
 const STYLES = `
 .cseq svg text { font-family: inherit; }
 .cseq .p rect.head { fill: var(--surface-1); stroke: var(--hairline-strong); stroke-width: 1; }
-.cseq .p .name { fill: var(--text-primary); font-size: 13px; font-weight: 600; text-anchor: middle; }
-.cseq .p .meta { fill: var(--text-muted); font-size: 11px; text-anchor: middle; }
+.cseq .p .name { fill: var(--text-primary); font-size: ${px(13)}; font-weight: 600; text-anchor: middle; }
+.cseq .p .meta { fill: var(--text-muted); font-size: ${px(11)}; text-anchor: middle; }
 .cseq .p .name.start, .cseq .p .meta.start { text-anchor: start; }
+.cseq .head-strip { fill: var(--surface-1); }
 .cseq .p .life { stroke: var(--hairline-strong); stroke-width: 1; }
 .cseq .p .act { fill: var(--surface-2); stroke: var(--hairline-strong); stroke-width: 1; }
-.cseq .m .line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.cseq .m.reply .line { stroke-dasharray: 5 5; }
-.cseq .m .hit { fill: none; stroke: transparent; stroke-width: 24; pointer-events: stroke; }
-.cseq .m .label { fill: var(--text-primary); font-size: 12.5px; font-weight: 500; }
+.cseq .m .line { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.cseq .m.reply .line { stroke-dasharray: 12 12; }
+.cseq .m .hit { fill: none; stroke: transparent; stroke-width: 56; pointer-events: stroke; }
+.cseq .m .label { fill: var(--text-primary); font-size: ${px(12.5)}; font-weight: 500; }
 .cseq .m .num-bg { stroke: var(--surface-1); stroke-width: 2; }
-.cseq .m .num { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.cseq .m .num { fill: #fff; font-size: ${px(10)}; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
 .cseq .m .lbl-bg { fill: var(--surface-1); }
 .cseq .m.sub rect.block { fill: var(--surface-2); stroke: var(--hairline-strong); stroke-width: 1; stroke-dasharray: 4 3; }
-.cseq .m.sub .tag { fill: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.cseq .m.sub .tag { fill: var(--text-muted); font-size: ${px(10)}; font-weight: 700; letter-spacing: .08em; }
 .cseq .m.sub .label { font-weight: 600; }
 .cseq .m.sub .open rect { fill: var(--surface-1); stroke: var(--hairline-strong); }
-.cseq .m.sub .open text { fill: var(--text-primary); font-size: 11px; font-weight: 600; }
+.cseq .m.sub .open text { fill: var(--text-primary); font-size: ${px(11)}; font-weight: 600; }
 .cseq .m.sub .open:hover rect, .cseq .m.sub .open:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
 .cseq .m.sub .open { cursor: pointer; }
-.cseq svg.focusing .m:not(.hot), .cseq svg.focusing .p:not(.hot) { opacity: .28; transition: opacity .12s; }
-.cseq .m.hot .line { stroke-width: 2.5; }
+.cseq .m.hot .line { stroke-width: 7; }
+.cseq .m.hot .label { font-weight: 700; }
+.cseq .m.hot .lbl-bg { stroke: var(--focus); stroke-width: 2; }
+.cseq .m.hot .num-bg { stroke: var(--focus); stroke-width: 3; }
+.cseq .p.hot rect.head { stroke: var(--focus); stroke-width: 3; }
 .cseq .m:focus, .cseq .p:focus { outline: none; }
 .cseq svg { touch-action: none; }
 .cseq [data-target] { cursor: pointer; }
 .cseq .p.picked rect.head, .cseq .m.picked .lbl-bg, .cseq .m.sub.picked rect.block { stroke: var(--focus); stroke-width: 2; }
 .cseq .popen { cursor: pointer; }
 .cseq .popen rect { fill: var(--surface-1); stroke: var(--hairline-strong); }
-.cseq .popen text { fill: var(--text-primary); font-size: 11px; font-weight: 600; }
+.cseq .popen text { fill: var(--text-primary); font-size: ${px(11)}; font-weight: 600; }
 .cseq .popen:hover rect, .cseq .popen:focus-visible rect { stroke: var(--focus); stroke-width: 2; }
 .cseq .m:focus-visible .lbl-bg, .cseq .p:focus-visible rect.head { stroke: var(--focus); stroke-width: 2; }
 `;
@@ -140,26 +154,33 @@ export function layoutSequence(value: SequenceValue) {
     color[p.id] = `var(${SLOTS[i] ?? '--s-other'})`;
     idx[p.id] = i;
   });
-  const COL = P.length > 5 ? 214 : 240;
-  const MARGIN = 40;
-  const HEAD_W = P.length > 5 ? 184 : 196;
-  const HEAD_H = 54;
-  // Card geometry, from the card's left edge: colour dot, icon, then the text column.
-  const DOT_X = 16;
-  const ICON_X = 28;
-  const ICON_SIZE = 20;
-  const TEXT_X = 54;
-  const NAME_CHAR_W = 7.6; // 13px name
-  const META_CHAR_W = 6.4; // 11px meta
-  const TOP = 20;
-  const ROW = 46;
-  const SELF = 58;
-  const END = 28;
+  // Text is drawn 3× the chart's base size (TEXT_SCALE); the cards, rows and lane gaps grow
+  // with the text they hold, so it stays readable at the zoom that fits the whole chart.
+  const NAME_CHAR_W = 7.6 * TEXT_SCALE; // 39px name
+  const META_CHAR_W = 6.4 * TEXT_SCALE; // 33px meta
+  const MARGIN = 60;
+  const DOT_X = 30;
+  const ICON_X = 56;
+  const ICON_SIZE = 56;
+  const TEXT_X = 128;
+  const longest = Math.max(
+    0,
+    ...P.map((p) => Math.max(p.label.length * NAME_CHAR_W, (p.sublabel ?? '').length * META_CHAR_W)),
+  );
+  const HEAD_W = Math.min(720, Math.max(380, Math.ceil(longest + TEXT_X + 30)));
+  const HEAD_H = 130;
+  // Lanes are sized by their cards only: a long arrow label runs past its lanes on its plate, so the
+  // text keeps its size at the zoom that fits the chart's width.
+  const COL = HEAD_W + 40;
+  const TOP = 40;
+  const ROW = 120;
+  const SELF = 150;
+  const END = 60;
   const cx = (id: string) => MARGIN + HEAD_W / 2 + idx[id] * COL;
   const name = (id: string) => P[idx[id]].label;
 
   const items: Item[] = [];
-  let y = TOP + HEAD_H + 34;
+  let y = TOP + HEAD_H + 90;
   M.forEach((m: SequenceMessage, i) => {
     if (!(m.from in idx) || !(m.to in idx)) return;
     const self = m.from === m.to;
@@ -170,7 +191,7 @@ export function layoutSequence(value: SequenceValue) {
     if (m.ref) {
       const lo = Math.min(x1, x2) - HEAD_W / 2 + 14;
       const hi = Math.max(x1, x2) + HEAD_W / 2 - 14;
-      const h = 50;
+      const h = SUB_H;
       items.push({
         kind: 'sub',
         key: m.id,
@@ -184,7 +205,7 @@ export function layoutSequence(value: SequenceValue) {
         y,
         info: { n, label: m.label, from: name(m.from), to: name(m.to), self, color: c, note: m.note },
       });
-      y += h + 20;
+      y += h + 50;
       if (m.returns && !self) {
         const dir = x1 > x2 ? 1 : -1;
         const rn = `${i + 1}′`;
@@ -199,7 +220,7 @@ export function layoutSequence(value: SequenceValue) {
           d: `M${x2 + dir * 6},${y} L${x1 - dir * 6},${y}`,
           reply: true,
           lx: (x1 + x2) / 2,
-          ly: y - 9,
+          ly: y - 24,
           anchor: 'middle',
           nx: NaN,
           ny: y,
@@ -222,21 +243,21 @@ export function layoutSequence(value: SequenceValue) {
     let ly: number;
     let anchor: 'start' | 'middle';
     if (self) {
-      const w = 44;
-      const h = SELF - 22;
-      d = `M${x1 + 6},${y} h${w - 12} q12,0 12,12 v${h - 24} q0,12 -12,12 h${-(w - 12)}`;
-      lx = x1 + w + 14;
-      ly = y + h / 2 + 4;
+      const w = 100;
+      const h = SELF - 40;
+      d = `M${x1 + 6},${y} h${w - 24} q24,0 24,24 v${h - 48} q0,24 -24,24 h${-(w - 24)}`;
+      lx = x1 + w + 30;
+      ly = y + h / 2 + 12;
       anchor = 'start';
     } else {
       const dir = x2 > x1 ? 1 : -1;
       d = `M${x1 + dir * 6},${y} L${x2 - dir * 6},${y}`;
       lx = (x1 + x2) / 2;
-      ly = y - 9;
+      ly = y - 24;
       anchor = 'middle';
     }
     // the step number sits at the start of the arrow (Mermaid's autonumber)
-    const nx = self ? x1 + 6 : x1 + (x2 > x1 ? 16 : -16);
+    const nx = self ? x1 + 6 : x1 + (x2 > x1 ? 40 : -40);
     items.push({
       kind: 'arrow',
       key: m.id,
@@ -254,13 +275,13 @@ export function layoutSequence(value: SequenceValue) {
       ny: y,
       info: { n, label: m.label, from: name(m.from), to: name(m.to), self, color: c, note: m.note },
     });
-    y += self ? SELF + 10 : ROW;
+    y += self ? SELF + 50 : ROW;
   });
   const bottom = y + END;
   const lanes: Lane[] = P.map((p) => {
     const x = cx(p.id);
     const lines = [p.label, p.sublabel].filter(Boolean) as string[];
-    const room = p.icon ? HEAD_W - TEXT_X - 10 : HEAD_W - 40;
+    const room = p.icon ? HEAD_W - TEXT_X - 20 : HEAD_W - 80;
     return {
       p,
       x,
@@ -283,7 +304,7 @@ export function layoutSequence(value: SequenceValue) {
       },
     };
   });
-  const width = MARGIN * 2 + HEAD_W + Math.max(0, P.length - 1) * COL + 40;
+  const width = MARGIN * 2 + HEAD_W + Math.max(0, P.length - 1) * COL + 120;
   const laneOf = new Map(lanes.map((l) => [l.p.id, l]));
   const itemOf = new Map(items.map((i) => [i.target, i]));
   return {
@@ -306,7 +327,7 @@ export function layoutSequence(value: SequenceValue) {
 }
 
 /** Width of a label plate before layout can be measured (jsdom, first paint). */
-const estimate = (text: string) => text.length * 6.8;
+const estimate = (text: string) => text.length * 6.8 * TEXT_SCALE;
 
 interface SequenceChartViewProps {
   fsRef: FSRef;
@@ -358,7 +379,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
   }, [chartRef]);
 
   const layout = useMemo(() => (value ? layoutSequence(value) : null), [value]);
-  const pz = usePanZoom(layout?.width ?? 1, layout?.height ?? 1);
+  const pz = usePanZoom(layout?.width ?? 1, layout?.height ?? 1, { fitWidth: true });
   const setPzSvg = pz.svgRef;
   // A stable ref: an inline one re-attaches (and re-sets pan-zoom state) on every render.
   const attachSvg = useCallback(
@@ -378,7 +399,12 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
       if (typeof node.getBBox !== 'function') return;
       const b = node.getBBox();
       if (!b.width) return;
-      next[node.dataset.plate!] = { x: b.x - 5, y: b.y - 2, width: b.width + 10, height: b.height + 4 };
+      next[node.dataset.plate!] = {
+        x: b.x - PLATE_PAD.x,
+        y: b.y - PLATE_PAD.y,
+        width: b.width + PLATE_PAD.x * 2,
+        height: b.height + PLATE_PAD.y * 2,
+      };
     });
     setPlates((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
   }, [layout, view]);
@@ -441,10 +467,10 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
   });
   const plateFor = (key: string, text: string, x: number, y: number, anchor: 'start' | 'middle') =>
     plates[key] ?? {
-      x: (anchor === 'middle' ? x - estimate(text) / 2 : x) - 5,
-      y: y - 14,
-      width: estimate(text) + 10,
-      height: 19,
+      x: (anchor === 'middle' ? x - estimate(text) / 2 : x) - PLATE_PAD.x,
+      y: y - 40,
+      width: estimate(text) + PLATE_PAD.x * 2,
+      height: 54,
     };
   const keyActivate = (e: React.KeyboardEvent, fn: () => void) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -507,7 +533,7 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                   {...pz.handlers}
                   xmlns="http://www.w3.org/2000/svg"
                   role="img"
-                  className={`block${hot ? ' focusing' : ''}`}
+                  className="block"
                   style={{ width: '100%', height: 'calc(100vh - 290px)', minHeight: 360 }}
                   viewBox={pz.viewBox}
                   data-zoomed={pz.zoomed ? 'true' : 'false'}
@@ -523,8 +549,8 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                         viewBox="0 0 10 10"
                         refX={9}
                         refY={5}
-                        markerWidth={11}
-                        markerHeight={11}
+                        markerWidth={26}
+                        markerHeight={26}
                         orient="auto-start-reverse"
                         markerUnits="userSpaceOnUse"
                       >
@@ -533,83 +559,12 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                     ))}
                   </defs>
                   <g>
-                    {lanes.map((lane) => {
-                      const base = TOP + HEAD_H / 2 + (lane.lines.length > 1 ? -3 : 4.5);
-                      return (
-                        <g
-                          key={lane.p.id}
-                          className={`p${markClass(lane.p.id)}`}
-                          data-target={lane.p.id}
-                          data-label={lane.lines[0]}
-                          tabIndex={0}
-                          role="listitem"
-                          aria-label={`Participant ${lane.lines.join(' ')}`}
-                          data-testid="chart-participant"
-                          onPointerMove={(e) => showTip(lane.p.id, lane.info, e)}
-                          onFocus={(e) => focusTip(lane.p.id, lane.info, e.currentTarget)}
-                          onBlur={() => setHot(null)}
-                          onClick={(e) => pick(lane.p.id, lane.lines[0], e)}
-                          onKeyDown={(e) =>
-                            keyActivate(e, () => {
-                              const b = e.currentTarget.getBoundingClientRect();
-                              pick(lane.p.id, lane.lines[0], { clientX: b.left + b.width / 2, clientY: b.bottom });
-                            })
-                          }
-                        >
-                          <line className="life" x1={lane.x} y1={TOP + HEAD_H} x2={lane.x} y2={bottom} />
-                          <rect
-                            className="head"
-                            x={lane.x - HEAD_W / 2}
-                            y={TOP}
-                            width={HEAD_W}
-                            height={HEAD_H}
-                            rx={10}
-                          />
-                          <circle cx={lane.x - HEAD_W / 2 + DOT_X} cy={TOP + HEAD_H / 2} r={5} fill={lane.color} />
-                          {lane.p.icon && (
-                            // The participant's own mark (an IconSpec tag); identity still rides the dot.
-                            <foreignObject
-                              x={lane.x - HEAD_W / 2 + ICON_X}
-                              y={TOP + (HEAD_H - ICON_SIZE) / 2}
-                              width={ICON_SIZE}
-                              height={ICON_SIZE}
-                            >
-                              <FlowIcon icon={lane.p.icon} size={ICON_SIZE} title={lane.p.label} />
-                            </foreignObject>
-                          )}
-                          <text
-                            className={lane.text.anchor === 'start' ? 'name start' : 'name'}
-                            x={lane.text.x}
-                            y={base}
-                          >
-                            {clip(lane.lines[0], lane.text.max[0])}
-                          </text>
-                          {lane.lines[1] && (
-                            <text
-                              className={lane.text.anchor === 'start' ? 'meta start' : 'meta'}
-                              x={lane.text.x}
-                              y={base + 15}
-                            >
-                              {clip(lane.lines[1], lane.text.max[1])}
-                            </text>
-                          )}
-                          <rect className="act" x={lane.x - 4} y={bottom - 6} width={8} height={6} rx={2} />
-                          {lane.p.ref && (
-                            <g
-                              {...openPill(() => void openRef(lane.p.ref!))}
-                              aria-label={t`Open ${lane.lines[0]}`}
-                              data-testid="chart-participant-open"
-                            >
-                              <rect x={lane.x - 31} y={TOP + HEAD_H + 6} width={62} height={20} rx={10} />
-                              <text x={lane.x} y={TOP + HEAD_H + 20} textAnchor="middle">
-                                {t`Open ↗`}
-                              </text>
-                            </g>
-                          )}
-                          <Marks ns={marksOf(lane.p.id, lane.lines[0])} x={lane.x - HEAD_W / 2 + 2} y={TOP + 2} />
-                        </g>
-                      );
-                    })}
+                    {lanes.map((lane) => (
+                      <g key={lane.p.id} className="p" aria-hidden="true">
+                        <line className="life" x1={lane.x} y1={TOP + HEAD_H} x2={lane.x} y2={bottom} />
+                        <rect className="act" x={lane.x - 8} y={bottom - 12} width={16} height={12} rx={4} />
+                      </g>
+                    ))}
                   </g>
                   <g>
                     {items.map((item) => {
@@ -634,15 +589,15 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                             data-testid="chart-subflow"
                             {...common}
                           >
-                            <rect className="block" x={lo} y={y - 18} width={hi - lo} height={50} rx={10} />
-                            <circle className="num-bg" cx={lo + 18} cy={y + 7} r={9} fill={item.color} />
-                            <text className="num" x={lo + 18} y={y + 7.5}>
+                            <rect className="block" x={lo} y={y - 45} width={hi - lo} height={SUB_H} rx={20} />
+                            <circle className="num-bg" cx={lo + 45} cy={y + 20} r={24} fill={item.color} />
+                            <text className="num" x={lo + 45} y={y + 21}>
                               {item.n}
                             </text>
-                            <text className="tag" x={lo + 36} y={y + 1}>
+                            <text className="tag" x={lo + 90} y={y + 5}>
                               <Trans>SUB-FLOW</Trans>
                             </text>
-                            <text className="label" x={lo + 36} y={y + 17}>
+                            <text className="label" x={lo + 90} y={y + 50}>
                               {item.label}
                             </text>
                             <g
@@ -661,12 +616,12 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                                 keyActivate(e, () => void openRef(item.ref));
                               }}
                             >
-                              <rect x={hi - 74} y={y - 5} width={62} height={24} rx={12} />
-                              <text x={hi - 43} y={y + 11} textAnchor="middle">
+                              <rect x={hi - 30 - PILL.w} y={y - 10} width={PILL.w} height={PILL.h} rx={PILL.h / 2} />
+                              <text x={hi - 30 - PILL.w / 2} y={y + 32} textAnchor="middle">
                                 {t`Open ↗`}
                               </text>
                             </g>
-                            <Marks ns={marksOf(item.target, item.label)} x={hi - 92} y={y - 16} />
+                            <Marks ns={marksOf(item.target, item.label)} x={hi - 220} y={y - 40} />
                           </g>
                         );
                       }
@@ -693,13 +648,109 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                           </text>
                           {!Number.isNaN(item.nx) && (
                             <>
-                              <circle className="num-bg" cx={item.nx} cy={item.ny} r={9} fill={item.color} />
-                              <text className="num" x={item.nx} y={item.ny + 0.5}>
+                              <circle className="num-bg" cx={item.nx} cy={item.ny} r={24} fill={item.color} />
+                              <text className="num" x={item.nx} y={item.ny + 1}>
                                 {item.n}
                               </text>
                             </>
                           )}
-                          <Marks ns={marksOf(item.target, item.label)} x={plate.x + plate.width + 10} y={plate.y + plate.height / 2} />
+                          <Marks
+                            ns={marksOf(item.target, item.label)}
+                            x={plate.x + plate.width + 24}
+                            y={plate.y + plate.height / 2}
+                          />
+                        </g>
+                      );
+                    })}
+                  </g>
+                  {/* The cards stay pinned to the top of the view: they pan and zoom with their columns
+                      across, never scroll away down. A strip behind them hides what passes under. */}
+                  <g transform={`translate(0 ${Math.max(0, pz.visibleTop)})`} data-testid="chart-sequence-head">
+                    <rect
+                      className="head-strip"
+                      x={-layout.width}
+                      y={0}
+                      width={layout.width * 3}
+                      height={TOP * 2 + HEAD_H}
+                    />
+                    {lanes.map((lane) => {
+                      const base = TOP + HEAD_H / 2 + (lane.lines.length > 1 ? -8 : 13);
+                      return (
+                        <g
+                          key={lane.p.id}
+                          className={`p${markClass(lane.p.id)}`}
+                          data-target={lane.p.id}
+                          data-label={lane.lines[0]}
+                          tabIndex={0}
+                          role="listitem"
+                          aria-label={`Participant ${lane.lines.join(' ')}`}
+                          data-testid="chart-participant"
+                          onPointerMove={(e) => showTip(lane.p.id, lane.info, e)}
+                          onFocus={(e) => focusTip(lane.p.id, lane.info, e.currentTarget)}
+                          onBlur={() => setHot(null)}
+                          onClick={(e) => pick(lane.p.id, lane.lines[0], e)}
+                          onKeyDown={(e) =>
+                            keyActivate(e, () => {
+                              const b = e.currentTarget.getBoundingClientRect();
+                              pick(lane.p.id, lane.lines[0], { clientX: b.left + b.width / 2, clientY: b.bottom });
+                            })
+                          }
+                        >
+                          <rect
+                            className="head"
+                            x={lane.x - HEAD_W / 2}
+                            y={TOP}
+                            width={HEAD_W}
+                            height={HEAD_H}
+                            rx={20}
+                          />
+                          <circle cx={lane.x - HEAD_W / 2 + DOT_X} cy={TOP + HEAD_H / 2} r={12} fill={lane.color} />
+                          {lane.p.icon && (
+                            // The participant's own mark (an IconSpec tag); identity still rides the dot.
+                            <foreignObject
+                              x={lane.x - HEAD_W / 2 + ICON_X}
+                              y={TOP + (HEAD_H - ICON_SIZE) / 2}
+                              width={ICON_SIZE}
+                              height={ICON_SIZE}
+                            >
+                              <FlowIcon icon={lane.p.icon} size={ICON_SIZE} title={lane.p.label} />
+                            </foreignObject>
+                          )}
+                          <text
+                            className={lane.text.anchor === 'start' ? 'name start' : 'name'}
+                            x={lane.text.x}
+                            y={base}
+                          >
+                            {clip(lane.lines[0], lane.text.max[0])}
+                          </text>
+                          {lane.lines[1] && (
+                            <text
+                              className={lane.text.anchor === 'start' ? 'meta start' : 'meta'}
+                              x={lane.text.x}
+                              y={base + 42}
+                            >
+                              {clip(lane.lines[1], lane.text.max[1])}
+                            </text>
+                          )}
+                          {lane.p.ref && (
+                            <g
+                              {...openPill(() => void openRef(lane.p.ref!))}
+                              aria-label={t`Open ${lane.lines[0]}`}
+                              data-testid="chart-participant-open"
+                            >
+                              <rect
+                                x={lane.x - PILL.w / 2}
+                                y={TOP + HEAD_H + 14}
+                                width={PILL.w}
+                                height={PILL.h}
+                                rx={PILL.h / 2}
+                              />
+                              <text x={lane.x} y={TOP + HEAD_H + 54} textAnchor="middle">
+                                {t`Open ↗`}
+                              </text>
+                            </g>
+                          )}
+                          <Marks ns={marksOf(lane.p.id, lane.lines[0])} x={lane.x - HEAD_W / 2 + 2} y={TOP + 2} />
                         </g>
                       );
                     })}
@@ -798,7 +849,6 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
             )}
           </ChartTooltip>
         )}
-
       </div>
     </div>
   );

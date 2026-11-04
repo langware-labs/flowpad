@@ -36,6 +36,11 @@ Never write `thumbnail.svg`; the editor makes it.
 
 ## 1. Pick the format, then cut the flows
 
+**One request → ONE chart.** Pick the single format that answers it and put everything in that chart
+(a sequence can carry state changes as self-calls, an architecture chart its steps). Never add a
+second chart "to complement" the first. More than one only when the person asks for several, or a
+sequence set's repeated sub-flow (below) is real.
+
 - Several actors exchanging messages over time → `sequence`. What a system is made of and what it
   talks to → `c4` (a request walking through it, numbered → `c4` with `level: dynamic`). The real
   deployment in one picture — which services, stores and clients run where, and the steps of one request through
