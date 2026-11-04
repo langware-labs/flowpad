@@ -108,6 +108,12 @@ async function createSource(
   const submit = dialog.getByRole('button', { name: 'Add source' });
   await expect(submit).toBeEnabled();
   await submit.click();
+  // A source with a setup step (a folder, a repository, a drive) keeps the dialog open on the Setup
+  // panel — "<name> is listening · 1 of 1 set up" — until the person presses Done; one with none closes.
+  // A setup that cannot finish (Drive has no token yet) offers "Finish later" instead.
+  const done = dialog.getByRole('button', { name: /^(Done|Finish later)$/ });
+  await expect.poll(async () => !(await dialog.isVisible()) || (await done.isVisible()), { timeout: 15_000 }).toBe(true);
+  if (await done.isVisible()) await done.click();
   await expect(dialog).toBeHidden();
 
   const card = page.locator(`[data-testid="source-card"][data-provider="${provider}"]`).filter({

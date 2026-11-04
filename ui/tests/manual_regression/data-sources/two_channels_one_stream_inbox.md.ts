@@ -120,7 +120,7 @@ test('1. the API pages a source\'s items 50 at a time', async () => {
  *  one after the ingest returns; sampled, never hurried — the test's own timeout is the bound. */
 async function projected() {
   await expect(async () => {
-    const convs = await graph<Array<{ channel_source_id?: string; message_count?: number }>>('get', '/graph/conversation?limit=1000');
+    const convs = await graph<Array<{ channel_source_id?: string; message_count?: number }>>('get', `/graph/conversation?filter=${encodeURIComponent(JSON.stringify({ match: { op: '$NE', operands: ['id', ''] }, limit: 1000 }))}`);
     const ours = convs.filter((c) => [slackId, gmailId].includes(c.channel_source_id ?? '') && (c.message_count ?? 0) > 0);
     expect(ours).toHaveLength(2 * PER_SOURCE);
   }).toPass();

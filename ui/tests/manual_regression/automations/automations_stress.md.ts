@@ -201,6 +201,8 @@ test('the Automations screen stays truthful under load', async ({ page }) => {
     await shot(page, '04-list-with-failures');
     await page.getByTestId('automations-attention').click();
     await expect(page).toHaveURL(/\/dock\/automations\/runs\?status=failed/);
+    // The instance keeps earlier runs' failures (other automations, other reasons): open THIS run's own.
+    await page.goto(`/dock/automations/runs?trigger=${failing[0].id}&status=failed`);
     const firstFailed = page.locator('[data-testid^="run-row-"][data-status="failed"]').first();
     await firstFailed.click();
     await expect(page.getByTestId('run-detail-error')).toContainText('no agent to run');
