@@ -7,7 +7,7 @@
  *      Try fills the list; Save turns the rule on;
  *   4. a second message arrives; the rule catches it; the chip "⚡ <agent>" appears on the
  *      message and the stream inbox row; the lifecycle line reads handling → replied;
- *   5. the chip opens the agent's session; the top-bar ⚡ counts it; the list row shows a mark.
+ *   5. the chip opens the agent's session; the rail's Automations place opens the list; the list row shows a mark.
  *
  * Runs against an instance whose backend is `tests/e2e/mock_worker_backend.py` with `MOCK_DECISION=1`
  * (every agent turn answers from the mock worker; the Decision API answers "yes 0.9" from the double):
@@ -238,9 +238,9 @@ test('3. a second message is caught: the chip on the message and the row, the li
   await expect(page).toHaveURL(/\/dock\/process-runs\?run=/);
   await shot(page, 'stream-inbox-session');
 
-  // The top bar counts it; the list row carries a mark.
-  await expect(page.getByTestId('top-nav-automations-badge')).toHaveText(/^[1-9]/);
-  await page.getByTestId('top-nav-automations').click();
+  // Automations is a rail place now (the top bar's ⚡ and its counter were removed: e21e8520e, 698536dfc);
+  // the list row carries a mark.
+  await page.locator('[data-rail-item="automations"]').click();
   await expect(page).toHaveURL(/\/dock\/automations$/);
   await expect(page.getByTestId(`automation-marks-${ruleId}`)).toBeVisible();
   await expect(page.getByTestId(`automation-counts-${ruleId}`)).toContainText('caught');
