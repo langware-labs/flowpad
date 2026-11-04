@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Agent, AgentPlace } from '@sdk';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
+import { type Agent, type AgentPlace, dataContext } from '@sdk';
+import { useOnTag } from '@sdk/react/hooks';
 
 /** Every mounted reader of an agent's places, so one reload (a launch, a switch) refreshes them all. */
 const readers = new Map<string, Set<() => void>>();
@@ -22,8 +22,8 @@ export function useAgentPlaces(agent: Agent | null | undefined): {
   const read = useCallback(async () => {
     const current = agentRef.current;
     if (!current) return;
-    // Places are this computer's deployments; the hub has no `places` call.
-    if (isHubOnly()) return setPlaces([]);
+    // Places are this backend's own deployments: a backend with no disk of its own (the hub) has none.
+    if (!dataContext.caps.localFiles) return setPlaces([]);
     try {
       setPlaces(await current.listPlaces());
     } catch {
@@ -50,6 +50,11 @@ export function useAgentPlaces(agent: Agent | null | undefined): {
   useEffect(() => {
     void read();
   }, [read, placesKey]);
+  // A place that just answered (a run starting or ending on this computer) should say so without a
+  // reload: its `last_active` is read again on the same bus event the place's activity list follows.
+  useOnTag('agent.status', () => {
+    if (dataContext.caps.localFiles) void read();
+  });
 
   const reload = useCallback(async () => {
     await read();

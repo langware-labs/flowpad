@@ -5,14 +5,23 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), open: vi.fn() }));
 vi.mock('@src/notifications', () => ({ notify: { error: h.error, success: h.success, info: vi.fn() } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: {} }) }));
-vi.mock('@src/components/llm-endpoints/llm-endpoints-pointer', () => ({ openLlmEndpoint: h.open }));
-vi.mock('@src/components/assets/editor/agent-profile/TokenAllocationField', () => ({
+vi.mock('@src/components/llm-endpoints/llm-endpoints-pointer', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  openLlmEndpoint: h.open,
+}));
+// The editor seeds from the allocation's endpoint chain: answered at once, so Save is live.
+vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useLlmEndpointChain: () => ({ data: { entry: { id: 'llm_endpoint-55555555-5555-4555-8555-555555555555' }, hops: [], paths: [] }, error: null }),
+}));
+vi.mock('@src/components/assets/editor/agent-profile/TokenAllocationField', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   TokenAllocationField: () => <div data-testid="allocation-field" />,
   tokenAllocationComplete: () => true,
 }));
@@ -76,6 +85,22 @@ describe('deployment funding', () => {
       </QueryClientProvider>,
     );
     expect(h.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('changing the allocation names this deployment, so the hub never plans a new one', async () => {
+    const post = vi.spyOn(agent as unknown as { post: () => Promise<unknown> }, 'post').mockResolvedValue({});
+    try {
+      wrap(<DeploymentFundingCard agent={agent} deployment={deployment(ALLOCATION)} />);
+      fireEvent.click(await screen.findByTestId('deployment-change-allocation'));
+      fireEvent.click(screen.getByTestId('deployment-allocation-save'));
+      await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+      expect(post).toHaveBeenCalledWith(
+        'plan_deployment',
+        expect.objectContaining({ deployment_id: '44444444-4444-4444-8444-444444444444' }),
+      );
+    } finally {
+      post.mockRestore();
+    }
   });
 
   it('the list cell says who pays, and an owner default says so', async () => {

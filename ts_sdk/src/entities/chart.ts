@@ -4,7 +4,7 @@ import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 
 /** How a chart is drawn — and which file in its folder is the source. Mirrors Python's `ChartFormat`. */
-export const CHART_FORMATS = ['sequence', 'excalidraw', 'mermaid', 'c4'] as const;
+export const CHART_FORMATS = ['sequence', 'excalidraw', 'mermaid', 'c4', 'architecture'] as const;
 
 export type ChartFormat = (typeof CHART_FORMATS)[number];
 
@@ -14,6 +14,7 @@ export const CHART_SOURCE_FILE: Record<ChartFormat, string> = {
   excalidraw: 'board.json',
   mermaid: 'CHART.md',
   c4: 'c4.json',
+  architecture: 'architecture.json',
 };
 
 /** A row without a known `format` is a board. */
@@ -34,6 +35,7 @@ export function isUnknownChartFormat(value: unknown): value is string {
  *   <name>/chart.json     — format `sequence`: a chartit.sequence value {participants, messages}
  *   <name>/board.json     — format `excalidraw`: {kind, version, data} Excalidraw payload
  *   <name>/c4.json        — format `c4`: a chartit.c4 value {level, elements, boundaries, relations}
+ *   <name>/architecture.json — format `architecture`: a chartit.architecture value {groups, links, steps}
  *   <name>/thumbnail.svg  — regenerated on save
  * Format `mermaid` keeps its source in CHART.md's mermaid block.
  *

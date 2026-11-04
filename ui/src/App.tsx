@@ -21,6 +21,7 @@ import { useEffect, useRef } from 'react';
 import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
+import { LaunchFailureRoot } from '@src/components/launch-failure/LaunchFailureCard';
 import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
 import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
 import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
@@ -174,6 +175,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
+        {/* A coding agent the server refused to start — one recovery card. */}
+        {!isHubOnly() && <LaunchFailureRoot />}
         {!isHubOnly() && <HarnessSignInDialogRoot />}
         {!isHubOnly() && (
           <>

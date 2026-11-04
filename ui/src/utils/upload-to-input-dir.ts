@@ -1,8 +1,22 @@
 import { ActionInfo, AgenticProcess, dataManager, fsStore, TypeId } from '@sdk';
 
-export interface ProcessInputDir {
+/** A folder on a compute node the backend named for an upload: `{abs_path, compute_node_id}`. */
+export interface UploadDir {
   abs_path: string;
   compute_node_id: string;
+}
+
+export type ProcessInputDir = UploadDir;
+
+/**
+ * Upload `files` into `dir` and wait for every one, answering their absolute paths. The
+ * one "wait for the bytes before using the path" rule for anything the UI uploads into a
+ * backend-named folder (a chat's input dir, the recordings folder).
+ */
+export async function uploadFilesToDir(dir: UploadDir, files: File[]): Promise<string[]> {
+  const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, files);
+  await Promise.all(uploads.map((u) => u.waitForCompletion()));
+  return files.map((file) => `${dir.abs_path}/${file.name}`);
 }
 
 // The input dir is immutable for a given process id, so resolve it once and
@@ -46,9 +60,8 @@ export async function uploadFilesToProcessInputDir(procId: string, files: File[]
   if (!files.length) return [];
   const dir = await resolveProcessInputDir(procId);
   if (!dir) throw new Error('Could not resolve the process input directory');
-  const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, files);
-  await Promise.all(uploads.map((u) => u.waitForCompletion()));
-  return files.map((file) => `File ${file.name} is available here: ${dir.abs_path}/${file.name}`);
+  const paths = await uploadFilesToDir(dir, files);
+  return files.map((file, i) => `File ${file.name} is available here: ${paths[i]}`);
 }
 
 /**

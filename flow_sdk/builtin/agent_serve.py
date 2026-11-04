@@ -394,7 +394,43 @@ class TurnEngine:
                 # Why it failed (e.g. the hub's 429 "limit ... exceeded") is kept: the health check names it.
                 failed = {**done_record(started, text or "", FAILED), ERROR: _line(str(answer.detail or ""), 300)}
                 await stamp_turn(ap, turn.key, failed)
+            await _settle(ap)
             yield done(answer)
+
+
+async def _settle(ap) -> None:
+    """End the lifecycle of a headless process whose turn is over: ``stopped``, its session kept.
+
+    A headless turn sets the process ``running`` and nothing on the turn's tail sets it back --
+    the worker is per turn, so once it answered nothing is live, yet the run read ``running``
+    forever. ``stopped`` with a session is headless-idle: the next turn starts it again
+    (``process_for`` reuses it). The turn's task is joined first, so its own tail (broadcast,
+    reindex, naming) is not raced. A worker parked on background work is still live, and a PTY
+    or hub-routed process has its own lifecycle owner: those are left alone."""
+    from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+        _PROMPT_TASKS,
+        prompt_worker_parked,
+    )
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus  # noqa: PLC0415
+
+    if getattr(ap, "pty_mode", False) or getattr(ap, "hub_route", False) or getattr(ap, "shell_id", None):
+        return
+    if getattr(ap, "id", None) is None:  # a runner that answered without a process row: nothing to settle
+        return
+    pid = str(ap.id)
+    # The answer stands: nothing in settling the run's status may turn it into a failed turn.
+    try:
+        if prompt_worker_parked(pid):
+            return
+        task = _PROMPT_TASKS.get(pid)
+        if task is not None and task is not asyncio.current_task():
+            await asyncio.gather(task, return_exceptions=True)
+        if getattr(ap, "status", None) != ProcessStatus.RUNNING.value or prompt_worker_parked(pid):
+            return
+        ap.status = ProcessStatus.STOPPED.value
+        await ap.save()
+    except Exception:  # noqa: BLE001 — a stale status does not undo the answer
+        logger.warning("agent turn: could not settle process %s", pid, exc_info=True)
 
 
 def _transcript_file(ap):
@@ -913,7 +949,11 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     if row.is_echo(source) if row is not None else is_own_outgoing(source, author):
         return await skip_message(message)
     channel = source.channel or source.provider
-    if not admits(source, author):
+    from flow_sdk.builtin.agent_mailbox import refresh_policy_for  # noqa: PLC0415
+
+    # The cached allowlist may be stale or never filled on this machine (a cloud placement's):
+    # re-read it once from its owner before refusing.
+    if not admits(source, author) and not (await refresh_policy_for(source) and admits(source, author)):
         console.info("✗ %s  %s — not an allowed sender, not answered", channel, author)
         _announce(engine.deployment, "refused", data_source_id=str(source.id))
         return await skip_message(message)

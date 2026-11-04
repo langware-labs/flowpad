@@ -54,9 +54,11 @@ class HubAgentMailboxDriver:
         body = {k: v for k, v in options.items() if v}
         return await self._post(agent_id, "provision", body)
 
-    async def enable_mailbox(self, agent_id: str) -> dict:
-        """Provision or reactivate the agent's existing Hub allocation."""
-        return await self._post(agent_id, "enable", {})
+    async def enable_mailbox(self, agent_id: str, **options: Any) -> dict:
+        """Provision or reactivate the agent's existing Hub allocation. ``options`` (``username``,
+        ``display_name``) name a NEW mailbox; an existing one keeps its address."""
+        body = {k: v for k, v in options.items() if v}
+        return await self._post(agent_id, "enable", body)
 
     async def disable_mailbox(self, agent_id: str) -> dict:
         """Pause the Hub allocation without deleting the provider mailbox."""

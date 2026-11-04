@@ -46,11 +46,27 @@ Every part is optional. A simple message is the one-liner and nothing else.
 - No emoji decoration, no headings in a short message.
 - Never explain that an AI or assistant wrote it.
 
+## A light positive touch — only when earned
+
+When the message closes a real success or answers real help — they shipped, fixed, approved,
+or unblocked something, or you are reporting work that actually landed — add ONE light touch:
+a ✅ or 👍, or a few kind words ("Nice catch.", "Thanks — that unblocked it.").
+
+- Never by default. Routine FYIs, questions, requests and bad news get none.
+- One touch per message, at most. Never two emoji, never stacked praise.
+- Concrete, not gushing: thank them for the specific thing ("Thanks for the quick review"),
+  never "Amazing!!", "Great job!", "You're awesome".
+- Only for a confirmed outcome. Pending, partial or unsure → no ✅.
+
+The "no emoji decoration" rule still holds; this one earned mark is the only exception.
+
 ## Your wording only
 
 - Text the user dictated word for word goes out as written. You may format around it, never
   rewrite it.
 - Never invent a fact, deadline or option to fill a section. Missing → leave the section out.
+- A prompt the receiver should run is not wording: send it in its own field (`--prompt`),
+  never as a code block in the text. The text just says what it does.
 
 ## Markup per channel
 

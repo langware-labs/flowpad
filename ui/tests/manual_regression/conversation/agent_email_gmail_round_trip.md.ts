@@ -1,7 +1,8 @@
 /**
  * Agent Email: browser enable -> Gmail -> MessageSource -> Agent -> Gmail.
  *
- * Credential-gated: `.env.local` must contain GMAIL_ADDRESS and
+ * Credential-gated: `.env.local` must contain TEST_GMAIL_ADDRESS / TEST_GMAIL_APP_PASSWORD
+ * (else GMAIL_ADDRESS and
  * GMAIL_APP_PASSWORD. The Python harness uses the same FLOW_INSTANCE as the
  * browser backend, so it is ordinary SDK/REPL usage against the local Hub test
  * instance. No credential is copied into a DataSource or printed here.
@@ -17,6 +18,11 @@ import { parse } from 'dotenv';
 const cwd = process.cwd();
 const ROOT = existsSync(path.resolve(cwd, 'ui/package.json')) ? cwd : path.resolve(cwd, '..');
 const localEnv = parse(readFileSync(path.resolve(ROOT, '.env.local')));
+// The dedicated test mailbox when one is configured, else the general one.
+const GMAIL = {
+  GMAIL_ADDRESS: localEnv.TEST_GMAIL_ADDRESS || localEnv.GMAIL_ADDRESS,
+  GMAIL_APP_PASSWORD: localEnv.TEST_GMAIL_APP_PASSWORD || localEnv.GMAIL_APP_PASSWORD,
+};
 
 const PYTHON = String.raw`
 import asyncio
@@ -41,6 +47,10 @@ async def command():
 async def main():
     address = os.environ["GMAIL_ADDRESS"]
     await flow_sdk.auth.login()
+    # Gmail's credential ships as a template; setup fills the user's own copy, which a source reads.
+    from flow_sdk.builtin.credential_service import credential_named, set_credential_by_name
+    credential_created = await credential_named("gmail", None) is None
+    credential = await set_credential_by_name("gmail", {"GMAIL_ADDRESS": address, "GMAIL_APP_PASSWORD": os.environ["GMAIL_APP_PASSWORD"]})
 
     driver = await DataDriver.get("gmail")
     gmail = await DataSource.find_for_account("gmail", driver.identity_config_key, address)
@@ -113,6 +123,9 @@ async def main():
     await current.delete()
     if gmail_created:
         await gmail.delete()
+    if credential_created:
+        from flow_sdk.builtin.credential_service import delete_credential
+        await delete_credential(str(credential.typeid))
     emit("clean")
 
 asyncio.run(main())
@@ -189,6 +202,10 @@ async def main():
         gmail = await DataSource.find_for_account("gmail", "address", os.environ["GMAIL_ADDRESS"])
         if gmail is not None:
             await gmail.delete()
+        from flow_sdk.builtin.credential_service import credential_named, delete_credential
+        credential = await credential_named("gmail", None)
+        if credential is not None:
+            await delete_credential(str(credential.typeid))
 
 asyncio.run(main())
 `;
@@ -223,11 +240,12 @@ test.afterEach(async () => {
 });
 
 test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', async ({ page }) => {
-  test.skip(!localEnv.GMAIL_ADDRESS || !localEnv.GMAIL_APP_PASSWORD, 'Gmail app-password credentials are not configured');
+  test.skip(!GMAIL.GMAIL_ADDRESS || !GMAIL.GMAIL_APP_PASSWORD, 'Gmail app-password credentials are not configured');
 
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...localEnv,
+    ...GMAIL,
     FLOW_INSTANCE: process.env.FLOW_INSTANCE || localEnv.FLOW_INSTANCE || 'oss',
     FLOWPAD_HUB_URL: process.env.FLOWPAD_HUB_URL || 'http://localhost:8093',
   };
@@ -258,9 +276,9 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     const mailboxAddress = (await page.getByTestId('agent-mailbox-address').textContent())?.trim() ?? '';
     expect(mailboxAddress).toContain('@');
 
-    await page.getByTestId('agent-email-allowed-senders').fill(ready.gmail_address);
-    await page.getByTestId('agent-mailbox-settings').getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Mailbox settings saved')).toBeVisible();
+    await page.getByTestId('agent-email-allowed-senders-add-input').fill(ready.gmail_address);
+    await page.getByTestId('agent-email-allowed-senders-add').click();
+    await expect(page.getByTestId('agent-email-allowed-senders-senders')).toContainText(ready.gmail_address);
 
     harness.send(`SEND ${mailboxAddress}`);
     expect((await harness.next()).kind).toBe('deployed');
@@ -277,7 +295,7 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     expect(reply.body.toLowerCase()).toContain('arr');
     expect(reply.body).toContain(ready.nonce);
     await expect(page.getByText(/arr/i).last()).toBeVisible();
-    await page.getByTestId('thread-stack-open').click();
+    // A channel thread renders flat: the sent mail and the reply both sit in the feed.
     await expect(page.getByTestId('email-message-headers')).toHaveCount(2);
 
     harness.send('CLEANUP');

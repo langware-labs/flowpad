@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, Forward, MoreVertical, Pencil, Reply, SmilePlus, Star, Trash2, Zap } from 'lucide-react';
+import { Download, Forward, MoreVertical, Pencil, SmilePlus, Star, Trash2, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AgenticProcess, Conversation, TypeId, type ICloudOrigin } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -34,10 +34,7 @@ interface MessageActionsMenuProps {
   /** The channel this message caches (`null` for a Flowpad-native message). */
   origin?: ICloudOrigin | null;
   forwarded?: boolean;
-  onReply?: () => void;
-  replyInThread?: boolean;
   onReact?: (emoji: string) => void;
-  onForward?: () => void;
   /** Present only while the message is not a task yet; an opened task keeps its chips below the body. */
   onTaskIt?: () => void;
   /** Start a rule on messages like this one (docs/snippets/stream-inbox-automations.md). */
@@ -80,10 +77,10 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   // Controlled: the worker icons are plain buttons, so a launch closes the menu itself.
   const [menuOpen, setMenuOpen] = useState(false);
-  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onAutomate, onEditName, onDelete, onLaunchWorker } =
+  const { flowMessageId, conversationId, onReact, onTaskIt, onAutomate, onEditName, onDelete, onLaunchWorker } =
     props;
   // A draft bubble (no stored message) with no handlers has nothing to offer.
-  if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onAutomate || onEditName || onDelete)) return null;
+  if (!flowMessageId && !(onReact || onTaskIt || onAutomate || onEditName || onDelete)) return null;
 
   return (
     <>
@@ -140,10 +137,7 @@ function MessageMenuItems({
   messageText,
   origin,
   forwarded,
-  onReply,
-  replyInThread,
   onReact,
-  onForward,
   onTaskIt,
   onAutomate,
   onEditName,
@@ -158,8 +152,8 @@ function MessageMenuItems({
   const favorited = flowMessageId ? !!isFavorited('flow_message', flowMessageId) : false;
   const showNote = !!flowMessageId && !!worker && isAdvanced;
   const WorkerIcon = workerIcon(worker?.worker_type ?? undefined);
-  const conversing = !!(onReply || onReact);
-  const sharing = !!(onForward || onTaskIt || onAutomate || flowMessageId);
+  const conversing = !!onReact;
+  const sharing = !!(onTaskIt || onAutomate || flowMessageId);
   const managing = !!(onEditName || onDelete);
 
   return (
@@ -178,12 +172,6 @@ function MessageMenuItems({
           <DropdownMenuSeparator />
         </>
       )}
-      {onReply && (
-        <DropdownMenuItem onSelect={onReply} data-testid="message-reply">
-          <Reply className={ITEM_ICON} />
-          {replyInThread ? <Trans>Reply in thread</Trans> : <Trans>Reply</Trans>}
-        </DropdownMenuItem>
-      )}
       {onReact && (
         <DropdownMenuItem onSelect={onOpenPicker} data-testid="message-react">
           <SmilePlus className={ITEM_ICON} />
@@ -191,12 +179,6 @@ function MessageMenuItems({
         </DropdownMenuItem>
       )}
       {conversing && sharing && <DropdownMenuSeparator />}
-      {onForward && (
-        <DropdownMenuItem onSelect={onForward} data-testid="message-forward">
-          <Forward className={`${ITEM_ICON} rtl:-scale-x-100`} />
-          <Trans>Forward</Trans>
-        </DropdownMenuItem>
-      )}
       {onTaskIt && (
         <DropdownMenuItem onSelect={onTaskIt} title={taskItHint()} data-testid="message-task-it">
           <TaskItIcon className={ITEM_ICON} />

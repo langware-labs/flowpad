@@ -33,6 +33,7 @@ from flow_sdk.app.actions.flow_message_action import (
 from flow_sdk.builtin.conversation import _PROJECTION_SENTINEL
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.fs_store.operations.conversation import default_jsonl_path
 from flow_sdk.fs_store.pointer import Pointer
 from flow_sdk.fs_store.type_id import TypeId
@@ -82,8 +83,11 @@ async def _run(conv_id: str, hub_children, fm_by_id: dict[str, FlowMessage | Exc
     with (
         patch.object(
             HubProxy,
-            "try_call",
-            new=AsyncMock(return_value=hub_children),
+            "call",
+            # A strict call answers the data, or raises: ``None`` here stands for "the hub could not answer".
+            new=AsyncMock(return_value=hub_children)
+            if hub_children is not None
+            else AsyncMock(side_effect=HubError(503, "hub down")),
         ),
         patch.object(FlowMessage, "get_one", new=AsyncMock(side_effect=fake_get_one)),
         patch(
@@ -213,7 +217,7 @@ async def test_ready_body_reconciles_even_when_metadata_is_current():
     with (
         patch.object(
             HubProxy,
-            "try_call",
+            "call",
             new=AsyncMock(return_value=[hub_child]),
         ),
         patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=local)),
@@ -336,7 +340,7 @@ async def test_orphaned_pointer_restored_from_hub_list():
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_hub_unavailable_leaves_local_state_untouched():
-    """HubProxy.try_call returning None means "could not prove anything" — no rewrite,
+    """The hub failing to answer the listing means "could not prove anything" — no rewrite,
     no projection."""
     conv = "aaaa0006-1111-4111-8111-000000000006"
     ids = ["bbbb0006-1111-4111-8111-000000000001"]

@@ -353,16 +353,20 @@ export function useStartVibeSession(): StartVibeSession {
           // re-probes rather than trusting the stale capability row, so anything
           // that failed for another reason falls through to its real message
           // instead of being mislabelled as an uninstalled harness.
-          confirmMissingThen(kind, error, () =>
-            notify.error({
-              title: t`Could not start`,
-              // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error
-              // whose own message is the boilerplate "Request failed with status
-              // code 4xx". Taking the envelope ONLY means a failure the server did
-              // not explain falls back to our wording instead of putting a status
-              // line in front of the user as if it were an explanation.
-              message: errorDetail(error) || t`Failed to start the build session.`,
-            }),
+          confirmMissingThen(
+            kind,
+            error,
+            () =>
+              notify.error({
+                title: t`Could not start`,
+                // `errorDetail`, NOT `errorMessage`: an AxiosError is also an Error
+                // whose own message is the boilerplate "Request failed with status
+                // code 4xx". Taking the envelope ONLY means a failure the server did
+                // not explain falls back to our wording instead of putting a status
+                // line in front of the user as if it were an explanation.
+                message: errorDetail(error) || t`Failed to start the build session.`,
+              }),
+            () => Promise.resolve(launch()),
           );
         });
       }

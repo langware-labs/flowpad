@@ -9,7 +9,10 @@ code. The driver declares that code here, the machinery asks:
 
 ``flow source step <source> account [--check]`` (``DataSource.step``) opens the source — its config may still
 be incomplete, that is what setup is for — and calls it. ``check`` asks only whether the goal already holds
-(the op's completion check); without it the step does the work. ``values`` are what the wizard's asks bound.
+(the op's completion check) and judges ONLY what is kept — never ``values``: the check runs with the run's
+answers in hand, and a check that judged them would say "done" before the step ever kept them. ``values``
+are what the wizard's asks bound. A step declared ``probes=True`` also takes ``probe``: it judges ``values``
+and keeps nothing (a question's Verify button).
 
 A step never writes a row or a secret itself. When it has learned something to keep, its answer's ``value``
 is a :class:`SourceUpdateSpec` and ``DataSource.step`` stores it: config on the source, allowed senders on
@@ -25,6 +28,7 @@ from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
 
+_PROBES_ATTR = "__flow_setup_probes__"
 _STEP_ATTR = "__flow_setup_step__"
 #: Steps every source answers, whatever its driver (``DataSource.step``):
 #: a public URL for this machine (a driver with a ``webhook`` block);
@@ -35,19 +39,28 @@ VERIFY = "verify"
 ANSWERED = "answered"
 #: a message from an allowed sender, and one after it going back — the conversation works.
 FIRST_TURN = "first-turn"
-GENERIC_STEPS = frozenset({PUBLIC_WEBHOOK, VERIFY, ANSWERED, FIRST_TURN})
+#: something arrived since a moment (``since``, else the verify): the source hears its channel.
+HEARD = "heard"
+GENERIC_STEPS = frozenset({PUBLIC_WEBHOOK, VERIFY, ANSWERED, FIRST_TURN, HEARD})
 
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-def setup_step(name: str) -> Callable[[F], F]:
-    """Declare the decorated coroutine method as the source's setup step ``name``."""
+def setup_step(name: str, *, probes: bool = False) -> Callable[[F], F]:
+    """Declare the decorated coroutine method as the source's setup step ``name``; ``probes`` when it takes a
+    ``probe`` argument and can judge typed values without keeping them."""
 
     def mark(fn: F) -> F:
         setattr(fn, _STEP_ATTR, name)
+        setattr(fn, _PROBES_ATTR, probes)
         return fn
 
     return mark
+
+
+def step_probes(cls: type, method: str) -> bool:
+    """Whether the step method ``method`` of ``cls`` was declared ``probes=True``."""
+    return bool(getattr(getattr(cls, method, None), _PROBES_ATTR, False))
 
 
 def setup_steps(cls: type) -> dict[str, str]:
@@ -116,5 +129,5 @@ SourceUpdateSpec.model_rebuild()
 
 
 __all__ = [
-    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "PUBLIC_WEBHOOK", "VERIFY", "ReturnedValue", "SetupShown", "SourceUpdateSpec", "setup_step", "setup_steps",
+    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "HEARD", "PUBLIC_WEBHOOK", "VERIFY", "ReturnedValue", "SetupShown", "SourceUpdateSpec", "setup_step", "setup_steps", "step_probes",
 ]

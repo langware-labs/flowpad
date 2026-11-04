@@ -1,7 +1,9 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { InboundWebhooks } from '@sdk';
-import { CHIP_CLASS } from '@src/components/asset-counters/AssetCounterRow';
-import { CounterTable, LiveDot, QuickSearchInput, useQuickSearch } from '@src/components/asset-counters/AssetItems';
+import { InboundWebhooks, PageId, ViewType } from '@sdk';
+import { counterAt, counterKey, selectionOf } from '@src/components/asset-counters/axes';
+import { CountBubble, CounterAxes } from '@src/components/asset-counters/StatChips';
+import { hubSkillCounterGroup } from '@src/components/asset-counters/skill-counters';
+import { CounterTable, QuickSearchInput, useQuickSearch } from '@src/components/asset-counters/AssetItems';
 import {
   hubAgentCounterGroup,
   hubDeploymentCounterGroup,
@@ -41,6 +43,8 @@ interface TabDef {
   createLabel?: ReactNode;
   /** Shown only while it has items (Issues). */
   hideWhenEmpty?: boolean;
+  /** The tab opens this hub screen instead of listing its items here (Machines). */
+  opensPage?: ViewType;
 }
 
 const TABS: TabDef[] = [
@@ -49,9 +53,10 @@ const TABS: TabDef[] = [
     emptyText: <Trans>No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram.</Trans>,
     createLabel: <Trans>Make an agent</Trans>,
   },
+  { group: hubSkillCounterGroup, emptyText: <Trans>No skills yet.</Trans> },
   {
     group: hubMachineCounterGroup,
-    emptyText: <Trans>No machines yet. Connect this computer or start a sandbox to run agents and terminals.</Trans>,
+    opensPage: ViewType.MACHINES,
   },
   {
     group: hubDeploymentCounterGroup,
@@ -84,14 +89,12 @@ function writePref(key: string, value: string): void {
 
 /** Every tab's counters. `TABS` is a constant list, so the hooks run in the same order every render. */
 function useTabCounters(): AssetCounter<unknown>[][] {
-   
   return TABS.map((tab) => tab.group.useCounters());
 }
 
 function TabButton({
   label,
   count,
-  active,
   isLoading,
   selected,
   onClick,
@@ -99,7 +102,6 @@ function TabButton({
 }: {
   label: ReactNode;
   count: number;
-  active?: number;
   isLoading: boolean;
   selected: boolean;
   onClick: () => void;
@@ -120,15 +122,7 @@ function TabButton({
       data-testid={testId}
     >
       {label}
-      <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs font-semibold tabular-nums text-foreground">
-        {isLoading ? '…' : count}
-      </span>
-      {active !== undefined && (
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <LiveDot active={active > 0} />
-          <Trans>{active} active</Trans>
-        </span>
-      )}
+      <CountBubble value={count} isLoading={isLoading} />
     </button>
   );
 }
@@ -145,28 +139,33 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
 
   const [tabId, setTabId] = useState(() => readPref(TAB_KEY) ?? hubAgentCounterGroup.id);
   const [view, setView] = useState<View>(() => (readPref(VIEW_KEY) === 'list' ? 'list' : 'grid'));
-  const [counterKey, setCounterKey] = useState('all');
+  const [selectedKey, setSelectedKey] = useState('all');
   const [query, setQuery] = useState('');
   const [shown, setShown] = useState(PAGE_SIZE);
 
-  const tabs = TABS.map((tab, i) => ({ tab, counters: all[i], total: all[i][0]?.items.length ?? 0 })).filter(
-    ({ tab, total }) => !tab.hideWhenEmpty || total > 0,
-  );
-  const current = tabs.find(({ tab }) => tab.group.id === tabId) ?? tabs[0];
+  const tabs = TABS.map((tab, i) => ({
+    tab,
+    counters: all[i],
+    total: counterAt(all[i], selectionOf(all[i]))?.items.length ?? 0,
+  })).filter(({ tab, total }) => !tab.hideWhenEmpty || total > 0);
+  // A tab that opens its own screen is never the one listed here.
+  const listed = tabs.filter(({ tab }) => !tab.opensPage);
+  const current = listed.find(({ tab }) => tab.group.id === tabId) ?? listed[0];
   const { group } = current.tab;
-  const counter = current.counters.find((c) => c.key === counterKey) ?? current.counters[0];
+  const selection = selectionOf(current.counters, selectedKey);
+  const counter = counterAt(current.counters, selection);
   const rows = useQuickSearch(group, counter?.items ?? [], query);
 
   // Every change of what is listed starts again from the first page.
   const selectTab = (id: string) => {
     setTabId(id);
-    setCounterKey('all');
+    setSelectedKey('all');
     setQuery('');
     setShown(PAGE_SIZE);
     writePref(TAB_KEY, id);
   };
   const selectCounter = (key: string) => {
-    setCounterKey(key);
+    setSelectedKey(key);
     setShown(PAGE_SIZE);
   };
   const search = (value: string) => {
@@ -229,10 +228,13 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
             key={tab.group.id}
             label={counters[0]?.label}
             count={total}
-            active={counters.find((c) => c.key === 'active')?.items.length}
             isLoading={!!counters[0]?.isLoading}
-            selected={tab.group.id === group.id}
-            onClick={() => selectTab(tab.group.id)}
+            selected={!tab.opensPage && tab.group.id === group.id}
+            onClick={() => {
+              const page = tab.opensPage;
+              if (page) navigation.openPage(PageId.HUB, page);
+              else selectTab(tab.group.id);
+            }}
             testId={`hub-tab-${tab.group.id}`}
           />
         ))}
@@ -268,20 +270,11 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
         <>
           <div className="flex flex-wrap items-center gap-2 py-3">
             <QuickSearchInput value={query} onChange={search} className="w-64" testId="hub-items-search" />
-            {current.counters.length > 1 &&
-              current.counters.map((c) => (
-                <button
-                  key={c.key}
-                  type="button"
-                  onClick={() => selectCounter(c.key)}
-                  className={cn(CHIP_CLASS, 'px-3 py-1', c.key === counter?.key && 'border-primary/50 bg-card')}
-                  data-testid="hub-items-filter"
-                  data-counter={c.key}
-                >
-                  <span className="text-muted-foreground group-hover:text-foreground">{c.label}</span>
-                  <span className="tabular-nums text-foreground">{c.items.length}</span>
-                </button>
-              ))}
+            <CounterAxes
+              counters={current.counters}
+              selection={selection}
+              onSelect={(next) => selectCounter(counterKey(next.scope, next.status))}
+            />
             <div role="radiogroup" className={cn(SEGMENTED_GROUP, 'ml-auto')}>
               {(
                 [

@@ -796,12 +796,13 @@ async def _keep_route(app, mount, port: int, command: str) -> bool:
 async def _keep_service(app, service, port: int, command: str) -> bool:
     """The service's endpoint on its project's local placement now names this port."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_placement import local_web_deployment, set_service_endpoint  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import local_web_deployment, set_service_endpoint, tell_hub  # noqa: PLC0415
 
     project = await Project.get_by_id(app.project_id) if app.project_id else None
     deployment = await local_web_deployment(project)
     if deployment is None:
         return False
     backend = {"type": "proxy", "port": port, "start_cmd": command, "health": service.serving.health}
-    await set_service_endpoint(deployment, app, service, backend)
+    if await set_service_endpoint(deployment, app, service, backend):
+        tell_hub(deployment)  # as a route does: a box's hub reads the port the service landed on
     return True

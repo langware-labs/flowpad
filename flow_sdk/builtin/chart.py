@@ -6,6 +6,8 @@ Folder layout::
         CHART.md           # frontmatter (incl. format) + prose + auto-managed mermaid block
         chart.json         # format: sequence   — {participants:[...], messages:[...]}
         board.json         # format: excalidraw — {kind:"excalidraw", version:1, data:<...>}
+        c4.json            # format: c4         — {level, elements, boundaries, relations}
+        architecture.json  # format: architecture — {groups:[{tiers:[{parts}]}], links, steps}
         thumbnail.svg      # generated on save
 
 A ``mermaid`` chart keeps its source in the ```mermaid``` block of CHART.md.

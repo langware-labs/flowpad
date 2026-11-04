@@ -306,10 +306,9 @@ export async function resolveTabProject(dock: IDockPointer, target: TabProjectTa
   // 2
   if (targetTypeId?.type === EntityTypes.Project) return targetTypeId.id;
   // 3
-  if (dock.viewType === ViewType.PROJECT && dock.pointer) {
-    const presenting = await namedProject(dock.pointer.split('/', 1)[0]);
-    if (presenting) return presenting;
-  }
+  const named = dock.viewType === ViewType.PROJECT && dock.pointer ? dock.pointer.split('/', 1)[0] : dock.presentedIn;
+  const presenting = named ? await namedProject(named) : null;
+  if (presenting) return presenting;
   // 4
   const [scopeKeyed, scopeProject] = tabHashScopeProject(dock.tabHash);
   if (scopeKeyed && !isContentSubPointer(dock.pointer)) return scopeProject;

@@ -381,6 +381,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
 
   // Active hides machines the provider no longer has (Not found).
   const firstAgentRef = useRef<HTMLDivElement>(null);
+  const [wizardActive, setWizardActive] = useState(false);
   const [machineFilter, setMachineFilter] = useState<'active' | 'all'>('active');
   const activeSandboxes = sandboxes.filter((d) => details[d.id]?.status !== ExecutionEnvironmentStatus.NOT_FOUND);
   const shownSandboxes = machineFilter === 'all' ? sandboxes : activeSandboxes;
@@ -490,19 +491,24 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
 
             {/* First agent: describe → its own sandbox + a channel → it answers. */}
             <div ref={firstAgentRef} className="w-full">
-              <FirstAgentCard />
+              <FirstAgentCard onActiveChange={setWizardActive} />
             </div>
 
-            {/* Projects other people gave you — the way from here to FlowPad. */}
-            <SharedProjectsBanner projects={sharedProjects} />
+            {/* Once the first-agent wizard is started it stands alone on the page. */}
+            {!wizardActive && (
+              <>
+                {/* Projects other people gave you — the way from here to FlowPad. */}
+                <SharedProjectsBanner projects={sharedProjects} />
 
-            {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
-            <ProjectActionsRow className="w-full self-start" />
+                {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
+                <ProjectActionsRow className="w-full self-start" />
 
-            {/* The counters as tabs over the items they count. */}
-            <HubItemsSection
-              onCreate={() => firstAgentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-            />
+                {/* The counters as tabs over the items they count. */}
+                <HubItemsSection
+                  onCreate={() => firstAgentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                />
+              </>
+            )}
           </>
         )}
 
@@ -523,7 +529,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
               </p>
             )}
 
-            {/* Machines — hidden until the summary line's Machines chip is clicked. */}
+            {/* Machines — reached from the home page's Machines tab (HubItemsSection). */}
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-medium text-muted-foreground">
                 <Trans>Machines</Trans>

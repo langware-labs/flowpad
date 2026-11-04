@@ -301,6 +301,17 @@ def init_temp_dir():
 init_temp_dir()
 
 
+def instance_temp_dir(*parts: str) -> Path:
+    """``<FLOWPAD_TEMP_DIR>/<instance>/<parts…>`` — this instance's corner of Flowpad's temp folder.
+
+    The one spelling of the instance temp root (datasets, assistant views, recordings all
+    live under it). Does not create the folder: callers that write into it ``mkdir`` it.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return Path(FLOWPAD_TEMP_DIR).joinpath(get_instance_settings().instance_name, *parts)
+
+
 # ---------------------------------------------------------------------------
 # User desktop data folder
 # ---------------------------------------------------------------------------

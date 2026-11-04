@@ -336,6 +336,7 @@ def _start_service_guarded(port: int) -> None:
     from flow_sdk.server.launch import (
         EXIT_FATAL_FAILURE,
         check_server_health,
+        latest_server_log_tail,
         refuse_start_reason,
         start_monitor_detached,
         wait_for_server_health,
@@ -372,6 +373,11 @@ def _start_service_guarded(port: int) -> None:
                 typer.echo("Server is ready")
             else:
                 typer.echo("Server may still be starting...")
+                # The backend logs only to its own file; on a cloud box this output is the only
+                # log that reaches the serial console and the hub, so name the file and its tail.
+                log_path, tail = latest_server_log_tail()
+                if log_path is not None:
+                    typer.echo(f"Server log: {log_path}\n{tail}", err=True)
     finally:
         boot_progress.stop()
 

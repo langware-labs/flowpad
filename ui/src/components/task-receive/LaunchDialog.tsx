@@ -2,7 +2,12 @@ import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { Button } from '@src/components/ui/button';
 import { StepList } from '@src/components/ui/step-list';
 import type { Step } from '@src/hooks/use-step-flow';
-import { errorMessage, isUnfundedHarness } from '@src/lib/error-message';
+import { errorMessage } from '@src/lib/error-message';
+import {
+  LaunchFailureCard,
+  readLaunchFailure,
+  type LaunchFailure as AgentLaunchFailure,
+} from '@src/components/launch-failure/LaunchFailureCard';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
@@ -40,6 +45,7 @@ export function LaunchDialog({ plan: asked, onClose }: { plan: LaunchPlan; onClo
   const order = ORDER.filter((s) => plan.controllerId || (s !== 'controller' && s !== 'setup'));
   const [step, setStep] = useState<LaunchStep>(order[0]);
   const [error, setError] = useState<string | null>(null);
+  const [agentFailure, setAgentFailure] = useState<AgentLaunchFailure | null>(null);
   const started = useRef(false);
 
   const launch = useCallback(() => {
@@ -58,11 +64,8 @@ export function LaunchDialog({ plan: asked, onClose }: { plan: LaunchPlan; onClo
       .catch((e: unknown) => {
         const cause = e instanceof LaunchFailure ? e.cause : e;
         if (e instanceof LaunchFailure) setStep(e.step);
-        setError(
-          isUnfundedHarness(cause)
-            ? t`This machine has no model to run the agent on. Set one up, then try again.`
-            : errorMessage(cause, t`Couldn't launch.`),
-        );
+        setAgentFailure(readLaunchFailure(cause));
+        setError(errorMessage(cause, t`Couldn't launch.`));
       });
   }, [plan, computeNode, workspaceId, navigation, onClose, t]);
 
@@ -143,16 +146,22 @@ export function LaunchDialog({ plan: asked, onClose }: { plan: LaunchPlan; onClo
         )}
         {error && (
           <div className="space-y-3">
-            <p
-              className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
-              data-testid="launch-error"
-            >
-              {error}
-            </p>
+            {agentFailure ? (
+              <LaunchFailureCard failure={agentFailure} retry={() => Promise.resolve(launch())} />
+            ) : (
+              <p
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
+                data-testid="launch-error"
+              >
+                {error}
+              </p>
+            )}
             <div className="flex gap-2">
-              <Button onClick={launch} data-testid="launch-retry">
-                <Trans>Try again</Trans>
-              </Button>
+              {!agentFailure && (
+                <Button onClick={launch} data-testid="launch-retry">
+                  <Trans>Try again</Trans>
+                </Button>
+              )}
               <Button variant="ghost" onClick={onClose} data-testid="launch-close">
                 <Trans>Close</Trans>
               </Button>

@@ -3,20 +3,17 @@ import {
   cloudManager,
   ComputeNode,
   fetchPendingInvitations,
-  OAUTH_PROVIDERS,
-  OAuthStatus,
-  oauthService,
   navigator as sdkNavigator,
   TypeId,
 } from '@sdk';
-import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
+import { ConnectGithubButton } from '@src/components/git/ConnectGithubButton';
 import { StepList } from '@src/components/ui/step-list';
 import { isLaunched, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { errorMessage, errorStatus, isMissingGitCredential } from '@src/lib/error-message';
-import { ExternalLink, Github, Loader2 } from 'lucide-react';
+import { ExternalLink, Github } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useParams, useSearchParams } from 'react-router';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -155,7 +152,6 @@ export default function OpenSandboxLanding() {
   // The one failure the RECIPIENT can fix, so it gets a screen instead of a
   // sentence: the box loads a private repo and they have never connected GitHub.
   const [needsGithub, setNeedsGithub] = useState(false);
-  const [connecting, setConnecting] = useState(false);
   // StrictMode double-invokes effects; navigating twice would restart the box's
   // resume from scratch, and launching twice would orphan a VM.
   const started = useRef(false);
@@ -296,15 +292,6 @@ export default function OpenSandboxLanding() {
     })();
   }, [nodeId, alreadyReturned, here.pathname, here.search, launchSandbox, t]);
 
-  const connectGithub = () => {
-    setConnecting(true);
-    setError(null);
-    void oauthService.connect(OAUTH_PROVIDERS.GITHUB).catch((e: unknown) => {
-      setConnecting(false);
-      setError(errorMessage(e, t`Couldn't start the GitHub connection.`));
-    });
-  };
-
   // A grant lands here, and what it unblocks is the PROJECT, not the machine.
   //
   // Reloading was the obvious answer and it is wrong: `ops/setup` has already
@@ -313,19 +300,13 @@ export default function OpenSandboxLanding() {
   // opening a box that never got its project, forever. The VM is not the thing
   // that failed and must not be rebuilt (a second setup orphans the live one);
   // the clone is, and it is separately retryable.
-  useOAuthFlowComplete(OAUTH_PROVIDERS.GITHUB, (msg) => {
-    if (msg.status !== OAuthStatus.SUCCESS) {
-      setConnecting(false);
-      setError(t`The GitHub connection didn't complete.`);
-      return;
-    }
+  const onGithubConnected = () => {
     const node = pendingNode.current;
     if (!node) {
       window.location.reload();
       return;
     }
     setNeedsGithub(false);
-    setConnecting(false);
     setLaunching(true);
     void (async () => {
       try {
@@ -339,7 +320,7 @@ export default function OpenSandboxLanding() {
         setError(errorMessage(e, t`This sandbox could not be set up.`));
       }
     })();
-  });
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -356,16 +337,14 @@ export default function OpenSandboxLanding() {
             <p className="mt-2 text-sm text-muted-foreground">
               <Trans>Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you.</Trans>
             </p>
-            <Button
+            <ConnectGithubButton
               size="sm"
+              variant="default"
               className="mt-5 gap-1.5"
-              onClick={connectGithub}
-              disabled={connecting}
-              data-testid="open-sandbox-connect-github"
-            >
-              {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Github className="h-3.5 w-3.5" />}
-              <Trans>Connect GitHub</Trans>
-            </Button>
+              onConnected={onGithubConnected}
+              onError={setError}
+              testId="open-sandbox-connect-github"
+            />
             {error && (
               <p className="mt-3 text-sm text-destructive" role="alert">
                 {error}

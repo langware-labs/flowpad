@@ -1,5 +1,6 @@
 import type { IDockPointer } from '@sdk';
 import type { ReactNode } from 'react';
+import type { AxisOption } from './axes';
 
 /**
  * One counter's value: the LIST behind the number. The home box shows
@@ -12,6 +13,9 @@ export interface AssetCounter<T> {
   description: ReactNode;
   items: T[];
   isLoading: boolean;
+  /** The scope and status this counter is the cross of (`axes.tsx`). Absent → that axis is not offered. */
+  scope?: AxisOption;
+  status?: AxisOption;
 }
 
 export interface AssetColumn<T> {

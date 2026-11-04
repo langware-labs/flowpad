@@ -1,14 +1,10 @@
-"""Which scopes a connect asks for beyond a provider's base set — and why.
+"""Which scopes ONE use point asks for beyond its connection's own set, and through which scope group.
 
-A provider's ``scopes`` are what every connection of it consents to. Some permissions are needed only by
-some uses: writing back to Drive needs full ``drive`` where reading needs ``drive.readonly``. Those
-are asked for exactly while something on this machine needs them — a data source that writes back
-(not ``read_only``), or a dataset whose rows live in a store of that driver (its ``location``), whose
-driver declares a ``writes`` permission on this connection — so a person who only reads never consents to more. A local provider bounds them by its ``optional_scopes``; a hub
-provider's own manifest bounds them on the hub.
-
-A declared credential whose ONE_OF group offers a sign-in with this provider as one of its ways wants that
-way's scopes too, whichever way was chosen before: connecting is how a person switches to that way.
+A connection's own scopes are what every connect of it consents to. Some permissions are needed only by
+some uses: writing back to Drive needs full ``drive`` where reading needs ``drive.readonly``. A connect
+asks for exactly what the data source it was started from needs — it writes back (not ``read_only``), or
+its store keeps a dataset's rows — and nothing another source needs. A local provider bounds the extra by
+its ``optional_scopes``; a hub provider's own manifest bounds it on the hub.
 """
 from __future__ import annotations
 
@@ -17,91 +13,70 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-async def wanted_extra_scopes(provider: str) -> list[str]:
-    """The scopes beyond ``provider``'s base set that this machine's data sources need now, sorted."""
+async def use_point(provider: str, source_id: str) -> tuple[str, list[str]]:
+    """``(scope group, extra scopes)`` of the data source a connect is for — one read of the source."""
+    source = await _source(source_id)
+    return (await _group_of(source), await _scopes_of(provider, source)) if source is not None else ("", [])
+
+
+async def scopes_for_source(provider: str, source_id: str) -> list[str]:
+    """The scopes beyond ``provider``'s own set that the data source ``source_id`` needs, sorted.
+    ``[]`` for no source, an unknown one, or one that only reads."""
+    return (await use_point(provider, source_id))[1]
+
+
+async def group_for_source(source_id: str) -> str:
+    """The connector scope group the data source ``source_id`` reads through (its driver's ``auth.group``)."""
+    return (await use_point("", source_id))[0]
+
+
+async def _source(source_id: str):
+    if not source_id:
+        return None
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    try:
+        return await DataSource.get_by_id(source_id)
+    except Exception:  # noqa: BLE001 — a connect never fails because this could not be asked
+        logger.warning("[oauth] could not read source %s for its scopes", source_id, exc_info=True)
+        return None
+
+
+async def _group_of(source) -> str:
+    from flow_sdk.builtin.readiness import auth_of  # noqa: PLC0415
+
+    return str(getattr(await auth_of(source), "group", "") or "")
+
+
+async def _scopes_of(provider: str, source) -> list[str]:
+    if getattr(source, "read_only", False):
+        return []
     from flow_sdk.core.oauth.provider_registry import get_local_provider, local_providers  # noqa: PLC0415
-    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
     from flow_sdk.permissions import row_scopes_of_driver, write_scopes_of_driver  # noqa: PLC0415
 
     asked = (provider or "").strip().lower()
     local = get_local_provider(asked) or next((p for p in local_providers() if (p.hub_name or "").lower() == asked), None)
     names = {asked, *([local.name.lower(), (local.hub_name or "").lower()] if local is not None else [])} - {""}
-    wanted: set[str] = set()
-    holding = await _drivers_holding_rows()
-    # Only the drivers that write through this connection, then whether any of their sources writes back.
-    def for_this(by_connector: dict[str, list[str]]) -> list[str]:
-        return [s for connector, listed in by_connector.items() if connector.lower() in names for s in listed]
-
-    for driver in DRIVERS.kinds():
-        if driver in holding:
-            wanted.update(for_this(row_scopes_of_driver(driver)))
-            continue
-        scopes = for_this(write_scopes_of_driver(driver))
-        if not scopes:
-            continue
-        try:
-            sources = await DataSource.get_all({"provider": driver})
-        except Exception:  # noqa: BLE001 — a connect never fails because this could not be asked
-            logger.warning("[oauth] could not list %s sources for %s's scopes", driver, provider, exc_info=True)
-            continue
-        if any(not getattr(source, "read_only", False) for source in sources):
-            wanted.update(scopes)
-    wanted.update(await _credential_way_scopes(names))
+    driver = str(source.provider or "")
+    by_connector = row_scopes_of_driver(driver) if await _holds_rows(source) else write_scopes_of_driver(driver)
+    wanted = {s for connector, listed in by_connector.items() if connector.lower() in names for s in listed}
     if local is not None:
         wanted &= set(local.optional_scopes)
         wanted -= set(local.scopes)
     return sorted(wanted)
 
 
-async def _drivers_holding_rows() -> set[str]:
-    """The drivers whose stores hold a dataset's rows on this machine (a dataset's data source, or its
-    project's data store) and are not ``read_only``: keeping rows there writes."""
+async def _holds_rows(source) -> bool:
+    """Whether a dataset keeps its rows in ``source``'s store: keeping rows there writes."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
-    from flow_sdk.datasets.stores import resolve  # noqa: PLC0415
-    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
+    if not source.name:
+        return False
     try:
-        # Only the datasets that name a data source; a project's data store is a data source of its own,
-        # asked for its scopes like any other.
-        in_source = QueryFilter(match=ExpressionNode(op=QueryOp.IS_NOT_NULL, operands=["data_source"]))
-        datasets = await Dataset.get_all(in_source) or []
+        return bool(await Dataset.get_all({"data_source": str(source.name)}))
     except Exception:  # noqa: BLE001 — a connect never fails because this could not be asked
-        logger.warning("[oauth] could not list datasets for their stores' scopes", exc_info=True)
-        return set()
-    out: set[str] = set()
-    for dataset in datasets:
-        if not getattr(dataset, "asset_ref", None):
-            continue
-        try:
-            # The DECLARED store, even while its source is not set up: connecting is what sets it up.
-            store = resolve(dataset.asset_ref, dataset.data_source, dataset.path)
-        except ValueError:
-            continue
-        for held in (store, store.files):
-            if held.driver and not held.read_only:
-                out.add(held.driver)
-    return out
+        logger.warning("[oauth] could not list datasets kept in %s", source.id, exc_info=True)
+        return False
 
 
-async def _credential_way_scopes(names: set[str]) -> set[str]:
-    """The scopes of each declared credential's oauth way through one of ``names``. Only this machine's
-    declarations — a shipped template is never asked: it declares nothing."""
-    from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_USER  # noqa: PLC0415
-
-    try:  # a ONE_OF way lives on an env credential
-        rows = [row for scope in (SCOPE_PROJECT, SCOPE_USER) for row in await Credential.get_all({"kind": "env", "scope": scope})]
-    except Exception:  # noqa: BLE001 — a connect never fails because this could not be asked
-        logger.warning("[oauth] could not list credentials for %s's scopes", sorted(names), exc_info=True)
-        return set()
-    return {
-        scope
-        for row in rows
-        for var in (row.vars or {}).values()
-        if var.is_oauth and var.provider in names
-        for scope in var.scopes
-    }
-
-
-__all__ = ["wanted_extra_scopes"]
+__all__ = ["group_for_source", "scopes_for_source", "use_point"]

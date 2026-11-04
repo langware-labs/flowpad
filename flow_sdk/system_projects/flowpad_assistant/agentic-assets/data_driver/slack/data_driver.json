@@ -1,36 +1,45 @@
 {
   "schema": 1,
   "name": "slack",
-  "title": "Your own Slack app",
+  "title": "Slack",
   "icon_name": "Slack",
-  "group": "Slack",
-  "group_order": 1,
-  "group_icon_name": "Slack",
-  "description": "One channel in a Slack workspace, read as your own bot (bot token) or as you (Slack sign-in). Invite the bot to the channel, then press Verify.",
+  "featured": true,
+  "description": "See your Slack messages in Flowpad.",
   "kind": "datasource.api.slack",
   "setup_wiki": "Slack channels",
   "auth": {
     "credential": "slack_channel",
     "vars": {
-      "SLACK_BOT_TOKEN": "SLACK_BOT_TOKEN"
+      "SLACK_BOT_TOKEN": "SLACK_BOT_TOKEN",
+      "SLACK_USER_TOKEN": "SLACK_USER_TOKEN",
+      "webhook_url": "SLACK_WEBHOOK_URL"
     }
   },
   "permissions": {
     "permission.slack.channels.read": {
-      "mechanism": "oauth",
-      "why": "Read the channels the app is in."
+      "mechanism": "api_key",
+      "why": "Read the channels you are in.",
+      "api_key": "SLACK_USER_TOKEN"
     },
     "permission.slack.chat.write": {
-      "mechanism": "oauth",
-      "why": "Post replies as the app."
+      "mechanism": "api_key",
+      "why": "Post replies as you (or your bot).",
+      "api_key": "SLACK_USER_TOKEN"
     },
     "permission.slack.files": {
-      "mechanism": "oauth",
-      "why": "Read the files people share in the channel, and send files (`files:read`, `files:write`)."
+      "mechanism": "api_key",
+      "why": "Read the files people share in the channel, and send files (`files:read`, `files:write`).",
+      "api_key": "SLACK_USER_TOKEN"
     },
     "permission.slack.reactions": {
-      "mechanism": "oauth",
-      "why": "See the emoji people react with, and react as the app (`reactions:read`, `reactions:write`)."
+      "mechanism": "api_key",
+      "why": "See the emoji people react with, and react as you (or your bot) (`reactions:read`, `reactions:write`).",
+      "api_key": "SLACK_USER_TOKEN"
+    },
+    "permission.slack.conversations.read": {
+      "mechanism": "api_key",
+      "why": "List and read every conversation you are in — DMs, group DMs, channels (`im:*`, `mpim:*`, `channels:*`, `groups:*`, `users:read`).",
+      "api_key": "SLACK_USER_TOKEN"
     }
   },
   "config": {
@@ -39,7 +48,7 @@
       "choices": true,
       "label": "Channel",
       "placeholder": "C0123456789",
-      "hint": "Pick from the channels this workspace has, or type its ID. The ID is what is stored — a renamed channel keeps its ID, and keying on the name would fork its history. Watching several channels? Add one source per channel."
+      "hint": "Leave empty for everything you are in (your own app, set up by Connect). To read ONE channel as a bot, pick it here or type its ID — the ID is what is stored; a renamed channel keeps it. Several channels? One source per channel."
     },
     "allowed_senders": {
       "type": "lines",
@@ -51,6 +60,35 @@
       "type": "text",
       "advanced": true,
       "label": "API base URL"
+    },
+    "team_id": {
+      "type": "text",
+      "advanced": true,
+      "label": "Workspace",
+      "hint": "Learned by Connect from your app's token (auth.test)."
+    },
+    "user_id": {
+      "type": "text",
+      "advanced": true,
+      "label": "You",
+      "hint": "Your member ID in that workspace, learned by Connect."
     }
-  }
+  },
+  "webhook": {
+    "url_var": "webhook_url",
+    "methods": [
+      "POST"
+    ],
+    "required_headers": []
+  },
+  "setup_wizards": [
+    {
+      "stage": "connect",
+      "label": "Connect",
+      "wizard": "slack-connect",
+      "provides": [
+        "credential"
+      ]
+    }
+  ]
 }

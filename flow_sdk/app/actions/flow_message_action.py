@@ -2447,7 +2447,6 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     """
     from flow_sdk.app.actions.notification_action import (
         _append_message_to_conversation,
-        _notify_ui_conversation_updated,
         _send_conversation_message_header,
     )
     from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
@@ -2507,8 +2506,6 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         fm_id=fm.id,
         someone_typeid=someone_typeid,
     )
-
-    _notify_ui_conversation_updated(conv.id, "", fm.id)
 
     if is_remote_send:
         conv.kick_delivery()  # the body, if it has one — owed on the row until the hub has it
@@ -3350,20 +3347,26 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
             # Children-list route, primary source: returns the conversation's
             # FlowMessage children (with updated_date) the caller may see.
             # the hub url builder requires an action segment before sub_path.
-            children = await HubProxy.try_call(
-                "GET",
-                BuiltinEntityType.CONVERSATION,
-                conv_id,
-                action="flow_message",
-            )
-            # try_call returns the unwrapped `data` when 200 and None on any
-            # failure. None ⇒ we cannot prove anything — abort without
-            # touching local state. An EMPTY LIST is a real answer ("this
-            # conversation has zero messages you may see") and still goes
-            # through the authoritative reconcile below.
-            if children is None:
+            try:
+                children = await HubProxy.call(
+                    "GET",
+                    BuiltinEntityType.CONVERSATION,
+                    conv_id,
+                    action="flow_message",
+                    strict=True,
+                )
+            except HubError as e:
+                # Any failure ⇒ we cannot prove anything — abort without touching
+                # messages. One answer is certain, though: the hub holds no row here
+                # this account can reach. For a conversation started here that is a
+                # wrong ``remote`` flag (a share that took a 409 on someone else's
+                # row), not a lost conversation: stop claiming the hub counterpart.
+                if e.is_target_missing and (conv := await Conversation.get_one({"id": conv_id})):
+                    await conv.heal_if_fake_remote("hub has no row here this account can reach")
                 logger.warning("[conv-msg-fetch] %s: children listing unavailable, skipping", conv_id[:8])
                 return False
+            # An EMPTY LIST is a real answer ("this conversation has zero messages
+            # you may see") and still goes through the authoritative reconcile below.
             child_list = [m for m in rows_of(children) if m.get("id")]
             child_list = fetch_order(child_list)
             synced = 0
@@ -4020,6 +4023,8 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
             # out of the hub list means "not in it", not "gone".
             if c.remote and c.id and c.id not in seen_ids and not c.channel_source_id:
                 try:
+                    if await c.heal_if_fake_remote("absent from the hub's conversation list"):
+                        continue  # written here: never the person's data
                     await _hard_delete_local_conversation(c)
                     pruned.append(c.id)
                 except Exception as e:  # noqa: BLE001
@@ -4788,9 +4793,8 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             logger.warning("[invitation-accept] bundle download failed: %s", e)
 
     # Live UI refresh: fire an explicit ``OperationType.UPDATE`` for the
-    # Conversation entity. The per-step sniffer EVENTs logged above as
-    # ``[hook_op] Unhandled event`` don't invalidate the UI's
-    # ``useEntity<Conversation>`` React-Query cache. ``notify_updated``
+    # Conversation entity so the UI's ``useEntity<Conversation>`` React-Query
+    # cache refreshes. ``notify_updated``
     # dispatches a ``DataOpMessage(op=UPDATE)`` which IS what useEntity
     # listens for.
     # The per-step events fired above (materialize, sync) don't all carry the

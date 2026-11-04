@@ -17,6 +17,7 @@ because ``ApiAuthSpec`` references :class:`LMApiProvider`.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
 logger = logging.getLogger(__name__)
+_FETCHES: set = set()  # in-flight budget-list fetches, kept alive
 
 
 @dataclass(frozen=True)
@@ -421,6 +423,22 @@ async def _size_overrides(worker_type: str, provider: LMApiProvider) -> dict[str
     return dict((getattr(cap, "model_map", None) or {}).get(provider.value) or {})
 
 
+async def _fresh_hub_tiers(endpoint_typeid) -> dict[str, str]:
+    """The sizes the hub serves for one endpoint NOW, read past the listing's memo; ``{}`` when unreadable."""
+    from flow_sdk.instance_settings.llm_endpoint import _list_cache, fetch_hub_llm_endpoints  # noqa: PLC0415
+
+    _list_cache.clear()
+    try:
+        endpoints = await fetch_hub_llm_endpoints()
+    except Exception:  # noqa: BLE001 -- the refusal below explains a size that stays missing
+        return {}
+    wanted = str(endpoint_typeid or "")
+    for endpoint in endpoints:
+        if str(getattr(endpoint, "typeid", "")) == wanted or str(getattr(endpoint, "endpoint_typeid", "")) == wanted:
+            return dict(getattr(endpoint, "tiers", None) or {})
+    return {}
+
+
 def _slug_for(worker_type: str, spec: "ApiAuthSpec", sizes: dict, source, tier: str | None, overrides: dict) -> str:
     """The model a funded spawn runs: the slug the ENDPOINT declares for the size, never a code default.
 
@@ -477,8 +495,10 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
         LLMSourceError,
+        _hub_budget_pending,
         resolve_llm_endpoint,
     )
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
 
     worker_type = getattr(process.driver, "name", None)
     if not worker_type or driver_api_auth_spec(worker_type) is None:
@@ -487,6 +507,10 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     try:
         candidate = await resolve_llm_endpoint(process)
     except LLMSourceError as exc:
+        exc.budget_not_ready = _hub_budget_pending()
+        if exc.budget_not_ready:  # fetch the list once, without holding the refusal; the card's retry finds it
+            _FETCHES.add(task := asyncio.create_task(fetch_hub_llm_endpoints()))
+            task.add_done_callback(_FETCHES.discard)
         raise WorkerSpawnError(worker_type, str(exc)) from exc
 
     model = (process.cli_config or {}).get("model")
@@ -563,6 +587,11 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
         bound = get_hub_llm_endpoint()
         if bound is not None and (not own_url or bound.endpoint_typeid == source.endpoint_typeid):
             sizes = dict(bound.tiers)
+    wanted = spec.native_tiers.get(tier, tier) if tier else default_size()
+    if is_hub and is_model_tier(wanted) and not sizes.get(wanted):
+        # The sizes above are a copy (the listing's memo, or what the hub pushed when this box was bound);
+        # a pool's sizes set since then reach a spawn only through a fresh read of the hub's listing.
+        sizes = {**sizes, **await _fresh_hub_tiers(source.endpoint_typeid)}
     slug = _slug_for(worker_type, spec, sizes, source, tier, await _size_overrides(worker_type, provider))
     env = {**binding.base_env, binding.token_env_var: key}
     if spec.max_output_env_var:

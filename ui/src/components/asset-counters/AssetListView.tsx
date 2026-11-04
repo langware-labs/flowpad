@@ -1,10 +1,11 @@
 import { Trans } from '@lingui/react/macro';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
-import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useState } from 'react';
 import { CounterTable, NoRows, QuickSearchInput, useQuickSearch } from './AssetItems';
+import { counterAt, counterKey, selectionOf } from './axes';
 import { findCounterGroup } from './registry';
+import { CounterAxes } from './StatChips';
 import type { AssetCounterGroup } from './types';
 
 /**
@@ -23,13 +24,14 @@ export function AssetListView() {
     );
   }
   // Keyed: a different group runs a different `useCounters`.
-  return <AssetListBody key={group.id} group={group} counterKey={currentDock?.options?.counter} />;
+  return <AssetListBody key={group.id} group={group} selectedKey={currentDock?.options?.counter} />;
 }
 
-function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; counterKey?: string }) {
+function AssetListBody<T>({ group, selectedKey }: { group: AssetCounterGroup<T>; selectedKey?: string }) {
   const { navigation } = useDockNavigation();
   const counters = group.useCounters();
-  const active = counters.find((counter) => counter.key === counterKey) ?? counters[0];
+  const selection = selectionOf(counters, selectedKey);
+  const active = counterAt(counters, selection);
   // A transient filter over the rows on screen, not a new list — so it stays
   // local and survives switching tabs rather than living in the URL.
   const [query, setQuery] = useState('');
@@ -42,24 +44,11 @@ function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; 
           <h1 className="text-lg font-semibold">{labelForType(group.type)}</h1>
           {active && <p className="text-sm text-muted-foreground">{active.description}</p>}
         </div>
-        <Tabs value={active?.key} onValueChange={(key) => navigation.openAssetList(group.id, key)}>
-          <TabsList>
-            {counters.map((counter) => (
-              <TabsTrigger
-                key={counter.key}
-                value={counter.key}
-                className="gap-2"
-                data-testid="asset-list-tab"
-                data-counter={counter.key}
-              >
-                <span className="max-w-40 truncate">{counter.label}</span>
-                <span className="rounded bg-muted px-1.5 text-xs tabular-nums">
-                  {counter.isLoading ? '…' : counter.items.length}
-                </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <CounterAxes
+          counters={counters}
+          selection={selection}
+          onSelect={(next) => navigation.openAssetList(group.id, counterKey(next.scope, next.status))}
+        />
       </header>
 
       <QuickSearchInput value={query} onChange={setQuery} className="mb-3 max-w-sm" testId="asset-list-search" />

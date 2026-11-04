@@ -41,10 +41,9 @@ describe('GitPushButton commit count', () => {
     expect(screen.getByTestId('git-push-button')).toHaveAttribute('title', 'git push — 3 commits to push');
   });
 
-  it('shows no number when only uncommitted changes are pending', () => {
+  it('is hidden when only uncommitted changes are pending (plain push commits nothing)', () => {
     withStatus(2, 0);
     render(<GitPushButton />);
-    expect(screen.getByTestId('git-push-button')).toBeInTheDocument();
-    expect(screen.queryByTestId('git-push-ahead-count')).toBeNull();
+    expect(screen.queryByTestId('git-push-button')).toBeNull();
   });
 });

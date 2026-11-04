@@ -167,6 +167,15 @@ export default {
             boxShadow: '0 0 0 2px rgb(234 179 8 / 0.70), 0 0 14px 3px rgb(234 179 8 / 0.55)',
           },
         },
+        // The same pulse in blue: updates are waiting, nothing blocks the project.
+        'updates-glow': {
+          '0%, 100%': {
+            boxShadow: '0 0 0 1px rgb(59 130 246 / 0.35), 0 0 4px 0 rgb(59 130 246 / 0.25)',
+          },
+          '50%': {
+            boxShadow: '0 0 0 2px rgb(59 130 246 / 0.70), 0 0 14px 3px rgb(59 130 246 / 0.55)',
+          },
+        },
         'unfunded-flash': {
           '0%, 100%': {
             backgroundColor: 'rgb(248 113 113 / 0.10)',
@@ -202,6 +211,7 @@ export default {
         'pending-glow-once': 'pending-glow-once 3s ease-in-out 1 forwards',
         'unfunded-flash': 'unfunded-flash 1.4s ease-in-out infinite',
         'setup-glow': 'setup-glow 2s ease-in-out infinite',
+        'updates-glow': 'updates-glow 2s ease-in-out infinite',
       },
     },
   },

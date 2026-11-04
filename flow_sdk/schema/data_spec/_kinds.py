@@ -91,6 +91,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.help_request_spec  # noqa: F401  — registers ``help.recipient`` / ``help.request``
     import flow_sdk.schema.data_spec.hub_failure_spec  # noqa: F401  — registers ``hub.failure``
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
+    import flow_sdk.schema.data_spec.launch_failure_spec  # noqa: F401  — registers ``agent.launch_failure``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
@@ -117,6 +118,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
     import flow_sdk.schema.data_spec.webapp_spec  # noqa: F401  — registers ``webapp.mount`` / ``webapp.service``
+    import flow_sdk.schema.data_spec.project_status_spec  # noqa: F401  — registers ``project.status`` / ``project.status.part``
     import flow_sdk.schema.data_spec.webapp_lifecycle_spec  # noqa: F401  — registers ``webapp.lifecycle`` / ``webapp.failure`` / ``webapp.handling``
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.plan`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``

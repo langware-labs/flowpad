@@ -34,6 +34,7 @@ import { ownerOf, sourceConversationsRequest } from '@src/components/stream-inbo
 import { BusStream } from '@src/components/automations/BusStream';
 import { sourceGlyphs } from './source-icon';
 import { SourceActions, SourceSetupDetails, SourceStatusLine } from './source-parts';
+import { useSourceVerify } from './use-source-verify';
 import { SourceFiles } from './SourceFiles';
 import { openDriver, openSource, openSourceFile, type SourceTab } from './data-sources-pointer';
 import { OpenFolderButton } from './OpenFolderButton';
@@ -58,6 +59,8 @@ interface Props {
 
 export function DataSourcePage({ source, id, tab, conversation, thread, files, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
+  // Verify is pressed in the actions and answered on the status line beside them, never in a toast.
+  const { verify, busy: verifying, last: verdict } = useSourceVerify(source, { quiet: true });
   const { navigation } = useDockNavigation();
   const hosted = useHostedDatasets(source);
   if (!source) {
@@ -116,7 +119,7 @@ export function DataSourcePage({ source, id, tab, conversation, thread, files, s
             </p>
           )}
         </div>
-        <SourceStatusLine source={source} className="ms-2" />
+        <SourceStatusLine source={source} className="ms-2" verifying={verifying} verdict={verdict} />
         {advanced && (
           <>
             <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
@@ -140,7 +143,15 @@ export function DataSourcePage({ source, id, tab, conversation, thread, files, s
             <SlidersHorizontal className="size-3.5" />
             <Trans>Advanced</Trans>
           </Button>
-          <SourceActions source={source} spec={spec} onEdit={onEdit} onReplay={onReplay} onDelete={onDelete} />
+          <SourceActions
+            source={source}
+            spec={spec}
+            onEdit={onEdit}
+            onReplay={onReplay}
+            onDelete={onDelete}
+            onVerify={verify}
+            verifying={verifying}
+          />
         </div>
       </div>
 

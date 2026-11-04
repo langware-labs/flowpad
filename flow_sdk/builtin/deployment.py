@@ -204,7 +204,13 @@ class Deployment(Entity):
     )
     #: A local agent deployment that RUNS: a subprocess on this machine running its loop
     #: (``builtin/agent_loop``). A placement processes are only spawned through does not.
-    serving: bool = APIField(default=False, description="A local deployment that runs its own agent loop process")
+    #: PRIVATE: this machine's own flag. The hub never holds it, so a hub refresh used to reset it to
+    #: False and the box stopped its agent on the next resume.
+    serving: bool = APIField(
+        default=False,
+        sharing=Sharing.PRIVATE,
+        description="A local deployment that runs its own agent loop process",
+    )
     #: The Python file that process runs instead of the stock loop; ``None`` runs the stock loop.
     snippet: str | None = APIField(default=None, description="The loop this deployment runs, when not the stock one")
 
@@ -493,6 +499,11 @@ class Deployment(Entity):
         # placement's address, however, is allocated and refreshed by the hub.
         if local.target.provider != "local" and "origin" in hub_payload:
             merged["origin"] = hub_payload["origin"]
+        # A row this machine runs is held here as local -- the box a cloud placement runs on. The hub's
+        # target names the cloud machine from outside; taking it made the row not local here, and the
+        # box's supervisor stopped the agent.
+        if local.target.provider == "local":
+            merged["target"] = local.target
         return merged
 
     @classmethod
@@ -638,6 +649,27 @@ class Deployment(Entity):
         except HubError as exc:
             return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
         return ApiSuccessResponse(data=providers if isinstance(providers, list) else [])
+
+    @action.get(action_name="funding")
+    async def funding_action(self):
+        """`GET /deployment/<id>/funding` — what pays for this placement's model turns: the hub's answer
+        (``{kind, endpoint_typeid, name, size, model, exhausted}``), relayed.
+
+        Hub funding only pays for a placement the hub holds (``remote``). A purely local placement runs
+        on this computer's own model logins, so no hub endpoint funds it and none refuses its turns:
+        ``kind: "none"`` with an empty ``exhausted`` — never a guessed allocation or default.
+        """
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.remote:
+            return ApiSuccessResponse(data={"kind": "none", "endpoint_typeid": "", "name": "", "exhausted": ""})
+        if not hub_base_url():
+            return ApiFailResponse(message="Sign in to the hub to see what funds this deployment", status_code=409)
+        funding = await self.funding()
+        if not isinstance(funding, dict):
+            return ApiFailResponse(message="the hub did not answer for this cloud placement", status_code=502)
+        return ApiSuccessResponse(data=funding)
 
     @action.get(action_name="endpoints")
     async def endpoints_action(self):
@@ -792,6 +824,20 @@ class Deployment(Entity):
         # The hub already drops anything that is not a run.
         return list(data.get("runs") or [])
 
+    async def _read_remote(self, verb: str, params: dict[str, str]) -> dict[str, Any]:
+        """What a cloud machine answers for one of its own reads (``threads``, ``timeline``), through the hub.
+
+        A box's conversations, turns and replies live in the box's database. Answered from this computer's
+        rows instead, the page listed what this computer had ingested -- threads the box never handled,
+        and not the one it answered.
+        """
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+        data = await HubProxy.try_call("GET", self.get_type(), self.id, verb, params=params)
+        if not isinstance(data, dict):
+            raise DeploymentActionError("the hub did not answer for this cloud machine", status_code=502)
+        return data
+
     async def _hub_action(self, verb: str) -> dict[str, Any]:
         """POST one action on this placement's hub row; the row itself comes back down the bridge."""
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
@@ -892,6 +938,10 @@ class Deployment(Entity):
             except ValueError:
                 return ApiFailResponse(message=f"before={raw_before!r} is not an ISO time", status_code=400)
         conversation = str((request_info.get_param("conversation") if request_info else None) or "").strip() or None
+        if not self.is_local:
+            params = {"limit": str(limit), **({"before": raw_before} if raw_before else {}),
+                      **({"conversation": conversation} if conversation else {})}
+            return await self._answer("timeline", lambda: self._read_remote("timeline", params))
         page = await timeline(self, limit=limit, before=before, conversation=conversation)
         return ApiSuccessResponse(data=page.model_dump(mode="json"))
 
@@ -902,6 +952,8 @@ class Deployment(Entity):
         from flow_sdk.builtin.deployment_timeline import threads  # noqa: PLC0415
         from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
+        if not self.is_local:
+            return await self._answer("threads", lambda: self._read_remote("threads", {}))
         return ApiSuccessResponse(data=(await threads(self)).model_dump(mode="json"))
 
     def _local_process(self):

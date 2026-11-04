@@ -145,7 +145,7 @@ describe('sharing through the project hub repo', () => {
 
   it('bob, a reader without GitHub, reads the document on the hub and installs it', async () => {
     const link = await (await hub(aliceToken, `/graph/project/${projectId}/members/link`, {
-      invitation_targets: [{ typeid: `project-${projectId}`, role: 'reader' }],
+      invitation_targets: [{ typeid: `project-${projectId}`, roles: ['reader'] }],
     })).json();
     const token = String(link.data.url).split('/').pop();
     expect((await (await hub(bobToken, '/graph/members/redeem', { token })).json()).status).toMatch(/success/i);

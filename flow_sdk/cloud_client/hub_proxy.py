@@ -21,6 +21,7 @@ hub is ``server/routes/_hub_reflect.py``'s job, not this module's.
 from __future__ import annotations
 
 import logging
+import time
 import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Mapping, Optional
@@ -30,7 +31,13 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
-from flow_sdk.cloud_client.client_hooks import ANONYMOUS_EXTENSION, PASSTHROUGH_EXTENSION, HubAuthExpiredError
+from flow_sdk import toplog
+from flow_sdk.cloud_client.client_hooks import (
+    ANONYMOUS_EXTENSION,
+    PASSTHROUGH_EXTENSION,
+    QUIET_EXTENSION,
+    HubAuthExpiredError,
+)
 from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code, _extract_reason, classify_hub_failure
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 
@@ -176,6 +183,7 @@ class HubProxy:
         anonymous: bool = False,
         passthrough: bool = False,
         stream: bool = False,
+        quiet: bool = False,
     ) -> httpx.Response:
         """Send ONE request to the hub and return the response, whatever its status.
 
@@ -189,6 +197,8 @@ class HubProxy:
         extensions: dict[str, Any] = {}
         if anonymous:
             extensions[ANONYMOUS_EXTENSION] = True
+        if quiet:
+            extensions[QUIET_EXTENSION] = True
         if passthrough or stream:
             extensions[PASSTHROUGH_EXTENSION] = True
         try:
@@ -206,7 +216,16 @@ class HubProxy:
                     extensions=extensions or None,
                 )
                 logger.info("[hub] %s %s", request.method, request.url)
+                t0 = time.monotonic()
                 resp = await client.send(request, stream=stream)
+                toplog.log(
+                    "hub",
+                    "http %s %s status=%s ms=%.0f",
+                    request.method,
+                    request.url.path,
+                    resp.status_code,
+                    (time.monotonic() - t0) * 1000,
+                )
         except HubAuthExpiredError as e:
             logger.warning("[hub] %s %s auth expired: %s", method, url, e)
             raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
@@ -242,13 +261,15 @@ class HubProxy:
         strict: bool = False,
         anonymous: bool = False,
         raw: bool = False,
+        quiet: bool = False,
     ) -> Any:
         """Call a hub graph endpoint and answer its envelope's ``data`` (``{}`` when empty).
 
         Raises ``HubError``: ``not_configured`` with no hub, ``signed_out`` / ``offline`` when
         nothing came back, the hub's status on any non-200, ``server_error`` on a 200 that is not
         JSON. ``strict`` also refuses a 200 envelope that says FAIL, and refuses to send at all
-        without a credential. ``raw`` answers the body's bytes; ``anonymous`` sends no login.
+        without a credential. ``raw`` answers the body's bytes; ``anonymous`` sends no login; ``quiet``
+        keeps a failure the caller handles out of the UI's hub warnings (it still raises).
         """
         url = _require_url(entity_type, entity_id, action, sub_path, scope=scope)
         if strict and not anonymous:
@@ -259,7 +280,7 @@ class HubProxy:
             payload = {}  # the hub parses DELETE bodies (``members`` expects one)
         resp = await cls.send(
             method, url, params=params, json=None if files else payload, files=files,
-            timeout=timeout, anonymous=anonymous,
+            timeout=timeout, anonymous=anonymous, quiet=quiet,
         )  # fmt: skip
         return _unwrap(resp, method=method, url=url, strict=strict, raw=raw)
 
@@ -618,11 +639,35 @@ class HubProxy:
         return HubAnswer(resp.status_code, hdrs, resp.content)
 
 
+def _extract_data(resp: httpx.Response) -> Any:
+    """The ``data`` of a refusal's JSON envelope, or None."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    return body.get("data") if isinstance(body, dict) else None
+
+
+def _is_json(resp: httpx.Response) -> bool:
+    return "json" in resp.headers.get("content-type", "")
+
+
 def _unwrap(resp: httpx.Response, *, method: str = "", url: Any = "", strict: bool = False, raw: bool = False) -> Any:
     """A hub response read as a graph-call answer: ``data`` on 200, ``HubError`` otherwise."""
     if resp.status_code != 200:
         logger.warning("[hub] %s %s returned %s: %s", method, url, resp.status_code, resp.text[:200])
-        raise HubError(resp.status_code, _extract_reason(resp), code=_extract_error_code(resp))
+        if not _is_json(resp):
+            # The hub answers every failure in JSON. A page that is not JSON came from something between
+            # us and the hub -- a tunnel or proxy whose endpoint is offline (ngrok's 404 ERR_NGROK_3200) --
+            # so the hub was not reached: read as a 404, it told a mailbox source "you have no mailbox"
+            # and stopped it for good.
+            raise HubError(
+                0, f"the hub could not be reached (HTTP {resp.status_code} from the way there)",
+                kind=HubFailureKind.OFFLINE,
+            )
+        raise HubError(
+            resp.status_code, _extract_reason(resp), code=_extract_error_code(resp), data=_extract_data(resp)
+        )
     if raw:
         return resp.content
     try:

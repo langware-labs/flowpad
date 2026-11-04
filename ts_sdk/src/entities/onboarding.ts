@@ -9,7 +9,7 @@ import type { HttpMethod } from '../models/ApiUrl';
 import { dataManager } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 
-export type OnboardingChannel = 'whatsapp' | 'telegram' | 'slack';
+export type OnboardingChannel = 'email' | 'whatsapp' | 'telegram' | 'slack';
 /** `flowpad`: Flowpad's own bot/number/app; `own`: the person's own. */
 export type OnboardingMethod = 'flowpad' | 'own';
 
@@ -18,6 +18,8 @@ export interface CreatedAgent {
   agent: { id: string; name?: string };
   rel_path: string;
   data_source_id: string | null;
+  /** The agent's own mailbox, when it was made on the email channel (its address and who may write). */
+  mailbox?: { typeid: string; address: string; status: string; allowed_senders: string[] } | null;
 }
 
 export interface DeployedAgent {

@@ -30,6 +30,15 @@ _cursors: OrderedDict[str, _Cursor] = OrderedDict()
 _lock = RLock()
 
 
+def title_from_record(raw: dict) -> tuple[str, bool] | None:
+    """The ``(title, explicit)`` a transcript record carries, or ``None``."""
+    explicit = raw.get('type') == 'custom-title'
+    title = raw.get('customTitle' if explicit else 'aiTitle')
+    if raw.get('type') not in ('ai-title', 'custom-title') or not isinstance(title, str) or not title.strip():
+        return None
+    return title, explicit
+
+
 def read_claude_title(path: str | Path) -> ClaudeTitle | None:
     """Scan once, then consume complete appended lines; manual names always win.
 
@@ -63,10 +72,10 @@ def read_claude_title(path: str | Path) -> ClaudeTitle | None:
                         continue
                     if not isinstance(raw, dict):
                         continue
-                    explicit = raw.get('type') == 'custom-title'
-                    title = raw.get('customTitle' if explicit else 'aiTitle')
-                    if raw.get('type') not in ('ai-title', 'custom-title') or not isinstance(title, str) or not title.strip():
+                    found = title_from_record(raw)
+                    if found is None:
                         continue
+                    title, explicit = found
                     value = ClaudeTitle(title, explicit, f'{stat.st_ino}:{cursor.offset}:{title}', stat.st_mtime_ns)
                     if explicit:
                         cursor.explicit = value

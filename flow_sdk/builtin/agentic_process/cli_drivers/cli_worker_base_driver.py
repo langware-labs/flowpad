@@ -864,6 +864,9 @@ class AgenticWorker(ABC):
     workers override what makes sense for their CLI.
     """
 
+    def turn_failure(self):  # (LaunchError, evidence) a turn ended with — taken once per turn; None by default
+        return None
+
     #: The process-local JSONL tee this worker writes, when it keeps one.
     #: Declared here (not just on the workers that have one) so callers can ask
     #: every worker without a hasattr dance — claude has no tee and leaves it
@@ -988,6 +991,9 @@ class AgentOptions:
 
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
+
+    def prepare_launch(self, workdir: "str | None") -> None:
+        """Adjust this argv for a real launch in ``workdir`` (a check the pure argv must not make). No-op here."""
 
     def apply_instruction_assets(self, assets: "Any") -> None:
         """Route FlowPad's generated instruction/skill assets into this argv.
@@ -1504,15 +1510,38 @@ async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError
     ``start_failure`` latch, so the UI surfaces the message and auto-recovery
     stops relaunching until an explicit user retry (``open(retry=True)``).
     """
-    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
 
     logger.error("AgenticProcess %s: worker spawn failed — %s", process.id, error)
-    process.status = ProcessStatus.FAILED.value
-    process.start_failure = str(error)
+    process.latch_launch_failure(LaunchError.classify(error, error.worker_type), evidence=str(error))
     try:
         await process.save()
     except Exception:
         logger.exception("AgenticProcess %s: failed to persist spawn-failure latch", process.id)
+
+
+async def latch_turn_failure(process: "AgenticProcess", worker, fd) -> None:
+    """At a turn's END frame (so the UI sees it first): latch what the turn failed with, if anything."""
+    if fd.attributes.get("element-type") == "end" and (failure := worker.turn_failure()):
+        await latch_credential_failure(process, *failure)
+
+
+async def latch_credential_failure(process: "AgenticProcess", error, evidence: str) -> None:
+    """Latch a first-turn failure; a refused credential is key_rejected (marked) only for a stored key, else signed_out."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchErrorCode  # noqa: PLC0415
+    from flow_sdk.cli.auth.lm_api_keys import mark_key_rejected  # noqa: PLC0415
+
+    facts = {}
+    if error.code is LaunchErrorCode.KEY_REJECTED:
+        endpoint, source = await resolve_llm_endpoint(process)
+        if endpoint.kind != "api_key":
+            error = LaunchError.of(LaunchErrorCode.SIGNED_OUT, error.detail, error.worker_type)
+        else:
+            mark_key_rejected(endpoint.provider, error.detail, source.detail)
+            facts = {"provider": endpoint.provider, "key_hint": source.detail}
+    process.latch_launch_failure(error, phase="first_turn", evidence=evidence, facts=facts)
+    await process.save()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1699,6 +1728,8 @@ class WorkerDriver(Protocol):
     # (QA C09b). None → no grounded marker; delivery keeps the legacy
     # settle-then-type behaviour. Matched via ``pump_composer_ready``.
     pty_composer_ready_pattern: "re.Pattern[str] | None"
+    # Module with classify / classify_auth / trust_prompt_folder / apply_launch_fix (claude), or None.
+    launch_screen: Any
     # The key that switches this vendor's interactive TUI into its own shell mode (claude's
     # ``!``), or None. ``AgenticProcess.run_shell_command`` types it, then the command: the
     # command runs in the session's shell and its output joins the conversation.

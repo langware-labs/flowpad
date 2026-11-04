@@ -201,7 +201,6 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
       icon: (
         <EntityIcon
           type={tab.target_type}
-          remote={tab.target_remote}
           density="compact"
           showLocationTooltip={false}
           className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -314,7 +313,6 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
             item.icon = (
               <EntityIcon
                 type={focusType}
-                remote={remote}
                 density="compact"
                 showLocationTooltip={false}
                 className="h-3.5 w-3.5 shrink-0 text-muted-foreground"

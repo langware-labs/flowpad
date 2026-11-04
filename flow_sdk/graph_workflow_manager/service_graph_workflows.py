@@ -117,8 +117,13 @@ async def _get_or_create_flow(name: str) -> tuple[GraphWorkflow | None, bool]:
     existing = await _find_flow(name)
     if existing is not None:
         return existing, False
+    from flow_sdk.assets.creation import AssetPathCollisionError, adopt_unindexed  # noqa: PLC0415
+
     flow = GraphWorkflow(name=name, scope="system")
-    await flow.save()  # scaffolds folder + capsule id
+    try:
+        await flow.save()  # scaffolds folder + capsule id
+    except AssetPathCollisionError as collision:
+        return await adopt_unindexed(collision, lambda: _find_flow(name)), False
     return flow, True
 
 

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { destroyVibeFixture, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
+import { destroyVibeFixture, openVibe, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
 
 /**
  * Every scenario of the journey runtime, driven the way a person drives one.
@@ -12,7 +12,10 @@ import { destroyVibeFixture, seedLastVibeChat, type VibeFixture } from '../vibe/
  * things that had not happened.
  *
  * So this asserts the WORLD, not the tray: when the journey says the workspace is
- * gone, `VibeDisplay` is really out of the DOM and the view is really `standard`.
+ * gone, `VibeDisplay` is really out of the DOM and the session is really `standard`.
+ *
+ * Since 2026-10-11 a mode belongs to a session tab (docs/viewmodes.md): the home
+ * is always Vibe, and the exit under review is the open build's own switch.
  * A journey that advanced on a click alone would pass a step-only check and
  * still be lying.
  *
@@ -26,7 +29,6 @@ const JOURNEY = '@vibe-exit-mode-switch';
 /** The authored steps, in order — from the journey document itself, so a drifted
  *  graph fails here rather than silently. */
 const STEPS = [
-  'Start in Vibe',
   'Open a build',
   'This is what you have',
   'Now take the exit',
@@ -65,6 +67,15 @@ async function expectStep(n: number): Promise<void> {
   await expect(stepsLeft()).toHaveText(`${STEPS.length - (n - 1)} steps left`);
 }
 
+/** The seeded build's own address, with the journey's step on it — how a user
+ *  opens a build mid-journey (step 1 cannot open one: a build id is not authored). */
+async function openBuildAt(n: number): Promise<void> {
+  await page.goto(
+    `/dock/vibe/agentic_process-${fixture.processId}?journeyId=${encodeURIComponent(JOURNEY)}&journeyStep=${n}`,
+  );
+  await expect(workspace()).toBeVisible();
+}
+
 /** Open the journey at a given step, cold — no prior navigation. */
 async function openAt(n: number, extra = ''): Promise<void> {
   await page.goto(`/?journeyId=${encodeURIComponent(JOURNEY)}&journeyStep=${n}${extra}`);
@@ -98,48 +109,38 @@ async function launch(): Promise<void> {
  * warming there simply moved the overflow into that test.
  */
 test('a build opens from the rail (warm-up)', async () => {
-  await page.goto('/?viewMode=vibe');
-  await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
-  await page.locator('[data-tag="TopNavTabs"]').click();
+  await openVibe(page, fixture.processId);
   await expect(workspace()).toBeVisible();
 });
 
 test.describe('the journey demonstrates — the app really moves', () => {
   /**
-   * Six presses of one button, and the app is somewhere different after each.
-   * Deliberately entered from INSIDE vibe: step 1 names `standard`, so the
-   * journey normalizes its own opening state instead of inheriting one — a
-   * journey about entering Vibe cannot start already in it, or its first step
-   * has nothing left to show.
+   * Five presses of one button, and the app is somewhere different after each.
+   * The home is always Vibe, so the user opens a real build first and the
+   * journey then takes that session's own exit out and back.
    */
-  test('entrance and exit, in six presses of one button', async () => {
-    await page.goto('/?viewMode=vibe');
+  test('open a build, take its exit and come back, in five presses of one button', async () => {
+    await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
     await launch();
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
+    await expect(workspace()).toHaveCount(0);
 
-    await next(); // the wand — enters Vibe
+    // The user opens a build (step 1 cannot: a build id is not authored).
+    await openBuildAt(1);
+    await expectStep(1);
+    await next(); // its gate (the workspace) holds — so this lands
     await expectStep(2);
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
-
-    await next(); // the rail — opens a real build
-    // The step is GATED on the build actually opening (`element.present:
-    // VibeDisplay` in the journey graph); assert the gate's own condition
-    // first, then the step. Under full-suite load the open can outlast one
-    // expect budget while the tray correctly holds at step 2.
-    await expect(workspace()).toBeVisible();
-    await expectStep(3);
 
     await next(); // commentary
-    await expectStep(4);
+    await expectStep(3);
 
-    await next(); // the exit under review
-    await expectStep(5);
+    await next(); // the exit under review — the session's Chat button
+    await expectStep(4);
     await expect(workspace()).toHaveCount(0);
     await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
 
-    await next(); // the way home
-    await expectStep(6);
+    await next(); // the way home — the session's Vibe button
+    await expectStep(5);
     await expect(workspace()).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 
@@ -161,7 +162,7 @@ test.describe('the journey demonstrates — the app really moves', () => {
 
 test.describe('the step number is the address', () => {
   /** The property none of this had before: a step is a URL you can open. */
-  for (const n of [1, 2, 3, 6]) {
+  for (const n of [1, 2, 3, 5]) {
     test(`?journeyStep=${n} opens that step cold`, async () => {
       await openAt(n);
       await expectStep(n);
@@ -207,16 +208,18 @@ test.describe('Back', () => {
 test.describe('the gate holds a press, it does not drive', () => {
   test('a gated step does not land until its condition is true', async () => {
     await launch();
-    await next(); // into vibe
-    await expectStep(2);
 
-    // Step 2 waits for the workspace to exist. Its act opens one, so the press
-    // completes on its own — but only once the workspace is REALLY there, and
-    // never before.
+    // Step 1 waits for the workspace to exist. At home there is none, so a press
+    // is held — the step does not land on the click alone.
     await expect(workspace()).toHaveCount(0);
     await next();
-    await expect(workspace()).toBeVisible();
-    await expectStep(3);
+    await page.waitForTimeout(2000);
+    await expectStep(1);
+
+    // Once the workspace is REALLY there, the same press completes.
+    await openBuildAt(1);
+    await next();
+    await expectStep(2);
   });
 
   test('nothing advances without a press', async () => {

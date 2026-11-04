@@ -6,16 +6,14 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { buildConversationStatusPrompt } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useProjectMappingGate } from './useProjectMappingGate';
-import { OpenSessionButton, ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
+import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
 
 /**
  * Conversation-header affordance for the conversation's owning worker session.
  * Renders:
  *
- *   - a **launch toolbar** (claude_code / codex / copilot) — always. A click
- *     sends to the conversation's session when it is that worker type and has
- *     not failed; it starts a new one only otherwise (`useConversationSession`);
- *   - plus, when a conversationProcess exists, an **Open** chip → the latest one.
+ * the shared context-worker launcher: the launch toolbar (claude_code / codex /
+ * copilot) until a conversationProcess exists, then **Open** → that session.
  *
  * Self-contained: it owns its own project-mapping gate + picker dialog, so it
  * can be dropped into the route header (which has no gate of its own). Launch
@@ -25,20 +23,17 @@ import { OpenSessionButton, ContextWorkerToolbar } from '@src/components/workers
  * latest status"; the drawer supplies the full context-aware variant.
  *
  * A surface that starts a session on something narrower (the live session, on
- * its latest message) passes its own `buildPrompt` and `launchOnly`, which
- * always offers the launch toolbar.
+ * its latest message) passes its own `buildPrompt`.
  */
 export function ConversationHeaderSession({
   conversation,
   task,
   buildPrompt: buildPromptOverride,
-  launchOnly = false,
   testIdPrefix = 'conversation',
 }: {
   conversation: Conversation | null;
   task?: Task | null;
   buildPrompt?: () => string;
-  launchOnly?: boolean;
   testIdPrefix?: string;
 }) {
   const { t } = useLingui();
@@ -56,17 +51,15 @@ export function ConversationHeaderSession({
 
   return (
     <>
-      <div className="inline-flex items-center gap-1">
-        {!launchOnly && conversationProcess && (
-          <OpenSessionButton
-            onOpen={open}
-            title={t`Open the conversation session`}
-            name={resolveProcessDisplayName(conversationProcess)}
-            testIdPrefix={testIdPrefix}
-          />
-        )}
-        <ContextWorkerToolbar starting={starting} onLaunch={launch} testIdPrefix={testIdPrefix} />
-      </div>
+      <ContextWorkerToolbar
+        onLaunch={launch}
+        hasProcess={!!conversationProcess}
+        onOpen={open}
+        openTitle={t`Open the conversation session`}
+        sessionName={conversationProcess ? resolveProcessDisplayName(conversationProcess) : undefined}
+        starting={starting}
+        testIdPrefix={testIdPrefix}
+      />
       <OpenProjectComponent {...dialogProps} />
     </>
   );

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { GitBranch, Loader2, Plus } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
-import { GitRemoteField, type GitRemoteValue } from '@src/components/git/GitRemoteField';
+import { Loader2 } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { GitRepoPicker, type GitTarget, type GitTargetMode } from '@src/components/git/GitRepoPicker';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -11,20 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { Input } from '@src/components/ui/input';
-import { Label } from '@src/components/ui/label';
 
-/**
- * Which repository a git flow should use.
- *
- * `branch` rides along on the existing-repo path: without it a flow clones (or
- * pushes to) whatever the remote's HEAD points at, so work that lives on a
- * release or feature branch silently becomes `main`. Absent means "the remote's
- * default branch" — a choice the user made, not one we guessed.
- */
-export type GitTarget =
-  | { mode: 'existing'; url: string; branch?: string }
-  | { mode: 'new'; name: string };
+export type { GitTarget } from '@src/components/git/GitRepoPicker';
 
 export interface GitTargetDialogProps {
   open: boolean;
@@ -46,6 +34,8 @@ export interface GitTargetDialogProps {
    */
   awaitSubmit?: boolean;
   onSubmit: (target: GitTarget) => void | Promise<void>;
+  /** Choices offered — see `GitRepoPicker`. */
+  modes?: readonly GitTargetMode[];
 }
 
 /**
@@ -68,31 +58,22 @@ export function GitTargetDialog({
   testIdPrefix,
   awaitSubmit = false,
   onSubmit,
+  modes,
 }: GitTargetDialogProps): React.ReactElement {
-  const { t } = useLingui();
-  const [mode, setMode] = useState<GitTarget['mode']>('existing');
-  const [remote, setRemote] = useState<GitRemoteValue>({ url: '', branch: null });
-  const [name, setName] = useState(nameSeed);
-  // The branch step takes over the dialog body and carries its own Back, so the
-  // mode chips and the footer would be a second, contradicting set of controls.
+  const [target, setTarget] = useState<GitTarget | null>(null);
+  // The branch step takes over the body and carries its own Back, so the footer
+  // would be a second, contradicting set of controls.
   const [inBranchPicker, setInBranchPicker] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setMode('existing');
-    setRemote({ url: '', branch: null });
-    setName(nameSeed);
     setInBranchPicker(false);
     setBusy(false);
-  }, [open, nameSeed]);
-
-  const value = mode === 'existing' ? remote.url.trim() : name.trim();
+  }, [open]);
 
   const handleSubmit = useCallback(() => {
-    if (!value || busy) return;
-    const target: GitTarget =
-      mode === 'existing' ? { mode, url: value, branch: remote.branch ?? undefined } : { mode, name: value };
+    if (!target || busy) return;
     if (!awaitSubmit) {
       onOpenChange(false);
       void onSubmit(target);
@@ -101,22 +82,7 @@ export function GitTargetDialog({
     setBusy(true);
     // No `setBusy(false)`: the dialog closes here, and reopening resets it.
     void Promise.resolve(onSubmit(target)).finally(() => onOpenChange(false));
-  }, [awaitSubmit, busy, mode, value, remote.branch, onSubmit, onOpenChange]);
-
-  const modeOptions: { value: GitTarget['mode']; icon: React.ReactNode; label: React.ReactNode; title: string }[] = [
-    {
-      value: 'existing',
-      icon: <GitBranch className="h-3 w-3" />,
-      label: <Trans>Existing repo</Trans>,
-      title: t`Use a repository that already exists`,
-    },
-    {
-      value: 'new',
-      icon: <Plus className="h-3 w-3" />,
-      label: <Trans>New repo</Trans>,
-      title: t`Create a brand-new repository`,
-    },
-  ];
+  }, [awaitSubmit, busy, target, onSubmit, onOpenChange]);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
@@ -128,53 +94,19 @@ export function GitTargetDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        {!inBranchPicker && (
-          <div className="flex items-center justify-center gap-1" role="radiogroup">
-            {modeOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={mode === opt.value}
-                title={opt.title}
-                onClick={() => setMode(opt.value)}
-                data-testid={`${testIdPrefix}-mode-${opt.value}`}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
-                  mode === opt.value
-                    ? 'border-primary bg-primary/10 text-foreground'
-                    : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
-                }`}
-              >
-                {opt.icon}
-                {opt.label}
-              </button>
-            ))}
-          </div>
+        {/* Keyed on `open` so every opening starts from a clean choice. */}
+        {open && (
+          <GitRepoPicker
+            modes={modes}
+            onChange={setTarget}
+            onStepChange={setInBranchPicker}
+            onEnter={handleSubmit}
+            nameSeed={nameSeed}
+            urlLabel={urlLabel}
+            enabled={open}
+            testIdPrefix={testIdPrefix}
+          />
         )}
-
-        <div className="grid min-w-0 gap-1.5 py-1">
-          {mode === 'existing' ? (
-            <GitRemoteField value={remote} onChange={setRemote} onStepChange={setInBranchPicker} urlLabel={urlLabel} />
-          ) : (
-            <>
-              <Label htmlFor={`${testIdPrefix}-name`}>
-                <Trans>Repository name</Trans>
-              </Label>
-              <Input
-                id={`${testIdPrefix}-name`}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={nameSeed || t`my-context`}
-                autoComplete="off"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSubmit();
-                }}
-                data-testid={`${testIdPrefix}-name`}
-              />
-            </>
-          )}
-        </div>
 
         {!inBranchPicker && (
           <DialogFooter>
@@ -184,7 +116,7 @@ export function GitTargetDialog({
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={!value || busy}
+              disabled={!target || busy}
               data-testid={`${testIdPrefix}-submit`}
             >
               {busy && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}

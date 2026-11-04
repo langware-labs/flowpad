@@ -27,7 +27,7 @@ const RELATIVE_PATH = new RegExp(String.raw`^${WORD}+(?:[/\\]${SEGMENT}+)+[/\\]?
 /** What a test runner appends to the file it names: `tests/a.py::test_x`, `a.py::TestA::test_b[1]`. */
 const TEST_ID = /(?:::[\w[\].-]+)+$/;
 
-const RTL = String.raw`֐-ࣿיִ-﷿ﹰ-﻿`;
+const RTL = String.raw`\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff`;
 export const HAS_RTL = new RegExp(`[${RTL}]`);
 // Prose wraps references in brackets: `(src/a.ts:49)`. Hebrew glues a prefix on with a hyphen: `ב-src/a.ts`.
 // Claude Code glues an attachment's label to its absolute path: `[image]/private/tmp/a.png`.
@@ -61,7 +61,12 @@ const QUOTED = ['"', "'", '`'].map((q) => String.raw`(?<![\p{L}\p{N}_])${q}([^${
 export const BOX_GLYPHS = String.raw`\u2500-\u259f`;
 // Prose brackets an absolute path whose folder has a space: `(/Users/me/Flowpad workspace/a.md)`.
 // It must end in a file name, so a bracketed aside (`(/tmp is shared)`) stays prose.
-const BRACKETED_PATH = String.raw`\(((?:/|~/|[A-Za-z]:[/\\])[^()\r\n]*\.[A-Za-z]\w*(?::\d+){0,2})\)`;
+const ABSOLUTE_FILE = String.raw`(?:/|~/|[A-Za-z]:[/\\])[^()\r\n]*\.[A-Za-z]\w*(?::\d+){0,2}`;
+const BRACKETED_PATH = String.raw`\((${ABSOLUTE_FILE})\)`;
+/** A whole code span that is one absolute file path, spaces in its folders allowed: `` `~/Flowpad workspace/a.md` ``. */
+export const SPACED_ABSOLUTE_FILE = new RegExp(
+  String.raw`^(?:/|~/|[A-Za-z]:[/\\])[^()\r\n]*[/\\][^\s/\\()]+\.[A-Za-z]\w*(?::\d+){0,2}$`,
+);
 const TOKENS = new RegExp(`${[...QUOTED, BRACKETED_PATH].join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
 
 export function fileLinkMatches(text: string): LinkMatch[] {

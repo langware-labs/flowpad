@@ -66,7 +66,7 @@ async def _agent(project) -> Agent:
     return agent
 
 
-async def _published(self, actor=None):
+async def _published(self, actor=None, *, force=False):
     return None
 
 
@@ -98,7 +98,7 @@ async def test_the_hub_stores_the_url_so_use_mine_never_copies_this_computers(ho
         await run_deployment_steps(agent, "user-1", "production", provider="e2b")
     deployment = await agent.plan_deployment("production", provider="e2b")
     copied = await use_mine(str(deployment.id))
-    await deploy_ended(agent, "user-1", "production", provider="e2b")
+    await deploy_ended(agent, "user-1", "production", provider="e2b", deployment_id=str(deployment.id))
 
     assert copied["copied"] == ["POLLED_KEY", "PUSHED_KEY"], "the store already holds the webhook URL"
     assert hub.values[str(deployment.id)]["PUSHED_WEBHOOK_URL"] == hub.webhook_url("hook-pushed")

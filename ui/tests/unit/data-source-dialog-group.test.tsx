@@ -136,6 +136,32 @@ describe('a driver group', () => {
     expect(screen.getByTestId('group-member-ours')).toHaveTextContent('Not on your hub yet.');
     expect(screen.getByTestId('group-member-own')).toBeEnabled();
   });
+
+  it('names a new source the way its card said — the one name the driver gives what it creates', async () => {
+    vi.spyOn(DataDriver.prototype, 'profile').mockImplementation(function (this: DataDriver) {
+      return Promise.resolve(this.name === 'own' ? { available: true, default_name: "Eran's inbox" } : {});
+    });
+    open();
+    fireEvent.click(screen.getByTestId('provider-group-Chat'));
+    await waitFor(() => expect(DataDriver.prototype.profile).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0)); // the card's profile has landed
+
+    fireEvent.click(screen.getByTestId('group-member-own'));
+    expect(screen.getByLabelText(/Data source name/)).toHaveValue("Eran's inbox");
+  });
+
+  it('the form step takes its own height; the grid and the ways keep the fixed one', () => {
+    vi.spyOn(DataDriver.prototype, 'profile').mockResolvedValue({});
+    open();
+    const dialog = () => screen.getByRole('dialog');
+    expect(dialog().className).not.toContain('h-auto');
+
+    fireEvent.click(screen.getByTestId('provider-group-Chat'));
+    expect(dialog().className).not.toContain('h-auto');
+
+    fireEvent.click(screen.getByTestId('group-member-own'));
+    expect(dialog().className).toContain('h-auto'); // a few fields, no dead space under them
+  });
 });
 
 

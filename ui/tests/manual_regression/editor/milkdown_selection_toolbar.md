@@ -11,7 +11,7 @@ test 1: Selection toolbar appears above a non-empty text selection in editor mod
 - programmatically select the first 6 characters of the first paragraph or heading inside .ProseMirror
 - wait 100 ms for the selectionUpdated listener to flush
 - validate the element with data-testid="selection-toolbar" is visible
-- validate the toolbar contains exactly 4 buttons with titles: "Bold", "Italic", "Inline code", and one of "Add link" / "Edit link"
+- validate the toolbar contains exactly 5 buttons with titles: "Bold", "Italic", "Inline code", one of "Add link" / "Edit link", then "Change this…"
 - validate the toolbar's bounding rect top is above (smaller y) the selection rect (popup floats above the text)
 
 test 2: Bold button in selection toolbar formats the selected text

@@ -27,7 +27,8 @@ vi.mock('@sdk/lazy', () => ({
 }));
 vi.mock('@sdk/react/hooks/useLazyAsset', () => ({ useLazyAsset: () => ({ data: [] }) }));
 
-import { __resetActivityStoreForTest, subscribeToActivities } from '@src/store/activity-store';
+import { __resetActivityStoreForTest, handleActivitySnapshot, replay, subscribeToActivities, useActivitySpec } from '@src/store/activity-store';
+import { renderHook } from '@testing-library/react';
 
 describe('activity store — reconnect', () => {
   beforeEach(() => {
@@ -52,5 +53,19 @@ describe('activity store — reconnect', () => {
 
     handlers['on_open']?.forEach((fn) => fn());
     expect(listCalls).toHaveLength(2);
+  });
+
+  it('drops a running row the backend no longer has — its end will never arrive', async () => {
+    handleActivitySnapshot({
+      activity_id: 'a', subject_entity: 'wizard-x', path: 'llm-setup', name: 'llm-setup', label: 'llm-setup', state: 'running',
+      message: 'checking Install Claude Code?', done: 0, skipped: 0, errors_count: 0, errors: [], counters: {}, children: [], seq: 1,
+    } as never);
+    const { result, rerender } = renderHook(() => useActivitySpec('llm-setup', 'wizard-x'));
+    expect(result.current).not.toBeNull();
+
+    await replay();
+    rerender();
+
+    expect(result.current).toBeNull();
   });
 });

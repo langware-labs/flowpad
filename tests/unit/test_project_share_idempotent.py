@@ -30,6 +30,7 @@ import pytest
 from flow_sdk.app.actions.share_action import ShareInvitee
 from flow_sdk.builtin.project import Project
 from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.shared.errors import HubError
 
 
 class _FakeResponse:
@@ -77,7 +78,12 @@ def hub(monkeypatch):
         path = str(url)
         path = "/graph/" + path.split("/graph/", 1)[1] if "/graph/" in path else path
         fake = await fake_request(None, method, path, **kwargs)
-        return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
+        return httpx.Response(
+            fake.status_code,
+            text=fake.text,
+            headers={"content-type": "application/json"},  # the hub answers every failure in JSON
+            request=httpx.Request(method, str(url)),
+        )
 
     monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
     return holder
@@ -132,7 +138,7 @@ async def test_share_refuses_a_409_row_this_account_cannot_reach(hub):
     hub["get"] = _FakeResponse(404, _HIDDEN)
     proj = _project()
 
-    with pytest.raises(RuntimeError, match="cannot reach it"):
+    with pytest.raises(HubError, match="cannot reach it"):
         await proj.share()
 
     assert proj.remote is not True, "an unreachable row must not be claimed as published"

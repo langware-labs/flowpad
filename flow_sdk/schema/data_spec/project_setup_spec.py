@@ -17,7 +17,7 @@ from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement, CredentialVarKind, Requirement, is_valid_env_var
-from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, group_held
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialTestResultSpec, CredentialWaySpec, group_held
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 REQUIREMENT_PACK = "pack"
@@ -164,6 +164,9 @@ class SetupRequirementSpec(DataSpec):
     why_not_always: str = ""
     #: Its node in the project's setup tree (``derive.requirement_node_id``) — the ``root`` that runs it alone.
     node: str = ""
+    #: pack: the credential declares a ``test`` (a ``test.json`` beside it), and its last result on this machine.
+    has_test: bool = False
+    test_result: Optional[CredentialTestResultSpec] = None
 
     @property
     def missing(self) -> list[SetupVarSpec]:
@@ -195,3 +198,5 @@ class ProjectReadinessSpec(DataSpec):
     gaps: list[SetupRequirementSpec] = []
     #: What is set up already (not skipped) — what the Project setup page lists as Ready.
     set_up: list[SetupRequirementSpec] = []
+    #: Dependencies Flowpad cloned that are behind their remote. Never part of ``ready``: updates wait.
+    updates: int = 0

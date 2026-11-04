@@ -6,8 +6,10 @@ import { AssetCounterChips, AssetCounterRow } from '@src/components/asset-counte
 import { agentCounterGroup } from '@src/components/asset-counters/agent-counters';
 import { IssuesSummaryChip } from '@src/components/asset-counters/issue-counters';
 import { appCounterGroup } from '@src/components/asset-counters/app-counters';
+import { skillCounterGroup } from '@src/components/asset-counters/skill-counters';
 import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
+import { QuickCreateNewSection } from '@src/components/quick-create';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
 import { useVibeModelTier } from './vibe-model-select';
@@ -67,6 +69,7 @@ export function VibeNewChat() {
         </div>
         {installDialog}
         <ProjectActionsRow className="w-full self-start" />
+        <QuickCreateNewSection testId="vibe-home-new" />
         <ProjectAgentsStrip
           startsNew
           className="w-full self-start"
@@ -74,6 +77,7 @@ export function VibeNewChat() {
           fallback={<AssetCounterRow group={agentCounterGroup} />}
         />
         <AssetCounterRow group={appCounterGroup} />
+        <AssetCounterRow group={skillCounterGroup} />
         <div className="flex w-full self-start">
           <IssuesSummaryChip />
         </div>

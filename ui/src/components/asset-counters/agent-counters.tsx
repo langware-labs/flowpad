@@ -5,6 +5,8 @@ import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { Badge } from '@src/components/ui/badge';
 import { useProjectAgents } from '@src/hooks/use-project-agents';
 import { useMemo } from 'react';
+import { crossCounters, useScopes } from './axes';
+import { isLiveDeployment, isRunning, runPauseStatuses } from './placement';
 import type { AssetCounter, AssetCounterGroup } from './types';
 
 /** An agent plus the placements that make it "running". */
@@ -67,10 +69,7 @@ export function toAgentRows(agents: Agent[], byAgent: Map<string, Deployment[]>)
     .map((agent) => ({ agent, deployments: byAgent.get(agent.typeId.toString()) ?? [] }));
 }
 
-/** Running = one of the project's agents that has a deployment. */
-export function runningRows<R extends { deployments: Deployment[] }>(projectRows: R[]): R[] {
-  return projectRows.filter((row) => row.deployments.length > 0);
-}
+const agentCreator = (row: AgentRow) => row.agent.created_by;
 
 function useAgentCounters(): AssetCounter<AgentRow>[] {
   const { project } = useProject(null);
@@ -86,32 +85,21 @@ function useAgentCounters(): AssetCounter<AgentRow>[] {
   const projectRows = useMemo(() => toAgentRows(projectAgents, byAgent), [projectAgents, byAgent]);
   const allRows = useMemo(() => toAgentRows(allAgents, byAgent), [allAgents, byAgent]);
 
-  return useMemo(() => {
-    const projectName = project?.name || <Trans>Project</Trans>;
-    return [
-      {
-        key: 'running',
-        label: <Trans>Running</Trans>,
-        description: <Trans>Agents in {projectName} with a deployment</Trans>,
-        items: runningRows(projectRows),
-        isLoading: projectLoading || deploymentsLoading,
-      },
-      {
-        key: 'project',
-        label: projectName,
-        description: <Trans>Every agent {projectName} can launch</Trans>,
-        items: projectRows,
-        isLoading: projectLoading,
-      },
-      {
-        key: 'total',
-        label: <Trans>Total</Trans>,
-        description: <Trans>Every agent on this machine</Trans>,
-        items: allRows,
-        isLoading: allLoading,
-      },
-    ];
-  }, [project?.name, projectRows, allRows, projectLoading, allLoading, deploymentsLoading]);
+  const scopes = useScopes(
+    { items: allRows, isLoading: allLoading },
+    { items: projectRows, isLoading: projectLoading },
+    agentCreator,
+  );
+  return useMemo(
+    () =>
+      crossCounters({
+        label: <Trans>Agents</Trans>,
+        scopes,
+        // Agents are placed or not; a paused agent is not a status of its own.
+        statuses: runPauseStatuses<AgentRow>(isRunning, null, deploymentsLoading),
+      }),
+    [scopes, deploymentsLoading],
+  );
 }
 
 /** The project folder an agent comes from: the directory above `agentic-assets/`. */
@@ -129,12 +117,14 @@ export function DeploymentBadges({ deployments }: { deployments: Deployment[] })
   return (
     <div className="flex flex-wrap gap-1">
       {deployments.map((deployment) => {
-        const paused = deployment.status.provider_state === 'paused';
+        const paused = !isLiveDeployment(deployment);
         return (
           <Badge
             key={deployment.id}
             variant="outline"
-            className={paused ? 'text-muted-foreground' : 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400'}
+            className={
+              paused ? 'text-muted-foreground' : 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+            }
             title={deployment.status.provider_state ?? undefined}
           >
             {deployment.target.provider || deployment.name}
@@ -152,13 +142,7 @@ export const agentCounterGroup: AssetCounterGroup<AgentRow> = {
   useCounters: useAgentCounters,
   itemKey: (row) => row.agent.id,
   searchText: ({ agent, deployments }) =>
-    [
-      agent.displayName,
-      agent.name,
-      agent.description,
-      agentSource(agent),
-      ...deployments.map((d) => d.target.provider),
-    ]
+    [agent.displayName, agent.name, agent.description, agentSource(agent), ...deployments.map((d) => d.target.provider)]
       .filter(Boolean)
       .join(' '),
   itemPointer: (row) => row.agent.dockPointer,

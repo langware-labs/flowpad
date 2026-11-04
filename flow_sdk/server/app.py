@@ -668,6 +668,10 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.ingest.change_event import subscribe as subscribe_source_changes
 
         subscribe_source_changes()
+        # A change to what a project's setup status reads marks it stale (``core/project_status``).
+        from flow_sdk.core.project_status.hooks import subscribe as subscribe_project_status
+
+        subscribe_project_status()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")

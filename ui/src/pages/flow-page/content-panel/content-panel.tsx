@@ -345,7 +345,7 @@ function ContentPanelBody({
       case ViewType.INBOUND:
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
-            <InboundView />
+            <InboundView pointer={currentDock?.pointer} />
           </Suspense>
         );
       case ViewType.MACHINES:
@@ -460,7 +460,7 @@ function ContentPanelBody({
       case ViewType.INBOUND:
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
-            <InboundView />
+            <InboundView pointer={currentDock?.pointer} />
           </Suspense>
         );
       case ViewType.AI_CONFIG:

@@ -7,8 +7,8 @@
  * the same broken grant, so the install funnel terminated there.
  *
  * The picker deliberately does NOT own the connect flow — the host knows which
- * provider it wants and what to do afterwards — so this is a button spec
- * rendered in the error branch, nothing more.
+ * provider it wants and what to do afterwards — so it renders the host's
+ * control (for GitHub, `ConnectGithubButton`) in the error branch, nothing more.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -59,7 +59,11 @@ describe('RepoPicker connectionAction', () => {
       <RepoPicker
         provider="github"
         onSelect={vi.fn()}
-        connectionAction={{ label: 'Connect GitHub', pending: false, onClick }}
+        connectionAction={
+          <button data-testid="repo-picker-connect" onClick={onClick}>
+            Connect GitHub
+          </button>
+        }
       />,
     );
 
@@ -76,23 +80,11 @@ describe('RepoPicker connectionAction', () => {
       <RepoPicker
         provider="github"
         onSelect={vi.fn()}
-        connectionAction={{ label: 'Connect GitHub', pending: false, onClick: vi.fn() }}
+        connectionAction={<button data-testid="repo-picker-connect">Connect GitHub</button>}
       />,
     );
     expect(screen.getByText(/Bad credentials/)).toBeInTheDocument();
     expect(screen.getByTestId('repo-picker-connect')).toBeInTheDocument();
-  });
-
-  it('disables itself while a connect is in flight', () => {
-    mockUseGitRepos.mockReturnValue(errored());
-    render(
-      <RepoPicker
-        provider="github"
-        onSelect={vi.fn()}
-        connectionAction={{ label: 'Connect GitHub', pending: true, onClick: vi.fn() }}
-      />,
-    );
-    expect(screen.getByTestId('repo-picker-connect')).toBeDisabled();
   });
 
   it('stays the dead end it was when the host offers no action', () => {
@@ -119,7 +111,7 @@ describe('RepoPicker connectionAction', () => {
       <RepoPicker
         provider="github"
         onSelect={vi.fn()}
-        connectionAction={{ label: 'Connect GitHub', pending: false, onClick: vi.fn() }}
+        connectionAction={<button data-testid="repo-picker-connect">Connect GitHub</button>}
       />,
     );
     expect(screen.queryByTestId('repo-picker-connect')).toBeNull();

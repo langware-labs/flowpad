@@ -146,6 +146,19 @@ RECEIVED_SETUP_DETAIL = "Received — connect your own account, then press Verif
 NO_SETUP_PROJECT = "This source belongs to no project, so there is no setup to run for it — press Verify."
 
 
+def channel_from_driver(source) -> str:
+    """The channel *source*'s loaded driver gives it, ``""`` when its driver is not loaded (yet)."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded(getattr(source, "provider", "") or "")
+    if driver is None:
+        return ""
+    try:
+        return str(driver.channel_for(source) or "").strip()
+    except Exception:  # noqa: BLE001 -- reading a row never fails over its channel
+        return ""
+
+
 class DataSource(SetupSkippable, Entity):
     type: str = APIField(default=EntityType.DATA_SOURCE.value)
 
@@ -267,6 +280,8 @@ class DataSource(SetupSkippable, Entity):
     #: A thread quiet this long is over: the next message on it starts a new thread (a new
     #: conversation), on top of the driver's own split (a chat, a topic, a call). None = never.
     thread_timeout_seconds: Optional[int] = APIField(default=None, ge=1, description="Seconds of quiet after which a thread ends")
+    #: Times a request waits out the provider's rate limit (its Retry-After) before failing. 0 = fail at once.
+    rate_limit_retries: int = APIField(default=0, ge=0, le=10, description="Rate-limit waits before a request fails")
     next_poll_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
     last_synced_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
@@ -320,6 +335,16 @@ class DataSource(SetupSkippable, Entity):
         if isinstance(data.get("allowed_senders"), (list, tuple)):
             data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
         return data
+
+    @model_validator(mode="after")
+    def _channel_from_driver(self):
+        """``channel`` is not stored, so a row read back from the database has none until a save or a poll
+        stamps it. Two processes on one machine (the app, an agent's loop) then named one source's channel
+        differently -- ``email`` against the provider fallback ``cloud_email`` -- and each minted its own
+        thread for the same email. Every row in memory carries its driver's answer instead."""
+        if not (self.channel or "").strip() and self.provider:
+            self.channel = channel_from_driver(self)
+        return self
 
     @field_validator("owner", mode="before")
     @classmethod
@@ -1868,29 +1893,38 @@ class DataSource(SetupSkippable, Entity):
 
     @core_action.post(action_name="step")
     async def step_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_source/{id}/step ``{"step", "check"?, "values"?}`` — :meth:`step`. The
-        answer is the ``ReturnedValue`` with a 200 either way: its exit code is the answer."""
+        """POST /api/v1/graph/data_source/{id}/step ``{"step", "check"?, "probe"?, "values"?}`` — :meth:`step`.
+        The answer is the ``ReturnedValue`` with a 200 either way: its exit code is the answer."""
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else None) or {}
         values = body.get("values") if isinstance(body.get("values"), dict) else {}
-        answer = await self.step(str(body.get("step") or ""), check=bool(body.get("check")), values=values)
+        answer = await self.step(str(body.get("step") or ""), check=bool(body.get("check")), probe=bool(body.get("probe")), values=values)
         return ApiSuccessResponse(data=answer.model_dump(mode="json"))
 
-    async def step(self, name: str, *, check: bool = False, values: Optional[dict] = None):
+    async def step(self, name: str, *, check: bool = False, probe: bool = False, values: Optional[dict] = None):
         """Run the setup step ``name`` this source's driver declares (``flow_sdk/sources/setup_steps.py``),
-        or the generic ``public-webhook``. ``check`` only asks whether it already holds. What the step
-        learned (a ``SourceUpdateSpec``) is stored here — config, allowed senders, credential values — and
-        the answer goes back without the secrets. Never raises for an outcome."""
+        or the generic ``public-webhook``. ``check`` only asks whether it already holds. ``probe`` judges
+        ``values`` without keeping anything (a question's Verify button): only a driver step declared
+        ``probes=True`` can; the generic steps cannot. What the step learned (a ``SourceUpdateSpec``) is
+        stored here — config, allowed senders, credential values — and the answer goes back without the
+        secrets. Never raises for an outcome."""
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
         from flow_sdk.sources import setup_steps as steps  # noqa: PLC0415
-        from flow_sdk.sources.setup_steps import SourceUpdateSpec, setup_steps  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import SourceUpdateSpec, setup_steps, step_probes  # noqa: PLC0415
 
         driver = await DataDriver.find(self.provider or "")
         if driver is None:
             return ReturnedValue.not_found(f"no data driver {self.provider!r}")
+        typed = {k: str(v) for k, v in (values or {}).items()}
         try:
-            if name == steps.PUBLIC_WEBHOOK:
+            if probe:
+                method = setup_steps(driver.cls).get(name)
+                if method is None or not step_probes(driver.cls, method):
+                    return ReturnedValue.not_applicable(f"{name} judges no typed value")
+                live = await self._open_for_setup(driver)
+                answer = await getattr(live, method)(check=True, values=typed, probe=True)
+            elif name == steps.PUBLIC_WEBHOOK:
                 answer = await self._public_webhook(driver, check=check, delivery=(values or {}).get("delivery", self.webhook_delivery))
             elif name == steps.VERIFY:
                 answer = await self._verify_step(check=check)
@@ -1902,12 +1936,16 @@ class DataSource(SetupSkippable, Entity):
                     external_id=str((values or {}).get("external_id") or ""),
                     since=str((values or {}).get("since") or ""),
                 )
+            elif name == steps.HEARD:
+                answer = await self._heard_step(
+                    check=check, wait=float((values or {}).get("wait") or 0), since=str((values or {}).get("since") or ""),
+                )
             else:
                 method = setup_steps(driver.cls).get(name)
                 if method is None:
                     return ReturnedValue.not_found(f"{self.provider} has no setup step {name!r}")
                 live = await self._open_for_setup(driver)
-                answer = await getattr(live, method)(check=check, values={k: str(v) for k, v in (values or {}).items()})
+                answer = await getattr(live, method)(check=check, values=typed)
         except Exception as exc:  # noqa: BLE001 — a step that raises is a sentence for the person, not a 500
             logger.warning("setup step %s of %s failed: %s", name, self.id, exc, exc_info=True)
             return ReturnedValue.not_yet(f"{name}: {exc}")
@@ -1915,7 +1953,7 @@ class DataSource(SetupSkippable, Entity):
         if isinstance(update, dict) and set(update) <= set(SourceUpdateSpec.model_fields):
             update = SourceUpdateSpec.model_validate(update)
         if isinstance(update, SourceUpdateSpec):
-            if answer.ok and not check:
+            if answer.ok and not (check or probe):  # a probe keeps nothing, whatever the step answered
                 await self._keep(driver, update)
                 if self.status == SourceStatus.SETUP.value:
                     await self.verify()  # what it kept may finish setup: live without a Verify press
@@ -2002,6 +2040,60 @@ class DataSource(SetupSkippable, Entity):
                 )
             # A wait on a person, polled at a human pace: the person is typing on their phone.
             await asyncio.sleep(2.0)
+
+    async def _heard_step(self, *, check: bool, wait: float, since: str = ""):
+        """Something arrived: a message of this source — anyone's, the person's own included — written after
+        ``since`` (ISO-8601; else after the source was verified). The proof a connected source hears its
+        channel; a reply is not required (``first-turn`` is that). Without ``check`` it waits up to ``wait``
+        seconds, at a human pace."""
+        import asyncio  # noqa: PLC0415
+        import time  # noqa: PLC0415
+
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+
+        after = iso_to_utc(since) if since else self.verified_at
+        if since and after is None:
+            return ReturnedValue.not_yet("since must be an ISO-8601 timestamp")
+        if after is not None and after.tzinfo is None:
+            after = after.replace(tzinfo=timezone.utc)
+
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        by_source = ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(self.id)])
+        match = by_source if after is None else ExpressionNode(op=QueryOp.AND, operands=[
+            by_source, ExpressionNode(op=QueryOp.GE, operands=["occurred_at", after.isoformat()]),
+        ])
+
+        async def heard() -> Optional[SourceItem]:
+            rows = await SourceItem.get_all(QueryFilter(match=match, order_by=[{"occurred_at": "desc"}], limit=1)) or []
+            return next((row for row in rows if iso_to_utc(row.occurred_at or "") is not None), None)
+
+        deadline = time.monotonic() + (0 if check else max(0.0, wait))
+        while True:
+            row = await heard()
+            if row is not None:
+                return ReturnedValue.satisfied(f"heard: {(row.name or row.body or row.external_id or '')[:60]}", ran=not check)
+            if time.monotonic() >= deadline:
+                return ReturnedValue.not_yet("Nothing has arrived yet — send a message where this source listens." + await self._delivery_hint())
+            await asyncio.sleep(2.0)
+
+    async def _delivery_hint(self) -> str:
+        """Where the provider must post for a pushed source: this source's own hub URL. Named when nothing arrives,
+        because the one silent failure of a pushed source is a provider pointed at another (older) URL."""
+        if self.webhook_delivery is not WebhookDelivery.HUB:
+            return ""
+        try:
+            own = await self._own_account_claims()
+        except Exception:  # noqa: BLE001 — no hub: no hint
+            return ""
+        url = next((str(c.get("url") or "") for c in own if c.get("url")), "")
+        return f" Live delivery needs the provider to post to exactly {url} (an app made from an older link posts elsewhere)." if url else ""
+
+    async def _own_account_claims(self) -> list[dict]:
+        """The hub's account claims that deliver to THIS source — never the URL in the credential: sources of
+        one driver share that credential, so a held URL may be a sibling's (proven with the sibling's app)."""
+        return [c for c in _claims_for(await _hub_claims(), str(self.id)) if (c.get("claim") or {}).get("kind") == "account"]
 
     async def _open_for_setup(self, driver):
         """This source, opened as far as its setup allows: with its credential when it resolves, else
@@ -2104,7 +2196,19 @@ class DataSource(SetupSkippable, Entity):
                 wanted = {"kind": kind, "key": declared["key"]}
                 routed = any(c.get("claim") == wanted for c in _claims_for(await _hub_claims(), str(self.id)))
                 return ReturnedValue.satisfied(f"the hub routes this {kind} here") if routed else ReturnedValue.not_yet(f"the hub does not route this {kind} here yet")
-            return ReturnedValue.satisfied("a public URL is set") if held else ReturnedValue.not_yet("no public URL yet")
+            if declared is not None:
+                own = await self._own_account_claims()
+                if not own:
+                    return ReturnedValue.not_yet("no public URL of this source's own yet")
+                if declared.get("key"):
+                    # The URL was handed out before the account was known (a pending claim): done only once the
+                    # hub holds the proof — until then the URL answers the vendor's handshake and routes nothing.
+                    proven = any(str(c.get("status") or "active") == "active" for c in own)
+                    return ReturnedValue.satisfied("a public URL is set and proven") if proven else ReturnedValue.not_yet("the hub does not hold your app's proof yet")
+                return ReturnedValue.satisfied("a public URL is set")
+            if not held:
+                return ReturnedValue.not_yet("no public URL yet")
+            return ReturnedValue.satisfied("a public URL is set")
         config: dict = {}
         token = str((self.config or {}).get("verify_token") or "")
         if not token and "verify_token" in (driver.config or {}):
@@ -2124,11 +2228,29 @@ class DataSource(SetupSkippable, Entity):
             # The account on the hub's chain for this vendor (``webhook/@<provider>``): the hub checks the
             # vendor's signature with the claim's own secret and hands each event to THIS channel on THIS
             # instance -- never to every desktop of the person.
+            #
+            # A driver that needs the URL BEFORE the account exists (an app created from a manifest naming
+            # its Request URL) declares the claim with no key first: the hub holds it PENDING under the same
+            # URL, and the second time through — key and proof known — that claim is proven, not replaced.
+            pending = next((c for c in await self._own_account_claims() if str(c.get("status") or "") == "pending"), None)
+            if pending is not None and claim["claim"]["key"] and (claim.get("proof") or {}).get("credential"):
+                data = await _post_unless_unconfigured("webhook", "prove", {"key": claim["claim"]["key"], "proof": claim["proof"]}, entity_id=str(pending["id"]))
+                if not data or str(data.get("status") or "") != "active":
+                    return ReturnedValue.not_yet("the hub did not take your app's proof — sign in to Flowpad cloud first")
+                url = str(data.get("url") or pending.get("url") or "")
+                update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url, connected=True))
+                return ReturnedValue.satisfied("the hub now checks your app's signature and delivers here", value=update)
+            if pending is not None and not claim["claim"]["key"]:
+                url = str(pending.get("url") or "")
+                update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url))
+                return ReturnedValue.satisfied(f"public URL {url}", ran=False, value=update)
             data = await _post_unless_unconfigured("webhook", "chain", claim)
             if not data or not data.get("url"):
                 return ReturnedValue.not_yet("the hub did not take this account — sign in to Flowpad cloud first")
-            update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: str(data["url"])})
-            return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
+            url = str(data["url"])
+            connected = str(data.get("status") or "active") == "active"
+            update = SourceUpdateSpec(config=config, webhook_delivery=delivery, secrets={hook.url_var: url}, shown=SetupShown(link=url, connected=connected))
+            return ReturnedValue.satisfied(f"public URL {url}", value=update)
         body = {
             "name": f"{self.provider}-{self.id}",
             "default_path": WEBHOOK_ROUTE.format(name=self.provider),
@@ -2306,7 +2428,29 @@ class DataSource(SetupSkippable, Entity):
 
         if get_probe(provider) is None:
             return None  # no probe defined — not a failure, just unverifiable
-        return await connection_need(provider)
+        need = await connection_need(provider, driver.cls.connection_probe_url(self.config or {}), why=_read_why(manifest))
+        return need or await self._missing_grant(provider, manifest)
+
+    async def _missing_grant(self, provider: str, manifest) -> Optional[SetupNeedSpec]:
+        """A working sign-in that lacks a scope THIS source needs (a read-only grant for a source that writes
+        back): the sign-in need again, saying — in the driver's words — what the missing permission is for.
+        What the source needs is ``requirements_of_source``'s answer, so Verify and Setup never disagree."""
+        from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import connection_of, requirements_of_source  # noqa: PLC0415
+        from flow_sdk.core.connections.specs import _connection_user  # noqa: PLC0415
+        from flow_sdk.core.oauth.provider_registry import grant_gap, granted_scopes  # noqa: PLC0415
+
+        connector = str(manifest.auth.connector or "")
+        wants = [(req, grant[1]) for req in await requirements_of_source(self)
+                 if (grant := connection_of(req)) is not None and grant[0] == connector and grant[1]]
+        if not wants:
+            return None
+        granted = await granted_scopes(provider, await _connection_user())  # one read, whatever the needs
+        for req, scopes in wants:
+            if missing := [s for s in scopes if granted and s not in granted]:
+                title = shipped_provider_title(provider) or provider.title()
+                return _sign_in_need(provider, title, "missing_scopes", grant_gap(missing), req.why)
+        return None
 
     async def _verify_credentials(self) -> Optional[SetupNeedSpec]:
         """For a source that holds datasets' rows (asked only for those: a feed's values may live in a
@@ -2415,10 +2559,10 @@ _NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
 
 
 
-def _sign_in_need(provider: str, title: str, state: str, detail: str = "") -> SetupNeedSpec:
+def _sign_in_need(provider: str, title: str, state: str, detail: str = "", why: str = "") -> SetupNeedSpec:
     """The one shape of "this source needs <title> sign-in" — at create, from Verify and from a setup step alike."""
     return SetupNeedSpec(kind=NEED_CONNECTION, name=provider, title=title, state=state,
-                         detail=detail or f"Needs {title} sign-in")
+                         detail=detail or f"Needs {title} sign-in", why=why)
 
 
 def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
@@ -2429,23 +2573,33 @@ def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
         return None
     from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
 
-    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified")
+    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified",
+                         why=_read_why(manifest))
 
 
-async def connection_need(provider: str) -> Optional[SetupNeedSpec]:
+def _read_why(manifest) -> str:
+    """What reading through a driver's sign-in lets a source do: its first read permission's own reason."""
+    from flow_sdk import permissions  # noqa: PLC0415
+
+    name = getattr(manifest, "name", "") or ""
+    return next((need.why for need in permissions.needs_of_driver(name, writes=False) if need.why), "")
+
+
+async def connection_need(provider: str, url: Optional[str] = None, why: str = "") -> Optional[SetupNeedSpec]:
     """None when ``provider``'s sign-in works for what runs here (``provider_probe.connection_answer``);
     otherwise the need it is — the answer a source's Verify and its setup step's sign-in node both give."""
     from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
     from flow_sdk.core.oauth.provider_probe import connection_answer  # noqa: PLC0415
 
-    data = await connection_answer(provider)
+    # The source's own probe URL only when it names one: every other caller asks the provider's default.
+    data = await (connection_answer(provider, url) if url else connection_answer(provider))
     if data.get("ok") is not False:
         return None
     code = str(data.get("code") or "")
     state = "missing" if code == "missing_token" else (code or "refused")
     title = await _provider_title(provider)
     detail = "" if state == "missing" else str(data.get("detail") or f"{title} did not accept the sign-in")
-    return _sign_in_need(provider, title, state, detail)
+    return _sign_in_need(provider, title, state, detail, why)
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:
@@ -2525,15 +2679,15 @@ async def _hub_claims() -> list[dict]:
     return [r for r in rows or [] if isinstance(r, dict)]
 
 
-async def _post_unless_unconfigured(entity_type: str, action: str, payload: dict) -> Any:
-    """POST to the hub; None when this box has no hub configured (Local mode) — the caller's
-    "sign in to Flowpad cloud first" path. Every other hub failure raises."""
+async def _post_unless_unconfigured(entity_type: str, action: str, payload: dict, *, entity_id: Optional[str] = None) -> Any:
+    """POST to the hub (a class action, or ``entity_id``'s own); None when this box has no hub configured
+    (Local mode) — the caller's "sign in to Flowpad cloud first" path. Every other hub failure raises."""
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
     try:
-        return await HubProxy.call("POST", entity_type, None, action, payload=payload)
+        return await HubProxy.call("POST", entity_type, entity_id, action, payload=payload)
     except HubError as e:
         if e.kind is not HubFailureKind.NOT_CONFIGURED:
             raise

@@ -7,11 +7,12 @@ import { Button } from '@src/components/ui/button';
 import { TRANSCRIPT_TIME_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { sandboxShareLandingPath } from '@src/pages/hub-home/share-sandbox';
+import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { IssueBanners } from '@src/components/asset-counters/issue-counters';
 import { AgentPlaceCard } from '../AgentPlaceCard';
 import { usePlaceDisplay } from '../use-place-display';
 import { useAgentPlaces } from '../use-agent-places';
-import { DeploymentFundingCard } from './DeploymentFunding';
+import { DeploymentFundingCard, useDeploymentFunding } from './DeploymentFunding';
 import { DeploymentHealth } from './DeploymentHealth';
 import { DeploymentProcessPanel } from './DeploymentProcessPanel';
 import { DeploymentThreads } from './DeploymentThreads';
@@ -37,6 +38,10 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
   const display = usePlaceDisplay();
   const [settings, setSettings] = useState(false);
   const { threads, error } = useDeploymentThreads(deployment);
+  // The model is what the deployment's funding runs (its size → that size's model), not the agent's own size.
+  const { data: funding } = useDeploymentFunding(deployment);
+  const fundedModel = funding?.model ? (funding.size ? `${funding.size} → ${funding.model}` : funding.model) : null;
+  const worker = place?.overrides?.worker_type ?? agent.worker_type;
 
   const options = currentDock?.options ?? {};
   const selectedId = options[THREAD_OPTION] ?? threads?.[0]?.conversation_id ?? null;
@@ -101,7 +106,7 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
           </span>
         )}
         <span className="text-xs text-muted-foreground">
-          {[agent.name, place?.overrides?.worker_type ?? agent.worker_type, place?.overrides?.model ?? agent.model]
+          {[agent.name, worker && workerLabel(worker), fundedModel ?? place?.overrides?.model ?? agent.model]
             .filter(Boolean)
             .join(' · ')}
         </span>
@@ -142,7 +147,13 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
           <div className="min-h-0 flex-1 overflow-y-auto">
             {error ? (
               <p className="px-5 py-6 text-sm text-destructive">{error}</p>
-            ) : threads === null ? null : (
+            ) : threads === null ? (
+              // A cloud deployment's threads are read from its machine, which takes seconds: a blank
+              // list there read as "no threads yet".
+              <p className="px-5 py-6 text-sm text-muted-foreground" data-testid="deployment-threads-loading">
+                <Trans>Reading the threads…</Trans>
+              </p>
+            ) : (
               <DeploymentThreads threads={threads} selected={selected?.conversation_id ?? null} onSelect={open} />
             )}
           </div>

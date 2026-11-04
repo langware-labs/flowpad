@@ -61,6 +61,8 @@ EXEMPT_FILES = {
 
 #: ``path regex -> phrases`` a file may say, each for the reason on its line.
 PHRASES = {
+    # the name a person's own Slack app is given, as Slack shows it in their workspace
+    r"^flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/slack/(source\.py|tests/test_slack_source\.py|agentic-assets/wizard/slack-connect/wizard\.json)$|^ts_sdk/src/entities/data-driver\.ts$|^ui/src/components/data-sources/source-form\.ts$|^ui/tests/unit/data-source-dialog-group\.test\.tsx$": ["'s inbox", "Flowpad inbox", "%27s%20inbox", "in your Flowpad inbox"],
     # the retired names, where they are retired
     r"^flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/cloud_email/(source|tests/test_cloud_email_source)\.py$": ["inbox_typeid"],
     r"^flow_sdk/server/app\.py$|^tests/unit/test_fs_store/test_entity_type_enum\.py$": ['"inbox_manager"'],

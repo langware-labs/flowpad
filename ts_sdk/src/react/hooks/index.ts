@@ -21,6 +21,7 @@ export * from './useOAuthFlowComplete';
 export * from './useProject';
 export * from './use-cleanup-summary';
 export * from './use-project-readiness';
+export * from './use-project-status';
 export * from './useWarnings';
 
 // Entity hooks

@@ -215,8 +215,9 @@ export function DataSourceDialog({
       if (provisioned) {
         // The one provisioned account today is the agent's mailbox; allocating wires
         // the local source itself.
-        if (await allocateMailbox(new Agent({ id: provisioned }))) {
-          notify.success({ title: t`${spec?.title} is ready` });
+        const allocated = await allocateMailbox(new Agent({ id: provisioned }));
+        if (allocated) {
+          notify.success({ title: t`${spec?.title} is ready`, message: allocated.mailbox?.address || undefined });
           onOpenChange(false);
         }
         return;
@@ -400,6 +401,9 @@ export function DataSourceDialog({
       <SteppedDialogContent
         ref={contentRef}
         crumbs={crumbs}
+        // The provider grid and the ways-to-connect cards share one fixed height so swapping between them never
+        // jumps; the form is a few fields, and the same height leaves it mostly empty — it takes its own size.
+        className={step === 'form' ? 'h-auto max-h-[85vh]' : undefined}
         description={
           step === 'provider' && beforeSetup ? (
             variant === 'channel' ? (
@@ -517,8 +521,8 @@ export function DataSourceDialog({
             group={group}
             members={groupMembers(specs, group)}
             selected={draft.provider}
-            onPick={(m) => {
-              setDraft(emptyDraft(m));
+            onPick={(m, profile) => {
+              setDraft(emptyDraft(m, profile));
               setStep('form');
             }}
           />

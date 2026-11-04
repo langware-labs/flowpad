@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import time
+import weakref
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from flow_sdk import toplog
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.user import User
@@ -37,8 +40,6 @@ from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.entity.parent_share import collect_parent_share_typeids
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.discovery.notify import send_resource_sync
-from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -532,6 +533,30 @@ async def link_origin_session(
                        process_id, conversation_id, e, exc_info=True)
 
 
+def message_header_kwargs(reply_fm: "FlowMessage") -> dict:
+    """``Conversation.add_message_body`` fields for ``reply_fm``: its header, as the hub stores it.
+    The FM id is pinned to the local id so the body bundle uploaded next lands under the same key."""
+    from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
+
+    attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
+    shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
+    kind_value = getattr(reply_fm.kind, "value", reply_fm.kind)
+    sendable_kind = FlowMessageKind.sendable(kind_value) if reply_fm.kind else None
+    return {
+        "sender_name": reply_fm.sender_name or None,
+        "sender_id": reply_fm.sender_id or None,
+        "flow_message_id": reply_fm.id,
+        "attachments": attachments or None,
+        "shared_context_entities": shared_context_entities or None,
+        "cloned_from_id": reply_fm.cloned_from_id or None,
+        "cloned_from_sender_id": reply_fm.cloned_from_sender_id or None,
+        "remote_worker_session_id": reply_fm.remote_worker_session_id or None,
+        "kind": sendable_kind.value if sendable_kind else None,
+        "reply_to_id": reply_fm.reply_to_id or None,
+        "thread_root_id": reply_fm.thread_root_id or None,
+    }
+
+
 async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> "HubFailure | None":
     """Create the hub-side FlowMessage header via the conversation's
     ``add_message`` action.
@@ -548,28 +573,9 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
     under the same key.
     """
     try:
-        from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
-
-        attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
-        shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
-        kind_value = getattr(reply_fm.kind, "value", reply_fm.kind)
-        sendable_kind = FlowMessageKind.sendable(kind_value) if reply_fm.kind else None
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
 
-        stored = await conv.add_message(
-            reply_fm.text,
-            sender_name=reply_fm.sender_name or None,
-            sender_id=reply_fm.sender_id or None,
-            flow_message_id=reply_fm.id,
-            attachments=attachments or None,
-            shared_context_entities=shared_context_entities or None,
-            cloned_from_id=reply_fm.cloned_from_id or None,
-            cloned_from_sender_id=reply_fm.cloned_from_sender_id or None,
-            remote_worker_session_id=reply_fm.remote_worker_session_id or None,
-            kind=sendable_kind.value if sendable_kind else None,
-            reply_to_id=reply_fm.reply_to_id or None,
-            thread_root_id=reply_fm.thread_root_id or None,
-        )
+        stored = await conv.add_message(reply_fm.text, **message_header_kwargs(reply_fm))
         # The hub decides whether a body is owed. A replay answers with the row it already stored,
         # and one first sent text-only over the socket has none: uploading one now would be refused
         # (NA is terminal) and leave the message looking undelivered for good.
@@ -586,7 +592,6 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
 
 async def _upload_body_and_finalize(
     reply_fm: "FlowMessage",
-    conv_id: str,
     *,
     transfer_mode: str = "copy",
     create_bookmark: bool = False,
@@ -616,7 +621,6 @@ async def _upload_body_and_finalize(
     else:
         reply_fm.delivery_failure = None
         await reply_fm.save()
-        _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
         return None
     logger.warning("[append_conversation] body upload failed: %s", failure.message)
     if failure.code == "target_not_found":
@@ -628,7 +632,6 @@ async def _upload_body_and_finalize(
         failure = failure.model_copy(update={"kind": HubFailureKind.SERVER_ERROR})
     reply_fm.body_status = BodyStatus.FAILED
     await reply_fm.record_delivery_failure(failure)
-    _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
     return failure
 
 
@@ -657,10 +660,8 @@ async def _finalize_message_dispatch(
         fm_id=fm.id,
         someone_typeid=someone_typeid,
     )
-    # Refresh the sender's UI immediately, then create the hub-side header
-    # (graph-linked to the parent Conversation so delivery receipts work). The
-    # body bundle uploads in a background task.
-    _notify_ui_conversation_updated(conv.id, "", fm.id)
+    # Create the hub-side header (graph-linked to the parent Conversation so
+    # delivery receipts work). The body bundle uploads in a background task.
     if is_remote_send:
         # The header now, in order behind anything this conversation still owes; the body after,
         # off the request. Its state is on the row, so a task that dies is resumed, not lost.
@@ -742,6 +743,7 @@ async def _try_send_reply_via_hub(
         logger.warning("[append_conversation] hub add_message failed: %s", e, exc_info=True)
         return None
     fm_payload = (resp or {}).get("data") or {}
+    t_hub = time.monotonic()  # the WS round trip itself is the `hub` tag's `ws add_message` line
 
     hub_fm_id = fm_payload.get("id")
     if not hub_fm_id:
@@ -778,10 +780,17 @@ async def _try_send_reply_via_hub(
     except Exception as e:
         logger.warning("[append_conversation] hub-side reply materialize failed: %s", e, exc_info=True)
         # Hub got the message; local UI will pick it up on the next refetch.
+    t_mat = time.monotonic()
 
     conv_after = await Conversation.get_one({"id": conv_id})
+    toplog.log(
+        "conversation.send",
+        "send conv=%s materialize ms=%.0f reread ms=%.0f",
+        conv_id[:8],
+        (t_mat - t_hub) * 1000,
+        (time.monotonic() - t_mat) * 1000,
+    )
     message_count = conv_after.message_count if conv_after else 0
-    _notify_ui_conversation_updated(conv_id, "", hub_fm_id)
     # Spread the hub-confirmed FlowMessage fields into the response — see
     # _fm_response_fields for why the id must be carried (SDK mints a random
     # one otherwise).
@@ -795,33 +804,6 @@ async def _try_send_reply_via_hub(
             "flow_message_id": hub_fm_id,
         }
     )
-
-
-def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> None:
-    """Fire-and-forget sniffer EVENT so the UI refreshes the conversation panel.
-
-    Must be SyncOperation.EVENT — never CRUD. Sent as UPDATE it reached the
-    webhook receiver's ``_reflect_entity``, which loaded the Conversation
-    entity *while ``materialize_flow_message`` was still mid-flight* (before
-    the new pointer was projected into ``message_ids``), re-saved that stale
-    snapshot, and re-broadcast ``notify_updated()`` — clobbering the freshly
-    projected message list and leaving the UI exactly one message behind.
-    EVENT routes to the event handler / sniffer instead, which is all this
-    channel was ever for. Mirrors ``materialize_flow_message``'s own
-    ``conversation_updated`` event.
-    """
-    try:
-        send_resource_sync(
-            type="conversation",
-            id=conv_id,
-            operation=SyncOperation.EVENT,
-            data={
-                "event_name": "conversation_updated",
-                "event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id},
-            },
-        )
-    except Exception:
-        pass
 
 
 def _unshippable_payload(gaps) -> list[dict]:
@@ -1324,6 +1306,18 @@ async def handle_start_live_session(conversation_id: str, body: dict, someone_ty
     materializes PENDING with its Approve request). The line is the session's
     first message: where the conversation shows its one line.
     """
+    # One start at a time per conversation: the open-session check and the save
+    # below are separated by awaits, so two quick clicks would each mint a row.
+    from flow_sdk.stream_inbox._locks import keyed_loop_lock  # noqa: PLC0415
+
+    async with keyed_loop_lock(_LIVE_SESSION_START_LOCKS, conversation_id):
+        return await _start_live_session_locked(conversation_id, body, someone_typeid)
+
+
+_LIVE_SESSION_START_LOCKS = weakref.WeakKeyDictionary()
+
+
+async def _start_live_session_locked(conversation_id: str, body: dict, someone_typeid: str) -> ApiResponse:
     from flow_sdk.app.actions.execute_prompt import _peer_of, emit_session_event  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
     from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415

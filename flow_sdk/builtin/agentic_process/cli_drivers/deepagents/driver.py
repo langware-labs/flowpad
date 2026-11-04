@@ -117,6 +117,7 @@ class DeepAgentsDriver:
 
     # No TUI (``Vendor.interactive`` is False); the PTY facts are inert defaults.
     pty_submits_on_paste = False
+    launch_screen = None
     pty_composer_ready_pattern = None
     pins_resume_cwd = False
 

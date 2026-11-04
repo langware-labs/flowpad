@@ -120,6 +120,14 @@ function stripEphemeralAppState(appState: unknown): Record<string, unknown> {
 // file in these alone, and that must not read as an edit.
 const VOLATILE_ELEMENT_KEYS = new Set(['version', 'versionNonce', 'updated', 'seed', 'index']);
 
+/** A cheap stamp of the scene: Excalidraw bumps an element's `version` on every edit, so an
+ *  unchanged stamp means unchanged content and the full fingerprint below can be skipped. */
+function sceneStamp(elements: unknown[], files: unknown): string {
+  let versions = 0;
+  for (const el of elements) versions += Number((el as { version?: number } | null)?.version) || 0;
+  return `${elements.length}:${versions}:${Object.keys((files as object | null) ?? {}).join(',')}`;
+}
+
 /** Only durable canvas content counts as an edit; viewport/app-state changes do not. */
 function semanticBoardFingerprint(elements: unknown, files: unknown): string {
   return JSON.stringify({
@@ -205,11 +213,11 @@ export function ExcalidrawChartView({ fsRef, chart, actions }: ExcalidrawChartVi
   // re-writes byte-identical board.json, churning the file (and its mtime) with
   // no real change. Skip the write when the payload matches the last one.
   const lastWrittenRef = useRef<string | null>(null);
+  // The durable content last seen (seeded from the loaded scene). Opening a chart never
+  // writes: Excalidraw fires onChange on mount with the loaded scene, and saving that
+  // once rewrote CHART.md (and created board.json) for a chart nobody touched.
   const lastSemanticRef = useRef<string | null>(null);
-  // Opening a chart never writes: Excalidraw fires onChange on mount with the loaded
-  // scene, and saving that once rewrote CHART.md (and created board.json) for a chart
-  // nobody touched. Only a change to the durable content arms the save.
-  const editedRef = useRef(false);
+  const lastStampRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -295,13 +303,14 @@ export function ExcalidrawChartView({ fsRef, chart, actions }: ExcalidrawChartVi
   const onChange = useCallback(
     (elements: unknown, appState: unknown, files: unknown) => {
       const els = Array.isArray(elements) ? (elements as unknown[]) : [];
+      const stamp = sceneStamp(els, files);
+      if (stamp === lastStampRef.current) return; // app state only (selection, scroll, a pointer move)
+      lastStampRef.current = stamp;
+      // Only a change to the durable content arms the save, so the same board is never written twice.
       const semanticFingerprint = semanticBoardFingerprint(els, files);
-      if (semanticFingerprint !== lastSemanticRef.current) {
-        lastSemanticRef.current = semanticFingerprint;
-        editedRef.current = true;
-        chart?.markEdit();
-      }
-      if (!editedRef.current) return;
+      if (semanticFingerprint === lastSemanticRef.current) return;
+      lastSemanticRef.current = semanticFingerprint;
+      chart?.markEdit();
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         void persist(els, appState, files);

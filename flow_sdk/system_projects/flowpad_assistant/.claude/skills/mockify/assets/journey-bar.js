@@ -20,7 +20,7 @@
     html.mk-picking,html.mk-picking *{cursor:crosshair!important}`;
   document.head.append(docStyle);
 
-  let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, branch_of?, when?, decisions?[]}
+  let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, expect?[], branch_of?, when?, decisions?[]}
   let cur = 0;
   const data = { sdk: null, mock: null, mocksDs: null, fbDs: null, rows: [], error: '' };
   const openRows = () => data.rows.filter((r) => r.input.status === 'open');
@@ -104,7 +104,7 @@
     @media (prefers-reduced-motion: reduce) { .next.hint { animation: none; } }
     .ico { height: 32px; min-width: 32px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--mk-fg); }
     .ico:hover { background: var(--mk-soft); }
-    .where { display: flex; flex-direction: column; min-width: 0; padding: 0 6px; }
+    .where { display: flex; flex-direction: column; box-sizing: border-box; flex: 0 0 272px; width: 272px; min-width: 0; padding: 0 6px; }
     .step { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
     .n { color: var(--mk-muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; display: flex; gap: 4px; min-width: 0; max-width: 260px; }
     .n .count { flex: none; }
@@ -118,7 +118,7 @@
     .ptools .tb.on { border-color: var(--mk-accent); color: var(--mk-accent); }
     [hidden] { display: none !important; }
     .min .hide-min { display: none !important; }
-    @media (max-width: 900px) { .restart-label, .nav .lbl, .trail { display: none; } .step { max-width: 26vw; } .nav { padding: 0 10px; } }
+    @media (max-width: 900px) { .restart-label, .nav .lbl, .trail { display: none; } .step { max-width: 26vw; } .where { flex-basis: 26vw; width: 26vw; } .nav { padding: 0 10px; } }
     .panel { position: absolute; left: 0; width: min(420px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; background: var(--mk-bg); color: var(--mk-fg);
       border: 1.5px solid var(--mk-edge); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.3); padding: 10px; }
     .panel.down { top: 50px; } .panel.up { bottom: 50px; }
@@ -350,6 +350,7 @@
     const decisions = s.decisions || [];
     let html = head() + `<h4>Feedback · ${esc(s.title || '')}</h4>`;
     if (s.note) html += `<div class="note">${esc(s.note)}</div>`;
+    if (s.expect && s.expect.length) html += `<div class="note"><b>Test checks</b>\n${s.expect.map((e) => '✓ ' + esc(e)).join('\n')}</div>`;
     if (!data.fbDs) {
       html += `<div class="msg">${esc(data.error || 'Loading…')}</div>`;
       panel.innerHTML = html; return;

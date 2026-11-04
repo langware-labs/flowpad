@@ -301,27 +301,12 @@ async def _send_to_tab(connection: tuple[str, Any], target: dict[str, Any]) -> N
         )
 
 
-async def _app_project(target: dict[str, Any]) -> Optional[str]:
-    """The project a shown APP belongs to — its tab opens in that project's strip, whoever showed it.
-    ``None`` for anything else: those tabs open in the showing session's project."""
-    from flow_sdk.core.display_target import DisplayTargetKind  # noqa: PLC0415
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
-
-    if target.get("kind") != DisplayTargetKind.APP or not TypeId.is_typeid(str(target.get("typeid") or "")):
-        return None
-    app = TypeId(str(target["typeid"]))
-    return await Entity.project_id_of(app.type, app.id)
-
-
-def where_shown(placement: dict[str, Any], app_project: Optional[str]) -> str:
+def where_shown(placement: dict[str, Any]) -> str:
     """Where a show landed, in words for the agent — a show never switches the person's view,
     so "delivered" alone does not say they can see it."""
     if placement.get("host"):
         return "Shown in the session's Display pane."
     where = "Opened as a tab beside the session's tab" if placement.get("tab_id") else "Opened as a new tab"
-    if app_project and app_project != placement.get("project_id"):
-        where += f" in project {app_project}, not the session's project"
     return where + "; the person's view was not switched — tell them where to find it."
 
 
@@ -336,8 +321,7 @@ async def deliver(
     delivered, else why not; the target's health is ``probe_target``'s question."""
     if process is not None:
         placement = await process.on_show(target)
-        app_project = None if placement.get("host") else await _app_project(target)
-        return NavigateResult.satisfied(where_shown(placement, app_project), pointer=pointer, delivered=True)
+        return NavigateResult.satisfied(where_shown(placement), pointer=pointer, delivered=True)
     connection = pick_connection(connection_id)
     if isinstance(connection, NavigateResult):
         return connection.model_copy(update={"pointer": pointer})

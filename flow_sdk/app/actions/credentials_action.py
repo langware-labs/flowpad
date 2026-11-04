@@ -146,7 +146,7 @@ async def credentials_action() -> ApiResponse:
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
                 return ApiSuccessResponse(data=await svc.test_credential(payload.get("name") or "", payload.get("project_id") or ""))
-            if sub_path in ("publish", "fetch", "vault-check", "grant", "vault-set", "vault-remove"):
+            if sub_path in ("publish", "fetch", "vault-check", "vault-setup", "grant", "vault-set", "vault-remove"):
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
                 pid, vault = payload.get("project_id") or "", payload.get("vault") or ""
@@ -161,6 +161,8 @@ async def credentials_action() -> ApiResponse:
                     return ApiSuccessResponse(data=await svc.fetch(name, pid))
                 if sub_path == "vault-check":
                     return ApiSuccessResponse(data=await svc.vault_check(pid, vault))
+                if sub_path == "vault-setup":
+                    return ApiSuccessResponse(data=await svc.vault_setup(pid, vault))
                 if sub_path == "grant":
                     return ApiSuccessResponse(data=await svc.grant(pid, vault, payload.get("email") or ""))
                 spec = payload.get("spec") if sub_path == "vault-set" else None

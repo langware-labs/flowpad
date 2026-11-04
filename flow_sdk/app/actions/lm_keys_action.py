@@ -19,6 +19,7 @@ from flow_sdk.cli.auth.lm_api_keys import (
     delete_lm_api,
     list_lm_api,
     list_provider_models,
+    mark_key_rejected,
     validate_lm_api,
 )
 from flow_sdk.core import action
@@ -78,6 +79,8 @@ async def lm_keys_action() -> ApiResponse:
                 # Auto-validate on set so the UI can confirm the key immediately;
                 # reuse the in-hand key rather than re-reading the store.
                 result = await validate_lm_api(provider, key=key)
+                if result.get("status") in (401, 403):  # the provider refused it (not "unreachable")
+                    mark_key_rejected(provider.value, result["message"], f"****{key[-4:]}")
                 return ApiSuccessResponse(data={"ok": True, **result})
             return ApiFailResponse(message=f"Unknown POST subpath: {sub_path}")
 

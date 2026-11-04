@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { GitWorkdir } from '@sdk';
+import { GitWorkdir, type GitPushResult } from '@sdk';
 import { notifyGitFailure, notifyGitOutcome } from '@src/lib/git-outcome';
 
 export interface UseGitPushResult {
@@ -22,6 +22,8 @@ export function useGitPush(
   computeNodeId: string | null,
   workdir: string | null,
   onAfter?: () => void,
+  /** The push to run — the greedy commit-all push unless the caller picks another (e.g. `pushCommits`). */
+  op: (git: GitWorkdir) => Promise<GitPushResult> = (git) => git.push(),
 ): UseGitPushResult {
   const [busy, setBusy] = useState(false);
 
@@ -29,14 +31,14 @@ export function useGitPush(
     if (!computeNodeId || !workdir || busy) return;
     setBusy(true);
     try {
-      notifyGitOutcome('push', await new GitWorkdir(workdir, computeNodeId).push(), workdir);
+      notifyGitOutcome('push', await op(new GitWorkdir(workdir, computeNodeId)), workdir);
     } catch (e) {
       notifyGitFailure('push', e, workdir);
     } finally {
       setBusy(false);
       onAfter?.();
     }
-  }, [computeNodeId, workdir, busy, onAfter]);
+  }, [computeNodeId, workdir, busy, onAfter, op]);
 
   return { push, busy };
 }
