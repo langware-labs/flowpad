@@ -1635,8 +1635,6 @@ class UvManager {
     try {
       const result = await this._uvToolInstallForceAttempts(installArgs, { onProgress });
       this._recordEngineOwnership(venvBefore);
-      // An engine is installed now: a later repair has one to put back, whatever blocked the first install.
-      this._firstInstallBlocked = false;
       return result;
     } catch (err) {
       // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
@@ -3622,6 +3620,13 @@ class UvManager {
   /** The blocked install was the first one: a repair that follows has no previous engine to put back. */
   markFirstInstallBlocked() { this._firstInstallBlocked = true; }
 
+  /**
+   * The engine answered its health check: there IS a working engine now, so a later repair has one
+   * to put back. Only a healthy engine clears the "first install blocked" mark — an install that
+   * merely finished (a repair's, a rollback's) proves nothing.
+   */
+  markEngineHealthy() { this._firstInstallBlocked = false; }
+
   _preRepairVenvDir() {
     return `${this._toolVenvDir()}.pre-repair`;
   }
@@ -3639,8 +3644,8 @@ class UvManager {
   /** The repair held: drop the set-aside environment. Best effort; a leftover is harmless. */
   async _finalizeEngine() {
     const aside = this._preRepairVenvDir();
-    // The repair held: there is an engine now, so a later repair has one to put back.
-    this._firstInstallBlocked = false;
+    // The repair held (the engine is healthy): a later repair has an engine to put back.
+    this.markEngineHealthy();
     try {
       fs.rmSync(aside, { recursive: true, force: true });
       this._dropAsideOwnershipRecord();

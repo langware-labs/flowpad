@@ -178,6 +178,15 @@ fn root_path(layout: &Layout, root: RootId, pinned: super::Identity) -> PathBuf 
         RootId::AppData => layout.app_data(),
         RootId::InstanceProd => layout.instances().join("prod"),
         RootId::PreRepair => layout.pre_repair_venv(),
+        // Several may exist (`flowpad.corrupt-<time>`): the one pinned at uninstall, by identity.
+        RootId::CorruptCopy => fs::read_dir(layout.uv_tools())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("flowpad.corrupt-")))
+            .find(|p| Root::open(p).is_ok_and(|r| r.identity() == pinned))
+            .unwrap_or_else(|| layout.uv_tools().join("flowpad.corrupt-")),
     }
 }
 
@@ -223,8 +232,9 @@ fn still_owned(layout: &Layout, root: RootId, path: &Path) -> Result<(), String>
                 Err("it is no longer a desktop-only instance".into())
             }
         }
-        // Fixed FlowPad-only locations whose identity was pinned at uninstall.
-        RootId::Bootstrap | RootId::Updater | RootId::AppData => Ok(()),
+        // Fixed FlowPad-only locations (and a quarantined copy of the engine FlowPad removed),
+        // whose identity was pinned at uninstall.
+        RootId::Bootstrap | RootId::Updater | RootId::AppData | RootId::CorruptCopy => Ok(()),
     }
 }
 
@@ -253,13 +263,17 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
 
     let gathered = ops::gather(layout, log);
     let engine_owned = body.entries.iter().any(|e| e.root == RootId::Venv);
-    super::run::stop_processes(layout, &gathered, engine_owned, &mut Ledger::default(), log);
+    let aside_owned = body.entries.iter().any(|e| e.root == RootId::PreRepair) && gathered.pre_repair_proven;
+    super::run::stop_processes(layout, &gathered, engine_owned, aside_owned, &mut Ledger::default(), log);
 
     let mut ledger = Ledger::default();
     let mut remaining = Vec::new();
-    let mut kept_on_purpose = Vec::new();
-    for entry in &body.entries {
-        let pinned = super::Identity { volume: entry.volume, file_id: entry.file_id };
+    // Entries (by index) this run leaves on purpose: no longer provably FlowPad's, another folder
+    // now, or a runtime a kept engine copy runs on. Never deleted, and not pending either.
+    let mut kept: Vec<usize> = Vec::new();
+    let pinned_of = |e: &state::Entry| super::Identity { volume: e.volume, file_id: e.file_id };
+    for (idx, entry) in body.entries.iter().enumerate() {
+        let pinned = pinned_of(entry);
         let path = root_path(layout, entry.root, pinned);
         match Root::open(&path) {
             Err(super::delete::Refused::Missing) => {
@@ -271,11 +285,13 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
                 continue;
             }
             Err(e) => {
-                status(layout, &format!("{:?}: skipped, the folder {e}", entry.root));
+                status(layout, &format!("{:?}: kept, the folder {e}", entry.root));
+                kept.push(idx);
                 continue;
             }
             Ok(r) if r.identity() != pinned => {
-                status(layout, &format!("{:?}: skipped, {} is a different folder now", entry.root, path.display()));
+                status(layout, &format!("{:?}: kept, {} is a different folder now", entry.root, path.display()));
+                kept.push(idx);
                 continue;
             }
             Ok(_) => {}
@@ -285,23 +301,33 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
             continue;
         }
         if ops::waits_for_venv(entry.root) {
-            let pending_aside = body.entries.iter().any(|e| e.root == RootId::PreRepair);
+            // Engine copies this run tried and that are still in use: the runtime waits behind
+            // them. Any other copy on the runtime is one FlowPad keeps, and so it keeps the runtime.
+            let waiting: Vec<String> = body
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(i, e)| ops::is_set_aside_root(e.root) && !kept.contains(i))
+                .map(|(_, e)| root_path(layout, e.root, pinned_of(e)))
+                .filter(|p| Root::open(p).is_ok())
+                .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                .collect();
             let users = ops::set_aside_copies_on_runtime(layout);
-            if users.iter().any(|n| !(pending_aside && n == "flowpad.pre-repair")) {
-                // A set-aside engine FlowPad keeps on purpose runs on it: kept, not "still in use".
+            if users.iter().any(|n| !waiting.contains(n)) {
                 let msg = format!("{:?}: kept, a set-aside engine runs on it ({})", entry.root, users.join(", "));
                 status(layout, &msg);
                 log.line(&msg);
-                kept_on_purpose.push(entry.root);
+                kept.push(idx);
                 continue;
             }
             if !users.is_empty() {
-                status(layout, &format!("{:?}: waits, the set-aside engine is still there", entry.root));
+                status(layout, &format!("{:?}: waits, a set-aside engine is still in use", entry.root));
                 continue;
             }
         }
         if let Err(why) = still_owned(layout, entry.root, &path) {
-            status(layout, &format!("{:?}: skipped, {why}", entry.root));
+            status(layout, &format!("{:?}: kept, {why}", entry.root));
+            kept.push(idx);
             continue;
         }
         let evidence = match entry.root {
@@ -318,16 +344,14 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         }
     }
 
-    // Verified: each pinned root is gone (or is no longer the pinned object).
+    // Verified: each pinned root is gone (or is no longer the pinned object), unless kept on purpose.
     let still_there: Vec<String> = body
         .entries
         .iter()
-        .filter(|e| !kept_on_purpose.contains(&e.root))
-        .filter(|e| {
-            let pinned = super::Identity { volume: e.volume, file_id: e.file_id };
-            Root::open(&root_path(layout, e.root, pinned)).is_ok_and(|r| r.identity() == pinned)
-        })
-        .map(|e| format!("{:?}", e.root))
+        .enumerate()
+        .filter(|(i, _)| !kept.contains(i))
+        .filter(|(_, e)| Root::open(&root_path(layout, e.root, pinned_of(e))).is_ok_and(|r| r.identity() == pinned_of(e)))
+        .map(|(_, e)| format!("{:?}", e.root))
         .collect();
     if still_there.is_empty() {
         status(layout, "verified: every pending item is gone");

@@ -99,12 +99,29 @@ function Invoke-Deferred($r) {
   } finally { Remove-Item Env:FLOWRS_TEST_LAYOUT_ROOT -ErrorAction SilentlyContinue }
 }
 
+# Waits for a condition instead of a fixed time; $false if it never holds within the ceiling.
+function Wait-Until([scriptblock]$cond, [int]$secs = 30) {
+  $end = (Get-Date).AddSeconds($secs)
+  while (-not (& $cond)) { if ((Get-Date) -gt $end) { return $false }; Start-Sleep -Milliseconds 100 }
+  return $true
+}
+
+function Test-Held($path) {
+  try { $x = [IO.File]::Open($path, 'Open', 'ReadWrite', 'ReadWrite,Delete'); $x.Close(); return $false } catch { return $true }
+}
+
 # Holds a file open WITHOUT share-delete, as an editor or an antivirus scan would.
 function Lock-File($path) {
   $h = Start-Process powershell -ArgumentList '-NoProfile', '-Command', "`$f=[IO.File]::Open('$path','Open','Read','Read'); Start-Sleep 120" -PassThru -WindowStyle Hidden
   $script:holders += $h
-  Start-Sleep 2
+  if (-not (Wait-Until { Test-Held $path })) { throw "could not hold $path" }
   return $h
+}
+
+# Ends the holders and waits until they are gone (their handles closed).
+function Release($procs) {
+  Stop-Process -Id ($procs | ForEach-Object { $_.Id }) -Force -ErrorAction SilentlyContinue
+  $procs | ForEach-Object { $_.WaitForExit(30000) | Out-Null }
 }
 
 function Result($r) { Get-Content "$r\result.txt" -Raw }
@@ -220,7 +237,7 @@ try {
     $cmd = (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest
     Check ($cmd -and $cmd.Contains("$r\local\Flowpad\fc\flow-rs.exe")) 'RunOnce (test value) starts the helper copy'
     Check ((Result $r) -match 'will be removed the next time you sign in') 'summary says sign out to finish'
-    Stop-Process -Id $h.Id, $hp.Id -Force; Start-Sleep 1
+    Release @($h, $hp)
     $dcode = Invoke-Deferred $r
     Check ($dcode -eq 0) "deferred-cleanup exit 0, got $dcode"
     Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'engine gone after the deferred run'
@@ -230,8 +247,7 @@ try {
     Check (-not (Test-Path "$r\local\Flowpad\runtime")) 'runtime gone after the engine'
     Check (-not (Test-Path "$r\profile\.flow\desktop-runtime.json")) 'runtime record gone'
     Check (-not (Test-Path "$r\local\Flowpad\engine-ownership.json")) 'ownership record gone'
-    Start-Sleep 5
-    Check (-not (Test-Path "$r\local\Flowpad\fc")) 'the helper removed itself'
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the helper removed itself'
     Check (-not (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest) 'RunOnce test value gone'
   }
 
@@ -252,14 +268,40 @@ try {
     Check ($code -eq 10) "exit 10 (restart required), got $code"
     Check (Test-Path "$aside\uv-receipt.toml") 'the set-aside copy waits, its receipt (the proof) kept'
     Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'its runtime waits behind it'
-    Stop-Process -Id $h.Id -Force; Start-Sleep 1
+    Release @($h)
     $dcode = Invoke-Deferred $r
     Check ($dcode -eq 0) "deferred-cleanup exit 0, got $dcode"
     Check (-not (Test-Path $aside)) 'the set-aside copy gone after the deferred run'
     Check (-not (Test-Path "$r\local\Flowpad\runtime")) 'and the runtime after it'
     Check (-not (Test-Path "$r\local\Flowpad\engine-ownership.pre-repair.json")) 'and its record'
-    Start-Sleep 5
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the helper removed itself'
     Check (-not (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest) 'RunOnce test value gone'
+  }
+
+  Write-Host '== a deferred set-aside copy no longer proven at the next run: kept with its runtime, the cleanup finishes'
+  if (-not $credentials) {
+    Skip 'the Credential Manager is not available in this session'
+  } else {
+    $r = New-Layout 'pre-repair-unproven'
+    $aside = "$r\roaming\uv\tools\flowpad.pre-repair"
+    W "$aside\uv-receipt.toml" 'receipt of the previous engine'
+    W "$aside\pyvenv.cfg" "home = $r\local\Flowpad\runtime\python-3.11.9`r`n"
+    W "$aside\Lib\held.py" 'x'
+    $aid = [FileIdentity]::Of($aside)
+    $asha = (Get-FileHash "$aside\uv-receipt.toml" -Algorithm SHA256).Hash.ToLower()
+    W "$r\local\Flowpad\engine-ownership.pre-repair.json" (@{ schema = 1; origin = 'desktop'; venv = "$r\roaming\uv\tools\flowpad"; venvVolume = $aid[0]; venvFileId = $aid[1]; receiptSha256 = $asha; desktopVersion = '0.2.59'; installedAt = 'T' } | ConvertTo-Json)
+    # pyvenv.cfg is the file held: what survives the first attempt still runs on the runtime
+    $h = Lock-File "$aside\pyvenv.cfg"
+    $code = Invoke-Uninstall $r @()
+    Check ($code -eq 10) "exit 10 (restart required), got $code"
+    Release @($h)
+    W "$aside\uv-receipt.toml" 'changed since: no longer the recorded copy'
+    $dcode = Invoke-Deferred $r
+    Check ($dcode -eq 0) "deferred-cleanup exit 0 (nothing left pending), got $dcode"
+    Check (Test-Path "$aside\uv-receipt.toml") 'the copy, no longer proven, is kept'
+    Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'and so is the runtime it runs on'
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the cleanup finished: the helper removed itself'
+    Check (-not (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest) 'nothing left scheduled'
   }
 
   Write-Host '== the deferred run keeps a runtime a kept set-aside engine runs on, and finishes'
@@ -270,15 +312,14 @@ try {
     $h = Lock-File "$r\roaming\uv\tools\flowpad\Lib\site-packages\flow_sdk\__init__.py"
     $code = Invoke-Uninstall $r @()
     Check ($code -eq 10) "exit 10 (restart required), got $code"
-    Stop-Process -Id $h.Id -Force; Start-Sleep 1
+    Release @($h)
     # an engine copy nothing proves is FlowPad's appears on the runtime before the deferred run
     W "$r\roaming\uv\tools\flowpad.pre-repair\pyvenv.cfg" "home = $r\local\Flowpad\runtime\python-3.11.9`r`n"
     $dcode = Invoke-Deferred $r
     Check ($dcode -eq 0) "deferred-cleanup exit 0 (nothing left pending), got $dcode"
     Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'the engine is gone'
     Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'the runtime the kept copy runs on is kept'
-    Check ((Get-Content "$r\deferred.log" -Raw) -match 'kept, a set-aside engine runs on it') 'reported as kept, not as still in use'
-    Start-Sleep 5
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the cleanup finished: the helper removed itself'
     Check (-not (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest) 'nothing left scheduled'
   }
 
@@ -289,7 +330,7 @@ try {
     $r = New-Layout 'tampered'
     $h = Lock-File "$r\roaming\uv\tools\flowpad\Lib\site-packages\flow_sdk\__init__.py"
     Invoke-Uninstall $r @() | Out-Null
-    Stop-Process -Id $h.Id -Force; Start-Sleep 1
+    Release @($h)
     $state = "$r\local\Flowpad\fc\state.json"
     Set-Content $state ((Get-Content $state -Raw) -replace '"fileId": (\d+)', '"fileId": 1') -NoNewline
     $dcode = Invoke-Deferred $r
@@ -343,17 +384,16 @@ try {
   $pa = Start-Process "$a\Flowpad.exe" -ArgumentList '-n', '60', '127.0.0.1' -PassThru -WindowStyle Hidden
   $pb = Start-Process "$b\Flowpad.exe" -ArgumentList '-n', '60', '127.0.0.1' -PassThru -WindowStyle Hidden
   $script:holders += $pa, $pb
-  Start-Sleep 1
+  Wait-Until { @(Get-Process -Id $pa.Id, $pb.Id -ErrorAction SilentlyContinue).Count -eq 2 } | Out-Null
   & $FlowRs app-running --install-dir $a; Check ($LASTEXITCODE -eq 1) "running: exit 1 (got $LASTEXITCODE)"
   & $FlowRs app-running --install-dir $a --stop; Check ($LASTEXITCODE -eq 0) "--stop: exit 0 (got $LASTEXITCODE)"
-  Start-Sleep 1
-  Check ($pa.HasExited) 'the app of this installation was stopped'
+  Check (Wait-Until { $pa.HasExited } 10) 'the app of this installation was stopped'
   Check (-not $pb.HasExited) 'a Flowpad.exe from another folder is untouched'
 } finally {
-  foreach ($h in $holders) { if ($h -and -not $h.HasExited) { Stop-Process -Id $h.Id -Force -ErrorAction SilentlyContinue } }
+  $alive = @($holders | Where-Object { $_ -and -not $_.HasExited })
+  if ($alive.Count) { Release $alive }
   Remove-ItemProperty $runOnce -Name FlowpadCleanupTest -ErrorAction SilentlyContinue
   Invoke-Quiet { & $FlowRs delete_key Flowpad.cleanup.debug state } | Out-Null
-  Start-Sleep 1
   Remove-Tree $Root
 }
 

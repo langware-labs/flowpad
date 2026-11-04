@@ -67,8 +67,8 @@ pub struct Context {
     pub app_exe: String,
     /// The engine's interpreters: the venv's `Scripts\python.exe` and its `pyvenv.cfg` `home` python.
     pub engine_interpreters: Vec<String>,
-    /// The engine venv root, only when the engine is being removed.
-    pub owned_venv: Option<String>,
+    /// The engine venv roots being removed: the venv, and a set-aside copy of it (`flowpad.pre-repair`).
+    pub owned_venvs: Vec<String>,
     /// Servers of instances with `.desktop_managed`.
     pub servers: Vec<InstanceServer>,
     /// TCP listeners: port → owning pid.
@@ -202,10 +202,20 @@ pub fn select(procs: &[Proc], ctx: &Context) -> Selection {
         }
     }
 
-    if let Some(venv) = &ctx.owned_venv {
-        for p in procs {
-            if p.image.as_deref().is_some_and(|i| under(i, venv)) {
-                verified.entry(p.pid).or_insert(Role::VenvExecutable);
+    let in_owned = |image: &str| ctx.owned_venvs.iter().any(|v| under(image, v));
+    let mut launchers = Vec::new();
+    for p in procs {
+        if p.image.as_deref().is_some_and(in_owned) {
+            verified.entry(p.pid).or_insert(Role::VenvExecutable);
+            launchers.push(p);
+        }
+    }
+    // A venv's Scripts\python.exe is a launcher: the base interpreter it starts (a child created
+    // after it) is the one holding the venv's files open.
+    for l in launchers {
+        for c in procs {
+            if c.ppid == l.pid && c.pid != l.pid && is_interpreter(c) && matches!((l.created, c.created), (Some(a), Some(b)) if b >= a) {
+                verified.entry(c.pid).or_insert(Role::VenvExecutable);
             }
         }
     }
@@ -226,9 +236,9 @@ pub fn select(procs: &[Proc], ctx: &Context) -> Selection {
             if c.pid == parent || !matches!((parent_created, c.created), (Some(a), Some(b)) if b >= a) {
                 continue;
             }
-            let engine_image = is_interpreter(c) || ctx.owned_venv.as_deref().is_some_and(|v| c.image.as_deref().is_some_and(|i| under(i, v)));
+            let engine_image = is_interpreter(c) || c.image.as_deref().is_some_and(in_owned);
             let flowpad_cmd = c.cmdline.as_deref().is_some_and(|cl| {
-                cl.contains("flow_sdk") || ctx.owned_venv.as_deref().is_some_and(|v| cl.to_lowercase().contains(&v.to_lowercase()))
+                cl.contains("flow_sdk") || ctx.owned_venvs.iter().any(|v| cl.to_lowercase().contains(&v.to_lowercase()))
             });
             if engine_image && flowpad_cmd {
                 verified.entry(c.pid).or_insert(Role::Worker);
@@ -400,7 +410,7 @@ mod tests {
         Context {
             app_exe: APP.into(),
             engine_interpreters: vec![LAUNCHER.into(), BASE.into()],
-            owned_venv: None,
+            owned_venvs: vec![],
             servers: vec![InstanceServer { instance: "prod".into(), info }],
             listeners: BTreeMap::from([(9007, 200)]),
         }
@@ -509,10 +519,27 @@ mod tests {
         w.push(p(601, 1, r"C:\Users\u\AppData\Roaming\uv\tools\flowpad2\Scripts\flow.exe", 1041.0, "flow status"));
         let mut c = ctx(info(Some(Some("desktop"))));
         assert!(!select(&w, &c).verified.iter().any(|v| v.pid == 600), "not owned: not touched");
-        c.owned_venv = Some(VENV.into());
+        c.owned_venvs = vec![VENV.into()];
         let s = select(&w, &c);
         assert!(s.verified.iter().any(|v| v.pid == 600 && v.role == Role::VenvExecutable));
         assert!(!s.verified.iter().any(|v| v.pid == 601), "flowpad2 is not inside flowpad");
+    }
+
+    /// A set-aside copy being removed: its launcher and the base interpreter the launcher started
+    /// (which holds the copy's files open) are stopped; the same interpreter elsewhere is not.
+    #[test]
+    fn a_set_aside_copys_launcher_and_its_interpreter_are_stopped_when_it_goes() {
+        const ASIDE: &str = r"C:\Users\u\AppData\Roaming\uv\tools\flowpad.pre-repair";
+        let mut w = world();
+        w.push(p(700, 1, &format!(r"{ASIDE}\Scripts\python.exe"), 1050.0, "python -m flow_sdk.x"));
+        w.push(p(701, 700, BASE, 1051.0, "python -m flow_sdk.x"));
+        w.push(p(702, 1, BASE, 1052.0, "python something-else.py"));
+        let mut c = ctx(info(Some(Some("desktop"))));
+        c.owned_venvs = vec![ASIDE.into()];
+        let s = select(&w, &c);
+        assert!(s.verified.iter().any(|v| v.pid == 700), "the copy's launcher");
+        assert!(s.verified.iter().any(|v| v.pid == 701), "the interpreter it started");
+        assert!(!s.verified.iter().any(|v| v.pid == 702), "the same interpreter, not started by it");
     }
 
     #[test]

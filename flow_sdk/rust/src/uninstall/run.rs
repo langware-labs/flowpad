@@ -32,17 +32,25 @@ const RETRY_PAUSE: Duration = Duration::from_millis(1500);
 
 /// Stop what the desktop launched. A graceful `flow stop` for each desktop instance whose server
 /// is verified; then, only when the engine goes, force-stop the verified set and re-check. A
-/// kept engine's processes are never force-stopped.
-pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, ledger: &mut Ledger, log: &mut Log) -> bool {
-    let ctx = |owned: bool| Context {
+/// kept engine's processes are never force-stopped. `aside_goes`: a proven set-aside copy
+/// (`flowpad.pre-repair`) is being removed, so whatever runs from it is stopped too.
+pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, aside_goes: bool, ledger: &mut Ledger, log: &mut Log) -> bool {
+    let mut owned_venvs = Vec::new();
+    if engine_goes {
+        owned_venvs.push(layout.venv().display().to_string());
+    }
+    if aside_goes {
+        owned_venvs.push(layout.pre_repair_venv().display().to_string());
+    }
+    let ctx = || Context {
         app_exe: layout.app_exe().display().to_string(),
         engine_interpreters: g.engine_interpreters.clone(),
-        owned_venv: owned.then(|| layout.venv().display().to_string()),
+        owned_venvs: owned_venvs.clone(),
         servers: g.servers.clone(),
         listeners: procs::tcp_listeners(),
     };
     let flow = layout.venv().join("Scripts").join("flow.exe");
-    let first = procs::select(&procs::scan(), &ctx(engine_goes));
+    let first = procs::select(&procs::scan(), &ctx());
     for s in &g.servers {
         let verified = s.info.server_pid.is_some_and(|pid| first.verified.iter().any(|v| v.pid == pid && v.role == Role::Server));
         if verified && flow.exists() {
@@ -53,10 +61,10 @@ pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, ledger: 
             }
         }
     }
-    let force_roles = |r: Role| engine_goes || r == Role::App;
+    let force_roles = |r: Role| engine_goes || r == Role::App || r == Role::VenvExecutable;
     for pass in 0..RETRIES {
         let snapshot = procs::scan();
-        let sel = procs::select(&snapshot, &ctx(engine_goes));
+        let sel = procs::select(&snapshot, &ctx());
         let targets: Vec<_> = sel.verified.iter().filter(|v| force_roles(v.role)).collect();
         if targets.is_empty() {
             for o in &sel.orphans {
@@ -74,7 +82,7 @@ pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, ledger: 
         log.line(&format!("process pass {} done", pass + 1));
         std::thread::sleep(RETRY_PAUSE);
     }
-    let sel = procs::select(&procs::scan(), &ctx(engine_goes));
+    let sel = procs::select(&procs::scan(), &ctx());
     let survivors: Vec<_> = sel.verified.iter().filter(|v| force_roles(v.role)).collect();
     for v in &survivors {
         ledger.processes_left.push(format!("pid {} ({:?}) could not be stopped", v.pid, v.role));
@@ -87,9 +95,10 @@ fn ini_escape(s: &str) -> String {
 }
 
 /// The page's sizes are only for display, and the page has to appear inside the classify
-/// deadline: one budget for ALL the folders on the page, in entries and in time, shared out
-/// equally so one large folder cannot leave another unmeasured. Past its share, a folder's size
-/// is what was counted, shown as "more than".
+/// deadline: one budget for ALL the folders on the page, in entries and in time. Each folder in
+/// turn gets an equal share of what is left, so one large folder cannot leave another unmeasured,
+/// and what a small folder does not use passes on to the next. Past its share, a folder's size is
+/// what was counted, shown as "more than".
 const SIZE_WALK_ENTRIES: usize = 200_000;
 const SIZE_WALK_TIME: Duration = Duration::from_secs(15);
 
@@ -102,13 +111,32 @@ impl SizeBudget {
     fn new(entries: usize, time: Duration) -> Self {
         SizeBudget { entries_left: entries, until: Instant::now() + time }
     }
-    /// One folder's equal share of the page's budget.
-    fn share(folders: usize) -> Self {
-        let n = folders.max(1);
-        SizeBudget::new(SIZE_WALK_ENTRIES / n, SIZE_WALK_TIME / n as u32)
-    }
     fn spent(&self) -> bool {
         self.entries_left == 0 || Instant::now() >= self.until
+    }
+}
+
+/// The page's budget, handed out folder by folder.
+struct PageBudget {
+    entries_left: usize,
+    until: Instant,
+    folders_left: usize,
+}
+
+impl PageBudget {
+    fn new(entries: usize, time: Duration, folders: usize) -> Self {
+        PageBudget { entries_left: entries, until: Instant::now() + time, folders_left: folders.max(1) }
+    }
+    /// Measure the next folder with an equal share of what is left; what it does not use stays.
+    fn size_text(&mut self, path: &Path) -> String {
+        let n = self.folders_left.max(1);
+        let time_left = self.until.saturating_duration_since(Instant::now());
+        let mut share = SizeBudget::new(self.entries_left / n, time_left / n as u32);
+        let allotted = share.entries_left;
+        let text = size_text(path, &mut share);
+        self.entries_left -= allotted - share.entries_left;
+        self.folders_left = self.folders_left.saturating_sub(1);
+        text
     }
 }
 
@@ -155,18 +183,19 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     s.push_str(&format!("remove={}\n", engine.remove_by_default as u8));
     s.push_str(&format!("offer={}\n", engine.opt_in_offered as u8));
     s.push_str(&format!("reason={}\n", ini_escape(&engine.reasons.join("; "))));
-    // Each measured folder (every offered instance, and the app data) gets an equal share.
+    // Every offered instance, and the app data: an equal share of what is left, in turn.
     let measured = instances.iter().filter(|i| !matches!(i.offer, DataOffer::NotOffered(_))).count() + 1;
+    let mut budget = PageBudget::new(SIZE_WALK_ENTRIES, SIZE_WALK_TIME, measured);
     let mut offered = Vec::new();
     let mut warn = false;
     let mut kept = Vec::new();
     for i in instances {
         let dir = layout.instances().join(&i.name);
         match &i.offer {
-            DataOffer::Offered => offered.push(format!("{} ({})", dir.display(), size_text(&dir, &mut SizeBudget::share(measured)))),
+            DataOffer::Offered => offered.push(format!("{} ({})", dir.display(), budget.size_text(&dir))),
             DataOffer::OfferedWithWarning => {
                 warn = true;
-                offered.push(format!("{} ({})", dir.display(), size_text(&dir, &mut SizeBudget::share(measured))))
+                offered.push(format!("{} ({})", dir.display(), budget.size_text(&dir)))
             }
             DataOffer::NotOffered(r) => kept.push(format!("{} — kept: {r}", i.name)),
         }
@@ -178,7 +207,7 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
         ini_escape(&format!(
             "{} ({}), {}",
             app.display(),
-            size_text(&app, &mut SizeBudget::share(measured)),
+            budget.size_text(&app),
             layout.flow_home().join("logs").join("main_desktop").display()
         ))
     ));
@@ -251,7 +280,8 @@ pub fn run(o: &Options) -> i32 {
         ledger.kept("FlowPad engine", &layout.venv(), &hint);
     }
 
-    stop_processes(&layout, &g, engine_goes, &mut ledger, &mut log);
+    let aside_goes = (engine_goes || !g.facts.engine.venv_exists) && g.pre_repair_proven;
+    stop_processes(&layout, &g, engine_goes, aside_goes, &mut ledger, &mut log);
 
     let engine_absent = !g.facts.engine.venv_exists;
     let selected_instances: Vec<String> = if o.delete_instance_data {
@@ -273,7 +303,7 @@ pub fn run(o: &Options) -> i32 {
         }
         log.line(&format!("retry {attempt}: {} item(s) in use", leftovers.len()));
         std::thread::sleep(RETRY_PAUSE);
-        stop_processes(&layout, &g, engine_goes, &mut Ledger::default(), &mut log);
+        stop_processes(&layout, &g, engine_goes, aside_goes, &mut Ledger::default(), &mut log);
         let mut again: Vec<Leftover> = Vec::new();
         for l in leftovers {
             if ops::waits_for_venv(l.root) && again.iter().any(|a| ops::is_engine_root(a.root)) {
@@ -313,7 +343,7 @@ fn evidence_for(root: super::state::RootId) -> Option<&'static str> {
         Venv | PreRepair => Some(ops::RECEIPT_FILE),
         RuntimePython | RuntimeDownloads => Some(ops::RUNTIME_SENTINEL),
         InstanceProd => Some(ops::DESKTOP_MARKER),
-        Bootstrap | Updater | AppData => None,
+        Bootstrap | Updater | AppData | CorruptCopy => None,
     }
 }
 
@@ -339,10 +369,13 @@ fn remove_all(
     let venv_pending = leftovers.iter().any(|l| ops::is_engine_root(l.root));
     // A set-aside copy still here that is NOT pending (kept, or the engine stays) runs on the
     // runtime for good: removing the runtime would break it.
-    let pending_aside = leftovers.iter().any(|l| l.root == super::state::RootId::PreRepair);
+    let pending: Vec<String> = leftovers
+        .iter()
+        .filter(|l| ops::is_set_aside_root(l.root))
+        .filter_map(|l| l.path.file_name().map(|n| n.to_string_lossy().to_string()))
+        .collect();
     let mut runtime_facts = g.runtime.clone();
-    runtime_facts.used_by_another_environment |=
-        ops::set_aside_copies_on_runtime(layout).iter().any(|n| !(pending_aside && n == "flowpad.pre-repair"));
+    runtime_facts.used_by_another_environment |= ops::set_aside_copies_on_runtime(layout).iter().any(|n| !pending.contains(n));
     let runtime = decide_runtime(&runtime_facts, (engine_goes && (venv_pending || !layout.venv().exists())) || engine_absent);
     if venv_pending {
         leftovers.extend(ops::defer_runtime(layout, &runtime, ledger));
@@ -367,11 +400,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn each_folder_gets_an_equal_share_of_the_page_budget() {
-        let one = SizeBudget::share(4);
-        assert_eq!(one.entries_left, SIZE_WALK_ENTRIES / 4);
-        assert!(one.until <= Instant::now() + SIZE_WALK_TIME / 4);
-        assert_eq!(SizeBudget::share(0).entries_left, SIZE_WALK_ENTRIES);
+    fn what_a_small_folder_leaves_passes_on_to_the_next() {
+        let dir = std::env::temp_dir().join(format!("flowrs-share-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("small")).unwrap();
+        fs::write(dir.join("small").join("f"), vec![0u8; 300 * 1024]).unwrap();
+        fs::create_dir_all(dir.join("big")).unwrap();
+        for i in 0..9 {
+            fs::write(dir.join("big").join(format!("f{i}")), vec![0u8; 300 * 1024]).unwrap();
+        }
+        // 12 entries for 2 folders: an equal split (6 each) would cut "big" (10 entries); the
+        // small one uses 2, so "big" gets the other 10 and is measured whole.
+        let mut page = PageBudget::new(12, Duration::from_secs(60), 2);
+        assert_eq!(page.size_text(&dir.join("small")), "0.3 MB");
+        assert_eq!(page.size_text(&dir.join("big")), "2.6 MB");
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

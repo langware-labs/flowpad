@@ -1772,17 +1772,22 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     await m._installEngineOn('C:\\p\\python.exe');
     await m._rollbackEngine();
     ok(fs.existsSync(path.join(venv, 'WORKING')), 'after a held first-install repair, a later failed repair restores the working engine');
-    // The blocked first install is followed by a plain retry that WORKS (no repair): a later failed
-    // repair must still find the working engine to put back.
+    // The blocked first install is followed by a plain retry whose engine comes up HEALTHY (no
+    // repair): a later failed repair must still find that working engine to put back.
+    m.markFirstInstallBlocked();
+    m.markEngineHealthy(); // main.js, when the backend answers
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._rollbackEngine();
+    ok(fs.existsSync(path.join(venv, 'WORKING')), 'after a blocked first install and a healthy retry, a failed repair restores the working engine');
+    // ...but an install that merely FINISHED proves nothing: the mark stays until the engine is healthy.
     m.markFirstInstallBlocked();
     m._uvToolInstallForceAttempts = async () => ({});
     const repairInstall = m._uvToolInstallForce;
-    delete m._uvToolInstallForce; // the real one: its success clears the flag
+    delete m._uvToolInstallForce; // the real one
     await m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.202']);
     m._uvToolInstallForce = repairInstall;
-    await m._installEngineOn('C:\\p\\python.exe');
-    await m._rollbackEngine();
-    ok(fs.existsSync(path.join(venv, 'WORKING')), 'after a blocked first install and a successful retry, a failed repair restores the working engine');
+    ok(m._firstInstallBlocked, 'a finished install alone does not clear "first install blocked"');
+    m.markEngineHealthy();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   {

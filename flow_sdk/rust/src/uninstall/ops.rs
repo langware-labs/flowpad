@@ -106,14 +106,20 @@ pub fn gather(layout: &Layout, log: &mut Log) -> Gathered {
     instances.sort_by(|a, b| a.name.cmp(&b.name));
 
     let mut engine_interpreters = vec![venv.join("Scripts").join("python.exe").display().to_string()];
-    if let Some(home) = venv_home(&venv) {
-        engine_interpreters.push(home.join("python.exe").display().to_string());
+    // The base interpreter of the venv and of its set-aside copy (the same runtime, or not).
+    for v in [venv.clone(), layout.pre_repair_venv()] {
+        if let Some(home) = venv_home(&v) {
+            let base = home.join("python.exe").display().to_string();
+            if !engine_interpreters.contains(&base) {
+                engine_interpreters.push(base);
+            }
+        }
     }
 
     let ctx = Context {
         app_exe: layout.app_exe().display().to_string(),
         engine_interpreters: engine_interpreters.clone(),
-        owned_venv: None,
+        owned_venvs: vec![],
         servers: servers.clone(),
         listeners: procs::tcp_listeners(),
     };
@@ -386,7 +392,10 @@ pub fn remove_engine(layout: &Layout, receipt: Option<&Receipt>, pre_repair_prov
                 .collect()
         })
         .unwrap_or_default();
-    remove_children(ledger, log, "set-aside engine", &layout.uv_tools(), &siblings);
+    // In use (a scan holding a file): deferred, with the runtime it may run on waiting behind it.
+    for name in siblings {
+        leftovers.extend(remove_tree(ledger, log, "set-aside engine", &layout.uv_tools().join(name), Some(RootId::CorruptCopy), None));
+    }
     leftovers.extend(remove_pre_repair(layout, pre_repair_proven, ledger, log));
     if !layout.venv().exists() {
         remove_file(ledger, log, "engine ownership record", &layout.ownership_record());
@@ -461,7 +470,12 @@ pub fn waits_for_venv(root: RootId) -> bool {
 
 /// An engine environment the runtime waits behind: the venv, or a set-aside copy of it.
 pub fn is_engine_root(root: RootId) -> bool {
-    matches!(root, RootId::Venv | RootId::PreRepair)
+    matches!(root, RootId::Venv) || is_set_aside_root(root)
+}
+
+/// A set-aside copy of the engine (`flowpad.pre-repair`, `flowpad.corrupt-*`).
+pub fn is_set_aside_root(root: RootId) -> bool {
+    matches!(root, RootId::PreRepair | RootId::CorruptCopy)
 }
 
 fn plain_installer_name(n: &str) -> bool {

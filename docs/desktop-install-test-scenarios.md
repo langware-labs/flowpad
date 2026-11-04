@@ -554,6 +554,6 @@ FlowPad's Claude Code hooks (`--name=flowpad_sniffer`) are removed with the engi
 - **(b)** A folder recreated before the next sign-in (a new file identity) is not touched.
 - **(c)** A modified `state.json` is refused and nothing is deleted.
 - **(d)** An old state replayed after a completed run is refused: its key was deleted.
-- **(e)** A root whose ownership proof (receipt, marker) is gone is skipped.
+- **(e)** A root whose ownership proof (receipt, marker) is gone, or that is another folder now, is kept: never deleted, and not left pending either, so the cleanup still finishes. A runtime waits only behind an engine copy that is still in use.
 - **(f) Manual:** a reinstall before the sign-in: the sign-in run stands down, and the new installer finishes the cleanup.
 - **(g)** A cleanup still blocked at sign-in does not re-register itself; the next installer or the manual command finishes it.

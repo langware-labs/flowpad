@@ -157,15 +157,15 @@ def test_any_file_an_older_cli_left_counts(instance):
     root = instance.global_dir.parent / "instances"
     (root / "cli-only" / "tasks").mkdir(parents=True, exist_ok=True)
     (root / "cli-only" / "config.json").write_text("{}")
-    (root / "empty" / "logs" / "monitor").mkdir(parents=True, exist_ok=True)  # a launch, not use
+    (root / "logs-only" / "logs" / "cli").mkdir(parents=True, exist_ok=True)  # an older CLI's logs
+    (root / "empty").mkdir(parents=True, exist_ok=True)
     (root / "empty" / ".DS_Store").write_bytes(b"")  # the OS, not an engine
-    (root / "empty" / "server.lock").write_bytes(b"")
-    (root / "empty" / "server-failure.json").write_text("{}")
 
     cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert "cli-only" in marker["preexisting"]
+    assert "logs-only" in marker["preexisting"], "an older engine that only logged still ran there"
     assert "empty" not in marker["preexisting"]
 
 

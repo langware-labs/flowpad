@@ -27,6 +27,8 @@ pub enum RootId {
     InstanceProd,
     /// `flowpad.pre-repair`: the engine a runtime repair set aside, proven the desktop's.
     PreRepair,
+    /// A `flowpad.corrupt-<time>` copy the desktop quarantined, removed with the engine it belonged to.
+    CorruptCopy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

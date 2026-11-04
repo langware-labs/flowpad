@@ -1132,6 +1132,12 @@ let startupFailed = false;
 // "quit FlowPad", before it "stop the startup" (quit-gate.js).
 let backendReady = false;
 
+// The engine answered: a later repair has a working engine to put back (uv-manager.js).
+function noteEngineHealthy() {
+  if (uvManager && typeof uvManager.markEngineHealthy === 'function') uvManager.markEngineHealthy();
+}
+
+
 // ── FLOWPAD-2231: fatal-failure handling, recovery update, startup journal ─────────────────────
 // The journal (startup-watchdog.js) records which phase this launch reached so the next launch can
 // tell a crash from a clean end; the guard keeps two `flow start`s from ever running at once; the
@@ -2581,6 +2587,7 @@ async function startApp() {
         });
         if (!recovered) return;
         backendReady = true;
+        noteEngineHealthy();
         break;
       }
       if (result.fatalRecord) {
@@ -2589,6 +2596,7 @@ async function startApp() {
         const recovered = await handleFatalFailure({ match: rec.match, record: result.fatalRecord });
         if (!recovered) return;
         backendReady = true;
+        noteEngineHealthy();
         break;
       }
       await waitForRetryRequest();
@@ -2617,6 +2625,7 @@ async function startApp() {
   if (backendWaitAborted(backendWait)) return;
   backendReady = backendWait.ready;
   if (backendWait.ready) {
+    noteEngineHealthy();
     updateTest.event('engine-ready', { desktop: app.getVersion(), engine: (uvManager && uvManager.getInstalledVersionSync()) || null });
   }
 
@@ -2632,6 +2641,7 @@ async function startApp() {
     const repaired = await handleFatalFailure({ match: rec.match, record: rec.record });
     if (!repaired) return;
     backendReady = true;
+    noteEngineHealthy();
   } else if (!backendWait.ready) {
     // Try to gather diagnostics for the error dialog
     const timeoutSec = backendWait.elapsedSec;

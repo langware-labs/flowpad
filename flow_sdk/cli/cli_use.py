@@ -9,10 +9,14 @@ leaves a stamp:
 * ``<flow_home>/global/cli-stamp-since`` — ``{"version", "since", "preexisting"}``: written once,
   by the first engine that stamps. Without it, a missing ``.cli_used`` means "unknown" (an older
   engine never stamped), not "never used". ``preexisting`` names the instances an older engine
-  already ran against — something in the folder (other than OS files) predates the process that
-  wrote the marker: that engine may have driven them from the command line unrecorded, so for
-  them a missing stamp stays "unknown". The folder itself proves nothing: the desktop creates
-  ``instances/prod`` at launch, before any engine runs.
+  already ran against — anything in the folder other than the OS's own files (``NOT_ENGINE_TRACES``)
+  predates the process that wrote the marker: that engine may have driven them from the command
+  line unrecorded, so for them a missing stamp stays "unknown". The folder itself proves nothing:
+  the desktop creates ``instances/prod`` at launch, before any engine runs.
+
+  Only the ``flow`` entry point writes the marker, and it runs before anything it starts: the
+  desktop launches the engine as ``flow start``, so the monitor and the server (and the logs,
+  locks and state files they write) come after the marker, never before it.
 
 Not stamped: a process with ``FLOWPAD_DESKTOP=1`` (the desktop's own ``flow`` calls, its backend,
 and every worker the backend spawns — they inherit it), and the ``hooks`` group (the Claude Code
@@ -60,14 +64,13 @@ def _process_started() -> float:
     return psutil.Process().create_time()
 
 
-#: What is NOT evidence that an engine used the instance: the OS's files, and what a launch writes
-#: before (or without) using it — logs, locks, the launcher's failure record. The desktop itself
-#: only creates the folder, at launch, before any engine runs. Anything else there was an engine's.
-NOT_ENGINE_TRACES = frozenset({".DS_Store", "desktop.ini", "Thumbs.db", "logs", "server-failure.json"})
+#: The OS's own files. The desktop only creates the folder, at launch, before any engine runs;
+#: anything else there — data, config, logs, locks — was an engine's, older or this one.
+NOT_ENGINE_TRACES = frozenset({".DS_Store", "desktop.ini", "Thumbs.db"})
 
 
 def _is_trace(path: Path) -> bool:
-    return path.name not in NOT_ENGINE_TRACES and not path.name.endswith(".lock")
+    return path.name not in NOT_ENGINE_TRACES
 
 
 def _created(path: Path) -> float:

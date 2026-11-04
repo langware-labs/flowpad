@@ -204,14 +204,6 @@ class FlowServer:
 
             mark_desktop_managed()
 
-            # This engine stamps CLI use (flow_sdk/cli/cli_use.py): say so on disk even if the
-            # CLI never runs, so the uninstaller can read a missing stamp as "not used".
-            from flow_sdk.cli.cli_use import ensure_stamping_marker
-            from flow_sdk.instance_settings import get_instance_settings
-
-            _settings = get_instance_settings()
-            ensure_stamping_marker(_settings.global_dir, current=_settings.instance_name)
-
             # SOD driver. An explicitly-registered driver (tests / embedders /
             # cloud) wins. Otherwise there is NO desktop driver to install:
             # get_current_sod_store() falls through to the single per-instance
