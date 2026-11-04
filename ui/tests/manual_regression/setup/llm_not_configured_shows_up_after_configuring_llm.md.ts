@@ -55,7 +55,7 @@ test.describe('LLM configuration view', () => {
 
     // App remains functional (search bar or session input visible)
     const hasInteractiveElement = await page
-      .locator('input, button, textarea')
+      .locator('input:visible, button:visible, textarea:visible')
       .first()
       .isVisible({ timeout: adjusted(10_000) })
       .catch(() => false);
