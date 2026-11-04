@@ -36,14 +36,16 @@ pub struct Failure {
     pub detail: String,
 }
 
-/// `Refused::Unreadable` for a file where a folder was expected.
-pub const NOT_A_DIRECTORY: &str = "not a directory";
-
 /// Why a root was not opened. Nothing under a refused root is touched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refused {
     Missing,
+    /// Held open by someone else right now (a sharing or lock violation): worth trying again.
+    Busy(String),
+    /// Cannot be opened, and nothing says it will change (access denied by its ACL, ...).
     Unreadable(String),
+    /// A file where the folder was.
+    NotADirectory,
     /// The root itself is a junction or symlink.
     ReparsePoint,
     /// A junction or symlink somewhere above the root sends it elsewhere.
@@ -54,7 +56,9 @@ impl std::fmt::Display for Refused {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Refused::Missing => write!(f, "does not exist"),
+            Refused::Busy(e) => write!(f, "is in use: {e}"),
             Refused::Unreadable(e) => write!(f, "cannot be opened: {e}"),
+            Refused::NotADirectory => write!(f, "is a file, not a folder"),
             Refused::ReparsePoint => write!(f, "is a junction or symbolic link"),
             Refused::Redirected { actual, .. } => write!(f, "is redirected to {}", actual.display()),
         }
@@ -111,19 +115,19 @@ impl Root {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(Refused::Missing),
             Err(e) => return Err(Refused::Unreadable(e.to_string())),
         };
-        let handle = fsx::open_path_no_follow(&lexical, true).map_err(|e| {
-            if matches!(e, OsError::Win32(2) | OsError::Win32(3)) {
-                Refused::Missing
-            } else {
-                Refused::Unreadable(e.to_string())
-            }
+        let handle = fsx::open_path_no_follow(&lexical, true).map_err(|e| match e {
+            OsError::Win32(2) | OsError::Win32(3) => Refused::Missing,
+            // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION: someone holds it now.
+            OsError::Win32(32) | OsError::Win32(33) => Refused::Busy(e.to_string()),
+            _ if e.is_locked() => Refused::Busy(e.to_string()),
+            _ => Refused::Unreadable(e.to_string()),
         })?;
         let a = fsx::attrs(&handle).map_err(|e| Refused::Unreadable(e.to_string()))?;
         if a.reparse {
             return Err(Refused::ReparsePoint);
         }
         if !a.directory {
-            return Err(Refused::Unreadable(NOT_A_DIRECTORY.into()));
+            return Err(Refused::NotADirectory);
         }
         let actual = fsx::final_path(&handle).map_err(|e| Refused::Unreadable(e.to_string()))?;
         if !fsx::same_path(&actual, &lexical) {

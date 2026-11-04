@@ -9,12 +9,12 @@ leaves a stamp:
 * ``<flow_home>/global/cli-stamp-since`` — ``{"version", "since", "preexisting"}``: written once,
   by the first engine that stamps. Without it, a missing ``.cli_used`` means "unknown" (an older
   engine never stamped), not "never used". ``preexisting`` names the instances an older engine
-  already ran against — one of the files an engine keeps there (``ENGINE_TRACES``: its data,
-  settings, records, markers), or the database / records an env override moved elsewhere, predates
-  the process that wrote the marker: that engine may have driven them from the command line
-  unrecorded, so for them a missing stamp stays "unknown". The folder itself proves nothing (the
-  desktop creates ``instances/prod`` at launch, before any engine runs), and neither do the logs,
-  locks and failure record a launch writes before it uses anything.
+  already ran against — anything in the folder but the OS's own files (``NOT_ENGINE_TRACES``), or
+  the database / records this process's env overrides moved elsewhere, predates the process that
+  wrote the marker: that engine may have driven them from the command line unrecorded, so for them
+  a missing stamp stays "unknown". The folder itself proves nothing (the desktop creates
+  ``instances/prod`` at launch, before any engine runs). Another instance's overrides lived only in
+  the environment of the processes that used it; nothing on disk records them.
 
   Only the ``flow`` entry point writes the marker (see ``record_cli_use``).
 
@@ -64,38 +64,15 @@ def _process_started() -> float:
     return psutil.Process().create_time()
 
 
-#: What an engine keeps in an instance folder once it has used it: its data (database, records,
-#: projects, schema, tasks), its settings and markers. Not the logs, locks or failure record a
-#: launch writes first, and not the OS's own files.
-ENGINE_TRACES = frozenset(
-    {
-        "flowpad.db",
-        "flowpad_db",
-        "server.json",
-        "config.json",
-        "preferences.json",
-        "records",
-        "records_data",
-        "projects",
-        "schema",
-        "tasks",
-        "deployments",
-        "browser",
-        "backups",
-        "sealed",
-        "hub_git",
-        "received_transcripts",
-        "scheduler_jobs.db",
-        "cost_stats_cache.sqlite",
-        ".desktop_managed",
-        ".secrets_enabled",
-        ".cookie_gate",
-    }
-)
+#: The OS's own files. Anything else in an instance folder is evidence an engine used it: the
+#: desktop only creates the folder (at launch, before any engine runs), and the marker is written
+#: before anything `flow` starts (see ``record_cli_use``). A file nobody listed counts — an error
+#: here keeps an engine, never removes one.
+NOT_ENGINE_TRACES = frozenset({".DS_Store", "desktop.ini", "Thumbs.db"})
 
 
 def _is_trace(path: Path) -> bool:
-    return path.name in ENGINE_TRACES
+    return path.name not in NOT_ENGINE_TRACES
 
 
 def _created(path: Path) -> float:

@@ -32,31 +32,23 @@ const RETRY_PAUSE: Duration = Duration::from_millis(1500);
 
 /// Stop what the desktop launched. A graceful `flow stop` for each desktop instance whose server
 /// is verified; then, only when the engine goes, force-stop the verified set and re-check. A
-/// kept engine's processes are never force-stopped. `aside_goes`: a proven set-aside copy
-/// (`flowpad.pre-repair`) is being removed, so whatever runs from it is stopped too.
-pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, aside_goes: bool, ledger: &mut Ledger, log: &mut Log) -> bool {
+/// kept engine's processes are never force-stopped.
+/// `owned`: the engine environments being removed (the venv, its set-aside copies) — whatever
+/// runs from them is stopped. `engine_goes`: the venv itself goes, so every verified FlowPad
+/// process may be force-stopped.
+pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, owned: &[PathBuf], ledger: &mut Ledger, log: &mut Log) -> bool {
     let mut owned_venvs = Vec::new();
     let mut engine_interpreters = g.engine_interpreters.clone();
-    let mut own = |venv: std::path::PathBuf| {
+    for venv in owned {
         // A venv being removed: its own base interpreter counts as the engine's (never an
         // unproven copy's, whose `home` may be the user's Python).
-        if let Some(home) = ops::venv_home(&venv) {
+        if let Some(home) = ops::venv_home(venv) {
             let base = home.join("python.exe").display().to_string();
             if !engine_interpreters.contains(&base) {
                 engine_interpreters.push(base);
             }
         }
         owned_venvs.push(venv.display().to_string());
-    };
-    if engine_goes {
-        own(layout.venv());
-        // The quarantined `flowpad.corrupt-*` copies go with the engine.
-        for name in ops::corrupt_copies(layout) {
-            own(layout.uv_tools().join(name));
-        }
-    }
-    if aside_goes {
-        own(layout.pre_repair_venv());
     }
     let ctx = || Context {
         app_exe: layout.app_exe().display().to_string(),
@@ -114,9 +106,9 @@ fn ini_escape(s: &str) -> String {
 
 /// The page's sizes are only for display, and the page has to appear inside the classify
 /// deadline: one budget for ALL the folders on the page, in entries and in time. Each folder in
-/// turn gets an equal share of what is left, so one large folder cannot leave another unmeasured,
-/// and what a small folder does not use passes on to the next. Past its share, a folder's size is
-/// what was counted, shown as "more than".
+/// turn may use everything left except a guaranteed minimum held back for each folder after it,
+/// so a large folder is measured whole wherever it comes, and no folder is left unmeasured. Past
+/// its allowance, a folder's size is what was counted, shown as "more than".
 const SIZE_WALK_ENTRIES: usize = 200_000;
 const SIZE_WALK_TIME: Duration = Duration::from_secs(15);
 
@@ -139,21 +131,33 @@ struct PageBudget {
     entries_left: usize,
     until: Instant,
     folders_left: usize,
+    /// Held back for each folder not measured yet: a quarter of an equal share.
+    min_entries: usize,
+    min_time: Duration,
 }
 
 impl PageBudget {
     fn new(entries: usize, time: Duration, folders: usize) -> Self {
-        PageBudget { entries_left: entries, until: Instant::now() + time, folders_left: folders.max(1) }
+        let n = folders.max(1);
+        PageBudget {
+            entries_left: entries,
+            until: Instant::now() + time,
+            folders_left: n,
+            min_entries: entries / n / 4,
+            min_time: time / n as u32 / 4,
+        }
     }
-    /// Measure the next folder with an equal share of what is left; what it does not use stays.
+    /// Measure the next folder with what is left, less the minimum kept for the ones after it.
     fn size_text(&mut self, path: &Path) -> String {
-        let n = self.folders_left.max(1);
+        let later = self.folders_left.saturating_sub(1);
         let time_left = self.until.saturating_duration_since(Instant::now());
-        let mut share = SizeBudget::new(self.entries_left / n, time_left / n as u32);
+        let entries = self.entries_left.saturating_sub(self.min_entries * later);
+        let time = time_left.saturating_sub(self.min_time * later as u32);
+        let mut share = SizeBudget::new(entries, time);
         let allotted = share.entries_left;
         let text = size_text(path, &mut share);
         self.entries_left -= allotted - share.entries_left;
-        self.folders_left = self.folders_left.saturating_sub(1);
+        self.folders_left = later;
         text
     }
 }
@@ -201,8 +205,8 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     s.push_str(&format!("remove={}\n", engine.remove_by_default as u8));
     s.push_str(&format!("offer={}\n", engine.opt_in_offered as u8));
     s.push_str(&format!("reason={}\n", ini_escape(&engine.reasons.join("; "))));
-    // Every offered instance, and the app data: an equal share of what is left, in turn. The app
-    // data (settings and cache: few entries) first, so what it leaves goes to the user's data.
+    // The app data, then every offered instance, each with what is left less the minimum held back
+    // for the ones after it (PageBudget).
     let measured = instances.iter().filter(|i| !matches!(i.offer, DataOffer::NotOffered(_))).count() + 1;
     let mut budget = PageBudget::new(SIZE_WALK_ENTRIES, SIZE_WALK_TIME, measured);
     let app = layout.app_data();
@@ -295,8 +299,17 @@ pub fn run(o: &Options) -> i32 {
         ledger.kept("FlowPad engine", &layout.venv(), &hint);
     }
 
-    let aside_goes = (engine_goes || !g.facts.engine.venv_exists) && g.pre_repair_proven;
-    stop_processes(&layout, &g, engine_goes, aside_goes, &mut ledger, &mut log);
+    // What this run removes: the venv and its quarantined copies when the engine goes, and a proven
+    // set-aside copy when the engine goes or is already gone.
+    let mut owned: Vec<PathBuf> = Vec::new();
+    if engine_goes {
+        owned.push(layout.venv());
+        owned.extend(ops::corrupt_copies(&layout).into_iter().map(|n| layout.uv_tools().join(n)));
+    }
+    if (engine_goes || !g.facts.engine.venv_exists) && g.pre_repair_proven {
+        owned.push(layout.pre_repair_venv());
+    }
+    stop_processes(&layout, &g, engine_goes, &owned, &mut ledger, &mut log);
 
     let engine_absent = !g.facts.engine.venv_exists;
     let selected_instances: Vec<String> = if o.delete_instance_data {
@@ -318,7 +331,7 @@ pub fn run(o: &Options) -> i32 {
         }
         log.line(&format!("retry {attempt}: {} item(s) in use", leftovers.len()));
         std::thread::sleep(RETRY_PAUSE);
-        stop_processes(&layout, &g, engine_goes, aside_goes, &mut Ledger::default(), &mut log);
+        stop_processes(&layout, &g, engine_goes, &owned, &mut Ledger::default(), &mut log);
         let mut again: Vec<Leftover> = Vec::new();
         for l in leftovers {
             if ops::waits_for_venv(l.root) && again.iter().any(|a| ops::is_engine_root(a.root)) {
@@ -414,21 +427,40 @@ fn remove_all(
 mod tests {
     use super::*;
 
+    fn folders(dir: &Path, sizes: &[(&str, usize)]) {
+        for (name, files) in sizes {
+            fs::create_dir_all(dir.join(name)).unwrap();
+            for i in 0..*files {
+                fs::write(dir.join(name).join(format!("f{i}")), vec![0u8; 300 * 1024]).unwrap();
+            }
+        }
+    }
+
     #[test]
-    fn what_a_small_folder_leaves_passes_on_to_the_next() {
+    fn a_large_folder_is_measured_whole_wherever_it_comes() {
         let dir = std::env::temp_dir().join(format!("flowrs-share-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(dir.join("small")).unwrap();
-        fs::write(dir.join("small").join("f"), vec![0u8; 300 * 1024]).unwrap();
-        fs::create_dir_all(dir.join("big")).unwrap();
-        for i in 0..9 {
-            fs::write(dir.join("big").join(format!("f{i}")), vec![0u8; 300 * 1024]).unwrap();
-        }
-        // 12 entries for 2 folders: an equal split (6 each) would cut "big" (10 entries); the
-        // small one uses 2, so "big" gets the other 10 and is measured whole.
-        let mut page = PageBudget::new(12, Duration::from_secs(60), 2);
+        folders(&dir, &[("big", 29), ("small", 1)]);
+        // 40 entries, 2 folders: 5 held back for the second. "big" (30 entries) comes FIRST and
+        // is measured whole; "small" (2) still fits in what is left.
+        let mut page = PageBudget::new(40, Duration::from_secs(60), 2);
+        assert_eq!(page.size_text(&dir.join("big")), "8.5 MB");
         assert_eq!(page.size_text(&dir.join("small")), "0.3 MB");
-        assert_eq!(page.size_text(&dir.join("big")), "2.6 MB");
+        // Small first: what it leaves goes to the large one.
+        let mut page = PageBudget::new(40, Duration::from_secs(60), 2);
+        assert_eq!(page.size_text(&dir.join("small")), "0.3 MB");
+        assert_eq!(page.size_text(&dir.join("big")), "8.5 MB");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_folder_after_a_huge_one_still_gets_its_minimum() {
+        let dir = std::env::temp_dir().join(format!("flowrs-min-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        folders(&dir, &[("huge", 60), ("small", 1)]);
+        let mut page = PageBudget::new(40, Duration::from_secs(60), 2);
+        assert!(page.size_text(&dir.join("huge")).starts_with("more than "));
+        assert_eq!(page.size_text(&dir.join("small")), "0.3 MB", "its minimum (5 entries) was held back");
         fs::remove_dir_all(&dir).unwrap();
     }
 

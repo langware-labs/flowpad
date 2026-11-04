@@ -190,15 +190,15 @@ fn root_path(layout: &Layout, root: RootId, pinned: super::Identity) -> PathBuf 
     }
 }
 
-/// The root will never be deleted as it is now: a junction or symlink (at it or above it), or a
-/// file where the folder was. Anything else that fails to open (a sharing violation, access denied
-/// during a scan) is temporary.
+/// The root will not be deleted as it is now: a junction or symlink (at it or above it), a file
+/// where the folder was, or a folder that cannot be opened for a reason that does not pass (its
+/// ACL). Only "in use right now" (a sharing or lock violation) is worth another run — and that
+/// too ends: the state expires (state.rs), and an expired state is cleaned up.
 fn refused_for_good(e: &super::delete::Refused) -> bool {
     use super::delete::Refused::*;
     match e {
-        ReparsePoint | Redirected { .. } => true,
-        Unreadable(why) => why == super::delete::NOT_A_DIRECTORY,
-        Missing => false,
+        ReparsePoint | Redirected { .. } | NotADirectory | Unreadable(_) => true,
+        Busy(_) | Missing => false,
     }
 }
 
@@ -266,6 +266,14 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
     let secret = credential().ok().and_then(|c| c.get_password().ok()).and_then(|s| Secret::decode(&s));
     let body = match state::verify(&text, secret.as_ref(), win::now()) {
         Ok(b) => b,
+        Err(state::Rejected::Expired) => {
+            // The ceiling on retries: past its lifetime the state can never authorize anything, so
+            // the pending cleanup ends here — its key, state and helper go; nothing is deleted.
+            status(layout, "expired: nothing deleted; the pending cleanup is dropped");
+            log.line("deferred cleanup state expired: dropped, nothing deleted");
+            finish(layout);
+            return 20;
+        }
         Err(e) => {
             status(layout, &format!("refused: {e}; nothing deleted"));
             log.line(&format!("deferred cleanup refused: {e}"));
@@ -274,18 +282,36 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
     };
 
     let gathered = ops::gather(layout, log);
-    // The engine (and its quarantined copies) is FlowPad's to remove when it, or a copy, is pending.
-    let engine_owned = body.entries.iter().any(|e| matches!(e.root, RootId::Venv | RootId::CorruptCopy));
-    let aside_owned = body.entries.iter().any(|e| e.root == RootId::PreRepair) && gathered.pre_repair_proven;
-    super::run::stop_processes(layout, &gathered, engine_owned, aside_owned, &mut Ledger::default(), log);
+    let pinned_of = |e: &state::Entry| super::Identity { volume: e.volume, file_id: e.file_id };
+    // First, before anything is stopped or deleted: which engine environments (the venv, its
+    // set-aside copies) this run will remove — still the pinned folder, still provably FlowPad's.
+    // Only their processes are stopped, and the runtime decisions below never depend on the order
+    // the state lists its entries in.
+    let removable: Vec<(usize, PathBuf)> = body
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| ops::is_engine_root(e.root))
+        .filter_map(|(i, e)| {
+            let path = root_path(layout, e.root, pinned_of(e));
+            let same = Root::open(&path).is_ok_and(|r| r.identity() == pinned_of(e));
+            (same && still_owned(layout, e.root, &path).is_ok()).then_some((i, path))
+        })
+        .collect();
+    let venv_goes = removable.iter().any(|(i, _)| body.entries[*i].root == RootId::Venv);
+    let owned: Vec<PathBuf> = removable.iter().map(|(_, p)| p.clone()).collect();
+    super::run::stop_processes(layout, &gathered, venv_goes, &owned, &mut Ledger::default(), log);
 
     let mut ledger = Ledger::default();
     let mut remaining = Vec::new();
     // Entries (by index) this run leaves on purpose: no longer provably FlowPad's, another folder
     // now, or a runtime a kept engine copy runs on. Never deleted, and not pending either.
     let mut kept: Vec<usize> = Vec::new();
-    let pinned_of = |e: &state::Entry| super::Identity { volume: e.volume, file_id: e.file_id };
-    for (idx, entry) in body.entries.iter().enumerate() {
+    // Engine environments first, then everything else (the runtime waits behind them).
+    let mut order: Vec<usize> = (0..body.entries.len()).collect();
+    order.sort_by_key(|&i| !ops::is_engine_root(body.entries[i].root));
+    for idx in order {
+        let entry = &body.entries[idx];
         let pinned = pinned_of(entry);
         let path = root_path(layout, entry.root, pinned);
         match Root::open(&path) {
@@ -315,10 +341,10 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
             Ok(_) => {}
         }
         if ops::waits_for_venv(entry.root) && layout.venv().exists() {
-            // The runtime waits only behind an engine this cleanup is still removing. An engine it
-            // keeps (no longer proven, another folder now), or one it never had to remove, stays
-            // for good, and so does its runtime.
-            let venv_pending = body.entries.iter().enumerate().any(|(i, e)| e.root == RootId::Venv && !kept.contains(&i));
+            // The runtime waits only behind an engine this cleanup is removing (and could not yet).
+            // An engine it keeps (no longer proven, another folder now), or one it never had to
+            // remove, stays for good, and so does its runtime.
+            let venv_pending = venv_goes;
             if venv_pending {
                 status(layout, &format!("{:?}: waits, the engine is still there", entry.root));
             } else {
@@ -332,14 +358,10 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         if ops::waits_for_venv(entry.root) {
             // Engine copies this run tried and that are still in use: the runtime waits behind
             // them. Any other copy on the runtime is one FlowPad keeps, and so it keeps the runtime.
-            let waiting: Vec<String> = body
-                .entries
+            let waiting: Vec<String> = removable
                 .iter()
-                .enumerate()
-                .filter(|(i, e)| ops::is_set_aside_root(e.root) && !kept.contains(i))
-                .map(|(_, e)| root_path(layout, e.root, pinned_of(e)))
-                .filter(|p| Root::open(p).is_ok())
-                .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                .filter(|(i, p)| ops::is_set_aside_root(body.entries[*i].root) && p.exists())
+                .filter_map(|(_, p)| p.file_name().map(|n| n.to_string_lossy().to_string()))
                 .collect();
             let users = ops::set_aside_copies_on_runtime(layout);
             if users.iter().any(|n| !waiting.contains(n)) {

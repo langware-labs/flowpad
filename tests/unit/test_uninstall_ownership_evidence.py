@@ -152,21 +152,23 @@ def test_a_clean_install_has_no_preexisting_instance(instance):
     assert "prod" not in marker["preexisting"], "...but no engine had run against it"
 
 
-def test_engine_files_count_and_launch_files_do_not(instance):
-    """A `flow` command that never started a server still leaves files (config.json, tasks/)."""
+def test_anything_an_older_engine_left_counts(instance):
+    """Data, settings, logs, locks — any file an engine left (only the OS's own do not count). A
+    file nobody listed counts too: the error keeps an engine, never removes one."""
     root = instance.global_dir.parent / "instances"
     (root / "cli-only" / "tasks").mkdir(parents=True, exist_ok=True)
     (root / "cli-only" / "config.json").write_text("{}")
-    (root / "launch-only" / "logs" / "monitor").mkdir(parents=True, exist_ok=True)  # a launch, not use
-    (root / "launch-only" / "server.lock").write_bytes(b"")
-    (root / "launch-only" / "server-failure.json").write_text("{}")
-    (root / "launch-only" / ".DS_Store").write_bytes(b"")  # the OS, not an engine
+    (root / "logs-only" / "logs" / "cli").mkdir(parents=True, exist_ok=True)
+    (root / "unlisted" / "worker_history_cache.sqlite").parent.mkdir(parents=True, exist_ok=True)
+    (root / "unlisted" / "worker_history_cache.sqlite").write_bytes(b"")
+    (root / "os-only").mkdir(parents=True, exist_ok=True)
+    (root / "os-only" / ".DS_Store").write_bytes(b"")
 
     cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
-    assert "cli-only" in marker["preexisting"]
-    assert "launch-only" not in marker["preexisting"], "logs, locks and a failure record are a launch, not use"
+    assert {"cli-only", "logs-only", "unlisted"} <= set(marker["preexisting"])
+    assert "os-only" not in marker["preexisting"]
 
 
 def test_an_overridden_database_counts_for_its_instance(instance, tmp_path, monkeypatch):
@@ -183,12 +185,33 @@ def test_an_overridden_database_counts_for_its_instance(instance, tmp_path, monk
 
 
 def test_only_the_flow_entry_point_writes_the_marker():
-    """The server must not write it: started without `flow`, it would date the marker after its own
-    launch files (record_cli_use explains). Read the source, not a docstring."""
-    import flow_sdk.server.flow_server as flow_server
+    """No other module of the engine refers to the marker writer — not the server, its startup,
+    the monitor, `python -m`, the MCP server — by name, alias or attribute: started without `flow`,
+    any of them would date the marker after its own launch files (record_cli_use explains)."""
+    import ast
 
-    source = Path(flow_server.__file__).read_text(encoding="utf-8")
-    assert "ensure_stamping_marker(" not in source
+    import flow_sdk
+
+    package = Path(flow_sdk.__file__).parent
+    writers = []
+    for path in package.rglob("*.py"):
+        if path.name == "cli_use.py" or "rust" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "ensure_stamping_marker" not in text:  # any reference (call, alias, getattr string) names it
+            continue
+        tree = ast.parse(text, filename=str(path))
+        for node in ast.walk(tree):
+            name = (
+                node.id if isinstance(node, ast.Name)
+                else node.attr if isinstance(node, ast.Attribute)
+                else node.name if isinstance(node, ast.alias)
+                else node.value if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                else None
+            )
+            if name == "ensure_stamping_marker":
+                writers.append(f"{path.relative_to(package)}:{node.lineno if hasattr(node, 'lineno') else '?'}")
+    assert writers == []
 
 
 def test_an_unreadable_entry_counts_and_the_scan_goes_on(instance, monkeypatch):

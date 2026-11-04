@@ -112,15 +112,14 @@ function Wait-Until([scriptblock]$cond, [int]$secs = 30) {
   return $true
 }
 
-# True only while another process holds the file (a sharing violation); false when it is free,
-# and an error for anything else (a missing file is not "held").
+# True only while another process holds the file (a sharing violation). A missing path, a folder,
+# or any other error is "not held": never a crash of the whole run.
 function Test-Held($path) {
-  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "not a file: $path" }
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
   try { $x = [IO.File]::Open($path, 'Open', 'ReadWrite', 'ReadWrite,Delete'); $x.Close(); return $false }
   catch {
     $ex = $_.Exception; if ($ex.InnerException) { $ex = $ex.InnerException }  # a .NET call's error comes wrapped
-    if (($ex.HResult -band 0xFFFF) -eq 32) { return $true }  # ERROR_SHARING_VIOLATION
-    throw
+    return (($ex.HResult -band 0xFFFF) -eq 32)  # ERROR_SHARING_VIOLATION
   }
 }
 
@@ -128,7 +127,8 @@ function Test-Held($path) {
 function Lock-File($path) {
   $h = Start-Process powershell -ArgumentList '-NoProfile', '-Command', "`$f=[IO.File]::Open('$path','Open','Read','Read'); Start-Sleep 120" -PassThru -WindowStyle Hidden
   $script:holders += $h
-  if (-not (Wait-Until { Test-Held $path })) { throw "could not hold $path" }
+  $ok = Wait-Until { Test-Held $path } 10
+  Check $ok "the test holds $path"
   return $h
 }
 
@@ -373,6 +373,48 @@ try {
     Check ($dcode -eq 0) "deferred-cleanup exit 0 (nothing left pending), got $dcode"
     Check (Test-Path "$venv\uv-receipt.toml") 'the engine, no longer proven, is kept'
     Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'and so is the runtime it runs on'
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the cleanup finished: the helper removed itself'
+  }
+
+  Write-Host '== only a quarantined copy pending, the engine reinstalled since: its processes are left alone'
+  if (-not $credentials) {
+    Skip 'the Credential Manager is not available in this session'
+  } else {
+    $r = New-Layout 'corrupt-pending-reinstalled'
+    $copy = "$r\roaming\uv\tools\flowpad.corrupt-1"
+    $h = Lock-File "$copy\x"
+    $code = Invoke-Uninstall $r @()
+    Check ($code -eq 10) "exit 10 (restart required), got $code"
+    Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'the engine itself was removed'
+    Release @($h)
+    # a new engine is installed and running before the deferred run
+    New-Item -ItemType Directory -Force "$r\roaming\uv\tools\flowpad\Scripts" | Out-Null
+    Copy-Item "$env:SystemRoot\System32\PING.EXE" "$r\roaming\uv\tools\flowpad\Scripts\flow.exe" -Force
+    $p = Start-Process "$r\roaming\uv\tools\flowpad\Scripts\flow.exe" -ArgumentList '-n', '60', '127.0.0.1' -PassThru -WindowStyle Hidden
+    $script:holders += $p
+    $dcode = Invoke-Deferred $r
+    Check ($dcode -eq 0) "deferred-cleanup exit 0, got $dcode"
+    Check (-not (Test-Path $copy)) 'the quarantined copy is removed'
+    Check (-not $p.HasExited) 'a process of the reinstalled engine is left running'
+    Check (Test-Path "$r\roaming\uv\tools\flowpad\Scripts\flow.exe") 'and the reinstalled engine is untouched'
+    Release @($p)
+  }
+
+  Write-Host '== a pending folder its ACL now blocks: kept, the cleanup finishes'
+  if (-not $credentials) {
+    Skip 'the Credential Manager is not available in this session'
+  } else {
+    $r = New-Layout 'deferred-acl'
+    $venv = "$r\roaming\uv\tools\flowpad"
+    $h = Lock-File "$venv\Lib\site-packages\flow_sdk\__init__.py"
+    $code = Invoke-Uninstall $r @()
+    Check ($code -eq 10) "exit 10 (restart required), got $code"
+    Release @($h)
+    $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    icacls $venv /deny "${me}:(RD)" | Out-Null
+    try { $dcode = Invoke-Deferred $r } finally { icacls $venv /remove:d $me | Out-Null }
+    Check ($dcode -eq 0) "deferred-cleanup exit 0 (nothing left pending), got $dcode"
+    Check (Test-Path "$venv\uv-receipt.toml") 'the folder it cannot open is kept, nothing deleted'
     Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the cleanup finished: the helper removed itself'
   }
 

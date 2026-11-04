@@ -171,7 +171,9 @@ pub fn verify(text: &str, secret: Option<&Secret>, now: u64) -> Result<Body, Rej
     if body.entries.len() > MAX_ENTRIES {
         return Err(Rejected::TooManyEntries);
     }
-    let mut roots: Vec<RootId> = body.entries.iter().map(|e| e.root).collect();
+    // The same object twice is a duplicate; two of a kind are not (two quarantined
+    // `flowpad.corrupt-*` copies, two runtime folders): each is pinned by its own identity.
+    let mut roots: Vec<(RootId, u32, u64)> = body.entries.iter().map(|e| (e.root, e.volume, e.file_id)).collect();
     roots.sort();
     if roots.windows(2).any(|w| w[0] == w[1]) {
         return Err(Rejected::DuplicateRoot);
@@ -273,6 +275,10 @@ mod tests {
         assert_eq!(verify(&"x".repeat(MAX_BYTES + 1), Some(&s), 2_000), Err(Rejected::TooLarge));
         let two = to_text(&sign(Body { entries: vec![body().entries[0].clone(), body().entries[0].clone()], ..body() }, &s));
         assert_eq!(verify(&two, Some(&s), 2_000), Err(Rejected::DuplicateRoot));
+        // Two of a kind, each its own object (two quarantined engine copies): accepted.
+        let copy = |file_id| Entry { root: RootId::CorruptCopy, volume: 1, file_id };
+        let pair = to_text(&sign(Body { entries: vec![copy(7), copy(8)], ..body() }, &s));
+        assert!(verify(&pair, Some(&s), 2_000).is_ok(), "two copies with their own identities are not a duplicate");
         let wrong_schema = to_text(&sign(Body { schema: 2, ..body() }, &s));
         assert_eq!(verify(&wrong_schema, Some(&s), 2_000), Err(Rejected::Schema));
     }
