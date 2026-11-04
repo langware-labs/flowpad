@@ -55,6 +55,9 @@ test.describe('open shell from process workdir', () => {
     // workdir basename.
     await expect(page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first()).toBeAttached();
     const base = workdir.split('/').filter(Boolean).pop()!;
+    // The prompt only names the directory in some shells (zsh's %~); `pwd` shows it in any.
+    await page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm').first().click();
+    await page.keyboard.type('pwd\n');
     await expect(async () => {
       const txt = await page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first().textContent();
       expect(txt).toContain(base);
