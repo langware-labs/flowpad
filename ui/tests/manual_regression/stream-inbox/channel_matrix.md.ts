@@ -64,7 +64,15 @@ test.beforeAll(async () => {
   // The doubles: one process, every driver's Double, credentials planted on this instance.
   doubles = spawn('uv', ['run', 'python', 'tests/e2e/channel_doubles.py', '--backend', apiOrigin()], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...configuredFileEnv(), FLOW_INSTANCE: INSTANCE, FLOWPAD_SKIP_DOTENV: 'true' },
+    // An explicitly exported hub URL beats the instance env file's: the doubles' mailbox driver must reach the
+    // same hub the run was pointed at (the file's launcher default is the cloud hub, which answers 301).
+    env: {
+      ...process.env,
+      ...configuredFileEnv(),
+      ...(process.env.FLOWPAD_HUB_URL ? { FLOWPAD_HUB_URL: process.env.FLOWPAD_HUB_URL } : {}),
+      FLOW_INSTANCE: INSTANCE,
+      FLOWPAD_SKIP_DOTENV: 'true',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';
