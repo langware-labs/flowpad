@@ -196,16 +196,31 @@ def test_proc_kill_spares_backend_kills_decoy(tree, monkeypatch):
         _reap(decoy.pid)
 
 
-def test_proc_kill_name_matches_versioned_python(monkeypatch):
+def test_proc_kill_image_base_normalizes_versioned_python():
     from flow_sdk.cli.commands import proc_cmd
 
-    # The real interpreter name here is e.g. "python3.11"; --name python must still find it.
+    # Finding 9: "--name python" must match the real names macOS/Linux/Windows report,
+    # so the version suffix, case, and ".exe" are all normalized away — but a substring
+    # like "python-lsp" is left alone.
+    assert proc_cmd._image_base("python3.11") == "python"
+    assert proc_cmd._image_base("python3") == "python"
+    assert proc_cmd._image_base("Python") == "python"
+    assert proc_cmd._image_base("python.exe") == "python"
+    assert proc_cmd._image_base("node") == "node"
+    assert proc_cmd._image_base("python-lsp") == "python-lsp"
+
+
+def test_proc_kill_name_excludes_caller_and_ancestors():
+    from flow_sdk.cli.commands import proc_cmd
+
+    # Search for THIS process's own image base (it may be "pytest", "python", …) and assert the
+    # caller and its whole ancestor chain are excluded — so a worker's --name request can never
+    # resolve to the backend/launcher that spawned it.
     me = psutil.Process(os.getpid())
-    assert proc_cmd._image_base(me.name()) == "python"
-    matches = proc_cmd._pids_for_name("python")
-    assert os.getpid() not in matches  # caller excluded
+    matches = proc_cmd._pids_for_name(me.name())
+    assert os.getpid() not in matches
     for parent in me.parents():
-        assert parent.pid not in matches  # ancestor chain excluded
+        assert parent.pid not in matches
 
 
 def test_proc_kill_no_targets_exits_nonzero(monkeypatch):
