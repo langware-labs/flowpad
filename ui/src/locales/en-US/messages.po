@@ -7258,6 +7258,8 @@ msgstr "Cloning…"
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Close"
 msgstr "Close"
 
@@ -8075,6 +8077,10 @@ msgstr "Console"
 #: src/components/token-plan/SourceSummary.tsx
 msgid "Consumption"
 msgstr "Consumption"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Contact <0>{SUPPORT_EMAIL}</0> to enable"
+msgstr "Contact <0>{SUPPORT_EMAIL}</0> to enable"
 
 #: src/i18n/type-labels.ts
 msgid "Contact Permission"
@@ -11763,6 +11769,7 @@ msgstr "done"
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -15037,6 +15044,10 @@ msgid "Get it from the {vaultLabel} vault."
 msgstr "Get it from the {vaultLabel} vault."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Get its address"
+msgstr "Get its address"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #~ msgid "Get my link code"
 #~ msgstr "Get my link code"
 
@@ -17098,6 +17109,10 @@ msgstr "It will run {0}."
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Italic"
 msgstr "Italic"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Its address"
+msgstr "Its address"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Its agent"
@@ -22813,6 +22828,10 @@ msgstr "Only people you share with can view this agent."
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Only the steps below"
 msgstr "Only the steps below"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Only these people can make it act. Anyone else's mail is kept but not answered."
+msgstr "Only these people can make it act. Anyone else's mail is kept but not answered."
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Only this device"
@@ -29816,6 +29835,12 @@ msgstr "Set up Git for sharing"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Set up GitHub"
 msgstr "Set up GitHub"
+
+#. placeholder {0}: elapsed.toFixed(0)
+#. placeholder {1}: made?.mailbox?.address
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Set up in {0}s. Email it at <0>{1}</0> — it answers there."
+msgstr "Set up in {0}s. Email it at <0>{1}</0> — it answers there."
 
 #. placeholder {0}: elapsed.toFixed(0)
 #. placeholder {1}: CHANNEL_TITLE[channel]

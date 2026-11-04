@@ -7216,6 +7216,8 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Close"
 msgstr "إغلاق"
 
@@ -8024,6 +8026,10 @@ msgstr "الطرفية"
 #: src/components/token-plan/SourceSummary.tsx
 msgid "Consumption"
 msgstr "الاستهلاك"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Contact <0>{SUPPORT_EMAIL}</0> to enable"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Contact Permission"
@@ -11697,6 +11703,7 @@ msgstr "تم"
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -14934,6 +14941,10 @@ msgid "Get it from the {vaultLabel} vault."
 msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Get its address"
+msgstr ""
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #~ msgid "Get my link code"
 #~ msgstr ""
 
@@ -16984,6 +16995,10 @@ msgstr "سيعمل {0}."
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Italic"
 msgstr "مائل"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Its address"
+msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Its agent"
@@ -22641,6 +22656,10 @@ msgstr "لا يمكن عرض هذا الوكيل إلا للأشخاص الذي�
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Only the steps below"
 msgstr "الخطوات أدناه فقط"
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Only these people can make it act. Anyone else's mail is kept but not answered."
+msgstr ""
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Only this device"
@@ -29597,6 +29616,12 @@ msgstr "إعداد Git للمشاركة"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Set up GitHub"
 msgstr "إعداد GitHub"
+
+#. placeholder {0}: elapsed.toFixed(0)
+#. placeholder {1}: made?.mailbox?.address
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Set up in {0}s. Email it at <0>{1}</0> — it answers there."
+msgstr ""
 
 #. placeholder {0}: elapsed.toFixed(0)
 #. placeholder {1}: CHANNEL_TITLE[channel]
