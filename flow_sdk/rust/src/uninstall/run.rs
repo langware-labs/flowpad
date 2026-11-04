@@ -17,6 +17,10 @@ pub struct Options {
     pub classify_only: bool,
     /// The user's consent to remove an engine that is only offered (checkbox / `/REMOVEENGINE`).
     pub remove_engine: bool,
+    /// Remove only the app's own state: the engine, its runtime and set-aside copies stay whatever
+    /// they are. The uninstaller passes it when its page could not classify them, and so told the
+    /// user they are kept.
+    pub app_only: bool,
     pub delete_app_data: bool,
     pub delete_instance_data: bool,
     pub log: Option<PathBuf>,
@@ -271,7 +275,10 @@ pub fn run(o: &Options) -> i32 {
     }
 
     let mut ledger = Ledger::default();
-    let mut engine_goes = engine.removed(o.remove_engine);
+    let mut engine_goes = engine.removed(o.remove_engine) && !o.app_only;
+    if o.app_only && engine.category != super::classify::EngineCategory::Absent {
+        ledger.kept("FlowPad engine", &layout.venv(), "kept: FlowPad could not check it when the uninstall began");
+    }
     // FlowPad's Claude Code hooks call the engine's `flow`: remove them first, and keep the
     // engine if they cannot be confirmed gone (Claude Code must not be left calling a missing flow).
     if engine_goes {
@@ -307,12 +314,13 @@ pub fn run(o: &Options) -> i32 {
         owned.push(layout.venv());
         owned.extend(ops::corrupt_copies(&layout).into_iter().map(|n| layout.uv_tools().join(n)));
     }
-    if (engine_goes || !g.facts.engine.venv_exists) && g.pre_repair_proven {
+    // No engine left to run on the runtime (the user was told only the app goes when `app_only`).
+    let engine_absent = !g.facts.engine.venv_exists && !o.app_only;
+    if (engine_goes || engine_absent) && g.pre_repair_proven {
         owned.push(layout.pre_repair_venv());
     }
     stop_processes(&layout, &g, engine_goes, &owned, &mut ledger, &mut log);
 
-    let engine_absent = !g.facts.engine.venv_exists;
     let selected_instances: Vec<String> = if o.delete_instance_data {
         instances
             .iter()
@@ -339,7 +347,7 @@ pub fn run(o: &Options) -> i32 {
                 again.push(l);
                 continue;
             }
-            let evidence = evidence_for(l.root);
+            let evidence = evidence_for(l.root, &l.path);
             if let Some(l2) = ops::remove_tree(&mut ledger, &mut log, &format!("{:?}", l.root), &l.path, Some(l.root), evidence) {
                 again.push(l2);
             }
@@ -366,11 +374,11 @@ pub fn run(o: &Options) -> i32 {
     outcome.exit_code()
 }
 
-fn evidence_for(root: super::state::RootId) -> Option<&'static str> {
+fn evidence_for(root: super::state::RootId, path: &Path) -> Option<&'static str> {
     use super::state::RootId::*;
     match root {
         Venv | PreRepair => Some(ops::RECEIPT_FILE),
-        RuntimePython | RuntimeDownloads => Some(ops::RUNTIME_SENTINEL),
+        RuntimePython | RuntimeDownloads => Some(ops::runtime_evidence(path)),
         InstanceProd => Some(ops::DESKTOP_MARKER),
         Bootstrap | Updater | AppData | CorruptCopy => None,
     }

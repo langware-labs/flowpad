@@ -182,7 +182,14 @@ const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, msg); passed++; };
   ok(/--classify-only/.test(page), 'the page shows what flow-rs classified, read-only');
 
   ok(/app-running --install-dir/.test(macro('customCheckAppRunning')), 'the uninstaller checks the app with flow-rs (bounded), not electron-builder\'s WMI call');
-  ok(/deferred-cleanup --trigger installer/.test(macro('customInstall')), 'a new install finishes a pending cleanup before the first launch');
+  const install = macro('customInstall');
+  ok(/deferred-cleanup --trigger installer/.test(install), 'a new install finishes a pending cleanup before the first launch');
+  ok(/\$FlowpadWasInstalled == 1[\s\S]*--trigger reinstall[\s\S]*\$\{Else\}[\s\S]*--trigger installer/.test(install)
+    && /ReadRegStr \$R0 SHELL_CONTEXT "\$\{UNINSTALL_REGISTRY_KEY\}"/.test(macro('customInit')),
+    'over an installed FlowPad the pending cleanup is only dropped: its folders may be that install\'s');
+  ok(/\$\{IfNot\} \$\{FileExists\} \$FlowpadIni\s*\n\s*StrCpy \$FlowpadAppOnly 1/.test(page)
+    && /\$FlowpadAppOnly == 1\s*\n\s*StrCpy \$0 "\$0 --app-only"/.test(uninstall),
+    'a page that could not classify says "only the app is removed", and the run removes only the app');
   const init = macro('customUnInit');
   ok(['/REMOVEENGINE', '/DELETEAPPDATA', '/DELETEDATA'].every((s) => init.includes(`"${s}"`)), 'silent switches are documented and parsed');
 }

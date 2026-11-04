@@ -26,6 +26,7 @@ Var pid
 
 Var FlowpadUpdating
 Var FlowpadRemoveEngine
+Var FlowpadAppOnly
 Var FlowpadDeleteAppData
 Var FlowpadDeleteData
 Var FlowpadIni
@@ -34,7 +35,25 @@ Var FlowpadAppDataBox
 Var FlowpadDataBox
 Var FlowpadFinishTitle
 Var FlowpadFinishText
+!else
+Var FlowpadWasInstalled
 !endif
+
+; Installer: was FlowPad already installed when this installer started? (An update, or Setup run
+; again.) Read before anything is written: electron-builder writes the uninstall key before
+; customInstall runs.
+!macro customInit
+  !ifndef BUILD_UNINSTALLER
+    StrCpy $FlowpadWasInstalled 0
+    ClearErrors
+    ReadRegStr $R0 SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
+    ${IfNot} ${Errors}
+    ${AndIf} $R0 != ""
+      StrCpy $FlowpadWasInstalled 1
+    ${EndIf}
+    ClearErrors
+  !endif
+!macroend
 
 !macro customUnInit
   ; ${isUpdated} is not defined where this file's functions are compiled; remember it here.
@@ -43,6 +62,7 @@ Var FlowpadFinishText
     StrCpy $FlowpadUpdating 1
   ${EndIf}
   StrCpy $FlowpadRemoveEngine 0
+  StrCpy $FlowpadAppOnly 0
   StrCpy $FlowpadDeleteAppData 0
   StrCpy $FlowpadDeleteData 0
   StrCpy $FlowpadFinishTitle "FlowPad was uninstalled"
@@ -138,6 +158,8 @@ Function un.flowpadOptionsCreate
   ${EndIf}
 
   ${IfNot} ${FileExists} $FlowpadIni
+    ; What this page says is what happens: the run below removes the app only.
+    StrCpy $FlowpadAppOnly 1
     ${NSD_CreateLabel} 0 0 100% 40u "FlowPad could not check its other components, so it will keep them: the engine, its runtime and your data stay. Only the app is removed."
     Pop $0
     GetDlgItem $0 $HWNDPARENT 1
@@ -248,7 +270,9 @@ FunctionEnd
     ${If} ${FileExists} "${FLOWPAD_RS}"
       InitPluginsDir
       StrCpy $0 '"${FLOWPAD_RS}" uninstall --install-dir "$INSTDIR" --log "$TEMP\flowpad-uninstall.log" --result "$PLUGINSDIR\flowpad-result.json"'
-      ${If} $FlowpadRemoveEngine == 1
+      ${If} $FlowpadAppOnly == 1
+        StrCpy $0 "$0 --app-only"
+      ${ElseIf} $FlowpadRemoveEngine == 1
         StrCpy $0 "$0 --remove-engine"
       ${EndIf}
       ${If} $FlowpadDeleteAppData == 1
@@ -291,11 +315,18 @@ FunctionEnd
   ${endIf}
 !macroend
 
-; A previous uninstall may have left items in use, scheduled for the next sign-in. A new install
-; finishes that cleanup before the app first runs (flow-rs re-proves every item first).
+; A previous uninstall may have left items in use, scheduled for the next sign-in. A fresh install
+; finishes that cleanup before the app first runs (flow-rs re-proves every item first), and drops
+; whatever is still in use: the app launches next and may take those folders over. Over an
+; installed FlowPad (an update, or Setup run again) they may be that install's already: the
+; pending cleanup is dropped, nothing deleted.
 !macro customInstall
   ${If} ${FileExists} "$LOCALAPPDATA\Flowpad\fc\state.json"
-    nsExec::ExecToLog '"$INSTDIR\resources\flow-rs\flow-rs.exe" deferred-cleanup --trigger installer --deadline-secs 120'
+    ${If} $FlowpadWasInstalled == 1
+      nsExec::ExecToLog '"$INSTDIR\resources\flow-rs\flow-rs.exe" deferred-cleanup --trigger reinstall --deadline-secs 120'
+    ${Else}
+      nsExec::ExecToLog '"$INSTDIR\resources\flow-rs\flow-rs.exe" deferred-cleanup --trigger installer --deadline-secs 120'
+    ${EndIf}
     Pop $0
   ${EndIf}
 !macroend

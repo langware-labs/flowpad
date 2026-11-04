@@ -55,6 +55,10 @@ enum Cmd {
         /// Consent to remove an engine that is offered, not removed by default.
         #[arg(long)]
         remove_engine: bool,
+        /// Remove only the app's own state; keep the engine and its runtime whatever they are (the
+        /// uninstaller's page could not classify them).
+        #[arg(long)]
+        app_only: bool,
         #[arg(long)]
         delete_app_data: bool,
         #[arg(long)]
@@ -138,6 +142,7 @@ fn main() -> anyhow::Result<()> {
             classify_only,
             ini,
             remove_engine,
+            app_only,
             delete_app_data,
             delete_instance_data,
             log,
@@ -149,6 +154,7 @@ fn main() -> anyhow::Result<()> {
                 install_dir,
                 classify_only,
                 remove_engine,
+                app_only,
                 delete_app_data,
                 delete_instance_data,
                 log,
@@ -163,6 +169,7 @@ fn main() -> anyhow::Result<()> {
             watchdog(deadline_secs);
             let trigger = match trigger.as_str() {
                 "installer" => Trigger::Installer,
+                "reinstall" => Trigger::Reinstall,
                 "manual" => Trigger::Manual,
                 _ => Trigger::Logon,
             };

@@ -97,11 +97,11 @@ function Invoke-Uninstall($r, [string[]]$extra) {
   } finally { Remove-Item Env:FLOWRS_TEST_LAYOUT_ROOT, Env:FLOWRS_TEST_ALLOW_UNSIGNED -ErrorAction SilentlyContinue }
 }
 
-function Invoke-Deferred($r, [int64]$clockAheadSecs = 0) {
+function Invoke-Deferred($r, [int64]$clockAheadSecs = 0, [string]$trigger = 'manual') {
   $env:FLOWRS_TEST_LAYOUT_ROOT = $r
   if ($clockAheadSecs) { $env:FLOWRS_TEST_CLOCK_AHEAD_SECS = "$clockAheadSecs" }
   try {
-    & "$r\local\Flowpad\fc\flow-rs.exe" deferred-cleanup --trigger manual --log "$r\deferred.log" | Out-Null
+    & "$r\local\Flowpad\fc\flow-rs.exe" deferred-cleanup --trigger $trigger --log "$r\deferred.log" | Out-Null
     return $LASTEXITCODE
   } finally { Remove-Item Env:FLOWRS_TEST_LAYOUT_ROOT, Env:FLOWRS_TEST_CLOCK_AHEAD_SECS -ErrorAction SilentlyContinue }
 }
@@ -143,6 +143,8 @@ function Release($procs) {
 
 function Result($r) { Get-Content "$r\result.txt" -Raw }
 $runOnce = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
+# "FlowPad is installed", as debug builds under test read it (never the machine's real key).
+$testUninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FlowpadTest'
 
 # A native command's stderr is an error under 'Stop' in Windows PowerShell 5.1; these calls may
 # fail by design, so run them with errors relaxed and judge them by their exit code.
@@ -234,6 +236,15 @@ try {
   Check (Test-Path "$r\roaming\uv\tools\flowpad\uv-receipt.toml") 'shared engine kept'
   Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'its runtime kept'
   Check ((Result $r) -match 'not managed by the desktop') 'the reason is reported'
+
+  Write-Host '== an instance that is a junction (never read through): its signals are unknown, the engine is kept'
+  $r = New-Layout 'instance-junction'
+  W "$r\elsewhere\.cli_used" '{}'
+  cmd /c mklink /J "$r\profile\.flow\instances\linked" "$r\elsewhere" | Out-Null
+  $code = Invoke-Uninstall $r @()
+  Check ($code -eq 20) "exit 20 (partial), got $code"
+  Check (Test-Path "$r\roaming\uv\tools\flowpad\uv-receipt.toml") 'engine kept'
+  Check (Test-Path "$r\elsewhere\.cli_used") 'nothing behind the junction is touched'
 
   Write-Host '== a file in use: scheduled, then finished by deferred-cleanup'
   if (-not $credentials) {
@@ -427,6 +438,46 @@ try {
     Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the dropped cleanup removed its helper'
   }
 
+  Write-Host '== FlowPad installed again: the pending cleanup is dropped, nothing deleted'
+  if (-not $credentials) {
+    Skip 'the Credential Manager is not available in this session'
+  } else {
+    # An update's installer (or Setup run over an installed FlowPad), then the sign-in run / manual
+    # command with FlowPad installed (debug builds read their own uninstall key).
+    foreach ($case in @(@{ name = 'reinstall'; trigger = 'reinstall'; key = $false }, @{ name = 'installed'; trigger = 'manual'; key = $true })) {
+      $r = New-Layout "again-$($case.name)"
+      $h = Lock-File "$r\roaming\uv\tools\flowpad\Lib\site-packages\flow_sdk\__init__.py"
+      $hp = Lock-File "$r\profile\.flow\instances\prod\flowpad.db"
+      $code = Invoke-Uninstall $r @('--delete-instance-data')
+      Check ($code -eq 10) "$($case.name): exit 10 (restart required), got $code"
+      Release @($h, $hp)
+      if ($case.key) { New-Item $testUninstallKey -Force | Out-Null }
+      try { $dcode = Invoke-Deferred $r 0 $case.trigger } finally { Remove-Item $testUninstallKey -ErrorAction SilentlyContinue }
+      Check ($dcode -eq 0) "$($case.name): exit 0 (nothing left pending), got $dcode"
+      Check (Test-Path "$r\roaming\uv\tools\flowpad\uv-receipt.toml") "$($case.name): the engine is not touched"
+      Check (Test-Path "$r\profile\.flow\instances\prod\flowpad.db") "$($case.name): prod is not touched"
+      Check ((Get-Content "$r\deferred.log" -Raw) -match 'installed again') "$($case.name): the log says why"
+      Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) "$($case.name): the dropped cleanup removed its helper"
+    }
+
+    # A fresh install: one try before the app's first launch; what is still in use is dropped.
+    $r = New-Layout 'again-fresh'
+    $h = Lock-File "$r\roaming\uv\tools\flowpad\Lib\site-packages\flow_sdk\__init__.py"
+    Invoke-Uninstall $r @() | Out-Null
+    $dcode = Invoke-Deferred $r 0 'installer'
+    Release @($h)
+    Check ($dcode -eq 20) "fresh install, still in use: exit 20, got $dcode"
+    Check (Test-Path "$r\roaming\uv\tools\flowpad\uv-receipt.toml") 'the folder in use is left'
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'and the cleanup is dropped: the new install may take the folder over'
+  }
+
+  Write-Host '== the page could not classify: only the app is removed'
+  $r = New-Layout 'app-only'
+  $code = Invoke-Uninstall $r @('--app-only')
+  Check (Test-Path "$r\roaming\uv\tools\flowpad\uv-receipt.toml") 'a desktop-exclusive engine is kept'
+  Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'and its runtime'
+  Check ((Result $r) -match 'could not check it') 'the summary says why'
+
   Write-Host '== a tampered cleanup state: refused, nothing deleted'
   if (-not $credentials) {
     Skip 'the Credential Manager is not available in this session'
@@ -497,6 +548,7 @@ try {
   $alive = @($holders | Where-Object { $_ -and -not $_.HasExited })
   if ($alive.Count) { Release $alive }
   Remove-ItemProperty $runOnce -Name FlowpadCleanupTest -ErrorAction SilentlyContinue
+  Remove-Item $testUninstallKey -ErrorAction SilentlyContinue
   Invoke-Quiet { & $FlowRs delete_key Flowpad.cleanup.debug state } | Out-Null
   Remove-Tree $Root
 }

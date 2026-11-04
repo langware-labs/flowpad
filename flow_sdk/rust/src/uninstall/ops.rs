@@ -29,6 +29,15 @@ pub const PSF_SIGNER: &str = "Python Software Foundation";
 pub const SNIFFER_MARK: &str = "--name=flowpad_sniffer";
 /// The desktop's per-user uninstall key (uuid5 of appId `ai.flowpad.desktop`, electron-builder).
 pub const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\01ea153f-315f-5cd5-8810-48807d21bb7d";
+/// Is FlowPad Desktop installed? Debug builds under test read their own key, so a test machine's
+/// real install does not answer for the test's layout.
+pub fn uninstall_key() -> &'static str {
+    if cfg!(debug_assertions) && std::env::var_os("FLOWRS_TEST_LAYOUT_ROOT").is_some() {
+        r"Software\Microsoft\Windows\CurrentVersion\Uninstall\FlowpadTest"
+    } else {
+        UNINSTALL_KEY
+    }
+}
 
 /// Something that could not be removed now, pinned so a later run acts on the same object only.
 #[derive(Debug, Clone)]
@@ -86,13 +95,31 @@ pub fn gather(layout: &Layout, log: &mut Log) -> Gathered {
         .and_then(|v| v.get("preexisting").and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|n| n.as_str().map(String::from)).collect()));
     let mut instances = Vec::new();
     let mut servers = Vec::new();
-    if let Ok(rd) = fs::read_dir(layout.instances()) {
-        for e in rd.flatten() {
-            let p = e.path();
-            if !fs::symlink_metadata(&p).map(|m| m.is_dir()).unwrap_or(false) {
+    // An instance FlowPad cannot look into — a junction or link (never read through), an entry it
+    // cannot stat, or an instances folder it cannot list — counts as one the desktop does not
+    // manage: its sharing signals are unknown, so the engine is kept and the instance never offered.
+    let unknown = |name: String| InstanceFacts { name, desktop_managed: false, cli_used: false, predates_stamping: true };
+    match fs::read_dir(layout.instances()) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            log.line(&format!("cannot list {}: {e}", layout.instances().display()));
+            instances.push(unknown("(instances folder could not be read)".into()));
+        }
+        Err(_) => {}
+        Ok(rd) => for e in rd {
+            let Ok(e) = e else {
+                instances.push(unknown("(an entry that could not be read)".into()));
                 continue;
-            }
+            };
+            let p = e.path();
             let name = e.file_name().to_string_lossy().to_string();
+            match fs::symlink_metadata(&p) {
+                Ok(m) if m.is_dir() => {}
+                Ok(m) if m.is_file() => continue,
+                _ => {
+                    instances.push(unknown(name));
+                    continue;
+                }
+            }
             let desktop_managed = p.join(DESKTOP_MARKER).exists();
             if desktop_managed {
                 if let Some(info) = fs::read_to_string(p.join("server.json")).ok().and_then(|t| ServerInfo::parse(&t)) {
@@ -101,7 +128,7 @@ pub fn gather(layout: &Layout, log: &mut Log) -> Gathered {
             }
             let predates_stamping = preexisting.as_ref().is_none_or(|names| names.iter().any(|n| n == &name));
             instances.push(InstanceFacts { name, desktop_managed, cli_used: p.join(CLI_STAMP).exists(), predates_stamping });
-        }
+        },
     }
     instances.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -408,12 +435,8 @@ pub fn remove_runtime(layout: &Layout, decisions: &[RuntimeDecision], ledger: &m
         match &d.action {
             RuntimeAction::Keep(reason) => ledger.kept("Python runtime folder", &p, reason),
             RuntimeAction::RemoveDir => {
-                let (id, evidence) = if d.name == "downloads" {
-                    (RootId::RuntimeDownloads, Some(RUNTIME_SENTINEL))
-                } else {
-                    (RootId::RuntimePython, Some(RUNTIME_SENTINEL))
-                };
-                if let Some(l) = remove_tree(ledger, log, "Python runtime", &p, Some(id), evidence) {
+                let id = if d.name == "downloads" { RootId::RuntimeDownloads } else { RootId::RuntimePython };
+                if let Some(l) = remove_tree(ledger, log, "Python runtime", &p, Some(id), Some(runtime_evidence(&p))) {
                     leftovers.push(l);
                 }
             }
@@ -432,6 +455,28 @@ pub fn remove_runtime(layout: &Layout, decisions: &[RuntimeDecision], ledger: &m
 
 /// The engine is in use and waits for the deferred cleanup: its runtime must wait behind it (the
 /// venv runs on it), so the runtime folders are pinned now and removed after the venv is gone.
+/// The file a runtime folder's ownership rests on, deleted last: its sentinel, or — a folder
+/// repaired before sentinels — its PSF-signed interpreter.
+pub fn runtime_evidence(dir: &Path) -> &'static str {
+    if dir.join(RUNTIME_SENTINEL).exists() {
+        RUNTIME_SENTINEL
+    } else {
+        LEGACY_RUNTIME_EVIDENCE
+    }
+}
+
+pub const LEGACY_RUNTIME_EVIDENCE: &str = "python.exe";
+
+/// A runtime repaired before sentinels: the exact `python-<version>` folder desktop-runtime.json
+/// records, holding a PSF-signed interpreter (the rule `classify::decide_runtime` applies).
+pub fn legacy_runtime_proven(layout: &Layout, dir: &Path) -> bool {
+    let version = read_json(&layout.runtime_state()).and_then(|s| s.get("version").and_then(|v| v.as_str()).map(String::from));
+    let named = version.is_some_and(|v| dir.file_name().is_some_and(|n| n.to_string_lossy() == format!("python-{v}")));
+    named
+        && !dir.join(RUNTIME_SENTINEL).exists()
+        && crate::authenticode::verify(&dir.join(LEGACY_RUNTIME_EVIDENCE), "the interpreter").is_ok_and(|signer| signer == PSF_SIGNER)
+}
+
 pub fn defer_runtime(layout: &Layout, decisions: &[RuntimeDecision], ledger: &mut Ledger) -> Vec<Leftover> {
     let mut leftovers = Vec::new();
     let runtime = layout.runtime();
@@ -605,7 +650,8 @@ pub fn sniffer_hooks_remain(layout: &Layout) -> bool {
     let p = layout.profile.join(".claude").join("settings.json");
     match fs::read_to_string(p) {
         Ok(text) => text.contains(SNIFFER_MARK),
-        Err(_) => false,
+        // No settings file: no hooks. One that cannot be read proves nothing: assume they remain.
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
     }
 }
 

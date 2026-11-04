@@ -156,8 +156,11 @@ pub const EXIT_EXPIRED: i32 = 30;
 pub enum Trigger {
     /// RunOnce at sign-in.
     Logon,
-    /// A new FlowPad installer, before the app's first launch.
+    /// A new FlowPad installer, before the app's first launch, where FlowPad was not installed.
     Installer,
+    /// A FlowPad installer run over an installed FlowPad (an update, or Setup run again): the
+    /// pending folders may be in use by that install now.
+    Reinstall,
     /// The user, by the documented command.
     Manual,
 }
@@ -168,14 +171,7 @@ fn root_path(layout: &Layout, root: RootId, pinned: super::Identity) -> PathBuf 
         // Not rebuilt from desktop-runtime.json's `version`: a repair that failed after marking its
         // folder leaves the token but no version. The state holds no paths, so find the
         // `python-*` folder by the identity pinned at uninstall; none means it is gone.
-        RootId::RuntimePython => fs::read_dir(layout.runtime())
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("python-")))
-            .find(|p| Root::open(p).is_ok_and(|r| r.identity() == pinned))
-            .unwrap_or_else(|| layout.runtime().join("python-")),
+        RootId::RuntimePython => find_pinned(&layout.runtime(), "python-", pinned),
         RootId::RuntimeDownloads => layout.runtime().join("downloads"),
         RootId::Bootstrap => layout.bootstrap(),
         RootId::Updater => layout.updater(),
@@ -183,15 +179,30 @@ fn root_path(layout: &Layout, root: RootId, pinned: super::Identity) -> PathBuf 
         RootId::InstanceProd => layout.instances().join("prod"),
         RootId::PreRepair => layout.pre_repair_venv(),
         // Several may exist (`flowpad.corrupt-<time>`): the one pinned at uninstall, by identity.
-        RootId::CorruptCopy => fs::read_dir(layout.uv_tools())
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("flowpad.corrupt-")))
-            .find(|p| Root::open(p).is_ok_and(|r| r.identity() == pinned))
-            .unwrap_or_else(|| layout.uv_tools().join("flowpad.corrupt-")),
+        RootId::CorruptCopy => find_pinned(&layout.uv_tools(), "flowpad.corrupt-", pinned),
     }
+}
+
+/// The `<prefix>*` folder in `parent` with the pinned identity. None matching: a folder that could
+/// not be opened (in use, a scan) may be it, so that one is returned and the entry waits; only
+/// when every candidate opened and none matched is it gone (a path that does not exist).
+fn find_pinned(parent: &Path, prefix: &str, pinned: super::Identity) -> PathBuf {
+    let mut unopened = None;
+    let candidates = fs::read_dir(parent)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(prefix)));
+    for p in candidates {
+        match Root::open(&p) {
+            Ok(r) if r.identity() == pinned => return p,
+            Ok(_) | Err(super::delete::Refused::Missing) => {}
+            Err(e) if refused_for_good(&e) => {}
+            Err(_) => unopened = unopened.or(Some(p)),
+        }
+    }
+    unopened.unwrap_or_else(|| parent.join(prefix))
 }
 
 /// The root will never be deleted as it is: a junction or symlink (at it or above it), or a file
@@ -222,6 +233,8 @@ fn still_owned(layout: &Layout, root: RootId, path: &Path) -> Result<(), String>
             }
             Ok(())
         }
+        // Repaired before sentinels: proven by the recorded folder name and a PSF-signed interpreter.
+        RootId::RuntimePython if ops::legacy_runtime_proven(layout, path) => Ok(()),
         RootId::RuntimePython | RootId::RuntimeDownloads => {
             let token = ops::read_json(&layout.runtime_state())
                 .and_then(|v| v.pointer("/runtimeOwnership/token").and_then(|t| t.as_str()).map(String::from))
@@ -259,38 +272,29 @@ fn still_owned(layout: &Layout, root: RootId, path: &Path) -> Result<(), String>
 pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
     status(layout, &format!("executed (trigger {trigger:?})"));
     log.line(&format!("deferred cleanup started (trigger {trigger:?})"));
-    if trigger == Trigger::Logon && win::key_exists(HKCU, ops::UNINSTALL_KEY) {
-        status(layout, "aborted: FlowPad Desktop is installed again; the installer finishes the cleanup");
-        return 0;
-    }
     let dir = layout.helper_dir();
     let Ok(text) = fs::read_to_string(dir.join(STATE_FILE)) else {
         status(layout, "nothing pending");
         return 0;
     };
+    // FlowPad is installed again: the pending folders — the engine, its runtime, prod — may be the
+    // new install's now, with the same identity and the same proofs. The pending cleanup ends
+    // here, nothing deleted. (The installer of a fresh install gets one try first, below.)
+    let installed = match trigger {
+        Trigger::Reinstall => true,
+        Trigger::Installer => false,
+        Trigger::Logon | Trigger::Manual => win::key_exists(HKCU, ops::uninstall_key()),
+    };
+    if installed {
+        drop_pending(layout, &text, "FlowPad Desktop is installed again", log);
+        return 0;
+    }
     let secret = credential().ok().and_then(|c| c.get_password().ok()).and_then(|s| Secret::decode(&s));
     let body = match state::verify(&text, secret.as_ref(), win::now()) {
         Ok(b) => b,
         Err(state::Rejected::Expired) => {
-            // The ceiling on retries: past its lifetime the state can never authorize anything, so
-            // the pending cleanup ends here — its key, state and helper go; nothing is deleted.
-            // What it still listed is reported (read only to name it: an expired state proves nothing).
-            let left: Vec<String> = serde_json::from_str::<state::Signed>(&text)
-                .map(|s| s.body.entries)
-                .unwrap_or_default()
-                .iter()
-                .map(|e| root_path(layout, e.root, super::Identity { volume: e.volume, file_id: e.file_id }))
-                .filter(|p| p.exists())
-                .map(|p| p.display().to_string())
-                .collect();
-            let msg = if left.is_empty() {
-                "expired: the pending cleanup is dropped; nothing it listed is left".to_string()
-            } else {
-                format!("expired: the pending cleanup is dropped, nothing deleted; still on disk, remove by hand if not needed: {}", left.join("; "))
-            };
-            status(layout, &msg);
-            log.line(&msg);
-            finish(layout);
+            // The ceiling on retries: past its lifetime the state can never authorize anything.
+            drop_pending(layout, &text, "expired", log);
             return EXIT_EXPIRED;
         }
         Err(e) => {
@@ -414,7 +418,7 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         }
         let evidence = match entry.root {
             RootId::Venv | RootId::PreRepair => Some(ops::RECEIPT_FILE),
-            RootId::RuntimePython | RootId::RuntimeDownloads => Some(ops::RUNTIME_SENTINEL),
+            RootId::RuntimePython | RootId::RuntimeDownloads => Some(ops::runtime_evidence(&path)),
             RootId::InstanceProd => Some(ops::DESKTOP_MARKER),
             _ => None,
         };
@@ -460,12 +464,39 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         }
         finish(layout);
         0
+    } else if trigger == Trigger::Installer {
+        // The app this installer just put in place launches next and may take these folders over:
+        // nothing may be deleted under it later.
+        drop_pending(layout, &text, &format!("still in use: {}; FlowPad is being installed again", still_there.join(", ")), log);
+        let _ = remaining;
+        20
     } else {
         // No re-registration: the next installer or the manual command finishes the rest.
         status(layout, &format!("still in use: {}; left for the next FlowPad installer or the manual command", still_there.join(", ")));
         let _ = remaining;
         20
     }
+}
+
+/// End the pending cleanup without deleting anything: its key, state and helper go, and what it
+/// still listed is reported (the state is read only to name it — it proves nothing).
+fn drop_pending(layout: &Layout, text: &str, why: &str, log: &mut Log) {
+    let left: Vec<String> = serde_json::from_str::<state::Signed>(text)
+        .map(|s| s.body.entries)
+        .unwrap_or_default()
+        .iter()
+        .map(|e| root_path(layout, e.root, super::Identity { volume: e.volume, file_id: e.file_id }))
+        .filter(|p| p.exists())
+        .map(|p| p.display().to_string())
+        .collect();
+    let msg = if left.is_empty() {
+        format!("{why}: the pending cleanup is dropped; nothing it listed is left")
+    } else {
+        format!("{why}: the pending cleanup is dropped, nothing deleted; still on disk, remove by hand if not needed: {}", left.join("; "))
+    };
+    status(layout, &msg);
+    log.line(&msg);
+    finish(layout);
 }
 
 /// Everything verified: delete the key (so this state can never be replayed), then have a

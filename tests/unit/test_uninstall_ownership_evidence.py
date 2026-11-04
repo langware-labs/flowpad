@@ -72,6 +72,25 @@ def test_hooks_are_the_desktop_integration_not_independent_use(instance, monkeyp
     assert _stamp(instance) is None
 
 
+def test_a_person_typing_flow_in_the_in_app_terminal_is_independent_use():
+    """The in-app terminal inherits FLOWPAD_DESKTOP; a person at its prompt still uses the engine by
+    hand. An agent's tool calls in that terminal run without an interactive stdin."""
+    env = {"FLOWPAD_DESKTOP": "1", cli_use.ENV_PTY_SESSION_ID: "s1"}
+
+    assert cli_use.is_independent_use("status", env, interactive=True)
+    assert not cli_use.is_independent_use("record", env, interactive=False)
+    assert not cli_use.is_independent_use("hooks", env, interactive=True)
+    assert not cli_use.is_independent_use("status", {"FLOWPAD_DESKTOP": "1"}, interactive=True)
+
+
+def test_a_stamp_with_a_bad_shape_is_replaced(instance):
+    (instance.instance_dir / cli_use.CLI_USE_STAMP).write_text('{"first": "yesterday"}')
+
+    cli_use.stamp_instance_use(instance.instance_dir, now=7.0)
+
+    assert _stamp(instance)["first"] == 7.0
+
+
 def test_last_is_refreshed_at_most_hourly_and_first_is_kept(instance):
     cli_use.stamp_instance_use(instance.instance_dir, now=1000.0)
     cli_use.stamp_instance_use(instance.instance_dir, now=1000.0 + cli_use.REFRESH_SECONDS - 1)
@@ -103,7 +122,7 @@ def test_stamping_never_raises(instance, monkeypatch):
     def boom(*_a, **_k):
         raise OSError("read-only disk")
 
-    monkeypatch.setattr(cli_use, "_write_json_atomic", boom)
+    monkeypatch.setattr(cli_use, "write_json_atomic", boom)
 
     cli_use.record_cli_use("status")  # must not raise
 
@@ -118,9 +137,9 @@ def test_stamping_never_raises(instance, monkeypatch):
 def test_stamping_marker_is_written_once(instance):
     marker = instance.global_dir / cli_use.STAMP_SINCE_FILENAME
 
-    cli_use.ensure_stamping_marker(instance.global_dir)
+    cli_use.ensure_stamping_marker(instance.global_dir, instance.instances_root)
     first = marker.read_text()
-    cli_use.ensure_stamping_marker(instance.global_dir)
+    cli_use.ensure_stamping_marker(instance.global_dir, instance.instances_root)
 
     assert marker.read_text() == first
     assert json.loads(first)["version"]
@@ -133,7 +152,7 @@ def test_stamping_marker_names_instances_an_older_engine_ran_against(instance):
     (root / "old" / "flowpad.db").write_bytes(b"db")
     started = time.time() + 60  # the database predates this "process"
 
-    cli_use.ensure_stamping_marker(instance.global_dir, started=started)
+    cli_use.ensure_stamping_marker(instance.global_dir, instance.instances_root, started=started)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert "old" in marker["preexisting"]
@@ -146,7 +165,7 @@ def test_a_clean_install_has_no_preexisting_instance(instance):
     (root / "prod").mkdir(parents=True, exist_ok=True)  # the desktop, at launch
     started = time.time() + 60  # the folder predates the server process...
 
-    cli_use.ensure_stamping_marker(instance.global_dir, started=started)
+    cli_use.ensure_stamping_marker(instance.global_dir, instance.instances_root, started=started)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert "prod" not in marker["preexisting"], "...but no engine had run against it"
@@ -164,7 +183,7 @@ def test_anything_an_older_engine_left_counts(instance):
     (root / "os-only").mkdir(parents=True, exist_ok=True)
     (root / "os-only" / ".DS_Store").write_bytes(b"")
 
-    cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60)
+    cli_use.ensure_stamping_marker(instance.global_dir, instance.instances_root, started=time.time() + 60)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert {"cli-only", "logs-only", "unlisted"} <= set(marker["preexisting"])
@@ -178,7 +197,7 @@ def test_an_overridden_database_counts_for_its_instance(instance, tmp_path, monk
     db.write_bytes(b"db")
     monkeypatch.setenv("SQLITE_DATABASE_PATH", str(db))
 
-    cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60, current="moved")
+    cli_use.ensure_stamping_marker(instance.global_dir, instance.instances_root, started=time.time() + 60, current="moved")
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert "moved" in marker["preexisting"]
@@ -228,7 +247,7 @@ def test_an_unreadable_entry_counts_and_the_scan_goes_on(instance, monkeypatch):
         return real_is_dir(self)
 
     monkeypatch.setattr(Path, "is_dir", is_dir)
-    cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60)
+    cli_use.ensure_stamping_marker(instance.global_dir, instance.instances_root, started=time.time() + 60)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert {"a-locked", "b-old"} <= set(marker["preexisting"])
@@ -240,7 +259,7 @@ def test_a_database_this_process_created_is_not_preexisting(instance):
     (root / "fresh").mkdir(parents=True, exist_ok=True)
     (root / "fresh" / "flowpad.db").write_bytes(b"db")
 
-    cli_use.ensure_stamping_marker(instance.global_dir, started=started)
+    cli_use.ensure_stamping_marker(instance.global_dir, instance.instances_root, started=started)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert "fresh" not in marker["preexisting"]

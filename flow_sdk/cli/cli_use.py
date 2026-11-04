@@ -20,19 +20,29 @@ leaves a stamp:
 
 Not stamped: a process with ``FLOWPAD_DESKTOP=1`` (the desktop's own ``flow`` calls, its backend,
 and every worker the backend spawns — they inherit it), and the ``hooks`` group (the Claude Code
-integration the desktop installed). Stamping never raises: it must not break a CLI command.
+integration the desktop installed). One exception: the in-app terminal inherits ``FLOWPAD_DESKTOP``
+too, and a person typing ``flow`` there uses the engine by hand — a command run from that terminal
+with an interactive stdin is stamped (an agent's tool calls run without one). Stamping never
+raises: it must not break a CLI command.
+
+Both files are ``DataSpec`` values (``CliUseStamp``, ``CliStampSince``); the uninstaller (Rust)
+reads the same keys.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from flow_sdk._version import __version__
 from flow_sdk.instance_settings.base_settings import ENV_FLOWPAD_DESKTOP
+from flow_sdk.instances.atomic import read_json, write_json_atomic
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 logger = logging.getLogger(__name__)
 
@@ -43,19 +53,24 @@ REFRESH_SECONDS = 3600
 #: Subcommands that are the desktop's own integration, not independent use of the engine.
 NOT_INDEPENDENT_USE = frozenset({"hooks"})
 
-
-def _write_json_atomic(path: Path, data: dict) -> None:
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(data), encoding="utf-8")
-    os.replace(tmp, path)
+#: Set by the backend on every in-app terminal (``compute/providers/desktop/provider.py``).
+ENV_PTY_SESSION_ID = "FLOWPAD_PTY_SESSION_ID"
 
 
-def _read_json(path: Path) -> dict | None:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return data if isinstance(data, dict) else None
+class CliUseStamp(DataSpec):
+    """``<instance_dir>/.cli_used``: this instance was driven by ``flow`` outside the desktop."""
+
+    first: float
+    last: float
+    version: str
+
+
+class CliStampSince(DataSpec):
+    """``<flow_home>/global/cli-stamp-since``: the first engine that stamps CLI use."""
+
+    version: str
+    since: float
+    preexisting: list[str]
 
 
 def _process_started() -> float:
@@ -127,16 +142,18 @@ def instances_before(instances_root: Path, started: float, *, current: str | Non
     return sorted(names)
 
 
-def ensure_stamping_marker(global_dir: Path, *, started: float | None = None, current: str | None = None) -> None:
+def ensure_stamping_marker(
+    global_dir: Path, instances_root: Path, *, started: float | None = None, current: str | None = None
+) -> None:
     """Record, once, that this engine stamps CLI use. Never raises."""
     marker = global_dir / STAMP_SINCE_FILENAME
     try:
         if marker.exists():
             return
         started = _process_started() if started is None else started
-        preexisting = instances_before(global_dir.parent / "instances", started, current=current)
-        global_dir.mkdir(parents=True, exist_ok=True)
-        _write_json_atomic(marker, {"version": __version__, "since": time.time(), "preexisting": preexisting})
+        preexisting = instances_before(instances_root, started, current=current)
+        since = CliStampSince(version=__version__, since=time.time(), preexisting=preexisting)
+        write_json_atomic(marker, since.model_dump())
     except Exception as e:  # noqa: BLE001 — evidence only; a missing marker means "unknown"
         logger.debug("Could not write %s: %s", marker, e)
 
@@ -148,17 +165,34 @@ def stamp_instance_use(instance_dir: Path, *, now: float | None = None) -> None:
     try:
         if not instance_dir.is_dir():
             return
-        existing = _read_json(stamp)
-        if existing and isinstance(existing.get("last"), (int, float)) and now - existing["last"] < REFRESH_SECONDS:
+        try:
+            existing = CliUseStamp.model_validate(read_json(stamp))
+        except ValidationError:
+            existing = None  # missing or corrupt: start over
+        if existing and now - existing.last < REFRESH_SECONDS:
             return
-        first = existing.get("first") if existing and isinstance(existing.get("first"), (int, float)) else now
-        _write_json_atomic(stamp, {"first": first, "last": now, "version": __version__})
+        first = existing.first if existing else now
+        write_json_atomic(stamp, CliUseStamp(first=first, last=now, version=__version__).model_dump())
     except OSError as e:
         logger.debug("Could not write %s: %s", stamp, e)
 
 
-def is_independent_use(subcommand: str | None, environ=os.environ) -> bool:
-    return environ.get(ENV_FLOWPAD_DESKTOP) != "1" and subcommand not in NOT_INDEPENDENT_USE
+def is_independent_use(subcommand: str | None, environ=os.environ, *, interactive: bool | None = None) -> bool:
+    if subcommand in NOT_INDEPENDENT_USE:
+        return False
+    if environ.get(ENV_FLOWPAD_DESKTOP) != "1":
+        return True
+    # The desktop's env, but typed by a person in the in-app terminal.
+    if interactive is None:
+        interactive = _stdin_is_tty()
+    return bool(environ.get(ENV_PTY_SESSION_ID)) and interactive
+
+
+def _stdin_is_tty() -> bool:
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except (OSError, ValueError):
+        return False
 
 
 def record_cli_use(subcommand: str | None) -> None:
@@ -175,7 +209,7 @@ def record_cli_use(subcommand: str | None) -> None:
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
         settings = get_instance_settings()
-        ensure_stamping_marker(settings.global_dir, current=settings.instance_name)
+        ensure_stamping_marker(settings.global_dir, settings.instances_root, current=settings.instance_name)
         if is_independent_use(subcommand):
             stamp_instance_use(settings.instance_dir)
     except Exception as e:  # noqa: BLE001 — evidence only; a CLI command must never fail on it

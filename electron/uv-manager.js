@@ -1801,7 +1801,10 @@ class UvManager {
       this._writeOwnershipRecord(recordPath, engineOwnership.buildRecord({
         origin, venv: venvDir, snapshot, desktopVersion: this._appVersion, now: () => new Date().toISOString(),
       }));
-      this.log.info(`[uv] engine ownership backfilled for an existing engine: origin=${origin}`);
+      // `adopted` covers every engine not proven the desktop's: one installed separately, or one an
+      // earlier install left half-written (no receipt). Both are kept on uninstall.
+      const why = origin === 'adopted' ? (receiptText == null ? ' (no receipt: installed separately, or an interrupted install)' : ' (not the desktop\'s install signature)') : '';
+      this.log.info(`[uv] engine ownership backfilled for an existing engine: origin=${origin}${why}`);
     } catch (e) {
       this.log.warn(`[uv] engine ownership backfill failed: ${e.message}`);
     }

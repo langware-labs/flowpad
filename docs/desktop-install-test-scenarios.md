@@ -342,7 +342,7 @@ The finish page and `%TEMP%\flowpad-uninstall.log` say which items, and why.
 | Installer script rules | any OS | `cd electron && node builder-config.test.js` |
 | Deletion on NTFS, process snapshot | Windows | `cargo test --manifest-path flow_sdk/rust/Cargo.toml --test fs_delete --test proc_scan` |
 | End to end against a scratch tree | Windows | `cargo build --manifest-path flow_sdk/rust/Cargo.toml --bin flow-rs`, then `scripts\win_uninstall_e2e.ps1` |
-| All of the above on `windows-latest` | CI | the `uninstaller (flow-rs + installer.nsh, windows)` job. It also builds the installer, so an `installer.nsh` mistake fails it (NSIS warnings are errors) |
+| The Rust rows and the end-to-end script on `windows-latest` | CI | the `uninstaller (flow-rs + installer.nsh, windows)` job. It also builds the installer, so an `installer.nsh` mistake fails it (NSIS warnings are errors). The evidence writers and the installer script rules run in the `electron` and `backend (pytest unit)` jobs |
 
 Notes on the end-to-end script and the CI job:
 
@@ -367,8 +367,12 @@ A switch never deletes what the page would not offer.
 A cleanup left pending runs:
 
 - at the next sign-in;
-- before the first launch of the next FlowPad install;
+- before the first launch of the next FlowPad install, once: what is still in use then is dropped (the app launches next and may take those folders over);
 - or by hand: `"%LOCALAPPDATA%\Flowpad\fc\flow-rs.exe" deferred-cleanup --trigger manual`.
+
+Once FlowPad is installed again, nothing pending is deleted any more. The sign-in run, the manual
+command, and any installer run over an installed FlowPad (an update, or Setup run again) drop the
+pending cleanup and name what it still listed: those folders may belong to the new install now.
 
 Its progress is in `%LOCALAPPDATA%\Flowpad\fc\status.log`, which reads scheduled → executed → verified.
 
@@ -556,6 +560,6 @@ FlowPad's Claude Code hooks (`--name=flowpad_sniffer`) are removed with the engi
 - **(d)** An old state replayed after a completed run is refused: its key was deleted.
 - **(e)** A root whose ownership proof (receipt, marker) is gone, or that is another folder now, a link or a file, is kept: never deleted, and not left pending either, so the cleanup still finishes. A runtime waits only behind an engine that is still to be removed; behind one kept for good, it is kept too.
 - **(h)** A folder that cannot be opened (in use, delete-pending, a scan, its ACL) stays pending and is tried again by the next trigger, until the state expires (14 days): the expired cleanup is dropped, nothing is deleted, and what it still listed is named in the log.
-- **Exit codes of `deferred-cleanup`:** 0 nothing left pending; 20 still pending (tried again by the next trigger); 30 the state had expired and was dropped.
-- **(f) Manual:** a reinstall before the sign-in: the sign-in run stands down, and the new installer finishes the cleanup.
+- **Exit codes of `deferred-cleanup`:** 0 nothing left pending (or dropped because FlowPad is installed again); 20 still pending (tried again by the next trigger; from a fresh install's installer, dropped); 30 the state had expired and was dropped.
+- **(f)** FlowPad installed again: a fresh install's installer finishes the cleanup once and drops what is still in use. After that, or with an installed FlowPad (the sign-in run, the manual command, an update's installer: `--trigger reinstall`), the pending cleanup is dropped and nothing is deleted, so an update can never delete the live engine or `prod`. The script: "FlowPad installed again: the pending cleanup is dropped, nothing deleted".
 - **(g)** A cleanup still blocked at sign-in does not re-register itself; the next installer or the manual command finishes it.

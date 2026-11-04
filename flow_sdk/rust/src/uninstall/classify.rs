@@ -133,7 +133,7 @@ pub fn decide_engine(f: &Facts) -> EngineDecision {
         return keep(Independent, vec!["FlowPad Desktop did not install this engine".into()]);
     };
     match record.origin.as_str() {
-        "adopted" => return keep(Adopted, vec!["the engine was installed before FlowPad Desktop used it".into()]),
+        "adopted" => return keep(Adopted, vec!["FlowPad Desktop cannot prove it installed the engine: it was there before FlowPad first recorded it (installed separately, or an install that was interrupted)".into()]),
         "desktop" | "legacy-inferred" => {}
         _ => return keep(Independent, vec!["the ownership record is not recognised".into()]),
     }
