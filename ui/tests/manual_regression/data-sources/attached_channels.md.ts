@@ -172,6 +172,14 @@ test('1. the header line shows the user\'s channels as round marks', async ({ pa
 
 test('2. a mark filters; × shows everything again', async ({ page }) => {
   const { bar, rows } = await userStreamInbox(page);
+  // The list is still filling (the task source's row lands a beat after ours): count it once it holds still.
+  await expect
+    .poll(async () => {
+      const first = await rows.count();
+      await page.waitForTimeout(2_000);
+      return first === (await rows.count());
+    })
+    .toBe(true);
   const all = await rows.count();
   const mark = userMarksOf(bar);
   const others = bar.locator('[data-testid="attached-channel"][aria-pressed="false"]');
