@@ -75,6 +75,6 @@ async def test_an_older_hub_gets_the_old_calls():
     calls = await _share(conv, {})
 
     actions = [action for _m, _t, action, _p in calls]
-    assert actions[0] is None, "the create, which an older hub answers with the row alone"
+    assert actions.count(None) == 1, "one create, which an older hub answers with the row alone"
     assert "add_message" in actions and actions[-1] == "members"
     assert next(p for _m, _t, a, p in calls if a == "add_message")["id"] == msg.id
