@@ -23,3 +23,21 @@ ADJUSTABLE_TIMEOUT: float = _read()
 def adjusted(seconds: float) -> float:
     """``seconds`` plus this runner's ADJUSTABLE_TIMEOUT. A budget of 0 (no limit) stays 0."""
     return seconds + ADJUSTABLE_TIMEOUT if seconds else seconds
+
+
+def _read_factor() -> float:
+    try:
+        value = float(os.environ.get("ADJUSTABLE_PERF_FACTOR", "1") or 1)
+    except ValueError:
+        return 1.0
+    return value if value > 0 else 1.0
+
+
+#: ADJUSTABLE_PERF_FACTOR: what a RUNNER multiplies every speed BUDGET by. Default 1 = the committed values.
+#: A factor, not seconds: a perf budget scales with the host. Mirror of ui/tests/adjustableTimeout.ts.
+ADJUSTABLE_PERF_FACTOR: float = _read_factor()
+
+
+def adjusted_budget(seconds: float) -> float:
+    """A speed budget ``seconds`` times this runner's ADJUSTABLE_PERF_FACTOR."""
+    return seconds * ADJUSTABLE_PERF_FACTOR

@@ -37,7 +37,7 @@ import {
   toplogOn,
   type World,
 } from './_world';
-import { adjusted } from '../../adjustableTimeout';
+import { adjusted, adjustedBudget, ADJUSTABLE_PERF_FACTOR } from '../../adjustableTimeout';
 
 test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
 
@@ -48,6 +48,8 @@ test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a product
 // 120-150 ms task: the long-chat leave measured p90 2387 ms with it and 611 ms without, the
 // warm terminal switch 365 vs 291 (same host, same build, back to back). Budgets unchanged.
 test.use({ trace: 'off' });
+
+if (ADJUSTABLE_PERF_FACTOR !== 1) console.log(`[perf] budgets x${ADJUSTABLE_PERF_FACTOR} (ADJUSTABLE_PERF_FACTOR)`);
 
 const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
 
@@ -161,11 +163,13 @@ const CI_MODE_FLIP_MS = 2100;
 const CI_LONG_CHAT_MS = 900;
 
 /** CI runs on slower hardware than the SLAs were calibrated on; see CI_WARM_MS. */
-const longChatMs = process.env.CI ? CI_LONG_CHAT_MS : LONG_CHAT_MS;
-const modeFlipMs = process.env.CI ? CI_MODE_FLIP_MS : MODE_FLIP_MS;
-const warmMs = process.env.CI ? CI_WARM_MS : BUDGET.warmMs;
-const projectMs = process.env.CI ? CI_PROJECT_MS : BUDGET.projectMs;
-const coldTerminalMs = process.env.CI ? CI_COLD_TERMINAL_MS : BUDGET.coldTerminalMs;
+/** Every budget also scales by the runner's ADJUSTABLE_PERF_FACTOR (default 1 = the values above). A pass
+ *  under a factor above 1 is not a default-budget pass: say so when reporting. */
+const longChatMs = adjustedBudget(process.env.CI ? CI_LONG_CHAT_MS : LONG_CHAT_MS);
+const modeFlipMs = adjustedBudget(process.env.CI ? CI_MODE_FLIP_MS : MODE_FLIP_MS);
+const warmMs = adjustedBudget(process.env.CI ? CI_WARM_MS : BUDGET.warmMs);
+const projectMs = adjustedBudget(process.env.CI ? CI_PROJECT_MS : BUDGET.projectMs);
+const coldTerminalMs = adjustedBudget(process.env.CI ? CI_COLD_TERMINAL_MS : BUDGET.coldTerminalMs);
 const ROUNDS = 20;
 /**
  * The request shapes a LOADER would use: tab materialization, an entity's identity,
