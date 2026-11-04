@@ -220,12 +220,12 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     for (let i = 0; i < 8; i++) {
       if (fs.existsSync(mdPath)) {
         md = fs.readFileSync(mdPath, 'utf8');
-        if (md.includes('<!-- END whiteboard:auto -->')) break;
+        if (md.includes('<!-- END chart:auto -->')) break;
       }
       await page.waitForTimeout(1_000);
     }
-    expect(md).toContain('<!-- BEGIN whiteboard:auto -->');
-    expect(md).toContain('<!-- END whiteboard:auto -->');
+    expect(md).toContain('<!-- BEGIN chart:auto -->');
+    expect(md).toContain('<!-- END chart:auto -->');
 
     fs.rmSync(assetRef, { recursive: true, force: true });
     await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});

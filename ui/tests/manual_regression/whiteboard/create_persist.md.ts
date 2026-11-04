@@ -124,8 +124,8 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     // so it is already there right after the first save, next to the mermaid block
     // the autosave splices in.
     const md = fs.readFileSync(`${assetRef}/CHART.md`, 'utf8');
-    expect(md).toContain('<!-- BEGIN whiteboard:auto -->');
-    expect(md).toContain('<!-- END whiteboard:auto -->');
+    expect(md).toContain('<!-- BEGIN chart:auto -->');
+    expect(md).toContain('<!-- END chart:auto -->');
     const savedId = frontmatterId(md);
     expect(savedId ?? '', 'frontmatter id is a valid v4/v5 UUID').toMatch(UUID_V4_V5);
     expect(savedId, 'frontmatter id is the entity id assigned at create').toBe(id);
@@ -135,8 +135,8 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(idx.status()).toBe(200);
     const mdAfterIndex = fs.readFileSync(`${assetRef}/CHART.md`, 'utf8');
     expect(frontmatterId(mdAfterIndex), 'index pass keeps the frontmatter id').toBe(id);
-    expect(mdAfterIndex).toContain('<!-- BEGIN whiteboard:auto -->');
-    expect(mdAfterIndex).toContain('<!-- END whiteboard:auto -->');
+    expect(mdAfterIndex).toContain('<!-- BEGIN chart:auto -->');
+    expect(mdAfterIndex).toContain('<!-- END chart:auto -->');
   });
 
   test('C4: draw + autosave writes board.json (>=2 elements) + thumbnail', async ({ page, request }) => {

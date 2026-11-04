@@ -65,10 +65,10 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);
     const md = await waitMermaidContains(page, `${assetRef}/CHART.md`, 'flowchart TD');
-    expect(md).toContain('<!-- BEGIN whiteboard:auto -->');
+    expect(md).toContain('<!-- BEGIN chart:auto -->');
     expect(md).toContain('```mermaid');
     expect(md).toContain('flowchart TD');
-    expect(md).toContain('<!-- END whiteboard:auto -->');
+    expect(md).toContain('<!-- END chart:auto -->');
     fs.rmSync(assetRef, { recursive: true, force: true });
     await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
@@ -91,8 +91,8 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     // Insert prose above BEGIN and below END, plus a wiki link below.
     const orig = fs.readFileSync(mdPath, 'utf8');
     const withProse = orig
-      .replace('<!-- BEGIN whiteboard:auto -->', 'PROSE_ABOVE_MARKER\n<!-- BEGIN whiteboard:auto -->')
-      .replace('<!-- END whiteboard:auto -->', '<!-- END whiteboard:auto -->\nPROSE_BELOW_MARKER [[my-wiki-link]]');
+      .replace('<!-- BEGIN chart:auto -->', 'PROSE_ABOVE_MARKER\n<!-- BEGIN chart:auto -->')
+      .replace('<!-- END chart:auto -->', '<!-- END chart:auto -->\nPROSE_BELOW_MARKER [[my-wiki-link]]');
     fs.writeFileSync(mdPath, withProse);
 
     // Trigger another save (one more element).
