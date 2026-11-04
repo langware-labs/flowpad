@@ -247,9 +247,12 @@ async def withdraw_device_key() -> None:
     HubProxy, Types = _hub()
     mine = await HubProxy.try_call("GET", Types.USER, _user_id(), "device_key") or []
     install = instance_uid()
+    # The keyring's own device id and the one last published are ours too: they carry an older instance uid when
+    # config.json was reset while the keys survived, and matching the uid alone would leave that advert on the hub.
+    known = {d for d in ((_key_store.load() or {}).get("device_id"), _read_json("published.json").get("device_id")) if d}
     for advert in mine:
         did = str((advert or {}).get("device_id") or "")
-        if did == install or did.startswith(f"{install}."):
+        if did in known or did == install or did.startswith(f"{install}."):
             await HubProxy.try_call("DELETE", Types.USER, _user_id(), "device_key", params={"device_id": did})
     _write_json("published.json", {})
 
