@@ -109,6 +109,15 @@ function pidFromUrl(page: Page): string {
  */
 async function launchSession(page: Page, rq: APIRequestContext, convId: string): Promise<string> {
   await page.goto(`/dock/conversation/${convId}`);
+  // A new session starts on the transport of the LAST SELECTED mode (8fbb4fd9a, `sessionOpenViewMode`),
+  // not the one this page shows: Standard launches a headless chat, Advanced a visible PTY. This runbook
+  // asserts the PTY branch, so it switches to Advanced the way the footer pill does (`window.setView`,
+  // the one persisting switch) instead of inheriting whatever mode the instance was left in. The page's
+  // own `data-view` does not move (this address states no mode, so it shows the unstated one): the
+  // stored last-selected mode is what the launch reads. afterAll switches back to Standard, the mode a
+  // QA instance is pinned to (`_pin_view_mode_for_qa`), so the next runbook does not inherit Advanced.
+  await page.evaluate(() => window.setView('advanced' as never));
+  switchedMode = true;
   // The header worker toolbar defaults to `lastOpened` mode in Standard view:
   // only the last-used worker shows up front, the rest behind a "Show other
   // workers" chevron. Expand it when claude_code isn't already surfaced so this
@@ -129,6 +138,29 @@ async function launchSession(page: Page, rq: APIRequestContext, convId: string):
   }).toPass({ timeout: adjusted(30_000) });
   return pid;
 }
+
+/** This suite switched the instance's last-selected mode to Advanced; afterAll puts Standard back. */
+let switchedMode = false;
+
+test.afterAll(async ({ browser }, info) => {
+  if (!switchedMode) return;
+  const page = await browser.newPage({ baseURL: info.project.use.baseURL });
+  try {
+    await page.goto('/dock/desktop');
+    await dismissSetupModal(page);
+    // The preference is saved debounced (InstancePreferences, 500 ms): wait for its write to
+    // preferences.json, or closing the page drops it and the instance stays in Advanced.
+    const saved = page
+      .waitForResponse((r) => r.url().includes('preferences.json') && r.request().method() !== 'GET', {
+        timeout: adjusted(15_000),
+      })
+      .catch(() => null);
+    await page.evaluate(() => window.setView('standard' as never));
+    await saved;
+  } finally {
+    await page.close();
+  }
+});
 
 test.beforeEach(async ({ page }) => {
   await dismissSetupModal(page);

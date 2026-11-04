@@ -16,7 +16,13 @@ import { parse } from 'dotenv';
 
 const cwd = process.cwd();
 const ROOT = existsSync(path.resolve(cwd, 'ui/package.json')) ? cwd : path.resolve(cwd, '..');
-const localEnv = parse(readFileSync(path.resolve(ROOT, '.env.local')));
+// The running instance's env file (`.env.<FLOW_INSTANCE>.local`, what instance_ctl writes), else the classic
+// `.env.local`. Neither present is not a crash at import — that took the whole conversation area down with
+// ENOENT — but "no credentials": the skip below says so.
+const envFile = [`.env.${process.env.FLOW_INSTANCE ?? ''}.local`, '.env.local']
+  .map((name) => path.resolve(ROOT, name))
+  .find((file) => !file.endsWith('.env..local') && existsSync(file));
+const localEnv = envFile ? parse(readFileSync(envFile)) : {};
 
 const PYTHON = String.raw`
 import asyncio
