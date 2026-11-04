@@ -16,7 +16,7 @@ test.describe('Home usage/cost overview — no fetch error', () => {
   });
 
   test('test 1: Home page loads usage and cost overview without errors', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

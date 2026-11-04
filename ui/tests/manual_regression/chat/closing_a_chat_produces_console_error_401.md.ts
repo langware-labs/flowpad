@@ -5,10 +5,11 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { gotoShell } from '../terminal/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('closing a chat — no 401', () => {
   test('test 1: closing a terminal tab produces no 401 console error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const consoleErrors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 

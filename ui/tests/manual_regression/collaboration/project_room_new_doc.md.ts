@@ -34,7 +34,7 @@ test.describe('Project doc creation — entity API', () => {
   });
 
   test('test 1: Project view mounts the asset browser (not a legacy DOCS sidebar)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
@@ -51,7 +51,7 @@ test.describe('Project doc creation — entity API', () => {
   });
 
   test('test 2: Creating a markdown doc via the entity API writes the entity (and is searchable)', async () => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const rq = await apiContext();
     // Its own temp project and a per-run name: a fixed name in a shared project
     // (the default project's mount is the user's real workspace) survives a DB
@@ -95,7 +95,7 @@ test.describe('Project doc creation — entity API', () => {
   });
 
   test('test 3: The markdown editor surface opens for an existing doc', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 

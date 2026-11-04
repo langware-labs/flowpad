@@ -71,7 +71,7 @@ const graph = <T = Record<string, unknown>>(method: 'get' | 'post' | 'delete', r
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  test.setTimeout(180_000);
+  test.setTimeout(adjusted(180_000));
   api = await apiContext();
   const users = await graph<Array<{ id: string; uname?: string }>>('get', '/graph/user');
   localUserId = users.find((u) => u.uname === 'local')?.id ?? '';

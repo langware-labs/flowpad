@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { ensureProjectMarkdown } from './_seed';
+import { adjusted } from '../../adjustableTimeout';
 
 
 function realConsoleErrors(errors: string[]): string[] {
@@ -35,7 +36,7 @@ async function openFirstMarkdownDoc(page: Page) {
 
 test.describe('Markdown editor header has no "Wiki" back button', () => {
   test('header shows mode toggle + no Wiki button and no left-edge back arrow', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => { localStorage.setItem('llm-setup-modal-seen', 'true'); localStorage.setItem('viewMode', 'advanced'); });
 
     const errors: string[] = [];

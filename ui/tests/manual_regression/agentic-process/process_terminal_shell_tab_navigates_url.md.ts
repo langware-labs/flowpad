@@ -15,7 +15,7 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 }
 
 test('clicking shell tab from agentic process view updates URL to shell session', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   await dismissSetupModal(page);
 
   // Navigate to shell

@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -42,7 +43,7 @@ const TWO_BOXES_ARROW = [
 
 test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
   test('E1: idle does not loop the debounced save (no repeated writes without onChange)', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -90,7 +91,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
   });
 
   test('E2: close without save (documented behavior, no pass/fail gate)', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -133,7 +134,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
   });
 
   test('E3: crash-mid-edit recovery preserves saved elements', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -170,7 +171,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
   });
 
   test('E4: large board (100 rects) persists all elements + mermaid block', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -231,7 +232,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
   });
 
   test('E5: delete board removes entity (folder kept on disk by design)', async ({ request }) => {
-    test.setTimeout(30_000);
+    test.setTimeout(adjusted(30_000));
     const { id } = await createWhiteboard(request, `e5-delete-${Date.now() % 10000}`);
 
     const del = await request.delete(`${API}/api/v1/graph/whiteboard/${id}`);

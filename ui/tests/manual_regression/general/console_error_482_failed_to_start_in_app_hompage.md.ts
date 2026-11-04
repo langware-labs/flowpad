@@ -16,7 +16,7 @@ test.describe('App homepage — no 482 failed-to-start', () => {
   });
 
   test('test 1: app homepage loads without 482 "failed to start" console error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

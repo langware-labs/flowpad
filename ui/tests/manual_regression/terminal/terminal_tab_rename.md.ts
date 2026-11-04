@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal Tab Rename', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Terminal Tab Rename', () => {
   });
 
   test('double-click to rename a terminal tab', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to shell (creates a new shell and navigates to it)
     await gotoShell(page);

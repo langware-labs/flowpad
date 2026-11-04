@@ -5,6 +5,7 @@ import {
   submitFromLanding,
   goHome,
 } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Return to Home', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,7 +13,7 @@ test.describe('Return to Home', () => {
   });
 
   test('navigate back to home from active shell session', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoLanding(page);
     await submitFromLanding(page, 'return home test');

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoLanding, submitFromLanding, waitForLanding } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Chat Tab Switching', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Chat Tab Switching', () => {
   });
 
   test('switch between sidebar dock views', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoLanding(page);
     await submitFromLanding(page, 'tab switching test');

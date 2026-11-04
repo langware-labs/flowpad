@@ -8,6 +8,7 @@
  * round-trip. The create step is best-effort (only if a create control exists).
  */
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Skill editor — no SkillParseError', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,7 +18,7 @@ test.describe('Skill editor — no SkillParseError', () => {
   });
 
   test('test 1: Creating and viewing a skill shows no SkillParseError', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

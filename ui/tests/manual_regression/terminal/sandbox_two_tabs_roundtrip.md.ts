@@ -9,6 +9,7 @@
  */
 import { expect, test } from '@playwright/test';
 import { dismissSetupModal, gotoShell, openTabViaMenu, requireSandbox, terminalTabChips } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Sandbox — two tabs roundtrip', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,7 +18,7 @@ test.describe('Sandbox — two tabs roundtrip', () => {
   });
 
   test('after opening a second sandbox tab, the first still routes output', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoShell(page);
 

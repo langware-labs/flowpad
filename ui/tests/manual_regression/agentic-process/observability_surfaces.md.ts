@@ -17,7 +17,7 @@ import { adjusted } from '../../adjustableTimeout';
 
 test.describe('observability surfaces', () => {
   test('test 1: PTY Viewer opens from the debug menu (no dev gate)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -44,7 +44,7 @@ test.describe('observability surfaces', () => {
   });
 
   test('test 2: Open Transcript navigates to the claude transcript lens', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -76,7 +76,7 @@ test.describe('observability surfaces', () => {
   });
 
   test('test 3: Open Transcript icon is hidden until a session exists', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
 

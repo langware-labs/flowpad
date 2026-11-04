@@ -20,6 +20,7 @@
  */
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { auth, hubLogin } from '../_shared/hub';
+import { adjusted } from '../../adjustableTimeout';
 
 // Hub origin — REQUIRED. This test intentionally targets a specific two-instance
 // hub rig, so there is no localhost fallback: set QA_HUB_URL explicitly.
@@ -43,7 +44,7 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
       'QA_HUB_URL is not set — this two-instance test requires an explicit hub origin (the instance_ctl local hub); there is no localhost fallback.',
     );
   }
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   // Each identity owns its own cookie jar. The hub accepts JWT cookies as well
   // as bearer headers, so logging both users into one context can make the last
   // login override an otherwise-correct Authorization header.

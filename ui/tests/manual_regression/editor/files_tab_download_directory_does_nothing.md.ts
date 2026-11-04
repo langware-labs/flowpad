@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 function realConsoleErrors(errors: string[]): string[] {
   return errors.filter(
@@ -13,7 +14,7 @@ function realConsoleErrors(errors: string[]): string[] {
 
 test.describe('File explorer shows files and directories correctly (FLOWPAD-1671)', () => {
   test('directory rows are visible and the per-file download control is wired', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

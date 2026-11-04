@@ -38,7 +38,7 @@ const cliOptions = debugMenuButton;
 
 test.describe('process restart and CLI flags', () => {
   test('test 1: Restart button respawns the PTY (clean, no console errors)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push(e.message));
@@ -65,7 +65,7 @@ test.describe('process restart and CLI flags', () => {
   test('test 2: toggling a CLI flag persists + lights the Restart glow; Restart clears it', async ({ page }) => {
     // --chrome is a claude-only flag; other vendors do not render the toggle.
     test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --chrome flag`);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -101,7 +101,7 @@ test.describe('process restart and CLI flags', () => {
     // a vendor without the field never drifts from last_started_hash, so the
     // glow correctly never lights and there is no toggle to revert.
     test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --chrome flag`);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -157,7 +157,7 @@ test.describe('process restart and CLI flags', () => {
   });
 
   test('test 4: ProcessToolbar gating (no toolbar on plain shell; gated buttons once running)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
 

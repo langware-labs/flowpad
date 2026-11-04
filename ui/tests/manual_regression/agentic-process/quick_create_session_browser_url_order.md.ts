@@ -25,7 +25,7 @@ function processIdFromCreateResponse(payload: unknown): string {
 test('Quick Create Claude session commits its final browser URL after dock loading', async ({ page }) => {
   await dismissSetupModal(page);
 
-  await page.goto(withViewMode('/dock/home', 'advanced'));
+  await page.goto(withViewMode('/dock/desktop', 'advanced'));
   await expect(page.getByRole('button', { name: 'Quick create' })).toBeVisible();
 
   const createProcessResponse = page.waitForResponse(

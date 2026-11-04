@@ -14,6 +14,7 @@
  */
 import { expect, test } from '@playwright/test';
 import { dismissSetupModal, gotoShell, openTabViaMenu, requireSandbox, terminalTabChips } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Sandbox terminal — uname -a', () => {
   test.beforeEach(async ({ page }) => {
@@ -22,7 +23,7 @@ test.describe('Sandbox terminal — uname -a', () => {
   });
 
   test('user types `uname -a` in a sandbox tab and sees Linux OS info', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoShell(page);
 

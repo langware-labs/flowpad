@@ -4,6 +4,7 @@
  * Source: skills_failed_to_run_skill_console_error_482.md
  */
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Skills view — no 482', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,7 +14,7 @@ test.describe('Skills view — no 482', () => {
   });
 
   test('test 1: Skills view loads without 482 console error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

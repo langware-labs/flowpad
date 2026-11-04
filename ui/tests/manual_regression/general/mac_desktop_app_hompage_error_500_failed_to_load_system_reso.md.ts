@@ -16,7 +16,7 @@ test.describe('App homepage — no 500 failed-to-load-system-resource', () => {
   });
 
   test('test 1: App home page does not produce 500 error on macOS', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

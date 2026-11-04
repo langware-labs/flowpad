@@ -3,6 +3,7 @@ import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -73,7 +74,7 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
 
 test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   test('U1: tree row carries a Palette icon', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -108,7 +109,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   });
 
   test('U2: whiteboard list shows whiteboards only', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -144,7 +145,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   });
 
   test('U3: save debounce — five rapid updates coalesce into one write', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     // The save goes through axios, which in the browser uses XMLHttpRequest
     // (NOT window.fetch). Hook XHR.open BEFORE the page loads to count board.json
     // write requests (POST). Counting actual requests with a before/after delta
@@ -194,7 +195,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   });
 
   test('U4: pasted image lives in board.json data.files', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

@@ -47,7 +47,7 @@ async function openConversation(p: Page) {
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  test.setTimeout(90_000);
+  test.setTimeout(adjusted(90_000));
   apiA = await request.newContext({ baseURL: A.api });
   apiB = await request.newContext({ baseURL: B.api });
   const projects = await call<Array<{ id: string; uname?: string }>>(apiA, 'get', '/graph/project');
@@ -83,7 +83,7 @@ test.afterAll(async () => {
 });
 
 test("B answers A's message with Reply; A sees the thread and the quote; A writes into it; B sees it grow", async ({ browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(adjusted(120_000));
   const shots = process.env.SHOT_DIR;
   const b = await page(browser, B.ui);
   const a = await page(browser, A.ui);

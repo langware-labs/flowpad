@@ -8,10 +8,11 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { gotoShell, addTerminalTab } from '../terminal/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('switch between sessions', () => {
   test('test 1: switching between two terminal tabs flips the active tab, no console errors', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const consoleErrors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 

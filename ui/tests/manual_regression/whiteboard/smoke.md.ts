@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 
 // API base for this instance (frontend is baseURL on VITE_PORT; backend on :6002).
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -30,7 +31,7 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
   });
 
   test('S3: excalidraw bundle lazy-loads + editor mounts', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

@@ -37,7 +37,7 @@ function localInputValue(d: Date): string {
 }
 
 test('a scheduled agent run: create, fire, open trigger, edit, disable, delete', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(adjusted(120_000));
   const errors: string[] = [];
   page.on('pageerror', (err) => errors.push(err.message));
   const api = await apiContext();

@@ -9,6 +9,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Flow Shell tab location', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,7 +17,7 @@ test.describe('Flow Shell tab location', () => {
   });
 
   test('test 1: Flow shell remains the first tab after opening terminals and refresh', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to shell (creates the default Flow shell tab).
     await gotoShell(page);

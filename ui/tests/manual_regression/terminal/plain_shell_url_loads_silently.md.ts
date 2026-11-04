@@ -7,9 +7,10 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test('plain shell URL with no linked process loads silently', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   const toasts: string[] = [];
 
   await dismissSetupModal(page);

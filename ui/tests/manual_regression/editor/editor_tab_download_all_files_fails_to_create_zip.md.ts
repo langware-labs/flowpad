@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 // The cross-cutting agent_hook/<id>/watch console noise is a separate ticket — filter it.
 function realConsoleErrors(errors: string[]): string[] {
@@ -14,7 +15,7 @@ function realConsoleErrors(errors: string[]): string[] {
 
 test.describe('File explorer download control is present (FLOWPAD-1605)', () => {
   test('SimpleFileManager renders the Download control', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

@@ -9,7 +9,7 @@ test.describe('LLM configuration view', () => {
   });
 
   test('AI configuration view is accessible and loads without errors (FLOWPAD-1604)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -39,7 +39,7 @@ test.describe('LLM configuration view', () => {
   });
 
   test('Navigating back to home after visiting AI config shows no crash', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await page.goto('/dock/ai-config');
     await page.waitForTimeout(2_000);

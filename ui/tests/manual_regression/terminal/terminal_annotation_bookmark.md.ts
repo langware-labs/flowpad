@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { RIBBON_TABS, dismissSetupModal, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
 import { apiOrigin } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Navigate to an agentic process terminal with worker_session_id set.
@@ -42,7 +43,7 @@ test.describe('terminal_annotation_bookmark', () => {
 });
 
   test('test 2: Annotation gutter is not visible in a plain shell terminal', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await page.goto('/dock/shell/new_terminal');
     await page.waitForURL(/\/dock\/shell\/(shell-)/, { timeout: 60_000 });
@@ -57,7 +58,7 @@ test.describe('terminal_annotation_bookmark', () => {
 });
 
   test('test 3: Annotation gutter is visible for existing agentic process with worker session ID', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcessWithSession(page);
 
@@ -71,7 +72,7 @@ test.describe('terminal_annotation_bookmark', () => {
   // `?t=` resume surface was removed in 29e6c667 (2026-06-18); scenario updated
   // 2026-07-07 to guard the surviving contract instead.
   test('test 4+5: Create bookmark; it persists with session linkage and is listed', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Navigate to an agentic process and capture its ID
     const processUrl = await gotoAgenticProcessWithSession(page);

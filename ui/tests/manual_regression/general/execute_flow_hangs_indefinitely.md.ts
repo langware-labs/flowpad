@@ -9,7 +9,7 @@ test.describe('Execute Flow view', () => {
   });
 
   test('Execute flow view loads and is responsive (FLOWPAD-1662)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

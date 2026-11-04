@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 // Whiteboard is a REPO asset, so user scope uses the same registry-owned
@@ -58,7 +59,7 @@ async function materialize(page: Page, id: string, assetRef: string) {
 
 test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   test('Sc1: project-scoped board creation materializes under the project mount', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -88,7 +89,7 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   });
 
   test('Sc2: user + project scopes coexist with distinct paths', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

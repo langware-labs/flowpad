@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 // Per-instance DB (see the .md: `~/.flow/instances/<instance>/flowpad.db`). The
@@ -45,7 +46,7 @@ async function materialize(page: Page, id: string, assetRef: string) {
 
 test.describe('Whiteboard participates in the wiki graph', () => {
   test('a whiteboard whose WHITE_BOARD.md has a [[wiki-link]] creates a links-table edge', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     test.skip(!fs.existsSync(DB), `instance DB not found at ${DB}`);
     await page.addInitScript(() => {
     try {

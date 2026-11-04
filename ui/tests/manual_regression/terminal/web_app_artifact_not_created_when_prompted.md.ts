@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Web App view accessibility', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Web App view accessibility', () => {
   });
 
   test('Web app view is accessible and loads without crashing (FLOWPAD-1616)', async ({ page }) => {
-    test.setTimeout(30_000);
+    test.setTimeout(adjusted(30_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

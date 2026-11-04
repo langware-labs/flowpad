@@ -22,6 +22,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { RIBBON_TABS, dismissSetupModal, startClaudeSession } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 let cachedAgenticUrl: string | null = null;
 
@@ -118,7 +119,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
   test('test 1: Time gutter field columns are aligned with fixed widths', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await gotoAgenticProcess(page);
     await ensurePtyContent(page);
 
@@ -172,7 +173,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
   test('test 6: Column header bar — hide and restore trace column', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await gotoAgenticProcess(page);
 
     // Column header bar (18px strip) is visible; trace gutter visible.
@@ -192,7 +193,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
   test('test 7: Column header bar — hide and restore annotations column', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP + ' (also needs a real worker session_id for the annotation gutter.)');
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await gotoAgenticProcess(page);
 
     // Annotation gutter requires a worker session_id (set when the banner
@@ -215,7 +216,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
   test('test 8: Column visibility persists across page refresh', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await gotoAgenticProcess(page);
 
     const traceGutter = page.locator('[data-testid="trace-gutter"]').first();
@@ -242,7 +243,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
   test('test 9: debug menu — Trace and Annotations column toggles (entry-point parity)', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await gotoAgenticProcess(page);
 
     const traceGutter = page.locator('[data-testid="trace-gutter"]').first();
@@ -281,7 +282,7 @@ test.describe('Time gutter & prompt annotations', () => {
 
   test('test 10: Time-gutter row/anchor time-range fields render extra columns', async ({ page }) => {
     test.skip(true, LIVE_CLAUDE_SKIP);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await gotoAgenticProcess(page);
 
     // This test's intent (widening the gutter when debugTime/refTime fields are

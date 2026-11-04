@@ -22,6 +22,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { apiContext } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const CLIP = process.env.VOICE_CLIP_WAV || '';
 /** The microphone's recording: the question after a pause long enough for the voice's greeting. */
@@ -247,7 +248,7 @@ test('2. browser mic + speakers — a live call the agent answers, heard back, w
 test('3. phone (Twilio) — the agent calls a person, who asks it on the line; watched live', async ({ page }) => {
   test.skip(!PHONE_TO || !PHONE_NUMBER || !PHONE_PROJECT, 'VOICE_PHONE_TO / VOICE_PHONE_NUMBER / VOICE_OPENAI_PROJECT not set');
   // A person answers, listens, asks and hangs up: the budget is a human conversation, set here once.
-  test.setTimeout(300_000);
+  test.setTimeout(adjusted(300_000));
   await openStreamInbox(page);
   const before = await rowIds(page);
   await page.locator('[data-testid="voice-call-button"][data-calls="dial"]').click();

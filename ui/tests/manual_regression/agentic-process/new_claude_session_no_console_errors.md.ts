@@ -17,7 +17,7 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 }
 
 test('creating a Claude session produces no console errors', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   const errors: string[] = [];
   page.on('console', msg => {
     if (msg.type() === 'error') errors.push(msg.text());

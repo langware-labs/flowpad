@@ -8,6 +8,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab, goHome, gotoShellView, sendCommand, waitForOutput, activePanel } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Shell terminals looks empty', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,7 +16,7 @@ test.describe('Shell terminals looks empty', () => {
   });
 
   test('test 1: terminals show content after Home -> Shell round-trip', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to app (shell), opening the default terminal.
     await gotoShell(page);

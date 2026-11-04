@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Multiple Terminal Tabs', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Multiple Terminal Tabs', () => {
   });
 
   test('create multiple tabs and switch between them', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to shell
     await gotoShell(page);

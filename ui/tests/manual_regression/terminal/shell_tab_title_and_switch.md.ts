@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal, gotoShell, openTabViaMenu } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 /**
  * Shell Tab Title & Switch Regression
@@ -81,7 +82,7 @@ test.describe('Shell Tab Title and Switching', () => {
   });
 
   test('rename tabs, refresh, and switch between them', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Use timestamps so these tabs are findable even if other tabs exist.
     // Do NOT close all existing tabs — with many accumulated sessions that

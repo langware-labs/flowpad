@@ -30,7 +30,7 @@ test.describe('Flowpad Assistant project space', () => {
   });
 
   test('test 1: Open the Flowpad Assistant project space (asset browser)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
@@ -48,7 +48,7 @@ test.describe('Flowpad Assistant project space', () => {
   });
 
   test('test 2: The shipped Welcome doc is seeded and searchable', async () => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const rq = await apiContext();
     const projectId = await assistantProjectId(rq);
     // The Phase 11 per-file reset mirrors production startup: both must seed
@@ -72,7 +72,7 @@ test.describe('Flowpad Assistant project space', () => {
   });
 
   test('test 3: The assistant project view mounts without an error boundary', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 

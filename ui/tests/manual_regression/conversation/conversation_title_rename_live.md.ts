@@ -12,6 +12,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 const titleSel = '[data-testid="conversation-title"]';
@@ -28,7 +29,7 @@ async function openConversation(page: Page, convId: string) {
 }
 
 test('test 1-3: rename in one client live-updates the other client', async ({ browser }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
 
   // Seed a conversation via the entity API.
   const rq = await apiContext();

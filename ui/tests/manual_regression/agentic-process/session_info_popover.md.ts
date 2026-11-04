@@ -38,7 +38,7 @@ test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
 test.describe('session info popover', () => {
   test('test 1: Info popover gated on hasSession; shows all expected rows', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
 
@@ -68,7 +68,7 @@ test.describe('session info popover', () => {
   });
 
   test('test 2: clicking a CopyRow shows transient "Copied!" confirmation', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -86,7 +86,7 @@ test.describe('session info popover', () => {
 
   test('test 3: Command row reflects CLI flags (--chrome appears after toggle)', async ({ page }) => {
     test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --chrome flag`);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);

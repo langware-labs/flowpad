@@ -9,6 +9,7 @@
  */
 import { expect, test } from '@playwright/test';
 import { dismissSetupModal, gotoShell, openTabViaMenu, requireSandbox, terminalTabChips } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Sandbox tab — provider icon', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,7 +18,7 @@ test.describe('Sandbox tab — provider icon', () => {
   });
 
   test('sandbox tab shows Shell provider icon to the left of the name', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: open the shell view.
     await gotoShell(page);

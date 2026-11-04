@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Skills view', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +9,7 @@ test.describe('Skills view', () => {
   });
 
   test('Skills view is responsive and does not hang indefinitely (FLOWPAD-1667)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

@@ -30,7 +30,7 @@ async function processesForTrigger(rq: APIRequestContext, tid: string): Promise<
 }
 
 test('trigger fire attaches process via target_typeid_str + panel shows invocation', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   await dismissSetupModal(page);
   const rq = await apiContext();
 

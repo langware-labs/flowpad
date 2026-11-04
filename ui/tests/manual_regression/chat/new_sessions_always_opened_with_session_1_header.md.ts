@@ -10,6 +10,7 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { gotoShell, addTerminalTab } from '../terminal/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 async function tabNames(page: import('@playwright/test').Page): Promise<string[]> {
   // The tab is a <div> whose FIRST <span> is a decorative active-indicator bar
@@ -27,7 +28,7 @@ async function tabNames(page: import('@playwright/test').Page): Promise<string[]
 
 test.describe('incremented tab names', () => {
   test('test 1: second terminal tab name increments (distinct from the first)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoShell(page);
 

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoLanding, submitFromLanding } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Landing to New Chat', () => {
   test.describe.configure({ retries: 1 });
@@ -9,7 +10,7 @@ test.describe('Landing to New Chat', () => {
   });
 
   test('start new session from landing page navigates to shell terminal', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to landing page and validate it
     await gotoLanding(page);

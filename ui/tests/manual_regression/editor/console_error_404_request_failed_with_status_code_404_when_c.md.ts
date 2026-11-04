@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 // Filters cross-cutting console noise that is not the regression under test.
 // Stale user-typeid 404s after a DB clear are filtered per the 2026-05-07 learning.
@@ -14,7 +15,7 @@ function realConsoleErrors(errors: string[]): string[] {
 
 test.describe('Code editor — no 404 console errors (FLOWPAD-1686)', () => {
   test('navigating to /dock/editor does not produce 404 console errors', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

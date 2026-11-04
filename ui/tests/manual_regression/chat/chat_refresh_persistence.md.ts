@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { gotoShell } from '../terminal/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Chat Refresh Persistence', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +9,7 @@ test.describe('Chat Refresh Persistence', () => {
   });
 
   test('Shell session tab persists after page refresh', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: Navigate to new_terminal and wait for shell to be ready
     await gotoShell(page);

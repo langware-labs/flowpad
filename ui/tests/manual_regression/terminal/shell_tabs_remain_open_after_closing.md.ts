@@ -9,6 +9,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, addTerminalTab } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 async function tabIds(page: import('@playwright/test').Page): Promise<string[]> {
   return page
@@ -22,7 +23,7 @@ test.describe('Shell tabs remain open after closing', () => {
   });
 
   test('test 1: 2 additional tabs remain open after closing 3 of 5 and refreshing', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to the app shell tab (default Flow shell).
     await gotoShell(page);

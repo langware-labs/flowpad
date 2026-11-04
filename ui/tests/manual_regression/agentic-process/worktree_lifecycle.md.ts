@@ -64,7 +64,7 @@ test.describe('worktree lifecycle', () => {
     // for codex/copilot/opencode), so the Open-in-Worktree affordance correctly
     // does not render on those arms.
     test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --worktree flag`);
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     cleanGit(PROJECT_DIR);
     gitInitWithCommit(PROJECT_DIR);
 
@@ -107,7 +107,7 @@ test.describe('worktree lifecycle', () => {
   });
 
   test('test 2: OpenInWorktree disabled when the workdir has no commits', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     cleanGit(PROJECT_DIR);
     gitInitNoCommit(PROJECT_DIR);
 

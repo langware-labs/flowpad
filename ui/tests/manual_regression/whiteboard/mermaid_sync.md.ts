@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -52,7 +53,7 @@ const TWO_BOXES_ARROW = [
 
 test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
   test('M1: mermaid block written', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -73,7 +74,7 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
   });
 
   test('M2: human content preserved outside markers', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -108,7 +109,7 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
   });
 
   test('M3: degenerate (freehand-only) board still emits valid mermaid', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -134,7 +135,7 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
   });
 
   test('M4: decision diamond emits double-curly (or single-curly) node', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -153,7 +154,7 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
   });
 
   test('M5: mermaid import dialog adds elements + re-syncs markdown', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

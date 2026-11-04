@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 function realConsoleErrors(errors: string[]): string[] {
   return errors.filter(
@@ -13,7 +14,7 @@ function realConsoleErrors(errors: string[]): string[] {
 
 test.describe('File explorer shows Unix-style root (not Windows C:/) on macOS (FLOWPAD-1594)', () => {
   test('root path is Unix-style and never shows C:\\ or C:/', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

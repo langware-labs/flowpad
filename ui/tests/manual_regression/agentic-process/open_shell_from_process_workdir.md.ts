@@ -26,7 +26,7 @@ async function fetchShellWorkdir(page: import('@playwright/test').Page, shellId:
 
 test.describe('open shell from process workdir', () => {
   test('test 1: Open Terminal opens a new plain shell in the process workdir', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -67,7 +67,7 @@ test.describe('open shell from process workdir', () => {
   });
 
   test('test 2: Open Terminal available without a Claude session (default cwd shell)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);

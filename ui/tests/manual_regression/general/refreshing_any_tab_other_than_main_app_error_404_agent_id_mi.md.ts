@@ -14,7 +14,7 @@ test.describe('Non-main tabs — no 404 agent-id-missing', () => {
   });
 
   test('test 1: Navigating to execute flow tab does not produce 404 (agent ID missing) error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -32,7 +32,7 @@ test.describe('Non-main tabs — no 404 agent-id-missing', () => {
   });
 
   test('test 2: Navigating to skills tab does not produce 404 error', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const errors: string[] = [];
     page.on('console', (msg) => {

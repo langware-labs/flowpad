@@ -17,6 +17,7 @@ import path from 'node:path';
 import { dismissSetupModal } from './helpers';
 import { apiBase, apiContext } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 const TEXTAREA = '[data-testid="entity-execution-input"]';
@@ -142,7 +143,7 @@ test.describe('doc-chat per type', () => {
   });
 
   test('test 1: panel mounts on every doc-type with an asset_ref-resolved target', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await dismissSetupModal(page);
 
     for (const { type, editor, machinePath } of DOCS) {

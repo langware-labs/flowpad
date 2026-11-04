@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand } from '../terminal/helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Chat Input Controls', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Shell terminal input accepts text and executes on Enter', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Capture console errors from the start
     const errors: string[] = [];
@@ -30,7 +31,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Empty Enter press does not crash terminal', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoShell(page);
 
@@ -43,7 +44,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Tab opener menu exposes Claude and Terminal rows', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoShell(page);
 

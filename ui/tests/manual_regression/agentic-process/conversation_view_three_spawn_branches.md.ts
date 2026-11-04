@@ -143,7 +143,7 @@ test.describe.serial('conversation session lifecycle', () => {
   let launched: { convId: string; projectId: string; workdir: string; pid: string } | null = null;
 
   test('launch spawns a visible conversation-process, links it, opens its dock', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const rq = await apiContext();
     try {
       // Defensive: free a leftover session if a prior pair's test 2 didn't run
@@ -182,7 +182,7 @@ test.describe.serial('conversation session lifecycle', () => {
   });
 
   test('opening again reuses the existing session — no duplicate', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     expect(launched, 'test 1 must have launched a session first').not.toBeNull();
     const { convId, pid } = launched!;
     const rq = await apiContext();

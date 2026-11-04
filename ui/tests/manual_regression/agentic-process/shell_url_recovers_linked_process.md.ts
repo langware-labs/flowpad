@@ -19,7 +19,7 @@ import { adjusted } from '../../adjustableTimeout';
 // terminals/get_by_shell_id) when the in-memory cache is cold, so the redirect
 // fires on a fresh page.goto. (Fix per Debug #17.)
 test('navigating to shell URL with linked agentic process redirects to agentic_process URL', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));

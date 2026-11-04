@@ -20,7 +20,7 @@ import { adjusted } from '../../adjustableTimeout';
 // to /dock/shell/agentic_process-Y on a fresh navigation regardless of the
 // PATCH visible=false push. (Fix per Debug #17.)
 test('agentic process with visible=false is recovered when navigating to shell URL', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(adjusted(60_000));
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));

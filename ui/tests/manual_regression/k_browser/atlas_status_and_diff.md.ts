@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 // Knowledge Atlas — index status, real-fs change detection, line diffs.
 // Structural-only flow (native scan/stamp, no LLM) — never gated on API keys.
@@ -49,7 +50,7 @@ async function rescan(page: Page) {
 
 test.describe('Knowledge Atlas — status + real-fs change detection + diff', () => {
   test('T1–T5: seed → stamp → mutate fs → detect → diff → re-stamp clears', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     seedVault();
 
     try {

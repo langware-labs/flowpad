@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput, goHome, gotoShellView } from './helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Terminal Persistence on Tab Switch', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,7 +8,7 @@ test.describe('Terminal Persistence on Tab Switch', () => {
   });
 
   test('terminal state persists when switching views', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     // Step 1: navigate to shell — creates a fresh session at /dock/shell/shell-<uuid>
     await gotoShell(page);

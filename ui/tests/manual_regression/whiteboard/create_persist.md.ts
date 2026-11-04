@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
@@ -77,7 +78,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   });
 
   test('C1: create opens the whiteboard editor', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -95,7 +96,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   });
 
   test('C2–C3: files on disk + frontmatter id present (after first save)', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -139,7 +140,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   });
 
   test('C4: draw + autosave writes board.json (>=2 elements) + thumbnail', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -182,7 +183,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
   });
 
   test('C5: reload preserves content', async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');

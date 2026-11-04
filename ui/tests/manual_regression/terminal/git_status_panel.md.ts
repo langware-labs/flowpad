@@ -42,6 +42,7 @@ import { RIBBON_TABS,
   startClaudeSession,
 } from './helpers';
 import { apiOrigin } from '../_shared/api';
+import { adjusted } from '../../adjustableTimeout';
 
 const API_URL = apiOrigin();
 // repo root of this checkout (ui/tests/manual_regression/terminal → 4 levels up).
@@ -172,7 +173,7 @@ test.describe('Git Status Panel', () => {
   // test 1: Git button appears in agentic process terminal ribbon
   // ---------------------------------------------------------------------------
   test('git status button appears in agentic process terminal ribbon', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -195,7 +196,7 @@ test.describe('Git Status Panel', () => {
   // test 2: Git panel opens as a tab in the side window
   // ---------------------------------------------------------------------------
   test('git panel opens as a tab in the side window when git button is clicked', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -225,7 +226,7 @@ test.describe('Git Status Panel', () => {
   // test 3: Git panel header shows branch name and ahead/behind indicators
   // ---------------------------------------------------------------------------
   test('git panel header shows branch name', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -255,7 +256,7 @@ test.describe('Git Status Panel', () => {
   // test 4: Git panel shows changed files with status badges and line counts
   // ---------------------------------------------------------------------------
   test('git panel shows file list with status badges and line counts', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const repo = createChangedGitRepo();
     const projectId = await createProjectForWorkdir(repo);
     let processId = '';
@@ -287,7 +288,7 @@ test.describe('Git Status Panel', () => {
   // test 5: Git tab closes via × in the tab strip
   // ---------------------------------------------------------------------------
   test('git tab closes via the × close button in the tab strip', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -307,7 +308,7 @@ test.describe('Git Status Panel', () => {
   // test 6: Multiple tabs coexist in the same side window
   // ---------------------------------------------------------------------------
   test('git and prompts tabs coexist and can be switched between', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -350,7 +351,7 @@ test.describe('Git Status Panel', () => {
   // test 8: Git button is absent for plain shell terminals (no agentic process)
   // ---------------------------------------------------------------------------
   test('git button is absent in plain shell terminal (no agentic process)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const bootstrap = await fetch(`${API_URL}/api/v1/graph/bootstrap`).then((response) => response.json());
     const projectId = bootstrap?.data?.default_project?.id as string | undefined;
     expect(projectId, 'Phase 11 plain-shell preflight requires a default project').toBeTruthy();
@@ -382,7 +383,7 @@ test.describe('Git Status Panel', () => {
   // test 10: git-status API endpoint returns correct structure
   // ---------------------------------------------------------------------------
   test('git-status API returns correct shape for git and non-git dirs', async () => {
-    test.setTimeout(30_000);
+    test.setTimeout(adjusted(30_000));
 
     const nodeId = await getComputeNodeId();
     expect(

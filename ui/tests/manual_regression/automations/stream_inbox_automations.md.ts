@@ -97,7 +97,7 @@ async function shot(page: Page, name: string) {
 }
 
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(240_000);
+test.setTimeout(adjusted(240_000));
 
 test.beforeAll(async () => {
   api = await apiContext();

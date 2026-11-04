@@ -37,6 +37,7 @@ import { RIBBON_TABS,
 } from './helpers';
 import { apiBase } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
+import { adjusted } from '../../adjustableTimeout';
 
 const API_URL = apiBase();
 
@@ -110,7 +111,7 @@ test.describe('Prompt Index Panel', () => {
   // test 1: Prompt icon appears in agentic process terminal ribbon
   // ---------------------------------------------------------------------------
   test('prompt index icon appears in agentic process terminal ribbon', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -134,7 +135,7 @@ test.describe('Prompt Index Panel', () => {
   // test 2: Prompt panel opens as a tab in the side window
   // ---------------------------------------------------------------------------
   test('prompt panel opens as a tab in the side window', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -168,7 +169,7 @@ test.describe('Prompt Index Panel', () => {
   // test 3: Prompt tab closes via × in the tab strip
   // ---------------------------------------------------------------------------
   test('prompt tab closes via the × close button in the tab strip', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -190,7 +191,7 @@ test.describe('Prompt Index Panel', () => {
   // test 4: Clicking ribbon button when Prompts is already active does NOT close the panel
   // ---------------------------------------------------------------------------
   test('clicking ribbon button toggles the Prompts tab — second click closes it', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 
@@ -220,7 +221,7 @@ test.describe('Prompt Index Panel', () => {
   // test 10: Prompt icon is absent for plain shell terminals (no process)
   // ---------------------------------------------------------------------------
   test('prompt icon is absent in plain shell terminal (no agentic process)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     const bootstrap = await page.request.get(`${API_URL}/api/v1/graph/bootstrap`);
     expect(bootstrap.status()).toBe(200);
@@ -254,7 +255,7 @@ test.describe('Prompt Index Panel', () => {
   // test 12: Multiple panels are tabs in the same side window (not side-by-side)
   // ---------------------------------------------------------------------------
   test('Files and Prompts panels coexist as tabs in the same side window', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
 
     await gotoAgenticProcess(page);
 

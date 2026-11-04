@@ -21,6 +21,7 @@
  * to the Playwright manual-regression tier.
  */
 import { request as pwRequest, test, type APIRequestContext } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 export const HUB = process.env.QA_HUB_URL || 'http://localhost:8093';
 export const ALICE_API = process.env.QA_ALICE_API || 'http://localhost:6005';
@@ -167,7 +168,7 @@ async function cleanup(rq: APIRequestContext, convId: string): Promise<void> {
  *  file supplies only its assertions. */
 export function withSharedConversation(body: (rq: APIRequestContext, rig: Rig) => Promise<void>): () => Promise<void> {
   return async () => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const rq = await pwRequest.newContext();
     const skip = await rigUnavailable(rq);
     test.skip(!!skip, skip ?? '');

@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 
 test.describe('Creating content in skills view + nav home does not crash (FLOWPAD-1623)', () => {
   test('skills view renders, New Skill is reachable, and home loads without crash', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
     });

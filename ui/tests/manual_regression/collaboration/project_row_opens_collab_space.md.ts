@@ -32,7 +32,7 @@ test.describe('Project view = asset browser', () => {
   });
 
   test('test 1: Direct navigation to /dock/project/<uuid> renders the project asset browser', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     const errors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
@@ -51,7 +51,7 @@ test.describe('Project view = asset browser', () => {
   });
 
   test('test 2: The asset browser exposes a project-scope filter chip (no Project tree node)', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.goto('/dock/assets');
     await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
 
@@ -71,7 +71,7 @@ test.describe('Project view = asset browser', () => {
   });
 
   test('test 3: Project rows in /dock/assets/list/project are NOT row-click targets', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(adjusted(60_000));
     await page.goto('/dock/assets/list/project');
     await page.waitForLoadState('networkidle', { timeout: adjusted(25_000) }).catch(() => {});
     const firstRow = page.locator('tr:has(td)').first();
