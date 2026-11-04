@@ -49,6 +49,8 @@ test.describe('Search Scan Info Stats', () => {
     await page.goto('/dock/search');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
+    await expect(page.locator('[data-testid="search-view"]')).toBeVisible({ timeout: 10_000 });
+
     const indexedBadge = page.locator('text=/\\d+ indexed/').first();
     await expect(indexedBadge).toBeVisible({ timeout: 8_000 });
 
