@@ -37702,3 +37702,19 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Groups"
+msgstr "Groups"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "New conversation"
+msgstr "New conversation"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No groups yet."
+msgstr "No groups yet."
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Search groups"
+msgstr "Search groups"

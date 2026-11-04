@@ -3,6 +3,7 @@ import { markdownToPlain } from '@src/components/conversation/message-markdown';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import {
   Archive,
+  BookUser,
   Inbox as InboxIcon,
   Mail,
   MailOpen,
@@ -11,7 +12,6 @@ import {
   Search,
   SquarePen,
   Trash2,
-  UsersRound,
   X,
   Zap,
 } from 'lucide-react';
@@ -20,7 +20,7 @@ import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { pullNow } from '@src/components/data-sources/source-parts';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
-import { CreateContactsGroupDialog } from '@src/components/contact-picker/CreateContactsGroupDialog';
+import { ContactsDialog } from '@src/components/contact-picker/ContactsDialog';
 import {
   Conversation,
   FlowMessage,
@@ -745,7 +745,7 @@ export function StreamInboxView({
   // Bulk-delete + per-row-delete dialog state.
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
-  const [showNewContactsGroup, setShowNewContactsGroup] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
   const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
   // Multi-select: ids of rows ticked for a bulk mark-read/unread/archive/delete.
   // Constrained to currently-visible rows when actions run, so a stale id left
@@ -1259,6 +1259,28 @@ export function StreamInboxView({
           description={t`Sign in to your Flowpad Cloud account to view your stream inbox and conversations.`}
         />
       )}
+      {/* The list's main verbs get a row of their own, full-size, so they can't be missed. */}
+      {!agentId && !embedded && selectedCount === 0 && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2" data-testid="stream-inbox-primary-actions">
+          <Button
+            onClick={() => setShowNewConversation(true)}
+            data-testid="stream-inbox-new-conversation-button"
+            title={t`Start a new conversation`}
+          >
+            <SquarePen />
+            <Trans>New conversation</Trans>
+          </Button>
+          {desktopStreamInbox && (
+            <>
+              <ProjectUploadMessageButton variant="outline" size="default" />
+              <Button variant="outline" onClick={() => setShowContacts(true)} data-testid="stream-inbox-contacts-button">
+                <BookUser />
+                <Trans>Contacts</Trans>
+              </Button>
+            </>
+          )}
+        </div>
+      )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
         {/* Selection mode takes over the whole toolbar: the view pills, search and
             New buttons act on the list, not on the ticked rows, so they step aside
@@ -1371,38 +1393,6 @@ export function StreamInboxView({
                 </div>
               )}
             </div>
-            {/* CENTER — new conversation / new contacts group */}
-            {!agentId && !embedded && (
-              <div className="flex shrink-0 items-center">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setShowNewConversation(true)}
-                  data-testid="stream-inbox-new-conversation-button"
-                  title={t`Start a new conversation`}
-                >
-                  <SquarePen className="me-1 h-3.5 w-3.5" />
-                  <Trans>New</Trans>
-                </Button>
-                {desktopStreamInbox && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => setShowNewContactsGroup(true)}
-                      data-testid="stream-inbox-new-contacts-group-button"
-                      title={t`Create a contacts group — add its members to any conversation in one click`}
-                    >
-                      <UsersRound className="me-1 h-3.5 w-3.5" />
-                      <Trans>New group</Trans>
-                    </Button>
-                    <ProjectUploadMessageButton />
-                  </>
-                )}
-              </div>
-            )}
             {/* RIGHT — actions for the current view */}
             <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
               <>
@@ -1642,7 +1632,9 @@ export function StreamInboxView({
 
       {!agentId && <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />}
 
-      {!agentId && <CreateContactsGroupDialog open={showNewContactsGroup} onOpenChange={setShowNewContactsGroup} />}
+      {!agentId && (
+        <ContactsDialog open={showContacts} onOpenChange={setShowContacts} excludeUserId={cloudUser?.id ?? null} />
+      )}
 
       <BulkConfirmDialog
         open={bulkDialogOpen}

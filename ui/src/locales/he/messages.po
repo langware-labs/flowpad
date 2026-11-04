@@ -37428,3 +37428,19 @@ msgstr "הגדילו"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטינו"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Groups"
+msgstr "קבוצות"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "New conversation"
+msgstr "שיחה חדשה"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No groups yet."
+msgstr "אין עדיין קבוצות."
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Search groups"
+msgstr "חיפוש קבוצות"

@@ -37432,3 +37432,19 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Groups"
+msgstr "المجموعات"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "New conversation"
+msgstr "محادثة جديدة"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No groups yet."
+msgstr "لا توجد مجموعات بعد."
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Search groups"
+msgstr "البحث في المجموعات"
