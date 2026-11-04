@@ -413,7 +413,9 @@ export function AgentScheduleSection({
 /** Every schedule that runs this agent, on any place — the overview's schedule rows whose `agent_type_id` is
  *  this agent (each carries its place and source; the hub's are among them). */
 export function useAgentSchedules(agentTypeId: TypeId) {
-  const { data: overview = [], isLoading } = useAutomations({ poll: false });
+  // Polled: each row says when it last ran and how often, and a fire happens off-screen — an unpolled
+  // overview kept saying "not run yet" after the schedule had fired.
+  const { data: overview = [], isLoading } = useAutomations();
   const client = useQueryClient();
   const key = agentTypeId.toString();
   const schedules = useMemo(
