@@ -23,7 +23,7 @@
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { apiContext } from '../_shared/api';
-import { AP_WORKER_TYPE, dismissSetupModal } from './_ap_helpers';
+import { AP_WORKER_TYPE, dismissSetupModal, restoreStandardMode, selectAdvancedMode } from './_ap_helpers';
 import { adjusted } from '../../adjustableTimeout';
 
 /** Resolve the bootstrap default project's id + real workdir (mount path). */
@@ -116,7 +116,7 @@ async function launchSession(page: Page, rq: APIRequestContext, convId: string):
   // own `data-view` does not move (this address states no mode, so it shows the unstated one): the
   // stored last-selected mode is what the launch reads. afterAll switches back to Standard, the mode a
   // QA instance is pinned to (`_pin_view_mode_for_qa`), so the next runbook does not inherit Advanced.
-  await page.evaluate(() => window.setView('advanced' as never));
+  await selectAdvancedMode(page);
   switchedMode = true;
   // The header worker toolbar defaults to `lastOpened` mode in Standard view:
   // only the last-used worker shows up front, the rest behind a "Show other
@@ -143,23 +143,7 @@ async function launchSession(page: Page, rq: APIRequestContext, convId: string):
 let switchedMode = false;
 
 test.afterAll(async ({ browser }, info) => {
-  if (!switchedMode) return;
-  const page = await browser.newPage({ baseURL: info.project.use.baseURL });
-  try {
-    await page.goto('/dock/desktop');
-    await dismissSetupModal(page);
-    // The preference is saved debounced (InstancePreferences, 500 ms): wait for its write to
-    // preferences.json, or closing the page drops it and the instance stays in Advanced.
-    const saved = page
-      .waitForResponse((r) => r.url().includes('preferences.json') && r.request().method() !== 'GET', {
-        timeout: adjusted(15_000),
-      })
-      .catch(() => null);
-    await page.evaluate(() => window.setView('standard' as never));
-    await saved;
-  } finally {
-    await page.close();
-  }
+  if (switchedMode) await restoreStandardMode(browser, info.project.use.baseURL);
 });
 
 test.beforeEach(async ({ page }) => {
