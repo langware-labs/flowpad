@@ -6,25 +6,34 @@ same OS user as the backend, was told by ``flow-diagnose`` to free "port 9007" a
 killed itself.
 
 The rule, asked at every kill a FlowPad activity can reach (``flow proc kill``, the
-instance sweep, the port-cleanup path): **does the process about to die — or anything in
-its tree — listen on one of THIS instance's protected ports?** If so, refuse. That one
-question protects:
+instance sweep, the port-cleanup path): **is the process about to die the live backend of
+this instance — or an ancestor that has the live backend somewhere beneath it?** If so,
+refuse.
 
-* the **backend** directly (it is the listener on the server port), and
-* its whole ancestor chain — **monitor**, launcher, and the **Electron shell** — because
-  the backend is a descendant in their trees, so a tree/name kill that would reach them is
-  refused on the backend's behalf.
+Identity is the backend the *backend itself recorded* in ``server.json`` (``server_pid`` +
+``server_create_time``), confirmed to still be that live process — NOT "whoever holds the
+port". That distinction matters: when the backend has died and a stale ``python`` (or a
+foreign program) is left holding 9007, it must be *killable* ("may clean up a stale port
+holder"), and keying on the port would wrongly protect it and leave FlowPad unable to
+start. ``server.json`` is the backend's own self-record, written at startup
+(``server/app.py``), not a registry we maintain on the side.
 
-It deliberately does NOT protect a worker's own children: the backend is their *ancestor*,
-not a descendant, so ``listening_under`` of a worker child never contains the server port —
-a worker cleaning up its own stuck ``python`` is still allowed.
+That single question protects:
 
-Design, by construction (not by prompt): no pid registry, no ``create_time`` sidecar, no
-files, no feature flag. The protected port is read live from the process table, so a server
-that moved or restarted is protected exactly as it runs now. A kill the **user** asked for
-(``flow stop``, ``flow instance restart-backend/reset``) passes ``allow_protected=True`` at
-the call site — explicit, not global state — and workers are told apart from the human by
-``caller_is_worker`` (``FLOWPAD_EXECUTION_SCOPE``).
+* the **backend** directly — it is the recorded live process; and
+* its whole **ancestor chain** — monitor, launcher, and the Electron shell — because the
+  backend sits beneath them, so a tree- or name-based kill that would reach them is refused
+  on the backend's behalf.
+
+It deliberately does **not** protect the backend's *descendants* (workers, their shells,
+MCP servers, web apps): the backend is their *ancestor*, so a worker reaping its own stuck
+``python`` — or a tree it itself spawned — stays allowed ("may clean up"). Refusal is
+decided per *root*: a root whose subtree holds the live backend is spared whole; a root at
+or below the backend is not.
+
+No pid registry, no feature flag. The backend's identity is read live each time, so a
+backend that moved or restarted is protected exactly as it runs now. With no live recorded
+backend, the guard protects nothing (fail open — there is no FlowPad to protect).
 
 This is an app-level guard (L0). The real boundary against a worker that bypasses Python
 entirely — a raw ``taskkill`` / ``kill`` — is OS containment (a low-integrity / restricted
@@ -33,63 +42,55 @@ worker token), tracked as the L1 follow-up.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
-#: Set by the backend on every worker it spawns (``cli_worker_base_driver.apply_worker_env``)
-#: and inherited by anything the worker runs; a human's terminal has none.
-_WORKER_ENV = "FLOWPAD_EXECUTION_SCOPE"
+#: Tolerance (seconds) when matching a recorded ``create_time`` against the live process, to
+#: absorb float rounding between the writer (``server/app.py``) and a reader.
+_CREATE_TIME_SLACK = 1.0
 
 
 class PortGuardRefused(RuntimeError):
-    """A kill was refused because its target holds a protected FlowPad port."""
+    """A kill was refused because its target is (or contains) the live FlowPad backend."""
 
-    def __init__(self, pids: Iterable[int], ports: Iterable[int]) -> None:
+    def __init__(self, pids: Iterable[int]) -> None:
         self.pids = sorted({int(p) for p in pids})
-        self.ports = sorted({int(p) for p in ports})
         super().__init__(
-            f"refusing to kill {self.pids}: holds FlowPad's protected port(s) {self.ports} — "
-            "this would stop the FlowPad backend this process runs inside"
+            f"refusing to kill {self.pids}: this is (or contains) the live FlowPad backend "
+            "of the instance this process runs inside"
         )
 
 
-def protected_ports() -> set[int]:
-    """THIS instance's ports that must stay alive — today, the backend server port.
+def live_backend_pid() -> int | None:
+    """The pid of THIS instance's live backend, from its own ``server.json`` record, confirmed
+    to still be that process (``server_create_time`` matches) — else None.
 
-    Read from the running server's own record (``server.json``'s ``port``) and the instance's
-    configured port, so a server on a non-default port (any instance that is not ``prod``) is
-    covered without hardcoding ``9007``. An empty set (neither readable) means the guard spares
-    nothing and every caller falls through to its own behaviour — fail *open* only when there is
-    demonstrably no FlowPad to protect.
+    None covers every "nothing to protect" case: no ``server.json``, no recorded pid, the pid
+    is dead, or the pid was reused by a different process. In particular a stale/foreign holder
+    of the port is NOT the recorded live backend, so it stays killable.
     """
-    ports: set[int] = set()
     try:
         from flow_sdk.config import load_server_info  # noqa: PLC0415
 
-        recorded = load_server_info().get("port")
-        if isinstance(recorded, int):
-            ports.add(recorded)
+        info = load_server_info() or {}
     except Exception:  # noqa: BLE001 -- no server.json yet is normal
-        pass
+        return None
+    pid = info.get("server_pid")
+    if not isinstance(pid, int):
+        return None
+    import psutil  # noqa: PLC0415
+
     try:
-        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-
-        ports.add(int(get_instance_settings().port))
-    except Exception:  # noqa: BLE001 -- settings not resolvable here
-        pass
-    return {p for p in ports if p}
-
-
-def listener_pids(ports: set[int] | None = None) -> set[int]:
-    """Pids that listen on a protected port, from one read of the socket table."""
-    ports = protected_ports() if ports is None else ports
-    if not ports:
-        return set()
-    from flow_sdk.core import app_ports  # noqa: PLC0415
-
-    return {one.pid for one in app_ports.listeners() if one.port in ports}
+        proc = psutil.Process(pid)
+        recorded = info.get("server_create_time")
+        if isinstance(recorded, (int, float)) and abs(proc.create_time() - recorded) > _CREATE_TIME_SLACK:
+            return None  # pid reused by a different process
+        if not proc.is_running():
+            return None
+    except (psutil.Error, OSError):
+        return None
+    return pid
 
 
 def _tree_pids(pid: int) -> set[int]:
@@ -104,21 +105,21 @@ def _tree_pids(pid: int) -> set[int]:
 
 
 def protected(pids: Iterable[int]) -> set[int]:
-    """The subset of *pids* that must not be killed: a pid whose tree (itself or any
-    descendant) holds a protected FlowPad port. Empty when no protected port can be read or
-    nothing listens on one — the common case on a machine with no FlowPad running, so the
-    guard costs one socket-table read and returns.
+    """The subset of *pids* (treated as kill *roots*) that must not be killed: a root whose
+    subtree holds the live backend (the backend itself, or an ancestor above it). Empty when
+    there is no live recorded backend. One ``server.json`` read plus one tree walk per root —
+    the roots are few (the processes a caller actually aimed at), never every listener.
     """
-    wanted = {int(p) for p in pids}
-    if not wanted:
+    roots = {int(p) for p in pids}
+    if not roots:
         return set()
-    holders = listener_pids()
-    if not holders:
+    backend = live_backend_pid()
+    if backend is None:
         return set()
     refused: set[int] = set()
-    for pid in wanted:
-        if _tree_pids(pid) & holders:
-            refused.add(pid)
+    for root in roots:
+        if root == backend or backend in _tree_pids(root):
+            refused.add(root)
     return refused
 
 
@@ -130,23 +131,9 @@ def partition(pids: Iterable[int]) -> tuple[list[int], list[int]]:
     return [p for p in ordered if p not in refused], [p for p in ordered if p in refused]
 
 
-def caller_is_worker() -> bool:
-    """A FlowPad agentic worker is running this code.
-
-    The backend stamps ``FLOWPAD_EXECUTION_SCOPE`` onto every worker it spawns, and any ``flow``
-    CLI the worker runs inherits it; a human running ``flow stop`` in their own shell has none.
-    This is an app-level discriminator, not a security boundary — a determined worker can unset
-    the variable, which is exactly why the real boundary for a raw OS kill is OS containment
-    (L1). Here it only tells a human/monitor lifecycle action (no scope) from a worker's.
-    """
-    return bool(os.environ.get(_WORKER_ENV, "").strip())
-
-
 __all__ = [
     "PortGuardRefused",
-    "caller_is_worker",
-    "listener_pids",
+    "live_backend_pid",
     "partition",
     "protected",
-    "protected_ports",
 ]

@@ -106,18 +106,12 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
     server = _read_json(idir / "server.json")
     env = _read_env_file(name)
 
-    # Self-protection (FLOWPAD-2112): reset/restart-backend reap this instance's backend by
-    # design, so the human invoking them passes allow_protected=True below. A worker must not —
-    # it would stop the FlowPad it runs inside — and is refused loudly here (the single choke for
-    # both commands). A worker inherits FLOWPAD_EXECUTION_SCOPE; a human's terminal does not.
-    from flow_sdk.core import port_guard  # noqa: PLC0415
-
-    if port_guard.caller_is_worker():
-        raise RuntimeError(
-            f"'{name}': a worker may not reset or restart this instance's backend "
-            f"(self-protection: it would stop the FlowPad it runs inside)"
-        )
-
+    # FLOWPAD-2112: reset/restart-backend reap the named instance's backend by design, so the
+    # sweep below passes allow_protected=True. These are deliberate lifecycle commands, not gated
+    # on a worker signal (FLOWPAD_EXECUTION_SCOPE is set in the FlowPad desktop terminal too, so it
+    # cannot tell a human from a worker, and gating here would block a human and every other
+    # instance). A worker deliberately restarting its own backend is contained at the OS boundary
+    # (L1); the port guard still spares the live backend on every non-lifecycle kill path.
     table = liveness.scan()
     # Let this instance's own records vouch for PIDs whose environ we cannot
     # read (a backend that took FLOW_INSTANCE from dotenv rather than the env).

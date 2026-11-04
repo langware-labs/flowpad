@@ -13,103 +13,99 @@ process holding 9007 **is** the backend. FlowPad killed itself.
 
 Two sub-rules, both required:
 
-- **May clean up** — a dead process, a stale port holder, the user's stuck `python`, or a
-  worker's **own** child process. These are legitimate and must keep working.
+- **May clean up** — a dead process, a **stale/foreign port holder**, the user's stuck
+  `python`, or a worker's **own** child process. These are legitimate and must keep working.
 - **Must not suicide** — the live backend (and, transitively, the processes that keep it
   running) are never taken down by a worker, a prompt, `flow-diagnose`, or a port-cleanup.
 
 Protection is **by construction, in code** — not a system-prompt instruction telling the AI
-what not to do. The AI does not have to choose to obey.
+what not to do.
 
 ## The one rule
 
-At every kill a FlowPad activity can reach, ask one question:
+At every kill a FlowPad activity can reach, the kill is evaluated per **root** (each process
+the caller actually aimed at):
 
-> Does the process about to die — **or anything in its process tree** — listen on one of
-> **this instance's** protected ports?
+> Is this root **the live backend of this instance**, or an **ancestor that has the live
+> backend somewhere beneath it**? If so, refuse it (whole).
 
-If yes, refuse. Today the protected set is the **backend server port** (read live, per
-instance — see below). That single question protects:
+That protects:
 
-- the **backend** directly — it is the listener on the server port; and
-- its whole **ancestor chain** — monitor, launcher, and the Electron shell — because the
-  backend is a *descendant* in their trees, so any tree- or name-based kill that would reach
-  them is refused on the backend's behalf.
+- the **backend** directly; and
+- its whole **ancestor chain** — monitor, launcher, Electron — because the backend sits
+  beneath them, so a tree/name kill that would reach them is refused on the backend's behalf.
 
-It deliberately does **not** protect a worker's own children: the backend is their
-*ancestor*, not a descendant, so `listening_under(worker_child)` never contains the server
-port. A worker reaping its own stuck `python` stays allowed. (This is the one place the
-design diverges from the original plan, which also refused *descendants* of the backend —
-that would have made every worker child unkillable and broken the "may clean up" rule.)
+It deliberately does **not** protect the backend's *descendants* (workers, their shells, MCP
+servers, web apps): the backend is their *ancestor*, so a worker reaping its own stuck
+`python` or a tree it spawned stays allowed. A refused root is spared **whole** — its subtree
+and (on POSIX) its process group are never collected — so killing "from above" the backend
+never sweeps the backend's siblings along with it.
 
-No pid registry, no `create_time` sidecar files, no feature flag. The port is read from the
-process table at the moment of the kill, so a backend that moved or restarted is protected
-exactly as it runs now. With no FlowPad running, the protected set is empty and the guard is
-a no-op.
+## Identifying the live backend (not "whoever holds the port")
 
-## Resolving the protected port (per instance)
+`port_guard.live_backend_pid()` returns the backend's pid from the backend's **own**
+`server.json` record — `server_pid` plus `server_create_time` — confirmed to still be that
+live process. It is **not** "the process listening on the port":
 
-`port_guard.protected_ports()` returns `{backend port}`, from two live sources:
+- When the backend has died and a stale `python` (or a foreign program) is left holding the
+  port, that holder is **not** the recorded live backend, so it stays **killable** — which is
+  exactly what "may clean up a stale port holder" requires, and what lets FlowPad start again.
+- `server.json` is the backend's self-record written at startup (`server/app.py`), per
+  instance — so a non-`prod` instance on a different port is covered without hardcoding
+  `9007`, and another instance's backend (a different record) is never spared here.
 
-- `load_server_info()["port"]` — what the running backend recorded in `server.json`; and
-- `get_instance_settings().port` — the instance's configured port (`LOCAL_SERVER_PORT`,
-  else the instance default: prod `9007`, dev/test differ).
-
-So a non-`prod` instance on a different port is protected without hardcoding `9007`, and a
-kill aimed at **another** instance's backend (a different port) is never spared.
+With no live recorded backend, the guard protects nothing (fail open — there is no FlowPad to
+protect). Cost per kill is one `server.json` read plus one tree walk per root — never a scan
+of every listener on the machine.
 
 ## Why not port 9222 (Electron CDP)
 
-The original design also protected `9222`. Verified against the shipped Electron app: the
+An earlier design also protected `9222`. Verified against the shipped Electron app: the
 packaged desktop sets **no** `--remote-debugging-port` and **no** `--remote-debugging-pipe`
-(`electron/main.js` sets only one unrelated switch). It exposes no Chrome DevTools endpoint
-at all; every `9222` in the repo is a dev-only Chrome / `debugMCP` convention. So `9222` was
-dropped — which also removes the risk of wrongly protecting a user's own Chrome that grabbed
-the port. The Electron shell is instead protected transitively (it is an ancestor of the
-backend).
+(`electron/main.js` sets only one unrelated switch). It opens no Chrome DevTools endpoint at
+all; every `9222` in the repo is a dev-only Chrome / `debugMCP` convention. So `9222` was
+dropped, and the Electron shell is protected transitively (it is an ancestor of the backend).
 
 ## Where it is enforced
 
 | Kill path | File | Behaviour |
 | --- | --- | --- |
-| `terminate_tree` | `flow_sdk/instances/procs.py` | Spares any tree member whose subtree holds a protected port; `allow_protected=True` reaps it. |
-| `kill_owned` / `kill_port_if_owned` | `flow_sdk/instances/procs.py` | Pass `allow_protected` through; record a spared backend in `KillResult.refused`. |
-| `kill_trees` | `flow_sdk/core/app_ports.py` | Spares protected members and never `killpg`s a group that still holds a protected listener. |
-| `flow proc kill` | `flow_sdk/cli/commands/proc_cmd.py` | **Always** guards (no bypass). Name match is exact and excludes the caller's ancestor chain. Reports `refused_protected`. |
-| `flow stop` | `flow_sdk/server/launch.py` (`_stop_all_guarded`) | A worker is refused with a clear non-zero `FlowServiceError`; a human proceeds. |
-| `flow instance reset` / `restart-backend` | `flow_sdk/cli/commands/instance_cmd.py` (`_kill_instance_processes`) | A worker is refused (`RuntimeError`); a human passes `allow_protected=True` to reap its own backend. |
-| service generation teardown | `flow_sdk/core/connections/service.py` (`_exact_cleanup`) | Trusted exact-identity teardown passes `allow_protected=True` (worker path blocked upstream). |
+| `terminate_tree` | `flow_sdk/instances/procs.py` | Drops a protected root (backend / ancestor) **before** expansion, so the backend's own children are not swept along; `allow_protected=True` reaps it. |
+| `kill_owned` / `kill_port_if_owned` | `flow_sdk/instances/procs.py` | Pass `allow_protected` through; record each spared pid in `KillResult.refused` so a refusal is visible, not read as success. |
+| `kill_trees` | `flow_sdk/core/app_ports.py` | Skips a protected root whole (its tree and its process group) and never `killpg`s a group still holding the live backend. |
+| `flow proc kill` | `flow_sdk/cli/commands/proc_cmd.py` | **Always** guards (no bypass). `--name` matches by base name (`python` ↔ `python3.11`) and excludes the caller's ancestor chain; reports `refused_protected`; exits non-zero when nothing was selected. |
 
-### User-requested vs worker kills
+### Lifecycle commands are not gated on a "worker" signal
 
-`flow stop` / `flow instance …` are user commands that legitimately stop the backend. The
-backend stamps `FLOWPAD_EXECUTION_SCOPE` onto every worker it spawns (and children inherit
-it); a human's terminal has none. So `port_guard.caller_is_worker()` cleanly tells the two
-apart: a worker is refused loudly, a human proceeds. This is an **app-level** discriminator,
-not a boundary — a determined worker can unset the variable, which is why the real boundary
-for a raw OS kill is OS containment (below).
+`flow stop` and `flow instance reset` / `restart-backend` are deliberate lifecycle commands
+that reap the backend by design (`allow_protected=True`), so they work for whoever runs them.
+They are **not** gated on `FLOWPAD_EXECUTION_SCOPE`: that variable is a process-*attribution*
+signal set in **both** an AI worker **and** the FlowPad desktop terminal (where a human
+types), so it cannot tell a human from a worker — gating on it would block a human and every
+other instance while still being bypassable. A worker that *deliberately* runs `flow stop` to
+stop the backend it lives in is contained at the OS boundary (L1), not here. The port guard
+still spares the live backend on every non-lifecycle kill path (the incident class: a broad
+"free the port" / "kill python" / `flow proc kill`).
 
 ## Verification
 
-- Unit tests: `tests/unit/test_port_guard.py` — a real helper process listens on a faked
-  protected port; the whole live path (socket-table scan → tree walk) runs. Asserts: the
-  listener and its ancestor are refused; a worker **child** of the listener is allowed; an
-  unrelated process is killed; `terminate_tree` / `kill_trees` spare it (and its POSIX group)
-  unless `allow_protected=True`; `flow proc kill` spares it and reports `refused_protected`;
-  `--name` is exact and excludes the caller's ancestors; `caller_is_worker` reads the env var.
-- Regression: the touched kill-path modules' existing suites pass unchanged.
+- Unit tests: `tests/unit/test_port_guard.py` build a real `root → backend → worker` process
+  tree (only `live_backend_pid` is faked, to the helper's pid) and assert: the backend and its
+  ancestor are refused; the worker **child** is allowed; a **stale port holder is killable**
+  (no live backend → not protected); `terminate_tree` / `kill_trees` spare the ancestor tree
+  **whole** (backend and its worker survive) unless `allow_protected=True`; `flow proc kill`
+  reports `refused_protected`, matches `python`→`python3.x`, and exits non-zero on no match.
+- Regression: the touched kill-path suites pass unchanged.
 
 ## Residuals and follow-ups (not in this change)
 
-- **Raw OS kill (L1).** A worker that bypasses Python entirely — `taskkill` / `kill` /
-  `lsof | kill` — is outside this app-level guard. The real boundary is OS containment: a
-  low-integrity / restricted worker token on Windows, a sandbox profile on macOS. Tracked as
-  the L1 follow-up.
-- **Startup gap.** Between the backend process starting and its socket entering `LISTEN`, the
-  port-based check cannot see it. Brief, and the backend is not yet serving.
-- **Monitor adopt-case.** When the monitor adopts an already-healthy backend instead of
-  spawning it, the monitor is not the backend's parent, so killing the monitor alone is not
-  refused — but the backend survives (it is not in the monitor's tree), so the app stays up.
+- **Raw OS kill, and deliberate `flow stop` / `flow instance`, by a worker (L1).** A worker
+  that bypasses Python (`taskkill` / `kill` / `lsof | kill`), or that deliberately invokes a
+  lifecycle command to stop its own backend, is outside this app-level guard. The real
+  boundary is OS containment: a low-integrity / restricted worker token on Windows, a sandbox
+  profile on macOS. Tracked as the L1 follow-up.
+- **Startup gap.** Between the backend recording `server.json` at startup and a kill reading
+  it, there is a brief window with no identity to protect.
 - **JS / shell paths.** The Electron shell's own `uv-manager.js` port-kills and the
   `scripts/*.sh` launchers manage the backend directly; they are the app managing itself, not
   worker-reachable, and are out of scope for worker containment.

@@ -19,12 +19,23 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Optional
 
 import typer
 from typing_extensions import Annotated
 
 proc_app = typer.Typer(help="Broker for process kills that never kill FlowPad itself.")
+
+#: Trailing version suffix on an image name — ``python3.11`` / ``python3`` → ``python``.
+_VERSION_SUFFIX = re.compile(r"[0-9][0-9.]*$")
+
+
+def _image_base(name: str) -> str:
+    """An image name, lowercased, without ``.exe`` and without a trailing version suffix, so
+    ``python`` matches the real process names ``python3`` / ``python3.11`` / ``Python`` that
+    macOS and Linux actually report."""
+    return _VERSION_SUFFIX.sub("", name.lower().removesuffix(".exe"))
 
 
 def _self_and_ancestors() -> set[int]:
@@ -43,20 +54,20 @@ def _self_and_ancestors() -> set[int]:
 
 
 def _pids_for_name(name: str) -> list[int]:
-    """PIDs whose image name matches ``name`` EXACTLY (case-insensitively, ``.exe`` aside) —
-    not as a substring, so ``python`` does not also match ``python-lsp`` and a stray match
-    does not widen the kill. The caller's own ancestor chain is excluded."""
+    """PIDs whose image name matches ``name`` by base name — version suffixes aside, so ``python``
+    matches ``python3`` / ``python3.11`` but still not a substring like ``python-lsp``. The caller's
+    own ancestor chain is excluded so a worker's ``--name python`` never resolves to the backend or
+    launcher that spawned it (the port guard then still spares them by identity)."""
     import psutil  # noqa: PLC0415
 
     exclude = _self_and_ancestors()
-    wanted = name.lower().removesuffix(".exe")
+    wanted = _image_base(name)
     out: list[int] = []
     for proc in psutil.process_iter(["pid", "name"]):
         try:
             if proc.pid in exclude:
                 continue
-            image = (proc.info["name"] or "").lower().removesuffix(".exe")
-            if image == wanted:
+            if _image_base(proc.info["name"] or "") == wanted:
                 out.append(proc.pid)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
@@ -77,6 +88,13 @@ def kill(
     if name:
         targets += _pids_for_name(name)
     targets = list(dict.fromkeys(targets))
+
+    if not targets:
+        # Nothing matched — say so on stderr and exit non-zero, so a caller (or the
+        # flow-diagnose skill) does not read empty lists as "the kill succeeded".
+        typer.echo("flow proc kill: no processes selected (no PIDs given / no name match)", err=True)
+        typer.echo(json.dumps({"killed": [], "refused_protected": [], "denied": [], "not_found": []}))
+        raise typer.Exit(1)
 
     allowed, refused = port_guard.partition(targets)
 

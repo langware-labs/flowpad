@@ -68,10 +68,11 @@ def kill_owned(
     instance's spawned workers — are only swept when no role filter is given,
     since they belong to the instance as a whole rather than to one half of it.
 
-    ``allow_protected`` passes through to ``terminate_tree``: left False (the
-    default) the FLOWPAD-2112 port guard spares this instance's own backend and
-    records it in ``result.refused`` rather than killing it. A user-requested
-    restart/reset passes True so the backend can actually be reaped.
+    ``allow_protected`` passes through to ``terminate_tree`` for enforcement: left False
+    (the default) the FLOWPAD-2112 port guard spares this instance's own live backend (and
+    its ancestor chain), recording each spared pid in ``result.refused`` so the refusal is
+    visible and not mistaken for success. A user-requested restart/reset passes True so the
+    backend can actually be reaped.
     """
     import psutil
 
@@ -97,11 +98,12 @@ def kill_owned(
     if not allow_protected:
         from flow_sdk.core import port_guard  # noqa: PLC0415
 
+        # Record (for reporting) which roots the guard will spare; terminate_tree does the
+        # actual sparing, dropping each such root's whole subtree before reaping.
         for pid in port_guard.protected(list(targets)):
-            targets.pop(pid, None)
             result.refused.append(
-                f"pid {pid} holds a protected FlowPad port — refusing to kill the backend "
-                f"of a running instance"
+                f"pid {pid} is (or contains) this instance's live backend — refused by the "
+                f"self-protection guard"
             )
 
     result.killed, result.survivors = terminate_tree(
@@ -117,18 +119,29 @@ def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[
     The caller has already decided the roots are its own; this only reaps them — batched,
     because a degraded tree can hold dozens of children and one-at-a-time takes minutes.
 
-    ``allow_protected`` left False (the default) applies the FLOWPAD-2112 port guard: a tree
-    member whose own subtree holds a protected FlowPad port (the backend, or an ancestor that
-    has the backend beneath it) is spared, even if it was discovered as a child. A user-requested
-    restart/reset passes True to reap its own backend.
+    ``allow_protected`` left False (the default) applies the FLOWPAD-2112 port guard: a ROOT
+    whose subtree holds the live backend (the backend, or an ancestor above it) is spared
+    WHOLE — it is dropped before its tree is expanded, so the backend's own children (workers,
+    MCP servers, web apps) are never swept along with it. A user-requested restart/reset passes
+    True to reap its own backend.
     """
     import psutil
 
     gone = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
     self_pid = os.getpid()
-    targets = {p.pid: p for p in roots if p.pid != self_pid}
+    roots = [p for p in roots if p.pid != self_pid]
+    if not allow_protected and roots:
+        from flow_sdk.core import port_guard  # noqa: PLC0415
+
+        refused = port_guard.protected([p.pid for p in roots])
+        if refused:
+            logger.warning("[port_guard] terminate_tree sparing protected FlowPad tree(s) %s", sorted(refused))
+            roots = [p for p in roots if p.pid not in refused]
+
+    targets = {p.pid: p for p in roots}
     # Descend the tree as well: children spawned after the roots were found (a
-    # backend that forked a worker a moment ago) are still ours to reap.
+    # backend that forked a worker a moment ago) are still ours to reap. A root whose
+    # subtree held the backend was already dropped above, so no expansion reaches it.
     for pid in list(targets):
         try:
             for child in targets[pid].children(recursive=True):
@@ -136,15 +149,6 @@ def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[
                     targets[child.pid] = child
         except gone:
             pass
-
-    if not allow_protected:
-        from flow_sdk.core import port_guard  # noqa: PLC0415
-
-        refused = port_guard.protected(list(targets))
-        for pid in refused:
-            targets.pop(pid, None)
-        if refused:
-            logger.warning("[port_guard] terminate_tree sparing protected FlowPad pids %s", sorted(refused))
 
     procs = list(targets.values())
     for p in procs:

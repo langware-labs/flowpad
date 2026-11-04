@@ -337,15 +337,29 @@ def kill_trees(pids: Iterable[int], *, allow_protected: bool = False) -> None:
     stall for over 30 s. Only what was signalled is waited for — one that could not be ended (another
     user's) would be waited on forever.
 
-    ``allow_protected`` lets a kill the user asked for (``flow stop`` / ``flow instance``) reap this
-    instance's own backend; left False (the default), the FLOWPAD-2112 port guard spares any member whose
-    tree holds a protected FlowPad port and never ``killpg``\\ s a group that still contains such a
-    listener — so a FlowPad activity freeing a port cannot take down the FlowPad it runs inside."""
+    ``allow_protected`` left False (the default) applies the FLOWPAD-2112 port guard: a root whose
+    subtree holds the live backend (the backend, or an ancestor above it — monitor, launcher, Electron)
+    is skipped WHOLE — its tree and its process group are never collected — so freeing a port cannot take
+    down the FlowPad this process runs inside, nor the backend's siblings in that tree. No production
+    caller passes True today; it exists for a deliberate teardown that means to reap its own backend."""
     import psutil  # noqa: PLC0415
+
+    roots = list(pids)
+    refused: set[int] = set()
+    backend_pid: int | None = None
+    if not allow_protected:
+        from flow_sdk.core import port_guard  # noqa: PLC0415
+
+        refused = port_guard.protected(roots)
+        backend_pid = port_guard.live_backend_pid()
+        if refused:
+            logger.warning("[port_guard] kill_trees sparing protected FlowPad tree(s) %s", sorted(refused))
 
     doomed: dict[int, "psutil.Process"] = {}
     groups: set[int] = set()
-    for pid in pids:
+    for pid in roots:
+        if pid in refused:
+            continue  # skip a protected root whole — its tree AND its group
         doomed.update((member.pid, member) for member in _tree(pid))
         if sys.platform == "win32":
             continue
@@ -356,22 +370,14 @@ def kill_trees(pids: Iterable[int], *, allow_protected: bool = False) -> None:
         if group != os.getpgrp():
             groups.add(group)
             doomed.update((member.pid, member) for member in _tree(group))
-    if not allow_protected:
-        from flow_sdk.core import port_guard  # noqa: PLC0415
-
-        refused = port_guard.protected(list(doomed))
-        for pid in refused:
-            doomed.pop(pid, None)
-        # Never killpg a group that still holds a protected listener — even one not enumerated into
-        # ``doomed`` — since the group signal would take it down regardless.
-        if sys.platform != "win32" and groups:
-            for holder in port_guard.listener_pids():
-                try:
-                    groups.discard(os.getpgid(holder))
-                except OSError:
-                    continue
-        if refused:
-            logger.warning("[port_guard] kill_trees sparing protected FlowPad pids %s", sorted(refused))
+    # Backstop: never killpg a group that still contains the live backend — e.g. a non-protected root
+    # that happens to share the backend's group — since the group signal would take it down regardless.
+    if backend_pid is not None and sys.platform != "win32" and groups:
+        try:
+            groups.discard(os.getpgid(backend_pid))
+        except OSError:
+            pass
+        doomed.pop(backend_pid, None)
     for group in groups:
         try:
             os.killpg(group, signal.SIGKILL)
