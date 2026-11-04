@@ -30,12 +30,20 @@ proc_app = typer.Typer(help="Broker for process kills that never kill FlowPad it
 #: Trailing version suffix on an image name — ``python3.11`` / ``python3`` → ``python``.
 _VERSION_SUFFIX = re.compile(r"[0-9][0-9.]*$")
 
+#: Only these interpreters ship version-suffixed binaries we want ``--name <x>`` to unify.
+#: The suffix is stripped ONLY when the result is one of these — so ``python3.11`` → ``python``
+#: but ``x264`` stays ``x264`` (not ``x``) and a random ``foo2`` keeps its digits.
+_VERSIONED_INTERPRETERS = frozenset({"python", "node"})
+
 
 def _image_base(name: str) -> str:
-    """An image name, lowercased, without ``.exe`` and without a trailing version suffix, so
-    ``python`` matches the real process names ``python3`` / ``python3.11`` / ``Python`` that
-    macOS and Linux actually report."""
-    return _VERSION_SUFFIX.sub("", name.lower().removesuffix(".exe"))
+    """An image name, lowercased and without ``.exe``; a trailing version suffix is dropped only
+    when doing so yields a known versioned interpreter, so ``python`` matches the real process
+    names ``python3`` / ``python3.11`` / ``Python`` that macOS and Linux report, while unrelated
+    names that merely end in digits (``x264``, ``node-sass``, ``foo2``) are left intact."""
+    base = name.lower().removesuffix(".exe")
+    stripped = _VERSION_SUFFIX.sub("", base)
+    return stripped if stripped != base and stripped in _VERSIONED_INTERPRETERS else base
 
 
 def _self_and_ancestors() -> set[int]:

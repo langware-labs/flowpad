@@ -123,6 +123,21 @@ def protected(pids: Iterable[int]) -> set[int]:
     return refused
 
 
+def caller_is_worker() -> bool:
+    """Whether this process is (or runs under) a FlowPad worker.
+
+    Keyed on ``FLOWPAD_WORKER`` (:data:`flow_sdk.utils.environment.WORKER_ENV`), which the backend
+    stamps at the single worker-spawn chokepoint (``apply_worker_env``) and a worker's children
+    inherit. Deliberately NOT ``FLOWPAD_EXECUTION_SCOPE``: that is set in the FlowPad desktop
+    terminal as well, so it cannot tell a human apart from a worker. This lets the lifecycle gate
+    (``flow stop`` / ``flow instance reset`` of the caller's OWN instance) refuse a worker without
+    blocking a human in the desktop terminal or a worker managing a DIFFERENT instance.
+    """
+    from flow_sdk.utils.environment import is_worker_process  # noqa: PLC0415
+
+    return is_worker_process()
+
+
 def partition(pids: Iterable[int]) -> tuple[list[int], list[int]]:
     """``(allowed, refused)`` over *pids*, de-duplicated and order-preserving. ``refused`` are
     the protected FlowPad pids; ``allowed`` is everything else and is safe to kill."""
@@ -133,6 +148,7 @@ def partition(pids: Iterable[int]) -> tuple[list[int], list[int]]:
 
 __all__ = [
     "PortGuardRefused",
+    "caller_is_worker",
     "live_backend_pid",
     "partition",
     "protected",

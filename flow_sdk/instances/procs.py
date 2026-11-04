@@ -42,7 +42,9 @@ class KillResult:
 
     @property
     def ok(self) -> bool:
-        return not self.survivors
+        # A refusal is NOT success: a protected process the guard spared is still running,
+        # so a caller must not read `ok` as "nothing of it is left". Both lists must be empty.
+        return not self.survivors and not self.refused
 
     def to_json(self) -> dict:
         return {
@@ -95,26 +97,22 @@ def kill_owned(
         except gone:
             continue
 
-    if not allow_protected:
-        from flow_sdk.core import port_guard  # noqa: PLC0415
-
-        # Record (for reporting) which roots the guard will spare; terminate_tree does the
-        # actual sparing, dropping each such root's whole subtree before reaping.
-        for pid in port_guard.protected(list(targets)):
-            result.refused.append(
-                f"pid {pid} is (or contains) this instance's live backend — refused by the "
-                f"self-protection guard"
-            )
-
-    result.killed, result.survivors = terminate_tree(
+    # terminate_tree applies the guard and reports back which roots it spared, so the guard
+    # runs ONCE (not a separate protected() pre-call here) and a refusal reaches the result.
+    result.killed, result.survivors, refused = terminate_tree(
         list(targets.values()), allow_protected=allow_protected
     )
+    for pid in refused:
+        result.refused.append(
+            f"pid {pid} is (or contains) this instance's live backend — refused by the "
+            f"self-protection guard"
+        )
     return result
 
 
-def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[int], list[int]]:
+def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[int], list[int], list[int]]:
     """The shutdown ladder over *roots* (``psutil.Process``) and every descendant: SIGTERM all,
-    wait once, SIGKILL the survivors. ``(killed, survivors)`` pids. Never this process.
+    wait once, SIGKILL the survivors. ``(killed, survivors, refused)`` pids. Never this process.
 
     The caller has already decided the roots are its own; this only reaps them — batched,
     because a degraded tree can hold dozens of children and one-at-a-time takes minutes.
@@ -122,14 +120,16 @@ def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[
     ``allow_protected`` left False (the default) applies the FLOWPAD-2112 port guard: a ROOT
     whose subtree holds the live backend (the backend, or an ancestor above it) is spared
     WHOLE — it is dropped before its tree is expanded, so the backend's own children (workers,
-    MCP servers, web apps) are never swept along with it. A user-requested restart/reset passes
-    True to reap its own backend.
+    MCP servers, web apps) are never swept along with it, and its pid is returned in ``refused``
+    so the caller does NOT read a spared process as stopped. A user-requested restart/reset
+    passes True to reap its own backend.
     """
     import psutil
 
     gone = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
     self_pid = os.getpid()
     roots = [p for p in roots if p.pid != self_pid]
+    refused_pids: list[int] = []
     if not allow_protected and roots:
         from flow_sdk.core import port_guard  # noqa: PLC0415
 
@@ -137,6 +137,7 @@ def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[
         if refused:
             logger.warning("[port_guard] terminate_tree sparing protected FlowPad tree(s) %s", sorted(refused))
             roots = [p for p in roots if p.pid not in refused]
+            refused_pids = sorted(refused)
 
     targets = {p.pid: p for p in roots}
     # Descend the tree as well: children spawned after the roots were found (a
@@ -163,7 +164,7 @@ def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[
         except gone:
             pass
     _, survivors = psutil.wait_procs(alive, timeout=_KILL_GRACE)
-    return sorted(targets), sorted(p.pid for p in survivors)
+    return sorted(targets), sorted(p.pid for p in survivors), refused_pids
 
 
 def kill_port_if_owned(

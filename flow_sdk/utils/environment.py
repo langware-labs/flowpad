@@ -52,6 +52,17 @@ def get_execution_scope() -> list:
 INVOCATION_ENV = "FLOWPAD_INVOCATION_ID"
 PARENT_CALL_ENV = "FLOWPAD_PARENT_CALL_ID"
 
+#: Stamped "1" on every worker spawn by ``apply_worker_env`` (and inherited by a worker's own
+#: children). It is the ONE signal that tells a worker apart from a human: the FlowPad desktop
+#: terminal never calls ``apply_worker_env`` so it never carries this — unlike
+#: ``FLOWPAD_EXECUTION_SCOPE``, which the desktop terminal sets too and so cannot distinguish them.
+WORKER_ENV = "FLOWPAD_WORKER"
+
+
+def is_worker_process() -> bool:
+    """Whether this process is (or runs under) a FlowPad worker — see :data:`WORKER_ENV`."""
+    return os.environ.get(WORKER_ENV) == "1"
+
 
 def inherited_trace() -> dict:
     """The run this process's calls join: ``{"invocation_id", "parent_call_id"}``, or ``{}`` for none."""

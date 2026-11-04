@@ -374,12 +374,15 @@ Repair:
    whose PID is not the recorded `$SERVER_PID` — free the port. Never signal the live
    `$SERVER_PID` of the instance you are running inside, and never `flow stop` from in here.
 
-   Prefer **`flow proc kill <pid>`**: it is the broker that refuses to kill any process holding
-   a live FlowPad port, so even if the PID you resolved is wrong it cannot take down the backend.
-   It prints one JSON line — `{"killed": [...], "refused_protected": [...], "denied": [...],
-   "not_found": [...]}`. A PID in `refused_protected` means it was this instance's live backend
-   after all: leave it, report "no conflict", stop. A raw `kill`/`taskkill` is the fallback only
-   where `flow` is unavailable.
+   Prefer **`flow proc kill <pid>`**: it is the broker that refuses to kill this instance's live
+   backend — the one recorded in `server.json` (`$SERVER_PID`, confirmed still that process) — and
+   its ancestor chain (launcher, monitor, Electron), identified by that record, NOT by whatever
+   merely holds the port. So a stale or foreign port holder is still freed, but even a wrong PID
+   you resolved cannot take down the backend. It prints one JSON line — `{"killed": [...],
+   "refused_protected": [...], "denied": [...], "not_found": [...]}`. A PID in `refused_protected`
+   is the live backend or one of its ancestors: leave it, report "no conflict", stop. If nothing
+   matched, the command exits non-zero with empty lists — that means "nothing to kill", not a
+   successful kill. A raw `kill`/`taskkill` is the fallback only where `flow` is unavailable.
 
    * Broker (any OS): `flow proc kill <pid>`
    * Fallback macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.

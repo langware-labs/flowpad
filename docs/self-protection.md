@@ -75,17 +75,31 @@ dropped, and the Electron shell is protected transitively (it is an ancestor of 
 | `kill_trees` | `flow_sdk/core/app_ports.py` | Skips a protected root whole (its tree and its process group) and never `killpg`s a group still holding the live backend. |
 | `flow proc kill` | `flow_sdk/cli/commands/proc_cmd.py` | **Always** guards (no bypass). `--name` matches by base name (`python` ↔ `python3.11`) and excludes the caller's ancestor chain; reports `refused_protected`; exits non-zero when nothing was selected. |
 
-### Lifecycle commands are not gated on a "worker" signal
+### Lifecycle commands: gated for a worker on its OWN instance only
 
-`flow stop` and `flow instance reset` / `restart-backend` are deliberate lifecycle commands
-that reap the backend by design (`allow_protected=True`), so they work for whoever runs them.
-They are **not** gated on `FLOWPAD_EXECUTION_SCOPE`: that variable is a process-*attribution*
-signal set in **both** an AI worker **and** the FlowPad desktop terminal (where a human
-types), so it cannot tell a human from a worker — gating on it would block a human and every
-other instance while still being bypassable. A worker that *deliberately* runs `flow stop` to
-stop the backend it lives in is contained at the OS boundary (L1), not here. The port guard
-still spares the live backend on every non-lifecycle kill path (the incident class: a broad
-"free the port" / "kill python" / `flow proc kill`).
+`flow stop` and `flow instance reset` / `restart-backend` reap the backend by design
+(`allow_protected=True`), so the port guard above does not stop them. But a **worker** that runs
+one against **the instance it lives in** would stop its own FlowPad — the exact incident — so
+that one case is refused, loudly (a clear error, non-zero exit):
+
+- `flow stop` always targets the current instance, so it is refused whenever the caller is a
+  worker.
+- `flow instance reset <name>` / `restart-backend <name>` is refused only when `<name>` is the
+  caller's **own** instance (its `FLOW_INSTANCE`, or an instance whose live `server_pid` is this
+  process's `live_backend_pid()`). A worker managing a **different** instance (`qa`, `dev`, on
+  another port) is **not** blocked.
+
+The signal is **`FLOWPAD_WORKER`** (`flow_sdk/utils/environment.py`), stamped `"1"` on every
+worker spawn at the one chokepoint (`apply_worker_env`) and inherited by a worker's children. It
+is deliberately **not** `FLOWPAD_EXECUTION_SCOPE`: that is a process-*attribution* signal set in
+**both** a worker **and** the FlowPad desktop terminal (where a human types), so it cannot tell a
+human from a worker — gating on it would block a human and every other instance. `FLOWPAD_WORKER`
+is set nowhere but the worker-spawn path, so a human in the desktop terminal never carries it.
+
+This is still an app-level gate (L0): a worker that bypasses Python with a raw `taskkill` / `kill`
+is contained at the OS boundary (L1). The port guard also spares the live backend on every
+non-lifecycle kill path (the incident class: a broad "free the port" / "kill python" /
+`flow proc kill`).
 
 ## Verification
 

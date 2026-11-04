@@ -476,6 +476,13 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         "FLOWPAD_EXECUTION_SCOPE",
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
+    # FLOWPAD-2112: the worker-only signal the self-protection gate reads. Set HERE (the one spawn
+    # chokepoint) and nowhere else, so it marks a worker and everything under it — never the FlowPad
+    # desktop terminal, which does not pass through this function. Assigned, not setdefault-ed: it is
+    # not launch config a caller may override.
+    from flow_sdk.utils.environment import WORKER_ENV  # noqa: PLC0415
+
+    env[WORKER_ENV] = "1"
     env["FLOWPAD_PYTHON"] = sys.executable
     # The FlowCall run this worker serves (``runner._agent`` / a process call stamp it on
     # ``context_data``): its own `flow op run` calls join that run, under the call that spawned it.

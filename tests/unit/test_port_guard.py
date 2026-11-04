@@ -132,8 +132,10 @@ def test_partition_splits_allowed_and_refused(tree):
 def test_terminate_tree_spares_whole_backend_tree(tree):
     from flow_sdk.instances.procs import terminate_tree
 
-    killed, survivors = terminate_tree([psutil.Process(tree["root"])])
+    killed, survivors, refused = terminate_tree([psutil.Process(tree["root"])])
     assert killed == [] and survivors == []
+    # The refusal is reported explicitly (finding 6), not read as a successful stop.
+    assert refused == [tree["root"]]
     # The ancestor is spared WHOLE: backend AND its worker child survive, not just the ancestor.
     assert psutil.Process(tree["backend"]).is_running()
     assert psutil.Process(tree["worker"]).is_running()
@@ -142,8 +144,8 @@ def test_terminate_tree_spares_whole_backend_tree(tree):
 def test_terminate_tree_allow_protected_reaps(tree):
     from flow_sdk.instances.procs import terminate_tree
 
-    killed, _ = terminate_tree([psutil.Process(tree["root"])], allow_protected=True)
-    assert tree["root"] in killed
+    killed, _, refused = terminate_tree([psutil.Process(tree["root"])], allow_protected=True)
+    assert tree["root"] in killed and refused == []
 
 
 def test_terminate_tree_kills_unrelated(monkeypatch):
@@ -152,8 +154,8 @@ def test_terminate_tree_kills_unrelated(monkeypatch):
     monkeypatch.setattr(port_guard, "live_backend_pid", lambda: None)
     other = subprocess.Popen([sys.executable, "-c", _WORKER_SRC])
     try:
-        killed, survivors = terminate_tree([psutil.Process(other.pid)])
-        assert other.pid in killed and survivors == []
+        killed, survivors, refused = terminate_tree([psutil.Process(other.pid)])
+        assert other.pid in killed and survivors == [] and refused == []
     finally:
         _reap(other.pid)
 
@@ -208,6 +210,10 @@ def test_proc_kill_image_base_normalizes_versioned_python():
     assert proc_cmd._image_base("python.exe") == "python"
     assert proc_cmd._image_base("node") == "node"
     assert proc_cmd._image_base("python-lsp") == "python-lsp"
+    # Finding 4: a trailing version is stripped ONLY for known interpreters, so an unrelated
+    # name that merely ends in digits keeps them (not x264 -> x, not foo2 -> foo).
+    assert proc_cmd._image_base("x264") == "x264"
+    assert proc_cmd._image_base("foo2") == "foo2"
 
 
 def test_proc_kill_name_excludes_caller_and_ancestors():
@@ -230,3 +236,77 @@ def test_proc_kill_no_targets_exits_nonzero(monkeypatch):
     with pytest.raises(proc_cmd.typer.Exit) as exc:
         proc_cmd.kill(pids=None, name="definitely-no-such-image-xyz")
     assert exc.value.exit_code == 1
+
+
+# ---- worker-only lifecycle gate (finding 2 of the re-review) --------------------------------
+
+def test_caller_is_worker_reads_worker_env_only(monkeypatch):
+    # The signal is FLOWPAD_WORKER (worker-spawn only), NOT FLOWPAD_EXECUTION_SCOPE (which the
+    # desktop terminal carries too) — so a desktop terminal is NOT seen as a worker.
+    monkeypatch.delenv("FLOWPAD_WORKER", raising=False)
+    monkeypatch.setenv("FLOWPAD_EXECUTION_SCOPE", '[{"type":"subagent","id":"x"}]')
+    assert port_guard.caller_is_worker() is False
+    monkeypatch.setenv("FLOWPAD_WORKER", "1")
+    assert port_guard.caller_is_worker() is True
+
+
+def test_apply_worker_env_stamps_worker_signal():
+    # The one spawn chokepoint must stamp the signal, so every worker (and its children) carries it.
+    # The stamp mutates env in place, before any driver/config work, so we assert on the passed
+    # dict and don't care that the rest of the heavy spawn-env build needs a real driver/process.
+    import contextlib
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import apply_worker_env
+    from flow_sdk.utils.environment import WORKER_ENV
+
+    process = SimpleNamespace(id="proc-1", get_type=lambda: "subagent", context_data={})
+    env: dict[str, str] = {}
+    with contextlib.suppress(Exception):
+        apply_worker_env(env, process)
+    assert env[WORKER_ENV] == "1"
+
+
+def test_flow_stop_refused_for_worker(monkeypatch):
+    from flow_sdk.core.connections.service import FlowServiceError
+    from flow_sdk.server import launch
+
+    monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007})
+    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
+    with pytest.raises(FlowServiceError):
+        launch._stop_all_guarded()
+
+
+def test_flow_stop_allowed_for_human(monkeypatch):
+    # Not a worker → the gate does not fire; stub the actual kills so the test stays a pure unit.
+    from flow_sdk.server import launch
+
+    monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007})
+    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: False)
+    monkeypatch.setattr(launch, "_monitor_pids", lambda info, port: [])
+    monkeypatch.setattr(launch, "clear_server_info", lambda: None, raising=False)
+    # No server_pid in info → no kill attempted; just assert the gate let us through.
+    assert launch._stop_all_guarded() == (False, False)
+
+
+def test_instance_reset_own_instance_refused_for_worker(monkeypatch):
+    from flow_sdk.cli.commands import instance_cmd
+
+    monkeypatch.setattr(instance_cmd, "_is_callers_own_instance", lambda name, server: True)
+    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
+    monkeypatch.setattr(instance_cmd, "_read_json", lambda p: {})
+    monkeypatch.setattr(instance_cmd, "_read_env_file", lambda n: {})
+    with pytest.raises(RuntimeError, match="worker may not reset"):
+        instance_cmd._kill_instance_processes("oss", backend_only=True)
+
+
+def test_instance_reset_other_instance_allowed_for_worker(monkeypatch):
+    # A worker managing a DIFFERENT instance (qa/dev) must NOT be gated (finding 4).
+    from flow_sdk.cli.commands import instance_cmd
+
+    assert instance_cmd._is_callers_own_instance.__name__  # present
+    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
+    monkeypatch.setattr("flow_sdk.instance_settings._resolve_instance_name_from_env", lambda: "oss")
+    monkeypatch.setattr(port_guard, "live_backend_pid", lambda: None)
+    # name != caller's instance, and no live-backend pid match → not the caller's own instance.
+    assert instance_cmd._is_callers_own_instance("qa-cycle", {"server_pid": 424242}) is False

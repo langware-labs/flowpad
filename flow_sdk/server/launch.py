@@ -844,10 +844,21 @@ def _stop_all_guarded() -> tuple[bool, bool]:
     monitor_killed = False
     server_killed = False
 
-    # FLOWPAD-2112: `flow stop` is a deliberate lifecycle command and reaps the backend for
-    # whoever runs it. It is NOT gated on a worker signal — FLOWPAD_EXECUTION_SCOPE is also set
-    # in the FlowPad desktop terminal, so it cannot tell a human from a worker. A worker that
-    # deliberately stops the backend it runs inside is contained at the OS boundary (L1), not here.
+    # FLOWPAD-2112: `flow stop` always targets THIS instance's backend (the one it runs inside), so
+    # a worker running it would stop the FlowPad it lives in — the incident. Refuse it for a worker,
+    # loudly. The signal is FLOWPAD_WORKER (set only at worker spawn), NOT FLOWPAD_EXECUTION_SCOPE
+    # (which the desktop terminal carries too): a human in the desktop terminal is still allowed.
+    from flow_sdk.core import port_guard  # noqa: PLC0415
+
+    if port_guard.caller_is_worker():
+        from flow_sdk.core.connections.service import FlowServiceError  # noqa: PLC0415
+
+        log.warning("stop_all refused: a worker may not stop the backend it runs inside")
+        raise FlowServiceError(
+            "self_protection",
+            "a worker may not stop the FlowPad backend it runs inside — run `flow stop` from your own terminal",
+        )
+
     monitor_pids = list(_monitor_pids(info, port))
 
     # Every monitor first, so none of them restarts the server we kill next.

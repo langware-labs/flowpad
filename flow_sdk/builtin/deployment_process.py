@@ -249,7 +249,9 @@ def stop(deployment) -> bool:
         proc = psutil.Process(pid)
     except psutil.NoSuchProcess:
         return True
-    return not terminate_tree([proc])[1]
+    _killed, survivors, refused = terminate_tree([proc])
+    # A refused (guard-protected) process is still running — not a successful stop.
+    return not survivors and not refused
 
 
 async def close_shell(deployment) -> None:
