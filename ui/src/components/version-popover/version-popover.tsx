@@ -6,6 +6,7 @@ import { useCopied } from '@src/components/ui/copy-button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { VersionChip } from '@src/components/version-popover/version-chip';
+import { upgradeOfferVersion } from '@src/components/version-popover/upgrade-offer';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
@@ -69,13 +70,14 @@ interface VersionCheckResponse {
    *  sits beside `hub` rather than inside `pypi`. Null for a source checkout. */
   installed_at: string | null;
   hub: HubInfo | null;
-  /** The version the server runs NOW — differs from the page's after a restart onto another version. */
-  running_version?: string;
 }
 
 interface ElectronAPI {
   getAppVersion?: () => Promise<string>;
-  upgradeFlowpad?: () => Promise<{ success: boolean; error?: string }>;
+  /** `version`: the release the button names — installed exactly (a prepared older one is not used instead). */
+  upgradeFlowpad?: (version?: string) => Promise<{ success: boolean; error?: string }>;
+  /** The newest release THIS desktop runs: a version newer than the installed one, false (none), null (unknown). */
+  getEngineUpgradeTarget?: () => Promise<string | false | null>;
   openExternal?: (url: string) => Promise<boolean>;
 }
 
@@ -296,9 +298,10 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
   const [picking, setPicking] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [installResult, setInstallResult] = useState<InstallVersionResponse | null>(null);
-  // The server may have restarted onto another version since this page loaded: show what it runs.
-  const currentVersion = data?.running_version || pageVersion;
-  const pageIsStale = currentVersion !== pageVersion;
+  // The server may have restarted onto another version since this page loaded: show what it runs
+  // (`pypi.current` is the running server's own version).
+  const runningVersion = data?.pypi?.current || pageVersion;
+  const pageIsStale = runningVersion !== pageVersion;
   const [restarting, setRestarting] = useState(false);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
   const [diagReport, setDiagReport] = useState<{
@@ -343,7 +346,8 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
 
   // Every open asks again: the running version is only true as of the last ask.
   useEffect(() => {
-    if (open) void fetchData();
+    if (open && !loading) void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per open, not again when the fetch ends
   }, [open, fetchData]);
 
   useEffect(() => {
@@ -362,15 +366,43 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     };
   }, [open, electronApi]);
 
+  // Desktop: the release to offer is the newest one THIS desktop runs — PyPI's newest may need a newer desktop.
+  // undefined until asked; null when the desktop could not tell (PyPI's newest is offered, and checked on click).
+  const [desktopTarget, setDesktopTarget] = useState<string | false | null | undefined>(undefined);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !electronApi?.getEngineUpgradeTarget) return;
+    let cancelled = false;
+    setUpgradeError(null);
+    electronApi
+      .getEngineUpgradeTarget()
+      .then((v) => {
+        if (!cancelled) setDesktopTarget(v);
+      })
+      .catch(() => {
+        if (!cancelled) setDesktopTarget(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, electronApi]);
+  const upgradeVersion = upgradeOfferVersion({
+    desktop: Boolean(electronApi?.upgradeFlowpad),
+    desktopTarget,
+    pypiLatest: data?.pypi?.latest,
+  });
+
   const handleUpgrade = useCallback(async () => {
-    if (!electronApi?.upgradeFlowpad) return;
+    if (!electronApi?.upgradeFlowpad || !upgradeVersion) return;
     setUpgrading(true);
+    setUpgradeError(null);
     try {
-      await electronApi.upgradeFlowpad();
+      const r = await electronApi.upgradeFlowpad(upgradeVersion);
+      if (r && !r.success) setUpgradeError(r.error ?? t`Install failed.`);
     } finally {
       setUpgrading(false);
     }
-  }, [electronApi]);
+  }, [electronApi, upgradeVersion, t]);
 
   // Wait for the backend to go down and come back healthy, then reload so the
   // (possibly different-version) UI is reloaded fresh. The python monitor restart
@@ -437,21 +469,21 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     // both PyPI rows ended up with a blank date.
     const githubReleases = data?.releases ?? [];
     return {
-      pypiCurrentPublished: findPypiRelease(pypi?.releases, currentVersion),
+      pypiCurrentPublished: findPypiRelease(pypi?.releases, runningVersion),
       pypiLatestPublished: findPypiRelease(pypi?.releases, pypi?.latest),
       electronCurrentRelease: findReleaseByTag(githubReleases, electronVersion),
       githubUpdateAvailable: Boolean(
         electronVersion && githubLatest && electronVersion.replace(/^v/i, '') !== githubLatest.tag,
       ),
     };
-  }, [data?.releases, pypi?.releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
+  }, [data?.releases, pypi?.releases, runningVersion, pypi?.latest, electronVersion, githubLatest]);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <VersionChip
           ref={targetRef}
-          version={currentVersion}
+          version={runningVersion}
           updateAvailable={Boolean(pypi?.update_available || githubUpdateAvailable)}
           data-testid="version-popover-trigger"
         />
@@ -464,7 +496,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
               data-testid="version-page-stale"
             >
               <span>
-                <Trans>The server now runs v{currentVersion}; this page is still v{pageVersion}.</Trans>
+                <Trans>The server now runs v{runningVersion}; this page is still v{pageVersion}.</Trans>
               </span>
               <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => window.location.reload()}>
                 <Trans>Reload</Trans>
@@ -582,7 +614,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
             </div>
             <VersionRow
               label={t`Installed`}
-              version={currentVersion}
+              version={runningVersion}
               date={formatDateWithAge(pypiCurrentPublished?.published_at)}
             />
             <VersionRow
@@ -597,22 +629,23 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
                 is version/date/yanked only), and GitHub Releases are desktop
                 tags, so an SDK version never resolves there. The rows that used
                 to try rendered nothing, every time. */}
-            {pypi?.update_available && pypi.latest && (
+            {pypi?.update_available && upgradeVersion && (
               <div className="pt-1">
                 {/* The desktop app upgrades through its own updater; a browser tab asks the backend
                     to install the release and restart (the same install the version picker uses). */}
                 <button
                   type="button"
                   onClick={() =>
-                    void (electronApi?.upgradeFlowpad ? handleUpgrade() : handleInstallVersion(pypi.latest!))
+                    void (electronApi?.upgradeFlowpad ? handleUpgrade() : handleInstallVersion(upgradeVersion))
                   }
                   disabled={upgrading || restarting}
                   data-testid="version-upgrade-button"
                   className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                 >
                   {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  {upgrading ? t`Upgrading…` : t`Upgrade to v${pypi.latest}`}
+                  {upgrading ? t`Upgrading…` : t`Upgrade to v${String(upgradeVersion)}`}
                 </button>
+                {upgradeError && <p className="pt-1 text-[10px] text-destructive">{upgradeError}</p>}
               </div>
             )}
             <button
@@ -633,7 +666,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
                 </p>
                 <div className="max-h-48 overflow-y-auto rounded-sm border bg-muted/30 py-0.5">
                   {(pypi?.releases ?? []).map((r) => {
-                    const isCurrent = r.version === currentVersion;
+                    const isCurrent = r.version === runningVersion;
                     const isPending = r.version === pendingVersion;
                     return (
                       <div key={r.version}>

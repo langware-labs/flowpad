@@ -76,7 +76,7 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
     from flow_sdk.core.oauth.provider_registry import OAuthFlowKind  # noqa: PLC0415
 
     expires_at = item.get("expires_at")
-    return provider_env_var(
+    row = provider_env_var(
         name,
         display_name,
         ref_name,
@@ -91,6 +91,11 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
         expires_at=int(expires_at) if isinstance(expires_at, (int, float)) else None,
         needs_reauth=bool(item.get("needs_reauth")),
     )
+    groups = item.get("oauth_groups")
+    # A hub that predates scope groups sends none: the provider is one group, as before.
+    if isinstance(groups, list):
+        row.oauth_groups = [g for g in groups if isinstance(g, dict) and g.get("name") and g.get("credentials_name")]
+    return row
 
 
 #: The hub's provider catalogue, cached per cloud user for the life of the

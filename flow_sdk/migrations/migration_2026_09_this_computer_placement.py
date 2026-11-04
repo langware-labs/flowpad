@@ -143,7 +143,8 @@ async def lift(*, dry_run: bool = True, force: bool = False) -> Report:
     # 2. Slots: one local deployment per agent (per provider and environment).
     groups: dict[tuple, list[dict]] = {}
     for r in rows:
-        if r["parent"].startswith("agent-"):
+        # Local slots only: an agent's cloud deployments are separate machines, not extra slots.
+        if r["parent"].startswith("agent-") and r["provider"] == "local":
             groups.setdefault((r["parent"], r["provider"], r["environment"]), []).append(r)
     for (parent, provider, _env), members in groups.items():
         if len(members) < 2:

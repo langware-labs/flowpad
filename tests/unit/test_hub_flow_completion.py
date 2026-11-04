@@ -32,10 +32,10 @@ def hub(monkeypatch):
         state["waits"] += 1
         return {"status": state["status"]}
 
-    async def credentials_name(provider):
+    async def credentials_name(provider, group=""):
         return f"{provider}_credentials"
 
-    async def adopt(provider, local_name, hub_name):
+    async def adopt(provider, local_name, hub_name, group=""):
         if state["adopt_error"]:
             raise state["adopt_error"]
         state["adopted"].append(provider)

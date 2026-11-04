@@ -202,6 +202,8 @@ class Source:
         return self
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
+        if isinstance(exc, SourceError) and not exc.provider:
+            exc.provider = self.provider    # whatever a session raised says which data source said it
         self._session = None
         self._handler = None
         await self._close()

@@ -12,6 +12,8 @@ export interface MarkdownContentState {
   setBody: (body: string) => void;
   dropField: (key: string) => void;
   dirty: boolean;
+  /** Live dirtiness, read now (not from the last render): true iff `save` would write something. */
+  isDirty: () => boolean;
   saving: boolean;
   lastSync: Date | null;
   isLoading: boolean;
@@ -170,6 +172,7 @@ export function useMarkdownContent(
     catch (error) { setLoadError(error instanceof Error ? error : new Error(String(error))); }
   }, []);
 
+  const isDirty = useCallback(() => draft.current?.dirty ?? false, []);
   const dirty = draft.current?.dirty ?? false;
   const autoSave = options?.autoSave ?? true;
   const autoSaveMs = options?.autoSaveMs ?? 3000;
@@ -191,7 +194,7 @@ export function useMarkdownContent(
   return {
     fields, typedFields: current?.fields ?? {}, hasFields: Object.keys(current?.fields ?? {}).length > 0,
     body: current?.body ?? '', bodyStartLine: current?.document.body_start_line ?? 1,
-    setBody, setField, dropField, dirty, saving, lastSync, isLoading, loadError,
+    setBody, setField, dropField, dirty, isDirty, saving, lastSync, isLoading, loadError,
     saveError, conflict, currentDocument, inspectCurrent, metadataError: current?.document.metadata_error ?? null,
     isMissing, recreate, save, reload,
   };

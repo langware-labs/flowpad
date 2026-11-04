@@ -145,6 +145,14 @@ async def list_activities(
     validates the whole list away to ``null``.
     """
     rows = monitor.list(subject_entity=_subject(subject_entity), all_subjects=all_subjects)
+    from flow_sdk.activity.emit import keep_hearing  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    # A tab shown a root here hears it until it ends, even one whose subject it does not watch.
+    request_info = get_current_request_info()
+    connection_id = request_info.initiator_connection_id if request_info else ""
+    for spec in rows:
+        keep_hearing(spec, connection_id)
     return ApiResponse.success([spec.model_dump(mode="json") for spec in rows])
 
 

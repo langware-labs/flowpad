@@ -158,7 +158,7 @@ def own_sandbox_id() -> str | None:
     Cached for the process lifetime: the id is fixed at boot, and callers sit on
     per-request paths.
     """
-    if get_assigned_runtime() is not RuntimeKind.SANDBOX:
+    if get_assigned_runtime() not in (RuntimeKind.SANDBOX, RuntimeKind.AGENT):
         return None
     try:
         token_req = Request(_MMDS_TOKEN_URL, method="PUT", headers={"X-metadata-token-ttl-seconds": "60"})

@@ -104,6 +104,8 @@ class AuthFlow(DataSpec):
     flow_id: str
     kind: AuthFlowKind
     provider: str
+    #: The provider's scope group this grant is for (a non-default group keeps its own token); "" = default.
+    group: str = ""
     #: TypeId string of the entity the grant should attach to, when a screen asked for one.
     target: str = ""
     #: The browser tab that started the flow; empty for CLI / SDK initiators.
@@ -146,6 +148,7 @@ def start_flow(
     flow_id: str = "",
     target: str = "",
     initiator_connection_id: str = "",
+    group: str = "",
 ) -> AuthFlow:
     """Register a flow. ``flow_id`` is the protocol's own ``state`` where it has one."""
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
@@ -155,6 +158,7 @@ def start_flow(
         flow_id=flow_id or mint_uuid(),
         kind=kind,
         provider=provider,
+        group=group,
         target=target,
         initiator_connection_id=initiator_connection_id,
     )

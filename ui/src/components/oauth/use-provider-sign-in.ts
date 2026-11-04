@@ -15,14 +15,22 @@ export function useProviderSignIn(
     onNotFinished,
     onError,
     listen,
-  }: { onGranted: () => void; onNotFinished?: () => void; onError: (e: unknown) => void; listen?: boolean },
+    source,
+  }: {
+    onGranted: () => void;
+    onNotFinished?: () => void;
+    onError: (e: unknown) => void;
+    listen?: boolean;
+    /** The data source this sign-in is for: the backend asks for its scope group and what it needs. */
+    source?: string;
+  },
 ) {
   const [connecting, setConnecting] = useState(false);
   const signIn = async () => {
     if (!provider) return;
     setConnecting(true);
     try {
-      await oauthService.connect(provider);
+      await oauthService.connect(provider, undefined, undefined, source ? { source } : {});
     } catch (e: unknown) {
       setConnecting(false);
       onError(e);

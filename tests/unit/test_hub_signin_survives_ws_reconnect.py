@@ -125,3 +125,17 @@ async def test_verification_rejects_a_different_authenticated_principal(hub):
     with pytest.raises(HubWebSocketVerificationError, match='user mismatch'):
         await hub_ws_manager.verify_current_user()
     assert not hub_ws_manager.is_verified
+
+
+async def test_a_dropped_hub_socket_redials_without_waiting_the_backoff(hub, monkeypatch):
+    # A drop must never turn into downtime: the backoff is for a hub that keeps
+    # refusing the dial, not for the first redial after a socket that lived.
+    monkeypatch.setattr(hub_ws_manager, "reconnect_initial_seconds", 5.0)
+    await hub_ws_manager.start(wait_connected=True)
+
+    mark = len(hub.statuses)
+    started = time.monotonic()
+    hub.main[0].transport.abort()
+    await hub.wait_up_after(mark)
+
+    assert time.monotonic() - started < 1.0, "the redial waited out the backoff after a normal drop"

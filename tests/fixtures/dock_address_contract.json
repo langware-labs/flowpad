@@ -149,6 +149,14 @@
       "pointer": "bus"
     }
   },
+  "retired_pointers": {
+    "data-sources": {
+      "channels": {
+        "view_type": "inbound",
+        "pointer": ""
+      }
+    }
+  },
   "view_meta": {
     "home": {
       "addressable": true,
@@ -875,12 +883,6 @@
       "url": "/dock/schema-tree/--acme--.crm.lead/--acme--.crm.company"
     },
     {
-      "name": "every message channel and where it is routed",
-      "view_type": "data-sources",
-      "pointer": "channels",
-      "url": "/dock/data-sources/channels"
-    },
-    {
       "name": "one data source's page",
       "view_type": "data-sources",
       "pointer": "5b112f8f-06d9-46ff-9ff0-d09748a4d512",
@@ -1283,6 +1285,25 @@
       "page": "desk",
       "view_type": "llm-sources",
       "pointer": "endpoints"
+    },
+    {
+      "name": "hub channels list",
+      "view_type": "inbound",
+      "page": "hub",
+      "url": "/dock/hub/inbound"
+    },
+    {
+      "name": "hub channel routing",
+      "view_type": "inbound",
+      "page": "hub",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/hub/inbound/550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "name": "desk channel routing (a mailbox)",
+      "view_type": "inbound",
+      "pointer": "mailbox-550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/inbound/mailbox-550e8400-e29b-41d4-a716-446655440000"
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
+  Agent,
   type ChannelSetupResult,
   type CreatedAgent,
   type DeployedAgent,
@@ -13,11 +14,13 @@ import {
   linkChainBody,
   TypeId,
 } from '@sdk';
-import { CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Loader2, Mail, X } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
+import { AllowedSendersEditor } from '@src/components/agents/AllowedSendersEditor';
+import { PROVIDER_TITLE } from '@src/components/inbound/inbound-model';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
@@ -26,9 +29,19 @@ import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { deployedMachine } from './deployed-machine';
 
 /** One way to connect a channel: Flowpad's own bot/number/app, or the person's own. */
-type Option = { id: string; method: OnboardingMethod; title: string; hint: string };
+type Option = { id: string; method: OnboardingMethod; title: string; hint: string; disabled?: boolean };
 
+/** In picker order: email first. */
 const OPTIONS: Record<OnboardingChannel, Option[]> = {
+  email: [
+    {
+      id: 'agent_email',
+      method: 'flowpad',
+      title: 'Agent email address',
+      hint: 'Flowpad gives it its own address. It answers from there.',
+    },
+    { id: 'own_gmail', method: 'own', title: 'Your Gmail', hint: '', disabled: true },
+  ],
   slack: [
     {
       id: 'flowpad_app',
@@ -55,7 +68,15 @@ const OPTIONS: Record<OnboardingChannel, Option[]> = {
   ],
 };
 
-const CHANNEL_TITLE: Record<OnboardingChannel, string> = { whatsapp: 'WhatsApp', telegram: 'Telegram', slack: 'Slack' };
+/** The channels' names: the Channels screen's provider titles, plus email (no provider). */
+const CHANNEL_TITLE: Record<OnboardingChannel, string> = { email: 'Email', ...PROVIDER_TITLE } as Record<OnboardingChannel, string>;
+const SUPPORT_EMAIL = 'support@langware.ai';
+
+/** A channel's mark: its brand icon, or a mail glyph for email (no brand). */
+function ChannelIcon({ channel, className }: { channel: OnboardingChannel; className: string }) {
+  if (channel === 'email') return <Mail aria-hidden className={cn(className, 'text-primary')} />;
+  return <FlowIcon icon={`brands.${channel}`} className={className} />;
+}
 /** Throws unless the channel set-up's last step (verify) reports the channel ready. */
 const assertReady = (answer: ChannelSetupResult) => {
   const last = answer.results.at(-1);
@@ -81,9 +102,10 @@ type LiveMessage = {
 };
 
 /** The hub home's first-agent card: pick a channel → say what it does → pick how it connects → its own sandbox + connect a channel → talk to it. */
-export function FirstAgentCard() {
+export function FirstAgentCard({ onActiveChange }: { onActiveChange?: (active: boolean) => void } = {}) {
   const { t } = useLingui();
   const [step, setStep] = useState<Step>('channel');
+  useEffect(() => onActiveChange?.(step !== 'channel'), [step, onActiveChange]);
   const [prompt, setPrompt] = useState('');
   const [channel, setChannel] = useState<OnboardingChannel>('slack');
   const [option, setOption] = useState<Option | null>(null);
@@ -117,6 +139,22 @@ export function FirstAgentCard() {
     return () => clearInterval(id);
   }, [started, step]);
 
+  // × closes the wizard: back to the channel tiles, nothing carried over.
+  const close = () => {
+    setStep('channel');
+    setPrompt('');
+    setOption(null);
+    setMade(null);
+    setDeployed(null);
+    setPhases({});
+    setStarted(0);
+    setError(null);
+    setClaim(null);
+    setPointed(false);
+    askedCode.current = false;
+    deploying.current = null;
+  };
+
   const mark = (name: string) => setPhases((p) => ({ ...p, [name]: Date.now() }));
   const secs = (at?: number) => (at && started ? `${((at - started) / 1000).toFixed(1)}s` : '');
 
@@ -130,6 +168,7 @@ export function FirstAgentCard() {
       const agent = await Onboarding.createAgent(prompt.trim(), channel, option?.method ?? 'flowpad');
       setMade(agent);
       mark('saved');
+      if (agent.mailbox?.address) mark('linked'); // the address exists the moment the agent does
       setStep('connect');
       deploying.current = deployedMachine(agent.agent.id).then((d) => {
         setDeployed(d);
@@ -160,9 +199,13 @@ export function FirstAgentCard() {
     }
   };
 
+  const goLive = () => {
+    mark('live');
+    setStep('live');
+  };
   const linked = () => {
     mark('linked');
-    setStep('live');
+    goLive();
   };
 
   // Flowpad bot: the person connects while the machine boots. The claim is made at once with no place, proven by the
@@ -200,7 +243,7 @@ export function FirstAgentCard() {
   // Flowpad bot: ask for the code as soon as the connect step opens — nothing for the person to press.
   const askedCode = useRef(false);
   useEffect(() => {
-    if (step !== 'connect' || option?.method !== 'flowpad' || claim || askedCode.current) return;
+    if (step !== 'connect' || option?.method !== 'flowpad' || channel === 'email' || claim || askedCode.current) return;
     askedCode.current = true;
     void startLink();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -343,6 +386,15 @@ export function FirstAgentCard() {
       linked();
     });
 
+  // Email: the agent behind the allowed-senders editor, and the list as the hub stored it.
+  const [mailAgent, setMailAgent] = useState<Agent | null>(null);
+  const [senders, setSenders] = useState<string[]>([]);
+  useEffect(() => {
+    if (channel !== 'email' || !made) return;
+    setSenders(made.mailbox?.allowed_senders ?? []);
+    void Agent.getById<Agent>(made.agent.id).then(setMailAgent);
+  }, [channel, made]);
+
   // Live: the channel's latest messages, read from the sandbox through the hub every few seconds. Held in this page
   // only — nothing here is stored.
   const [live, setLive] = useState<LiveMessage[]>([]);
@@ -368,37 +420,70 @@ export function FirstAgentCard() {
 
   const at = WIZARD.indexOf(step as WizardStep);
   const inWizard = at >= 0;
-  const elapsed = started ? ((step === 'live' ? (phases.linked ?? now) : now) - started) / 1000 : 0;
+  const elapsed = started ? ((step === 'live' ? (phases.live ?? now) : now) - started) / 1000 : 0;
 
   return (
     <section data-testid="first-agent-card" className="w-full rounded-xl border bg-card p-5 text-left shadow-sm">
-      {inWizard && (
-        <nav data-testid="first-agent-crumbs" className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
-          {WIZARD.map((s, i) => {
-            const label = [t`Channel`, t`Instructions`, t`Launch bot`][i];
-            return (
-              <span key={s} className="flex items-center gap-1.5">
-                {i > 0 && <span className="text-muted-foreground">›</span>}
-                {i < at ? (
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
-                    onClick={() => setStep(s)}
-                  >
-                    ✓ {label}:{s === 'channel' && <FlowIcon icon={`brands.${channel}`} className="h-3 w-3 shrink-0" />}
-                    <span className="text-foreground">{s === 'channel' ? CHANNEL_TITLE[channel] : prompt.trim()}</span>
-                  </button>
-                ) : (
-                  <span className={i === at ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
-                    {i + 1}. {label}
+      <div data-testid="first-agent-top" className="mb-2 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          {inWizard && (
+            <nav data-testid="first-agent-crumbs" className="flex flex-wrap items-center gap-1.5 text-xs">
+              {WIZARD.map((s, i) => {
+                const label = [t`Channel`, t`Instructions`, t`Launch bot`][i];
+                return (
+                  <span key={s} className="flex items-center gap-1.5">
+                    {i > 0 && <span className="text-muted-foreground">›</span>}
+                    {i < at ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+                        onClick={() => setStep(s)}
+                      >
+                        ✓ {label}:{s === 'channel' && <ChannelIcon channel={channel} className="h-3 w-3 shrink-0" />}
+                        <span className="text-foreground">
+                          {s === 'channel' ? CHANNEL_TITLE[channel] : prompt.trim()}
+                        </span>
+                      </button>
+                    ) : (
+                      <span className={i === at ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                        {i + 1}. {label}
+                      </span>
+                    )}
                   </span>
-                )}
-              </span>
-            );
-          })}
-        </nav>
-      )}
-      <div className="mb-3 flex items-center justify-between">
+                );
+              })}
+            </nav>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {inWizard && (
+            <span className="text-xs text-muted-foreground">
+              <Trans>
+                Step {at + 1} of {WIZARD.length}
+              </Trans>
+            </span>
+          )}
+          {started > 0 && (
+            <span data-testid="first-agent-timer" className="font-mono text-xs text-muted-foreground">
+              {elapsed.toFixed(1)}s
+            </span>
+          )}
+          {step !== 'channel' && (
+            <Button
+              data-testid="first-agent-close"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              aria-label={t`Close`}
+              title={t`Close`}
+              onClick={close}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="mb-3">
         <h2 className="text-base font-semibold">
           {step === 'channel' && <Trans>Make an agent in 60 seconds — where will you talk to it?</Trans>}
           {step === 'instructions' && <Trans>What should it do?</Trans>}
@@ -406,18 +491,6 @@ export function FirstAgentCard() {
           {step === 'connect' && <Trans>Connect {CHANNEL_TITLE[channel]}</Trans>}
           {step === 'live' && <Trans>Your agent is live</Trans>}
         </h2>
-        {inWizard && (
-          <span className="text-xs text-muted-foreground">
-            <Trans>
-              Step {at + 1} of {WIZARD.length}
-            </Trans>
-          </span>
-        )}
-        {started > 0 && (
-          <span data-testid="first-agent-timer" className="font-mono text-xs text-muted-foreground">
-            {elapsed.toFixed(1)}s
-          </span>
-        )}
       </div>
 
       {step === 'channel' && (
@@ -434,7 +507,7 @@ export function FirstAgentCard() {
               }}
               className="flex flex-1 flex-col items-start gap-2 rounded-lg border border-border bg-background p-4 text-left hover:bg-accent"
             >
-              <FlowIcon icon={`brands.${c}`} className="h-7 w-7 shrink-0" />
+              <ChannelIcon channel={c} className="h-7 w-7 shrink-0" />
               <span className="text-sm font-semibold text-foreground">{CHANNEL_TITLE[c]}</span>
             </button>
           ))}
@@ -487,12 +560,16 @@ export function FirstAgentCard() {
                 key={o.id}
                 type="button"
                 data-testid={`first-agent-option-${o.id}`}
+                disabled={o.disabled}
+                aria-disabled={o.disabled}
                 onClick={() => setOption(o)}
                 className={cn(
                   'flex flex-1 flex-col gap-1 rounded-lg border p-3 text-left',
-                  option?.id === o.id
-                    ? 'border-primary/50 bg-primary/10'
-                    : 'border-border bg-background hover:bg-accent',
+                  o.disabled
+                    ? 'cursor-not-allowed border-border bg-background opacity-60'
+                    : option?.id === o.id
+                      ? 'border-primary/50 bg-primary/10'
+                      : 'border-border bg-background hover:bg-accent',
                 )}
               >
                 <span className="flex items-center gap-2">
@@ -500,13 +577,15 @@ export function FirstAgentCard() {
                     // Flowpad's own bot: the Flow logo with the channel as a sub icon.
                     <span className="relative h-6 w-6 shrink-0">
                       <img src={flowpadIcon} alt="" className="h-6 w-6 rounded-sm" />
-                      <FlowIcon
-                        icon={`brands.${channel}`}
+                      <ChannelIcon
+                        channel={channel}
                         className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-card"
                       />
                     </span>
+                  ) : o.id === 'own_gmail' ? (
+                    <FlowIcon icon="brands.gmail" className="h-6 w-6 shrink-0" />
                   ) : (
-                    <FlowIcon icon={`brands.${channel}`} className="h-6 w-6 shrink-0" />
+                    <ChannelIcon channel={channel} className="h-6 w-6 shrink-0" />
                   )}
                   <span
                     className={cn('text-sm font-semibold', option?.id === o.id ? 'text-primary' : 'text-foreground')}
@@ -514,7 +593,23 @@ export function FirstAgentCard() {
                     {o.title}
                   </span>
                 </span>
-                <span className="text-xs text-muted-foreground">{o.hint}</span>
+                <span className="text-xs text-muted-foreground">
+                  {o.disabled ? (
+                    <Trans>
+                      Contact{' '}
+                      <a
+                        className="text-primary underline"
+                        href={`mailto:${SUPPORT_EMAIL}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {SUPPORT_EMAIL}
+                      </a>{' '}
+                      to enable
+                    </Trans>
+                  ) : (
+                    o.hint
+                  )}
+                </span>
               </button>
             ))}
           </div>
@@ -526,12 +621,14 @@ export function FirstAgentCard() {
               data-testid="first-agent-create"
               disabled={!prompt.trim() || !option || busy}
               onClick={() => {
-                if (option?.method === 'flowpad') openVendorTab();
+                if (option?.method === 'flowpad' && channel !== 'email') openVendorTab();
                 void create();
               }}
             >
               {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {option?.method === 'flowpad' ? (
+              {channel === 'email' ? (
+                <Trans>Get its address</Trans>
+              ) : option?.method === 'flowpad' ? (
                 <Trans>Connect Flow to {CHANNEL_TITLE[channel]}</Trans>
               ) : (
                 <Trans>Try it</Trans>
@@ -562,7 +659,38 @@ export function FirstAgentCard() {
 
       {step === 'connect' && option && (
         <div className="flex flex-col gap-3 text-sm">
-          {option.method === 'flowpad' && (
+          {channel === 'email' && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground">
+                  <Trans>Its address</Trans>
+                </span>
+                <p className="flex items-center gap-2">
+                  <code data-testid="first-agent-address" className="rounded bg-muted px-1">
+                    {made?.mailbox?.address}
+                  </code>
+                  {made?.mailbox?.address && <CopyButton value={made.mailbox.address} />}
+                </p>
+              </div>
+              <AllowedSendersEditor
+                agent={mailAgent}
+                allowedSenders={senders}
+                onSaved={(next) => setSenders(next)}
+                testId="first-agent-mailbox"
+              />
+              <p className="text-xs text-muted-foreground">
+                <Trans>Only these people can make it act. Anyone else's mail is kept but not answered.</Trans>
+              </p>
+              <div>
+                <Button data-testid="first-agent-done" disabled={!deployed} onClick={goLive}>
+                  {!deployed && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Trans>Done</Trans>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {option.method === 'flowpad' && channel !== 'email' && (
             <>
               <div className="flex flex-col gap-2">
                 {error && !claim ? (
@@ -822,9 +950,16 @@ export function FirstAgentCard() {
       {step === 'live' && (
         <div className="flex flex-col gap-3 text-sm">
           <p data-testid="first-agent-live">
-            <Trans>
-              Set up in {elapsed.toFixed(0)}s. Message it on {CHANNEL_TITLE[channel]} — it answers there.
-            </Trans>
+            {channel === 'email' ? (
+              <Trans>
+                Set up in {elapsed.toFixed(0)}s. Email it at{' '}
+                <code className="rounded bg-muted px-1">{made?.mailbox?.address}</code> — it answers there.
+              </Trans>
+            ) : (
+              <Trans>
+                Set up in {elapsed.toFixed(0)}s. Message it on {CHANNEL_TITLE[channel]} — it answers there.
+              </Trans>
+            )}
           </p>
           {flowSlackBot && (
             <p data-testid="first-agent-slack-read" className="flex items-center gap-2 text-xs text-muted-foreground">

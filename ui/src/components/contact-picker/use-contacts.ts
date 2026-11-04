@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { ConversationParticipant, normalizeEmail, QueryRequest, User } from '@sdk';
+import { useMemo, useState } from 'react';
+import { ActionInfo, ConversationParticipant, dataManager, normalizeEmail, QueryRequest, User } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { isTeamParticipant } from './use-team-suggestions';
 
@@ -62,4 +62,21 @@ export function filterContacts(contacts: User[], query: string): User[] {
   const q = query.trim().toLowerCase();
   if (!q) return contacts;
   return contacts.filter((u) => (u.name ?? '').toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q));
+}
+
+/** Rule 5: scan every local conversation and upsert its members into the
+ *  address book, then refetch. Scanned contacts also stream in live via the
+ *  entity-query watch, so the refetch is belt-and-suspenders. */
+export function useAddressBookScan(refetch: () => void): { refreshing: boolean; refresh: () => Promise<void> } {
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await dataManager.callAction<null, unknown>(new ActionInfo('address-book-scan', null, null, 'POST'));
+      refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  return { refreshing, refresh };
 }

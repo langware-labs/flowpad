@@ -48,6 +48,9 @@ class SourceBinding(DataSpec):
     #: The source hosts datasets' rows (``DataSource.datasets()``): a folder of its own it does not find
     #: yet is made on the first write, not a setup problem.
     holds_rows: bool = False
+    #: How many times a request waits out a rate limit before failing (``http.request(source=...)``).
+    #: The row's ``rate_limit_retries``; 0 = fail at once.
+    rate_limit_retries: int = Field(default=0, ge=0)
 
 
 __all__ = ["Persona", "SourceBinding"]

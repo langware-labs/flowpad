@@ -157,9 +157,9 @@ def local_request(method: str, url: str, **kwargs: Any) -> "requests.Response":
     An explicit ``headers`` kwarg wins — the gate header is merged underneath it
     — so a caller can still override it deliberately.
     """
-    import requests
-
     from urllib.parse import urlsplit
+
+    import requests
 
     from flow_sdk.instance_settings import cookie_gate
     from flow_sdk.utils.networking import is_loopback
@@ -258,13 +258,20 @@ def server_error(status_code: int, body: dict) -> NoReturn:
     fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", str(body.get("message") or f"HTTP {status_code}"))
 
 
-def data_source_create_path(port: int) -> str:
-    """Where a new data source is POSTed (under ``/graph/``): the working directory's project, whose
-    ``agentic-assets/data_source/`` the asset lands in; outside any project, the user scope."""
+def data_source_create_path(port: int, project_id: "str | None" = None) -> str:
+    """Where a new data source is POSTed (under ``/graph/``): into a project, the way the app saves one
+    into the project open there — ``project_id`` when given, else the working directory's project, else
+    the project this instance was last used in (``project/last-active``, the one the app opens on). A
+    source belongs to a project because its setup is a node of that project's setup tree; only an
+    instance with no project at all lands it in the user scope."""
     from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
 
-    cwd = os.getcwd()
-    project_id = project_for_path(port, cwd, create=False) if is_valid_project_cwd(cwd, include_temp=True) else None
+    if not project_id:
+        cwd = os.getcwd()
+        project_id = project_for_path(port, cwd, create=False) if is_valid_project_cwd(cwd, include_temp=True) else None
+    if not project_id:
+        last = get_graph_json(graph_url(port, "project/last-active"), on_error=server_error) or {}
+        project_id = last.get("project_id") if isinstance(last, dict) else None
     return f"project/{project_id}/data_source" if project_id else "data_source"
 
 

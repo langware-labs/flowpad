@@ -767,6 +767,13 @@ def user_credentials_name(name: str) -> Optional[str]:
     return provider.user_credentials_name if provider else None
 
 
+def group_credentials_name(base: str, group: str) -> str:
+    """The local SOD name of a provider's NON-default scope group's token, from its default name:
+    ``google_credentials`` + ``gmail`` → ``google_gmail_credentials``. Each group keeps its own token."""
+    stem = base.removesuffix("_credentials")
+    return f"{stem}_{group}_credentials" if stem != base else f"{base}_{group}"
+
+
 def app_credentials_name(name: str) -> Optional[str]:
     """The SOD entry name holding this provider's APP (bot) token, or ``None``.
 
@@ -1044,6 +1051,42 @@ async def credential_for(
     except Exception:  # noqa: BLE001
         logger.debug("%s: no hub credential", provider, exc_info=True)
         return None
+
+
+async def granted_scopes(provider: str, user: Any, *, name: str | None = None) -> tuple[str, ...]:
+    """What the provider GRANTED ``user``'s stored token for ``provider`` (``name``: a scope group's own
+    token), as kept with the copy — a local grant's token response, or the hub's record on a mirror.
+    Empty when unknown or not held. A plain read: no refresh, no hub call."""
+    entry = name or user_credentials_name(provider)
+    if not entry or user is None:
+        return ()
+    from flow_sdk.request_context.methods import stored_user_credentials  # noqa: PLC0415
+
+    try:
+        value = await stored_user_credentials(user, entry, user.id)
+    except KeyError:
+        return ()
+    except Exception:  # noqa: BLE001 — never raises: a status read must not fail on one row
+        logger.debug("%s: granted scopes unreadable", provider, exc_info=True)
+        return ()
+    scopes = value.get("scopes") if isinstance(value, dict) else None
+    return tuple(str(s) for s in scopes) if isinstance(scopes, list) else ()
+
+
+async def missing_granted(provider: str, scopes: "list[str] | tuple[str, ...]", *, name: str | None = None) -> list[str]:
+    """The scopes of ``scopes`` the provider did NOT grant this machine's token (``name``: a group's own).
+    An unrecorded grant (one made before grants were kept) is taken as covering: ``[]``."""
+    if not scopes:
+        return []
+    from flow_sdk.core.connections.specs import _connection_user  # noqa: PLC0415
+
+    granted = await granted_scopes(provider, await _connection_user(), name=name)
+    return [s for s in dict.fromkeys(scopes) if granted and s not in granted]
+
+
+def grant_gap(missing: "list[str] | tuple[str, ...]") -> str:
+    """The one sentence for a sign-in that lacks scopes a use needs."""
+    return f"Connected without {', '.join(missing)} — connect again to grant it"
 
 
 async def token_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Optional[str]:

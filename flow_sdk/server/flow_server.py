@@ -194,6 +194,9 @@ class FlowServer:
             # ── Startup ──────────────────────────────────────────────
             # The steps here import nothing, so the boot reporter would see no
             # progress in them: each declares itself. No-ops outside a boot.
+            from .loop_stall_watchdog import start as start_loop_stall_watchdog
+
+            start_loop_stall_watchdog()  # silent until the `loop_stall` toplog tag is on
             boot_progress.set_phase("db")
             await init_db()
 

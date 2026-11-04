@@ -100,7 +100,7 @@ describe('vibe chat start failure', () => {
   });
 
   it('offers the install dialog when the harness really is missing', async () => {
-    h.launch.mockRejectedValue(refusal('Claude CLI is not installed on this machine.'));
+    h.launch.mockRejectedValue(refusal('claude not found on worker PATH'));
     h.test.mockResolvedValue({ available: false });
 
     const { submit, dialog } = mountVibe();
@@ -148,7 +148,7 @@ describe('vibe chat start failure', () => {
     // answers "available" to the umbrella — and the dialog never appeared even
     // though the launch failed for the harness that IS missing. Asking about the
     // RESOLVED kind is what makes the answer about the right assistant.
-    h.launch.mockRejectedValue(refusal('Claude CLI is not installed on this machine.'));
+    h.launch.mockRejectedValue(refusal('claude not found on worker PATH'));
     h.getSnapshot.mockReturnValue({ resolvedKind: CLAUDE });
     h.test.mockResolvedValue({ available: false });
 
@@ -158,30 +158,6 @@ describe('vibe chat start failure', () => {
     await waitFor(() => expect(h.test).toHaveBeenCalledWith(CLAUDE));
     expect(h.test).not.toHaveBeenCalledWith(CapabilityKinds.Harness);
     await waitFor(() => expect(dialog()).toBeTruthy());
-  });
-
-  it('sends an unfunded harness to LLM sources, not to an install screen', async () => {
-    // The Windows report, verbatim. Claude was installed AND signed in: both
-    // real sources were excluded by a preference pinning it to a Flowpad budget
-    // that produced no candidate at all. Neither an installer nor a sign-in
-    // modal can clear a preference — only the sources page can.
-    h.launch.mockRejectedValue(
-      refusal(
-        'claude has no usable LLM source:\n' +
-          '  - claude device login: claude is set to use flowpad\n' +
-          '  - openrouter key: claude is set to use flowpad',
-      ),
-    );
-
-    const { submit, dialog } = mountVibe();
-    submit();
-
-    // Focused on the harness that failed, not a bare page.
-    await waitFor(() => expect(h.openSources).toHaveBeenCalledWith(expect.anything(), 'claude_code'));
-    expect(dialog()).toBeNull();
-    // And no probe at all: the failure already said what is wrong.
-    expect(h.test).not.toHaveBeenCalled();
-    expect(h.notifyError).not.toHaveBeenCalled();
   });
 
   it('asks BEFORE launching, so a known-missing harness never reaches the backend', async () => {

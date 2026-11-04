@@ -249,6 +249,9 @@ class _FakeProcess:
     async def save(self):
         self.calls.append("save")
 
+    def latch_launch_failure(self, error, **_):  # AgenticProcess's latch: legacy text + FAILED
+        self.status, self.start_failure = "failed", error.detail
+
     async def notify_updated(self):
         self.calls.append("notify")
 

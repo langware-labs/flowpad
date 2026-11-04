@@ -1,80 +1,59 @@
-"""A connect asks for more than reading exactly while a source here writes back.
+"""A connect asks for what ITS use point needs — never for what another source on the machine needs.
 
-``wanted_extra_scopes`` is what the consent adds to a provider's base scopes: the ``writes`` permissions
-of the drivers whose sources are not read-only, bounded by the provider's ``optional_scopes``.
+``scopes_for_source`` is what the consent adds to a connection's own scopes for one data source: its
+driver's ``writes`` permissions when it writes back, or its store's row permissions when a dataset keeps
+its rows there — bounded by the provider's ``optional_scopes``. ``group_for_source`` is the connector
+scope group it reads through.
 """
 from __future__ import annotations
 
 import pytest
 
-from flow_sdk.core.oauth.wanted_scopes import wanted_extra_scopes
+from flow_sdk.core.oauth.wanted_scopes import group_for_source, scopes_for_source
 from flow_sdk.ingest.testing import make_data_source
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 DRIVE = "https://www.googleapis.com/auth/drive"
+STORAGE_RW = "https://www.googleapis.com/auth/devstorage.read_write"
 
 
-@pytest.fixture(autouse=True)
-async def no_drive_sources():
-    """The test database is shared: start from no Drive source at all."""
-    from flow_sdk.builtin.data_source import DataSource
-
-    for row in await DataSource.get_all({"provider": "gdrive"}):
-        await row.delete()
+async def _saved(driver: str, **kw):
+    source = make_data_source(driver, **kw)
+    await source.save()
+    return source
 
 
-async def test_nothing_extra_until_a_source_writes_back():
-    assert await wanted_extra_scopes("google") == []
+async def test_no_source_and_a_reader_ask_for_nothing_extra():
+    reader = await _saved("gdrive", read_only=True, config={"path": "GTM/Research"})
+    assert await scopes_for_source("google", "") == []
+    assert await scopes_for_source("google", str(reader.id)) == []
 
 
-async def test_a_drive_source_that_writes_back_asks_for_drive_and_a_read_only_one_does_not():
-    reader = make_data_source("gdrive", read_only=True, config={"path": "GTM/Research"})
-    await reader.save()
-    assert await wanted_extra_scopes("google") == []
-
-    writer = make_data_source("gdrive", config={"path": "GTM/Research"})
-    await writer.save()
-    assert await wanted_extra_scopes("google") == [DRIVE]
-    assert await wanted_extra_scopes("googledrive") == [DRIVE], "the hub's name for the same connection"
-    assert DRIVE in writer.connections.scopes("google") and DRIVE not in reader.connections.scopes("google")
+async def test_a_writer_asks_for_drive_and_another_source_never_changes_a_readers_connect():
+    reader = await _saved("gdrive", read_only=True, config={"path": "GTM/Research"})
+    writer = await _saved("gdrive", config={"path": "GTM/Research"})
+    assert await scopes_for_source("google", str(writer.id)) == [DRIVE]
+    assert await scopes_for_source("googledrive", str(writer.id)) == [DRIVE], "the hub's name for the same connection"
+    assert await scopes_for_source("google", str(reader.id)) == [], "a writer elsewhere does not widen the reader's consent"
 
 
-def _in_source(tmp_path, name, driver, config):
-    """A dataset of a project whose data source ``name`` (driver ``driver``) holds its rows."""
-    import json
-
+async def test_a_source_holding_a_datasets_rows_asks_for_its_row_permission(monkeypatch):
     from flow_sdk.builtin.dataset import Dataset
 
-    folder = tmp_path / "proj" / "agentic-assets" / "data_source" / name
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / "data_source.json").write_text(json.dumps({"type": "data_source", "name": name, "data_driver_name": driver,
-                                                         "data_driver_config": config}))
-    return Dataset(name="leads", asset_ref=str(tmp_path / "proj" / "agentic-assets" / "dataset" / "leads"), data_source=name)
+    bucket = await _saved("gcs", name="rows-bucket", config={"bucket": "acme"})
+    assert await scopes_for_source("google", str(bucket.id)) == [], "a bucket only read asks for nothing"
+
+    async def kept_here(match, *a, **k):
+        return [Dataset(name="leads")] if match == {"data_source": "rows-bucket"} else []
+
+    monkeypatch.setattr(Dataset, "get_all", kept_here)
+    assert await scopes_for_source("google", str(bucket.id)) == [STORAGE_RW]
 
 
-async def test_a_dataset_whose_rows_live_in_drive_asks_for_drive(monkeypatch, tmp_path):
-    """Keeping a dataset's rows in a Drive data source writes there: the connect asks for it."""
-    from flow_sdk.builtin.dataset import Dataset
-
-    leads = _in_source(tmp_path, "drive", "gdrive", {"path": "GTM/Rows"})
-
-    async def datasets(*a, **k):
-        return [leads, Dataset(name="notes")]
-
-    monkeypatch.setattr(Dataset, "get_all", datasets)
-    assert await wanted_extra_scopes("google") == [DRIVE]
-
-
-async def test_a_dataset_whose_rows_live_in_a_bucket_asks_for_storage_writes_and_a_gcs_source_never_does(monkeypatch, tmp_path):
-    from flow_sdk.builtin.dataset import Dataset
-
-    storage = "https://www.googleapis.com/auth/devstorage.read_write"
-    assert storage not in make_data_source("gcs", config={"bucket": "acme"}).connections.scopes("google")
-    leads = _in_source(tmp_path, "bucket", "gcs", {"bucket": "acme"})
-
-    async def datasets(*a, **k):
-        return [leads]
-
-    monkeypatch.setattr(Dataset, "get_all", datasets)
-    assert await wanted_extra_scopes("google") == [storage]
+async def test_the_google_drivers_read_through_the_drive_group():
+    drive = await _saved("gdrive", read_only=True, config={"path": "x"})
+    bucket = await _saved("gcs", config={"bucket": "acme"})
+    assert await group_for_source(str(drive.id)) == "drive"
+    assert await group_for_source(str(bucket.id)) == "drive"
+    assert await group_for_source("") == ""

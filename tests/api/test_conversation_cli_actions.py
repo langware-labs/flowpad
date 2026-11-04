@@ -113,7 +113,6 @@ async def test_add_message_git_share_config_reaches_background_upload(
 
     async def fake_upload(
         _fm,
-        _conv_id,
         *,
         transfer_mode: str = "copy",
         create_bookmark: bool = False,

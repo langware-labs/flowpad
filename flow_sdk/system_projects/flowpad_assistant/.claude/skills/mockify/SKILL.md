@@ -90,7 +90,10 @@ DM ds-put <mock project>/agentic-assets/dataset/mocks <slug> '{"input": {"title"
   own step, never a patch on another step's screen.
 - A branch (failure, cancel, "finish later") has `branch_of: <step id>` and `when`, right after the step it
   branches from; a screen that goes on somewhere other than the next screen depth-first says `next`.
-- `session` is YOUR agentic process id (`flow context`) — where Execute delivers the feedback.
+- `session` is YOUR agentic process id — where Execute delivers the feedback. Read it from the env:
+  `python3 -c 'import json,os;print(json.loads(os.environ["FLOWPAD_EXECUTION_SCOPE"])[0]["id"])'`.
+  Never infer it from a file path (an attached screenshot lives under ANOTHER process's records), and
+  never from `flow context` (that reads the browser tab, not the process).
 - `DM check` the value against `mockify.mock` before the put; a refused put writes nothing.
 
 Send the user the step table (id · title · scenario · controls that move on), one line per step.
@@ -165,7 +168,7 @@ On every screen, both modes:
    The app is at `/api/v1/graph/service_endpoint/<endpoint id>/service/<route>/` (`#<step id>` opens a
    screen). The mock folder holds `webapp.json`, so it is served as a webapp ASSET: after a backend restart the
    display sets it up again instead of showing a dead end. A `DM` put refused with "names a kind nobody
-   registered" means the backend restarted — run `mock_project.py ensure` again. From outside your session pass `--process <id> --no-show`. In the browser (your own tab): walk
+   registered" means the backend restarted — run `mock_project.py ensure` again. Inside your session never pass `--process`: the CLI reads `FLOWPAD_EXECUTION_SCOPE` itself, and a wrong id puts the tab beside another session's tab. From outside your session pass `--process <id> --no-show`. In the browser (your own tab): walk
    the main path once, Restart once, save one comment with an image and delete it (`DM ds-rows`).
 4. **Real mode: the side-by-side is required.** The first screen beside the live app, both screenshotted,
    the pair attached to your reply (`reference/real-capture.md` §6).

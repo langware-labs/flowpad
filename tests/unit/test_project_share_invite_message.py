@@ -132,7 +132,7 @@ def hub(monkeypatch):
 
     async def fake_send(method, url, **kwargs):
         fake = await fake_request(None, method, str(url), **kwargs)
-        return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
+        return httpx.Response(fake.status_code, text=fake.text, headers={"content-type": "application/json"}, request=httpx.Request(method, str(url)))
 
     monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
     monkeypatch.setattr(HubProxy, "upload", staticmethod(fake_hub_upload))

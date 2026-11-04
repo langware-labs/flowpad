@@ -893,6 +893,19 @@ class Project(SetupSkippable, Entity):
             log.warning("project home page failed for %s: %s", self.id, exc)
             return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
+    @action.get(action_name="home-page-typeid")
+    async def home_page_typeid_action(self, reference: str = "") -> "ApiResponse":
+        """`GET /project/<id>/home-page-typeid?reference=` — ``resolve_home_page_typeid`` alone.
+
+        For a surface that only SHOWS the home page (the Customize card): the TypeId
+        ``reference`` (default: the declared one) names in this checkout, or null.
+        Unlike ``home-page`` it never loads the project. The row is indexed when
+        missing, as ``open_home_page`` does, so the caller can read the asset."""
+        typeid = await self.resolve_home_page_typeid(reference or None)
+        if typeid:
+            await self._index_home_page(typeid)
+        return ApiSuccessResponse(data={"typeid": typeid})
+
     # ── setup: is this project ready here, and the wizard that makes it so ─────────
 
     @action.post(action_name="load")
@@ -1099,6 +1112,15 @@ class Project(SetupSkippable, Entity):
         except SkipRefused as exc:
             return ApiFailResponse(message=str(exc), status_code=409)
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @classmethod
+    @action.get(action_name="last-active")
+    async def last_active_action(cls) -> "ApiResponse":
+        """`GET /project/last-active` — ``{"project_id"}`` of the project this instance was last used in
+        (:meth:`get_last_active`, the project the app opens on), ``None`` when there is none. What a CLI
+        command outside any project folder scopes a new asset to, the way the app scopes it to the open one."""
+        project = await cls.get_last_active()
+        return ApiSuccessResponse(data={"project_id": str(project.id) if project else None})
 
     @action.get(action_name="status")
     async def status_action(self, parts: str = "") -> "ApiResponse":
@@ -2832,7 +2854,12 @@ class Project(SetupSkippable, Entity):
         becomes a timeout in practice the fix is 202-and-poll on the node's
         ``ops/status``, which already exists, not a longer client timeout.
         """
-        from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
+        from flow_sdk.builtin.cloud_deploy import (  # noqa: PLC0415
+            DEFAULT_CLOUD_ENVIRONMENT,
+            DEFAULT_CLOUD_PROVIDER,
+            deploy_entity_to_cloud,
+        )
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
@@ -2841,8 +2868,15 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
             body = (await request_info.get_post_data()) or {}
+            provider = str(body.get("provider") or "").strip() or None
+            # The hub makes a new placement (and box) for a deploy that names none: a redeploy names the one it has.
+            existing = await Deployment.find_existing(
+                str(self.typeid), provider or DEFAULT_CLOUD_PROVIDER, environment=DEFAULT_CLOUD_ENVIRONMENT
+            )
             await self.ensure_on_hub()
-            data = await deploy_entity_to_cloud(self, provider=str(body.get("provider") or "").strip() or None)
+            data = await deploy_entity_to_cloud(
+                self, provider=provider, deployment_id=str(existing.id) if existing else None
+            )
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"project_id": self.id, **data})

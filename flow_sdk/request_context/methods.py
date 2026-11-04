@@ -299,6 +299,11 @@ async def get_user_credentials(user, name: str, foreign_key: str | None = None) 
     return token
 
 
+async def stored_user_credentials(user, name: str, foreign_key: str | None = None) -> Any:
+    """The credential exactly as stored — a hub mirror NOT resolved (no hub call, its own fields kept)."""
+    return await get_current_sod_store().read_user_sod(_sod_key(user, name), foreign_key)
+
+
 async def set_user_credentials(user, name: str, value: Any, foreign_key: str):
     sod_store: SodDriver = get_current_sod_store()
     return await sod_store.write_user_sod(_sod_key(user, name), value, foreign_key)

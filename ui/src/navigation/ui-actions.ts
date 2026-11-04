@@ -19,7 +19,7 @@ import { dataContext } from '@sdk';
 import { openSetupWizard } from '@src/components/setup-incomplete/open-setup-wizard';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
-import { openNewChat } from '@src/navigation/open-new-chat';
+import { openNewChatOrExplain } from '@src/navigation/open-new-chat';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { openSpotlight } from '@src/store/use-spotlight-store';
 
@@ -139,7 +139,7 @@ export const UI_ACTIONS: Record<string, Handler> = {
   ...Object.fromEntries(
     Object.entries(NEW_CHAT).map(([id, workerType]): [string, Handler] => [
       id,
-      (h) => openNewChat(h.navigation, workerType ? { workerType } : {}),
+      (h) => openNewChatOrExplain(h.navigation, workerType ? { workerType } : {}),
     ]),
   ),
   'new-terminal': (h) => h.navigation.openNewShell(),

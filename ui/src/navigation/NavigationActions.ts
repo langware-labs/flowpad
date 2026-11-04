@@ -477,10 +477,9 @@ export class NavigationActions {
       this.openDock(DockPointer.forHome().withPage(PageId.HUB));
       return;
     }
-    // `homePage`: the Home BUTTON asks for the project's home page — every click,
-    // from anywhere — which the root's load redirect resolves
-    // (`project-home-page-redirect`). Only the button asks — a fallback "go home"
-    // (no chat to resume) wants the plain home.
+    // `homePage`: ask for the project's home page, which the root's load
+    // redirect resolves (`project-home-page-redirect`) — closing a project's last
+    // tab and finishing a wizard ask. The Home button does not: it is Flowpad's home.
     this.openDock(options?.homePage ? withHomePage(DockPointer.root()) : DockPointer.root());
   }
 

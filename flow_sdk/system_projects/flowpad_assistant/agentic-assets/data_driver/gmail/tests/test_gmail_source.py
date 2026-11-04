@@ -36,7 +36,6 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ADDRESS = "Captain@Gmail.com"
 PASSWORD = "app-pass"
-TOKEN = "ya29.google-token"
 ALL_MAIL = "[Gmail]/All Mail"
 
 
@@ -95,13 +94,6 @@ class _Imap:
             raise imaplib.IMAP4.error("[AUTHENTICATIONFAILED] Invalid credentials")
         return "OK", []
 
-    def authenticate(self, mechanism, respond):
-        said = respond(b"").decode()
-        if mechanism != "XOAUTH2" or said != f"user={ADDRESS}\x01auth=Bearer {TOKEN}\x01\x01":
-            raise imaplib.IMAP4.error("[AUTHENTICATIONFAILED] Invalid credentials (Failure)")
-        self.g.calls.append(("AUTHENTICATE", mechanism))
-        return "OK", []
-
     def select(self, box, readonly=True):
         # Gmail's own parser: a mailbox name with a space must arrive quoted.
         if " " in box and not (box.startswith('"') and box.endswith('"')):
@@ -157,14 +149,6 @@ class _Smtp:
         if password != PASSWORD:
             raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
 
-    def ehlo(self):
-        return 250, b"AUTH XOAUTH2"
-
-    def auth(self, mechanism, respond, initial_response_ok=True):
-        if mechanism != "XOAUTH2" or respond() != f"user={ADDRESS}\x01auth=Bearer {TOKEN}\x01\x01":
-            raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
-        self.g.calls.append(("SMTP AUTH", mechanism))
-
     def send_message(self, message):
         parent = str(message.get("In-Reply-To") or "")
         thread = next((t for _, t, r in self.g.boxes[ALL_MAIL] if parent and f"Message-ID: {parent}".encode() in r), None)
@@ -174,14 +158,12 @@ class _Smtp:
 
 @pytest.fixture(autouse=True)
 def credentials(monkeypatch):
-    """The ``gmail`` credential, resolved — read here from ``GMAIL_*`` variables a test sets (``GMAIL_CHOICE``
-    names the way, ``GMAIL_TOKEN`` is a Google sign-in's token, ``GMAIL_IDENTITY`` who signed in). A test with a double patches over it."""
+    """The ``gmail`` credential, resolved — read here from the ``GMAIL_*`` variables a test sets. A test with a
+    double patches over it."""
 
     async def resolve(_row):
         values = {k: SecretStr(v) for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD") if (v := os.environ.get(k))}
-        token = SecretStr(os.environ["GMAIL_TOKEN"]) if os.environ.get("GMAIL_TOKEN") else None
-        return ResolvedSecrets(shape=AuthShape.SECRETS, values=values, token=token, choice=os.environ.get("GMAIL_CHOICE", ""),
-                               identity=os.environ.get("GMAIL_IDENTITY", ""))
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values=values)
 
     monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
     monkeypatch.setattr(DataDriver.loaded("gmail"), "credentials_for", resolve)
@@ -246,54 +228,19 @@ def test_gmail_is_a_registered_message_source_read_with_the_gmail_credential():
     assert driver.has_setup  # a new source owes Setup: its verify logs in
 
 
-async def test_the_google_way_logs_in_with_xoauth2_for_imap_and_smtp(gmail, monkeypatch):
-    monkeypatch.delenv("GMAIL_APP_PASSWORD")
-    monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
-    monkeypatch.setenv("GMAIL_CHOICE", "google")
-    gmail.deliver(_raw(), "9988", uid=7)
-    result = await DataDriver.loaded("gmail").traverse(_row(), _view())
-    assert [i.external_id for i in result.items] == ["<incoming@gmail.test>"] and ("AUTHENTICATE", "XOAUTH2") in gmail.calls
-
-    await DataDriver.loaded("gmail").send(_row(), thread_key="", to="sailor@example.com", text="Ahoy")
-    assert ("SMTP AUTH", "XOAUTH2") in gmail.calls and len(gmail.sent) == 1
-
-
-async def test_the_google_way_needs_no_address_it_is_the_account_that_signed_in(gmail, monkeypatch):
-    monkeypatch.delenv("GMAIL_APP_PASSWORD")
-    monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
-    monkeypatch.setenv("GMAIL_CHOICE", "google")
-    monkeypatch.setenv("GMAIL_IDENTITY", ADDRESS)
-    gmail.deliver(_raw(), "9988", uid=7)
-    result = await DataDriver.loaded("gmail").traverse(_row(address=""), _view())
-    assert [i.external_id for i in result.items] == ["<incoming@gmail.test>"] and ("AUTHENTICATE", "XOAUTH2") in gmail.calls
-
-
-async def test_the_way_chosen_wins_over_a_value_that_is_also_there(gmail, monkeypatch):
-    monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
-    monkeypatch.setenv("GMAIL_CHOICE", "app_password")
-    gmail.deliver(_raw(), "9988", uid=7)
-    await DataDriver.loaded("gmail").traverse(_row(), _view())
-    assert ("AUTHENTICATE", "XOAUTH2") not in gmail.calls
-
-
-@pytest.mark.parametrize("way", ["google", "app_password"])
-async def test_verify_holds_with_either_way(gmail, monkeypatch, way):
-    if way == "google":
-        monkeypatch.delenv("GMAIL_APP_PASSWORD")
-        monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
-    monkeypatch.setenv("GMAIL_CHOICE", way)
+async def test_verify_holds_with_an_app_password(gmail):
     source = await DataDriver.loaded("gmail").open(_row())
     async with source:
         verdict = await source.verify()
     assert verdict.ready and ADDRESS in verdict.detail
 
 
-async def test_verify_owes_setup_with_no_way_and_says_googles_refusal(gmail, monkeypatch):
+async def test_verify_owes_setup_without_an_app_password_and_says_googles_refusal(gmail, monkeypatch):
     monkeypatch.delenv("GMAIL_APP_PASSWORD")
     source = await DataDriver.loaded("gmail").open(_row())
     async with source:
         verdict = await source.verify()
-    assert not verdict.ready and verdict.detail == "Sign in with Google or add an app password"
+    assert not verdict.ready and verdict.detail == "Add an app password"
 
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "wrong")
     source = await DataDriver.loaded("gmail").open(_row())
