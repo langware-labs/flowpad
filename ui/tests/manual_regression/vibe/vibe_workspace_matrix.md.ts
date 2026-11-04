@@ -137,7 +137,9 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       // on the newest show (the HTML), not on the bare process.
       await page.getByTestId('workspace-display-tab').click();
       await expect(page).toHaveURL(displayUrlRe(fixture.projectId, fixture.processId, 'editor/html/'));
-      await expect(htmlFrame.locator('#activate')).toHaveText('VW03_HTML_READY');
+      // The shown page is a parked frame: coming back to it does not reload it (FLOWPAD-2305), so the
+      // click made before the round trip is still there.
+      await expect(htmlFrame.locator('#activate')).toHaveText('VW03_HTML_CLICKED');
 
       // A hard reload is a new session, so restore fires again and returns the
       // user to the deliverable.
