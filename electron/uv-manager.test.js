@@ -2480,10 +2480,39 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       let syncRm = 0;
       const realRmSync = fs.rmSync;
       fs.rmSync = (...a) => { if (String(a[0]).includes('flowpad-staging-')) syncRm++; return realRmSync(...a); };
-      try { await p.m.prepareEngine(); } finally { fs.rmSync = realRmSync; }
+      try { await p.m.prepareEngine(); await p.m._stageCleanup; } finally { fs.rmSync = realRmSync; }
       eq(fs.readdirSync(base).sort(), ['flowpad-staging-legacynew', `flowpad-staging-${process.ppid}-live`, 'not-ours'].sort(),
         'prepare: orphans, its own and day-old dirs are gone — a live process\'s fresh one and a fresh unowned one stay');
       eq(syncRm, 0, 'prepare: no synchronous removal of a staged venv');
+    }
+
+    // A file Windows still holds after the validation: a few brief tries, never awaited by the prepare; still
+    // locked, it is logged and left to the next sweep.
+    {
+      const p = mkPrep();
+      const base = fs.mkdtempSync(path.join(tmp, 'base-'));
+      p.m._stageBase = async () => base;
+      p.m._newStageRoot = UvManager.prototype._newStageRoot;
+      const lines = [];
+      p.m.log = { ...p.m.log, info: (l) => lines.push(String(l)) };
+      const realRm = fs.promises.rm;
+      const seen = [];
+      let unlock;
+      const locked = new Promise((r) => { unlock = r; });
+      fs.promises.rm = async (dir, o) => {
+        if (!String(dir).includes(`flowpad-staging-${process.pid}-`)) return realRm(dir, o);
+        seen.push(o);
+        await locked;
+        const e = new Error('EBUSY: resource busy or locked'); e.code = 'EBUSY'; throw e;
+      };
+      try {
+        const rec = await p.m.prepareEngine();
+        ok(rec && rec.version, 'prepare: the record is ready while its dir is still being removed');
+        unlock(); await p.m._stageCleanup;
+      } finally { fs.promises.rm = realRm; }
+      eq(seen.map((o) => [o.maxRetries, o.retryDelay]), [[2, 250]], 'prepare: 3 tries in all, 250 ms apart (linear)');
+      ok(lines.some((l) => /is still locked \(EBUSY\) — the next sweep removes it/.test(l)), 'prepare: a lock that outlasts them is logged');
+      eq(fs.readdirSync(base).filter((n) => n.startsWith(`flowpad-staging-${process.pid}-`)).length, 1, 'prepare: and the dir is left for the next sweep');
     }
 
     // One interpreter-path rule, honoring a simulated platform; the WDAC fallback keeps its zero-arg form.

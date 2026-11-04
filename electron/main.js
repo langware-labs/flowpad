@@ -1248,11 +1248,17 @@ function startLaunchDesktopCheck() {
   // background. A newer desktop it finds goes down the same road as the hourly look's.
   log.info(`[update] launch check not due (${plan.reason})${plan.seed ? '; reusing the last answer' : ''} — the desktop feed is checked in the background`);
   if (plan.seed) setDesktopStatus(plan.seed);
-  void getDesktopUpdateVersion({ desktopOnly: true })
+  const look = getDesktopUpdateVersion({ desktopOnly: true });
+  look
     .then((version) => offerDesktopFoundAtLaunch(version))
     .catch((err) => log.warn(`[update] background desktop check failed: ${err.message}`));
+  // What the engine offer waits for after the start (postBootUpdates) — never the start itself. Bounded like
+  // the launch check: `{ version }` once the feed answered, null when it failed or gave up.
+  launchDesktopLook = updateRecovery.boundedCheck(() => look.then((version) => ({ version })), { ms: updateTest.checkBoundMs() });
   return Promise.resolve(null);
 }
+// The launch's background look at the desktop feed, when the launch check went to the background (not due).
+let launchDesktopLook = null;
 // A newer desktop the launch's background look found before the app was up: offered once it is (the
 // post-boot hook), never in the middle of the start — the pre-start flow knows nothing of this look.
 let desktopFoundAtLaunch = null;
@@ -2305,13 +2311,17 @@ async function installAndStartBackend({ quiet = false } = {}) {
   uvManager = new UvManager(log, { stateDir: FLOW_HOME, appVersion: app.getVersion() });
   uvManager.setFailureSharer((text) => shareDiagnostics(text, 'could not finish updating'));
 
-  // Did the user just upgrade to a new desktop build? Logged for diagnostics.
-  // The engine version saved for this desktop (if any) is installed below.
+  // Did the user just upgrade to a new desktop build? Then the engine follows it (below). Only a NEWER build is
+  // an upgrade: an older installer run by hand changes no engine by itself — the installed-pair check below
+  // still repairs a pair the contract forbids, and asks before moving the engine backward.
   const lastDesktopVersion = readLastDesktopVersion();
-  const desktopUpgraded =
+  const desktopChanged =
     app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
+  const desktopUpgraded = desktopChanged && isNewer(lastDesktopVersion, app.getVersion());
   if (desktopUpgraded) {
     log.info(`[update] desktop upgraded ${lastDesktopVersion} → ${app.getVersion()}`);
+  } else if (desktopChanged) {
+    log.info(`[update] desktop downgraded ${lastDesktopVersion} → ${app.getVersion()}: the engine is not changed automatically (the installed pair is checked)`);
   }
 
   try {
@@ -2408,6 +2418,11 @@ async function installAndStartBackend({ quiet = false } = {}) {
         });
         if (action === 'announce') await startOffer(desktopLatest); // through the one-window guard, like the tick's offers
         else if (action !== 'ignore') adoptDesktopUpdateSilently(desktopLatest, action);
+      } else if (launchDesktopLook) {
+        // The launch check went to the background (not due): asking about the engine here would ask before the
+        // desktop feed answers — and a newer desktop goes first. The engine is offered once FlowPad is up, after
+        // that answer (postBootUpdates); the start does not wait for the feed.
+        log.info('[update] the engine is offered once FlowPad is up: the desktop feed is still being checked (the desktop goes first)');
       } else if (engineChangeAllowed('pre-start engine prompt') === 'allow') {
         // No desktop update (and the check did answer) → the standalone engine prompt handles the "newer on
         // PyPI" case (and no-ops otherwise). Reads the installed version from `_version.py`, so it works even
@@ -2841,15 +2856,27 @@ async function startApp() {
     log.info('Development mode: skipping background update check');
     return;
   }
-  // Through the same mutex as the periodic check, so this dialog cannot stack
-  // with a desktop "update ready" prompt (a desktop download may already be
-  // running from the pre-start flow).
-  // A desktop the launch's background look found while the app started goes first (the engine follows it).
-  if (desktopFoundAtLaunch) {
-    void offerDesktopFoundAtLaunch(desktopFoundAtLaunch)
-      .catch((err) => log.warn(`[update] offering the desktop found at launch failed: ${err.message}`));
+  void postBootUpdates().catch((err) => log.warn(`[update] the post-boot update checks failed: ${err.message}`));
+}
+
+/**
+ * The launch's updates once FlowPad is up, in order and one screen at a time (the same mutexes as the periodic
+ * check, so nothing stacks with a desktop "update ready" prompt). A desktop the launch's background look found
+ * goes first — with a newer engine, in the same one offer — and the engine is offered alone only after the look
+ * answered that there is no newer desktop, or gave up (bounded: a slow or offline feed defers the engine offer by
+ * at most that bound; a desktop it finds later still goes first). Nothing here holds the app: the backend is up
+ * and the UI loads meanwhile.
+ */
+async function postBootUpdates() {
+  const look = launchDesktopLook;
+  if (look && !(await look)) {
+    log.info('[update] the desktop feed did not answer in time: the engine check goes on (a desktop found later still goes first)');
   }
-  checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
+  // A desktop the launch's background look found while the app started (the engine follows it).
+  if (desktopFoundAtLaunch) await offerDesktopFoundAtLaunch(desktopFoundAtLaunch);
+  // When the launch check ran pre-start, the engine question was asked there; when it went to the background the
+  // question moved here, with the pre-start's comparison (any newer release on PyPI).
+  await checkPackageUpdateInBackground({ compareWithPypi: !!look, label: 'post-boot' });
 }
 // Anything that escapes to the top level must reach the user with "Send Report" — an unhandled rejection in
 // startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.

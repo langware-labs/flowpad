@@ -30,7 +30,7 @@ Electron (main.js)
 | File | Role |
 | --- | --- |
 | `main.js` | Entry point (no exports). Window, menu, deep links, IPC, desktop updates, the startup/install flow (`startApp`, `installAndStartBackend`), the error panel. |
-| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. A post-boot engine update is first prepared in the background (`prepareEngine`: staged in a throwaway tool dir, then checked to import and report the release; the record is `~/.flow/prepared-engine.json`), so the upgrade after "Upgrade" — now, or at a later launch — installs offline in seconds. "Later" to the engine dialog at launch prepares it once the app is up (`prepareDeferredEngineUpdate`), so the next launch's "Upgrade" is fast too. The engine that rides along with a desktop update is prepared the same way while the desktop downloads, for the NEW desktop, which installs it offline after the restart. |
+| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. A post-boot engine update is first prepared in the background (`prepareEngine`: staged in a throwaway tool dir, then checked to import and report the release; the record is `~/.flow/prepared-engine.json`; the staging dir is removed in the background — a file Windows still holds is tried 3 times, then left to the next prepare's sweep), so the upgrade after "Upgrade" — now, or at a later launch — installs offline in seconds. "Later" to the engine dialog at launch prepares it once the app is up (`prepareDeferredEngineUpdate`), so the next launch's "Upgrade" is fast too. The engine that rides along with a desktop update is prepared the same way while the desktop downloads, for the NEW desktop, which installs it offline after the restart. |
 | `preload.js` | `contextBridge` bridge to the renderer. |
 | `loading.html`, `loading-renderer.js` | Loading screen, progress, and the error panel (including "Send Report"). |
 
@@ -106,10 +106,18 @@ Electron (main.js)
   leads; the engine follows its dependencies): a desktop-only check (`getDesktopUpdateVersion({desktopOnly})`)
   stamps `lastDesktopCheckAt` (and keeps its answer in `lastResult`) and never moves the shared anchor or the
   backoff, so the engine keeps its cadence. At a launch inside the interval it runs in the background — the
-  start never waits for the feed — and a newer desktop it finds goes down the hourly look's road. An engine
-  prepared in the background is offered only if no desktop update turned up while it prepared. After ANY desktop update — "Restart now", or installed on quit after "Later" — the new desktop
+  start never waits for the feed — and a newer desktop it finds is offered once the app is up, never mid-start.
+  That launch asks no engine question pre-start (it would come before the feed answers): once the app is up,
+  `postBootUpdates` waits for the background look (bounded by the launch check's 20 s; the app is usable
+  meanwhile), offers a desktop it found first — with a newer engine in the same one screen — and only then
+  the engine alone (PyPI comparison, prepared before it asks). A look that gives up defers nothing further; a
+  desktop it finds later still goes first. An engine
+  prepared in the background is offered only if no desktop update turned up while it prepared. After a desktop
+  UPGRADE — "Restart now", or installed on quit after "Later" — the new desktop
   installs the newest engine it accepts without a question (`engineForUpdatedDesktop`; offline when it was
-  prepared with the desktop download; PyPI silent → the version saved with the update). A feed answer that
+  prepared with the desktop download; PyPI silent → the version saved with the update). A downgrade (an older
+  installer run by hand) changes no engine by itself: the installed-pair check repairs a forbidden pair, and
+  asks before moving the engine backward. A feed answer that
   cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —
   downloaded deferred, installed on the next quit, surfaced by the reminder (`decideDesktopAction`).
   Each channel keeps its own failure streak: a PyPI outage retries engine-only on its backoff without

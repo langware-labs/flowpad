@@ -24,6 +24,11 @@ const STAGE_PREFIX = 'flowpad-staging-';
 // A staging dir this old is a leftover whoever its owner: no prepare runs this long, so a live pid in its
 // name is a reused one. Also the only test for a dir with no owner pid in its name (an older build's).
 const STAGE_LEFTOVER_AGE_MS = 24 * 60 * 60 * 1000;
+// Removing a staging dir: a file Windows still holds is tried this many times in all, retryDelay apart
+// (Node's rm backs off linearly: 250 ms, then 500 ms). A retry budget the user approved for this lock only —
+// it never holds anything (see _removeStageRoot); do not grow it.
+const STAGE_RM_ATTEMPTS = 3;
+const STAGE_RM_RETRY_DELAY_MS = 250;
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
@@ -3178,7 +3183,8 @@ class UvManager {
         updateTest.event('engine-prepared', { engine: target.version });
         return prepared;
       } finally {
-        await this._removeStageRoot(stageRoot);
+        // Not awaited: the record is ready, and a locked file retried on Windows must not hold the offer.
+        this._stageCleanup = this._removeStageRoot(stageRoot);
       }
     };
     const promise = run().finally(() => { if (this._preparing && this._preparing.promise === promise) this._preparing = null; });
@@ -3311,9 +3317,18 @@ class UvManager {
     try { process.kill(pid, 0); return true; } catch (err) { return !!(err && err.code === 'EPERM'); }
   }
 
-  /** Asynchronous: a staged venv is thousands of files, and a sync rm froze the main process (IPC, windows). */
+  /**
+   * Asynchronous: a staged venv is thousands of files, and a sync rm froze the main process (IPC, windows).
+   * Windows holds a just-run python.exe for a moment (seen right after the validation, with Defender on), so a
+   * locked file is tried STAGE_RM_ATTEMPTS times, briefly apart; still locked, the dir is left to the next
+   * sweep (_removeStaleStageRoots) — nothing waits for this.
+   */
   async _removeStageRoot(dir) {
-    try { await fs.promises.rm(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    try {
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: STAGE_RM_ATTEMPTS - 1, retryDelay: STAGE_RM_RETRY_DELAY_MS });
+    } catch (err) {
+      this.log.info(`[uv] staging dir ${path.basename(dir)} is still locked (${err.code || err.message}) — the next sweep removes it`);
+    }
   }
 
   /** The release upgrade() would install — { version, spec, pin } — checked against the desktop it runs on. */
