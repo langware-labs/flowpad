@@ -14,7 +14,7 @@ const API = apiBase();
 // instance never writes into the home prod reads.
 const INSTANCE = process.env.FLOW_INSTANCE || 'prod';
 const USER_ASSET_ROOT =
-  INSTANCE === 'prod' ? os.homedir() : path.join(os.homedir(), 'Flowpad workspaces', '.home', INSTANCE);
+  INSTANCE === 'prod' ? os.homedir() : path.join(os.homedir(), '.flow', 'instances', INSTANCE, 'home');
 const USER_WHITEBOARDS = path.join(USER_ASSET_ROOT, 'agentic-assets', 'chart');
 
 function projectWhiteboards(mount: string): string {

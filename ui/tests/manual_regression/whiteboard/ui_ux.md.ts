@@ -46,25 +46,24 @@ async function openEditor(page: Page, id: string) {
 //      the same expand-if-collapsed pattern the agent asset-picker test uses.
 async function openWhiteboardListExpanded(page: Page, projectId: string, whiteboardId: string) {
   const scopedList = withViewMode(
-    `/dock/assets/list/whiteboard?scope-mode=project&scope-activeProjectId=${encodeURIComponent(projectId)}`,
+    `/dock/assets/list/chart?scope-mode=project&scope-activeProjectId=${encodeURIComponent(projectId)}`,
     'advanced',
   );
   await page.goto(scopedList);
   await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
-  await expect
-    .poll(() => page.evaluate(() => document.documentElement.getAttribute('data-view')), { timeout: adjusted(10_000) })
-    .toBe('advanced');
+  // (No global view mode any more: the developer switch below is what shows the advanced-only types.)
+  await page.waitForFunction(() => typeof (window as any).setDev === 'function', undefined, { timeout: adjusted(20_000) });
   // Since host tabs (71e9272c6) "Advanced" is a surface, not a tier: the types
   // that are `browseable_by=advanced` follow the developer switch
   // (`useTierMode()`), which the URL's `viewMode` no longer turns on. Flip it
   // through the app's own `window.setDev`, the call the avatar double-click makes.
   await page.evaluate(() => (window as any).setDev(true));
-  const chevron = page.getByTestId('browseable-chevron-asset-type:whiteboard');
+  const chevron = page.getByTestId('browseable-chevron-asset-type:chart');
   await expect(chevron).toBeVisible({ timeout: adjusted(15_000) });
   // The row's delete button is its stable handle, but a row toolbar is
   // `invisible` until the row is hovered (a807f58ee) — so "the row is listed"
   // means the handle is ATTACHED, not visible.
-  const createdRow = page.locator(`[data-testid="browseable-toolbar-delete:whiteboard:${whiteboardId}"]`);
+  const createdRow = page.locator(`[data-testid="browseable-toolbar-delete:chart:${whiteboardId}"]`);
   if ((await createdRow.count()) === 0) {
     await chevron.click();
   }
