@@ -702,17 +702,6 @@ def launch_monitor(port: int) -> None:
     _setup_logging()
     log.info("Monitor starting (PID=%d, port=%d)", os.getpid(), port)
 
-    # Self-protection (FLOWPAD-2112): mark the monitor as protected so no FlowPad
-    # kill path reaps it. Discovery only; enforcement is flag-gated. A registration
-    # failure must never block the monitor from starting.
-    try:
-        from flow_sdk.core import self_protection  # noqa: PLC0415
-
-        if self_protection.enabled():
-            self_protection.register(self_protection.ProtectedRole.MONITOR)
-    except Exception:
-        log.debug("self_protection monitor register skipped", exc_info=True)
-
     if not acquire_monitor_singleton():
         return
 
@@ -855,16 +844,21 @@ def _stop_all_guarded() -> tuple[bool, bool]:
     monitor_killed = False
     server_killed = False
 
-    # Self-protection (FLOWPAD-2112): stopping the instance is a legitimate kill of
-    # protected processes — authorize it (releasing the pids) so it proceeds. A
-    # worker is refused: it must not stop the backend it runs under.
-    from flow_sdk.core import self_protection  # noqa: PLC0415
+    # Self-protection (FLOWPAD-2112): a worker must not stop the FlowPad it runs inside.
+    # ``flow stop`` is a user command; a worker inherits FLOWPAD_EXECUTION_SCOPE, a human's
+    # terminal does not. Refuse loudly (a clear error, non-zero exit) rather than silently
+    # reporting "Nothing was running".
+    from flow_sdk.core import port_guard  # noqa: PLC0415
 
     monitor_pids = list(_monitor_pids(info, port))
-    to_release = [p for p in ([info.get("server_pid")] + monitor_pids) if p]
-    if not self_protection.authorize_lifecycle(to_release, "flow stop"):
-        log.warning("stop_all refused: a worker may not stop the backend")
-        return (False, False)
+    if port_guard.caller_is_worker():
+        from flow_sdk.core.connections.service import FlowServiceError  # noqa: PLC0415
+
+        log.warning("stop_all refused: a worker may not stop the backend it runs inside")
+        raise FlowServiceError(
+            "self_protection",
+            "a worker may not stop the FlowPad backend it runs inside — run `flow stop` from your own terminal",
+        )
 
     # Every monitor first, so none of them restarts the server we kill next.
     for monitor_pid in monitor_pids:

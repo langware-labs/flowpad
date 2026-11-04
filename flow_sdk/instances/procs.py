@@ -59,6 +59,7 @@ def kill_owned(
     *,
     roles: frozenset[Role] | None = None,
     extra: list[ProcInfo] | None = None,
+    allow_protected: bool = False,
 ) -> KillResult:
     """Terminate every process ownership-verified as ``name``'s.
 
@@ -66,6 +67,11 @@ def kill_owned(
     which also carries ``FLOW_INSTANCE``). Processes with no role — an
     instance's spawned workers — are only swept when no role filter is given,
     since they belong to the instance as a whole rather than to one half of it.
+
+    ``allow_protected`` passes through to ``terminate_tree``: left False (the
+    default) the FLOWPAD-2112 port guard spares this instance's own backend and
+    records it in ``result.refused`` rather than killing it. A user-requested
+    restart/reset passes True so the backend can actually be reaped.
     """
     import psutil
 
@@ -88,16 +94,33 @@ def kill_owned(
         except gone:
             continue
 
-    result.killed, result.survivors = terminate_tree(list(targets.values()))
+    if not allow_protected:
+        from flow_sdk.core import port_guard  # noqa: PLC0415
+
+        for pid in port_guard.protected(list(targets)):
+            targets.pop(pid, None)
+            result.refused.append(
+                f"pid {pid} holds a protected FlowPad port — refusing to kill the backend "
+                f"of a running instance"
+            )
+
+    result.killed, result.survivors = terminate_tree(
+        list(targets.values()), allow_protected=allow_protected
+    )
     return result
 
 
-def terminate_tree(roots: list) -> tuple[list[int], list[int]]:
+def terminate_tree(roots: list, *, allow_protected: bool = False) -> tuple[list[int], list[int]]:
     """The shutdown ladder over *roots* (``psutil.Process``) and every descendant: SIGTERM all,
     wait once, SIGKILL the survivors. ``(killed, survivors)`` pids. Never this process.
 
     The caller has already decided the roots are its own; this only reaps them — batched,
     because a degraded tree can hold dozens of children and one-at-a-time takes minutes.
+
+    ``allow_protected`` left False (the default) applies the FLOWPAD-2112 port guard: a tree
+    member whose own subtree holds a protected FlowPad port (the backend, or an ancestor that
+    has the backend beneath it) is spared, even if it was discovered as a child. A user-requested
+    restart/reset passes True to reap its own backend.
     """
     import psutil
 
@@ -114,16 +137,14 @@ def terminate_tree(roots: list) -> tuple[list[int], list[int]]:
         except gone:
             pass
 
-    # Self-protection: never reap a live protected FlowPad process (backend,
-    # monitor, desktop), even if it was discovered as a tree member. A no-op
-    # unless FLOWPAD_SELF_PROTECTION is on.
-    from flow_sdk.core import self_protection  # noqa: PLC0415
+    if not allow_protected:
+        from flow_sdk.core import port_guard  # noqa: PLC0415
 
-    _, refused = self_protection.partition_kill(list(targets))
-    for pid in refused:
-        targets.pop(pid, None)
-    if refused:
-        logger.warning("[self_protection] terminate_tree sparing protected pids %s", refused)
+        refused = port_guard.protected(list(targets))
+        for pid in refused:
+            targets.pop(pid, None)
+        if refused:
+            logger.warning("[port_guard] terminate_tree sparing protected FlowPad pids %s", sorted(refused))
 
     procs = list(targets.values())
     for p in procs:
@@ -147,6 +168,7 @@ def kill_port_if_owned(
     table: ProcTable,
     *,
     roles: frozenset[Role] | None = None,
+    allow_protected: bool = False,
 ) -> KillResult:
     """Kill the listener on ``port`` only if it is verifiably ``name``'s.
 
@@ -154,6 +176,9 @@ def kill_port_if_owned(
     happened to hold, which on a machine with a recycled port band meant
     terminating a stranger. Refusals are recorded rather than silently skipped,
     so the collision is visible in the result.
+
+    ``allow_protected`` passes through to ``kill_owned`` so a user-requested
+    restart/reset can reap this instance's own backend listener.
     """
     from .ports import kill_allowed
 
@@ -166,7 +191,9 @@ def kill_port_if_owned(
                 f"port {port} is held by {owner}, not '{name}' — refusing to signal it"
             )
         return result
-    return kill_owned(name, table, roles=roles, extra=table.listeners(port))
+    return kill_owned(
+        name, table, roles=roles, extra=table.listeners(port), allow_protected=allow_protected
+    )
 
 
 def spawn_detached(

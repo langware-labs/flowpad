@@ -106,20 +106,16 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
     server = _read_json(idir / "server.json")
     env = _read_env_file(name)
 
-    # Self-protection (FLOWPAD-2112): reset/restart-backend are legitimate kills of
-    # a protected backend/monitor — authorize (releasing the pids) so the guarded
-    # sweep can reap them. A worker is refused: it must not reset or restart the
-    # backend it runs under. The single choke for both commands.
-    from flow_sdk.core import self_protection  # noqa: PLC0415
+    # Self-protection (FLOWPAD-2112): reset/restart-backend reap this instance's backend by
+    # design, so the human invoking them passes allow_protected=True below. A worker must not —
+    # it would stop the FlowPad it runs inside — and is refused loudly here (the single choke for
+    # both commands). A worker inherits FLOWPAD_EXECUTION_SCOPE; a human's terminal does not.
+    from flow_sdk.core import port_guard  # noqa: PLC0415
 
-    _protect = [p for p in (
-        _as_int(server.get("server_pid")),
-        _as_int(server.get("monitor_pid")),
-        _as_int(launcher.get("monitor_pid")),
-    ) if p]
-    if not self_protection.authorize_lifecycle(_protect, f"kill-instance {name} backend_only={backend_only}"):
+    if port_guard.caller_is_worker():
         raise RuntimeError(
-            f"'{name}': a worker may not kill this instance's backend/monitor (self-protection)"
+            f"'{name}': a worker may not reset or restart this instance's backend "
+            f"(self-protection: it would stop the FlowPad it runs inside)"
         )
 
     table = liveness.scan()
@@ -132,13 +128,15 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
             table.adopt_recorded(name, pid, _proc_create_time(pid))
 
     roles = frozenset({Role.BACKEND}) if backend_only else None
-    result = procs.kill_owned(name, table, roles=roles)
+    # A human reset/restart (worker refused above) legitimately reaps this instance's own
+    # backend, so the port guard is told to allow it.
+    result = procs.kill_owned(name, table, roles=roles, allow_protected=True)
 
     port_keys = ("LOCAL_SERVER_PORT",) if backend_only else ("LOCAL_SERVER_PORT", "VITE_PORT")
     for key in port_keys:
         raw = env.get(key, "")
         if raw.isdigit():
-            extra = procs.kill_port_if_owned(int(raw), name, table, roles=roles)
+            extra = procs.kill_port_if_owned(int(raw), name, table, roles=roles, allow_protected=True)
             result.killed.extend(extra.killed)
             result.survivors.extend(extra.survivors)
 

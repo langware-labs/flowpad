@@ -106,24 +106,6 @@ async def _on_server_startup():
     settings = get_instance_settings()
     clear_backend_restart_request()
 
-    # Self-protection (FLOWPAD-2112): mark the backend as protected so no FlowPad
-    # kill path reaps the process that serves this instance. Discovery only;
-    # enforcement is flag-gated. A registration failure must never block boot.
-    try:
-        from flow_sdk.core import self_protection  # noqa: PLC0415
-
-        if self_protection.enabled():
-            self_protection.register(self_protection.ProtectedRole.BACKEND)
-            # The Electron shell passes its own pid (FLOWPAD_DESKTOP_PID): register it
-            # here, where psutil supplies a create_time consistent with the liveness
-            # recheck. The entry persists across backend restarts and is pruned only
-            # when the desktop process actually dies.
-            desktop_pid = os.environ.get("FLOWPAD_DESKTOP_PID", "").strip()
-            if desktop_pid.isdigit():
-                self_protection.register(self_protection.ProtectedRole.DESKTOP, pid=int(desktop_pid))
-    except Exception:
-        logging.getLogger(__name__).debug("self_protection backend register skipped", exc_info=True)
-
     # Code running in the backend that calls a local backend with urllib (the in-app diagnose's health
     # check) presents the gate token, like the CLI and the monitor do.
     from flow_sdk.instance_settings.cookie_gate import install_gate_opener

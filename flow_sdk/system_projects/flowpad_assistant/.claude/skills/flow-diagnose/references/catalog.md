@@ -16,7 +16,7 @@ platform, repair class, and repair action or workaround.
   - macOS/Linux: `lsof -ti tcp:$PORT`
   - Windows: `netstat -ano | findstr ":$PORT"`
   - Then compare the PID to `server_pid` in `server.json`: if it matches and the backend answers healthy, there is no conflict — stop.
-- **Repair**: only when the holder is NOT this instance's live `server_pid`: SIGTERM/SIGKILL (mac/linux) or `taskkill /PID <pid> /F` (win) the foreign/stale PID, then tell the user to relaunch. Never `flow stop` or signal the live `server_pid` of the instance you run inside — it kills the backend this skill runs in.
+- **Repair**: only when the holder is NOT this instance's live `server_pid`: free the port. Prefer `flow proc kill <pid>` — the broker refuses any process holding a live FlowPad port (a `refused_protected` PID in its JSON means it WAS the live backend; leave it, report no conflict). Fall back to SIGTERM/SIGKILL (mac/linux) or `taskkill /PID <pid> /F` (win) only where `flow` is unavailable. Then tell the user to relaunch. Never `flow stop` or signal the live `server_pid` of the instance you run inside — it kills the backend this skill runs in.
 
 ### A2 Backend unhealthy / failed to respond within 30 s
 - **Cause**: Stale lock from dead PID, DB corruption, or disk full.

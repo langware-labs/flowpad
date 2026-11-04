@@ -1,228 +1,115 @@
-# FlowPad AI Self-Protection — Enforcement Design (FLOWPAD-2112)
+# Self-protection: a FlowPad activity never kills the FlowPad it runs inside
 
-> Status: design + verification. Not implemented. This document is the deliverable
-> that an implementation PR is built from. Verified claims are marked ✅ with where
-> they were proven; unverified ones are marked ⬜.
+## The incident (FLOWPAD-2112)
 
-## 1. Incident and problem
+In Vibe Mode on a remote Windows machine, an agentic worker killed FlowPad. The worker holds
+the user's full permissions and runs as the same OS user as the backend. The leading cause:
+the `flow-diagnose` skill prescribed `taskkill /PID <pid> /F` to free "port 9007" — and the
+process holding 9007 **is** the backend. FlowPad killed itself.
 
-In Vibe Mode, on a remote Windows machine, the in-app AI ran commands that killed
-FlowPad itself. The exact command was not captured. The shipped `flow-diagnose`
-skill prescribes, for "Port 9007 occupied" (A1), `taskkill /PID <pid> /F` on
-Windows (`.claude/skills/flow-diagnose/SKILL.md:359-363`,
-`references/catalog.md:18`) — and the detection step (`lsof -ti tcp:$PORT` /
-`netstat`) returns the backend's own PID, because the backend is what holds the
-port. So a literal follow of the skill kills the backend.
+## The invariant
 
-An AI worker holds the user's full permissions and runs as the same OS user as the
-backend and the Electron shell. The OS therefore permits it to kill them: a process
-killing another process of the same user is allowed. Protection must be enforced in
-code / by construction, not by telling the AI what not to do.
+> A live FlowPad activity is never killed or disrupted by another FlowPad activity.
 
-## 2. The invariant
+Two sub-rules, both required:
 
-**A live FlowPad activity is never killed or disrupted by another FlowPad activity**,
-regardless of which subsystem initiated it (AI worker, a skill, a diagnosis request,
-lifecycle code, Electron, or an innocent user request).
+- **May clean up** — a dead process, a stale port holder, the user's stuck `python`, or a
+  worker's **own** child process. These are legitimate and must keep working.
+- **Must not suicide** — the live backend (and, transitively, the processes that keep it
+  running) are never taken down by a worker, a prompt, `flow-diagnose`, or a port-cleanup.
 
-Two sub-rules:
-- **May clean up** — a dead process, a port held by a dead process, the user's own
-  stuck `python`, the worker's own dev server, an unrelated/foreign process.
-- **Must not suicide** — a live backend / monitor / Electron / lifecycle supervisor.
+Protection is **by construction, in code** — not a system-prompt instruction telling the AI
+what not to do. The AI does not have to choose to obey.
 
-The hard part is the distinction, not the blocking. Identity is **PID + create_time**,
-never image name (the backend shares the `python` image with a user's script, so a
-name-based "kill python" must spare it by PID, not by name).
+## The one rule
 
-## 3. Actors and why the worker is special
+At every kill a FlowPad activity can reach, ask one question:
 
-Most kill paths are our own trusted code and will consult the guard voluntarily. The
-**AI worker** (and the agent an untrusted remote **diagnosis request** spawns) is the
-one actor that will not — it can issue a raw `taskkill`/`kill`. So the worker alone is
-wrapped in an OS boundary; everyone else is covered by an in-code guard.
+> Does the process about to die — **or anything in its process tree** — listen on one of
+> **this instance's** protected ports?
 
-## 4. Protection layers
+If yes, refuse. Today the protected set is the **backend server port** (read live, per
+instance — see below). That single question protects:
 
-Each: what it prevents · where enforced · can a same-user worker bypass it · residual ·
-test + status.
+- the **backend** directly — it is the listener on the server port; and
+- its whole **ancestor chain** — monitor, launcher, and the Electron shell — because the
+  backend is a *descendant* in their trees, so any tree- or name-based kill that would reach
+  them is refused on the backend's behalf.
 
-### L0 — Protected-set (single source of truth)
-- **Prevents:** nothing by itself; answers "is this a live protected FlowPad process".
-- **Enforced:** new `flow_sdk/core/self_protection/{spec,registry,guard}.py`.
-  `ProtectedProcessSpec(DataSpec)` {role, pid, create_time, instance} written per
-  process to `<instance_dir>/runtime/<role>-<pid>.json`; `partition_kill(targets,
-  caller)` → (allowed, refused).
-- **Bypass:** discovery only; it is not a boundary, so forging it does not move the OS
-  boundary. Forge/delete closed by L1 filesystem protection (runtime dir + ancestors).
-- **Test:** reference impl verified in the harness (`partition_kill` spares backend,
-  kills user python). ✅ harness.
+It deliberately does **not** protect a worker's own children: the backend is their
+*ancestor*, not a descendant, so `listening_under(worker_child)` never contains the server
+port. A worker reaping its own stuck `python` stays allowed. (This is the one place the
+design diverges from the original plan, which also refused *descendants* of the backend —
+that would have made every worker child unkillable and broken the "may clean up" rule.)
 
-### L1 — OS containment of the worker (the boundary for the non-compliant actor)
-- **Prevents:** direct kill, `WM_CLOSE`, and writes to system/config files, by the worker.
-- **Enforced:** one `contain_agent_argv()` at every spawn —
-  `cli_drivers/cli_worker_base_driver.py` (`apply_worker_env`), each
-  `cli_drivers/*/stream_worker.py`, `cli_drivers/jsonl_tee_worker.py`,
-  `compute/providers/desktop/provider.py` (`PtyProcess.spawn`, `run_command`).
-  New `self_protection/os_{windows,macos,linux}.py`.
-  - **Windows:** worker at **Low IL** — cannot open a Medium process for TERMINATE,
-    UIPI blocks `WM_CLOSE`, `NO_WRITE_UP` blocks writes to medium dirs (`~/.flow`,
-    `site-packages`, `~/.claude`). Every worker write target (TEMP/TMP, caches,
-    transcript dir) must be relocated to Low-labeled dirs.
-  - **macOS:** `(deny signal)(allow signal (target same-sandbox))` + a **write-allowlist**
-    (`deny file-write*`, allow only the workspace). Deny-list is NOT enough — it is
-    bypassed by renaming a writable ancestor; the allowlist closes that. SBPL is
-    last-match-wins, so no allow may re-include a protected ancestor.
-- **Bypass:** no, given a genuine low/sandboxed token. ❗ **real-browser does not run at
-  Low IL** (Chrome's browser process dies) — see L2 carve-out. Elevated worker (SeDebug)
-  would bypass — the worker must be non-elevated.
-- **Test:** ✅ UTM VM (kill blocked, Low-IL filesystem blocked, node/dev-server/loopback
-  work) · ✅ macOS sandbox (allowlist closes ancestor-rename) · ⬜ Linux (no VM).
+No pid registry, no `create_time` sidecar files, no feature flag. The port is read from the
+process table at the moment of the kill, so a backend that moved or restarted is protected
+exactly as it runs now. With no FlowPad running, the protected set is empty and the guard is
+a no-op.
 
-### L2 — Windows process-object DACL + `OWNER_RIGHTS`
-- **Prevents:** the owner re-granting itself `WRITE_DAC`→`TERMINATE` on the backend/Electron.
-- **Enforced:** self-harden at startup — backend near the top of
-  `server/app.py::_on_server_startup`, Electron in `electron/main.js`.
-- **Bypass:** DACL alone — **yes** (owner implicitly holds WRITE_DAC). DACL + an explicit
-  `OWNER_RIGHTS` (S-1-3-4) ACE that omits WRITE_DAC/TERMINATE, non-elevated worker — **no**.
-  Elevated (SeDebug) — **yes**. `taskkill /F` does NOT bypass OWNER_RIGHTS.
-- **Test:** ✅ UTM VM — three runs (no-OWNER_RIGHTS bypassed; OWNER_RIGHTS+medium held;
-  OWNER_RIGHTS+SeDebug bypassed).
+## Resolving the protected port (per instance)
 
-### L3 — protected-set guard in every kill path (the invariant for our own code)
-- **Prevents:** any kill from our code (lifecycle, port cleanup, diagnose) hitting a live
-  protected process; a name-based "kill python" hitting the backend.
-- **Enforced:** `partition_kill()` in `core/app_ports.py:329` (`kill_trees`),
-  `instances/procs.py:53/92/130` (`kill_owned`/`terminate_tree`/`kill_port_if_owned`),
-  `instances/ports.py:265` (`kill_allowed`), `utils/process_tree.py`
-  (`kill_process_tree`), and Electron `uv-manager.js` (`_killPort:2448`,
-  `_killChildTree:1973`, `_drainVenvProcesses:1512`).
-- **Bypass:** not for code that calls it; a raw worker kill is caught by L1, not here.
-- **Test:** ✅ harness (C3) · ⬜ unit `test_all_kill_paths_consult_guard`.
+`port_guard.protected_ports()` returns `{backend port}`, from two live sources:
 
-### L4 — Broker for legitimate kills
-- **Prevents:** suicide while preserving cleanup — enumerate targets, subtract protected,
-  kill the rest. Resolves "kill python": kills the user's, spares the backend.
-- **Enforced:** new `flow_sdk/cli/proc_cmd.py` (`flow proc kill`), runs outside the sandbox.
-- **Bypass:** the worker cannot skip it (raw kill blocked by L1); it can only ask.
-- **Test:** ✅ harness (C3) · ⬜ unit.
+- `load_server_info()["port"]` — what the running backend recorded in `server.json`; and
+- `get_instance_settings().port` — the instance's configured port (`LOCAL_SERVER_PORT`,
+  else the instance default: prod `9007`, dev/test differ).
 
-### L5 — Command-sink guard (defense-in-depth)
-- **Prevents:** running a worker command against a protected PID/port in
-  `core/compute/exec.py:123` (`run_shell`), `builtin/shell.py:1597` (`run-command`),
-  `:1632` (`run-detached`, which runs inside the backend, uncontained).
-- **Bypass:** **yes** — shell parsing is defeatable (`sh -c`, verified on macOS). This is
-  defense-in-depth only; the real boundary for the worker is L1.
-- **Test:** ⬜.
+So a non-`prod` instance on a different port is protected without hardcoding `9007`, and a
+kill aimed at **another** instance's backend (a different port) is never spared.
 
-### L6 — Peer-credential auth on sensitive endpoints
-- **Prevents:** indirect disruption via HTTP — the worker reads `.cookie_gate`
-  (`instance_settings/cookie_gate.py:75`, readable from disk) and calls destructive
-  endpoints; or an actor impersonating the supervisor.
-- **Enforced:** sensitive lifecycle/destructive endpoints authenticate the caller by
-  kernel-attested peer identity — `GetNamedPipeClientProcessId` (Windows) /
-  `SO_PEERCRED` (Unix) → open the peer, read its IL/image, refuse a contained worker
-  **regardless of any token it presents**. (`flow stop` itself is a signal kill, blocked
-  by L1, not HTTP.)
-- **Bypass:** no — the client PID comes from the kernel, not from the client.
-- **Test:** ✅ half (reading a peer's true IL demonstrated on the VM) · by construction
-  (kernel-attested PID) · ⬜ full handshake → unit test.
+## Why not port 9222 (Electron CDP)
 
-### L7 — Registration sequence (discovery channel)
-- **Prevents:** nothing itself; records who is protected for L3/L4.
-- **Enforced:** `self_protection.registry` writes `runtime/<role>-<pid>.json` with
-  create_time. Backend registers near the top of `server/app.py::_on_server_startup`
-  (before the heavy boot work, and separate from `set_server_info` at `:168`); Monitor in
-  `server/launch.py:594`; Electron in `main.js`; the transient lifecycle supervisor on
-  start (it alone may call `release(pid, reason)`).
-- **Bypass:** the worker does not read/write `runtime/` in normal flow; forge/delete is
-  closed by L1 (write+rename deny on the dir AND its ancestors). create_time recheck
-  closes PID reuse.
-- **Test:** ✅ startup order confirmed against the code.
+The original design also protected `9222`. Verified against the shipped Electron app: the
+packaged desktop sets **no** `--remote-debugging-port` and **no** `--remote-debugging-pipe`
+(`electron/main.js` sets only one unrelated switch). It exposes no Chrome DevTools endpoint
+at all; every `9222` in the repo is a dev-only Chrome / `debugMCP` convention. So `9222` was
+dropped — which also removes the risk of wrongly protecting a user's own Chrome that grabbed
+the port. The Electron shell is instead protected transitively (it is an ancestor of the
+backend).
 
-### L8 — Diagnosis-request agent containment + untrusted input
-- **Prevents:** an agent spawned by a remote `DiagnosisRequest`
-  (`builtin/diagnosis_request.py`) from killing/disrupting; and its `instructions`
-  (`:61`) / attachments (SKILL/SUBAGENT/MARKDOWN/PROMPT, `:32`) as an injection surface.
-- **Enforced:** the runner agent goes through the same L1 containment; `ask_before=False`
-  (`:63`) is not a sole defense.
-- **Bypass:** same as L1.
-- **Test:** ⬜ (harness case pending).
+## Where it is enforced
 
-### L9 — `flow-diagnose` skill fix (prompt, non-authoritative) — IMPLEMENTED
-- **Prevents:** the skill telling the AI to kill the self-PID. A1 now resolves
-  `server_pid` from `server.json`: if the port holder is this instance's live,
-  healthy backend it is not a conflict — do not kill it, do not `flow stop` from
-  inside FlowPad. Step 2a reframed likewise; the catalog and the worked example
-  match. (`SKILL.md` A1 / Step 2a, `references/catalog.md` A1.)
-- **Bypass:** **yes** — it is a prompt. It fixes the observed path cheaply, but it
-  is not the boundary: a `DiagnosisRequest`'s remote instructions, another skill,
-  an improvised kill, or a plain "kill python" are unaffected. The boundary is
-  L1–L4.
-- **Test:** structural skill tests pass; the prose change carries no unit test.
+| Kill path | File | Behaviour |
+| --- | --- | --- |
+| `terminate_tree` | `flow_sdk/instances/procs.py` | Spares any tree member whose subtree holds a protected port; `allow_protected=True` reaps it. |
+| `kill_owned` / `kill_port_if_owned` | `flow_sdk/instances/procs.py` | Pass `allow_protected` through; record a spared backend in `KillResult.refused`. |
+| `kill_trees` | `flow_sdk/core/app_ports.py` | Spares protected members and never `killpg`s a group that still holds a protected listener. |
+| `flow proc kill` | `flow_sdk/cli/commands/proc_cmd.py` | **Always** guards (no bypass). Name match is exact and excludes the caller's ancestor chain. Reports `refused_protected`. |
+| `flow stop` | `flow_sdk/server/launch.py` (`_stop_all_guarded`) | A worker is refused with a clear non-zero `FlowServiceError`; a human proceeds. |
+| `flow instance reset` / `restart-backend` | `flow_sdk/cli/commands/instance_cmd.py` (`_kill_instance_processes`) | A worker is refused (`RuntimeError`); a human passes `allow_protected=True` to reap its own backend. |
+| service generation teardown | `flow_sdk/core/connections/service.py` (`_exact_cleanup`) | Trusted exact-identity teardown passes `allow_protected=True` (worker path blocked upstream). |
 
-### L10 — CDP / remote-debugging surface (top priority; bypasses L1/L2)
-- **Prevents:** the worker closing/controlling Electron (or the carve-out browser) via a
-  Chrome DevTools Protocol endpoint over loopback (`Browser.close`, `Runtime.evaluate`).
-- **Why it is separate:** loopback TCP is not gated by integrity level, and loopback from
-  Low IL works (verified). So L1/L2 do not cover it.
-- **Enforced:** FlowPad's Electron strips `--remote-debugging-port`/`--inspect` from its
-  own argv at startup (strip-and-warn); the browser carve-out and the `real-browser`
-  skill use `--remote-debugging-pipe` (CDP over an fd/pipe handed only to the trusted
-  driver), never a TCP loopback port.
-- **Bypass:** no, if no loopback port exists; **yes** while a port is open.
-- **Residual / note:** the committed source is clean — `electron/main.js:51` only appends
-  a crash-report `enable-features` switch; there is no `--remote-debugging-port`. The live
-  exposure found on the VM (`Flowpad.exe` on `127.0.0.1:9222`, no auth) came from a
-  **launch flag** (`--remote-debugging-port=9222`), normalized by `docs/debugMCP-setup.md`
-  and `real-browser/scripts/browser.mjs:98`, not from default behavior.
-- **Test:** ✅ class confirmed live on the VM (open, unauthenticated, loopback-reachable) ·
-  ✅ source confirmed clean (a launch flag, not default).
+### User-requested vs worker kills
 
-## 5. Windows isolation decision
+`flow stop` / `flow instance …` are user commands that legitimately stop the backend. The
+backend stamps `FLOWPAD_EXECUTION_SCOPE` onto every worker it spawns (and children inherit
+it); a human's terminal has none. So `port_guard.caller_is_worker()` cleanly tells the two
+apart: a worker is refused loudly, a human proceeds. This is an **app-level** discriminator,
+not a boundary — a determined worker can unset the variable, which is why the real boundary
+for a raw OS kill is OS containment (below).
 
-**Low-IL worker by default + a Medium browser carve-out.** Chrome's browser process does
-not run at Low IL (verified: same launch method, Medium → 12 procs + CDP serves; Low → 0
-procs, exits immediately). So browser-driven skills do not launch Chrome themselves.
-Instead a **browser helper** runs at Medium, spawned and owned by the backend (never the
-worker), registered and OWNER_RIGHTS-protected; the Low worker drives it only via CDP over
-a **pipe** (not a TCP port — L10). Reopened surface is bounded: CDP exposes page
-automation + downloads (point downloads at a Low-labeled dir), not OS process spawn/kill.
+## Verification
 
-## 6. `FLOWPAD_EXECUTION_SCOPE` (existing)
+- Unit tests: `tests/unit/test_port_guard.py` — a real helper process listens on a faked
+  protected port; the whole live path (socket-table scan → tree walk) runs. Asserts: the
+  listener and its ancestor are refused; a worker **child** of the listener is allowed; an
+  unrelated process is killed; `terminate_tree` / `kill_trees` spare it (and its POSIX group)
+  unless `allow_protected=True`; `flow proc kill` spares it and reports `refused_protected`;
+  `--name` is exact and excludes the caller's ancestors; `caller_is_worker` reads the env var.
+- Regression: the touched kill-path modules' existing suites pass unchanged.
 
-A worker's `flow` commands carry `FLOWPAD_EXECUTION_SCOPE`
-(`cli_drivers/cli_worker_base_driver.py:476`), a JSON identity of its own
-`agentic_process`, resolved by the backend (`tasks/identity.py`), "never claimed". A
-lifecycle-verb refusal can use it ("a worker targeting its own instance"), but the worker
-can unset it, so it is defense-in-depth, not a boundary.
+## Residuals and follow-ups (not in this change)
 
-## 7. Verification summary
-
-| Claim | Where | Status |
-|---|---|---|
-| DACL alone bypassed; DACL+OWNER_RIGHTS holds (non-elevated); SeDebug bypasses | UTM VM | ✅ |
-| Low-IL blocks kill + WM_CLOSE + medium-dir writes; node/dev-server/loopback work | UTM VM | ✅ |
-| Chrome dies at Low IL (Medium control serves CDP) | UTM VM | ✅ |
-| macOS write-allowlist closes ancestor-rename; deny-list does not | macOS sandbox | ✅ |
-| peer-cred: reading a peer's true IL works; kernel-attested PID | UTM VM + construction | ✅ half |
-| CDP loopback bypasses IL/DACL; live via launch flag; source clean | UTM VM + source | ✅ |
-| Invariant end-to-end (kill / name-kill / broker / CDP), OS vs app block | macOS harness 6/6 | ✅ |
-
-## 8. Open items
-
-- **Linux** — unverified (no VM): bwrap + user/pid namespaces; the `systemctl --user kill`
-  bypass (hide the user D-Bus socket from the sandbox).
-- **Full peer-cred handshake** — unit test at implementation.
-- **Implementation go-ahead** — gated on explicit approval ("do not implement yet").
-
-## 9. Implementation order (when approved)
-
-1. L0 + L7 — protected-set and registration.
-2. L3 + L4 — guard in every kill path, and the broker (closes the invariant for our code:
-   lifecycle, `_killPort`, diagnose, "kill python").
-3. L1 — OS containment (the non-compliant worker + diagnosis-request agent).
-4. L10 — strip remote-debugging; CDP over pipe.
-5. L5 + L6 — defense-in-depth and peer-cred.
-6. Gates — a policy test that every kill path calls `partition_kill` and every spawn site
-   calls `contain_agent_argv`, in the style of
-   `tests/unit/test_data_sources_are_self_contained.py`.
+- **Raw OS kill (L1).** A worker that bypasses Python entirely — `taskkill` / `kill` /
+  `lsof | kill` — is outside this app-level guard. The real boundary is OS containment: a
+  low-integrity / restricted worker token on Windows, a sandbox profile on macOS. Tracked as
+  the L1 follow-up.
+- **Startup gap.** Between the backend process starting and its socket entering `LISTEN`, the
+  port-based check cannot see it. Brief, and the backend is not yet serving.
+- **Monitor adopt-case.** When the monitor adopts an already-healthy backend instead of
+  spawning it, the monitor is not the backend's parent, so killing the monitor alone is not
+  refused — but the backend survives (it is not in the monitor's tree), so the app stays up.
+- **JS / shell paths.** The Electron shell's own `uv-manager.js` port-kills and the
+  `scripts/*.sh` launchers manage the backend directly; they are the app managing itself, not
+  worker-reachable, and are out of scope for worker containment.

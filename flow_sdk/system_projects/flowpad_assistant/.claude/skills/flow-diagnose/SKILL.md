@@ -374,8 +374,16 @@ Repair:
    whose PID is not the recorded `$SERVER_PID` — free the port. Never signal the live
    `$SERVER_PID` of the instance you are running inside, and never `flow stop` from in here.
 
-   * macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.
-   * Windows: `taskkill /PID <pid> /F`
+   Prefer **`flow proc kill <pid>`**: it is the broker that refuses to kill any process holding
+   a live FlowPad port, so even if the PID you resolved is wrong it cannot take down the backend.
+   It prints one JSON line — `{"killed": [...], "refused_protected": [...], "denied": [...],
+   "not_found": [...]}`. A PID in `refused_protected` means it was this instance's live backend
+   after all: leave it, report "no conflict", stop. A raw `kill`/`taskkill` is the fallback only
+   where `flow` is unavailable.
+
+   * Broker (any OS): `flow proc kill <pid>`
+   * Fallback macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.
+   * Fallback Windows: `taskkill /PID <pid> /F`
 3. Report each PID killed and whether it was a foreign process or a stale Flowpad process.
 4. Confirm port is free: re-run lsof/netstat. Tell user to relaunch Flowpad (do NOT auto-start).
 

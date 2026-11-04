@@ -329,13 +329,18 @@ def decide(
     return PortAnswer("conflict", port, holder, f"port {port} is held by another program{who}")
 
 
-def kill_trees(pids: Iterable[int]) -> None:
+def kill_trees(pids: Iterable[int], *, allow_protected: bool = False) -> None:
     """End each process and everything started under it — its whole process group on POSIX, never this
     process's own — and return once they are gone, so their ports are free. The group is signalled too
     because a member whose leader already died is no longer anyone's child. Each process is also ended
     directly: on Windows there is no group, and ``taskkill /T`` (which asks WMI for the tree) was seen to
     stall for over 30 s. Only what was signalled is waited for — one that could not be ended (another
-    user's) would be waited on forever."""
+    user's) would be waited on forever.
+
+    ``allow_protected`` lets a kill the user asked for (``flow stop`` / ``flow instance``) reap this
+    instance's own backend; left False (the default), the FLOWPAD-2112 port guard spares any member whose
+    tree holds a protected FlowPad port and never ``killpg``\\ s a group that still contains such a
+    listener — so a FlowPad activity freeing a port cannot take down the FlowPad it runs inside."""
     import psutil  # noqa: PLC0415
 
     doomed: dict[int, "psutil.Process"] = {}
@@ -351,22 +356,22 @@ def kill_trees(pids: Iterable[int]) -> None:
         if group != os.getpgrp():
             groups.add(group)
             doomed.update((member.pid, member) for member in _tree(group))
-    # Self-protection: never kill a live protected FlowPad process, and never
-    # killpg a group that contains one (the group kill would take it down too).
-    # A no-op unless FLOWPAD_SELF_PROTECTION is on.
-    from flow_sdk.core import self_protection  # noqa: PLC0415
+    if not allow_protected:
+        from flow_sdk.core import port_guard  # noqa: PLC0415
 
-    protected = set(self_protection.partition_kill(list(doomed))[1])
-    if protected:
-        for pid in protected:
+        refused = port_guard.protected(list(doomed))
+        for pid in refused:
             doomed.pop(pid, None)
-        if sys.platform != "win32":
-            for pid in protected:
+        # Never killpg a group that still holds a protected listener — even one not enumerated into
+        # ``doomed`` — since the group signal would take it down regardless.
+        if sys.platform != "win32" and groups:
+            for holder in port_guard.listener_pids():
                 try:
-                    groups.discard(os.getpgid(pid))
+                    groups.discard(os.getpgid(holder))
                 except OSError:
-                    pass
-        logger.warning("[self_protection] kill_trees sparing protected pids %s", sorted(protected))
+                    continue
+        if refused:
+            logger.warning("[port_guard] kill_trees sparing protected FlowPad pids %s", sorted(refused))
     for group in groups:
         try:
             os.killpg(group, signal.SIGKILL)

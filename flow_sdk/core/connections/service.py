@@ -253,11 +253,15 @@ def _exact_cleanup(generation: ServiceGeneration) -> None:
             # Listener readiness is deliberately not required: a child that
             # failed during startup is still our exact PID/create-time owner.
             exact_table = ProcTable(procs={generation.pid: process})
+            # Tearing down our own service generation by exact pid+create_time is a trusted
+            # lifecycle kill (the worker path is already refused upstream at `flow stop`), so the
+            # FLOWPAD-2112 port guard is told to allow reaping this backend.
             kill_owned(
                 generation.instance,
                 exact_table,
                 roles=frozenset({Role.BACKEND}),
                 extra=[process],
+                allow_protected=True,
             )
     # Independently clear only our exact record. This also cleans a stale
     # generation after the child has already died and vanished from the scan.
