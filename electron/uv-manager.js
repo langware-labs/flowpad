@@ -21,8 +21,9 @@ const execFileAsync = promisify(execFile);
 const IS_WIN = process.platform === 'win32';
 // The throwaway tool dirs an engine prepare stages into (prepareEngine), next to uv's cache.
 const STAGE_PREFIX = 'flowpad-staging-';
-// A staging dir with no owner pid in its name (an older build's) is a leftover once it is this old.
-const STAGE_UNOWNED_AGE_MS = 24 * 60 * 60 * 1000;
+// A staging dir this old is a leftover whoever its owner: no prepare runs this long, so a live pid in its
+// name is a reused one. Also the only test for a dir with no owner pid in its name (an older build's).
+const STAGE_LEFTOVER_AGE_MS = 24 * 60 * 60 * 1000;
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
@@ -3285,7 +3286,7 @@ class UvManager {
    * the process tree) before its `finally` ran, leaving a whole venv behind. Called before a prepare.
    * Only a dir whose owner is gone: one of THIS process (its prepares are one at a time, and none runs
    * now), or of a pid that no longer runs. Another live process's (a dev build beside the app, another
-   * user's /tmp) is left alone; a dir with no pid in its name only once it is a day old.
+   * user's /tmp) is left alone — until it is a day old (the pid was reused); so is a dir with no pid in its name.
    */
   async _removeStaleStageRoots() {
     const base = await this._stageBase();
@@ -3294,13 +3295,12 @@ class UvManager {
     for (const name of names.filter((n) => n.startsWith(STAGE_PREFIX))) {
       const dir = path.join(base, name);
       const owner = /^(\d+)-/.exec(name.slice(STAGE_PREFIX.length));
-      if (owner) {
-        const pid = Number(owner[1]);
-        if (pid !== process.pid && this._pidAlive(pid)) continue;
-      } else {
+      const pid = owner ? Number(owner[1]) : null;
+      const ownerGone = pid === process.pid || (pid !== null && !this._pidAlive(pid));
+      if (!ownerGone) {
         let mtime = Date.now();
         try { mtime = (await fs.promises.stat(dir)).mtimeMs; } catch { continue; }
-        if (Date.now() - mtime < STAGE_UNOWNED_AGE_MS) continue;
+        if (Date.now() - mtime < STAGE_LEFTOVER_AGE_MS) continue;
       }
       this.log.info(`[uv] removing a leftover staging dir: ${name}`);
       await this._removeStageRoot(dir);

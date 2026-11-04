@@ -2472,6 +2472,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       mk('flowpad-staging-999999-dead');             // its process is gone
       mk(`flowpad-staging-${process.pid}-mine`);     // this process's own, from a run that never finished
       mk(`flowpad-staging-${process.ppid}-live`);    // another live process's (a dev build beside the app)
+      mk(`flowpad-staging-${process.ppid}-reused`, 2 * 24 * 60 * 60 * 1000); // its pid alive again, two days on: reused
       mk('flowpad-staging-legacyold', 2 * 24 * 60 * 60 * 1000); // no owner in the name, two days old
       mk('flowpad-staging-legacynew');               // no owner, fresh: maybe in use
       fs.mkdirSync(path.join(base, 'not-ours'));
@@ -2481,7 +2482,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       fs.rmSync = (...a) => { if (String(a[0]).includes('flowpad-staging-')) syncRm++; return realRmSync(...a); };
       try { await p.m.prepareEngine(); } finally { fs.rmSync = realRmSync; }
       eq(fs.readdirSync(base).sort(), ['flowpad-staging-legacynew', `flowpad-staging-${process.ppid}-live`, 'not-ours'].sort(),
-        'prepare: orphans and its own staging dir are gone — a live process\'s and a fresh unowned one stay');
+        'prepare: orphans, its own and day-old dirs are gone — a live process\'s fresh one and a fresh unowned one stay');
       eq(syncRm, 0, 'prepare: no synchronous removal of a staged venv');
     }
 

@@ -1256,7 +1256,7 @@ function startLaunchDesktopCheck() {
 // A newer desktop the launch's background look found before the app was up: offered once it is (the
 // post-boot hook), never in the middle of the start — the pre-start flow knows nothing of this look.
 let desktopFoundAtLaunch = null;
-function offerDesktopFoundAtLaunch(version) {
+async function offerDesktopFoundAtLaunch(version) {
   if (!version) return undefined;
   if (!backendReady) {
     desktopFoundAtLaunch = version;
