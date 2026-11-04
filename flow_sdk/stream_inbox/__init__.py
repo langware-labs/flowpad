@@ -199,6 +199,63 @@ def count_unread(**rows) -> int:
     return project_unread(**rows).total
 
 
+#: Ids per message read: well under SQLite's bound-parameter limit.
+_MESSAGE_READ_CHUNK = 500
+
+
+class _ReadProbe(dict):
+    """The messages read so far, as the formula's ``fm_by_id``. A lookup of an id not read yet
+    is a miss: the formula stops there (as at a message that is not materialized), so it says
+    only "this conversation needs more of its messages" — never a wrong count."""
+
+    def __init__(self, read: dict, fetched: set):
+        super().__init__(read)
+        self.fetched = fetched
+        self.missed = False
+
+    def get(self, key, default=None):
+        if key not in self.fetched:
+            self.missed = True
+        return super().get(key, default)
+
+
+async def _messages_the_formula_reads(conversations: list, self_ids: set, fetch) -> dict:
+    """The messages :func:`conversation_unread_count` reads — not every message in the database.
+
+    The rule walks each conversation newest first and stops at its first read, sent-by-us, draft
+    or missing message, so it reads one message of a quiet conversation and a few of an unread
+    one. Read them window by window: the next 1, 2, 4… refs of every conversation whose walk is
+    still going (``_ReadProbe`` tells), one ``IN`` query per window. The rule itself decides when
+    a walk ends, so this holds whatever the rule becomes. ``fetch(ids)`` reads messages by id."""
+    read: dict = {}
+    fetched: set = set()
+    refs = {conv.id: [ref.id for ref in conv.message_refs_newest_first()] for conv in conversations}
+    ahead = {conv.id: 0 for conv in conversations}
+    walking = [conv for conv in conversations if refs[conv.id]]
+    window = 1
+    while walking:
+        wanted: list = []
+        for conv in walking:
+            ids = refs[conv.id][ahead[conv.id] : ahead[conv.id] + window]
+            ahead[conv.id] += window
+            wanted.extend(i for i in ids if i and i not in fetched)
+        wanted = list(dict.fromkeys(wanted))
+        for start in range(0, len(wanted), _MESSAGE_READ_CHUNK):
+            for message in await fetch(wanted[start : start + _MESSAGE_READ_CHUNK]):
+                read[message.id] = message
+        fetched.update(wanted)
+        probe = _ReadProbe(read, fetched)
+        still: list = []
+        for conv in walking:
+            probe.missed = False
+            conversation_unread_count(conv, probe, pending_conv_ids=set(), self_ids=self_ids)
+            if probe.missed and ahead[conv.id] < len(refs[conv.id]):
+                still.append(conv)
+        walking = still
+        window *= 2
+    return read
+
+
 async def _load_rows() -> tuple[list, dict]:
     """The canonical rows the formula reads: every conversation, and the keyword
     arguments :func:`project_unread` takes (the local user's stream inbox as the count scope)."""
@@ -208,24 +265,33 @@ async def _load_rows() -> tuple[list, dict]:
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.invitation import Invitation  # noqa: PLC0415
     from flow_sdk.builtin.user import User  # noqa: PLC0415
-    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import default_owner  # noqa: PLC0415
 
     email = viewer_email()
     conversations = await Conversation.get_all(QueryFilter(type=EntityType.CONVERSATION.value))
+    self_ids = await User.self_ids()
+
+    async def fetch(ids: list[str]) -> list:
+        # hydrate=False: the formula reads is_read/sender/is_draft, never text —
+        # joining every reference row's SourceItem here would put a mailbox join
+        # on every mutation's recompute.
+        return await FlowMessage.get_all(
+            QueryFilter(
+                type=EntityType.FLOW_MESSAGE.value,
+                match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]),
+            ),
+            hydrate=False,
+        )
+
     return conversations, dict(
         conversations=conversations,
-        # hydrate=False: the formula reads is_read/sender/is_draft, never text —
-        # joining every reference row's SourceItem here would put a whole-mailbox
-        # join on every mutation's recompute.
-        fm_by_id={m.id: m for m in await FlowMessage.get_all(
-            QueryFilter(type=EntityType.FLOW_MESSAGE.value), hydrate=False
-        )},
+        fm_by_id=await _messages_the_formula_reads(conversations, self_ids, fetch),
         invitations=(
             await Invitation.get_all(QueryFilter(type=EntityType.INVITATION.value)) if email else []
         ),
-        self_ids=await User.self_ids(),
+        self_ids=self_ids,
         viewer_email=email,
         now=datetime.now(timezone.utc),
         stream_inbox_owner=await default_owner(),
