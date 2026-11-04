@@ -664,8 +664,8 @@ class Conversation(ProjectedFields, Entity):
 
         if created_here and await self._create_with_members(bodies, deliver_messages=deliver_messages):
             return self
-        if created_here:
-            await super().share()  # a hub that does not take members creates the row alone
+        # False means the row WAS created (an older hub drops the members and creates it alone):
+        # the invitations and messages below go the old way, without creating it a second time.
 
         # Join IMMEDIATELY after create. The hub stamps ``initiated_by`` on
         # this call; until then even the creator cannot owner-delete the
