@@ -305,6 +305,8 @@ async def _tickets_with(base: str, desk_owner_token: str, desk_id: str, text: st
     out = []
     for ticket in pool:
         conv_id = ticket.get("conversation_id") or ticket.get("id")
+        # the hub shows a ticket's lines to participants only: the helper picks it up to read it
+        await _hub(base, desk_owner_token, "POST", f"/graph/conversation/{conv_id}/pickup", {})
         rows = await _hub(base, desk_owner_token, "GET", f"/graph/conversation/{conv_id}/flow_message") or []
         if any((m.get("text") or "").strip().startswith(text) for m in rows):
             out.append(ticket)
