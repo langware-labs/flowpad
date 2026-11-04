@@ -15,10 +15,10 @@ const API = apiBase();
 const INSTANCE = process.env.FLOW_INSTANCE || 'prod';
 const USER_ASSET_ROOT =
   INSTANCE === 'prod' ? os.homedir() : path.join(os.homedir(), 'Flowpad workspaces', '.home', INSTANCE);
-const USER_WHITEBOARDS = path.join(USER_ASSET_ROOT, 'agentic-assets', 'whiteboard');
+const USER_WHITEBOARDS = path.join(USER_ASSET_ROOT, 'agentic-assets', 'chart');
 
 function projectWhiteboards(mount: string): string {
-  return path.join(mount, 'agentic-assets', 'whiteboard');
+  return path.join(mount, 'agentic-assets', 'chart');
 }
 
 async function pickProject(request: APIRequestContext): Promise<{ id: string; mount: string }> {
@@ -69,8 +69,8 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   });
     const { id: projectId, mount } = await pickProject(request);
 
-    const res = await request.post(`${API}/api/v1/graph/project/${projectId}/whiteboard`, {
-      data: { name: `sc1-proj-${Date.now() % 10000}` },
+    const res = await request.post(`${API}/api/v1/graph/project/${projectId}/chart`, {
+      data: { name: `sc1-proj-${Date.now() % 10000}`, format: 'excalidraw' },
     });
     expect(res.status()).toBe(200);
     const { id, asset_ref } = (await res.json()).data;
@@ -101,8 +101,8 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
 
     const userRes = await request.post(`${API}/api/v1/graph/chart`, { data: { name: `sc2-user-${Date.now() % 10000}`, format: 'excalidraw' } });
     const user = (await userRes.json()).data;
-    const projRes = await request.post(`${API}/api/v1/graph/project/${projectId}/whiteboard`, {
-      data: { name: `sc2-proj-${Date.now() % 10000}` },
+    const projRes = await request.post(`${API}/api/v1/graph/project/${projectId}/chart`, {
+      data: { name: `sc2-proj-${Date.now() % 10000}`, format: 'excalidraw' },
     });
     const proj = (await projRes.json()).data;
 

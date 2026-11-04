@@ -9,7 +9,7 @@ const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string, projectId?: string) {
   const scopePath = projectId ? `/project/${projectId}` : '';
-  const res = await request.post(`${API}/api/v1/graph${scopePath}/whiteboard`, { data: { name, format: 'excalidraw' } });
+  const res = await request.post(`${API}/api/v1/graph${scopePath}/chart`, { data: { name, format: 'excalidraw' } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
