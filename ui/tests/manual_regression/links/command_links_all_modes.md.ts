@@ -42,7 +42,13 @@ const turn = () =>
     '',
     cmd('line'),
     '',
-    `Then the recap: you run "${cmd('quoted')}" in the prompt, or \`${cmd('inline')}\`, and tell me.`,
+    // Each form on a row of its own: a long sentence is word-wrapped at the terminal's width, and a command split
+    // over two rows is two half-commands to the link layer.
+    'Then the recap:',
+    '',
+    `You run "${cmd('quoted')}" in the prompt,`,
+    '',
+    `or \`${cmd('inline')}\`, and tell me.`,
     '',
     'Not a command: ! Important note.',
   ].join('\n');
