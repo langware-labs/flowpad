@@ -9,6 +9,7 @@
  */
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import path from 'node:path';
 
@@ -481,17 +482,22 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
     request,
   }) => {
     const fixture = await createVibeFixture(request, 'vibe-app-address');
-    const server = createServer((_request, response) => {
-      response.setHeader('Content-Type', 'text/html');
-      response.end('<!doctype html><p id="marker">VW25_APP_READY</p>');
-    });
+    // The artifact's port must be held by a program serving FROM the artifact's folder (a stranger on the port is
+    // refused), so the fixture app is its own process with the fixture root as its cwd.
+    const server = spawn(
+      process.execPath,
+      [
+        '-e',
+        "require('http').createServer((q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><p id=\"marker\">VW25_APP_READY</p>')}).listen(0,'127.0.0.1',function(){console.log(this.address().port)})",
+      ],
+      { cwd: fixture.root, stdio: ['ignore', 'pipe', 'inherit'] },
+    );
     try {
-      await new Promise<void>((resolve, reject) => {
+      const port = await new Promise<number>((resolve, reject) => {
         server.once('error', reject);
-        server.listen(0, '127.0.0.1', resolve);
+        server.stdout.once('data', (chunk) => resolve(Number(String(chunk).trim())));
       });
-      const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('app fixture has no TCP port');
+      const address = { port };
 
       const artifactId = await registerWebappArtifact(
         request,
@@ -527,7 +533,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await expect(page).not.toHaveURL(/[?&]host=/);
       await expect(page).toHaveURL(new RegExp(`/dock/app/artifact-${artifactId}`));
     } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      server.kill();
       await destroyVibeFixture(request, fixture);
     }
   });
