@@ -174,7 +174,11 @@ lsof -ti tcp:$PORT
 netstat -ano | findstr ":$PORT"
 ```
 
-Expected: empty (port free). Any PID = potential conflict.
+Expected: the port is held by THIS instance's own backend (its `server_pid` in
+`server.json`) and it answers healthy — that is the normal running state, **not**
+a conflict. A conflict is only when the holder is a *different* process, or the
+port is held but the backend does not answer. This instance's own healthy backend
+is never a conflict and is never killed (see A1).
 
 **2b. Backend health**
 
@@ -353,13 +357,37 @@ The per-issue repair details (A1–G17) below are the **"how"** for the Fix sub-
 
 Repair:
 
-1. Run `flow stop`.
-2. Re-check port. If still held:
+1. **First decide whether the holder is this instance's own backend.** Read `server_pid`
+   from `server.json` (same place Step 1 reads `$PORT`):
 
-   * macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.
+   ```bash
+   SERVER_PID=$("$FLOWPAD_PYTHON" -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); p=pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'; print(json.load(open(p)).get('server_pid','') if p.exists() else '')")
+   ```
 
-   * Windows: `taskkill /PID <pid> /F`
-3. Report each PID killed and whether it was a Flowpad process or foreign.
+   If the PID on `$PORT` equals `$SERVER_PID` **and** the backend answers healthy, there is
+   **no conflict** — the port is held by the live backend this skill is running inside.
+   Do **not** kill it and do **not** run `flow stop`: that ends this run (and FlowPad)
+   before anything is recorded. Report "port held by this instance's healthy backend —
+   expected, no action" and stop. This is the common case and the end of A1.
+
+2. **Only if the holder is a different process** — a foreign program, or a stale/dead backend
+   whose PID is not the recorded `$SERVER_PID` — free the port. Never signal the live
+   `$SERVER_PID` of the instance you are running inside, and never `flow stop` from in here.
+
+   Prefer **`flow proc kill <pid>`**: it is the broker that refuses to kill this instance's live
+   backend — the one recorded in `server.json` (`$SERVER_PID`, confirmed still that process) — and
+   its ancestor chain (launcher, monitor, Electron), identified by that record, NOT by whatever
+   merely holds the port. So a stale or foreign port holder is still freed, but even a wrong PID
+   you resolved cannot take down the backend. It prints one JSON line — `{"killed": [...],
+   "refused_protected": [...], "denied": [...], "not_found": [...]}`. A PID in `refused_protected`
+   is the live backend or one of its ancestors: leave it, report "no conflict", stop. If nothing
+   matched, the command exits non-zero with empty lists — that means "nothing to kill", not a
+   successful kill. A raw `kill`/`taskkill` is the fallback only where `flow` is unavailable.
+
+   * Broker (any OS): `flow proc kill <pid>`
+   * Fallback macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.
+   * Fallback Windows: `taskkill /PID <pid> /F`
+3. Report each PID killed and whether it was a foreign process or a stale Flowpad process.
 4. Confirm port is free: re-run lsof/netstat. Tell user to relaunch Flowpad (do NOT auto-start).
 
 ***
@@ -774,11 +802,12 @@ Platform: Linux
 Date: 2026-06-04 09:25:00
 
 [FOUND] Port 9007 occupied (A1) — FIXED
-  Detection: lsof -ti tcp:9007 → PID 7743 (python / flowpad backend)
-  Action:    Ran `flow stop`; PID 7743 terminated via SIGTERM.
-             Port 9007 is now free. Please relaunch Flowpad.
+  Detection: lsof -ti tcp:9007 → PID 7743; server.json server_pid=4821 (dead) ≠ 7743,
+             and 7743 does not answer /health → a stale/foreign holder, not the live backend.
+  Action:    Confirmed 7743 is not this instance's live server_pid, then terminated it
+             (SIGTERM → SIGKILL). Did NOT run `flow stop`. Port 9007 is now free. Please relaunch.
 
-To Summarize: A stale Flowpad backend process was still holding port 9007. It has been stopped cleanly. Relaunch Flowpad and it should come up normally.
+To Summarize: A stale process was holding port 9007 and blocking startup; it was not the live backend, so it was cleared. Relaunch Flowpad and it should come up normally.
 ```
 
 ### Example 4: An issue with no ready-made fix — diagnosed normally

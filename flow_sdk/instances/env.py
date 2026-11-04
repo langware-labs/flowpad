@@ -97,7 +97,11 @@ def read_env_file(name: str) -> dict[str, str]:
 
 def build_named_instance_env(settings, *, generation: str | None = None) -> dict[str, str]:
     """The standard backend environment, pinned to one resolved instance."""
-    env = os.environ.copy()
+    from flow_sdk.utils.environment import without_worker_signal  # noqa: PLC0415
+
+    # A backend is FlowPad infrastructure, never a worker: strip FLOWPAD_WORKER so a backend a
+    # worker brings up (and the terminals it later spawns) never inherits the worker signal.
+    env = without_worker_signal()
     env.update(read_env_file(settings.instance_name))
     env.update(
         {
