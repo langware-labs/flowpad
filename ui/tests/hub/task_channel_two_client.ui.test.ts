@@ -132,12 +132,13 @@ async function count(page: Page, text: string): Promise<number> {
   return page.getByText(text, { exact: true }).count();
 }
 
-/** Open a thread and expand it — the stream inbox shows a thread collapsed to its newest message. */
+/** Open a thread whole. A row opens its thread unpacked (no stack); a packed view is expanded by its stack's button. */
 async function openWholeThread(inst: InstancePage, title: string): Promise<void> {
   await openThread(inst, title);
   const expand = inst.page.getByTestId('thread-stack-open').first();
-  await expand.waitFor({ state: 'visible', timeout: adjusted(20_000) });
-  await expand.click();
+  const thread = inst.page.getByTestId('message-task-chips').first();
+  await expand.or(thread).waitFor({ state: 'visible', timeout: adjusted(20_000) });
+  if (await expand.isVisible()) await expand.click();
 }
 
 describe('tasks in conversations — one thread both people read and act on', () => {
