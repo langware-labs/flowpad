@@ -20,6 +20,7 @@ import { CopyButton } from '@src/components/ui/copy-button';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { AllowedSendersEditor } from '@src/components/agents/AllowedSendersEditor';
+import { PROVIDER_TITLE } from '@src/components/inbound/inbound-model';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
@@ -67,12 +68,8 @@ const OPTIONS: Record<OnboardingChannel, Option[]> = {
   ],
 };
 
-const CHANNEL_TITLE: Record<OnboardingChannel, string> = {
-  email: 'Email',
-  whatsapp: 'WhatsApp',
-  telegram: 'Telegram',
-  slack: 'Slack',
-};
+/** The channels' names: the Channels screen's provider titles, plus email (no provider). */
+const CHANNEL_TITLE: Record<OnboardingChannel, string> = { email: 'Email', ...PROVIDER_TITLE } as Record<OnboardingChannel, string>;
 const SUPPORT_EMAIL = 'support@langware.ai';
 
 /** A channel's mark: its brand icon, or a mail glyph for email (no brand). */
