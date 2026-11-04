@@ -93,11 +93,17 @@ async def test_a_brand_new_user_can_spend_by_saying_hi(hub_base_url):
 
     api_key = login_as(_signup_a_brand_new_user(hub_base_url))
 
+    # First contact. The hub mints a signed-in human's own default allowance off the global pool when
+    # the app first bootstraps against it (`ensure_user_default`), which is what signing in does.
+    with httpx.Client(base_url=f"{hub_base_url}/api/v1", timeout=30.0) as client:
+        first_contact = client.get("/graph/bootstrap", headers={"Authorization": f"Bearer {api_key}"})
+    assert first_contact.status_code == 200, first_contact.text[:200]
+
     # 1. The grant. An account one second old is already offered something to spend.
     offered = await fetch_hub_llm_endpoints()
     assert offered, (
         "a brand-new user was offered no LLM endpoint at all — either the shared endpoint's "
-        "`authenticated_role: reader` grant is gone, or the hub now allocates per user"
+        "per-user default allowance (`ensure_user_default`, minted on first bootstrap) is gone"
     )
     endpoint = offered[0]
     print(f"\n[grant] a one-second-old account is offered: {endpoint.name}")
