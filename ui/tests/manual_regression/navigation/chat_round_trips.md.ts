@@ -19,7 +19,6 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import {
-import { adjusted } from '../../adjustableTimeout';
   awaitSteerable,
   createLongChat,
   createWorld,
@@ -32,6 +31,7 @@ import { adjusted } from '../../adjustableTimeout';
   type LongChat,
   type World,
 } from './_world';
+import { adjusted } from '../../adjustableTimeout';
 
 let world: World;
 let chat: LongChat;

@@ -22,7 +22,6 @@
  */
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import {
-import { adjusted } from '../../adjustableTimeout';
   awaitSteerable,
   BACKEND,
   createLongChat,
@@ -38,6 +37,7 @@ import { adjusted } from '../../adjustableTimeout';
   toplogOn,
   type World,
 } from './_world';
+import { adjusted } from '../../adjustableTimeout';
 
 test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
 

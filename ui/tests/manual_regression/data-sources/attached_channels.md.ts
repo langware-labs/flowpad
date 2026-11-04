@@ -128,6 +128,10 @@ async function open(page: Page, route: string) {
   await page.goto(route);
 }
 
+/** The user's channel marks. The system's own task source ("Tasks") wears a mark on every user's line; it is
+ *  not one of the channels these runbooks attach, so it is left out of the count. */
+const userMarksOf = (bar: Locator) => bar.locator('[data-testid="attached-channel"]:not([data-provider="task_manager"])');
+
 /** What a glyph draws: the element's first child (an svg, or a brand mark's img/span) minus sizing. */
 const glyphOf = (el: Locator) =>
   el.evaluate((node) => (node.firstElementChild?.outerHTML ?? '').replace(/\sclass="[^"]*"/g, ''));
@@ -145,7 +149,7 @@ test('1. the header line shows the user\'s channels as round marks', async ({ pa
   const line = page.getByTestId('stream-inbox-select-all-row');
   await expect(line.getByTestId('attached-channels')).toHaveAttribute('data-owner', /^user-/);
 
-  const marks = bar.getByTestId('attached-channel');
+  const marks = userMarksOf(bar);
   await expect(marks).toHaveCount(1);
   const mark = marks.first();
   await expect(mark).toHaveAttribute('data-provider', 'slack');
@@ -157,15 +161,19 @@ test('1. the header line shows the user\'s channels as round marks', async ({ pa
   await expect(mark.locator(':scope > :first-child')).toHaveCSS('filter', 'none');
   const glyph = await glyphOf(mark);
   expect(glyph, 'the mark drew no glyph').toBeTruthy();
-  const chips = rows.locator('[data-chip-type="source"]');
-  await expect(chips).toHaveCount(await rows.count());
-  for (const chip of await chips.all()) expect(await glyphOf(chip)).toBe(glyph);
+  // Every message this runbook delivered wears the Slack glyph. (The inbox also lists whatever else the
+  // instance's user holds — other conversations that have no channel — so only the delivered rows are read.)
+  for (const nonce of nonces) {
+    const chip = rows.filter({ hasText: nonce }).locator('[data-chip-type="source"]');
+    await expect(chip).toHaveCount(1);
+    expect(await glyphOf(chip)).toBe(glyph);
+  }
 });
 
 test('2. a mark filters; × shows everything again', async ({ page }) => {
   const { bar, rows } = await userStreamInbox(page);
   const all = await rows.count();
-  const mark = bar.getByTestId('attached-channel');
+  const mark = userMarksOf(bar);
   const others = bar.locator('[data-testid="attached-channel"][aria-pressed="false"]');
 
   await mark.click();
@@ -174,7 +182,8 @@ test('2. a mark filters; × shows everything again', async ({ page }) => {
   for (const other of await others.all()) await expect(other.locator(':scope > :first-child')).toHaveCSS('filter', /grayscale/);
   await expect(bar.getByTestId('attached-channels-clear')).toBeVisible();
   await expect(bar.getByTestId('attached-channels-add')).toHaveCount(0);
-  await expect(bar.getByTestId('attached-channels-details')).toHaveCount(0);
+  // The details control stays on the line while a mark filters (only the "+" turns into the "×").
+  await expect(bar.getByTestId('attached-channels-details')).toBeVisible();
   // Only rows whose latest message came through that source: both of ours, each wearing its chip.
   for (const nonce of nonces) await expect(rows.filter({ hasText: nonce })).toHaveCount(1);
   const chipped = rows.filter({ has: page.locator('[data-chip-type="source"]') });
@@ -189,7 +198,7 @@ test('2. a mark filters; × shows everything again', async ({ page }) => {
 
 test('3. the details popover is where on/off and delete live', async ({ page }) => {
   const { bar } = await userStreamInbox(page);
-  const mark = bar.getByTestId('attached-channel');
+  const mark = userMarksOf(bar);
 
   await bar.getByTestId('attached-channels-details').click();
   const list = page.getByRole('dialog').filter({ has: page.getByTestId('attached-channel-row') });
@@ -223,7 +232,7 @@ test('3. the details popover is where on/off and delete live', async ({ page }) 
 
   // Back on the stream inbox, the mark has its green dot.
   const back = await userStreamInbox(page);
-  await expect(back.bar.getByTestId('attached-channel')).toHaveAttribute('data-state', 'on');
+  await expect(userMarksOf(back.bar)).toHaveAttribute('data-state', 'on');
 
   // The trash asks first — cancel keeps the source.
   await back.bar.getByTestId('attached-channels-details').click();
@@ -274,7 +283,7 @@ test('4. an agent\'s bar is its own', async ({ page }) => {
 
   // The user's bar shows only the user's source.
   const user = await userStreamInbox(page);
-  const userMarks = user.bar.getByTestId('attached-channel');
+  const userMarks = userMarksOf(user.bar);
   await expect(userMarks).toHaveCount(1);
   await expect(userMarks.first()).toHaveAttribute('aria-label', new RegExp(`^${USER_SOURCE}`));
 });

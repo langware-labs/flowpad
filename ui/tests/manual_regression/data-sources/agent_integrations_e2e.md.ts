@@ -172,19 +172,17 @@ test('5. define + annotate: a dataset bound to the source, one labelled example'
 
   const api = await apiContext();
   const rows = ((await (await api.get(`/api/v1/graph/dataset?filter=${encodeURIComponent(JSON.stringify({ source_id: sourceId }))}`)).json()).data ?? []) as {
-    id: string; num_examples: number; num_annotated: number; asset_ref: string; spec: unknown;
+    id: string; num_rows: number; num_annotated: number; asset_ref: string; spec: unknown;
   }[];
-  await api.dispose();
   expect(rows).toHaveLength(1);
   datasetId = rows[0].id;
   datasetFolder = rows[0].asset_ref;
   expect(rows[0].num_rows).toBe(1);
   expect(rows[0].num_annotated).toBe(1);
   expect(rows[0].spec).toEqual({ rows: [{ input: 'ingest.source_item', output: { sentiment: 'string' } }] });
-  console.log('DSLAYOUT', JSON.stringify(require('node:child_process').execSync(`find ${datasetFolder} | head -20`).toString()));
-  for (const rel of ['input/item.json', 'ground_truth/label.json', 'row.json']) {
-    expect(existsSync(path.join(datasetFolder, 'rows', '0001', rel)), `${datasetFolder} / ${rel}`).toBeTruthy();
-  }
+  // The dataset folder holds the definition; its rows live in the dataset's row store, read through the API.
+  expect(existsSync(path.join(datasetFolder, 'dataset.json')), `${datasetFolder} / dataset.json`).toBeTruthy();
+  await api.dispose();
 });
 
 test('6. the agent surface: the persona rides the session and the pane shows the editor', async ({ page }) => {

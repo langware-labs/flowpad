@@ -18,7 +18,6 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import {
-import { adjusted } from '../../adjustableTimeout';
   awaitSteerable,
   createWorld,
   destroyWorld,
@@ -29,6 +28,7 @@ import { adjusted } from '../../adjustableTimeout';
   toplogOn,
   type World,
 } from './_world';
+import { adjusted } from '../../adjustableTimeout';
 
 let world: World;
 
