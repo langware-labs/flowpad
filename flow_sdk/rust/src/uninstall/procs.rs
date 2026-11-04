@@ -103,6 +103,9 @@ pub struct Selection {
     pub orphans: Vec<u32>,
     /// Notes for the log: why a recorded pid was not accepted.
     pub notes: Vec<String>,
+    /// Verified processes that run from a venv being removed (`owned_venvs`): its executables, the
+    /// interpreter its launcher started, and their verified descendants — whatever their role.
+    pub from_owned_venv: BTreeSet<u32>,
 }
 
 const SERVER_MARKER: &str = "flow_sdk.server.run";
@@ -207,15 +210,17 @@ pub fn select(procs: &[Proc], ctx: &Context) -> Selection {
     for p in procs {
         if p.image.as_deref().is_some_and(in_owned) {
             verified.entry(p.pid).or_insert(Role::VenvExecutable);
+            sel.from_owned_venv.insert(p.pid);
             launchers.push(p);
         }
     }
     // A venv's Scripts\python.exe is a launcher: the base interpreter it starts (a child created
-    // after it) is the one holding the venv's files open.
+    // after it) is the one holding the venv's files open — a server or monitor too, if it is one.
     for l in launchers {
         for c in procs {
             if c.ppid == l.pid && c.pid != l.pid && is_interpreter(c) && matches!((l.created, c.created), (Some(a), Some(b)) if b >= a) {
                 verified.entry(c.pid).or_insert(Role::VenvExecutable);
+                sel.from_owned_venv.insert(c.pid);
             }
         }
     }
@@ -246,6 +251,16 @@ pub fn select(procs: &[Proc], ctx: &Context) -> Selection {
                 sel.orphans.push(c.pid);
             }
             stack.push(c.pid);
+        }
+    }
+
+    // What a process running from a removed venv started (verified only) runs from it too.
+    let mut stack: Vec<u32> = sel.from_owned_venv.iter().copied().collect();
+    while let Some(parent) = stack.pop() {
+        for c in children.get(&parent).map(Vec::as_slice).unwrap_or(&[]) {
+            if c.pid != parent && verified.contains_key(&c.pid) && sel.from_owned_venv.insert(c.pid) {
+                stack.push(c.pid);
+            }
         }
     }
 
@@ -540,6 +555,7 @@ mod tests {
         assert!(s.verified.iter().any(|v| v.pid == 700), "the copy's launcher");
         assert!(s.verified.iter().any(|v| v.pid == 701), "the interpreter it started");
         assert!(!s.verified.iter().any(|v| v.pid == 702), "the same interpreter, not started by it");
+        assert!(s.from_owned_venv.contains(&700) && s.from_owned_venv.contains(&701) && !s.from_owned_venv.contains(&702));
     }
 
     #[test]

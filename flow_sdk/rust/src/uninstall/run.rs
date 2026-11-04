@@ -36,15 +36,31 @@ const RETRY_PAUSE: Duration = Duration::from_millis(1500);
 /// (`flowpad.pre-repair`) is being removed, so whatever runs from it is stopped too.
 pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, aside_goes: bool, ledger: &mut Ledger, log: &mut Log) -> bool {
     let mut owned_venvs = Vec::new();
+    let mut engine_interpreters = g.engine_interpreters.clone();
+    let mut own = |venv: std::path::PathBuf| {
+        // A venv being removed: its own base interpreter counts as the engine's (never an
+        // unproven copy's, whose `home` may be the user's Python).
+        if let Some(home) = ops::venv_home(&venv) {
+            let base = home.join("python.exe").display().to_string();
+            if !engine_interpreters.contains(&base) {
+                engine_interpreters.push(base);
+            }
+        }
+        owned_venvs.push(venv.display().to_string());
+    };
     if engine_goes {
-        owned_venvs.push(layout.venv().display().to_string());
+        own(layout.venv());
+        // The quarantined `flowpad.corrupt-*` copies go with the engine.
+        for name in ops::corrupt_copies(layout) {
+            own(layout.uv_tools().join(name));
+        }
     }
     if aside_goes {
-        owned_venvs.push(layout.pre_repair_venv().display().to_string());
+        own(layout.pre_repair_venv());
     }
     let ctx = || Context {
         app_exe: layout.app_exe().display().to_string(),
-        engine_interpreters: g.engine_interpreters.clone(),
+        engine_interpreters: engine_interpreters.clone(),
         owned_venvs: owned_venvs.clone(),
         servers: g.servers.clone(),
         listeners: procs::tcp_listeners(),
@@ -61,11 +77,13 @@ pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, aside_go
             }
         }
     }
-    let force_roles = |r: Role| engine_goes || r == Role::App || r == Role::VenvExecutable;
+    // Force-stop: everything verified when the engine goes; otherwise the app, and whatever runs
+    // from a set-aside copy being removed (its launcher, interpreter, server, workers).
+    let force = |sel: &procs::Selection, v: &procs::Verified| engine_goes || v.role == Role::App || sel.from_owned_venv.contains(&v.pid);
     for pass in 0..RETRIES {
         let snapshot = procs::scan();
         let sel = procs::select(&snapshot, &ctx());
-        let targets: Vec<_> = sel.verified.iter().filter(|v| force_roles(v.role)).collect();
+        let targets: Vec<_> = sel.verified.iter().filter(|v| force(&sel, v)).collect();
         if targets.is_empty() {
             for o in &sel.orphans {
                 ledger.processes_left.push(format!("pid {o} (started by FlowPad, not a FlowPad process)"));
@@ -83,7 +101,7 @@ pub fn stop_processes(layout: &Layout, g: &Gathered, engine_goes: bool, aside_go
         std::thread::sleep(RETRY_PAUSE);
     }
     let sel = procs::select(&procs::scan(), &ctx());
-    let survivors: Vec<_> = sel.verified.iter().filter(|v| force_roles(v.role)).collect();
+    let survivors: Vec<_> = sel.verified.iter().filter(|v| force(&sel, v)).collect();
     for v in &survivors {
         ledger.processes_left.push(format!("pid {} ({:?}) could not be stopped", v.pid, v.role));
     }
@@ -183,9 +201,12 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     s.push_str(&format!("remove={}\n", engine.remove_by_default as u8));
     s.push_str(&format!("offer={}\n", engine.opt_in_offered as u8));
     s.push_str(&format!("reason={}\n", ini_escape(&engine.reasons.join("; "))));
-    // Every offered instance, and the app data: an equal share of what is left, in turn.
+    // Every offered instance, and the app data: an equal share of what is left, in turn. The app
+    // data (settings and cache: few entries) first, so what it leaves goes to the user's data.
     let measured = instances.iter().filter(|i| !matches!(i.offer, DataOffer::NotOffered(_))).count() + 1;
     let mut budget = PageBudget::new(SIZE_WALK_ENTRIES, SIZE_WALK_TIME, measured);
+    let app = layout.app_data();
+    let app_size = budget.size_text(&app);
     let mut offered = Vec::new();
     let mut warn = false;
     let mut kept = Vec::new();
@@ -200,16 +221,10 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
             DataOffer::NotOffered(r) => kept.push(format!("{} — kept: {r}", i.name)),
         }
     }
-    let app = layout.app_data();
     s.push_str("[appdata]\n");
     s.push_str(&format!(
         "text={}\n",
-        ini_escape(&format!(
-            "{} ({}), {}",
-            app.display(),
-            budget.size_text(&app),
-            layout.flow_home().join("logs").join("main_desktop").display()
-        ))
+        ini_escape(&format!("{} ({}), {}", app.display(), app_size, layout.flow_home().join("logs").join("main_desktop").display()))
     ));
     s.push_str("[instances]\n");
     s.push_str(&format!("offer={}\n", (!offered.is_empty()) as u8));

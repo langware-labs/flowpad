@@ -36,6 +36,9 @@ pub struct Failure {
     pub detail: String,
 }
 
+/// `Refused::Unreadable` for a file where a folder was expected.
+pub const NOT_A_DIRECTORY: &str = "not a directory";
+
 /// Why a root was not opened. Nothing under a refused root is touched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refused {
@@ -120,7 +123,7 @@ impl Root {
             return Err(Refused::ReparsePoint);
         }
         if !a.directory {
-            return Err(Refused::Unreadable("not a directory".into()));
+            return Err(Refused::Unreadable(NOT_A_DIRECTORY.into()));
         }
         let actual = fsx::final_path(&handle).map_err(|e| Refused::Unreadable(e.to_string()))?;
         if !fsx::same_path(&actual, &lexical) {

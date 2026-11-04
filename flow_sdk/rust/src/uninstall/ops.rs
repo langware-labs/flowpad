@@ -59,7 +59,7 @@ pub fn read_json(p: &Path) -> Option<serde_json::Value> {
 }
 
 /// `home = …` of a venv's `pyvenv.cfg`.
-fn venv_home(venv: &Path) -> Option<PathBuf> {
+pub fn venv_home(venv: &Path) -> Option<PathBuf> {
     let text = fs::read_to_string(venv.join("pyvenv.cfg")).ok()?;
     text.lines().find_map(|l| {
         let (k, v) = l.split_once('=')?;
@@ -105,15 +105,11 @@ pub fn gather(layout: &Layout, log: &mut Log) -> Gathered {
     }
     instances.sort_by(|a, b| a.name.cmp(&b.name));
 
+    // The live venv's interpreters; a set-aside copy's are added only when it is being removed
+    // (run::stop_processes), never on an unproven copy's word.
     let mut engine_interpreters = vec![venv.join("Scripts").join("python.exe").display().to_string()];
-    // The base interpreter of the venv and of its set-aside copy (the same runtime, or not).
-    for v in [venv.clone(), layout.pre_repair_venv()] {
-        if let Some(home) = venv_home(&v) {
-            let base = home.join("python.exe").display().to_string();
-            if !engine_interpreters.contains(&base) {
-                engine_interpreters.push(base);
-            }
-        }
+    if let Some(home) = venv_home(&venv) {
+        engine_interpreters.push(home.join("python.exe").display().to_string());
     }
 
     let ctx = Context {
@@ -358,6 +354,14 @@ pub fn remove_pre_repair(layout: &Layout, proven: bool, ledger: &mut Ledger, log
     leftover
 }
 
+/// The quarantined `flowpad.corrupt-<time>` copies of the engine (uv_manager.js quarantines a
+/// corrupt venv there); they go with the engine.
+pub fn corrupt_copies(layout: &Layout) -> Vec<String> {
+    fs::read_dir(layout.uv_tools())
+        .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.starts_with("flowpad.corrupt-")).collect())
+        .unwrap_or_default()
+}
+
 /// Delete one named file (a record) beside others.
 pub fn remove_file(ledger: &mut Ledger, log: &mut Log, what: &str, path: &Path) {
     if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
@@ -384,14 +388,7 @@ pub fn remove_engine(layout: &Layout, receipt: Option<&Receipt>, pre_repair_prov
     if let Some(l) = remove_tree(ledger, log, "FlowPad engine", &layout.venv(), Some(RootId::Venv), Some(RECEIPT_FILE)) {
         leftovers.push(l);
     }
-    let siblings: Vec<String> = fs::read_dir(layout.uv_tools())
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.file_name().to_string_lossy().to_string())
-                .filter(|n| n.starts_with("flowpad.corrupt-"))
-                .collect()
-        })
-        .unwrap_or_default();
+    let siblings = corrupt_copies(layout);
     // In use (a scan holding a file): deferred, with the runtime it may run on waiting behind it.
     for name in siblings {
         leftovers.extend(remove_tree(ledger, log, "set-aside engine", &layout.uv_tools().join(name), Some(RootId::CorruptCopy), None));

@@ -204,6 +204,9 @@ class FlowServer:
 
             mark_desktop_managed()
 
+            # Not here: `cli-stamp-since` (CLI-use stamping is active). Only the `flow` entry point
+            # writes it, before anything it starts — see flow_sdk/cli/cli_use.py `record_cli_use`.
+
             # SOD driver. An explicitly-registered driver (tests / embedders /
             # cloud) wins. Otherwise there is NO desktop driver to install:
             # get_current_sod_store() falls through to the single per-instance

@@ -32,6 +32,12 @@ public static class FileIdentity {
   static extern SafeFileHandle CreateFile(string p, uint access, uint share, IntPtr sec, uint disp, uint flags, IntPtr tmpl);
   [DllImport("kernel32", SetLastError = true)] static extern bool GetFileInformationByHandle(SafeFileHandle h, out Info i);
   // What the desktop records (Node's statSync dev/ino) and flow-rs compares: volume serial + file index.
+  // Holds a folder open with NO sharing: anything else that opens it meanwhile gets a sharing violation.
+  public static SafeFileHandle HoldDir(string path) {
+    var h = CreateFile(path, 0x1, 0, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
+    if (h.IsInvalid) throw new Exception("cannot hold " + path);
+    return h;
+  }
   public static string[] Of(string path) {
     using (var h = CreateFile(path, 0x80, 7, IntPtr.Zero, 3, 0x02000000 | 0x00200000, IntPtr.Zero)) {
       Info i; if (h.IsInvalid || !GetFileInformationByHandle(h, out i)) throw new Exception("cannot read the identity of " + path);
@@ -106,8 +112,16 @@ function Wait-Until([scriptblock]$cond, [int]$secs = 30) {
   return $true
 }
 
+# True only while another process holds the file (a sharing violation); false when it is free,
+# and an error for anything else (a missing file is not "held").
 function Test-Held($path) {
-  try { $x = [IO.File]::Open($path, 'Open', 'ReadWrite', 'ReadWrite,Delete'); $x.Close(); return $false } catch { return $true }
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "not a file: $path" }
+  try { $x = [IO.File]::Open($path, 'Open', 'ReadWrite', 'ReadWrite,Delete'); $x.Close(); return $false }
+  catch {
+    $ex = $_.Exception; if ($ex.InnerException) { $ex = $ex.InnerException }  # a .NET call's error comes wrapped
+    if (($ex.HResult -band 0xFFFF) -eq 32) { return $true }  # ERROR_SHARING_VIOLATION
+    throw
+  }
 }
 
 # Holds a file open WITHOUT share-delete, as an editor or an antivirus scan would.
@@ -321,6 +335,45 @@ try {
     Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'the runtime the kept copy runs on is kept'
     Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the cleanup finished: the helper removed itself'
     Check (-not (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest) 'nothing left scheduled'
+  }
+
+  Write-Host '== a folder unreadable at the deferred run (held, scanned) stays pending and is retried'
+  if (-not $credentials) {
+    Skip 'the Credential Manager is not available in this session'
+  } else {
+    $r = New-Layout 'deferred-unreadable'
+    $venv = "$r\roaming\uv\tools\flowpad"
+    $h = Lock-File "$venv\Lib\site-packages\flow_sdk\__init__.py"
+    $code = Invoke-Uninstall $r @()
+    Check ($code -eq 10) "exit 10 (restart required), got $code"
+    Release @($h)
+    $held = [FileIdentity]::HoldDir($venv)
+    try { $dcode = Invoke-Deferred $r } finally { $held.Dispose() }
+    Check ($dcode -eq 20) "while the folder cannot be opened: still pending (exit 20), got $dcode"
+    Check (Test-Path "$venv\uv-receipt.toml") 'nothing of it removed'
+    Check (Test-Path "$r\local\Flowpad\fc\state.json") 'the pending state is kept for the next run'
+    $dcode = Invoke-Deferred $r
+    Check ($dcode -eq 0) "once it can be opened: finished (exit 0), got $dcode"
+    Check (-not (Test-Path $venv)) 'the engine is removed'
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the helper removed itself'
+  }
+
+  Write-Host '== an engine no longer proven at the deferred run: kept with its runtime, the cleanup finishes'
+  if (-not $credentials) {
+    Skip 'the Credential Manager is not available in this session'
+  } else {
+    $r = New-Layout 'deferred-engine-unproven'
+    $venv = "$r\roaming\uv\tools\flowpad"
+    $h = Lock-File "$venv\uv-receipt.toml"
+    $code = Invoke-Uninstall $r @()
+    Check ($code -eq 10) "exit 10 (restart required), got $code"
+    Release @($h)
+    [IO.File]::WriteAllText("$venv\uv-receipt.toml", 'reinstalled by someone else since')
+    $dcode = Invoke-Deferred $r
+    Check ($dcode -eq 0) "deferred-cleanup exit 0 (nothing left pending), got $dcode"
+    Check (Test-Path "$venv\uv-receipt.toml") 'the engine, no longer proven, is kept'
+    Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'and so is the runtime it runs on'
+    Check (Wait-Until { -not (Test-Path "$r\local\Flowpad\fc") }) 'the cleanup finished: the helper removed itself'
   }
 
   Write-Host '== a tampered cleanup state: refused, nothing deleted'

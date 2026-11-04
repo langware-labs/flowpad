@@ -9,14 +9,14 @@ leaves a stamp:
 * ``<flow_home>/global/cli-stamp-since`` — ``{"version", "since", "preexisting"}``: written once,
   by the first engine that stamps. Without it, a missing ``.cli_used`` means "unknown" (an older
   engine never stamped), not "never used". ``preexisting`` names the instances an older engine
-  already ran against — anything in the folder other than the OS's own files (``NOT_ENGINE_TRACES``)
-  predates the process that wrote the marker: that engine may have driven them from the command
-  line unrecorded, so for them a missing stamp stays "unknown". The folder itself proves nothing:
-  the desktop creates ``instances/prod`` at launch, before any engine runs.
+  already ran against — one of the files an engine keeps there (``ENGINE_TRACES``: its data,
+  settings, records, markers), or the database / records an env override moved elsewhere, predates
+  the process that wrote the marker: that engine may have driven them from the command line
+  unrecorded, so for them a missing stamp stays "unknown". The folder itself proves nothing (the
+  desktop creates ``instances/prod`` at launch, before any engine runs), and neither do the logs,
+  locks and failure record a launch writes before it uses anything.
 
-  Only the ``flow`` entry point writes the marker, and it runs before anything it starts: the
-  desktop launches the engine as ``flow start``, so the monitor and the server (and the logs,
-  locks and state files they write) come after the marker, never before it.
+  Only the ``flow`` entry point writes the marker (see ``record_cli_use``).
 
 Not stamped: a process with ``FLOWPAD_DESKTOP=1`` (the desktop's own ``flow`` calls, its backend,
 and every worker the backend spawns — they inherit it), and the ``hooks`` group (the Claude Code
@@ -64,13 +64,38 @@ def _process_started() -> float:
     return psutil.Process().create_time()
 
 
-#: The OS's own files. The desktop only creates the folder, at launch, before any engine runs;
-#: anything else there — data, config, logs, locks — was an engine's, older or this one.
-NOT_ENGINE_TRACES = frozenset({".DS_Store", "desktop.ini", "Thumbs.db"})
+#: What an engine keeps in an instance folder once it has used it: its data (database, records,
+#: projects, schema, tasks), its settings and markers. Not the logs, locks or failure record a
+#: launch writes first, and not the OS's own files.
+ENGINE_TRACES = frozenset(
+    {
+        "flowpad.db",
+        "flowpad_db",
+        "server.json",
+        "config.json",
+        "preferences.json",
+        "records",
+        "records_data",
+        "projects",
+        "schema",
+        "tasks",
+        "deployments",
+        "browser",
+        "backups",
+        "sealed",
+        "hub_git",
+        "received_transcripts",
+        "scheduler_jobs.db",
+        "cost_stats_cache.sqlite",
+        ".desktop_managed",
+        ".secrets_enabled",
+        ".cookie_gate",
+    }
+)
 
 
 def _is_trace(path: Path) -> bool:
-    return path.name not in NOT_ENGINE_TRACES
+    return path.name in ENGINE_TRACES
 
 
 def _created(path: Path) -> float:
@@ -160,7 +185,15 @@ def is_independent_use(subcommand: str | None, environ=os.environ) -> bool:
 
 
 def record_cli_use(subcommand: str | None) -> None:
-    """The CLI entry point's hook. Never raises."""
+    """The CLI entry point's hook. Never raises.
+
+    This is the ONLY writer of ``cli-stamp-since``, on purpose: the ``flow`` root callback runs
+    before anything the command starts, and the desktop launches the engine as ``flow start``, so
+    the marker's "started" time comes before the monitor and the server write anything. The server
+    used to write it too; a server started without ``flow`` (the monitor's restart, ``python -m``)
+    could then date the marker after its own launch files. The price: an engine only ever started
+    without ``flow`` has no marker, and is classified "unknown" (kept unless the user opts in).
+    """
     try:
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 

@@ -190,6 +190,18 @@ fn root_path(layout: &Layout, root: RootId, pinned: super::Identity) -> PathBuf 
     }
 }
 
+/// The root will never be deleted as it is now: a junction or symlink (at it or above it), or a
+/// file where the folder was. Anything else that fails to open (a sharing violation, access denied
+/// during a scan) is temporary.
+fn refused_for_good(e: &super::delete::Refused) -> bool {
+    use super::delete::Refused::*;
+    match e {
+        ReparsePoint | Redirected { .. } => true,
+        Unreadable(why) => why == super::delete::NOT_A_DIRECTORY,
+        Missing => false,
+    }
+}
+
 /// Re-prove, from disk, that the root is still FlowPad's — the state file proves nothing.
 fn still_owned(layout: &Layout, root: RootId, path: &Path) -> Result<(), String> {
     match root {
@@ -262,7 +274,8 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
     };
 
     let gathered = ops::gather(layout, log);
-    let engine_owned = body.entries.iter().any(|e| e.root == RootId::Venv);
+    // The engine (and its quarantined copies) is FlowPad's to remove when it, or a copy, is pending.
+    let engine_owned = body.entries.iter().any(|e| matches!(e.root, RootId::Venv | RootId::CorruptCopy));
     let aside_owned = body.entries.iter().any(|e| e.root == RootId::PreRepair) && gathered.pre_repair_proven;
     super::run::stop_processes(layout, &gathered, engine_owned, aside_owned, &mut Ledger::default(), log);
 
@@ -284,9 +297,14 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
                 }
                 continue;
             }
-            Err(e) => {
+            Err(e) if refused_for_good(&e) => {
                 status(layout, &format!("{:?}: kept, the folder {e}", entry.root));
                 kept.push(idx);
+                continue;
+            }
+            Err(e) => {
+                // Cannot be opened right now (an antivirus scan, a sharing violation): still pending.
+                status(layout, &format!("{:?}: waits, the folder {e}", entry.root));
                 continue;
             }
             Ok(r) if r.identity() != pinned => {
@@ -297,7 +315,18 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
             Ok(_) => {}
         }
         if ops::waits_for_venv(entry.root) && layout.venv().exists() {
-            status(layout, &format!("{:?}: waits, the engine is still there", entry.root));
+            // The runtime waits only behind an engine this cleanup is still removing. An engine it
+            // keeps (no longer proven, another folder now), or one it never had to remove, stays
+            // for good, and so does its runtime.
+            let venv_pending = body.entries.iter().enumerate().any(|(i, e)| e.root == RootId::Venv && !kept.contains(&i));
+            if venv_pending {
+                status(layout, &format!("{:?}: waits, the engine is still there", entry.root));
+            } else {
+                let msg = format!("{:?}: kept, the engine it runs is kept", entry.root);
+                status(layout, &msg);
+                log.line(&msg);
+                kept.push(idx);
+            }
             continue;
         }
         if ops::waits_for_venv(entry.root) {
@@ -350,7 +379,12 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         .iter()
         .enumerate()
         .filter(|(i, _)| !kept.contains(i))
-        .filter(|(_, e)| Root::open(&root_path(layout, e.root, pinned_of(e))).is_ok_and(|r| r.identity() == pinned_of(e)))
+        .filter(|(_, e)| match Root::open(&root_path(layout, e.root, pinned_of(e))) {
+            Ok(r) => r.identity() == pinned_of(e),
+            Err(super::delete::Refused::Missing) => false,
+            // Not verifiably gone: an unreadable root stays pending, and is tried again.
+            Err(e) => !refused_for_good(&e),
+        })
         .map(|(_, e)| format!("{:?}", e.root))
         .collect();
     if still_there.is_empty() {

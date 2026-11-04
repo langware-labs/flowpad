@@ -152,21 +152,21 @@ def test_a_clean_install_has_no_preexisting_instance(instance):
     assert "prod" not in marker["preexisting"], "...but no engine had run against it"
 
 
-def test_any_file_an_older_cli_left_counts(instance):
+def test_engine_files_count_and_launch_files_do_not(instance):
     """A `flow` command that never started a server still leaves files (config.json, tasks/)."""
     root = instance.global_dir.parent / "instances"
     (root / "cli-only" / "tasks").mkdir(parents=True, exist_ok=True)
     (root / "cli-only" / "config.json").write_text("{}")
-    (root / "logs-only" / "logs" / "cli").mkdir(parents=True, exist_ok=True)  # an older CLI's logs
-    (root / "empty").mkdir(parents=True, exist_ok=True)
-    (root / "empty" / ".DS_Store").write_bytes(b"")  # the OS, not an engine
+    (root / "launch-only" / "logs" / "monitor").mkdir(parents=True, exist_ok=True)  # a launch, not use
+    (root / "launch-only" / "server.lock").write_bytes(b"")
+    (root / "launch-only" / "server-failure.json").write_text("{}")
+    (root / "launch-only" / ".DS_Store").write_bytes(b"")  # the OS, not an engine
 
     cli_use.ensure_stamping_marker(instance.global_dir, started=time.time() + 60)
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert "cli-only" in marker["preexisting"]
-    assert "logs-only" in marker["preexisting"], "an older engine that only logged still ran there"
-    assert "empty" not in marker["preexisting"]
+    assert "launch-only" not in marker["preexisting"], "logs, locks and a failure record are a launch, not use"
 
 
 def test_an_overridden_database_counts_for_its_instance(instance, tmp_path, monkeypatch):
@@ -180,6 +180,15 @@ def test_an_overridden_database_counts_for_its_instance(instance, tmp_path, monk
 
     marker = json.loads((instance.global_dir / cli_use.STAMP_SINCE_FILENAME).read_text())
     assert "moved" in marker["preexisting"]
+
+
+def test_only_the_flow_entry_point_writes_the_marker():
+    """The server must not write it: started without `flow`, it would date the marker after its own
+    launch files (record_cli_use explains). Read the source, not a docstring."""
+    import flow_sdk.server.flow_server as flow_server
+
+    source = Path(flow_server.__file__).read_text(encoding="utf-8")
+    assert "ensure_stamping_marker(" not in source
 
 
 def test_an_unreadable_entry_counts_and_the_scan_goes_on(instance, monkeypatch):
