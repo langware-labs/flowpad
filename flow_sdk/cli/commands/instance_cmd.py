@@ -81,27 +81,19 @@ def _read_env_file(name: str) -> dict[str, str]:
 
 
 # ── kill ────────────────────────────────────────────────────────────────────
-def _is_callers_own_instance(name: str, server: dict) -> bool:
-    """Whether ``name`` is the instance THIS process runs inside — so resetting it would stop the
-    FlowPad the caller lives in.
+def _worker_reaping_own_backend(server: dict) -> bool:
+    """Whether a WORKER is about to reap the backend it runs inside — the one case reset/
+    restart-backend must refuse (it would stop the FlowPad the worker lives in).
 
-    Two signals, either is enough: (1) ``name`` matches the caller's resolved ``FLOW_INSTANCE``
-    (the backend pins it on a worker to its own instance), or (2) the named instance's recorded
-    ``server_pid`` is this process's live backend (``port_guard.live_backend_pid()``) — robust to
-    an aliased/unset name. The gate above only acts on this when the caller is also a worker.
+    "Its own backend" is decided by process ancestry (``port_guard.runs_under``): the named
+    instance's recorded ``server_pid`` is this process or an ancestor. Ancestry, not a name or
+    ``FLOW_INSTANCE`` match, so a worker resetting a DIFFERENT instance (``qa``/``dev``, whose
+    backend is not its ancestor) stays allowed even under a ``FLOW_INSTANCE`` override, and a
+    human in the desktop terminal (not a worker) is never blocked.
     """
-    from flow_sdk.instance_settings import _resolve_instance_name_from_env  # noqa: PLC0415
-
-    try:
-        if name == _resolve_instance_name_from_env():
-            return True
-    except Exception:  # noqa: BLE001 -- name resolution is best-effort
-        pass
     from flow_sdk.core import port_guard  # noqa: PLC0415
 
-    own = port_guard.live_backend_pid()
-    target = _as_int(server.get("server_pid"))
-    return own is not None and target is not None and own == target
+    return port_guard.caller_is_worker() and port_guard.runs_under(_as_int(server.get("server_pid")))
 
 
 def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
@@ -131,20 +123,16 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
 
     # FLOWPAD-2112: reset/restart-backend reap the named instance's backend by design, so the
     # sweep below passes allow_protected=True. Refuse ONLY the one dangerous case: a worker
-    # targeting the instance it runs inside (that would stop the FlowPad it lives in — the
-    # incident). A human in the desktop terminal, or a worker managing a DIFFERENT instance
-    # (qa/dev, on another port), is still allowed. The signal is FLOWPAD_WORKER (worker-spawn
-    # only), not FLOWPAD_EXECUTION_SCOPE (which the desktop terminal carries too). A worker that
-    # bypasses this with a raw kill is contained at the OS boundary (L1).
-    if _is_callers_own_instance(name, server):
-        from flow_sdk.core import port_guard  # noqa: PLC0415
-
-        if port_guard.caller_is_worker():
-            raise RuntimeError(
-                f"'{name}': a worker may not reset or restart the backend of the instance it runs "
-                f"inside (self-protection: it would stop the FlowPad it lives in). Run this from "
-                f"your own terminal, or target a different instance."
-            )
+    # reaping the backend it runs inside (that would stop the FlowPad it lives in — the incident).
+    # A human in the desktop terminal, or a worker managing a DIFFERENT instance (qa/dev, on
+    # another port), is still allowed. A worker that bypasses this with a raw kill is contained at
+    # the OS boundary (L1).
+    if _worker_reaping_own_backend(server):
+        raise RuntimeError(
+            f"'{name}': a worker may not reset or restart the backend of the instance it runs "
+            f"inside (self-protection: it would stop the FlowPad it lives in). Run this from "
+            f"your own terminal, or target a different instance."
+        )
 
     table = liveness.scan()
     # Let this instance's own records vouch for PIDs whose environ we cannot

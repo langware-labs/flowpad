@@ -267,46 +267,70 @@ def test_apply_worker_env_stamps_worker_signal():
     assert env[WORKER_ENV] == "1"
 
 
-def test_flow_stop_refused_for_worker(monkeypatch):
+def test_runs_under_identifies_self_and_ancestors(monkeypatch):
+    # The ancestry signal: this process and its parents are "under" themselves; an unrelated pid
+    # is not, and a falsey pid is never a match.
+    me = psutil.Process(os.getpid())
+    assert port_guard.runs_under(os.getpid()) is True
+    assert port_guard.runs_under(me.parent().pid) is True
+    assert port_guard.runs_under(None) is False
+    assert port_guard.runs_under(999999) is False
+
+
+def test_flow_stop_refused_for_worker_on_own_backend(monkeypatch):
+    # Worker, and the instance's recorded backend is this process's ancestor → it is OUR FlowPad.
     from flow_sdk.core.connections.service import FlowServiceError
     from flow_sdk.server import launch
 
-    monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007})
+    monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007, "server_pid": 4242})
     monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
+    monkeypatch.setattr(port_guard, "runs_under", lambda pid: True)
     with pytest.raises(FlowServiceError):
         launch._stop_all_guarded()
 
 
+def test_flow_stop_allowed_for_worker_on_other_instance(monkeypatch):
+    # Worker, but the target backend is NOT its ancestor (a different instance) → allowed. No
+    # server_pid in info keeps it a pure unit (nothing is actually killed).
+    from flow_sdk.server import launch
+
+    monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007})
+    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
+    monkeypatch.setattr(port_guard, "runs_under", lambda pid: False)
+    monkeypatch.setattr(launch, "_monitor_pids", lambda info, port: [])
+    monkeypatch.setattr(launch, "clear_server_info", lambda: None, raising=False)
+    assert launch._stop_all_guarded() == (False, False)
+
+
 def test_flow_stop_allowed_for_human(monkeypatch):
-    # Not a worker → the gate does not fire; stub the actual kills so the test stays a pure unit.
+    # Not a worker → the gate never fires even on our own backend.
     from flow_sdk.server import launch
 
     monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007})
     monkeypatch.setattr(port_guard, "caller_is_worker", lambda: False)
+    monkeypatch.setattr(port_guard, "runs_under", lambda pid: True)
     monkeypatch.setattr(launch, "_monitor_pids", lambda info, port: [])
     monkeypatch.setattr(launch, "clear_server_info", lambda: None, raising=False)
-    # No server_pid in info → no kill attempted; just assert the gate let us through.
     assert launch._stop_all_guarded() == (False, False)
+
+
+def test_worker_reaping_own_backend_predicate(monkeypatch):
+    from flow_sdk.cli.commands import instance_cmd
+
+    # Refused only when BOTH worker AND the target backend is our ancestor.
+    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
+    monkeypatch.setattr(port_guard, "runs_under", lambda pid: pid == 4242)
+    assert instance_cmd._worker_reaping_own_backend({"server_pid": 4242}) is True   # own instance
+    assert instance_cmd._worker_reaping_own_backend({"server_pid": 777}) is False   # other instance
+    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: False)
+    assert instance_cmd._worker_reaping_own_backend({"server_pid": 4242}) is False  # human
 
 
 def test_instance_reset_own_instance_refused_for_worker(monkeypatch):
     from flow_sdk.cli.commands import instance_cmd
 
-    monkeypatch.setattr(instance_cmd, "_is_callers_own_instance", lambda name, server: True)
-    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
+    monkeypatch.setattr(instance_cmd, "_worker_reaping_own_backend", lambda server: True)
     monkeypatch.setattr(instance_cmd, "_read_json", lambda p: {})
     monkeypatch.setattr(instance_cmd, "_read_env_file", lambda n: {})
     with pytest.raises(RuntimeError, match="worker may not reset"):
         instance_cmd._kill_instance_processes("oss", backend_only=True)
-
-
-def test_instance_reset_other_instance_allowed_for_worker(monkeypatch):
-    # A worker managing a DIFFERENT instance (qa/dev) must NOT be gated (finding 4).
-    from flow_sdk.cli.commands import instance_cmd
-
-    assert instance_cmd._is_callers_own_instance.__name__  # present
-    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
-    monkeypatch.setattr("flow_sdk.instance_settings._resolve_instance_name_from_env", lambda: "oss")
-    monkeypatch.setattr(port_guard, "live_backend_pid", lambda: None)
-    # name != caller's instance, and no live-backend pid match → not the caller's own instance.
-    assert instance_cmd._is_callers_own_instance("qa-cycle", {"server_pid": 424242}) is False

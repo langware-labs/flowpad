@@ -82,12 +82,19 @@ dropped, and the Electron shell is protected transitively (it is an ancestor of 
 one against **the instance it lives in** would stop its own FlowPad — the exact incident — so
 that one case is refused, loudly (a clear error, non-zero exit):
 
-- `flow stop` always targets the current instance, so it is refused whenever the caller is a
-  worker.
-- `flow instance reset <name>` / `restart-backend <name>` is refused only when `<name>` is the
-  caller's **own** instance (its `FLOW_INSTANCE`, or an instance whose live `server_pid` is this
-  process's `live_backend_pid()`). A worker managing a **different** instance (`qa`, `dev`, on
-  another port) is **not** blocked.
+- `flow stop` reaps the backend of the instance `FLOW_INSTANCE` names; it is refused only for a
+  worker whose **own** backend that is.
+- `flow instance reset <name>` / `restart-backend <name>` is refused only for a worker reaping its
+  **own** backend. A worker managing a **different** instance (`qa`, `dev`, on another port) is
+  **not** blocked.
+
+"Its own backend" is decided by **process ancestry** (`port_guard.runs_under`): the target's
+recorded `server_pid` is this process or one of its ancestors. Ancestry, not a `FLOW_INSTANCE` or
+`live_backend_pid()` match — both of those follow a `FLOW_INSTANCE=<other> flow stop` override and
+would wrongly flag a different instance, whereas the live process tree cannot be spoofed by an env
+var. The `FLOWPAD_WORKER` signal is also stripped from any backend/monitor a worker launches (the
+one detached-spawn chokepoint), so it never leaks to infrastructure or to a terminal opened from
+it.
 
 The signal is **`FLOWPAD_WORKER`** (`flow_sdk/utils/environment.py`), stamped `"1"` on every
 worker spawn at the one chokepoint (`apply_worker_env`) and inherited by a worker's children. It

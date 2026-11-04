@@ -138,6 +138,31 @@ def caller_is_worker() -> bool:
     return is_worker_process()
 
 
+def runs_under(pid: int | None) -> bool:
+    """Whether THIS process IS *pid* or a descendant of it — i.e. *pid* is a backend this process
+    runs inside, so stopping it would take down our own FlowPad.
+
+    Read from the live process tree, NOT from ``FLOW_INSTANCE`` or ``live_backend_pid()`` (both of
+    which follow a ``FLOW_INSTANCE=<other> flow stop`` override and would wrongly flag a different
+    instance). This is what lets the lifecycle gate refuse a worker stopping its OWN backend while
+    still allowing it to stop a DIFFERENT instance (whose backend is not its ancestor).
+    """
+    if not pid:
+        return False
+    import os  # noqa: PLC0415
+
+    import psutil  # noqa: PLC0415
+
+    pid = int(pid)
+    me = os.getpid()
+    if pid == me:
+        return True
+    try:
+        return any(anc.pid == pid for anc in psutil.Process(me).parents())
+    except (psutil.Error, OSError):
+        return False
+
+
 def partition(pids: Iterable[int]) -> tuple[list[int], list[int]]:
     """``(allowed, refused)`` over *pids*, de-duplicated and order-preserving. ``refused`` are
     the protected FlowPad pids; ``allowed`` is everything else and is safe to kill."""
@@ -152,4 +177,5 @@ __all__ = [
     "live_backend_pid",
     "partition",
     "protected",
+    "runs_under",
 ]

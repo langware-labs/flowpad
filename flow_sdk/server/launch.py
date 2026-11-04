@@ -180,11 +180,20 @@ def start_detached_process(args: list[str], env: dict | None = None, stderr=None
 
     Returns the Popen so a long-lived parent can poll and reap it.
     """
+    # FLOWPAD-2112: whatever we start detached here (a backend, the monitor, the backend-only
+    # respawn, a browser) is FlowPad infrastructure, never a worker — so it must not inherit the
+    # worker-only FLOWPAD_WORKER signal. Were it to leak (a worker that itself runs `flow start`),
+    # a human in a terminal that backend later spawns would be wrongly gated. Strip it here, the one
+    # detached-spawn chokepoint. Workers are spawned through apply_worker_env, not this path.
+    from flow_sdk.utils.environment import WORKER_ENV  # noqa: PLC0415
+
+    proc_env = dict(env) if env is not None else os.environ.copy()
+    proc_env.pop(WORKER_ENV, None)
     kwargs: dict = {
         "stdin": subprocess.DEVNULL,
         "stdout": stdout if stdout is not None else subprocess.DEVNULL,
         "stderr": stderr if stderr is not None else subprocess.DEVNULL,
-        "env": env or os.environ.copy(),
+        "env": proc_env,
     }
     if sys.platform == "win32":
         CREATE_NO_WINDOW = 0x08000000
@@ -844,13 +853,15 @@ def _stop_all_guarded() -> tuple[bool, bool]:
     monitor_killed = False
     server_killed = False
 
-    # FLOWPAD-2112: `flow stop` always targets THIS instance's backend (the one it runs inside), so
-    # a worker running it would stop the FlowPad it lives in — the incident. Refuse it for a worker,
-    # loudly. The signal is FLOWPAD_WORKER (set only at worker spawn), NOT FLOWPAD_EXECUTION_SCOPE
-    # (which the desktop terminal carries too): a human in the desktop terminal is still allowed.
+    # FLOWPAD-2112: `flow stop` reaps the backend of the instance FLOW_INSTANCE names. Refuse it
+    # ONLY for a worker whose OWN backend that is (stopping it would take down the FlowPad the
+    # worker runs inside — the incident); a worker targeting a DIFFERENT instance, and a human in
+    # the desktop terminal, are both allowed. "Own backend" = the recorded server_pid is this
+    # process's ancestor (override-proof); the worker signal is FLOWPAD_WORKER (worker-spawn only),
+    # NOT FLOWPAD_EXECUTION_SCOPE (which the desktop terminal carries too).
     from flow_sdk.core import port_guard  # noqa: PLC0415
 
-    if port_guard.caller_is_worker():
+    if port_guard.caller_is_worker() and port_guard.runs_under(info.get("server_pid")):
         from flow_sdk.core.connections.service import FlowServiceError  # noqa: PLC0415
 
         log.warning("stop_all refused: a worker may not stop the backend it runs inside")
