@@ -107,6 +107,9 @@ async def test_an_unchanged_agent_save_neither_bumps_the_version_nor_commits(boo
     prompt = "# Procurement agent\n\n## Hard limits\n\n- Never buy.\n- Never ask for card details.\n"
     (folder / "system_prompt.md").write_text(prompt)
     _git(tmp_path, "init", "-q")
+    # The product's own commit runs plain git: give the repo an identity (a CI runner has no global one).
+    _git(tmp_path, "config", "user.name", "t")
+    _git(tmp_path, "config", "user.email", "t@t")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-qm", "init")
     project = await project_at(client, tmp_path)

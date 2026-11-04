@@ -28612,6 +28612,10 @@ msgstr "scope: user only"
 msgid "Screen recording is not allowed"
 msgstr "Screen recording is not allowed"
 
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Screen recording is not supported"
+msgstr "Screen recording is not supported"
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Script"
 msgstr "Script"

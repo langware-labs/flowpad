@@ -139,7 +139,8 @@ export async function startRecording(): Promise<void> {
   } catch (error) {
     // NotAllowedError is the person cancelling the picker (the OS refusal was caught above).
     const name = error instanceof Error ? error.name : '';
-    if (name !== 'NotAllowedError' && name !== 'AbortError') failToast(t`Screen recording is not allowed`, error);
+    if (name === 'NotSupportedError') failToast(t`Screen recording is not supported`, error);
+    else if (name !== 'NotAllowedError' && name !== 'AbortError') failToast(t`Screen recording is not allowed`, error);
     set(IDLE);
     return;
   }

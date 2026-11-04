@@ -28398,6 +28398,10 @@ msgstr "scope: משתמש בלבד"
 msgid "Screen recording is not allowed"
 msgstr ""
 
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Screen recording is not supported"
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Script"
 msgstr "סקריפט"

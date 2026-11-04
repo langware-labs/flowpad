@@ -28402,6 +28402,10 @@ msgstr "النطاق: المستخدم فقط"
 msgid "Screen recording is not allowed"
 msgstr ""
 
+#: src/components/top-nav-bar/use-screen-recorder.ts
+msgid "Screen recording is not supported"
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Script"
 msgstr "نص برمجي"
