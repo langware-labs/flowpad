@@ -25,6 +25,7 @@
  * with CI validation against application control) is a separate task.
  */
 
+const crypto = require('crypto');
 const path = require('path');
 
 // ── The runtime manifest ─────────────────────────────────────────────────────
@@ -210,6 +211,16 @@ function createPolicyBlockProbe({ newestLogFile, fileSize, readTail, fileMtimeMs
 //   version    — its version ("3.11.9"), source ("python.org"), installedAt (ISO)
 //   attempts   — [{ appVersion, engineVersion, at, result }] — ONE repair per app+engine
 //                version; a failed one is not retried automatically (no repair loop).
+//   runtimeOwnership — { token, dirs } — the token written into each directory the repair
+//                created (dirs, relative to the runtime folder). The Windows uninstaller removes
+//                a runtime directory only when its OWNERSHIP_SENTINEL carries this token. Kept
+//                when a repair fails: a runtime left on disk must still be provably ours.
+const OWNERSHIP_SENTINEL = '.flowpad-owned';
+
+function ownershipSentinelText(token, at) {
+  return JSON.stringify({ owner: 'flowpad-desktop', token, createdAt: at }, null, 2);
+}
+
 function runtimeStatePath(stateDir) {
   return path.join(stateDir, 'desktop-runtime.json');
 }
@@ -267,6 +278,7 @@ function recordAttempt(state, { appVersion, engineVersion, at, result, detail })
  *   startBackend()                    → start the engine on the new venv
  *   healthCheck()                     → true when the backend answered healthy
  *   remove(pathToRemove)              → best-effort delete (the failed download only)
+ *   markOwned(dirs, token)            → optional; writes OWNERSHIP_SENTINEL with `token` into each dir
  *
  * `paths`: { runtimeDir, downloadsDir }. `versions`: { appVersion, engineVersion }.
  * Resolves `{ ok, python, reused, steps }`; rejects with an Error carrying `.step` and
@@ -284,6 +296,7 @@ async function performRuntimeRepair({
   onProgress = () => {},
   log = console,
   now = () => new Date().toISOString(),
+  newToken = () => crypto.randomBytes(16).toString('hex'),
 }) {
   if (!canAttemptRepair(state, versions)) {
     const prior = priorAttempt(state, versions);
@@ -353,6 +366,14 @@ async function performRuntimeRepair({
         throw fail('verify-signatures', `the extracted runtime has unsigned or unexpectedly signed files (${bad}); ${disposal}`);
       }
       step('verify-signatures', `${sigs.checked} executable files, all Valid and signed by ${manifest.signerSubjectCNs.join(' / ')}`);
+      // Mark what this repair created, before anything else can fail, so the uninstaller can
+      // later prove the folders are ours. A reused python.org install is never marked.
+      if (io.markOwned) {
+        const token = newToken();
+        await io.markOwned([targetDir, paths.downloadsDir], token);
+        state = { ...state, runtimeOwnership: { token, dirs: [path.basename(targetDir), path.basename(paths.downloadsDir)] } };
+        saveState(state);
+      }
     }
     // 4. The interpreter must start and load exactly the modules the engine needs.
     step('validate', `checking the interpreter can load ${requiredImports.join(', ')}`);
@@ -461,6 +482,8 @@ module.exports = {
   detectPolicyBlockInLog,
   policyBlockFromInstallError,
   createPolicyBlockProbe,
+  OWNERSHIP_SENTINEL,
+  ownershipSentinelText,
   runtimeStatePath,
   readRuntimeState,
   writeRuntimeState,

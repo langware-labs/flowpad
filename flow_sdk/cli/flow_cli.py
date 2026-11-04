@@ -137,6 +137,10 @@ def main(ctx: typer.Context):
     # Ensure config defaults are set
     setup_defaults()
 
+    from flow_sdk.cli.cli_use import record_cli_use  # noqa: PLC0415
+
+    record_cli_use(ctx.invoked_subcommand)
+
     # If no subcommand was invoked, show version
     if ctx.invoked_subcommand is None:
         typer.echo(f"flow {__version__}")

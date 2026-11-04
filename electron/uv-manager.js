@@ -12,6 +12,7 @@ const updateTest = require('./update-test');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
 const runtimeRepair = require('./runtime-repair');
+const engineOwnership = require('./engine-ownership');
 // The dependencies that ship native wheels (scripts/native_deps_from_lock.py): the only ones Windows
 // application control can refuse, so the only ones that get the reputation margin (see EXCLUDE_NEWER_MARGIN_DAYS).
 const NATIVE_DEPS = Object.freeze(require('./native-deps.json').packages);
@@ -499,6 +500,11 @@ class QuitInProgressError extends Error {
 const RANGE_FETCH_TIMEOUT_MS = 20 * 1000;
 const MAX_WHOLE_WHEEL_READS = 2;
 
+// Every `flow` the desktop runs carries this, as `flow start` does: the CLI-use stamp
+// (flow_sdk/cli/cli_use.py) must not count the desktop's own calls as someone else's use of
+// the engine, or the uninstaller would treat every desktop engine as shared.
+const DESKTOP_CLI_ENV = { FLOWPAD_DESKTOP: '1' };
+
 class UvManager {
   constructor(log, { stateDir = null, appVersion = null } = {}) {
     this.log = log;
@@ -607,7 +613,7 @@ class UvManager {
     // 'ok' | 'slow' (timed out: it runs) | 'blocked' | 'failed' (some other error)
     const attempt = async (launcher, cmd, args, shell) => {
       try {
-        await this._run(cmd, args, { timeout: 2000, ...(shell === undefined ? {} : { shell }) });
+        await this._run(cmd, args, { timeout: 2000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
         return 'ok';
       } catch (err) {
         if (isPolicyBlockError(err)) { tried.push({ launcher, path: cmd, detail: String(err.stderr || err.message).split('\n')[0] }); return 'blocked'; }
@@ -1641,8 +1647,11 @@ class UvManager {
     this._keepMarker = false;
     this._spawned = false;
     this._writeInstallMarker(installArgs);
+    const venvBefore = this._ownershipSnapshotBeforeInstall();
     try {
-      return await this._uvToolInstallForceAttempts(installArgs, { onProgress, strategies, compileBytecode });
+      const result = await this._uvToolInstallForceAttempts(installArgs, { onProgress, strategies, compileBytecode });
+      this._recordEngineOwnership(venvBefore);
+      return result;
     } catch (err) {
       // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
       // half-written tool dir: the venv may be half-replaced, so keep the marker.
@@ -1658,6 +1667,162 @@ class UvManager {
       // an abort during the drain, before the spawn, changed nothing.
       const keep = (this._installAborted || this._keepMarker) && this._spawned;
       if (!keep) this._clearInstallMarker();
+    }
+  }
+
+  // ── Engine ownership record (engine-ownership.js; read by the Windows uninstaller) ──────────
+
+  /** `%LOCALAPPDATA%\Flowpad\engine-ownership.json`; null off Windows and when state is disabled (tests, tools). */
+  _engineOwnershipPath() {
+    if (!IS_WIN || !this._stateDir) return null;
+    const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return engineOwnership.ownershipRecordPath(local);
+  }
+
+  _ownershipFs() {
+    return {
+      statBigint: (p) => fs.statSync(p, { bigint: true }),
+      readBytes: (p) => fs.readFileSync(p),
+      exists: (p) => fs.existsSync(p),
+    };
+  }
+
+  /**
+   * The venv as it is before an install. During a runtime repair the live venv has just been
+   * renamed to `<venv>.pre-repair`, so that copy stands in for it: a rename keeps the directory's
+   * identity and receipt, so an adopted engine is not mistaken for one the desktop made. Outside a
+   * repair a `.pre-repair` folder is only a leftover (finalize is best effort) and says nothing.
+   */
+  _ownershipSnapshotBeforeInstall() {
+    if (!this._engineOwnershipPath()) return null;
+    const io = this._ownershipFs();
+    const live = engineOwnership.snapshotVenv(io, this._toolVenvDir());
+    // A repair after a blocked FIRST install set aside that install's half-built venv, not an engine.
+    if (live.exists || !this._repairSetAside || this._hadEngineBeforeRepair === false) return live;
+    return engineOwnership.snapshotVenv(io, this._preRepairVenvDir());
+  }
+
+  /** After a successful install: record its origin. Never throws — a missing record only means "uncertain". */
+  _recordEngineOwnership(venvBefore) {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath || !venvBefore) return;
+    try {
+      const venvDir = this._toolVenvDir();
+      const prior = engineOwnership.readRecord((p) => fs.readFileSync(p, 'utf8'), recordPath);
+      const origin = engineOwnership.classifyEngineOrigin({ prior, before: venvBefore });
+      const snapshot = engineOwnership.snapshotVenv(this._ownershipFs(), venvDir);
+      if (!snapshot.exists) return;
+      const record = engineOwnership.buildRecord({
+        origin, venv: venvDir, snapshot, desktopVersion: this._appVersion, now: () => new Date().toISOString(),
+      });
+      this._writeOwnershipRecord(recordPath, record);
+      this.log.info(`[uv] engine ownership recorded: origin=${origin}`);
+    } catch (e) {
+      this.log.warn(`[uv] could not record engine ownership: ${e.message}`);
+    }
+  }
+
+  /** `engine-ownership.pre-repair.json`: the record of the venv set aside by a repair. */
+  _asideRecordPath() {
+    const recordPath = this._engineOwnershipPath();
+    return recordPath && path.join(path.dirname(recordPath), engineOwnership.ASIDE_RECORD_FILE);
+  }
+
+  /**
+   * Before the repair sets the venv aside: its record goes aside with it, byte for byte. Remembers
+   * what was there — 'saved', 'none' (no record: none to put back) or 'unknown' (the copy failed) —
+   * so the rollback never deletes a record it could not set aside. Never throws.
+   */
+  _setAsideOwnershipRecord() {
+    this._asideRecordState = undefined;
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath || !fs.existsSync(this._toolVenvDir())) return; // nothing is set aside
+    const aside = this._asideRecordPath();
+    try {
+      if (!fs.existsSync(recordPath)) {
+        fs.rmSync(aside, { force: true });
+        this._asideRecordState = 'none';
+        return;
+      }
+      const tmp = `${aside}.${process.pid}.tmp`;
+      try {
+        fs.copyFileSync(recordPath, tmp);
+        fs.renameSync(tmp, aside);
+      } finally {
+        try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+      }
+      this._asideRecordState = 'saved';
+    } catch (e) {
+      this._asideRecordState = 'unknown';
+      try { fs.rmSync(aside, { force: true }); } catch { /* best effort */ }
+      this.log.warn(`[runtime-repair] could not set the engine ownership record aside: ${e.message}`);
+    }
+  }
+
+  /**
+   * The set-aside venv is back in place: so is its record. Without a set-aside record the live one
+   * is deleted only when there was none before the repair; otherwise it stays (it no longer matches
+   * the venv, so the uninstaller keeps the engine — never a guess that removes it). Never throws.
+   */
+  _restoreAsideOwnershipRecord() {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath) return;
+    try {
+      const aside = this._asideRecordPath();
+      if (fs.existsSync(aside)) {
+        fs.renameSync(aside, recordPath);
+      } else if (this._asideRecordState === 'none') {
+        fs.rmSync(recordPath, { force: true });
+      } else {
+        this.log.warn('[runtime-repair] the engine ownership record was not set aside: the restored engine keeps the current one');
+        return;
+      }
+      this.log.info('[runtime-repair] engine ownership record restored with the engine');
+    } catch (e) {
+      this.log.warn(`[runtime-repair] could not restore the engine ownership record: ${e.message}`);
+    }
+  }
+
+  _dropAsideOwnershipRecord() {
+    const aside = this._asideRecordPath();
+    if (aside) fs.rmSync(aside, { force: true });
+  }
+
+  _writeOwnershipRecord(recordPath, record) {
+    engineOwnership.writeRecord({
+      mkdir: (d) => fs.mkdirSync(d, { recursive: true }),
+      writeText: (p, t) => fs.writeFileSync(p, t, 'utf8'),
+      rename: (a, b) => fs.renameSync(a, b),
+    }, recordPath, record);
+  }
+
+  /**
+   * Once, for an engine installed before ownership records existed: infer its origin from the
+   * receipt's desktop install signature plus the instance's `.desktop_managed` marker. Must run
+   * before this launch's first install, or that install would classify the venv as adopted.
+   */
+  backfillEngineOwnership() {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath) return;
+    try {
+      if (fs.existsSync(recordPath)) return;
+      const venvDir = this._toolVenvDir();
+      const snapshot = engineOwnership.snapshotVenv(this._ownershipFs(), venvDir);
+      if (!snapshot.exists) return;
+      let receiptText = null;
+      try { receiptText = fs.readFileSync(path.join(venvDir, engineOwnership.RECEIPT_FILE), 'utf8'); } catch { /* no receipt: adopted */ }
+      const instance = process.env.FLOW_INSTANCE || 'prod';
+      const desktopManaged = fs.existsSync(path.join(this._stateDir, 'instances', instance, '.desktop_managed'));
+      const origin = engineOwnership.inferLegacyOrigin({ receiptText, desktopManaged });
+      this._writeOwnershipRecord(recordPath, engineOwnership.buildRecord({
+        origin, venv: venvDir, snapshot, desktopVersion: this._appVersion, now: () => new Date().toISOString(),
+      }));
+      // `adopted` covers every engine not proven the desktop's: one installed separately, or one an
+      // earlier install left half-written (no receipt). Both are kept on uninstall.
+      const why = origin === 'adopted' ? (receiptText == null ? ' (no receipt: installed separately, or an interrupted install)' : ' (not the desktop\'s install signature)') : '';
+      this.log.info(`[uv] engine ownership backfilled for an existing engine: origin=${origin}${why}`);
+    } catch (e) {
+      this.log.warn(`[uv] engine ownership backfill failed: ${e.message}`);
     }
   }
 
@@ -2426,7 +2591,7 @@ class UvManager {
       ? this._flowCmd(['stop'])
       : { cmd: 'flow', args: ['stop'] };
     try {
-      await this._run(cmd, args, { timeout: 10000, ...(shell === undefined ? {} : { shell }) });
+      await this._run(cmd, args, { timeout: 10000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
       this.log.info('[uv] flow stop completed');
       return { busy: false };
     } catch (error) {
@@ -2546,7 +2711,7 @@ class UvManager {
   async _getUpgradeInfo() {
     try {
       const { cmd, args, shell } = this._flowCmd(['upgrade', '--info']);
-      const { stdout } = await this._run(cmd, args, { timeout: 15000, ...(shell === undefined ? {} : { shell }) });
+      const { stdout } = await this._run(cmd, args, { timeout: 15000, env: DESKTOP_CLI_ENV, ...(shell === undefined ? {} : { shell }) });
       return JSON.parse(stdout);
     } catch (err) {
       this.log.warn(`[uv] _getUpgradeInfo failed: ${err.message}`);
@@ -3551,6 +3716,10 @@ class UvManager {
       startBackend: () => startBackend(),
       healthCheck: () => healthCheck(),
       remove: async (p) => this._removePath(p),
+      markOwned: async (dirs, token) => {
+        const text = runtimeRepair.ownershipSentinelText(token, new Date().toISOString());
+        for (const d of dirs) fs.writeFileSync(path.join(d, runtimeRepair.OWNERSHIP_SENTINEL), text, 'utf8');
+      },
     };
     return runtimeRepair.performRuntimeRepair({
       io,
@@ -3795,25 +3964,52 @@ class UvManager {
     // `markFirstInstallBlocked()`: the app knows the blocked install was the FIRST — whatever is in the venv
     // (a block during --compile-bytecode comes after it was populated, and `_version.py` is readable) is not an engine.
     this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
-    try {
-      this._setAsidePreRepairVenv();
-    } catch (e) {
-      // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
-      // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
-      const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
-      err.nothingChanged = true;
-      throw err;
+    // The venv's ownership record goes aside with it: the rollback puts both back, and the
+    // uninstaller removes a leftover set-aside venv only when its record proves it was the desktop's.
+    if (this._hadEngineBeforeRepair === false) {
+      // A blocked FIRST install's half-built venv is not an engine: delete it, never set it aside
+      // (a leftover `.pre-repair` of it would only be hundreds of MB nothing can prove or use).
+      // A delete that fails part-way HAS changed the venv: never "nothing changed" here.
+      try {
+        fs.rmSync(this._toolVenvDir(), { recursive: true, force: true });
+      } catch (e) {
+        throw new Error(`could not delete the blocked first install's environment (${e.message})`);
+      }
+    } else {
+      try {
+        this._setAsideOwnershipRecord();
+        this._setAsidePreRepairVenv();
+      } catch (e) {
+        this._dropAsideOwnershipRecord();
+        // The rename failed (a file held open — an antivirus scan, a lingering process): the venv is
+        // still in place and intact, so NOTHING changed. Say so; the rollback below recognises it.
+        const err = new Error(`could not set the current engine aside (${e.message}); the engine was not changed`);
+        err.nothingChanged = true;
+        throw err;
+      }
     }
     this.log.info(`[runtime-repair] installing ${spec} on ${python}`);
-    await this._uvToolInstallForce(
-      ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
-    );
+    this._repairSetAside = true;
+    try {
+      await this._uvToolInstallForce(
+        ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
+      );
+    } finally {
+      this._repairSetAside = false;
+    }
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
   }
 
   /** The blocked install was the first one: a repair that follows has no previous engine to put back. */
   markFirstInstallBlocked() { this._firstInstallBlocked = true; }
+
+  /**
+   * The engine answered its health check: there IS a working engine now, so a later repair has one
+   * to put back. Only a healthy engine clears the "first install blocked" mark — an install that
+   * merely finished (a repair's, a rollback's) proves nothing.
+   */
+  markEngineHealthy() { this._firstInstallBlocked = false; }
 
   _preRepairVenvDir() {
     return `${this._toolVenvDir()}.pre-repair`;
@@ -3832,8 +4028,11 @@ class UvManager {
   /** The repair held: drop the set-aside environment. Best effort; a leftover is harmless. */
   async _finalizeEngine() {
     const aside = this._preRepairVenvDir();
+    // The repair held (the engine is healthy): a later repair has an engine to put back.
+    this.markEngineHealthy();
     try {
       fs.rmSync(aside, { recursive: true, force: true });
+      this._dropAsideOwnershipRecord();
       this.log.info('[runtime-repair] previous engine removed (repair finalized)');
     } catch (e) {
       this.log.warn(`[runtime-repair] could not remove ${aside}: ${e.message}`);
@@ -3860,12 +4059,14 @@ class UvManager {
       // environment of that install, not an engine), and reinstalling one on the blocked interpreter would only fail again.
       this.log.warn('[runtime-repair] there was no engine before the repair: nothing to roll back');
       fs.rmSync(aside, { recursive: true, force: true });
+      this._dropAsideOwnershipRecord();
       return;
     }
     if (fs.existsSync(aside)) {
       this.log.warn('[runtime-repair] restoring the set-aside engine');
       fs.rmSync(venvDir, { recursive: true, force: true });
       fs.renameSync(aside, venvDir);
+      this._restoreAsideOwnershipRecord();
       this._flowBin = await this._resolveFlowBin();
       return;
     }
