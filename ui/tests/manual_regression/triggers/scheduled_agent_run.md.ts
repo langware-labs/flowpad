@@ -108,14 +108,14 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
 
   // ── clicking the schedule in the menu opens the trigger, which links back ──
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
+  await expect(page).toHaveURL(new RegExp(`/dock/(assets|project/[^/]+)/editor/agent/typeid/agent-${agent.id}`));
   const section = page.getByTestId('navigator-section-schedules');
   if ((await section.getAttribute('aria-expanded')) !== 'true') await section.click();
   await page.getByTestId(`agent-resource-schedule-${trigger!.id}`).click();
   await expect(page).toHaveURL(new RegExp(`/child/schedule/trigger-${trigger!.id}`));
   await expect(page.getByTestId('agent-schedule-detail')).toContainText('Runs agent');
   await page.getByTestId('trigger-runs-agent').click();
-  await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
+  await expect(page).toHaveURL(new RegExp(`/dock/(assets|project/[^/]+)/editor/agent/typeid/agent-${agent.id}`));
   await expect(page).not.toHaveURL(/\/child\//);
 
   // ── edit keeps the trigger ─────────────────────────────────────────────────
