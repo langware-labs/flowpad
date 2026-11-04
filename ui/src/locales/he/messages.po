@@ -6247,6 +6247,14 @@ msgstr "שרשרת"
 msgid "Chain"
 msgstr "שרשרת"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Chain session"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
+msgid "Chain this session into which project?"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/inbound/InboundView.tsx
@@ -13617,6 +13625,7 @@ msgstr "ההגדרה של הפרויקט נכשלה"
 #: src/components/notes/useNoteWorker.ts
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
 msgid "Failed to start session"
 msgstr "כישלון בהתחלת הסשן"
 
@@ -22791,6 +22800,10 @@ msgstr "פתחו פרויקט כדי לראות את מודל הנתונים ש�
 msgid "Open a project to work on this note."
 msgstr ""
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Open a session on another project that reviews this one"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
 msgstr "פתיחת סשן במחשב הזה"
@@ -29383,6 +29396,7 @@ msgid "Session info"
 msgstr "מידע על הסשן"
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionAnchor.tsx

@@ -6285,6 +6285,14 @@ msgstr "chain"
 msgid "Chain"
 msgstr "Chain"
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Chain session"
+msgstr "Chain session"
+
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
+msgid "Chain this session into which project?"
+msgstr "Chain this session into which project?"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/inbound/InboundView.tsx
@@ -13700,6 +13708,7 @@ msgstr "Failed to set project"
 #: src/components/notes/useNoteWorker.ts
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
 msgid "Failed to start session"
 msgstr "Failed to start session"
 
@@ -22964,6 +22973,10 @@ msgstr "Open a project to see its data model."
 msgid "Open a project to work on this note."
 msgstr "Open a project to work on this note."
 
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Open a session on another project that reviews this one"
+msgstr "Open a session on another project that reviews this one"
+
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
 msgstr "Open a session on this machine"
@@ -29602,6 +29615,7 @@ msgid "Session info"
 msgstr "Session info"
 
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionAnchor.tsx
