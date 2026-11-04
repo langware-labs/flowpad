@@ -26,6 +26,7 @@ module.exports.__t = {
   runScheduledUpdateCheck, startLaunchDesktopCheck, startOffer, prepareDeferredEngineUpdate, offerDesktopFoundAtLaunch, postBootUpdates,
   setLaunchDesktopLook: (p) => { launchDesktopLook = p; },
   setJournal: (j) => { journal = j; },
+  getNewestLogFile,
   getFoundAtLaunch: () => desktopFoundAtLaunch, getFollowUpDesktop: () => followUpDesktop,
   primeLaunchCheck: () => { launchDesktopCheck = startLaunchDesktopCheck(); },
   fireAccountWatch: (f) => accountWatchEvent && accountWatchEvent(f),
@@ -740,6 +741,21 @@ const HOUR = 60 * 60 * 1000;
     eq(await ask({ compatibleRelease: { version: '0.2.168' } }), false, 'the installed one is the newest this desktop runs: nothing offered');
     eq(await ask({ compatThrows: 'no flowpad release on PyPI is compatible with desktop 0.2.47' }), false, 'nothing compatible: nothing offered');
     eq(await ask({ compatibleRelease: null }), null, 'undecided (PyPI silent): the popover falls back, and the click is checked');
+  }
+  {
+    // A log the backend prunes between the listing and its stat (launch.py cleans old logs as it starts, while
+    // waitForBackend lists the same dir) is skipped — a throw there ended the wait (seen on the VM: ENOENT).
+    const env = load();
+    const dir = fs.mkdtempSync(path.join(HOME, 'logs-'));
+    for (const [name, ageS] of [['old.log', 300], ['new.log', 1]]) {
+      fs.writeFileSync(path.join(dir, name), 'x');
+      const t = Date.now() / 1000 - ageS; fs.utimesSync(path.join(dir, name), t, t);
+    }
+    const realStat = fs.statSync;
+    fs.statSync = (p, ...a) => { if (String(p).endsWith('old.log')) { const e = new Error(`ENOENT: no such file or directory, stat '${p}'`); e.code = 'ENOENT'; throw e; } return realStat(p, ...a); };
+    let newest;
+    try { newest = env.t.getNewestLogFile(dir); } finally { fs.statSync = realStat; }
+    eq(newest && newest.name, 'new.log', 'a log gone since the listing is skipped, not thrown');
   }
   {
     // "Restart now" through main.js's applier: the background prepare and bytecode compile are stopped — the

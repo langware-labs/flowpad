@@ -96,12 +96,25 @@ function generateTimestampedFilename() {
   return `${day}${mon}${year}_${hh}_${mm}_${ss}.log`;
 }
 
+/**
+ * The `.log` files in `dir` with their mtimes. A file that vanishes between the listing and its stat is skipped:
+ * the backend prunes its own old logs as it starts (launch.py cleanup_old_logs) while waitForBackend lists the
+ * same directory, and a throw here ended the wait — seen on the VM, where it failed the restore after a failed
+ * upgrade with ENOENT on a log the new backend had just deleted.
+ */
+function listLogFiles(dir) {
+  if (!fs.existsSync(dir)) return [];
+  const files = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.log')) continue;
+    const full = path.join(dir, f);
+    try { files.push({ name: f, path: full, mtime: fs.statSync(full).mtimeMs }); } catch { /* gone since the listing */ }
+  }
+  return files;
+}
+
 function cleanupOldLogs(dir, maxAgeDays = 7) {
-  if (!fs.existsSync(dir)) return;
-  const files = fs.readdirSync(dir)
-    .filter(f => f.endsWith('.log'))
-    .map(f => ({ name: f, path: path.join(dir, f), mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
-    .sort((a, b) => a.mtime - b.mtime);
+  const files = listLogFiles(dir).sort((a, b) => a.mtime - b.mtime);
   if (files.length <= 1) return;
   const cutoff = Date.now() - maxAgeDays * 86400000;
   for (const f of files.slice(0, -1)) {  // never delete the newest
@@ -112,11 +125,7 @@ function cleanupOldLogs(dir, maxAgeDays = 7) {
 }
 
 function getNewestLogFile(dir) {
-  if (!fs.existsSync(dir)) return null;
-  const files = fs.readdirSync(dir)
-    .filter(f => f.endsWith('.log'))
-    .map(f => ({ name: f, path: path.join(dir, f), mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
+  const files = listLogFiles(dir).sort((a, b) => b.mtime - a.mtime);
   return files.length > 0 ? files[0] : null;
 }
 
