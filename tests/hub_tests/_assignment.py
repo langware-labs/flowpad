@@ -7,6 +7,11 @@ import json
 import httpx
 
 
+# The hub grants role SETS (``roles``), not a single ``role``; "member" was the
+# pre-role-set name for the default conversation grant.
+ROLE_SETS = {"member": ["reader", "runner"], "reader": ["reader"]}
+
+
 def _targets(invitation: dict, entity_type: str, entity_id: str) -> bool:
     """Whether a pending-invitation payload names one concrete target."""
     typeid = f"{entity_type}-{entity_id}"
@@ -42,9 +47,9 @@ def _assert_assignment(
     )
     assert member is not None, f"{user_id} was not assigned to {entity_type}-{entity_id}: {members}"
     if expected_role is not None:
-        assert member.get("role") == expected_role, member
+        assert sorted(member.get("roles") or []) == sorted(ROLE_SETS.get(expected_role, [expected_role])), member
     else:
-        assert member.get("role"), member
+        assert member.get("roles"), member
     return member
 
 

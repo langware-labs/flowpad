@@ -136,4 +136,4 @@ async def test_shared_skill_on_world_map_of_owner_and_reader(hub_base_url, hub_l
     members = r.json().get("data") or []
     by_id = {m.get("user_id"): m for m in members if isinstance(m, dict)}
     assert bob_id in by_id, f"bob not in skill members after assignment: {members}"
-    assert by_id[bob_id].get("role") == "reader", f"bob's role on skill is not reader: {by_id[bob_id]}"
+    assert by_id[bob_id].get("roles") == ["reader"], f"bob's role on skill is not reader: {by_id[bob_id]}"

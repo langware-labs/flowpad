@@ -94,7 +94,7 @@ async def test_conversation_worldview_consistent_for_both(hub_base_url):
             headers=headers_a,
             json={
                 "recipient_email": bob_email,
-                "invitation_targets": [{"typeid": f"conversation-{conv_id}", "role": "member"}],
+                "invitation_targets": [{"typeid": f"conversation-{conv_id}", "roles": ["reader", "runner"]}],
             },
         )
         r.raise_for_status()
