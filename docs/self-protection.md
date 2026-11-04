@@ -32,8 +32,18 @@ the caller actually aimed at):
 That protects:
 
 - the **backend** directly; and
-- its whole **ancestor chain** — monitor, launcher, Electron — because the backend sits
-  beneath them, so a tree/name kill that would reach them is refused on the backend's behalf.
+- its live **ancestor chain** — whatever genuinely sits above the backend in the process
+  tree right now, so a tree/name kill that would reach an ancestor is refused on the
+  backend's behalf. In practice that is the **monitor** (the backend's parent).
+
+It does **not** reliably protect the **launcher** (`flow start`) or the **Electron shell**.
+The backend is spawned *detached* (a new session), so whoever launched it is usually no longer
+an ancestor once the backend is live — on a desktop install the live chain is
+`backend → monitor → launchd`, with the launcher/Electron off to the side — and nothing records
+their pids, so there is no identity to key on. A worker that targets the launcher or the GUI
+directly is contained at the OS boundary (L1), not here. Killing the GUI is also outside the
+incident class this guard targets (a "free the port" / "kill python" that takes down the headless
+backend).
 
 It deliberately does **not** protect the backend's *descendants* (workers, their shells, MCP
 servers, web apps): the backend is their *ancestor*, so a worker reaping its own stuck
@@ -64,7 +74,8 @@ An earlier design also protected `9222`. Verified against the shipped Electron a
 packaged desktop sets **no** `--remote-debugging-port` and **no** `--remote-debugging-pipe`
 (`electron/main.js` sets only one unrelated switch). It opens no Chrome DevTools endpoint at
 all; every `9222` in the repo is a dev-only Chrome / `debugMCP` convention. So `9222` was
-dropped, and the Electron shell is protected transitively (it is an ancestor of the backend).
+dropped. (The Electron shell itself is not protected by this L0 guard — see the one rule above:
+it is generally not a live ancestor of the detached backend, and no record names its pid.)
 
 ## Where it is enforced
 
@@ -93,8 +104,11 @@ recorded `server_pid` — **or its recorded `monitor_pid`** — is this process 
 ancestors. Ancestry, not a `FLOW_INSTANCE` or `live_backend_pid()` match — both of those follow a
 `FLOW_INSTANCE=<other> flow stop` override and would wrongly flag a different instance, whereas the
 live process tree cannot be spoofed by an env var. The `FLOWPAD_WORKER` signal is also stripped
-from any backend/monitor a worker launches (the one detached-spawn chokepoint), so it never leaks
-to infrastructure or to a terminal opened from it.
+from any backend/monitor a worker launches, so it never leaks to infrastructure or to a terminal
+opened from it. The strip lives in one shared helper, `environment.without_worker_signal`, that
+every env-copying spawn path routes through — `start_detached_process`, the instances'
+`spawn_detached`, and `build_named_instance_env` (the backend env builder) — so it is not one
+chokepoint that must be remembered at each new call site, but one function they all call.
 
 The **monitor** is checked alongside the server because `flow stop` (and the instance sweep) reaps
 every monitor *first*, and the monitor is an ancestor of the backend — hence of the worker. For

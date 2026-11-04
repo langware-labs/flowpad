@@ -21,9 +21,17 @@ start. ``server.json`` is the backend's own self-record, written at startup
 That single question protects:
 
 * the **backend** directly — it is the recorded live process; and
-* its whole **ancestor chain** — monitor, launcher, and the Electron shell — because the
-  backend sits beneath them, so a tree- or name-based kill that would reach them is refused
-  on the backend's behalf.
+* its live **ancestor chain** — whatever genuinely sits above the backend in the process tree
+  right now, so a tree- or name-based kill that would reach an ancestor is refused on the
+  backend's behalf. In practice that is the **monitor** (the backend's parent).
+
+It does NOT reliably protect the **launcher** or the **Electron shell**. The backend is spawned
+*detached* (``start_detached_process`` / a new session), so whoever launched it — ``flow start``,
+or the desktop Electron process — is typically no longer an ancestor once the backend is live (the
+monitor reparents to ``init``/``launchd``). Nothing records their pids either, so there is no
+identity to key on. Killing the Electron GUI is also outside the incident class this guard targets
+(a port-cleanup / "kill python" that takes down the headless backend). Containing a worker that
+targets the launcher or the GUI directly is an L1 (OS-containment) concern.
 
 It deliberately does **not** protect the backend's *descendants* (workers, their shells,
 MCP servers, web apps): the backend is their *ancestor*, so a worker reaping its own stuck
@@ -62,20 +70,9 @@ class PortGuardRefused(RuntimeError):
         )
 
 
-def live_backend_pid() -> int | None:
-    """The pid of THIS instance's live backend, from its own ``server.json`` record, confirmed
-    to still be that process (``server_create_time`` matches) — else None.
-
-    None covers every "nothing to protect" case: no ``server.json``, no recorded pid, the pid
-    is dead, or the pid was reused by a different process. In particular a stale/foreign holder
-    of the port is NOT the recorded live backend, so it stays killable.
-    """
-    try:
-        from flow_sdk.config import load_server_info  # noqa: PLC0415
-
-        info = load_server_info() or {}
-    except Exception:  # noqa: BLE001 -- no server.json yet is normal
-        return None
+def _confirm_recorded_backend(info: dict) -> int | None:
+    """The ``server_pid`` in a ``server.json`` dict, confirmed to still be that live process
+    (``server_create_time`` matches) — else None. Pure over the dict; no I/O."""
     pid = info.get("server_pid")
     if not isinstance(pid, int):
         return None
@@ -91,6 +88,91 @@ def live_backend_pid() -> int | None:
     except (psutil.Error, OSError):
         return None
     return pid
+
+
+def live_backend_pid() -> int | None:
+    """The pid of THIS instance's live backend, from its own ``server.json`` record, confirmed
+    to still be that process (``server_create_time`` matches) — else None.
+
+    None covers every "nothing to protect" case: no ``server.json``, no recorded pid, the pid
+    is dead, or the pid was reused by a different process. In particular a stale/foreign holder
+    of the port is NOT the recorded live backend, so it stays killable.
+    """
+    try:
+        from flow_sdk.config import load_server_info  # noqa: PLC0415
+
+        info = load_server_info() or {}
+    except Exception:  # noqa: BLE001 -- no server.json yet is normal
+        return None
+    return _confirm_recorded_backend(info)
+
+
+def live_backend_pids() -> set[int]:
+    """The live backend pid of EVERY instance on this host — each instance's own ``server.json``
+    record, confirmed live. Empty when none is running.
+
+    ``live_backend_pid`` answers only for the instance this process targets; ``flow proc kill``
+    needs them all, because an unqualified name match (``--name python``) can otherwise resolve to
+    *another* instance's backend, which is just as much a live FlowPad process as this one's.
+    """
+    import json  # noqa: PLC0415
+
+    pids: set[int] = set()
+    try:
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        instances_root = get_instance_settings().server_json_path.parent.parent
+    except Exception:  # noqa: BLE001
+        return pids
+    try:
+        candidates = list(instances_root.glob("*/server.json"))
+    except OSError:
+        return pids
+    for path in candidates:
+        try:
+            info = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        pid = _confirm_recorded_backend(info) if isinstance(info, dict) else None
+        if pid is not None:
+            pids.add(pid)
+    return pids
+
+
+def foreign_flowpad_pids() -> set[int]:
+    """Every live FlowPad process the CALLER must not kill: each instance's live backend, the
+    ancestors above it (the monitor) and all of its descendants (sibling workers, their shells and
+    MCP servers) — MINUS the caller's OWN subtree, which it may clean up.
+
+    This is the invariant for ``flow proc kill``: "may clean up a worker's own child" (so the
+    caller's own stuck ``python`` or a tree it spawned stays killable) but "must not disrupt another
+    FlowPad activity" (a sibling worker, an MCP server a sibling spawned, or another instance's
+    backend/monitor — all live FlowPad, none of them the caller's own). Empty when no backend is
+    live anywhere (nothing to protect — a stale/foreign port holder is not under any live backend).
+    """
+    import os  # noqa: PLC0415
+
+    import psutil  # noqa: PLC0415
+
+    backends = live_backend_pids()
+    if not backends:
+        return set()
+    flow: set[int] = set()
+    for bpid in backends:
+        flow.add(bpid)
+        try:
+            proc = psutil.Process(bpid)
+            flow.update(child.pid for child in proc.children(recursive=True))
+            flow.update(anc.pid for anc in proc.parents())
+        except (psutil.Error, OSError):
+            continue
+    me = os.getpid()
+    own = {me}
+    try:
+        own.update(child.pid for child in psutil.Process(me).children(recursive=True))
+    except (psutil.Error, OSError):
+        pass
+    return flow - own
 
 
 def _tree_pids(pid: int) -> set[int]:
@@ -179,7 +261,9 @@ def partition(pids: Iterable[int]) -> tuple[list[int], list[int]]:
 __all__ = [
     "PortGuardRefused",
     "caller_is_worker",
+    "foreign_flowpad_pids",
     "live_backend_pid",
+    "live_backend_pids",
     "partition",
     "protected",
     "runs_under",

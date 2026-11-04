@@ -221,6 +221,11 @@ def spawn_detached(
 
     import psutil
 
+    from flow_sdk.utils.environment import without_worker_signal
+
+    # FLOWPAD-2112: a detached instance process (a backend) is never a worker — strip the worker
+    # signal here too, so this path matches start_detached_process and no spawn leaks it.
+    env = without_worker_signal(env)
     log.parent.mkdir(parents=True, exist_ok=True)
     with open(log, "ab") as fh:
         kwargs: dict = {

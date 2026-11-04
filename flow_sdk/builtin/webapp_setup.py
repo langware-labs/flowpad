@@ -703,8 +703,18 @@ async def stop(webapp_id: str) -> ReturnedValue:
         )
     if not found:
         return _answer(ExitCode.OK, f"{app.name} is not running", ran=False)
-    await asyncio.to_thread(app_ports.stop, found)
+    refused = await asyncio.to_thread(app_ports.stop, found)
     ports = ", ".join(str(port) for port in sorted({one.port for one in found}))
+    if refused:
+        # The port is held by the live FlowPad backend (or an ancestor of it): the guard spared it,
+        # so nothing was stopped. Reporting "stopped" would be a lie — and acting on it (a retry, a
+        # taskkill) is the self-kill this guard exists to prevent.
+        return _answer(
+            ExitCode.NOT_YET,
+            f"{app.name} is served on port {ports} by the live FlowPad backend — refusing to stop it "
+            "(that would take down FlowPad). This app does not own that port.",
+            ran=False,
+        )
     return _answer(ExitCode.OK, f"stopped {app.name} (port {ports})")
 
 

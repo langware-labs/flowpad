@@ -181,11 +181,117 @@ def test_kill_trees_spares_ancestor_tree_and_group(monkeypatch):
         _reap(root.pid, backend_pid, worker_pid)
 
 
+# A backend that is a session/group leader with TWO workers IN its group (plain Popen children,
+# no new session): a target worker and an innocent sibling. prints "<wa> <wb>".
+_TWO_WORKER_BACKEND_SRC = (
+    "import subprocess,sys,time,signal;"
+    "signal.signal(signal.SIGCHLD,signal.SIG_IGN);"  # auto-reap: a killed worker fully disappears
+    f"a=subprocess.Popen([sys.executable,'-c',{_WORKER_SRC!r}]);"
+    f"b=subprocess.Popen([sys.executable,'-c',{_WORKER_SRC!r}]);"
+    "print(a.pid,b.pid,flush=True);time.sleep(300)"
+)
+
+
+def _alive(pid: int) -> bool:
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+def test_kill_trees_spares_backend_group_when_target_shares_it(monkeypatch):
+    # Item 4: the target worker shares the LIVE backend's process group (it did not get its own
+    # session). kill_trees([worker]) must kill ONLY that worker's subtree — never the backend nor
+    # the sibling worker in the same group (neither by killpg nor by direct kill via group
+    # expansion). Before the fix, the group expansion swept the sibling into `doomed`.
+    backend = subprocess.Popen(
+        [sys.executable, "-c", _TWO_WORKER_BACKEND_SRC], start_new_session=True,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True,
+    )
+    target, sibling = (int(x) for x in backend.stdout.readline().strip().split())
+    # All three share the backend's group (backend is the session/group leader).
+    assert os.getpgid(backend.pid) == os.getpgid(target) == os.getpgid(sibling) == backend.pid
+    monkeypatch.setattr(port_guard, "live_backend_pid", lambda: backend.pid)
+    try:
+        refused = app_ports.kill_trees([target])
+        time.sleep(0.3)
+        assert refused == []                              # the worker itself is not protected
+        assert psutil.Process(backend.pid).is_running()   # backend (group leader) spared
+        assert _alive(sibling)                            # innocent sibling spared
+        assert not _alive(target)                         # target actually killed
+    finally:
+        _reap(backend.pid, target, sibling)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+def test_kill_trees_reports_refused_backend(tree):
+    # Item 5: a refusal must be visible to the caller. When a target IS the live backend, kill_trees
+    # returns it in the refused list (so a caller cannot report "stopped" while it still runs).
+    refused = app_ports.kill_trees([tree["backend"]])
+    assert refused == [tree["backend"]]
+    assert psutil.Process(tree["backend"]).is_running()
+
+
+# A spawner that double-forks a "foreign" FlowPad backend: it setsid's, spawns two workers, writes
+# "<backend> <wa> <wb>" to argv[1], then the spawner process exits so the backend REPARENTS TO INIT
+# — i.e. it is genuinely NOT a descendant of the test (as another instance's backend would be).
+_REPARENT_SPAWNER_SRC = (
+    "import os,sys,time,signal,subprocess\n"
+    "out=sys.argv[1]\n"
+    "if os.fork()>0: os._exit(0)\n"            # spawner exits -> child reparents to init
+    "os.setsid()\n"
+    "signal.signal(signal.SIGCHLD, signal.SIG_IGN)\n"
+    f"a=subprocess.Popen([sys.executable,'-c',{_WORKER_SRC!r}])\n"
+    f"b=subprocess.Popen([sys.executable,'-c',{_WORKER_SRC!r}])\n"
+    "open(out,'w').write(f'{os.getpid()} {a.pid} {b.pid}')\n"
+    "time.sleep(300)\n"
+)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX reparenting")
+def test_foreign_flowpad_tree_refused_but_own_child_killable(monkeypatch, tmp_path):
+    # Item 3: `flow proc kill` must spare EVERY live FlowPad process that is not the caller's own to
+    # clean up — another instance's backend, its monitor-ward ancestors, and its workers — while the
+    # caller's own child (a stuck python it spawned) stays killable.
+    from flow_sdk.cli.commands import proc_cmd
+
+    out = tmp_path / "pids.txt"
+    spawner = subprocess.Popen([sys.executable, "-c", _REPARENT_SPAWNER_SRC, str(out)])
+    spawner.wait()  # the spawner exits immediately; the backend lives on, reparented to init
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not out.exists():
+        time.sleep(0.05)
+    backend, wa, wb = (int(x) for x in out.read_text().split())
+    # The foreign backend is NOT one of the test's descendants (it reparented away).
+    own_kids = {c.pid for c in psutil.Process(os.getpid()).children(recursive=True)}
+    assert backend not in own_kids
+
+    monkeypatch.setattr(port_guard, "live_backend_pids", lambda: {backend})
+    monkeypatch.setattr(port_guard, "live_backend_pid", lambda: None)  # this-instance partition sees nothing
+    decoy = subprocess.Popen([sys.executable, "-c", _WORKER_SRC])  # the caller's OWN child
+    captured: dict[str, str] = {}
+    monkeypatch.setattr(proc_cmd.typer, "echo", lambda s, **k: None if k.get("err") else captured.__setitem__("out", s))
+    try:
+        foreign = port_guard.foreign_flowpad_pids()
+        assert {backend, wa, wb} <= foreign      # the whole foreign FlowPad tree is protected
+        assert decoy.pid not in foreign          # the caller's own child is not
+
+        proc_cmd.kill(pids=[backend, wa, decoy.pid], name=None)
+        res = json.loads(captured["out"])
+        assert backend in res["refused_protected"]   # foreign backend spared
+        assert wa in res["refused_protected"]        # foreign worker (sibling) spared
+        assert decoy.pid in res["killed"]            # the caller's own python cleaned up
+    finally:
+        _reap(backend, wa, wb, decoy.pid)
+
+
 # ---- flow proc kill (findings 9) ------------------------------------------------------------
 
 def test_proc_kill_spares_backend_kills_decoy(tree, monkeypatch):
     from flow_sdk.cli.commands import proc_cmd
 
+    monkeypatch.setattr(port_guard, "live_backend_pids", lambda: set())  # hermetic: only this instance
     decoy = subprocess.Popen([sys.executable, "-c", _WORKER_SRC])
     captured: dict[str, str] = {}
     monkeypatch.setattr(proc_cmd.typer, "echo", lambda s, **k: captured.setdefault("out", s))
@@ -265,6 +371,32 @@ def test_apply_worker_env_stamps_worker_signal():
     with contextlib.suppress(Exception):
         apply_worker_env(env, process)
     assert env[WORKER_ENV] == "1"
+
+
+def test_without_worker_signal_strips_the_signal(monkeypatch):
+    # Item 6: the shared helper every infra spawn routes through drops FLOWPAD_WORKER, from a
+    # passed env and from os.environ, while leaving everything else intact.
+    from flow_sdk.utils.environment import WORKER_ENV, without_worker_signal
+
+    assert without_worker_signal({WORKER_ENV: "1", "KEEP": "x"}) == {"KEEP": "x"}
+    monkeypatch.setenv(WORKER_ENV, "1")
+    monkeypatch.setenv("FLOW_SENTINEL_KEEP", "yes")
+    out = without_worker_signal()
+    assert WORKER_ENV not in out and out["FLOW_SENTINEL_KEEP"] == "yes"
+
+
+def test_build_named_instance_env_strips_worker_signal(monkeypatch):
+    # Item 6: a backend a worker brings up must not inherit the worker signal (else terminals it
+    # spawns are wrongly gated). build_named_instance_env is one of the env-copying spawn paths.
+    from types import SimpleNamespace
+
+    from flow_sdk.instances import env as envmod
+
+    monkeypatch.setenv("FLOWPAD_WORKER", "1")
+    settings = SimpleNamespace(instance_name="no_such_instance_xyz", flow_home="/tmp/fh", port=6001)
+    out = envmod.build_named_instance_env(settings)
+    assert "FLOWPAD_WORKER" not in out
+    assert out["FLOW_INSTANCE"] == "no_such_instance_xyz"
 
 
 def test_runs_under_identifies_self_and_ancestors(monkeypatch):

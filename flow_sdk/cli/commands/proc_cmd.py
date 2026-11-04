@@ -2,15 +2,21 @@
 
 A kill requested from inside FlowPad must never take down a live FlowPad process,
 but must still be able to clean up — a user's stuck ``python``, a stale server, an
-unrelated process. This broker resolves the targets, subtracts anything that holds
-a protected FlowPad port (``port_guard.partition``), and kills only the rest. A
-name-based request ("kill python") is matched exactly against the image name and
-resolved to PIDs here, so the backend — which shares the ``python`` image — is
-spared by the port it holds, not mistaken for a stranger.
+unrelated process. This broker resolves the targets and subtracts every live FlowPad
+process the caller must not touch, identified by ``server.json`` ancestry — NOT by
+"who holds a port":
 
-The port guard is applied ALWAYS here, with no bypass: ``flow proc kill`` exists
-to free the user's own stuck processes, never to stop FlowPad, so it has no
-``allow_protected`` escape — a user who means to stop FlowPad runs ``flow stop``.
+* this instance's live backend and its ancestors (``port_guard.partition``); and
+* every OTHER live FlowPad process — other instances' backends/monitors, sibling
+  workers, and the MCP servers those spawned (``port_guard.foreign_flowpad_pids``) —
+
+minus the caller's OWN subtree, which it may clean up. So a worker's ``--name python``
+frees its own stuck ``python`` but never a sibling's, another instance's backend, or
+its own monitor; the backend, sharing the ``python`` image, is spared by identity.
+
+The guard is applied ALWAYS here, with no bypass: ``flow proc kill`` exists to free
+the user's own stuck processes, never to stop FlowPad, so it has no ``allow_protected``
+escape — a user who means to stop FlowPad runs ``flow stop``.
 
 One JSON line on stdout:
 ``{"killed": [...], "refused_protected": [...], "denied": [...], "not_found": [...]}``.
@@ -85,7 +91,7 @@ def _pids_for_name(name: str) -> list[int]:
 @proc_app.command("kill")
 def kill(
     pids: Annotated[Optional[list[int]], typer.Argument(help="PIDs to kill.")] = None,
-    name: Annotated[Optional[str], typer.Option("--name", help="Kill processes whose image name matches EXACTLY (e.g. python).")] = None,
+    name: Annotated[Optional[str], typer.Option("--name", help="Kill processes by image base name, version suffix aside (e.g. python matches python3 / python3.11, but not python-lsp).")] = None,
 ) -> None:
     """Kill the given PIDs / name matches, always sparing any process that holds a protected FlowPad port."""
     import psutil  # noqa: PLC0415
@@ -104,7 +110,15 @@ def kill(
         typer.echo(json.dumps({"killed": [], "refused_protected": [], "denied": [], "not_found": []}))
         raise typer.Exit(1)
 
-    allowed, refused = port_guard.partition(targets)
+    # Spare EVERY live FlowPad process that is not the caller's own to clean up: this instance's
+    # backend AND other instances' backends/monitors, sibling workers, and the MCP servers they
+    # spawned. `partition` alone only knows this instance's backend, so an unqualified `--name
+    # python` would otherwise sweep the rest — against the invariant. The caller's own subtree
+    # (its stuck python, a tree it spawned) stays killable; `foreign_flowpad_pids` excludes it.
+    foreign = port_guard.foreign_flowpad_pids()
+    allowed_targets = [t for t in targets if t not in foreign]
+    allowed, refused_here = port_guard.partition(allowed_targets)
+    refused = sorted(set(refused_here) | (set(targets) & foreign))
 
     killed: list[int] = []
     denied: list[int] = []

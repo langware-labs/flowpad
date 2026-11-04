@@ -183,12 +183,11 @@ def start_detached_process(args: list[str], env: dict | None = None, stderr=None
     # FLOWPAD-2112: whatever we start detached here (a backend, the monitor, the backend-only
     # respawn, a browser) is FlowPad infrastructure, never a worker — so it must not inherit the
     # worker-only FLOWPAD_WORKER signal. Were it to leak (a worker that itself runs `flow start`),
-    # a human in a terminal that backend later spawns would be wrongly gated. Strip it here, the one
-    # detached-spawn chokepoint. Workers are spawned through apply_worker_env, not this path.
-    from flow_sdk.utils.environment import WORKER_ENV  # noqa: PLC0415
+    # a human in a terminal that backend later spawns would be wrongly gated. The shared
+    # `without_worker_signal` strips it in every env-copying spawn path, not only this one.
+    from flow_sdk.utils.environment import without_worker_signal  # noqa: PLC0415
 
-    proc_env = dict(env) if env is not None else os.environ.copy()
-    proc_env.pop(WORKER_ENV, None)
+    proc_env = without_worker_signal(env)
     kwargs: dict = {
         "stdin": subprocess.DEVNULL,
         "stdout": stdout if stdout is not None else subprocess.DEVNULL,
