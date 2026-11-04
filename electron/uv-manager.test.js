@@ -1692,6 +1692,48 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     ok(err && /Windows-only/.test(err.message), 'the runtime repair refuses to run off Windows');
   }
   {
+    // The engine ownership record around a runtime repair (FLOWPAD-2250). A leftover `.pre-repair`
+    // folder outside a repair must not stand in for a missing venv (a fresh install would read as
+    // "adopted"), and a rollback must put back the record of the venv it restores.
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-own-'));
+    const venv = path.join(tmp, 'flowpad');
+    const recordPath = path.join(tmp, 'engine-ownership.json');
+    const m = new UvManager(silentLog);
+    m._toolVenvDir = () => venv;
+    m._engineOwnershipPath = () => recordPath;
+    m._drainVenvProcesses = async () => {};
+    m._ensureShimOnPath = async () => {};
+    m._resolveFlowBin = async () => 'flow';
+    m.getInstalledVersionSync = () => '0.2.202';
+    fs.mkdirSync(`${venv}.pre-repair`, { recursive: true });
+    ok(!m._ownershipSnapshotBeforeInstall().exists, 'outside a repair, a leftover .pre-repair does not stand in for the missing venv');
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+
+    fs.mkdirSync(venv, { recursive: true });
+    fs.writeFileSync(path.join(venv, 'OLD'), '');
+    fs.writeFileSync(recordPath, 'RECORD-OF-OLD');
+    let snapshotInRepair = null;
+    m._uvToolInstallForce = async () => {
+      snapshotInRepair = m._ownershipSnapshotBeforeInstall();
+      fs.mkdirSync(venv, { recursive: true });
+      fs.writeFileSync(recordPath, 'RECORD-OF-NEW'); // what _recordEngineOwnership writes after the install
+    };
+    await m._installEngineOn('C:\\p\\python.exe');
+    ok(snapshotInRepair && snapshotInRepair.exists, 'during the repair, the set-aside venv stands in for the live one');
+    await m._rollbackEngine();
+    eq(fs.readFileSync(recordPath, 'utf8'), 'RECORD-OF-OLD', 'the rollback restores the ownership record with the venv');
+    ok(!m._repairSetAside, 'the repair flag is cleared after the install');
+
+    fs.rmSync(recordPath, { force: true });
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._rollbackEngine();
+    ok(!fs.existsSync(recordPath), 'no record before the repair → none after its rollback');
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  {
     // The engine install on the repaired interpreter, the reversible switch and the rollback —
     // against a TEMP tool venv (never the developer's real ~/.local/share/uv/tools/flowpad).
     const os = require('os');

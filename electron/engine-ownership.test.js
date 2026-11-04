@@ -202,8 +202,22 @@ try {
       eq(t.read().origin, 'adopted', 'precondition: adopted');
       fs.renameSync(t.venv, `${t.venv}.pre-repair`);
       t.m._uvToolInstallForceAttempts = async () => { t.makeVenv(); };
+      t.m._repairSetAside = true; // as _installEngineOn sets it around the repair's install
       await t.m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.60', '--reinstall']);
+      t.m._repairSetAside = false;
       eq(t.read().origin, 'adopted', 'a repair reinstall over an adopted engine stays adopted');
+    } finally { t.done(); }
+  }
+  {
+    // Outside a repair, a `.pre-repair` folder is a leftover: a fresh install into a missing venv
+    // is the desktop's own, not "adopted" because of it.
+    const t = setup();
+    try {
+      fs.mkdirSync(`${t.venv}.pre-repair`, { recursive: true });
+      fs.writeFileSync(path.join(`${t.venv}.pre-repair`, own.RECEIPT_FILE), HAND_RECEIPT);
+      t.m._uvToolInstallForceAttempts = async () => { t.makeVenv(); };
+      await t.m._uvToolInstallForce(['tool', 'install', 'flowpad==0.2.60']);
+      eq(t.read().origin, 'desktop', 'a fresh install beside a leftover .pre-repair is the desktop\'s');
     } finally { t.done(); }
   }
   {

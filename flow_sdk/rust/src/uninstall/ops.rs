@@ -23,6 +23,8 @@ pub const RECEIPT_FILE: &str = "uv-receipt.toml";
 pub const RUNTIME_SENTINEL: &str = ".flowpad-owned";
 pub const DESKTOP_MARKER: &str = ".desktop_managed";
 pub const CLI_STAMP: &str = ".cli_used";
+/// `~/.flow/desktop-runtime.json`: the runtime's ownership token and version.
+pub const RUNTIME_STATE_FILE: &str = "desktop-runtime.json";
 pub const PSF_SIGNER: &str = "Python Software Foundation";
 pub const SNIFFER_MARK: &str = "--name=flowpad_sniffer";
 /// The desktop's per-user uninstall key (uuid5 of appId `ai.flowpad.desktop`, electron-builder).
@@ -75,6 +77,11 @@ pub fn gather(layout: &Layout, log: &mut Log) -> Gathered {
     let receipt_sha256 = receipt_bytes.as_ref().map(|b| hex(&Sha256::digest(b)));
     let receipt = receipt_bytes.as_ref().map(|b| receipt::parse(&String::from_utf8_lossy(b)));
 
+    let stamp_since = layout.flow_home().join("global").join("cli-stamp-since");
+    let stamping_active = stamp_since.exists();
+    // The instances that existed before CLI use was stamped; without the list, every instance may have been.
+    let preexisting: Option<Vec<String>> = read_json(&stamp_since)
+        .and_then(|v| v.get("preexisting").and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|n| n.as_str().map(String::from)).collect()));
     let mut instances = Vec::new();
     let mut servers = Vec::new();
     if let Ok(rd) = fs::read_dir(layout.instances()) {
@@ -90,11 +97,11 @@ pub fn gather(layout: &Layout, log: &mut Log) -> Gathered {
                     servers.push(InstanceServer { instance: name.clone(), info });
                 }
             }
-            instances.push(InstanceFacts { name, desktop_managed, cli_used: p.join(CLI_STAMP).exists() });
+            let predates_stamping = preexisting.as_ref().is_none_or(|names| names.iter().any(|n| n == &name));
+            instances.push(InstanceFacts { name, desktop_managed, cli_used: p.join(CLI_STAMP).exists(), predates_stamping });
         }
     }
     instances.sort_by(|a, b| a.name.cmp(&b.name));
-    let stamping_active = layout.flow_home().join("global").join("cli-stamp-since").exists();
 
     let mut engine_interpreters = vec![venv.join("Scripts").join("python.exe").display().to_string()];
     if let Some(home) = venv_home(&venv) {
@@ -312,11 +319,22 @@ pub fn remove_engine(layout: &Layout, receipt: Option<&Receipt>, ledger: &mut Le
         .map(|rd| {
             rd.flatten()
                 .map(|e| e.file_name().to_string_lossy().to_string())
-                .filter(|n| n.starts_with("flowpad.corrupt-") || n == "flowpad.pre-repair")
+                .filter(|n| n.starts_with("flowpad.corrupt-"))
                 .collect()
         })
         .unwrap_or_default();
     remove_children(ledger, log, "set-aside engine", &layout.uv_tools(), &siblings);
+    // A repair renames the engine it replaces to `.pre-repair` and deletes it once the repair
+    // holds. One still here was left by an interrupted repair, and nothing proves that engine was
+    // FlowPad's own (an engine the desktop adopted is set aside the same way): keep it.
+    let aside = layout.uv_tools().join("flowpad.pre-repair");
+    if fs::symlink_metadata(&aside).is_ok() {
+        ledger.kept(
+            "engine set aside by an interrupted repair",
+            &aside,
+            "FlowPad cannot confirm it installed this copy; delete the folder if you do not need it",
+        );
+    }
     if !layout.venv().exists() {
         remove_children(ledger, log, "engine ownership record", &layout.local_flowpad(), &["engine-ownership.json".to_string()]);
     }
@@ -348,7 +366,7 @@ pub fn remove_runtime(layout: &Layout, decisions: &[RuntimeDecision], ledger: &m
     }
     if decisions.iter().all(|d| !matches!(d.action, RuntimeAction::Keep(_))) && leftovers.is_empty() {
         remove_if_empty(&runtime);
-        remove_children(ledger, log, "runtime record", &layout.flow_home(), &["desktop-runtime.json".to_string()]);
+        remove_children(ledger, log, "runtime record", &layout.flow_home(), &[RUNTIME_STATE_FILE.to_string()]);
     }
     leftovers
 }
@@ -455,7 +473,8 @@ pub fn remove_app_data(layout: &Layout, ledger: &mut Ledger, log: &mut Log) -> V
         .map(|rd| {
             rd.flatten()
                 .map(|e| e.file_name().to_string_lossy().to_string())
-                .filter(|n| n.starts_with("desktop-") && n.ends_with(".json"))
+                // desktop-runtime.json proves the runtime is ours: it goes with the runtime (run.rs).
+                .filter(|n| n.starts_with("desktop-") && n.ends_with(".json") && n != RUNTIME_STATE_FILE)
                 .collect()
         })
         .unwrap_or_default();
@@ -469,15 +488,24 @@ pub fn remove_instance(layout: &Layout, name: &str, ledger: &mut Ledger, log: &m
     let id = (name == "prod").then_some(RootId::InstanceProd);
     let leftover = remove_tree(ledger, log, &format!("FlowPad data ({name})"), &dir, id, Some(DESKTOP_MARKER));
     if !dir.exists() {
-        for account in [format!("{name}.flow-rs"), name.to_string()] {
-            if let Ok(entry) = keyring::Entry::new("Flowpad.ai.sod_key", &account) {
-                if entry.delete_credential().is_ok() {
-                    log.line(&format!("removed stored credential Flowpad.ai.sod_key/{account}"));
-                }
+        remove_instance_credentials(name, log);
+    }
+    leftover.into_iter().collect()
+}
+
+/// Where FlowPad keeps an instance's key. Debug builds (the end-to-end tests, whose folders are a
+/// scratch tree) use their own name, so a test run never deletes the real key of the machine's prod.
+pub const INSTANCE_KEY_SERVICE: &str = if cfg!(debug_assertions) { "Flowpad.ai.sod_key.debug" } else { "Flowpad.ai.sod_key" };
+
+/// An instance's stored keys go once its folder is gone (now, or in the deferred cleanup).
+pub fn remove_instance_credentials(name: &str, log: &mut Log) {
+    for account in [format!("{name}.flow-rs"), name.to_string()] {
+        if let Ok(entry) = keyring::Entry::new(INSTANCE_KEY_SERVICE, &account) {
+            if entry.delete_credential().is_ok() {
+                log.line(&format!("removed stored credential {INSTANCE_KEY_SERVICE}/{account}"));
             }
         }
     }
-    leftover.into_iter().collect()
 }
 
 /// `global/` and `~/.flow` itself go only when no instance is left: they are shared by all.

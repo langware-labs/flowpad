@@ -193,19 +193,24 @@ Function un.flowpadOptionsCreate
 FunctionEnd
 
 Function un.flowpadOptionsLeave
+  ; Each box decides its choice from scratch: this runs again after "No" keeps the page open,
+  ; and a box unticked since must not keep an earlier tick.
   ${If} $FlowpadEngineBox != ""
+    StrCpy $FlowpadRemoveEngine 0
     ${NSD_GetState} $FlowpadEngineBox $0
     ${If} $0 == ${BST_CHECKED}
       StrCpy $FlowpadRemoveEngine 1
     ${EndIf}
   ${EndIf}
   ${If} $FlowpadAppDataBox != ""
+    StrCpy $FlowpadDeleteAppData 0
     ${NSD_GetState} $FlowpadAppDataBox $0
     ${If} $0 == ${BST_CHECKED}
       StrCpy $FlowpadDeleteAppData 1
     ${EndIf}
   ${EndIf}
   ${If} $FlowpadDataBox != ""
+    StrCpy $FlowpadDeleteData 0
     ${NSD_GetState} $FlowpadDataBox $0
     ${If} $0 == ${BST_CHECKED}
       StrCpy $FlowpadDeleteData 1
@@ -223,13 +228,15 @@ Function un.flowpadOptionsLeave
       StrCpy $1 "$1$\r$\n- Your FlowPad data: $2"
     ${EndIf}
     MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "This permanently deletes:$\r$\n$1$\r$\n$\r$\nDelete it?" IDYES flowpad_confirmed
-    ; No: nothing is deleted, and the page says so.
+    ; No: nothing is deleted. The boxes are cleared and the page stays open, so the user can
+    ; choose again or cancel; Uninstall from here removes no data unless a box is ticked again.
     StrCpy $FlowpadDeleteAppData 0
     StrCpy $FlowpadDeleteData 0
     ${NSD_Uncheck} $FlowpadAppDataBox
     ${If} $FlowpadDataBox != ""
       ${NSD_Uncheck} $FlowpadDataBox
     ${EndIf}
+    Abort
     flowpad_confirmed:
   ${EndIf}
 FunctionEnd

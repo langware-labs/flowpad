@@ -6,9 +6,12 @@ leaves a stamp:
 
 * ``<instance_dir>/.cli_used`` — ``{"first", "last", "version"}``: this instance was driven by a
   ``flow`` that the desktop did not run. ``last`` is refreshed at most once an hour.
-* ``<flow_home>/global/cli-stamp-since`` — ``{"version", "since"}``: written once, by the first
-  engine that stamps. Without it, a missing ``.cli_used`` means "unknown" (an older engine never
-  stamped), not "never used".
+* ``<flow_home>/global/cli-stamp-since`` — ``{"version", "since", "preexisting"}``: written once,
+  by the first engine that stamps. Without it, a missing ``.cli_used`` means "unknown" (an older
+  engine never stamped), not "never used". ``preexisting`` names the instances that existed before
+  the process that wrote it started: an older engine may have driven them from the command line
+  unrecorded, so for them a missing stamp stays "unknown". An instance this process created (the
+  desktop's first ``prod``) is not in it.
 
 Not stamped: a process with ``FLOWPAD_DESKTOP=1`` (the desktop's own ``flow`` calls, its backend,
 and every worker the backend spawns — they inherit it), and the ``hooks`` group (the Claude Code
@@ -50,15 +53,44 @@ def _read_json(path: Path) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def ensure_stamping_marker(global_dir: Path) -> None:
+def _process_started() -> float:
+    import psutil  # noqa: PLC0415
+
+    return psutil.Process().create_time()
+
+
+def _created(path: Path) -> float:
+    st = path.stat()
+    # Windows' st_ctime is the creation time; st_birthtime where the platform has it.
+    return getattr(st, "st_birthtime", st.st_ctime)
+
+
+def instances_before(instances_root: Path, started: float) -> list[str]:
+    """The instance directories created before ``started``. Never raises."""
+    names = []
+    try:
+        for p in instances_root.iterdir():
+            try:
+                if p.is_dir() and _created(p) < started:
+                    names.append(p.name)
+            except OSError:
+                names.append(p.name)  # unreadable: assume it is old
+    except OSError:
+        pass
+    return sorted(names)
+
+
+def ensure_stamping_marker(global_dir: Path, *, started: float | None = None) -> None:
     """Record, once, that this engine stamps CLI use. Never raises."""
     marker = global_dir / STAMP_SINCE_FILENAME
     try:
         if marker.exists():
             return
+        started = _process_started() if started is None else started
+        preexisting = instances_before(global_dir.parent / "instances", started)
         global_dir.mkdir(parents=True, exist_ok=True)
-        _write_json_atomic(marker, {"version": __version__, "since": time.time()})
-    except OSError as e:
+        _write_json_atomic(marker, {"version": __version__, "since": time.time(), "preexisting": preexisting})
+    except Exception as e:  # noqa: BLE001 — evidence only; a missing marker means "unknown"
         logger.debug("Could not write %s: %s", marker, e)
 
 

@@ -158,15 +158,20 @@ pub enum Trigger {
     Manual,
 }
 
-fn root_path(layout: &Layout, root: RootId) -> PathBuf {
+fn root_path(layout: &Layout, root: RootId, pinned: super::Identity) -> PathBuf {
     match root {
         RootId::Venv => layout.venv(),
-        RootId::RuntimePython => {
-            let version = ops::read_json(&layout.runtime_state())
-                .and_then(|v| v.get("version").and_then(|s| s.as_str()).map(String::from))
-                .unwrap_or_default();
-            layout.runtime().join(format!("python-{version}"))
-        }
+        // Not rebuilt from desktop-runtime.json's `version`: a repair that failed after marking its
+        // folder leaves the token but no version. The state holds no paths, so find the
+        // `python-*` folder by the identity pinned at uninstall; none means it is gone.
+        RootId::RuntimePython => fs::read_dir(layout.runtime())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("python-")))
+            .find(|p| Root::open(p).is_ok_and(|r| r.identity() == pinned))
+            .unwrap_or_else(|| layout.runtime().join("python-")),
         RootId::RuntimeDownloads => layout.runtime().join("downloads"),
         RootId::Bootstrap => layout.bootstrap(),
         RootId::Updater => layout.updater(),
@@ -245,8 +250,8 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
     let mut ledger = Ledger::default();
     let mut remaining = Vec::new();
     for entry in &body.entries {
-        let path = root_path(layout, entry.root);
         let pinned = super::Identity { volume: entry.volume, file_id: entry.file_id };
+        let path = root_path(layout, entry.root, pinned);
         match Root::open(&path) {
             Err(super::delete::Refused::Missing) => {
                 status(layout, &format!("{:?}: already gone", entry.root));
@@ -278,6 +283,9 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         };
         if let Some(l) = ops::remove_tree(&mut ledger, log, &format!("{:?}", entry.root), &path, Some(entry.root), evidence) {
             remaining.push(l);
+        } else if entry.root == RootId::InstanceProd && !path.exists() {
+            // As in the uninstaller: the instance's keys go with its folder.
+            ops::remove_instance_credentials("prod", log);
         }
     }
 
@@ -286,8 +294,8 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         .entries
         .iter()
         .filter(|e| {
-            Root::open(&root_path(layout, e.root))
-                .is_ok_and(|r| r.identity() == super::Identity { volume: e.volume, file_id: e.file_id })
+            let pinned = super::Identity { volume: e.volume, file_id: e.file_id };
+            Root::open(&root_path(layout, e.root, pinned)).is_ok_and(|r| r.identity() == pinned)
         })
         .map(|e| format!("{:?}", e.root))
         .collect();
@@ -299,7 +307,7 @@ pub fn run(layout: &Layout, trigger: Trigger, log: &mut Log) -> i32 {
         if body.entries.iter().any(|e| ops::waits_for_venv(e.root)) {
             ops::remove_if_empty(&layout.runtime());
             if !layout.runtime().exists() {
-                let _ = ops::remove_children(&mut ledger, log, "runtime record", &layout.flow_home(), &["desktop-runtime.json".to_string()]);
+                let _ = ops::remove_children(&mut ledger, log, "runtime record", &layout.flow_home(), &[ops::RUNTIME_STATE_FILE.to_string()]);
             }
         }
         finish(layout);

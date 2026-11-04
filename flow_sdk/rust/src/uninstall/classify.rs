@@ -53,6 +53,9 @@ pub struct InstanceFacts {
     pub desktop_managed: bool,
     /// `.cli_used` — a `flow` the desktop did not run used it.
     pub cli_used: bool,
+    /// It existed before CLI use was stamped (`cli-stamp-since` `preexisting`): an older engine may
+    /// have driven it from the command line without a trace, so a missing `.cli_used` proves nothing.
+    pub predates_stamping: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -151,7 +154,7 @@ pub fn decide_engine(f: &Facts) -> EngineDecision {
     if record.origin == "legacy-inferred" {
         return offer(LegacyInferred, vec!["FlowPad cannot confirm nothing else uses this engine".into()]);
     }
-    if !f.stamping_active {
+    if !f.stamping_active || f.instances.iter().any(|i| i.predates_stamping) {
         return offer(StampingUnknown, vec!["FlowPad cannot confirm nothing else uses this engine".into()]);
     }
     if !cli.is_empty() {
@@ -183,7 +186,7 @@ pub fn decide_instance(i: &InstanceFacts, stamping_active: bool) -> InstanceDeci
         DataOffer::NotOffered("not managed by FlowPad Desktop".into())
     } else if i.cli_used {
         DataOffer::NotOffered("also used by the flow command line".into())
-    } else if !stamping_active {
+    } else if !stamping_active || i.predates_stamping {
         DataOffer::OfferedWithWarning
     } else {
         DataOffer::Offered
@@ -298,7 +301,7 @@ mod tests {
     }
 
     fn prod() -> InstanceFacts {
-        InstanceFacts { name: "prod".into(), desktop_managed: true, cli_used: false }
+        InstanceFacts { name: "prod".into(), desktop_managed: true, cli_used: false, predates_stamping: false }
     }
 
     /// The desktop-exclusive baseline every test perturbs.
@@ -369,7 +372,7 @@ mod tests {
                 f.engine.receipt = Some(receipt::parse(&RECEIPT.replace("\" }]", "\" }, { name = \"rich\" }]")))
             })),
             ("packages", Box::new(|f| f.engine.receipt = None)),
-            ("not managed", Box::new(|f| f.instances.push(InstanceFacts { name: "oss".into(), desktop_managed: false, cli_used: false }))),
+            ("not managed", Box::new(|f| f.instances.push(InstanceFacts { name: "oss".into(), desktop_managed: false, cli_used: false, predates_stamping: false }))),
             ("server", Box::new(|f| f.independent_server_running = true)),
         ];
         for (needle, perturb) in cases {
@@ -405,6 +408,13 @@ mod tests {
         let d = decide_engine(&f);
         assert_eq!(d.category, EngineCategory::StampingUnknown);
         assert!(!d.removed(false) && d.removed(true));
+
+        // Stamping is active now, but the instance is older than it: CLI use before the upgrade left no trace.
+        let mut f = facts();
+        f.instances = vec![InstanceFacts { predates_stamping: true, ..prod() }];
+        let d = decide_engine(&f);
+        assert_eq!(d.category, EngineCategory::StampingUnknown);
+        assert!(!d.removed(false) && d.removed(true));
     }
 
     #[test]
@@ -429,11 +439,13 @@ mod tests {
     fn instance_data_offers() {
         assert_eq!(decide_instance(&prod(), true).offer, DataOffer::Offered);
         assert_eq!(decide_instance(&prod(), false).offer, DataOffer::OfferedWithWarning);
+        let old = InstanceFacts { predates_stamping: true, ..prod() };
+        assert_eq!(decide_instance(&old, true).offer, DataOffer::OfferedWithWarning);
         let cli = InstanceFacts { cli_used: true, ..prod() };
         assert!(matches!(decide_instance(&cli, true).offer, DataOffer::NotOffered(r) if r.contains("command line")));
         let cli_unknown = InstanceFacts { cli_used: true, ..prod() };
         assert!(matches!(decide_instance(&cli_unknown, false).offer, DataOffer::NotOffered(_)), "use beats unknown");
-        let dev = InstanceFacts { name: "oss".into(), desktop_managed: false, cli_used: false };
+        let dev = InstanceFacts { name: "oss".into(), desktop_managed: false, cli_used: false, predates_stamping: false };
         assert!(matches!(decide_instance(&dev, true).offer, DataOffer::NotOffered(r) if r.contains("not managed")));
     }
 

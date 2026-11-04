@@ -63,7 +63,7 @@ function New-Layout($name) {
   $b = $bin.Replace('\', '\\')
   [IO.File]::WriteAllText("$venv\uv-receipt.toml", "[tool]`r`nrequirements = [{ name = `"flowpad`", specifier = `"==0.2.60`" }]`r`nentrypoints = [`r`n    { name = `"flow`", install-path = `"$b\\flow.exe`", from = `"flowpad`" },`r`n    { name = `"flow-sdk-mcp`", install-path = `"$b\\flow-sdk-mcp.exe`", from = `"flowpad`" },`r`n]`r`n")
   W "$bin\flow.exe"; W "$bin\flow-sdk-mcp.exe"; W "$bin\uv.exe" 'uv'; W "$bin\uvx.exe" 'uvx'
-  W "$ro\uv\tools\flowpad.pre-repair\x"; W "$ro\uv\tools\other-tool\pyvenv.cfg" "home = C:\Python311`r`n"
+  W "$ro\uv\tools\flowpad.corrupt-1\x"; W "$ro\uv\tools\other-tool\pyvenv.cfg" "home = C:\Python311`r`n"
   $id = [FileIdentity]::Of($venv)
   $sha = (Get-FileHash "$venv\uv-receipt.toml" -Algorithm SHA256).Hash.ToLower()
   W "$l\Flowpad\engine-ownership.json" (@{ schema = 1; origin = 'desktop'; venv = $venv; venvVolume = $id[0]; venvFileId = $id[1]; receiptSha256 = $sha; desktopVersion = '0.2.60'; installedAt = 'T' } | ConvertTo-Json)
@@ -74,7 +74,7 @@ function New-Layout($name) {
   W "$p\.flow\desktop-install-in-progress.json" '{}'
   W "$p\.flow\instances\prod\.desktop_managed" ''; W "$p\.flow\instances\prod\flowpad.db" 'db'
   W "$p\.flow\instances\prod\server.json" '{"port":59999,"server_pid":4,"server_create_time":1.0,"launched_by":"desktop"}'
-  W "$p\.flow\global\cli-stamp-since" '{"version":"0.2.60"}'; W "$p\.flow\logs\main_desktop\a.log"
+  W "$p\.flow\global\cli-stamp-since" '{"version":"0.2.60","since":1.0,"preexisting":[]}'; W "$p\.flow\logs\main_desktop\a.log"
   W "$l\Flowpad\bootstrap\Flowpad-0.2.60-Setup.exe"; W "$l\Flowpad\bootstrap\flowpad-install.log"; W "$l\Flowpad\bootstrap\user-notes.txt" 'mine'
   W "$l\flowpad-updater\installer.exe"; W "$l\flowpad-updater\pending\update-info.json" '{"fileName":"Flowpad-Setup-0.2.61.exe"}'; W "$l\flowpad-updater\pending\Flowpad-Setup-0.2.61.exe"
   W "$r\temp\flowpad-uv-123\x"; W "$r\temp\flowpad-support-1.zip"; W "$r\temp\someone-else.txt" 'keep'
@@ -130,7 +130,7 @@ try {
   Check (-not (Test-Path "$r\profile\.local\bin\flow.exe") -and -not (Test-Path "$r\profile\.local\bin\flow-sdk-mcp.exe")) "FlowPad's commands removed"
   Check ((Test-Path "$r\profile\.local\bin\uv.exe") -and (Test-Path "$r\profile\.local\bin\uvx.exe")) 'uv and uvx untouched'
   Check (Test-Path "$r\roaming\uv\tools\other-tool\pyvenv.cfg") 'another uv tool untouched'
-  Check (-not (Test-Path "$r\roaming\uv\tools\flowpad.pre-repair")) 'set-aside engine removed'
+  Check (-not (Test-Path "$r\roaming\uv\tools\flowpad.corrupt-1")) 'set-aside corrupt engine removed'
   Check (-not (Test-Path "$r\local\Flowpad\engine-ownership.json")) 'ownership record removed'
   Check (-not (Test-Path "$r\local\Flowpad\runtime")) 'repaired runtime removed'
   Check (-not (Test-Path "$r\profile\.flow\desktop-runtime.json")) 'runtime record removed with its runtime'
@@ -146,6 +146,24 @@ try {
   Check ($code -eq 0) "a second run over the same machine is a clean no-op (exit $code)"
   Check (((Get-ChildItem $r -Recurse -Force | Where-Object { $_.Name -notlike 'result.*' -and $_.Name -ne 'uninstall.log' } | Measure-Object).Count) -eq $left) 'and removes nothing more'
 
+  Write-Host '== an interrupted repair left the previous engine set aside: kept and reported'
+  $r = New-Layout 'pre-repair'
+  W "$r\roaming\uv\tools\flowpad.pre-repair\x" 'previous engine'
+  $code = Invoke-Uninstall $r @()
+  Check ($code -eq 20) "partial (exit 20), got $code"
+  Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'the desktop-installed engine is still removed'
+  Check (Test-Path "$r\roaming\uv\tools\flowpad.pre-repair\x") 'the set-aside copy is kept'
+  Check ((Result $r) -match 'interrupted repair') 'and reported'
+
+  Write-Host '== an instance that predates CLI-use stamping: the engine is kept unless the user opts in'
+  $r = New-Layout 'predates'
+  W "$r\profile\.flow\global\cli-stamp-since" '{"version":"0.2.60","since":1.0,"preexisting":["prod"]}'
+  $code = Invoke-Uninstall $r @()
+  Check ($code -eq 20) "partial (exit 20), got $code"
+  Check (Test-Path "$r\roaming\uv\tools\flowpad\uv-receipt.toml") 'engine kept: the command line may have used it before stamping'
+  $code = Invoke-Uninstall $r @('--remove-engine')
+  Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'removed when the user opts in'
+
   Write-Host '== an instance the desktop does not manage shares the engine: kept'
   $r = New-Layout 'shared'
   W "$r\profile\.flow\instances\oss\config.json"
@@ -160,18 +178,26 @@ try {
     Skip 'the Credential Manager is not available in this session (network logon or service); run in a desktop session'
   } else {
     $r = New-Layout 'locked'
+    # prod's key, under the debug builds' own name (never the machine's real one)
+    Invoke-Quiet { & $FlowRs set_key Flowpad.ai.sod_key.debug prod.flow-rs e2e } | Out-Null
     $h = Lock-File "$r\roaming\uv\tools\flowpad\Lib\site-packages\flow_sdk\__init__.py"
-    $code = Invoke-Uninstall $r @()
+    $hp = Lock-File "$r\profile\.flow\instances\prod\flowpad.db"
+    $code = Invoke-Uninstall $r @('--delete-app-data', '--delete-instance-data')
     Check ($code -eq 10) "exit 10 (restart required), got $code"
     Check (Test-Path "$r\roaming\uv\tools\flowpad\uv-receipt.toml") 'receipt (the ownership proof) kept while anything is left'
     Check (Test-Path "$r\local\Flowpad\runtime\python-3.11.9\python.exe") 'runtime waits behind the engine'
+    Check (Test-Path "$r\profile\.flow\desktop-runtime.json") 'app-data deletion keeps the runtime record the deferred run needs'
+    Check (Test-Path "$r\profile\.flow\instances\prod\.desktop_managed") 'prod in use: its marker (the proof) kept for the deferred run'
+    Check ((Invoke-Quiet { & $FlowRs get_key Flowpad.ai.sod_key.debug prod.flow-rs }) -eq 0) "prod's key kept while its folder remains"
     $cmd = (Get-ItemProperty $runOnce -ErrorAction SilentlyContinue).FlowpadCleanupTest
     Check ($cmd -and $cmd.Contains("$r\local\Flowpad\fc\flow-rs.exe")) 'RunOnce (test value) starts the helper copy'
     Check ((Result $r) -match 'will be removed the next time you sign in') 'summary says sign out to finish'
-    Stop-Process -Id $h.Id -Force; Start-Sleep 1
+    Stop-Process -Id $h.Id, $hp.Id -Force; Start-Sleep 1
     $dcode = Invoke-Deferred $r
     Check ($dcode -eq 0) "deferred-cleanup exit 0, got $dcode"
     Check (-not (Test-Path "$r\roaming\uv\tools\flowpad")) 'engine gone after the deferred run'
+    Check (-not (Test-Path "$r\profile\.flow\instances\prod")) 'prod gone after the deferred run'
+    Check ((Invoke-Quiet { & $FlowRs get_key Flowpad.ai.sod_key.debug prod.flow-rs }) -ne 0) "and its key with it"
     Check (-not (Test-Path "$r\local\Flowpad\runtime")) 'runtime gone after the engine'
     Check (-not (Test-Path "$r\profile\.flow\desktop-runtime.json")) 'runtime record gone'
     Check (-not (Test-Path "$r\local\Flowpad\engine-ownership.json")) 'ownership record gone'

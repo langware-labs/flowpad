@@ -93,7 +93,7 @@ impl Layout {
         self.local_flowpad().join("runtime")
     }
     pub fn runtime_state(&self) -> PathBuf {
-        self.flow_home().join("desktop-runtime.json")
+        self.flow_home().join(super::ops::RUNTIME_STATE_FILE)
     }
     pub fn bootstrap(&self) -> PathBuf {
         self.local_flowpad().join("bootstrap")

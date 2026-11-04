@@ -86,23 +86,39 @@ fn ini_escape(s: &str) -> String {
     s.replace(['\r', '\n'], " ")
 }
 
-fn data_size(path: &Path) -> u64 {
-    fn walk(p: &Path) -> u64 {
+/// The page's sizes are only for display, and the page has to appear inside the classify
+/// deadline: stop counting after this many entries and say "more than".
+const SIZE_WALK_LIMIT: usize = 100_000;
+
+/// A folder's size in MB, as the page shows it.
+fn size_text(path: &Path) -> String {
+    size_text_within(path, SIZE_WALK_LIMIT)
+}
+
+fn size_text_within(path: &Path, limit: usize) -> String {
+    fn walk(p: &Path, seen: &mut usize, limit: usize) -> u64 {
+        if *seen >= limit {
+            return 0;
+        }
+        *seen += 1;
         let Ok(md) = fs::symlink_metadata(p) else { return 0 };
         if md.file_type().is_symlink() {
             return 0;
         }
         if md.is_dir() {
-            fs::read_dir(p).map(|rd| rd.flatten().map(|e| walk(&e.path())).sum()).unwrap_or(0)
+            fs::read_dir(p).map(|rd| rd.flatten().map(|e| walk(&e.path(), seen, limit)).sum()).unwrap_or(0)
         } else {
             md.len()
         }
     }
-    walk(path)
-}
-
-fn mb(bytes: u64) -> String {
-    format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    let mut seen = 0;
+    let bytes = walk(path, &mut seen, limit);
+    let mb = format!("{:.1} MB", bytes as f64 / 1_048_576.0);
+    if seen >= limit {
+        format!("more than {mb}")
+    } else {
+        mb
+    }
 }
 
 /// The page the NSIS uninstaller shows comes from here: what will happen to the engine, and
@@ -121,7 +137,7 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
         ini_escape(&format!(
             "{} ({}), {}",
             app.display(),
-            mb(data_size(&app)),
+            size_text(&app),
             layout.flow_home().join("logs").join("main_desktop").display()
         ))
     ));
@@ -132,10 +148,10 @@ fn write_ini(path: &Path, layout: &Layout, engine: &EngineDecision, instances: &
     for i in instances {
         let dir = layout.instances().join(&i.name);
         match &i.offer {
-            DataOffer::Offered => offered.push(format!("{} ({})", dir.display(), mb(data_size(&dir)))),
+            DataOffer::Offered => offered.push(format!("{} ({})", dir.display(), size_text(&dir))),
             DataOffer::OfferedWithWarning => {
                 warn = true;
-                offered.push(format!("{} ({})", dir.display(), mb(data_size(&dir))))
+                offered.push(format!("{} ({})", dir.display(), size_text(&dir)))
             }
             DataOffer::NotOffered(r) => kept.push(format!("{} — kept: {r}", i.name)),
         }
@@ -247,7 +263,7 @@ pub fn run(o: &Options) -> i32 {
     if engine_goes && !layout.venv().exists() {
         ops::remove_children(&mut ledger, &mut log, "engine ownership record", &layout.local_flowpad(), &["engine-ownership.json".to_string()]);
         if !leftovers.iter().any(|l| ops::waits_for_venv(l.root)) && !layout.runtime().exists() {
-            ops::remove_children(&mut ledger, &mut log, "runtime record", &layout.flow_home(), &["desktop-runtime.json".to_string()]);
+            ops::remove_children(&mut ledger, &mut log, "runtime record", &layout.flow_home(), &[ops::RUNTIME_STATE_FILE.to_string()]);
         }
     }
     deferred::schedule(&layout, leftovers, &mut ledger, &mut log);
@@ -307,4 +323,22 @@ fn remove_all(
         ops::remove_flow_home_if_unused(layout, ledger, log);
     }
     leftovers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn size_text_stops_at_the_limit_and_says_more_than() {
+        let dir = std::env::temp_dir().join(format!("flowrs-size-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for i in 0..5 {
+            fs::write(dir.join(format!("f{i}")), vec![0u8; 1024]).unwrap();
+        }
+        assert_eq!(size_text_within(&dir, 100), "0.0 MB");
+        assert!(size_text_within(&dir, 3).starts_with("more than "));
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

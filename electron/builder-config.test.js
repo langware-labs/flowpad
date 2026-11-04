@@ -175,6 +175,10 @@ const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, msg); passed++; };
   ok(!/NSD_Check\b|BST_CHECKED\}\s*$/m.test(page.replace(/\$\{If\} \$0 == \$\{BST_CHECKED\}/g, '')), 'nothing on the page starts checked');
   ok(/MB_YESNO\|[^"]*MB_DEFBUTTON2[^"]*"This permanently deletes/.test(page), 'deleting data needs a confirmation whose default is No');
   ok(/IDYES flowpad_confirmed[\s\S]*StrCpy \$FlowpadDeleteAppData 0[\s\S]*StrCpy \$FlowpadDeleteData 0/.test(page), 'answering No deletes nothing');
+  ok(/IDYES flowpad_confirmed[\s\S]*\bAbort\b[\s\S]*flowpad_confirmed:/.test(page), 'answering No keeps the page open (the uninstall does not start)');
+  const leave = (page.match(/Function un\.flowpadOptionsLeave[\s\S]*?FunctionEnd/) || [''])[0];
+  ok(['RemoveEngine', 'DeleteAppData', 'DeleteData'].every((v) => new RegExp(`StrCpy \\$Flowpad${v} 0\\s*\\n\\s*\\$\\{NSD_GetState\\}`).test(leave)),
+    'each choice is reset before its box is read: a box unticked after "No" does not keep an earlier tick');
   ok(/--classify-only/.test(page), 'the page shows what flow-rs classified, read-only');
 
   ok(/app-running --install-dir/.test(macro('customCheckAppRunning')), 'the uninstaller checks the app with flow-rs (bounded), not electron-builder\'s WMI call');

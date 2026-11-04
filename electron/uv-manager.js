@@ -1672,16 +1672,16 @@ class UvManager {
   }
 
   /**
-   * The venv as it is before an install. The runtime repair renames the live venv to
-   * `<venv>.pre-repair` before reinstalling, so that copy stands in for it: a rename keeps the
-   * directory's identity and receipt, so an adopted engine is not mistaken for one the desktop made.
+   * The venv as it is before an install. During a runtime repair the live venv has just been
+   * renamed to `<venv>.pre-repair`, so that copy stands in for it: a rename keeps the directory's
+   * identity and receipt, so an adopted engine is not mistaken for one the desktop made. Outside a
+   * repair a `.pre-repair` folder is only a leftover (finalize is best effort) and says nothing.
    */
   _ownershipSnapshotBeforeInstall() {
     if (!this._engineOwnershipPath()) return null;
     const io = this._ownershipFs();
-    const venvDir = this._toolVenvDir();
-    const live = engineOwnership.snapshotVenv(io, venvDir);
-    if (live.exists) return live;
+    const live = engineOwnership.snapshotVenv(io, this._toolVenvDir());
+    if (live.exists || !this._repairSetAside) return live;
     return engineOwnership.snapshotVenv(io, this._preRepairVenvDir());
   }
 
@@ -1702,6 +1702,33 @@ class UvManager {
       this.log.info(`[uv] engine ownership recorded: origin=${origin}`);
     } catch (e) {
       this.log.warn(`[uv] could not record engine ownership: ${e.message}`);
+    }
+  }
+
+  /** The ownership record as text, or null (none, or not on Windows). */
+  _readOwnershipRecordText() {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath) return null;
+    try { return fs.readFileSync(recordPath, 'utf8'); } catch { return null; }
+  }
+
+  /**
+   * Put back the record that described a venv the rollback restored (the repair's install rewrote
+   * it for the venv it made, now deleted). No record before the repair → none now. Never throws.
+   */
+  _restoreOwnershipRecord(text) {
+    const recordPath = this._engineOwnershipPath();
+    if (!recordPath) return;
+    try {
+      if (text == null) {
+        fs.rmSync(recordPath, { force: true });
+      } else {
+        fs.writeFileSync(`${recordPath}.tmp`, text, 'utf8');
+        fs.renameSync(`${recordPath}.tmp`, recordPath);
+      }
+      this.log.info('[runtime-repair] engine ownership record restored with the engine');
+    } catch (e) {
+      this.log.warn(`[runtime-repair] could not restore the engine ownership record: ${e.message}`);
     }
   }
 
@@ -3513,6 +3540,8 @@ class UvManager {
     // `markFirstInstallBlocked()`: the app knows the blocked install was the FIRST — whatever is in the venv
     // (a block during --compile-bytecode comes after it was populated, and `_version.py` is readable) is not an engine.
     this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
+    // The rollback puts the set-aside venv back; its ownership record goes back with it.
+    this._preRepairOwnershipRecord = this._readOwnershipRecordText();
     try {
       this._setAsidePreRepairVenv();
     } catch (e) {
@@ -3523,9 +3552,14 @@ class UvManager {
       throw err;
     }
     this.log.info(`[runtime-repair] installing ${spec} on ${python}`);
-    await this._uvToolInstallForce(
-      ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
-    );
+    this._repairSetAside = true;
+    try {
+      await this._uvToolInstallForce(
+        ['tool', 'install', spec, '--python', python, '--reinstall', '--force'],
+      );
+    } finally {
+      this._repairSetAside = false;
+    }
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
   }
@@ -3584,6 +3618,7 @@ class UvManager {
       this.log.warn('[runtime-repair] restoring the set-aside engine');
       fs.rmSync(venvDir, { recursive: true, force: true });
       fs.renameSync(aside, venvDir);
+      this._restoreOwnershipRecord(this._preRepairOwnershipRecord);
       this._flowBin = await this._resolveFlowBin();
       return;
     }

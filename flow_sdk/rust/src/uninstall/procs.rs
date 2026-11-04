@@ -113,14 +113,20 @@ pub fn same_path_pub(a: &str, b: &str) -> bool {
     same_path(a, b)
 }
 
+/// Windows compares paths without case, beyond ASCII too (a profile named `Привет`).
+fn fold(s: &str) -> String {
+    s.trim_end_matches('\\').to_lowercase()
+}
+
 fn same_path(a: &str, b: &str) -> bool {
-    a.trim_end_matches('\\').eq_ignore_ascii_case(b.trim_end_matches('\\'))
+    fold(a) == fold(b)
 }
 
 /// `path` is inside `dir` — compared with a directory boundary, so `…\flowpad2\x` is not in `…\flowpad`.
 pub fn under(path: &str, dir: &str) -> bool {
-    let dir = dir.trim_end_matches('\\');
-    path.len() > dir.len() + 1 && path[..dir.len()].eq_ignore_ascii_case(dir) && path.as_bytes()[dir.len()] == b'\\'
+    let (path, dir) = (fold(path), fold(dir));
+    // `starts_with` matched whole characters, so `dir.len()` is a character boundary here.
+    path.len() > dir.len() + 1 && path.starts_with(&dir) && path.as_bytes()[dir.len()] == b'\\'
 }
 
 fn close(a: Option<f64>, b: Option<f64>) -> bool {
@@ -541,5 +547,11 @@ mod tests {
         assert!(under(r"C:\A\FLOWPAD\x.exe", r"c:\a\flowpad\"));
         assert!(!under(r"C:\a\flowpad2\x.exe", r"C:\a\flowpad"));
         assert!(!under(r"C:\a\flowpad", r"C:\a\flowpad"));
+        // Non-ASCII: no panic when the directory's length falls inside a character, and no case.
+        // `C:\Users\x` is 10 bytes; byte 10 of the path is the middle of `П` (bytes 9..11).
+        assert!(!under(r"C:\Users\Привет\app.exe", r"C:\Users\x"));
+        assert!(!under(r"C:\Program Files\Привет\app.exe", r"C:\Program Files\Прив"));
+        assert!(under(r"C:\Users\ПРИВЕТ\x.exe", r"c:\users\привет"));
+        assert!(same_path(r"C:\Users\Привет\app.exe", r"c:\users\ПРИВЕТ\APP.EXE"));
     }
 }

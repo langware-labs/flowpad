@@ -382,7 +382,7 @@ Its progress is in `%LOCALAPPDATA%\Flowpad\fc\status.log`, which reads scheduled
 
 - **Exit 0**, summary "FlowPad was removed."
 - **Removed:**
-  - the venv, `flow.exe` / `flow-sdk-mcp.exe` and the set-aside `flowpad.pre-repair`;
+  - the venv, `flow.exe` / `flow-sdk-mcp.exe` and set-aside `flowpad.corrupt-*` copies (a `flowpad.pre-repair` left by an interrupted repair is kept and reported: nothing proves that engine was FlowPad's);
   - `engine-ownership.json`, the repaired runtime and `desktop-runtime.json`;
   - the install marker, the launcher downloads, the updater cache and `%TEMP%\flowpad-*` leftovers.
 - **Untouched:** `uv.exe` / `uvx.exe`, other uv tools, and files in those folders that FlowPad did not create.
@@ -407,7 +407,8 @@ Its progress is in `%LOCALAPPDATA%\Flowpad\fc\status.log`, which reads scheduled
 - **(e)** On the page:
   - both data boxes start unchecked, and each names its exact folders and sizes;
   - the confirmation lists them and its default button is **No**;
-  - No unticks the boxes and deletes nothing;
+  - No clears the boxes, deletes nothing and keeps the page open (the user chooses again or cancels);
+  - each choice is read afresh every time the page is left, so a box cleared after No never keeps its earlier tick;
   - the button that starts the removal reads "Uninstall".
 
 ### E4 — A file in use
@@ -538,7 +539,7 @@ An unsigned look-alike, a wrong token, or a junction is kept and reported.
 | Carrying an extra `--with` package | Kept as shared |
 | Used by an instance without `.desktop_managed` | Kept as shared |
 | Run by an independently started server | Kept as shared |
-| `legacy-inferred`, or CLI stamping not yet active | Kept unless the user opts in |
+| `legacy-inferred`, CLI stamping not yet active, or an instance older than the stamping (`cli-stamp-since` `preexisting`: the command line may have used it unrecorded) | Kept unless the user opts in |
 | Desktop-made with `.cli_used` | Kept unless the user opts in |
 
 FlowPad's Claude Code hooks (`--name=flowpad_sniffer`) are removed with the engine. If they cannot be confirmed gone, the engine is kept, so Claude Code is never left calling a missing `flow`.
