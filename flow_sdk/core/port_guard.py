@@ -145,13 +145,13 @@ def foreign_flowpad_pids() -> set[int]:
     MCP servers) — MINUS the caller's OWN subtree, which it may clean up.
 
     This is the invariant for ``flow proc kill``: "may clean up a worker's own child" (so the
-    caller's own stuck ``python`` or a tree it spawned stays killable) but "must not disrupt another
+    worker's own stuck ``python`` or a tree it spawned stays killable) but "must not disrupt another
     FlowPad activity" (a sibling worker, an MCP server a sibling spawned, or another instance's
-    backend/monitor — all live FlowPad, none of them the caller's own). Empty when no backend is
-    live anywhere (nothing to protect — a stale/foreign port holder is not under any live backend).
+    backend/monitor — all live FlowPad, none of them the caller's own). "Own" is the **worker's**
+    subtree, not this process's — see :func:`_caller_worker_subtree`, because the kill runs in a
+    short-lived CLI *under* the worker and the stuck process is the worker's child, a sibling of the
+    CLI. Empty when no backend is live anywhere (a stale/foreign port holder is not under any backend).
     """
-    import os  # noqa: PLC0415
-
     import psutil  # noqa: PLC0415
 
     backends = live_backend_pids()
@@ -166,13 +166,38 @@ def foreign_flowpad_pids() -> set[int]:
             flow.update(anc.pid for anc in proc.parents())
         except (psutil.Error, OSError):
             continue
+    return flow - _caller_worker_subtree(backends)
+
+
+def _caller_worker_subtree(backends: set[int]) -> set[int]:
+    """The caller's OWN FlowPad subtree — everything it may clean up. ``flow proc kill`` runs as a
+    short-lived CLI *under* the worker, so the worker's stuck ``python`` is a SIBLING of this
+    process, not a child of it. "Own" therefore has to be the subtree of the **worker** — the
+    caller's ancestor that sits directly under a live backend — not the subtree of this process
+    (which has no children). If the caller is not under any backend (a human, not a worker), "own"
+    is just this process's own subtree, so every live FlowPad process stays refused.
+    """
+    import os  # noqa: PLC0415
+
+    import psutil  # noqa: PLC0415
+
     me = os.getpid()
-    own = {me}
     try:
-        own.update(child.pid for child in psutil.Process(me).children(recursive=True))
+        chain = [psutil.Process(me), *psutil.Process(me).parents()]  # self, then outward to init
     except (psutil.Error, OSError):
-        pass
-    return flow - own
+        return {me}
+    root = psutil.Process(me)
+    for proc in chain:  # the worker is the ancestor whose PARENT is a live backend
+        try:
+            if proc.ppid() in backends:
+                root = proc
+                break
+        except (psutil.Error, OSError):
+            continue
+    try:
+        return {root.pid, *(child.pid for child in root.children(recursive=True))}
+    except (psutil.Error, OSError):
+        return {me}
 
 
 def _tree_pids(pid: int) -> set[int]:

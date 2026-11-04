@@ -286,6 +286,72 @@ def test_foreign_flowpad_tree_refused_but_own_child_killable(monkeypatch, tmp_pa
         _reap(backend, wa, wb, decoy.pid)
 
 
+# A real caller tree, built as separate processes so the kill runs UNDER a worker (not as the test
+# process itself — the shape a real `flow proc kill` has). Layout:
+#   B (this script, the backend) ├─ W1 (our worker) ├─ S1 (W1's own stuck python)
+#                                │                   └─ K  (the killer: computes the guard, in a
+#                                │                          process UNDER the worker, like the CLI)
+#                                └─ W2 (a sibling worker) └─ S2 (W2's own python)
+# K fakes live_backend_pids={B} and writes a JSON verdict. This is the realistic shape the reviewer
+# asked for: the worker's stuck python (S1) is a SIBLING of the killer, not its child.
+_WORKER_CALLER_TREE = r'''
+import os, sys, json, time, subprocess
+OUT = sys.argv[1]
+SLEEP = "import time; time.sleep(300)"
+B = os.getpid()
+# NB: do NOT set SIGCHLD=SIG_IGN here — this process calls Popen.wait() below, and auto-reaping
+# would make that wait() never see the child exit (it would hang).
+
+# W2 (sibling worker) with its own python S2 — both children of B, foreign to the killer.
+w2_src = ("import subprocess,sys,time;"
+          f"s=subprocess.Popen([sys.executable,'-c',{SLEEP!r}]);"
+          "print(s.pid, flush=True); time.sleep(300)")
+w2 = subprocess.Popen([sys.executable, "-c", w2_src], stdout=subprocess.PIPE, text=True)
+s2 = int(w2.stdout.readline())
+
+killer_src = (
+    "import os, sys, json\n"
+    "B,S1,S2,W2,OUT = int(sys.argv[1]),int(sys.argv[2]),int(sys.argv[3]),int(sys.argv[4]),sys.argv[5]\n"
+    "from flow_sdk.core import port_guard\n"
+    "port_guard.live_backend_pids = lambda: {B}\n"
+    "port_guard.live_backend_pid = lambda: B\n"
+    "foreign = port_guard.foreign_flowpad_pids()\n"
+    "json.dump({'own_child_killable': S1 not in foreign, 'sibling_child_refused': S2 in foreign,\n"
+    "           'sibling_worker_refused': W2 in foreign, 'backend_refused': B in foreign,\n"
+    "           'cleanup': [B,S1,S2,W2]}, open(OUT,'w'))\n"
+)
+# W1 (our worker): spawns S1 (its own python) then K (the killer) as a child.
+w1_src = ("import subprocess,sys\n"
+          f"S1=subprocess.Popen([sys.executable,'-c',{SLEEP!r}]).pid\n"
+          f"k=subprocess.Popen([sys.executable,'-c',{killer_src!r}, str({B}), str(S1), str({s2}), str({w2.pid}), {OUT!r}])\n"
+          "k.wait()\n")
+w1 = subprocess.Popen([sys.executable, "-c", w1_src])
+w1.wait()
+'''
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process trees")
+def test_worker_may_clean_own_child_but_not_siblings(tmp_path):
+    # Item 3 (re-review): the kill runs in a process UNDER the worker, so the worker's stuck python
+    # is a SIBLING of the caller, not its child. It must still be killable ("may clean up a worker's
+    # own child"), while a sibling worker and ITS python stay refused.
+    out = tmp_path / "verdict.json"
+    tree = subprocess.Popen([sys.executable, "-c", _WORKER_CALLER_TREE, str(out)])
+    tree.wait()
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline and not out.exists():
+        time.sleep(0.05)
+    assert out.exists(), "killer did not write its verdict"
+    verdict = json.loads(out.read_text())
+    try:
+        assert verdict["own_child_killable"] is True       # the worker's OWN stuck python — killable
+        assert verdict["sibling_child_refused"] is True    # a sibling worker's python — refused
+        assert verdict["sibling_worker_refused"] is True   # the sibling worker itself — refused
+        assert verdict["backend_refused"] is True          # the caller's own backend — refused
+    finally:
+        _reap(*verdict.get("cleanup", []))
+
+
 # ---- flow proc kill (findings 9) ------------------------------------------------------------
 
 def test_proc_kill_spares_backend_kills_decoy(tree, monkeypatch):

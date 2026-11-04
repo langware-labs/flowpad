@@ -93,7 +93,7 @@ def kill(
     pids: Annotated[Optional[list[int]], typer.Argument(help="PIDs to kill.")] = None,
     name: Annotated[Optional[str], typer.Option("--name", help="Kill processes by image base name, version suffix aside (e.g. python matches python3 / python3.11, but not python-lsp).")] = None,
 ) -> None:
-    """Kill the given PIDs / name matches, always sparing any process that holds a protected FlowPad port."""
+    """Kill the given PIDs / name matches, always sparing any live FlowPad process (by server.json identity, not by port) that is not the caller's own to clean up."""
     import psutil  # noqa: PLC0415
 
     from flow_sdk.core import app_ports, port_guard  # noqa: PLC0415
