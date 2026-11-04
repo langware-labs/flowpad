@@ -297,7 +297,7 @@ answer = await run_op(broken, trusted=True, workdir=tmp)
 answer.exit_code                          # ExitCode.NOT_YET
 answer.returncode                         # 2
 answer.stderr                             # 'error: missing header\n'
-answer.detail                             # 'The command exited 2.' — one sentence
+answer.detail                             # 'missing header' — its last stderr line, without "error:"
 
 
 slow = ComputeOpSpec(name="slow", subkind="cli",
@@ -468,7 +468,7 @@ result = await run_wizard(
 )
 type(result) is WizardResult              # True
 result.exit_code                          # ExitCode.NOT_YET
-result.detail                             # 'The command exited 2.' — the step that stopped it
+result.detail                             # 'missing header' — what the step that stopped it said
 type(result.steps["make"]) is CliResult   # True — the op's OWN answer
 result.steps["compile"].stderr            # 'error: missing header\n'
 "deploy" in result.steps                  # False — never reached (on_fail: abort)

@@ -3637,6 +3637,7 @@ msgstr "وكلاء"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "الوكلاء"
@@ -4623,6 +4624,7 @@ msgid "Approving lets this machine act as you on FlowPad. Only approve a code yo
 msgstr "تتيح الموافقة لهذا الجهاز التصرّف باسمك على FlowPad، ولا تُمنح إلا لرمز من إنشائك."
 
 #: src/components/project-home/ProjectApps.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "تطبيقات"

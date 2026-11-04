@@ -3666,6 +3666,7 @@ msgstr "agents"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "Agents"
@@ -4655,6 +4656,7 @@ msgid "Approving lets this machine act as you on FlowPad. Only approve a code yo
 msgstr "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 
 #: src/components/project-home/ProjectApps.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "Apps"
