@@ -9,7 +9,7 @@ const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string, projectId?: string) {
   const scopePath = projectId ? `/project/${projectId}` : '';
-  const res = await request.post(`${API}/api/v1/graph${scopePath}/whiteboard`, { data: { name } });
+  const res = await request.post(`${API}/api/v1/graph${scopePath}/whiteboard`, { data: { name, format: 'excalidraw' } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -28,8 +28,8 @@ async function pickProjectId(request: APIRequestContext): Promise<string> {
 }
 
 async function openEditor(page: Page, id: string) {
-  await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-  await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
@@ -105,7 +105,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     expect(hasPalette, 'whiteboard row has a lucide-palette icon').toBe(true);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('U2: whiteboard list shows whiteboards only', async ({ page, request }) => {
@@ -141,7 +141,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     expect(counts.otherTypes, `no non-whiteboard rows: ${counts.otherTypes.join(', ')}`).toHaveLength(0);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('U3: save debounce — five rapid updates coalesce into one write', async ({ page, request }) => {
@@ -191,7 +191,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     expect(after - before, `5 rapid updates coalesce into exactly one board.json write (delta=${after - before})`).toBe(1);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('U4: pasted image lives in board.json data.files', async ({ page, request }) => {
@@ -242,6 +242,6 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     expect(await page.getByRole('heading', { name: /^Error$/ }).count()).toBe(0);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 });

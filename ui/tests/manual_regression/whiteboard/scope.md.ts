@@ -34,8 +34,8 @@ async function pickProject(request: APIRequestContext): Promise<{ id: string; mo
 }
 
 async function materialize(page: Page, id: string, assetRef: string) {
-  await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-  await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
@@ -74,7 +74,7 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
     });
     expect(res.status()).toBe(200);
     const { id, asset_ref } = (await res.json()).data;
-    // Both scopes use agentic-assets/whiteboard; the scope root is what differs.
+    // Both scopes use agentic-assets/chart; the scope root is what differs.
     expect(path.dirname(asset_ref), `asset_ref ${asset_ref} under project mount ${mount}`).toBe(
       projectWhiteboards(mount),
     );
@@ -85,7 +85,7 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
     expect(fs.existsSync(`${asset_ref}/board.json`), 'project-scoped board.json exists').toBe(true);
 
     fs.rmSync(asset_ref, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('Sc2: user + project scopes coexist with distinct paths', async ({ page, request }) => {
@@ -99,7 +99,7 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   });
     const { id: projectId, mount } = await pickProject(request);
 
-    const userRes = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name: `sc2-user-${Date.now() % 10000}` } });
+    const userRes = await request.post(`${API}/api/v1/graph/chart`, { data: { name: `sc2-user-${Date.now() % 10000}`, format: 'excalidraw' } });
     const user = (await userRes.json()).data;
     const projRes = await request.post(`${API}/api/v1/graph/project/${projectId}/whiteboard`, {
       data: { name: `sc2-proj-${Date.now() % 10000}` },
@@ -117,7 +117,7 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
 
     fs.rmSync(user.asset_ref, { recursive: true, force: true });
     fs.rmSync(proj.asset_ref, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${user.id}`).catch(() => {});
-    await request.delete(`${API}/api/v1/graph/whiteboard/${proj.id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${user.id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${proj.id}`).catch(() => {});
   });
 });

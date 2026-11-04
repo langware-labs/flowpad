@@ -7,7 +7,7 @@ import { adjusted } from '../../adjustableTimeout';
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, format: 'excalidraw' } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -21,8 +21,8 @@ async function openBoard(page: Page, id: string) {
       /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
     }
   });
-  await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-  await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
@@ -97,7 +97,7 @@ test.describe('Whiteboard — Multi-tab (X1)', () => {
     // Reload tab A — it re-reads board.json, which (last-write-wins) now holds
     // tab B's scene ("B"), not tab A's "A".
     await tabA.reload();
-    await tabA.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+    await tabA.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
     await tabA.waitForFunction(() => (window as any).__chartApi, null, { timeout: 15_000 });
     await tabA.waitForTimeout(1_500);
     const aLabelsAfterReload = await boardLabels(tabA);
@@ -107,6 +107,6 @@ test.describe('Whiteboard — Multi-tab (X1)', () => {
     await tabA.close();
     await tabB.close();
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 });

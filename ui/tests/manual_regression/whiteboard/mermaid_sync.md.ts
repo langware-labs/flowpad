@@ -7,15 +7,15 @@ import { adjusted } from '../../adjustableTimeout';
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, format: 'excalidraw' } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
 }
 
 async function openEditor(page: Page, id: string) {
-  await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-  await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
@@ -64,13 +64,13 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     const { id, assetRef } = await createWhiteboard(request, `m1-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);
-    const md = await waitMermaidContains(page, `${assetRef}/WHITE_BOARD.md`, 'flowchart TD');
+    const md = await waitMermaidContains(page, `${assetRef}/CHART.md`, 'flowchart TD');
     expect(md).toContain('<!-- BEGIN whiteboard:auto -->');
     expect(md).toContain('```mermaid');
     expect(md).toContain('flowchart TD');
     expect(md).toContain('<!-- END whiteboard:auto -->');
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('M2: human content preserved outside markers', async ({ page, request }) => {
@@ -85,7 +85,7 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     const { id, assetRef } = await createWhiteboard(request, `m2-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);
-    const mdPath = `${assetRef}/WHITE_BOARD.md`;
+    const mdPath = `${assetRef}/CHART.md`;
     await waitMermaidContains(page, mdPath, 'flowchart TD');
 
     // Insert prose above BEGIN and below END, plus a wiki link below.
@@ -105,7 +105,7 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     expect(after, 'prose below marker preserved').toContain('PROSE_BELOW_MARKER');
     expect(after, 'wiki link preserved').toContain('[[my-wiki-link]]');
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('M3: degenerate (freehand-only) board still emits valid mermaid', async ({ page, request }) => {
@@ -126,12 +126,12 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     await injectAndSave(page, [
       { type: 'freedraw', x: 0, y: 0, points: [[0, 0], [50, 20], [100, 30]], simulatePressure: true },
     ]);
-    const md = await waitMermaidContains(page, `${assetRef}/WHITE_BOARD.md`, 'flowchart TD');
+    const md = await waitMermaidContains(page, `${assetRef}/CHART.md`, 'flowchart TD');
     expect(md).toContain('flowchart TD');
     // Loose-elements comment mentioning freedraw; the fenced block is non-empty.
     expect(md).toMatch(/%%\s*loose elements:[\s\S]*freedraw/i);
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('M4: decision diamond emits double-curly (or single-curly) node', async ({ page, request }) => {
@@ -146,11 +146,11 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     const { id, assetRef } = await createWhiteboard(request, `m4-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, [{ type: 'diamond', x: 50, y: 200, width: 100, height: 80, label: { text: 'OK?' } }]);
-    const md = await waitMermaidContains(page, `${assetRef}/WHITE_BOARD.md`, 'OK?');
+    const md = await waitMermaidContains(page, `${assetRef}/CHART.md`, 'OK?');
     // mermaid v10+ double-curly, or single-curly backward-compat.
     expect(md).toMatch(/N\d+\{\{OK\?\}\}|N\d+\{OK\?\}/);
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('M5: mermaid import dialog adds elements + re-syncs markdown', async ({ page, request }) => {
@@ -183,10 +183,10 @@ test.describe('Whiteboard — Mermaid Auto-sync (M1–M5)', () => {
     expect(labels.join(' ')).toContain('Bar');
 
     // Markdown re-synced to contain the imported tokens.
-    const md = await waitMermaidContains(page, `${assetRef}/WHITE_BOARD.md`, 'Foo');
+    const md = await waitMermaidContains(page, `${assetRef}/CHART.md`, 'Foo');
     expect(md).toContain('Foo');
     expect(md).toContain('Bar');
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 });

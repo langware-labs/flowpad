@@ -7,15 +7,15 @@ import { adjusted } from '../../adjustableTimeout';
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, format: 'excalidraw' } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
 }
 
 async function openEditor(page: Page, id: string) {
-  await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
-  await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
+  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
@@ -87,7 +87,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     expect(readMtime(), 'no further board.json write on continued idle').toBe(baseMtime);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('E2: close without save (documented behavior, no pass/fail gate)', async ({ page, request }) => {
@@ -130,7 +130,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     // No assertion (documentation-only per the .md).
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('E3: crash-mid-edit recovery preserves saved elements', async ({ page, request }) => {
@@ -155,7 +155,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
     // Hard reload (full page reload, simulating a crash + reopen).
     await page.reload();
-    await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
+    await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: 20_000 });
     await page.waitForFunction(() => (window as any).__chartApi, null, { timeout: 15_000 });
     await page.waitForTimeout(2_000);
 
@@ -167,7 +167,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     expect(orphans, `no .tmp/.swp orphans: ${orphans.join(', ')}`).toHaveLength(0);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('E4: large board (100 rects) persists all elements + mermaid block', async ({ page, request }) => {
@@ -215,7 +215,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     expect(total, 'board.json holds >=100 elements').toBeGreaterThanOrEqual(100);
 
     // The mermaid block is still emitted and properly terminated.
-    const mdPath = `${assetRef}/WHITE_BOARD.md`;
+    const mdPath = `${assetRef}/CHART.md`;
     let md = '';
     for (let i = 0; i < 8; i++) {
       if (fs.existsSync(mdPath)) {
@@ -228,18 +228,18 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     expect(md).toContain('<!-- END whiteboard:auto -->');
 
     fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
   });
 
   test('E5: delete board removes entity (folder kept on disk by design)', async ({ request }) => {
     test.setTimeout(adjusted(30_000));
     const { id } = await createWhiteboard(request, `e5-delete-${Date.now() % 10000}`);
 
-    const del = await request.delete(`${API}/api/v1/graph/whiteboard/${id}`);
+    const del = await request.delete(`${API}/api/v1/graph/chart/${id}`);
     expect(del.status()).toBe(200);
 
     // The entity must be gone from the graph: GET returns 404 or empty data.
-    const get = await request.get(`${API}/api/v1/graph/whiteboard/${id}`);
+    const get = await request.get(`${API}/api/v1/graph/chart/${id}`);
     if (get.status() === 200) {
       const body = await get.json();
       const data = body.data;
