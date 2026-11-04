@@ -497,7 +497,7 @@ async function newPage(
 }
 
 const displayRe = () =>
-  new RegExp(`/process/agentic_process-${processId}/display/|host=agentic_process-${processId}.*activeDisplay=1`);
+  new RegExp(`/process/agentic_process-${processId}/display/|host=agentic_process-${processId}.*viewMode=vibe`);
 
 /**
  * The newest Display history entry's stamp, as the server keeps it. A show always moves
@@ -549,7 +549,7 @@ for (const surface of SURFACES) {
         await surface.click(page, kind);
         await kind.landed(page);
         if (surface.vibe && !kind.media) {
-          // The active Display, in either address form (project-placed, or hosted with `activeDisplay`).
+          // The active Display, in either address form (project-placed, or hosted in the vibe workspace: `host=` + `viewMode=vibe`).
           await expect(page).toHaveURL(displayRe());
           await expect.poll(lastShownAt).not.toBe(before);
         }
