@@ -31,6 +31,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
 from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
 from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+from tests.adjustable_timeout import adjusted
 from tests.hub_tests._assignment import assert_auto_assigned
 from tests.hub_tests._guest import completions, guest_login
 
@@ -136,7 +137,7 @@ async def test_twenty_prompts_two_sessions_one_host(
         sent_in = time.monotonic() - t0
 
         # ── host side: wait for every completion (bounded poll, no sleeps) ─
-        deadline = time.monotonic() + 40.0
+        deadline = time.monotonic() + adjusted(40.0)
         done: list[FlowMessage] = []
         while time.monotonic() < deadline:
             fms = await FlowMessage.get_all({"conversation_id": conv.id})
