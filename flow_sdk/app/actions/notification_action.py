@@ -22,6 +22,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import time
+import weakref
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
@@ -1305,6 +1306,18 @@ async def handle_start_live_session(conversation_id: str, body: dict, someone_ty
     materializes PENDING with its Approve request). The line is the session's
     first message: where the conversation shows its one line.
     """
+    # One start at a time per conversation: the open-session check and the save
+    # below are separated by awaits, so two quick clicks would each mint a row.
+    from flow_sdk.stream_inbox._locks import keyed_loop_lock  # noqa: PLC0415
+
+    async with keyed_loop_lock(_LIVE_SESSION_START_LOCKS, conversation_id):
+        return await _start_live_session_locked(conversation_id, body, someone_typeid)
+
+
+_LIVE_SESSION_START_LOCKS = weakref.WeakKeyDictionary()
+
+
+async def _start_live_session_locked(conversation_id: str, body: dict, someone_typeid: str) -> ApiResponse:
     from flow_sdk.app.actions.execute_prompt import _peer_of, emit_session_event  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
     from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
