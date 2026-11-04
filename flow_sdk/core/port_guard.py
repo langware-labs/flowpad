@@ -159,7 +159,12 @@ def runs_under(pid: int | None) -> bool:
         return True
     try:
         return any(anc.pid == pid for anc in psutil.Process(me).parents())
-    except (psutil.Error, OSError):
+    except (psutil.Error, OSError) as exc:
+        # Fail OPEN: we could not read the live tree. The lifecycle gate then does not refuse,
+        # so a worker whose chain to the backend is severed (an intermediate process exited, or
+        # it was detached with setsid/nohup and reparented to init) is NOT stopped here. That
+        # residual belongs to L1 (OS containment). Log it so the gap is observable, not silent.
+        logger.warning("runs_under(%s): could not read process ancestry (%s); failing open", pid, exc)
         return False
 
 

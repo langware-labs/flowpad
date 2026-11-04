@@ -290,16 +290,32 @@ def test_flow_stop_refused_for_worker_on_own_backend(monkeypatch):
 
 
 def test_flow_stop_allowed_for_worker_on_other_instance(monkeypatch):
-    # Worker, but the target backend is NOT its ancestor (a different instance) → allowed. No
-    # server_pid in info keeps it a pure unit (nothing is actually killed).
+    # Worker, but neither the target backend NOR its monitor is its ancestor (a different
+    # instance) → allowed. No server_pid in info keeps it a pure unit (nothing is actually killed).
     from flow_sdk.server import launch
 
     monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007})
     monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
     monkeypatch.setattr(port_guard, "runs_under", lambda pid: False)
+    monkeypatch.setattr(launch, "_recorded_monitor_pid", lambda info: None)
     monkeypatch.setattr(launch, "_monitor_pids", lambda info, port: [])
     monkeypatch.setattr(launch, "clear_server_info", lambda: None, raising=False)
     assert launch._stop_all_guarded() == (False, False)
+
+
+def test_flow_stop_refused_for_worker_in_startup_window(monkeypatch):
+    # The ~15s window after a restart: server_pid is not yet recorded, so the server check alone
+    # fails open — but the monitor (our ancestor) is already recorded, so the gate still refuses.
+    from flow_sdk.core.connections.service import FlowServiceError
+    from flow_sdk.server import launch
+
+    monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007})  # no server_pid yet
+    monkeypatch.setattr(port_guard, "caller_is_worker", lambda: True)
+    monkeypatch.setattr(launch, "_recorded_monitor_pid", lambda info: 5151)
+    # Ancestor iff it is the recorded monitor; server_pid (None here) is never our ancestor.
+    monkeypatch.setattr(port_guard, "runs_under", lambda pid: pid == 5151)
+    with pytest.raises(FlowServiceError):
+        launch._stop_all_guarded()
 
 
 def test_flow_stop_allowed_for_human(monkeypatch):
@@ -309,6 +325,7 @@ def test_flow_stop_allowed_for_human(monkeypatch):
     monkeypatch.setattr(launch, "_load_info", lambda: {"port": 9007})
     monkeypatch.setattr(port_guard, "caller_is_worker", lambda: False)
     monkeypatch.setattr(port_guard, "runs_under", lambda pid: True)
+    monkeypatch.setattr(launch, "_recorded_monitor_pid", lambda info: None)
     monkeypatch.setattr(launch, "_monitor_pids", lambda info, port: [])
     monkeypatch.setattr(launch, "clear_server_info", lambda: None, raising=False)
     assert launch._stop_all_guarded() == (False, False)
@@ -322,6 +339,8 @@ def test_worker_reaping_own_backend_predicate(monkeypatch):
     monkeypatch.setattr(port_guard, "runs_under", lambda pid: pid == 4242)
     assert instance_cmd._worker_reaping_own_backend({"server_pid": 4242}) is True   # own instance
     assert instance_cmd._worker_reaping_own_backend({"server_pid": 777}) is False   # other instance
+    # Server_pid not yet recorded, but the monitor (passed explicitly) is our ancestor → refused.
+    assert instance_cmd._worker_reaping_own_backend({}, 4242) is True               # startup window
     monkeypatch.setattr(port_guard, "caller_is_worker", lambda: False)
     assert instance_cmd._worker_reaping_own_backend({"server_pid": 4242}) is False  # human
 
@@ -329,7 +348,7 @@ def test_worker_reaping_own_backend_predicate(monkeypatch):
 def test_instance_reset_own_instance_refused_for_worker(monkeypatch):
     from flow_sdk.cli.commands import instance_cmd
 
-    monkeypatch.setattr(instance_cmd, "_worker_reaping_own_backend", lambda server: True)
+    monkeypatch.setattr(instance_cmd, "_worker_reaping_own_backend", lambda server, monitor_pid=None: True)
     monkeypatch.setattr(instance_cmd, "_read_json", lambda p: {})
     monkeypatch.setattr(instance_cmd, "_read_env_file", lambda n: {})
     with pytest.raises(RuntimeError, match="worker may not reset"):

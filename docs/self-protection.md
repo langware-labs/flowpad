@@ -89,12 +89,26 @@ that one case is refused, loudly (a clear error, non-zero exit):
   **not** blocked.
 
 "Its own backend" is decided by **process ancestry** (`port_guard.runs_under`): the target's
-recorded `server_pid` is this process or one of its ancestors. Ancestry, not a `FLOW_INSTANCE` or
-`live_backend_pid()` match — both of those follow a `FLOW_INSTANCE=<other> flow stop` override and
-would wrongly flag a different instance, whereas the live process tree cannot be spoofed by an env
-var. The `FLOWPAD_WORKER` signal is also stripped from any backend/monitor a worker launches (the
-one detached-spawn chokepoint), so it never leaks to infrastructure or to a terminal opened from
-it.
+recorded `server_pid` — **or its recorded `monitor_pid`** — is this process or one of its
+ancestors. Ancestry, not a `FLOW_INSTANCE` or `live_backend_pid()` match — both of those follow a
+`FLOW_INSTANCE=<other> flow stop` override and would wrongly flag a different instance, whereas the
+live process tree cannot be spoofed by an env var. The `FLOWPAD_WORKER` signal is also stripped
+from any backend/monitor a worker launches (the one detached-spawn chokepoint), so it never leaks
+to infrastructure or to a terminal opened from it.
+
+The **monitor** is checked alongside the server because `flow stop` (and the instance sweep) reaps
+every monitor *first*, and the monitor is an ancestor of the backend — hence of the worker. For
+roughly 15s after a restart (see `get_status`) the backend has not yet recorded its `server_pid`,
+so a server-only check would fail open in exactly the window a worker is most likely to run
+`flow stop`; the monitor's pid is already in the lock sidecar by then, so checking it closes the
+window.
+
+**Ancestry is read from the live tree, so a severed chain fails open.** If `runs_under` cannot walk
+the ancestry (a `psutil`/OS error, an intermediate process that already exited, or a worker
+detached with `setsid`/`nohup` and reparented to init), it returns `False` and the gate does **not**
+refuse — it logs a warning so the gap is observable. That residual is deliberate: a worker that has
+been cut loose from the backend's tree is no longer identifiable as "running inside" it at the app
+layer, and the real boundary for a detached or raw-kill worker is L1 (OS containment).
 
 The signal is **`FLOWPAD_WORKER`** (`flow_sdk/utils/environment.py`), stamped `"1"` on every
 worker spawn at the one chokepoint (`apply_worker_env`) and inherited by a worker's children. It

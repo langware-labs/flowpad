@@ -81,19 +81,25 @@ def _read_env_file(name: str) -> dict[str, str]:
 
 
 # ── kill ────────────────────────────────────────────────────────────────────
-def _worker_reaping_own_backend(server: dict) -> bool:
+def _worker_reaping_own_backend(server: dict, monitor_pid: int | None = None) -> bool:
     """Whether a WORKER is about to reap the backend it runs inside — the one case reset/
     restart-backend must refuse (it would stop the FlowPad the worker lives in).
 
     "Its own backend" is decided by process ancestry (``port_guard.runs_under``): the named
-    instance's recorded ``server_pid`` is this process or an ancestor. Ancestry, not a name or
-    ``FLOW_INSTANCE`` match, so a worker resetting a DIFFERENT instance (``qa``/``dev``, whose
-    backend is not its ancestor) stays allowed even under a ``FLOW_INSTANCE`` override, and a
-    human in the desktop terminal (not a worker) is never blocked.
+    instance's recorded ``server_pid`` — or its recorded ``monitor_pid`` — is this process or an
+    ancestor. Ancestry, not a name or ``FLOW_INSTANCE`` match, so a worker resetting a DIFFERENT
+    instance (``qa``/``dev``, whose backend is not its ancestor) stays allowed even under a
+    ``FLOW_INSTANCE`` override, and a human in the desktop terminal (not a worker) is never blocked.
+
+    The monitor is checked too because it is an ancestor of the backend (hence of the worker) and
+    the sweep reaps it as well: in the ~15s window after a restart, ``server_pid`` is absent/stale
+    so the server check alone would fail open, but the monitor pid is already recorded.
     """
     from flow_sdk.core import port_guard  # noqa: PLC0415
 
-    return port_guard.caller_is_worker() and port_guard.runs_under(_as_int(server.get("server_pid")))
+    if not port_guard.caller_is_worker():
+        return False
+    return port_guard.runs_under(_as_int(server.get("server_pid"))) or port_guard.runs_under(monitor_pid)
 
 
 def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
@@ -127,7 +133,7 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
     # A human in the desktop terminal, or a worker managing a DIFFERENT instance (qa/dev, on
     # another port), is still allowed. A worker that bypasses this with a raw kill is contained at
     # the OS boundary (L1).
-    if _worker_reaping_own_backend(server):
+    if _worker_reaping_own_backend(server, _as_int(launcher.get("monitor_pid") or server.get("monitor_pid"))):
         raise RuntimeError(
             f"'{name}': a worker may not reset or restart the backend of the instance it runs "
             f"inside (self-protection: it would stop the FlowPad it lives in). Run this from "
