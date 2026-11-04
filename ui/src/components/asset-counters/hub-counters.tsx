@@ -61,6 +61,7 @@ export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
       () => [
         {
           key: 'all',
+          chipLabel: <Trans>All</Trans>,
           label: <Trans>Agents</Trans>,
           description: <Trans>Every agent you can reach</Trans>,
           items: rows,
@@ -68,6 +69,7 @@ export const hubAgentCounterGroup: AssetCounterGroup<AgentRow> = {
         },
         {
           key: 'active',
+          chipLabel: <Trans>Active</Trans>,
           tone: 'live' as const,
           label: <Trans>Active</Trans>,
           description: <Trans>Agents with a live deployment</Trans>,
@@ -128,6 +130,7 @@ export const hubMachineCounterGroup: AssetCounterGroup<MachineRow> = {
       () => [
         {
           key: 'all',
+          chipLabel: <Trans>All</Trans>,
           label: <Trans>Machines</Trans>,
           description: <Trans>Every machine you can reach</Trans>,
           items: rows,
@@ -135,6 +138,7 @@ export const hubMachineCounterGroup: AssetCounterGroup<MachineRow> = {
         },
         {
           key: 'active',
+          chipLabel: <Trans>Active</Trans>,
           tone: 'live' as const,
           label: <Trans>Active</Trans>,
           description: <Trans>Machines that are running</Trans>,
@@ -176,6 +180,7 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
       () => [
         {
           key: 'all',
+          chipLabel: <Trans>All</Trans>,
           label: <Trans>Deployments</Trans>,
           description: <Trans>Every deployment you can reach</Trans>,
           items: deployments,

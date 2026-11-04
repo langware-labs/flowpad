@@ -2248,7 +2248,7 @@ class Entity(DBEntity):
         await blob_index_entity.save(self.embedded_storage)
         # logging.info(f"Saved blob index for {self.typeid} with fields: {blob_index_entity._blob_index.fields.keys()} on \n {self.storage.vfs_root_path}")
 
-    async def share(self: EntityType, *, recursive: bool = False) -> EntityType:
+    async def share(self: EntityType, *, recursive: bool = False, with_create: Optional[dict] = None) -> EntityType:
         """Create this entity on the hub (POST /api/v1/graph/<type>).
 
         Generic, type-agnostic: the body is this entity's serialized dump,
@@ -2269,6 +2269,9 @@ class Entity(DBEntity):
         transient instance reconstructed from a request body and not
         bound to a DB row, so we deliberately do not call ``self.save()``
         from inside ``share()``.
+
+        ``with_create`` adds keys the type's hub create takes beyond its fields (a
+        conversation's ``members`` / ``first_message``); the answer reaches ``_adopt_hub_created``.
 
         Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
         """
@@ -2306,7 +2309,7 @@ class Entity(DBEntity):
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
             self.add_shared_context_entities(parent_tid)
-        body = self._hub_body()
+        body = {**self._hub_body(), **(with_create or {})}
 
         try:
             created = await HubProxy.call("POST", self.get_type(), payload=body, strict=True)

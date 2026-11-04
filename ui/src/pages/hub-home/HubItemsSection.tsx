@@ -1,7 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { InboundWebhooks, PageId, ViewType } from '@sdk';
 import { CountBubble, StatChip } from '@src/components/asset-counters/StatChips';
-import { CounterTable, LiveDot, QuickSearchInput, useQuickSearch } from '@src/components/asset-counters/AssetItems';
+import { CounterTable, QuickSearchInput, useQuickSearch } from '@src/components/asset-counters/AssetItems';
 import {
   hubAgentCounterGroup,
   hubDeploymentCounterGroup,
@@ -123,9 +123,9 @@ function TabButton({
       {label}
       <CountBubble value={count} isLoading={isLoading} />
       {active !== undefined && (
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <LiveDot active={active > 0} />
-          <Trans>{active} active</Trans>
+        <span className="flex items-center gap-1.5 text-xs text-foreground/75">
+          <Trans>Active</Trans>
+          <CountBubble value={active} tone="live" isLoading={isLoading} />
         </span>
       )}
     </button>
@@ -277,7 +277,7 @@ export function HubItemsSection({ onCreate }: { onCreate: () => void }) {
               current.counters.map((c) => (
                 <StatChip
                   key={c.key}
-                  label={c.label}
+                  label={c.chipLabel ?? c.label}
                   selected={c.key === counter?.key}
                   onClick={() => selectCounter(c.key)}
                   data-testid="hub-items-filter"

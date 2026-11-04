@@ -134,7 +134,7 @@ class GmailSource(EmailAddressing, MessageSource):
             mailbox = self._mailbox()
             await self._imap(check_login, mailbox)
         except (AccessDenied, Rejected) as exc:
-            return Verdict(ready=False, detail=f"{exc}")
+            return Verdict(ready=False, detail=exc.message)
         return Verdict(ready=True, detail=f"Reading {mailbox.address}.")
 
     @classmethod

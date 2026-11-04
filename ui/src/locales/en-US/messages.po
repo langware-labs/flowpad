@@ -733,10 +733,9 @@ msgstr "{0} estimated · {1} unpriced"
 msgid "{0} failed"
 msgstr "{0} failed"
 
-#. placeholder {0}: failing[0].name
 #: src/components/automations/AutomationsList.tsx
-msgid "{0} failed last time it ran."
-msgstr "{0} failed last time it ran."
+#~ msgid "{0} failed last time it ran."
+#~ msgstr "{0} failed last time it ran."
 
 #. placeholder {0}: chain.data.paths.length
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -1214,7 +1213,6 @@ msgid "{0}: waiting for you…"
 msgstr "{0}: waiting for you…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
-#: src/pages/hub-home/HubItemsSection.tsx
 msgid "{active} active"
 msgstr "{active} active"
 
@@ -1365,8 +1363,8 @@ msgid "{failed} of {0} failed to delete."
 msgstr "{failed} of {0} failed to delete."
 
 #: src/components/automations/AutomationsList.tsx
-msgid "{failedName} failed: {failedWhy}"
-msgstr "{failedName} failed: {failedWhy}"
+#~ msgid "{failedName} failed: {failedWhy}"
+#~ msgstr "{failedName} failed: {failedWhy}"
 
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "{files} files need merging — let the assistant merge them"
@@ -1597,6 +1595,14 @@ msgstr "{listed} not sent"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "{listed} to invite"
 msgstr "{listed} to invite"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "{loneName} failed last time it ran."
+msgstr "{loneName} failed last time it ran."
+
+#: src/components/automations/AutomationsList.tsx
+msgid "{loneName} failed: {loneWhy}"
+msgstr "{loneName} failed: {loneWhy}"
 
 #: src/components/automations/automation-words.ts
 msgid "{m}m {rest}s"
@@ -2940,10 +2946,13 @@ msgstr "active"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/tabs/provider-meta.tsx
 msgid "Active"
@@ -3732,6 +3741,9 @@ msgstr "all"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts

@@ -730,10 +730,9 @@ msgstr "{0} משוערות · {1} ללא תמחור"
 msgid "{0} failed"
 msgstr "{0} נכשל"
 
-#. placeholder {0}: failing[0].name
 #: src/components/automations/AutomationsList.tsx
-msgid "{0} failed last time it ran."
-msgstr "{0} נכשלה בהרצה האחרונה."
+#~ msgid "{0} failed last time it ran."
+#~ msgstr "{0} נכשלה בהרצה האחרונה."
 
 #. placeholder {0}: chain.data.paths.length
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -1211,7 +1210,6 @@ msgid "{0}: waiting for you…"
 msgstr "{0}: ממתין לכם…"
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
-#: src/pages/hub-home/HubItemsSection.tsx
 msgid "{active} active"
 msgstr "{active} פעילים"
 
@@ -1362,8 +1360,8 @@ msgid "{failed} of {0} failed to delete."
 msgstr "{failed} מתוך {0} נכשלו במחיקה."
 
 #: src/components/automations/AutomationsList.tsx
-msgid "{failedName} failed: {failedWhy}"
-msgstr ""
+#~ msgid "{failedName} failed: {failedWhy}"
+#~ msgstr ""
 
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "{files} files need merging — let the assistant merge them"
@@ -1589,6 +1587,14 @@ msgstr "{listed} לא נשלחו"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "{listed} to invite"
 msgstr "{listed} להזמנה"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "{loneName} failed last time it ran."
+msgstr ""
+
+#: src/components/automations/AutomationsList.tsx
+msgid "{loneName} failed: {loneWhy}"
+msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "{m}m {rest}s"
@@ -2921,10 +2927,13 @@ msgstr "פעיל"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubItemsSection.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/tabs/provider-meta.tsx
 msgid "Active"
@@ -3703,6 +3712,9 @@ msgstr "הכל"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
+#: src/components/asset-counters/hub-counters.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts

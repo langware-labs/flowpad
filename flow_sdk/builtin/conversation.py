@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
-from pydantic import computed_field, field_validator, model_validator
+from pydantic import PrivateAttr, computed_field, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
@@ -223,6 +223,8 @@ class Conversation(ProjectedFields, Entity):
     # JSON-encoded [{"typeid": ..., "ts": ...}] — a projection of the pointer
     # log, like ``message_count``: rebuilt locally, never accepted from the hub.
     message_ids: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    #: The hub's answer to this conversation's create (``Entity.share``), read by ``share``.
+    _create_answer: dict = PrivateAttr(default_factory=dict)
     # Conversation-scoped default transfer mode for asset shares. When True,
     # asset shares into this conversation ride as Git-origin metadata (the
     # receiver clones/pulls on an explicit Download) instead of copied bytes.
@@ -532,6 +534,7 @@ class Conversation(ProjectedFields, Entity):
         return fallback
 
     def _adopt_hub_created(self, created: dict) -> None:
+        self._create_answer = created
         owner = created.get("initiated_by")
         if owner:
             self.initiated_by = owner
@@ -599,9 +602,9 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
         created_here = getattr(self, "remote", False) is not True
-        if created_here:
-            await super().share()  # a row already on the hub needs no second create (or file upload)
         if not recipients and not recipient_user_ids and not principals:
+            if created_here:
+                await super().share()  # a row already on the hub needs no second create (or file upload)
             # Link each shared-context doc to this conversation locally (the hub
             # doesn't host doc types). This makes the doc effective-remote so a
             # comment on it auto-shares under the conversation (the hub parent).
@@ -610,31 +613,6 @@ class Conversation(ProjectedFields, Entity):
         creds = load_credentials()
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
-
-        # Join IMMEDIATELY after create. The hub stamps ``initiated_by`` on
-        # this call; until then even the creator cannot owner-delete the
-        # row. Local context linking, pending-message delivery, and asset
-        # sharing can all block or fail, so none may sit in this ownership
-        # gap and leave an undeletable conversation behind.
-        # A hub whose create stamps the owner (``on_api_created``) says so in its answer;
-        # an older hub does not, and still needs the join.
-        # A local conversation has no ``initiated_by`` until this create's answer sets it.
-        if not (created_here and self.initiated_by):
-            await HubProxy.call("POST", self.type, self.id, "join", payload={}, strict=True)
-
-        # Link each shared-context doc to this conversation locally (the hub
-        # doesn't host doc types). This makes the doc effective-remote so a
-        # comment on it auto-shares under the conversation (the hub parent).
-        await self._link_context_to_conversation()
-
-        # Deliver any messages composed while this conversation was still
-        # local. Flush them through the same send pipeline a normal reply
-        # uses, BEFORE inviting, so the invitation's callback_override and
-        # the recipient's first fetch resolve.
-        # (``deliver_messages=False`` when ``deliver`` itself is opening this conversation.)
-        if deliver_messages:
-            await self.deliver(bodies=False)
-            self.kick_delivery()
 
         # Post-accept landing: point at the conversation's first FlowMessage
         # on the hub. Falls back to None (hub default = entity URL) when the
@@ -671,8 +649,7 @@ class Conversation(ProjectedFields, Entity):
             body.update(extra)  # message, expiration_at, transfer fields, a caller's callback_override
             return body
 
-        # One invitation per person/group. They are independent of each other, so they
-        # go out together; every one is awaited and the first refusal is raised.
+        # One invitation per person/group.
         bodies: list[dict] = []
         for email in recipients or []:
             if isinstance(email, str) and (email := normalize_email(email)):
@@ -684,6 +661,36 @@ class Conversation(ProjectedFields, Entity):
         for principal in principals or []:
             if principal:
                 bodies.append(_membership_body(principal=principal))
+
+        if created_here and await self._create_with_members(bodies, deliver_messages=deliver_messages):
+            return self
+        if created_here:
+            await super().share()  # a hub that does not take members creates the row alone
+
+        # Join IMMEDIATELY after create. The hub stamps ``initiated_by`` on
+        # this call; until then even the creator cannot owner-delete the
+        # row. Local context linking, pending-message delivery, and asset
+        # sharing can all block or fail, so none may sit in this ownership
+        # gap and leave an undeletable conversation behind.
+        # A hub whose create stamps the owner (``on_api_created``) says so in its answer;
+        # an older hub does not, and still needs the join.
+        # A local conversation has no ``initiated_by`` until this create's answer sets it.
+        if not (created_here and self.initiated_by):
+            await HubProxy.call("POST", self.type, self.id, "join", payload={}, strict=True)
+
+        await self._link_context_to_conversation()
+
+        # Deliver any messages composed while this conversation was still
+        # local. Flush them through the same send pipeline a normal reply
+        # uses, BEFORE inviting, so the invitation's callback_override and
+        # the recipient's first fetch resolve.
+        # (``deliver_messages=False`` when ``deliver`` itself is opening this conversation.)
+        if deliver_messages:
+            await self.deliver(bodies=False)
+            self.kick_delivery()
+
+        # They are independent of each other, so they go out together; every one is
+        # awaited and the first refusal is raised.
         results = await asyncio.gather(
             *(HubProxy.call("POST", self.type, self.id, "members", payload=b, strict=True) for b in bodies),
             return_exceptions=True,
@@ -692,6 +699,38 @@ class Conversation(ProjectedFields, Entity):
         if failure is not None:
             raise failure
         return self
+
+    async def _create_with_members(self, bodies: list[dict], *, deliver_messages: bool) -> bool:
+        """Create this conversation on the hub with its invitations and its first owed message in
+        ONE request (hub ``conversation_create_with_members``) — instead of create, add_message and
+        one ``members`` call per person. False when the hub's answer shows it does not take them
+        (an older hub drops the unknown keys and creates the row alone): the caller then sends
+        the rest the old way. A refused invitation fails the whole create on the hub.
+        """
+        from flow_sdk.app.actions.notification_action import message_header_kwargs  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+
+        owed = await self._owed_messages() if deliver_messages else []
+        first = owed[0] if owed else None
+        extras: dict = {"members": bodies}
+        if first is not None:
+            if first.has_body() and first.body_status not in (BodyStatus.UPLOADING, BodyStatus.FAILED):
+                first.body_status = BodyStatus.UPLOADING  # the upload ``deliver`` sends next
+            extras["first_message"] = self.add_message_body(first.text, **message_header_kwargs(first))
+        await super().share(with_create=extras)
+        answer = self._create_answer
+        if "invitations" not in answer:
+            return False
+        if first is not None:
+            stored = answer.get("first_message") or {}
+            if stored.get("body_status") == BodyStatus.NA.value:
+                first.body_status = BodyStatus.NA
+            await first.mark_sent()
+        await self._link_context_to_conversation()
+        if deliver_messages:
+            await self.deliver(bodies=False)  # anything owed after the first, in order
+            self.kick_delivery()
+        return True
 
     async def _link_context_to_conversation(self, refs=None, someone_typeid: str | None = None) -> None:
         """Set ``parent_type_id`` = this conversation on each local shared-context
@@ -1185,7 +1224,7 @@ class Conversation(ProjectedFields, Entity):
             "messages": entries,
         }
 
-    async def add_message(
+    def add_message_body(
         self,
         text: str,
         *,
@@ -1201,31 +1240,8 @@ class Conversation(ProjectedFields, Entity):
         reply_to_id: Optional[str] = None,
         thread_root_id: Optional[str] = None,
     ) -> dict:
-        """Append a FlowMessage to this conversation on the hub.
-
-        Hits ``POST <hub>/api/v1/graph/conversation/<id>/add_message`` via the
-        standard cloud client — same path the Python tests use directly. Returns
-        the response ``data`` (the persisted FlowMessage).
-
-        ``attachments``: optional list of Attachment-shaped dicts (or
-        ``Attachment`` instances). When at least one attachment requires a
-        body bundle (FILE / PROMPT-with-file / TYPE_ID), the hub stamps
-        ``body_status=UPLOADING`` on the FM at creation time; the sender then
-        calls ``FlowMessage.upload_body()`` to pack and upload.
-
-        ``shared_context_entities``: optional list of TypeId-shaped dicts to
-        bind on the FM's wire-bound bucket. Mirrors the
-        ``Entity.shared_context_entities`` field surface.
-
-        ``flow_message_id``: when given, the hub creates the FM under this id
-        instead of minting its own. The sender uses this so the local FM, the
-        hub FM, and the uploaded ``body.flowmsg`` bundle all share one key —
-        ``FlowMessage.upload_body()`` then targets the same id.
-        """
-        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-
-        if not self.id:
-            raise RuntimeError("Conversation.id is required")
+        """The hub ``add_message`` body for one message — also what a create carries as its
+        ``first_message`` (``share``)."""
         body: dict = {"text": text}
         if flow_message_id:
             body["id"] = flow_message_id
@@ -1258,6 +1274,35 @@ class Conversation(ProjectedFields, Entity):
         if thread_root_id:
             body["thread_root_id"] = thread_root_id
         body["conversation_id"] = self.id
+        return body
+
+    async def add_message(self, text: str, **fields) -> dict:
+        """Append a FlowMessage to this conversation on the hub.
+
+        Hits ``POST <hub>/api/v1/graph/conversation/<id>/add_message`` via the
+        standard cloud client — same path the Python tests use directly. Returns
+        the response ``data`` (the persisted FlowMessage).
+
+        ``attachments``: optional list of Attachment-shaped dicts (or
+        ``Attachment`` instances). When at least one attachment requires a
+        body bundle (FILE / PROMPT-with-file / TYPE_ID), the hub stamps
+        ``body_status=UPLOADING`` on the FM at creation time; the sender then
+        calls ``FlowMessage.upload_body()`` to pack and upload.
+
+        ``shared_context_entities``: optional list of TypeId-shaped dicts to
+        bind on the FM's wire-bound bucket. Mirrors the
+        ``Entity.shared_context_entities`` field surface.
+
+        ``flow_message_id``: when given, the hub creates the FM under this id
+        instead of minting its own. The sender uses this so the local FM, the
+        hub FM, and the uploaded ``body.flowmsg`` bundle all share one key —
+        ``FlowMessage.upload_body()`` then targets the same id.
+        """
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+        if not self.id:
+            raise RuntimeError("Conversation.id is required")
+        body = self.add_message_body(text, **fields)
         # The one hub seam: every way this fails raises a classified ``HubError`` (signed out
         # before anything is sent, offline, refused, broken) that delivery records as is.
         data = await HubProxy.call("POST", BuiltinEntityType.CONVERSATION, self.id, "add_message", payload=body, strict=True)

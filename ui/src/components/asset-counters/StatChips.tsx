@@ -64,8 +64,10 @@ export function StatChip({
       aria-pressed={selected}
       className={cn(
         'group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[13px] transition-colors',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        selected ? 'bg-accent text-foreground' : 'text-foreground/75 hover:bg-foreground/[0.08] hover:text-foreground',
+        'focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40',
+        selected
+          ? 'bg-foreground/[0.12] font-semibold text-foreground'
+          : 'text-foreground/75 hover:bg-foreground/[0.08] hover:text-foreground',
         className,
       )}
       {...data}
