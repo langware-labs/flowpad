@@ -47,7 +47,7 @@ export function SourceSetupDialogRoot() {
 export function pendingConnection(
   tree: SetupTreeResult | null,
   needs: SetupNeed[] = [],
-): { provider: string; title: string } | null {
+): { provider: string; title: string; why: string } | null {
   const walk = (node: SetupNodeResult | null): SetupNodeResult | null => {
     if (!node) return null;
     for (const child of node.children) {
@@ -60,8 +60,9 @@ export function pendingConnection(
   if (!node) return null;
   const provider = node.id.slice('connection:'.length);
   // The source names the sign-in it waits on (`setup_needs`); the node's label is only the fallback.
-  const title = needs.find((n) => n.name === provider)?.title || node.label.replace(/ sign-in$/, '') || provider;
-  return { provider, title };
+  const need = needs.find((n) => n.name === provider);
+  const title = need?.title || node.label.replace(/ sign-in$/, '') || provider;
+  return { provider, title, why: need?.why ?? '' };
 }
 
 /**
@@ -125,6 +126,7 @@ export function SourceSetupPanel({
     onGranted: begin,
     onError: (e) => setRefused(errorMessage(e, t`Could not start the ${signIn?.title ?? ''} sign-in.`)),
     listen: !!signIn,
+    source: source.id,
   });
   const done = !running && tree?.state === 'done';
   useEffect(() => onListening?.(done), [done, onListening]);
@@ -160,9 +162,11 @@ export function SourceSetupPanel({
                 <Trans>Sign in to {signIn.title}</Trans>
               </h1>
               <p className="text-sm text-muted-foreground">
-                <Trans>
-                  So {name} can read your {signIn.title} messages and send your replies as you. You stay signed in.
-                </Trans>
+                {signIn.why ? (
+                  <Trans>{signIn.why} You stay signed in.</Trans>
+                ) : (
+                  <Trans>So {name} can use your {signIn.title} account. You stay signed in.</Trans>
+                )}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">

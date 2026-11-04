@@ -69,8 +69,6 @@ interface VersionCheckResponse {
    *  sits beside `hub` rather than inside `pypi`. Null for a source checkout. */
   installed_at: string | null;
   hub: HubInfo | null;
-  /** The version the server runs NOW — differs from the page's after a restart onto another version. */
-  running_version?: string;
 }
 
 interface ElectronAPI {
@@ -296,9 +294,10 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
   const [picking, setPicking] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [installResult, setInstallResult] = useState<InstallVersionResponse | null>(null);
-  // The server may have restarted onto another version since this page loaded: show what it runs.
-  const currentVersion = data?.running_version || pageVersion;
-  const pageIsStale = currentVersion !== pageVersion;
+  // The server may have restarted onto another version since this page loaded: show what it runs
+  // (`pypi.current` is the running server's own version).
+  const runningVersion = data?.pypi?.current || pageVersion;
+  const pageIsStale = runningVersion !== pageVersion;
   const [restarting, setRestarting] = useState(false);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
   const [diagReport, setDiagReport] = useState<{
@@ -343,7 +342,8 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
 
   // Every open asks again: the running version is only true as of the last ask.
   useEffect(() => {
-    if (open) void fetchData();
+    if (open && !loading) void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per open, not again when the fetch ends
   }, [open, fetchData]);
 
   useEffect(() => {
@@ -437,21 +437,21 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     // both PyPI rows ended up with a blank date.
     const githubReleases = data?.releases ?? [];
     return {
-      pypiCurrentPublished: findPypiRelease(pypi?.releases, currentVersion),
+      pypiCurrentPublished: findPypiRelease(pypi?.releases, runningVersion),
       pypiLatestPublished: findPypiRelease(pypi?.releases, pypi?.latest),
       electronCurrentRelease: findReleaseByTag(githubReleases, electronVersion),
       githubUpdateAvailable: Boolean(
         electronVersion && githubLatest && electronVersion.replace(/^v/i, '') !== githubLatest.tag,
       ),
     };
-  }, [data?.releases, pypi?.releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
+  }, [data?.releases, pypi?.releases, runningVersion, pypi?.latest, electronVersion, githubLatest]);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <VersionChip
           ref={targetRef}
-          version={currentVersion}
+          version={runningVersion}
           updateAvailable={Boolean(pypi?.update_available || githubUpdateAvailable)}
           data-testid="version-popover-trigger"
         />
@@ -464,7 +464,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
               data-testid="version-page-stale"
             >
               <span>
-                <Trans>The server now runs v{currentVersion}; this page is still v{pageVersion}.</Trans>
+                <Trans>The server now runs v{runningVersion}; this page is still v{pageVersion}.</Trans>
               </span>
               <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => window.location.reload()}>
                 <Trans>Reload</Trans>
@@ -582,7 +582,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
             </div>
             <VersionRow
               label={t`Installed`}
-              version={currentVersion}
+              version={runningVersion}
               date={formatDateWithAge(pypiCurrentPublished?.published_at)}
             />
             <VersionRow
@@ -633,7 +633,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
                 </p>
                 <div className="max-h-48 overflow-y-auto rounded-sm border bg-muted/30 py-0.5">
                   {(pypi?.releases ?? []).map((r) => {
-                    const isCurrent = r.version === currentVersion;
+                    const isCurrent = r.version === runningVersion;
                     const isPending = r.version === pendingVersion;
                     return (
                       <div key={r.version}>

@@ -79,6 +79,25 @@ class TestTheHubMember:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_enable_carries_the_name_a_new_mailbox_gets(self, monkeypatch):
+        """The Channels screen names the mailbox it creates: `username` / `display_name` reach the hub's
+        `enable` (which provisions when absent); empty ones are left out, so the hub picks."""
+        seen: list[tuple[str, dict]] = []
+
+        async def fake_call(method, _type, _entity_id, _action, sub_path, *, payload=None, **_k):
+            seen.append((sub_path, payload))
+            return DESCRIPTOR
+
+        monkeypatch.setattr(HubProxy, "call", staticmethod(fake_call))
+        driver = HubAgentMailboxDriver()
+
+        await driver.enable_mailbox(AGENT_ID, username="acme-support", display_name="Acme support")
+        await driver.enable_mailbox(AGENT_ID, username=None, display_name="")
+
+        assert seen == [("enable", {"username": "acme-support", "display_name": "Acme support"}), ("enable", {})]
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_get_mailbox_unwraps_the_envelope(self, monkeypatch):
         """The hub wraps this one (`{"mailbox": …|null}`) because a bare null does
         not survive its envelope. Callers should see a descriptor or nothing."""

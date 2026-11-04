@@ -321,6 +321,7 @@ def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, perso
         persona=persona or Persona(),
         read_only=bool(getattr(row, "read_only", False)),
         holds_rows=bool(getattr(row, "holds_rows", False)),
+        rate_limit_retries=getattr(row, "rate_limit_retries", 0) or 0,
     )
 
 
@@ -968,7 +969,8 @@ class DriverRuntime:
         try:
             source = await self.open(row)
         except Rejected as exc:
-            return Verdict(ready=False, detail=str(exc))
+            # The setup step's own words: the person acts on them, without the "Data source error" label.
+            return Verdict(ready=False, detail=exc.message)
         verdict = await source.verify()  # type: ignore[attr-defined]
         if (verdict.ready or verdict.pending) and isinstance(source, Identified):
             await self._stamp(row, source)

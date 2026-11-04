@@ -183,7 +183,12 @@ def probe_claude_auth(
         parsed = None
     if not isinstance(parsed, dict) or "loggedIn" not in parsed:
         # Old claude versions without the `auth` subcommand land here too
-        # (nonzero rc, usage text on stderr).
+        # (nonzero rc, usage text on stderr) — but they still print --version; a crashed CLI does not.
+        crash_like = proc.returncode and not output and "usage" not in (proc.stderr or "").lower()
+        if crash_like and (version := _run_cli([executable, "--version"], env, timeout)).returncode:
+            err = (version.stderr or version.stdout or "").strip() or f"exit code {version.returncode}"
+            return WorkerAuthResult(status=WorkerAuthStatus.UNKNOWN, message=err.splitlines()[0][:500],
+                                    details={"returncode": proc.returncode, "cli_crashed": True})
         return WorkerAuthResult(
             status=WorkerAuthStatus.UNKNOWN,
             message=(output or (proc.stderr or "").strip())[:500],

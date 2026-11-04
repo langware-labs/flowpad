@@ -32,6 +32,7 @@ import {
   Download,
   FolderGit2,
   GitMerge,
+  Link2,
   Info,
   Loader2,
   Menu,
@@ -47,6 +48,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CommandStatusViewer } from './command-status-viewer';
 import { EntityShareDialog } from './EntityShareDialog';
 import { SessionInfoPopover } from './SessionInfoPopover';
+import { useChainSession } from './useChainSession';
 import { useCommitMerge, useOpenInWorktree } from './use-worktree-actions';
 import { useRestartRequiredHint } from './useRestartRequiredHint';
 
@@ -96,6 +98,7 @@ export function SessionActionsMenu({
   const restartHint = useRestartRequiredHint(process);
   const commitMerge = useCommitMerge(process, onInjectPrompt);
   const worktree = useOpenInWorktree(process, { enabled: menuOpen && !embedded });
+  const chain = useChainSession(process);
 
   const handleRestart = async () => {
     if (isRestarting) return;
@@ -240,6 +243,14 @@ export function SessionActionsMenu({
                     onSelect={commitMerge.run}
                   />
                 )}
+                <ActionItem
+                  testId="session-action-chain"
+                  icon={Link2}
+                  label={t`Chain session`}
+                  hint={t`Open a session on another project that reviews this one`}
+                  disabledReason={hasSession ? null : t`Session is not running`}
+                  onSelect={chain.start}
+                />
                 {/* Share + Bookmark are NOT here: the top navigation bar carries
                     them for whatever it is addressing, this session included.
                     Export stays — the bar has no equivalent for it. */}
@@ -265,6 +276,8 @@ export function SessionActionsMenu({
           onOpenChange={(open) => setAssets(open ? 'open' : 'closed')}
         />
       )}
+
+      {chain.picker}
 
       <CommandStatusViewer
         open={commandStatusOpen}

@@ -21,6 +21,7 @@ sod. Memoized per instance NAME like ``runtime.py``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import asdict, dataclass, field
@@ -39,6 +40,9 @@ _CONFIG_KEY = "hub_llm_endpoint"
 #: rides on. A short memo keeps that polling off the hub without ever holding a stale answer for
 #: long enough to matter.
 _LIST_TTL_SECONDS = 30.0
+#: The listing read in flight, per instance and event loop. Callers that miss the memo at the same
+#: moment (a WS drop fires several) join it instead of each sending the same two hub reads.
+_inflight: dict[tuple[str, int], asyncio.Future] = {}
 
 
 @dataclass(frozen=True)
@@ -185,6 +189,7 @@ def reset_cache() -> None:
     _cache.clear()
     _stamp.clear()
     _list_cache.clear()
+    _inflight.clear()
 
 
 def hub_origin(endpoint_typeid: str = "") -> str:
@@ -235,7 +240,12 @@ _list_cache: dict[str, tuple[float, list["LLMEndpoint"]]] = {}
 
 def invalidate_endpoint_listing() -> None:
     """Drop the readable endpoint cache; read visibility never revokes a binding."""
-    _list_cache.pop(get_instance_settings().instance_name, None)
+    name = get_instance_settings().instance_name
+    _list_cache.pop(name, None)
+    # A read already in flight may predate the change that caused this call: the next caller
+    # starts a fresh one rather than joining it.
+    for key in [k for k in _inflight if k[0] == name]:
+        _inflight.pop(key, None)
 
 
 def _allows(row: dict, action: str) -> bool | None:
@@ -314,9 +324,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     initiates -- binding an endpoint, for one -- where reaching back to the hub mid-request buys
     nothing and makes a hub-side call depend on a second hub-side call completing.
     """
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     name = get_instance_settings().instance_name
     cached = _list_cache.get(name)
@@ -353,6 +361,20 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # picker here would only make the list blink out at an arbitrary 30s boundary.
     if not hub_auth_available():
         return stale
+
+    key = (name, id(asyncio.get_running_loop()))
+    pending = _inflight.get(key)
+    if pending is None:
+        pending = asyncio.ensure_future(_read_hub_listing(name, stale))
+        _inflight[key] = pending
+        pending.add_done_callback(lambda done: _inflight.pop(key, None) if _inflight.get(key) is done else None)
+    return await asyncio.shield(pending)
+
+
+async def _read_hub_listing(name: str, stale: list["LLMEndpoint"]) -> list["LLMEndpoint"]:
+    """The two hub reads behind ``fetch_hub_llm_endpoints``, unioned and memoised."""
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMEndpointKind  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
     # ``HubProxy.try_call`` rather than a hand-built client: it is the one chokepoint that honours Local
     # privacy mode (nothing may leave the box) and it reuses the pooled client. It answers None on

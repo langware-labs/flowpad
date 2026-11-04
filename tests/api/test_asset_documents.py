@@ -86,3 +86,45 @@ async def test_document_remote_without_conditional_write_refuses_upload(bootstra
                                  json={'expected_revision': 'prior-revision', 'body': 'changed'})
     assert response.status_code == 501, response.text
     assert response.json()['data']['code'] == 'conditional_write_unsupported'
+
+
+def _git(cwd, *args):
+    import subprocess  # noqa: PLC0415
+    return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, check=True,
+                          capture_output=True, text=True).stdout
+
+
+async def test_an_unchanged_agent_save_neither_bumps_the_version_nor_commits(bootstrapped_client, tmp_path):
+    """Opening the agent page saved the untouched prompt; each save minted "Flowpad: <agent> vN"
+    and left the project with unpushed commits. A save with the loaded content is not a change."""
+    import json  # noqa: PLC0415
+
+    client = bootstrapped_client
+    folder = tmp_path / "agentic-assets" / "agent" / "procurement"
+    folder.mkdir(parents=True)
+    card = {"type": "agent", "id": mint_uuid(), "name": "Procurement agent", "worker_type": "claude", "version": 2}
+    (folder / "agent.json").write_text(json.dumps(card, indent=2) + "\n")
+    prompt = "# Procurement agent\n\n## Hard limits\n\n- Never buy.\n- Never ask for card details.\n"
+    (folder / "system_prompt.md").write_text(prompt)
+    _git(tmp_path, "init", "-q")
+    # The product's own commit runs plain git: give the repo an identity (a CI runner has no global one).
+    _git(tmp_path, "config", "user.name", "t")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "init")
+    project = await project_at(client, tmp_path)
+    route = f"/api/v1/graph/project/{project}/fs/document/agentic-assets/agent/procurement/agent.json"
+    loaded = (await client.get(route)).json()["data"]
+    assert loaded["body"] == prompt
+    saved = await client.post(route, json={"expected_revision": loaded["revision"], "body": loaded["body"],
+                                           "set_fields": {"name": loaded["fields"]["name"]}})
+    assert saved.status_code == 200, saved.text
+    assert _git(tmp_path, "rev-list", "--count", "HEAD").strip() == "1"
+    assert _git(tmp_path, "status", "--porcelain").strip() == "", _git(tmp_path, "diff")
+    assert json.loads((folder / "agent.json").read_text())["version"] == 2
+    # The guard is not vacuous: a real body change in the same call does version and commit.
+    edited = await client.post(route, json={"expected_revision": saved.json()["data"]["revision"],
+                                            "body": prompt + "- Only procurement.\n"})
+    assert edited.status_code == 200, edited.text
+    assert _git(tmp_path, "rev-list", "--count", "HEAD").strip() == "2"
+    assert json.loads((folder / "agent.json").read_text())["version"] == 3

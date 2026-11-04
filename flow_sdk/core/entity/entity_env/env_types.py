@@ -58,6 +58,9 @@ class EnvVar(BaseModel):
     #: The scopes the flow will request. Empty when the side that owns the flow
     #: does not publish them (a hub provider's scopes live in its manifest).
     oauth_scopes: list[str] = []
+    #: The provider's scope groups (a hub provider's manifest): ``{name, title, scopes, optional_scopes,
+    #: credentials_name}`` — each connected separately, with its own token. Empty: one group.
+    oauth_groups: list[dict] = []
     #: Epoch seconds the held access token expires; None when the provider never
     #: said, which means "does not expire".
     expires_at: Optional[int] = None

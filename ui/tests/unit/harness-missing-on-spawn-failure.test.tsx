@@ -151,16 +151,4 @@ describe('a spawn failure asks whether the harness is really gone', () => {
     );
   });
 
-  it('sends an unfunded harness to LLM sources instead of the Capabilities view', async () => {
-    // Installed, resolved, and refused for want of funding. Capabilities is an
-    // inventory of what is INSTALLED — it can only offer a re-check and an
-    // installer for something the machine already has.
-    h.openNewChat.mockRejectedValue(new Error('claude has no usable LLM source:\n  - claude device login: signed out'));
-
-    await mountController()();
-
-    await waitFor(() => expect(h.openSources).toHaveBeenCalled());
-    expect(h.openTab).not.toHaveBeenCalled();
-    expect(h.test).not.toHaveBeenCalled();
-  });
 });

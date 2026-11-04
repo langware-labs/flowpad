@@ -16,7 +16,7 @@
  *
  * No React here: the parser is shared by the view and the address bar.
  */
-import { isValidEntityId, PageId, ViewType } from '@sdk';
+import { isHubOnly, isValidEntityId, PageId, ViewType } from '@sdk';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
@@ -91,9 +91,9 @@ export function openDriver(navigation: NavigationActions, driver: string | null 
   navigation.openPage(PageId.DESK, ViewType.DATA_SOURCES, dataSourcesPointer({ section: 'drivers', driver }));
 }
 
-/** Open every MessageChannel and where each is routed. Same `openPage` shape as `openDriver`. */
+/** Open the one Channels screen (every channel and where its messages go). Same `openPage` shape as `openDriver`. */
 export function openChannels(navigation: NavigationActions): void {
-  navigation.openPage(PageId.DESK, ViewType.DATA_SOURCES, dataSourcesPointer({ section: 'channels' }));
+  navigation.openPage(isHubOnly() ? PageId.HUB : PageId.DESK, ViewType.INBOUND);
 }
 
 /** Open one configured source's page (a tab of it), or one of its conversations in place (and a thread in it). Same

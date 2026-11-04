@@ -10,6 +10,7 @@ import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext as useDataContext } from '@src/hooks/useContext';
+import { ProcessLaunchFailureCard, readLaunchFailure } from '@src/components/launch-failure/LaunchFailureCard';
 
 /**
  * Per-kind copy + primary action for the runtime-error banner. Each entry
@@ -216,6 +217,16 @@ export function TerminalRuntimeErrorBanner({ processId }: { processId?: string }
   const [busy, setBusy] = useState(false);
   const { t } = useLingui();
 
+  // A launch failure (latched, or a CLI blocked on a launch prompt) is the one launch-failure card.
+  const proc = processId ? AgenticProcess.getByIdFromCache<AgenticProcess>(processId) : null;
+  const failed = terminalRuntimeError?.processId === processId && terminalRuntimeError?.kind === 'failed_to_start';
+  if (proc && (failed || proc.launch_failure?.phase === 'blocked') && readLaunchFailure(proc)) {
+    return (
+      <div className="border-b border-border px-3 py-2" data-testid="terminal-runtime-error-banner">
+        <ProcessLaunchFailureCard process={proc} retry={failed ? () => retryFailedStart(proc.id) : undefined} />
+      </div>
+    );
+  }
   if (!terminalRuntimeError) return null;
   // The error names ONE process, and this component is mounted by every
   // terminal — so a failure had been showing over whichever terminal you
@@ -334,3 +345,4 @@ export function TerminalRuntimeErrorBanner({ processId }: { processId?: string }
     </TooltipProvider>
   );
 }
+

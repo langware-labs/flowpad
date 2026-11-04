@@ -5,6 +5,11 @@ import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
 import { workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { embedStandardAgent } from './embed-standard-agent';
 import type { NavigationActions } from './NavigationActions';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { handleLaunchFailure } from '@src/components/launch-failure/LaunchFailureCard';
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
 
 export interface OpenNewChatOptions {
   workerType?: 'claude_code' | 'codex' | 'copilot' | 'opencode';
@@ -130,7 +135,27 @@ export async function openNewChat(
     await embedStandardAgent(process);
   }
   if (!ptyMode && options.prompt) {
-    process.prompt(options.prompt).catch((e) => console.error('[openNewChat] first prompt failed', e));
+    const firstPrompt = options.prompt;
+    const send = (): Promise<unknown> =>
+      process.prompt(firstPrompt).catch((e: unknown) => {
+        console.error('[openNewChat] first prompt failed', e);
+        handleLaunchFailure(e, send, options.workerType);
+      });
+    void send();
   }
   return process;
+}
+
+/** {@link openNewChat} for a click: a launch failure shows its card, anything else a toast. Never rejects. */
+export function openNewChatOrExplain(
+  navigation: NavigationActions,
+  options: OpenNewChatOptions = {},
+): Promise<AgenticProcess | null> {
+  return openNewChat(navigation, options).catch((err: unknown) => {
+    console.error('[openNewChat] new chat failed', err);
+    const retry = () => openNewChatOrExplain(navigation, options);
+    if (!handleLaunchFailure(err, retry, options.workerType))
+      notify.error({ title: i18n._(msg`Could not start`), message: errorMessage(err, '') });
+    return null;
+  });
 }

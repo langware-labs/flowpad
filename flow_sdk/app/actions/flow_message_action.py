@@ -2447,7 +2447,6 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     """
     from flow_sdk.app.actions.notification_action import (
         _append_message_to_conversation,
-        _notify_ui_conversation_updated,
         _send_conversation_message_header,
     )
     from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
@@ -2507,8 +2506,6 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         fm_id=fm.id,
         someone_typeid=someone_typeid,
     )
-
-    _notify_ui_conversation_updated(conv.id, "", fm.id)
 
     if is_remote_send:
         conv.kick_delivery()  # the body, if it has one — owed on the row until the hub has it
@@ -4796,9 +4793,8 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             logger.warning("[invitation-accept] bundle download failed: %s", e)
 
     # Live UI refresh: fire an explicit ``OperationType.UPDATE`` for the
-    # Conversation entity. The per-step sniffer EVENTs logged above as
-    # ``[hook_op] Unhandled event`` don't invalidate the UI's
-    # ``useEntity<Conversation>`` React-Query cache. ``notify_updated``
+    # Conversation entity so the UI's ``useEntity<Conversation>`` React-Query
+    # cache refreshes. ``notify_updated``
     # dispatches a ``DataOpMessage(op=UPDATE)`` which IS what useEntity
     # listens for.
     # The per-step events fired above (materialize, sync) don't all carry the

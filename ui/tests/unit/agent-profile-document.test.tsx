@@ -13,6 +13,15 @@ vi.mock('@src/components/stream-inbox-view/AttachedChannelsBar', () => ({
 }));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => <div data-testid="agent-places" /> }));
 vi.mock('@src/components/assets/editor/agent-profile/use-agent-mcp-sync', () => ({ useAgentMcpSync: () => undefined }));
+// Milkdown needs a real browser; a textarea stands in for the markdown editor.
+vi.mock('@src/components/milkdown-editor/MilkdownEditor', () => ({
+  MilkdownEditor: ({ content, onChange, editorMode, toolbarRight }: { content: string; onChange: (v: string) => void; editorMode: string; toolbarRight?: React.ReactNode }) => (
+    <>
+      {toolbarRight}
+      <textarea aria-label="System prompt" value={content} disabled={editorMode === 'view'} onChange={(e) => onChange(e.target.value)} />
+    </>
+  ),
+}));
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -28,8 +37,9 @@ function fixture(extraFields: Record<string, unknown> = {}) {
   });
   const rawWrite = vi.spyOn(mainRef, 'write');
   const entitySave = vi.spyOn(agent, 'save');
+  const markEdit = vi.spyOn(agent, 'markEdit').mockImplementation(() => undefined);
   render(<MemoryRouter><TooltipProvider><AgentProfileEditor agent={agent} mainRef={mainRef} /></TooltipProvider></MemoryRouter>);
-  return { update, rawWrite, entitySave, externalEdit: () => { stored = {...stored, revision: 'external', body: 'External'}; } };
+  return { update, rawWrite, entitySave, markEdit, externalEdit: () => { stored = {...stored, revision: 'external', body: 'External'}; } };
 }
 
 describe('Agent profile document adapter', () => {
@@ -40,6 +50,29 @@ describe('Agent profile document adapter', () => {
     await waitFor(() => expect(f.update).toHaveBeenCalledTimes(1));
     expect(f.update).toHaveBeenCalledWith({expected_revision: 'first', body: 'My prompt'});
     expect(f.rawWrite).not.toHaveBeenCalled(); expect(f.entitySave).not.toHaveBeenCalled();
+  });
+  it('a blur with nothing changed writes nothing and is not an edit', async () => {
+    const f = fixture();
+    fireEvent.blur(await screen.findByRole('textbox', { name: 'System prompt' }));
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Agent title' }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(f.update).not.toHaveBeenCalled();
+    expect(f.markEdit).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Agent title' }), { target: { value: 'Renamed' } });
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Agent title' }));
+    await waitFor(() => expect(f.markEdit).toHaveBeenCalledTimes(1));
+  });
+  it('edits the prompt full screen and saves it once on exit', async () => {
+    const f = fixture();
+    fireEvent.click(await screen.findByTestId('full-screen-open'));
+    // One editor at a time: the inline one gives way to the full-screen one.
+    expect(screen.getAllByRole('textbox', { name: 'System prompt' })).toHaveLength(1);
+    fireEvent.change(screen.getByRole('textbox', { name: 'System prompt' }), { target: { value: 'Full prompt' } });
+    fireEvent.click(screen.getByTestId('full-screen-exit'));
+    await waitFor(() => expect(f.update).toHaveBeenCalledTimes(1));
+    expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', body: 'Full prompt' });
+    expect(screen.queryByTestId('full-screen-view')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'System prompt' })).toHaveValue('Full prompt');
   });
   it('keeps a conflicting field draft and does not retry on another blur', async () => {
     const f = fixture(); const title = await screen.findByRole('textbox', {name: 'Agent title'});
@@ -97,10 +130,12 @@ describe('Unreadable definition', () => {
     render(<MemoryRouter><TooltipProvider><AgentProfileEditor agent={agent} mainRef={mainRef} /></TooltipProvider></MemoryRouter>);
     const alert = await screen.findByTestId('agent-definition-error');
     expect(alert).toHaveTextContent('document is not implemented on the hub');
-    expect(screen.getByTestId('agent-places')).toBeInTheDocument();
     // The header carries the agent's channels line (the stream inbox header's bar), definition or not.
     expect(screen.getByTestId('agent-header-channels')).toContainElement(screen.getByTestId('attached-channels'));
     expect(screen.getByTestId('agent-more')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'System prompt' })).toBeDisabled();
+    // Deployments sit on their own tab and stay reachable with no definition.
+    fireEvent.mouseDown(screen.getByTestId('agent-tab-deployments'));
+    expect(await screen.findByTestId('agent-places')).toBeInTheDocument();
   });
 });

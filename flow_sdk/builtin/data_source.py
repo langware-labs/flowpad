@@ -280,6 +280,8 @@ class DataSource(SetupSkippable, Entity):
     #: A thread quiet this long is over: the next message on it starts a new thread (a new
     #: conversation), on top of the driver's own split (a chat, a topic, a call). None = never.
     thread_timeout_seconds: Optional[int] = APIField(default=None, ge=1, description="Seconds of quiet after which a thread ends")
+    #: Times a request waits out the provider's rate limit (its Retry-After) before failing. 0 = fail at once.
+    rate_limit_retries: int = APIField(default=0, ge=0, le=10, description="Rate-limit waits before a request fails")
     next_poll_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
     last_synced_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
@@ -2426,7 +2428,29 @@ class DataSource(SetupSkippable, Entity):
 
         if get_probe(provider) is None:
             return None  # no probe defined — not a failure, just unverifiable
-        return await connection_need(provider, driver.cls.connection_probe_url(self.config or {}))
+        need = await connection_need(provider, driver.cls.connection_probe_url(self.config or {}), why=_read_why(manifest))
+        return need or await self._missing_grant(provider, manifest)
+
+    async def _missing_grant(self, provider: str, manifest) -> Optional[SetupNeedSpec]:
+        """A working sign-in that lacks a scope THIS source needs (a read-only grant for a source that writes
+        back): the sign-in need again, saying — in the driver's words — what the missing permission is for.
+        What the source needs is ``requirements_of_source``'s answer, so Verify and Setup never disagree."""
+        from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import connection_of, requirements_of_source  # noqa: PLC0415
+        from flow_sdk.core.connections.specs import _connection_user  # noqa: PLC0415
+        from flow_sdk.core.oauth.provider_registry import grant_gap, granted_scopes  # noqa: PLC0415
+
+        connector = str(manifest.auth.connector or "")
+        wants = [(req, grant[1]) for req in await requirements_of_source(self)
+                 if (grant := connection_of(req)) is not None and grant[0] == connector and grant[1]]
+        if not wants:
+            return None
+        granted = await granted_scopes(provider, await _connection_user())  # one read, whatever the needs
+        for req, scopes in wants:
+            if missing := [s for s in scopes if granted and s not in granted]:
+                title = shipped_provider_title(provider) or provider.title()
+                return _sign_in_need(provider, title, "missing_scopes", grant_gap(missing), req.why)
+        return None
 
     async def _verify_credentials(self) -> Optional[SetupNeedSpec]:
         """For a source that holds datasets' rows (asked only for those: a feed's values may live in a
@@ -2535,10 +2559,10 @@ _NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
 
 
 
-def _sign_in_need(provider: str, title: str, state: str, detail: str = "") -> SetupNeedSpec:
+def _sign_in_need(provider: str, title: str, state: str, detail: str = "", why: str = "") -> SetupNeedSpec:
     """The one shape of "this source needs <title> sign-in" — at create, from Verify and from a setup step alike."""
     return SetupNeedSpec(kind=NEED_CONNECTION, name=provider, title=title, state=state,
-                         detail=detail or f"Needs {title} sign-in")
+                         detail=detail or f"Needs {title} sign-in", why=why)
 
 
 def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
@@ -2549,10 +2573,19 @@ def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
         return None
     from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
 
-    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified")
+    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified",
+                         why=_read_why(manifest))
 
 
-async def connection_need(provider: str, url: Optional[str] = None) -> Optional[SetupNeedSpec]:
+def _read_why(manifest) -> str:
+    """What reading through a driver's sign-in lets a source do: its first read permission's own reason."""
+    from flow_sdk import permissions  # noqa: PLC0415
+
+    name = getattr(manifest, "name", "") or ""
+    return next((need.why for need in permissions.needs_of_driver(name, writes=False) if need.why), "")
+
+
+async def connection_need(provider: str, url: Optional[str] = None, why: str = "") -> Optional[SetupNeedSpec]:
     """None when ``provider``'s sign-in works for what runs here (``provider_probe.connection_answer``);
     otherwise the need it is — the answer a source's Verify and its setup step's sign-in node both give."""
     from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
@@ -2566,7 +2599,7 @@ async def connection_need(provider: str, url: Optional[str] = None) -> Optional[
     state = "missing" if code == "missing_token" else (code or "refused")
     title = await _provider_title(provider)
     detail = "" if state == "missing" else str(data.get("detail") or f"{title} did not accept the sign-in")
-    return _sign_in_need(provider, title, state, detail)
+    return _sign_in_need(provider, title, state, detail, why)
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:

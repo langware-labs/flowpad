@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-from pydantic import PrivateAttr
+from pydantic import PrivateAttr, computed_field
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.auth import LoginRequired
@@ -987,6 +987,23 @@ class Agent(Entity):
         if source is not None:
             await source.delete()
         return result
+
+    @computed_field
+    @property
+    def shipped(self) -> bool:
+        """Ships inside an SDK system project — one of Flowpad's own agents, not the person's.
+
+        Systemness is a property of the LOCATION (``config.is_system_project_path``), so
+        walk up from the bundle — same rule as ``Wizard.shipped``. Not the base entity's
+        ``system`` flag, which a shipped agent's row may not carry.
+        """
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.config import is_system_project_path  # noqa: PLC0415
+
+        if not self.asset_ref:
+            return False
+        return any(is_system_project_path(p) for p in Path(self.asset_ref).parents)
 
     # ── the mailbox ───────────────────────────────────────────────────────
 

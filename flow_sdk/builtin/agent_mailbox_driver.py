@@ -74,8 +74,8 @@ class AgentMailboxDriver(Protocol):
         """Allocate this agent's mailbox, or return the one it already has."""
         ...
 
-    async def enable_mailbox(self, agent_id: str) -> dict:
-        """Activate this agent's allocation, provisioning it when absent."""
+    async def enable_mailbox(self, agent_id: str, **options: Any) -> dict:
+        """Activate this agent's allocation, provisioning it when absent (named by ``options`` then)."""
         ...
 
     async def disable_mailbox(self, agent_id: str) -> dict:

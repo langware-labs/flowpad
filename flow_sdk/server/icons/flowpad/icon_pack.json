@@ -93,10 +93,10 @@
       "kind": "message",
       "asset": "message.svg",
       "sub": {
-        "sent": "lucide.arrow-up-right",
-        "received": "lucide.arrow-down-left"
+        "sent": "lucide.circle-arrow-up",
+        "received": "lucide.circle-arrow-down"
       },
-      "source": "lucide `message-square` / `arrow-up-right` / `arrow-down-left` (ISC)"
+      "source": "lucide `message-square` / `circle-arrow-up` / `circle-arrow-down` (ISC)"
     }
   ]
 }

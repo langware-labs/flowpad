@@ -65,6 +65,8 @@ The "no emoji decoration" rule still holds; this one earned mark is the only exc
 - Text the user dictated word for word goes out as written. You may format around it, never
   rewrite it.
 - Never invent a fact, deadline or option to fill a section. Missing → leave the section out.
+- A prompt the receiver should run is not wording: send it in its own field (`--prompt`),
+  never as a code block in the text. The text just says what it does.
 
 ## Markup per channel
 

@@ -483,6 +483,26 @@ def _kill_server(pid: int) -> bool:
     return killed
 
 
+def latest_server_log_tail(lines: int = 40) -> tuple[Path | None, str]:
+    """The newest backend log (``<logs>/server/*.log``) and its last *lines* lines.
+
+    For a caller that waited on health and got nothing: the backend writes only to
+    this file, so on a cloud box -- where the CLI's own output is what reaches the
+    serial console and the hub -- naming it is what makes a silent boot diagnosable.
+    """
+    try:
+        logs = sorted((_logs_base() / "server").glob("*.log"), key=lambda f: f.stat().st_mtime)
+    except OSError:
+        return None, ""
+    if not logs:
+        return None, ""
+    try:
+        text = logs[-1].read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return logs[-1], ""
+    return logs[-1], "\n".join(text.splitlines()[-lines:])
+
+
 def wait_for_server_health(port: int, timeout: float = 10.0) -> bool:
     """Poll health endpoint every 0.5s until success or timeout."""
     deadline = time.monotonic() + timeout

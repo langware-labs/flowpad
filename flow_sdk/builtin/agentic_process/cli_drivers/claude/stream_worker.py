@@ -47,6 +47,7 @@ Prompt delivery / cancel semantics:
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -55,6 +56,7 @@ from typing import AsyncIterator
 from uuid import uuid4
 
 from flow_sdk import toplog
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.launch_screen import classify_auth
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.claude_cron_job import (
     SCHEDULE_TOOLS,
     ClaudeCronJob,
@@ -203,6 +205,8 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         #: The self-paced /loop's one pending wakeup (``scheduledFor``, epoch seconds), or None.
         self._pending_wakeup: float | None = None
         self._result_seen = False
+        self._stderr_tail: collections.deque[str] = collections.deque(maxlen=40)
+        self._auth_failure, self._failure_taken = None, False  # (code, message): a 401/403 or "Not logged in"
 
     @property
     def session_state(self) -> str | None:
@@ -294,6 +298,8 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         self._schedule_calls = {}
         self._pending_wakeup = None
         self._result_seen = False
+        self._auth_failure, self._failure_taken = None, False
+        self._stderr_tail.clear()
         # A turn must never start on a token we already know is dead — the CLI
         # would renew it inside this request and, if that renewal is slow, give
         # up and hand the user a raw 401. One file read on every healthy turn;
@@ -638,10 +644,29 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 decoded = line.decode("utf-8", errors="replace").rstrip()
                 if decoded:
                     logger.warning("claude stderr: %s", decoded)
+                    self._stderr_tail.append(decoded)
+                    self._fail_auth(classify_auth(decoded))
         except asyncio.CancelledError:
             pass
         except Exception:
             logger.warning("stderr drain error", exc_info=True)
+
+    def _fail_auth(self, failure: tuple[str, str] | None) -> None:  # first wins; kill now, not after ~10 retries
+        if failure and self._auth_failure is None:
+            self._auth_failure = failure
+            if self._proc is not None and self._proc.returncode is None:
+                asyncio.get_running_loop().create_task(self._terminate_process())
+
+    def turn_failure(self):
+        """Taken once: a refused credential, or exit ≠ 0 before any result (not a user stop)."""
+        from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
+        proc, ended = self._proc, self._result_seen or self._cancel_requested or self._stopped_while_parked
+        crashed = proc is not None and proc.returncode not in (None, 0) and not ended
+        if self._failure_taken or not (self._auth_failure or crashed):
+            return None
+        self._failure_taken = True
+        code, message = self._auth_failure or ("cli_crashed", f"claude exited with code {proc.returncode} before answering")
+        return LaunchError.of(code, message, "claude"), message if self._auth_failure else "\n".join(self._stderr_tail)
 
     async def _terminate_process(self) -> None:
         """SIGTERM → grace → SIGKILL. Safe to call multiple times."""
@@ -660,6 +685,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             return
         if event.get("type") == "result":
             self._result_seen = True
+        self._fail_auth(classify_auth(event))
         subtype = event.get("subtype")
         if subtype == "session_state_changed":
             state = event.get("state")

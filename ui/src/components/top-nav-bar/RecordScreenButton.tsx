@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Circle } from 'lucide-react';
+import { forwardRef, useEffect, useState } from 'react';
+import { CircleDot, type LucideIcon, type LucideProps } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { chromeEntityActionClassName, wideClusterButtonAttrs } from '@src/components/entity-actions/action-button-styles';
@@ -18,9 +18,15 @@ function Elapsed({ since }: { since: number }) {
   return <>{formatElapsed(now - since)}</>;
 }
 
+/** The record glyph: a ring with a red dot. */
+const RecordIcon = forwardRef<SVGSVGElement, LucideProps>(({ className, ...props }, ref) => (
+  <CircleDot ref={ref} className={cn('[&>circle:last-child]:fill-red-500 [&>circle:last-child]:stroke-red-500', className)} {...props} />
+));
+RecordIcon.displayName = 'RecordIcon';
+
 /**
- * The bar's Record button, first in the action cluster. Idle it is a circle; while
- * recording it is a red pulsing square with the elapsed time (a wide cluster button), and
+ * The bar's Record button, first in the action cluster. Idle it is a record glyph (ring + dot); while
+ * recording it is a glowing red pulsing square with the elapsed time (a wide cluster button), and
  * clicking it stops. The finished recording opens `RecordingReadyDialog`.
  */
 export function RecordScreenButton() {
@@ -39,8 +45,9 @@ export function RecordScreenButton() {
             data-testid="top-nav-record-screen"
             data-recording="true"
             {...wideClusterButtonAttrs}
-            className={cn(chromeEntityActionClassName, 'w-auto gap-1.5 px-2 text-xs font-medium tabular-nums text-red-500 hover:text-red-500')}
+            className={cn(chromeEntityActionClassName, 'relative w-auto gap-1.5 px-2 text-xs font-medium tabular-nums text-red-500 hover:text-red-500')}
           >
+            {!busy && <span aria-hidden className="pointer-events-none absolute inset-0 animate-pulse rounded-md bg-red-500/10 shadow-[0_0_10px_2px_rgba(239,68,68,0.55)] ring-1 ring-red-500/60" />}
             <span className={cn('inline-block h-2.5 w-2.5 rounded-sm bg-red-500', !busy && 'animate-pulse')} />
             {busy ? t`Saving…` : startedAt && <Elapsed since={startedAt} />}
           </button>
@@ -55,7 +62,7 @@ export function RecordScreenButton() {
   return (
     <>
       <NavIconButton
-        icon={Circle}
+        icon={RecordIcon as LucideIcon}
         label={t`Record screen`}
         tooltipContent={t`Record screen (video only)`}
         onClick={() => void startRecording()}

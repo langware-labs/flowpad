@@ -1,12 +1,10 @@
 {
   "schema": 1,
   "name": "slack",
-  "title": "Your own Slack agent",
+  "title": "Slack",
   "icon_name": "Slack",
-  "group": "Slack",
-  "group_order": 1,
-  "group_icon_name": "Slack",
-  "description": "Every DM, group DM and channel you are in, in Flowpad — live. Answer yourself or let your agents do it, and build automations on what arrives. Simple: three clicks in Slack. Local and secure: your own Slack app, your tokens stay on this machine.",
+  "featured": true,
+  "description": "See your Slack messages in Flowpad.",
   "kind": "datasource.api.slack",
   "setup_wiki": "Slack channels",
   "auth": {

@@ -472,6 +472,44 @@ async function provisionSandboxProject(
 
 const NO_NODES: ComputeNode[] = [];
 
+/**
+ * One `ops/status` read per box, shared by every mounted `useSandboxes`.
+ *
+ * Hub home alone mounts the hook several times (the page, its counters, each
+ * project-actions row). Each instance used to probe every box on mount, so one
+ * page load with 27 boxes cost ~270 hub calls — each an awaited provider
+ * lookup. Now a read in flight is joined, and an answer younger than
+ * {@link STATUS_FRESH_MS} is reused; the machine poll passes `force`.
+ */
+const STATUS_FRESH_MS = 30_000;
+const sharedStatus = new Map<string, { at: number; read: Promise<SandboxDetails> }>();
+
+async function probeStatus(node: ComputeNode): Promise<SandboxDetails> {
+  try {
+    return (await node.status()) ?? { status: ExecutionEnvironmentStatus.ERROR };
+  } catch {
+    return { status: ExecutionEnvironmentStatus.ERROR };
+  }
+}
+
+/** Exported for tests: the shared read the hook instances go through. */
+export function readSandboxStatus(node: ComputeNode, force = false): Promise<SandboxDetails> {
+  const hit = sharedStatus.get(node.id);
+  if (hit && !force && Date.now() - hit.at < STATUS_FRESH_MS) return hit.read;
+  const read = probeStatus(node);
+  sharedStatus.set(node.id, { at: Date.now(), read });
+  return read;
+}
+
+function seedSandboxStatus(id: string, value: SandboxDetails): void {
+  sharedStatus.set(id, { at: Date.now(), read: Promise.resolve(value) });
+}
+
+/** Test hook: forget every shared status read. */
+export function resetSandboxStatusCache(): void {
+  sharedStatus.clear();
+}
+
 export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean } = {}) {
   const { user } = useAuth();
 
@@ -497,32 +535,20 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
   const detailsRef = useRef(details);
   detailsRef.current = details;
 
-  const probeDetails = useCallback(async (node: ComputeNode): Promise<SandboxDetails> => {
-    try {
-      const res = await node.status();
-      return res ?? { status: ExecutionEnvironmentStatus.ERROR };
-    } catch {
-      return { status: ExecutionEnvironmentStatus.ERROR };
-    }
-  }, []);
-
   // Probe these boxes and merge the answers; an unchanged status keeps the same
   // object, so a poll that learns nothing re-renders nothing.
-  const probeInto = useCallback(
-    async (nodes: ComputeNode[]) => {
-      const entries = await Promise.all(nodes.map(async (d) => [d.id, await probeDetails(d)] as const));
-      setDetails((prev) => {
-        const changed = entries.filter(([id, next]) => {
-          const cur = prev[id];
-          return (
-            !cur || cur.status !== next.status || cur.status_msg !== next.status_msg || cur.hostname !== next.hostname
-          );
-        });
-        return changed.length ? { ...prev, ...Object.fromEntries(changed) } : prev;
+  const probeInto = useCallback(async (nodes: ComputeNode[], force = false) => {
+    const entries = await Promise.all(nodes.map(async (d) => [d.id, await readSandboxStatus(d, force)] as const));
+    setDetails((prev) => {
+      const changed = entries.filter(([id, next]) => {
+        const cur = prev[id];
+        return (
+          !cur || cur.status !== next.status || cur.status_msg !== next.status_msg || cur.hostname !== next.hostname
+        );
       });
-    },
-    [probeDetails],
-  );
+      return changed.length ? { ...prev, ...Object.fromEntries(changed) } : prev;
+    });
+  }, []);
 
   // Probe only machines we haven't seen yet, and forget ones that vanished —
   // re-probing the whole list on every add/delete would be one call per machine.
@@ -549,7 +575,7 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
     const id = setInterval(() => {
       if (inFlight || document.visibilityState !== 'visible') return;
       inFlight = true;
-      void probeInto(userMachines).finally(() => {
+      void probeInto(userMachines, true).finally(() => {
         inFlight = false;
       });
     }, MACHINE_STATUS_POLL_MS);
@@ -717,6 +743,7 @@ export function useSandboxes({ pollMachines = false }: { pollMachines?: boolean 
 
         // The just-launched sandbox is up — seed its status so the list effect
         // doesn't re-probe it.
+        seedSandboxStatus(node.id, { status: ExecutionEnvironmentStatus.READY });
         setDetails((s) => ({ ...s, [node.id]: { status: ExecutionEnvironmentStatus.READY } }));
         // Best-effort, and deliberately AFTER the box is usable. The refetch only
         // refreshes the list on the page behind; letting it reject here would

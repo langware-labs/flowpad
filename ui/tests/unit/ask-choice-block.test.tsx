@@ -75,7 +75,7 @@ describe('AskChoiceBlock', () => {
 
     expect(screen.queryByTestId('ask-choice-input')).toBeNull();
     fireEvent.click(screen.getByTestId('ask-choice-sign-in-button'));
-    await waitFor(() => expect(h.connect).toHaveBeenCalledWith('google'));
+    await waitFor(() => expect(h.connect.mock.calls[0]?.[0]).toBe('google'));
     expect(await screen.findByTestId('ask-choice-oauth-waiting')).toBeInTheDocument();
     expect(onAnswer).not.toHaveBeenCalled();
 

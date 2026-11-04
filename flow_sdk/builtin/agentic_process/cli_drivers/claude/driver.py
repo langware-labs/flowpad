@@ -8,6 +8,8 @@ location, history loading, and the prompt-composition compatibility hook.
 
 from __future__ import annotations
 
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import launch_screen
+
 import json
 import logging
 import os
@@ -234,6 +236,7 @@ class ClaudeDriver:
     # real ``\r\r\n`` — so one line break may separate the two.
     pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+(?:Try "|\n?─{3,})')
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
+    launch_screen = launch_screen  # blocking launch prompts, refused credentials, the card's fixes
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
