@@ -1,9 +1,11 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FSRef, isHiddenProject, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
+import { canSetUpProjects, dataContext, FSRef, isHiddenProject, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { canonicalPath } from '@src/components/project-selector';
+import { projectOriginOf } from '@sdk/models/FSOrigin';
+import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import type { DockPointer } from '@src/navigation/DockPointer';
@@ -651,6 +653,46 @@ export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
  * trigger, which opens on focus, so auto-focusing the first row pops its tab
  * submenu unhovered and leaves it stuck behind the row the pointer visits next.
  */
+/**
+ * Projects shared with you that have no files here yet, listed under the open
+ * ones with a "new" chip. A click opens their set-up — the only way it opens;
+ * nothing pops up on its own.
+ */
+function SharedProjectRows() {
+  const { projects } = useProjects();
+  const setPendingProject = useIncomingProjectStore((s) => s.setPendingProject);
+  const ProjectIcon = iconForType(Project.type);
+  if (!canSetUpProjects(dataContext.caps)) return null;
+  const rows = (projects ?? []).flatMap((project) => {
+    if (project.fs_storage_mount_path || isHiddenProject(project)) return [];
+    const gitOrigin = projectOriginOf(project);
+    return gitOrigin ? [{ project, gitOrigin }] : [];
+  });
+  if (!rows.length) return null;
+  return (
+    <ul>
+      {rows.map(({ project, gitOrigin }) => (
+        <li key={project.id}>
+          <button
+            type="button"
+            onClick={() =>
+              setPendingProject({ gitOrigin, projectName: project.name || 'Shared', projectId: project.id })
+            }
+            className="flex w-full items-center gap-2 rounded py-1.5 pe-1 ps-2 text-left text-sm hover:bg-muted"
+            data-testid={`project-shared-new-${project.id}`}
+          >
+            <ProjectIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{project.name}</span>
+            <span className="shrink-0 rounded border border-sky-500/40 px-1 py-0.5 text-[10px] text-sky-600 dark:text-sky-400">
+              <Trans>new</Trans>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
   const {
     buckets,
@@ -690,6 +732,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
         <div className="px-2 py-1.5 text-xs text-muted-foreground">
           <Trans>No project has open tabs yet.</Trans>
         </div>
+        <SharedProjectRows />
         {openProjectRow}
       </div>
     );
@@ -864,6 +907,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
           );
         })}
       </ul>
+      <SharedProjectRows />
       {openProjectRow}
     </div>
   );
