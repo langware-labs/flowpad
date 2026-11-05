@@ -1308,6 +1308,7 @@ class Agent(Entity):
         placement; the machine, minutes, starts after that and the activity says how it goes.
         """
         from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
         from flow_sdk.builtin.agent_cloud_deploy import DeployRunning, run_deployment_steps  # noqa: PLC0415
         from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
@@ -1354,6 +1355,8 @@ class Agent(Entity):
                 message=exc.actionable,
                 data={"code": str(exc.code), **exc.data},
             )
+        except HubError as exc:  # the hub's own reason and status, not "deploy failed: hub error 0: ..."
+            return exc.fail_response("Could not deploy")
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"agent_id": self.id, **data})

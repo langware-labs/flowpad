@@ -212,6 +212,10 @@ async def share_entity() -> ApiResponse:
             message=str(exc),
             data={"code": "invalid_role"},
         )
+    except HubError as exc:  # the hub's own answer (409 id_taken, 403, offline) reaches the caller as itself
+        logger.warning("[share] %s %s failed: %s", entity.get_type(), entity.id, exc)
+        prefix = "Could not invite" if project_invite_only else "Could not share"
+        return exc.fail_response(prefix)
     except Exception as exc:  # noqa: BLE001 — keep Project publish failures typed
         if project_invite_only:
             logger.warning("[share] inviting to Project %s failed: %s", entity.id, exc)
@@ -227,8 +231,6 @@ async def share_entity() -> ApiResponse:
                 message="The Hub could not publish this Project",
                 data={"code": "hub_publish_failed"},
             )
-        if isinstance(exc, HubError):  # a typed hub answer (e.g. ``id_taken``) reaches the caller as itself
-            return exc.fail_response("Could not share")
         raise
 
     # Send-side address-book reconcile (rule 4): learn every recipient — for ANY

@@ -200,6 +200,7 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onLaunched }: N
       notify.error({
         title: t`Could not launch the deployment`,
         message: errorMessage(e, t`Launch failed.`),
+        error: e,
         forceToast: true,
       });
     } finally {

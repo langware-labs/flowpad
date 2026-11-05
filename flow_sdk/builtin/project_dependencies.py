@@ -292,7 +292,7 @@ async def _hub_fetch(dep: FlowDependency, project_id: str, *, fetch: bool, updat
         from flow_sdk.dependencies.resolve import hub_reason  # noqa: PLC0415
 
         status = getattr(exc, "status_code", 0)
-        reason = "this hub project does not exist" if status == 404 else hub_reason(status)
+        reason = "this hub project does not exist" if status == 404 else hub_reason(status, exc.reason)
         raise _NotReady("unreachable", reason) from exc
     data = row.get("data", row) if isinstance(row, dict) else {}
     origin = ORIGIN_ADAPTER.validate_python(data.get("git_origin")) if data.get("git_origin") else None

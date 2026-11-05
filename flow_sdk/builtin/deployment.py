@@ -729,7 +729,7 @@ class Deployment(Entity):
         try:
             providers = await HubProxy.call("GET", EntityType.DEPLOYMENT.value, None, "providers")
         except HubError as exc:
-            return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
+            return exc.fail_response("Could not list cloud machines")
         return ApiSuccessResponse(data=providers if isinstance(providers, list) else [])
 
     @action.get(action_name="funding")
@@ -939,8 +939,12 @@ class Deployment(Entity):
         """`POST /deployment/<id>/pause` — stop this placement's machine."""
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
         try:
             paused = await self.pause()
+        except HubError as exc:
+            return exc.fail_response("Could not pause")
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=f"pause failed: {exc}")
         if not paused:
@@ -957,7 +961,7 @@ class Deployment(Entity):
         except DeploymentActionError as exc:
             return ApiFailResponse(message=str(exc), status_code=exc.status_code)
         except HubError as exc:
-            return ApiFailResponse(message=f"{verb} failed on the hub: {exc}", status_code=502)
+            return exc.fail_response(f"Could not {verb} on the hub")
 
     @action.post(action_name="resume")
     async def resume_action(self):
