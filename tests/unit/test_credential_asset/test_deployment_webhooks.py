@@ -174,3 +174,18 @@ async def test_placing_the_values_verifies_the_sources_that_read_them(home, proj
     for source in await DataSource.find_owned(agent.typeid):
         expected = SourceStatus.ACTIVE.value if source.provider == _Pushed.provider else SourceStatus.SETUP.value
         assert source.status == expected
+
+
+async def test_a_planned_placement_with_no_machine_is_continued_not_planned_again(home, project, hub):
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.agent_cloud_deploy import _unplaced
+
+    agent = Agent(name="planned-agent", project_id=str(project.id))
+    await agent.save()
+    planned = await agent.plan_deployment("staging", provider="gcp_vm")
+    assert planned.origin is None, "a planned placement has no machine yet"
+
+    ctx = SimpleNamespace(agent=agent, provider="gcp_vm", environment="staging")
+
+    assert await _unplaced(ctx) == str(planned.id)
