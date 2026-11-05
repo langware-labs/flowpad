@@ -633,9 +633,9 @@ export function StreamInboxView({
   // rows whose ``archived_at`` is set and not yet revived by newer activity.
   // "Delete all" is gated behind the 'archived' view — a destructive op only
   // exposed once the user has explicitly archived rows.
-  // URL-owned (`?view=`), so navigation back to the inbox restores the pill.
+  // URL-owned (`?view=`), so navigation back to the stream inbox restores the pill.
   const { navigation, currentDock } = useDockNavigation();
-  const viewMode: StreamInboxViewMode = currentDock?.inboxView ?? 'all';
+  const viewMode: StreamInboxViewMode = currentDock?.streamInboxView ?? 'all';
   // Read state, archive, search and channel pulls are this machine's; the hub page offers none of them.
   const desktopStreamInbox = !isHubOnly();
   // Set of conv ids whose row currently chose to render. Driven by row-level
@@ -730,8 +730,8 @@ export function StreamInboxView({
   // The rail's Stream Inbox icon: back to every message, no filter of any kind. Only the user's own
   // stream listens; a fresh mount already starts unfiltered.
   useUiActionRequest(embedded || agentId || sourceId ? [] : ['stream-inbox.reset'], () => {
-    if (currentDock && (currentDock.inboxView !== 'all' || currentDock.inboxSearch || currentDock.pageBefore))
-      navigation.openDock(currentDock.withInboxFilters({ view: 'all', search: '' }));
+    if (currentDock && (currentDock.streamInboxView !== 'all' || currentDock.streamInboxSearch || currentDock.pageBefore))
+      navigation.openDock(currentDock.withStreamInboxFilters({ view: 'all', search: '' }));
     setChannelFilter(new Set());
     setColumnFilter(NO_COLUMN_FILTER);
     setSelectedIds(new Set());
@@ -764,13 +764,13 @@ export function StreamInboxView({
   // while the next request is in flight so the list doesn't blank.
   // URL-owned (`?q=`): the box types into local state and commits to the dock URL after a pause,
   // so history doesn't take one entry per keystroke. Back/forward re-seeds the box.
-  const searchQuery = currentDock?.inboxSearch ?? '';
+  const searchQuery = currentDock?.streamInboxSearch ?? '';
   const [searchInput, setSearchInput] = useState(searchQuery);
   useEffect(() => setSearchInput(searchQuery), [searchQuery]);
   const settledSearch = useDebounced(searchInput);
   useEffect(() => {
     if (settledSearch !== searchQuery && currentDock)
-      navigation.openDock(currentDock.withInboxFilters({ search: settledSearch }));
+      navigation.openDock(currentDock.withStreamInboxFilters({ search: settledSearch }));
     // Commit only when the typed text settles; a dock change alone must not re-commit stale text.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settledSearch]);
@@ -1218,7 +1218,7 @@ export function StreamInboxView({
       setVisibleIds(new Set());
       setSelectedIds(new Set());
       // A page is a page of ONE view: another view starts at now.
-      navigation.openDock(currentDock.withInboxFilters({ view: next }));
+      navigation.openDock(currentDock.withStreamInboxFilters({ view: next }));
     },
     [viewMode, currentDock, navigation],
   );
@@ -1392,7 +1392,7 @@ export function StreamInboxView({
                       type="button"
                       onClick={() => {
                         setSearchInput('');
-                        if (currentDock) navigation.openDock(currentDock.withInboxFilters({ search: '' }));
+                        if (currentDock) navigation.openDock(currentDock.withStreamInboxFilters({ search: '' }));
                       }}
                       className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
                       aria-label={t`Clear search`}

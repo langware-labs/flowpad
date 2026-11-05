@@ -198,7 +198,7 @@ async def _graph_workflow_agent(e: Env) -> AgenticProcess:
 
 
 async def _trigger(e: Env) -> AgenticProcess:
-    # Legacy schedule trigger (trigger.py) — mirrored.
+    # Legacy schedule trigger (automations/compat.py run_instruction) — mirrored.
     return await AgenticProcess(worker_type=e.worker_type, workdir=e.workdir(), visible=False,
                                 instruction_content="do it", name="Trigger").save()
 
@@ -295,7 +295,7 @@ ROWS: tuple[Row, ...] = (
     Row("live_session", _live_session, (L.COMMON,), sites=("flow_sdk/app/actions/execute_prompt.py",)),
     Row("graph_workflow_agent", _graph_workflow_agent, (L.COMMON,),
         sites=("flow_sdk/graph_workflow_manager/manager.py",)),
-    Row("trigger", _trigger, (L.COMMON,), sites=("flow_sdk/builtin/trigger.py",)),
+    Row("trigger", _trigger, (L.COMMON,), sites=("flow_sdk/automations/compat.py",)),
     Row("project_language", _project_language, (L.COMMON, L.LANGUAGE)),
     Row("project_always_use_skills", _project_always_use_skills, (L.COMMON, L.ALWAYS_USE_SKILLS)),
     Row("ts_sdk_script", _ts_sdk_script, (L.COMMON,), sites=("flow_sdk/builtin/faas/scan_actions.py",)),
