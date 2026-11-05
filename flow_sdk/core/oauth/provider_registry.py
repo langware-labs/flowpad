@@ -978,7 +978,9 @@ async def credential_for(
     One copy, because the precedence IS the policy: it lived in six places
     (two ingest drivers, two "current user" action helpers, a publish-side
     resolver and a capability probe) and a new tier reached some of them.
-    Never raises: absence is the normal case for a provider nobody connected.
+    Absence is the normal case for a provider nobody connected, so it answers None — but
+    a hub that cannot be reached raises ``SourceUnavailable``: "could not ask" is not
+    "signed out", and a source polled during an outage must retry, not park.
     """
     # ``name`` reads a NON-default credential for the same provider — Slack's
     # bot token beside the user's. The hub tier is skipped for it: that tier
@@ -989,6 +991,7 @@ async def credential_for(
 
     from flow_sdk.builtin.user import User  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_mirror import HubMirrorUnavailable  # noqa: PLC0415
+    from flow_sdk.sources.errors import SourceUnavailable  # noqa: PLC0415
     from flow_sdk.request_context.methods import (  # noqa: PLC0415
         get_current_request_user_fresh,
         get_user_credentials,
@@ -1028,6 +1031,8 @@ async def credential_for(
                 return value
     except HubMirrorUnavailable:
         return None
+    except SourceUnavailable:
+        raise
     except Exception:  # noqa: BLE001
         logger.debug("%s: no local credential", provider, exc_info=True)
 
@@ -1048,6 +1053,8 @@ async def credential_for(
                 return None
             return await hub_credential_value(hub_app_credentials_name_for(provider), verify_held=False)
         return await hub_credential_value(hub_credentials_name_for(provider))
+    except SourceUnavailable:
+        raise
     except Exception:  # noqa: BLE001
         logger.debug("%s: no hub credential", provider, exc_info=True)
         return None
