@@ -3,7 +3,7 @@ import { useAgentPlaces } from './use-agent-places';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, MessageCircle, Trash2 } from 'lucide-react';
+import { Loader2, MessageCircle, Plus, Trash2 } from 'lucide-react';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 
 import { notify } from '@src/notifications';
@@ -25,6 +25,7 @@ import { Button } from '@src/components/ui/button';
 import { AttachedChannelsBar, useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { AddIntroTranslationButton, IntroTranslationFields } from './AgentIntroTranslations';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
+import { NewDeploymentDialog } from './NewDeploymentDialog';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
 import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
@@ -127,7 +128,8 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
   // A deploy publishes the agent without touching its row, so the header follows the deployments too:
   // without this it still said "Not published yet" after a cloud deploy, until the page was reopened.
-  const { places } = useAgentPlaces(hub ? null : agent);
+  const { places, reload: reloadPlaces } = useAgentPlaces(hub ? null : agent);
+  const [deployOpen, setDeployOpen] = useState(false);
   const placesKey = places
     ? places.map((p) => `${p.deployment.id}:${String(p.deployment.status ?? '')}:${p.behind ?? ''}`).join(',')
     : '';
@@ -373,15 +375,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
       <div className="flex min-h-0 flex-1 flex-col">
         <section
           className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
-          aria-labelledby="agent-definition"
+          aria-label={t`Agent`}
         >
           {/* On the hub this is the PUBLISHED definition: read it here, edit it on the author's computer. */}
           <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-definition-fields">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 id="agent-definition" className="text-sm font-semibold">
-                <Trans>Definition</Trans>
-              </h2>
-            </div>
             {definitionError && (
               <div
                 role="alert"
@@ -394,11 +391,14 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
           </fieldset>
 
           <Tabs
-            defaultValue="instructions"
+            defaultValue="summary"
             className="flex min-h-0 flex-1 flex-col"
             onValueChange={(v) => v === 'settings' && setMoreOpened(true)}
           >
             <TabsList className="self-start">
+              <TabsTrigger value="summary" data-testid="agent-tab-summary">
+                <Trans>Summary</Trans>
+              </TabsTrigger>
               <TabsTrigger value="instructions" data-testid="agent-tab-instructions">
                 <Trans>Instructions</Trans>
               </TabsTrigger>
@@ -689,6 +689,36 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   <AgentVisibilitySection agent={agent} version={version} onPublished={loadVersion} />
                 )}
               </div>
+            </TabsContent>
+            <TabsContent value="summary" className="mt-3 flex flex-col gap-4" data-testid="agent-summary">
+              <p className="whitespace-pre-wrap text-sm">
+                {description || <span className="text-muted-foreground">{t`No description yet.`}</span>}
+              </p>
+              <div className="flex items-center gap-3 text-sm">
+                <span data-testid="agent-summary-deployments">
+                  {places === null ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : places.length === 1 ? (
+                    t`1 deployment`
+                  ) : (
+                    t`${places.length} deployments`
+                  )}
+                </span>
+                {!hub && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setDeployOpen(true)}
+                    data-testid="agent-summary-new-deployment"
+                  >
+                    <Plus className="me-1.5 h-3.5 w-3.5" />
+                    <Trans>New deployment</Trans>
+                  </Button>
+                )}
+              </div>
+              {deployOpen && (
+                <NewDeploymentDialog agent={agent} open onOpenChange={setDeployOpen} onLaunched={reloadPlaces} />
+              )}
             </TabsContent>
             <TabsContent value="deployments" className="mt-3">
               <AgentPlacesColumn agent={agent} />
