@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, gotoShell, openTabViaMenu } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu, waitForOutput } from './helpers';
 import { adjusted } from '../../adjustableTimeout';
 
 /**
@@ -117,6 +117,10 @@ test.describe('Shell Tab Title and Switching', () => {
       }).toPass({ timeout: adjusted(10_000) });
 
       const tab = page.locator(`[data-testid="${newTestId}"]`);
+      // Rename only once the new shell is up, as a person would: when its terminal finishes booting it
+      // takes focus, which blurs an open rename input — and blur COMMITS and closes the editor
+      // (TabStrip handleNameBlur), so a press('Enter') right after fill() found no input on a slower host.
+      await waitForOutput(page, '$', adjusted(15_000));
       // Open rename via the tab's ContextMenu "Rename" item (same handler as the
       // span dblclick — handleTabDoubleClick). The synthetic dblclick raced the
       // selectTab re-render and dropped the event under load; the context menu is
