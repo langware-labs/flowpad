@@ -247,6 +247,15 @@ export const LANG_PARAM = 'lang';
 export const PAGE_BEFORE_PARAM = 'before';
 
 /**
+ * URL query-param keys for the stream inbox's filters (inbox-only): the view pill (`unread` /
+ * `archived`; absent = all) and the search text. Ride in `options` like `before`, so back/forward
+ * and a revisit restore them and they never open a tab. Pairs with `inboxView` / `inboxSearch` /
+ * `withInboxFilters()`.
+ */
+export const INBOX_VIEW_PARAM = 'view';
+export const INBOX_SEARCH_PARAM = 'q';
+
+/**
  * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
  * default; when set, the guided journey tray is shown for that journey and the
  * orchestrator drives its current step. Like the other option params it rides in
@@ -664,6 +673,26 @@ export class DockPointer implements IDockPointer {
   /** Clone this dock paged back to rows older than `before`, or back to now with null. */
   withPageBefore(before: string | null): DockPointer {
     return this.withOption(PAGE_BEFORE_PARAM, before);
+  }
+
+  /** The stream inbox's view pill, or 'all' when the URL names none (or an unknown one). */
+  get inboxView(): 'all' | 'unread' | 'archived' {
+    const v = this.options?.[INBOX_VIEW_PARAM];
+    return v === 'unread' || v === 'archived' ? v : 'all';
+  }
+
+  /** The stream inbox's search text, or '' for none. */
+  get inboxSearch(): string {
+    return this.options?.[INBOX_SEARCH_PARAM] ?? '';
+  }
+
+  /** Clone with the given inbox filters set ('all' / '' clear them). A page is a page of ONE filter
+   *  set, so any change also goes back to now. */
+  withInboxFilters(f: { view?: 'all' | 'unread' | 'archived'; search?: string }): DockPointer {
+    let next = this.withPageBefore(null);
+    if (f.view !== undefined) next = next.withOption(INBOX_VIEW_PARAM, f.view === 'all' ? null : f.view);
+    if (f.search !== undefined) next = next.withOption(INBOX_SEARCH_PARAM, f.search || null);
+    return next;
   }
 
   /**

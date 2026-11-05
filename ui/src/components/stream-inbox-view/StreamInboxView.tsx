@@ -54,6 +54,7 @@ import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
@@ -632,7 +633,9 @@ export function StreamInboxView({
   // rows whose ``archived_at`` is set and not yet revived by newer activity.
   // "Delete all" is gated behind the 'archived' view — a destructive op only
   // exposed once the user has explicitly archived rows.
-  const [viewMode, setViewMode] = useState<StreamInboxViewMode>('all');
+  // URL-owned (`?view=`), so navigation back to the inbox restores the pill.
+  const { navigation, currentDock } = useDockNavigation();
+  const viewMode: StreamInboxViewMode = currentDock?.inboxView ?? 'all';
   // Read state, archive, search and channel pulls are this machine's; the hub page offers none of them.
   const desktopStreamInbox = !isHubOnly();
   // Set of conv ids whose row currently chose to render. Driven by row-level
@@ -727,10 +730,10 @@ export function StreamInboxView({
   // The rail's Stream Inbox icon: back to every message, no filter of any kind. Only the user's own
   // stream listens; a fresh mount already starts unfiltered.
   useUiActionRequest(embedded || agentId || sourceId ? [] : ['stream-inbox.reset'], () => {
-    setViewMode('all');
+    if (currentDock && (currentDock.inboxView !== 'all' || currentDock.inboxSearch || currentDock.pageBefore))
+      navigation.openDock(currentDock.withInboxFilters({ view: 'all', search: '' }));
     setChannelFilter(new Set());
     setColumnFilter(NO_COLUMN_FILTER);
-    setSearchQuery('');
     setSelectedIds(new Set());
   });
   const setColumn = useCallback(
@@ -757,23 +760,32 @@ export function StreamInboxView({
   // action rather than a `$LIKE` entity query: under the reference model a
   // channel message's body lives on its SourceItem (the FlowMessage row stores
   // `text: ""`), so the backend searches BOTH residences and hands back
-  // conversation ids. Debounced per keystroke; the previous result is held
+  // conversation ids. The URL commit debounces typing; the previous result is held
   // while the next request is in flight so the list doesn't blank.
-  const [searchQuery, setSearchQuery] = useState('');
+  // URL-owned (`?q=`): the box types into local state and commits to the dock URL after a pause,
+  // so history doesn't take one entry per keystroke. Back/forward re-seeds the box.
+  const searchQuery = currentDock?.inboxSearch ?? '';
+  const [searchInput, setSearchInput] = useState(searchQuery);
+  useEffect(() => setSearchInput(searchQuery), [searchQuery]);
+  const settledSearch = useDebounced(searchInput);
+  useEffect(() => {
+    if (settledSearch !== searchQuery && currentDock)
+      navigation.openDock(currentDock.withInboxFilters({ search: settledSearch }));
+    // Commit only when the typed text settles; a dock change alone must not re-commit stale text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settledSearch]);
   const needle = searchQuery.trim();
   const searchActive = needle !== '';
   const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!searchActive) return;
+    // `needle` is the URL's, already debounced on its way there.
     let stale = false;
-    const timer = setTimeout(() => {
-      void searchStreamInbox(needle, agentId).then((ids) => {
-        if (!stale) setMatchIds(ids);
-      });
-    }, 200);
+    void searchStreamInbox(needle, agentId).then((ids) => {
+      if (!stale) setMatchIds(ids);
+    });
     return () => {
       stale = true;
-      clearTimeout(timer);
     };
   }, [agentId, needle, searchActive]);
 
@@ -782,7 +794,6 @@ export function StreamInboxView({
   // `channelsOwner` is rebuilt whenever its inputs change identity, and a fresh request re-subscribes.
   // One PAGE, not the whole stream inbox: the view's latest N (`before` null = now, live) or the N older
   // than the dock URL's `before`. A body search lists its hits instead.
-  const { navigation, currentDock } = useDockNavigation();
   const pageBefore = currentDock?.pageBefore ?? null;
   const ownerKey = channelsOwner?.toString() ?? '';
   // The channel marks narrow the QUERY to the picked marks' sources: a page is then rows of those
@@ -1200,19 +1211,16 @@ export function StreamInboxView({
 
   const setView = useCallback(
     (next: StreamInboxViewMode) => {
-      setViewMode((cur) => {
-        if (cur === next) return cur;
-        // Visible-ids tracks the previous mode's rows; reset so the count
-        // badge doesn't flash stale during the swap. Selection is per-view, so
-        // drop it too — carrying ticks across modes would act on hidden rows.
-        setVisibleIds(new Set());
-        setSelectedIds(new Set());
-        return next;
-      });
+      if (next === viewMode || !currentDock) return;
+      // Visible-ids tracks the previous mode's rows; reset so the count
+      // badge doesn't flash stale during the swap. Selection is per-view, so
+      // drop it too — carrying ticks across modes would act on hidden rows.
+      setVisibleIds(new Set());
+      setSelectedIds(new Set());
       // A page is a page of ONE view: another view starts at now.
-      if (currentDock?.pageBefore) navigation.openDock(currentDock.withPageBefore(null));
+      navigation.openDock(currentDock.withInboxFilters({ view: next }));
     },
-    [currentDock, navigation],
+    [viewMode, currentDock, navigation],
   );
 
   const inArchivedView = viewMode === 'archived';
@@ -1372,8 +1380,8 @@ export function StreamInboxView({
                   <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
                   <input
                     type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
                     placeholder={t`Search messages`}
                     className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                     data-testid="stream-inbox-search-input"
@@ -1382,7 +1390,10 @@ export function StreamInboxView({
                   {searchActive && (
                     <button
                       type="button"
-                      onClick={() => setSearchQuery('')}
+                      onClick={() => {
+                        setSearchInput('');
+                        if (currentDock) navigation.openDock(currentDock.withInboxFilters({ search: '' }));
+                      }}
                       className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
                       aria-label={t`Clear search`}
                       data-testid="stream-inbox-search-clear"
