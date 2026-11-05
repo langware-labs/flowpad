@@ -76,6 +76,9 @@ import { useOpenGitShare, type OpenShareOutcome } from './asset-review/use-open-
 import { ShareReplyCard } from './ShareReplyCard';
 import type { WorkerType } from './conversation-session-constants';
 import { PromptCallCard } from './PromptCallCard';
+import { MessageFormCard } from './MessageFormCard';
+import { FormAnswersCard } from './FormAnswersCard';
+import type { AnswersEntry, MessageForm } from './message-form';
 import type { ProcessCall, ReturnedValue } from '@sdk';
 import { messageDirection } from './message-direction';
 
@@ -246,6 +249,10 @@ interface FlowMessageBubbleProps {
   onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
   /** A prompt call riding this message (parsed once by the parent): its answer once the receiver
    *  replied, and whether it is running on this machine right now. */
+  /** The form this message carries, with its answers (oldest → newest). */
+  messageForm?: { form: MessageForm; answers: AnswersEntry[] } | null;
+  /** The answers this message carries; `latest`: the newest for its form. */
+  formAnswers?: { entry: AnswersEntry; form: MessageForm | null; latest: boolean } | null;
   promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
   /** The conversation's other participant — the machine a prompt call I send runs on. */
   callPeerName?: string | null;
@@ -281,6 +288,8 @@ export function FlowMessageBubble({
   taskPeople,
   onLaunchWorker,
   promptCall = null,
+  messageForm = null,
+  formAnswers = null,
   callPeerName = null,
   continuation = false,
   showEmailHeaders = false,
@@ -763,6 +772,24 @@ export function FlowMessageBubble({
           conversationId={fm.conversation_id ?? ''}
           role={isCurrentUser ? 'sender' : 'recipient'}
           otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
+        />
+      )}
+      {messageForm && (
+        <MessageFormCard
+          form={messageForm.form}
+          answers={messageForm.answers}
+          messageId={messageId}
+          conversationId={fm.conversation_id ?? ''}
+          isMine={isCurrentUser}
+          otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
+        />
+      )}
+      {formAnswers && (
+        <FormAnswersCard
+          entry={formAnswers.entry}
+          form={formAnswers.form}
+          answererName={fm.sender_name || t`They`}
+          canChange={isCurrentUser && formAnswers.latest}
         />
       )}
       {attachmentFooter}

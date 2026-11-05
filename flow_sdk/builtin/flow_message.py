@@ -246,8 +246,9 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     #
     # ``process_call`` / ``returned_value`` are a call on a message and its answer
     # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
+    # ``message_form`` / ``form_answers`` likewise: a form on a message and its answers (``message_form_spec``).
     {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion",
-     "process_call", "returned_value"}
+     "process_call", "returned_value", "message_form", "form_answers"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder

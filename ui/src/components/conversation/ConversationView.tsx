@@ -65,6 +65,7 @@ import {
   type ConversationItem,
 } from './conversation-items';
 import { indexCalls, runningProcessCalls } from './process-call';
+import { indexForms } from './message-form';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useConversationMessageAttachments } from './useMessageAttachments';
@@ -591,6 +592,17 @@ export function ConversationView({
       live = false;
     };
   }, [conversationId, askRunning]);
+  const forms = useMemo(() => indexForms(messagesById.values()), [messagesById]);
+  const messageFormFor = (id: string) => {
+    const form = forms.formByMessage.get(id);
+    return form ? { form, answers: forms.answersByForm.get(form.form_id) ?? [] } : null;
+  };
+  const formAnswersFor = (id: string) => {
+    const entry = forms.answersByMessage.get(id);
+    if (!entry) return null;
+    const all = forms.answersByForm.get(entry.answers.form_id) ?? [];
+    return { entry, form: forms.formById.get(entry.answers.form_id) ?? null, latest: all.at(-1) === entry };
+  };
   const promptCallFor = (id: string) => {
     const call = calls.callByMessage.get(id);
     if (!call) return null;
@@ -739,6 +751,8 @@ export function ConversationView({
           taskPeople={taskPeople}
           onLaunchWorker={launchWorkerOnMessage}
           promptCall={promptCallFor(id)}
+          messageForm={messageFormFor(id)}
+          formAnswers={formAnswersFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
           continuation={continuation}
         />

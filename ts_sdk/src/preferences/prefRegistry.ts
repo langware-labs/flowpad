@@ -683,7 +683,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
   [PrefKey.COMMAND_LINK_BROWSER]: {
     key: PrefKey.COMMAND_LINK_BROWSER,
     category: 'terminal',
-    label: 'Browser profile a command link opens pages in',
+    label: 'Browser profile for links and sign-in',
     // `{browser, profile}`; null is the system default browser.
     dataType: PrefDataType.JSON,
     defaultValue: null,

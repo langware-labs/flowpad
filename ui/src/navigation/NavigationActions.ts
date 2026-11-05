@@ -52,7 +52,7 @@ import { dockForDisplayTarget } from './display-target-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
-import { openInBrowserProfile } from '@src/lib/browser-profiles';
+import { browserProfileManager } from '@src/lib/browser-profiles';
 import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
 import { errorMessage } from '@src/lib/error-message';
 import type { LinkSource } from '@src/components/links/link-events';
@@ -872,10 +872,13 @@ export class NavigationActions {
     }
   }
 
-  /** The system browser: a web URL as itself, anything else as the Flowpad view that presents it. */
+  /** The selected browser profile (or system default), presenting the resolved web URL. */
   async openLinkInBrowser(link: string, source: LinkSource | null): Promise<void> {
     try {
-      openExternal(await this.browserUrlFor(link, source));
+      const url = await this.browserUrlFor(link, source);
+      const choice = browserProfileManager.selected;
+      if (choice) await browserProfileManager.open(url, choice.browser, choice.profile);
+      else openExternal(url);
     } catch (error) {
       notifyLinkError(error);
     }
@@ -889,7 +892,7 @@ export class NavigationActions {
     profile: string,
   ): Promise<void> {
     try {
-      await openInBrowserProfile(await this.browserUrlFor(link, source), browser, profile);
+      await browserProfileManager.open(await this.browserUrlFor(link, source), browser, profile);
     } catch (error) {
       notifyLinkError(error);
     }

@@ -10,7 +10,7 @@ import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForGlobalEntry, dockForProjectEntry, globalHomeDock, leaveProjectScope } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry, globalHomeDock, leaveProjectScope, resumeDock } from '@src/tabs/project-entry';
 import {
   useAncestorActiveTab,
   useCurrentTabs,
@@ -538,9 +538,10 @@ export function useProjectListMenu({
   // dock; its loader re-scopes the project, so a tab in another project is a
   // project switch too.
   const handleSelectTab = (tab: Tab) => {
-    if (!tab.dockPointer) return;
+    const dock = resumeDock(tab, tabManager.getSnapshot());
+    if (!dock) return;
     closeForNavigation();
-    navigation.openDock(tab.dockPointer as DockPointer);
+    navigation.openDock(dock);
   };
 
   // The list only switches between projects that already own tabs; opening

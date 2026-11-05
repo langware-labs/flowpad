@@ -117,6 +117,10 @@ def _attachment_only_body(payload: dict) -> str:
             return "Sent you a prompt to run"
         if entity_type == "returned_value":
             return "Ran your prompt"
+        if entity_type == "message_form":
+            return "Sent you questions"
+        if entity_type == "form_answers":
+            return "Answered your questions"
         if entity_type and entity_type not in ("conversation", "flow_message"):
             return f"Sent you: {entity_type}"
     filename = (payload.get("attachment_filename") or "").strip()

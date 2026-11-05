@@ -83,3 +83,32 @@ def test_unread_truth_table(case):
         # The per-conversation COUNT (a Vibe help task's badge) — > 0 exactly when the flag is set.
         assert projection.counts[facets["conversation"]] == facets["unreadCount"], case["name"]
         assert (projection.counts[facets["conversation"]] > 0) is facets["isUnread"], case["name"]
+
+
+def test_an_invite_the_viewer_already_joined_does_not_keep_the_row_unread():
+    """Prod shape: the viewer joined (approved member) and replied, but the hub left the
+    invitation ``accepted=False`` — opening the conversation must still clear unread."""
+    viewer = TABLE["viewer"]
+    conv = Conversation(
+        id="conv-joined",
+        members=[{"type": "user", "id": viewer["cloud_user_id"], "user_id": viewer["cloud_user_id"],
+                  "email": viewer["email"], "status": "approved", "roles": ["reader"]}],
+        message_ids=json.dumps([
+            {"typeid": "flow_message-m-theirs", "ts": "2026-07-15T10:00:00+00:00"},
+            {"typeid": "flow_message-m-mine", "ts": "2026-07-15T11:00:00+00:00"},
+        ]),
+    )
+    projection = project_unread(
+        conversations=[conv],
+        fm_by_id={
+            "m-theirs": _message("m-theirs", {"is_read": True, "sender_id": "user:someone-else"}),
+            "m-mine": _message("m-mine", {"is_read": True, "sender_id": f"user:{viewer['cloud_user_id']}"}),
+        },
+        invitations=[_invitation({"id": "inv-1", "accepted": False, "recipient_email": viewer["email"],
+                                  "target_url_path": "/conversation/conv-joined"})],
+        self_ids={viewer["cloud_user_id"], viewer["local_user_id"]},
+        viewer_email=viewer["email"],
+        now=_dt(TABLE["now"]),
+    )
+    assert projection.counts["conv-joined"] == 0
+    assert projection.by_conversation["conv-joined"] is False

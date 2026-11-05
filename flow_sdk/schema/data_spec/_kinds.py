@@ -102,6 +102,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
+    import flow_sdk.schema.data_spec.message_form_spec  # noqa: F401  — registers ``message.form`` / ``message.form_answers``
     import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``

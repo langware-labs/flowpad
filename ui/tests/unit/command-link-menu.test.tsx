@@ -6,10 +6,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.hoisted(() => vi.resetModules());
+
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   prefs: new Map<string, unknown>(),
+  listeners: new Set<() => void>(),
+  version: 0,
   openTerminal: vi.fn(),
   openNewShell: vi.fn(),
 }));
@@ -22,6 +26,27 @@ vi.mock('@sdk', async (importOriginal) => ({
   instancePreferences: {
     get: (key: string) => mocks.prefs.get(key),
     set: (key: string, value: unknown) => mocks.prefs.set(key, value),
+  },
+}));
+vi.mock('@sdk/services/InstancePreferences', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  instancePreferences: {
+    get: (key: string) => mocks.prefs.get(key),
+    set: (key: string, value: unknown) => {
+      mocks.prefs.set(key, value);
+      mocks.version++;
+      mocks.listeners.forEach((listener) => listener());
+    },
+    isLoaded: true,
+    get version() { return mocks.version; },
+    on: (_event: string, listener: () => void) => mocks.listeners.add(listener),
+  },
+}));
+vi.mock('@sdk/FlowSync/context', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  dataContext: {
+    on: vi.fn(),
+    get runtimeKind() { return 'browser'; },
   },
 }));
 vi.mock('@src/navigation', () => ({
@@ -221,5 +246,26 @@ describe('approval before running', () => {
     expect((await screen.findByTestId('command-confirm-browser')).textContent).toContain('System default');
     fireEvent.click(screen.getByTestId('command-confirm-confirm'));
     await waitFor(() => expect(host.runShellCommand).toHaveBeenCalledWith('gcloud auth login'));
+  });
+});
+
+describe('shared browser profile setting', () => {
+  it('shows the selected name and email and updates while the menu is open', async () => {
+    const { browserProfileManager } = await import('@sdk/services/browser-profiles');
+    render(<Harness />);
+    openMenu();
+    const row = await screen.findByTestId('link-menu-command-browser');
+    expect(row.textContent).toContain('System default');
+    act(() => browserProfileManager.select({ browser: 'chrome', profile: 'Profile 1' }));
+    await waitFor(() => expect(row.textContent).toContain('Work — me@work.test'));
+    act(() => browserProfileManager.select(null));
+    expect(row.textContent).toContain('System default');
+  });
+
+  it('keeps a removed profile visible instead of pretending to use the default', async () => {
+    mocks.prefs.set(PrefKey.COMMAND_LINK_BROWSER, { browser: 'chrome', profile: 'Removed' });
+    render(<Harness />);
+    openMenu();
+    expect((await screen.findByTestId('link-menu-command-browser')).textContent).toContain('chrome / Removed');
   });
 });

@@ -2463,15 +2463,11 @@ export class DockPointer implements IDockPointer {
         tabHash: this.tabHash,
       });
     }
-    // Scope-keyed identity is the SCOPE, not the sub-pointer. Normalize the pointer to
-    // '' and persist the scope (options) + the computed tabHash so: (a) the stored
-    // JSON is constant for a given scope regardless of which type was last viewed
-    // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
-    // same tabHash directly from the stored field; (c) clicking the chip reopens the
-    // scoped browser root. Preserve only whether the live Assets URL addresses
-    // content: the backend needs that URL-owned fact to validate a workspace
-    // parent edge after the sub-pointer itself is folded out of tab identity.
-    // It does not change tabHash, so editor/list URLs still share one row.
+    // Scope-keyed identity is the SCOPE, not the sub-pointer. Persist the scope
+    // and tabHash for dedup; top-level chips reopen the scoped browser root.
+    // Workspace children retain their content destination so reopening one does
+    // not navigate away to that root. workspaceContent lets the backend validate
+    // the parent edge even for older rows whose sub-pointer was folded away.
     if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
       // A dock rebuilt from stored JSON has already had its sub-pointer folded
       // to '' (and `fromUrl` supplied a default), so re-deriving the bit there
@@ -2482,7 +2478,9 @@ export class DockPointer implements IDockPointer {
           (this.pointer?.startsWith(`${AssetMode.EDITOR}/`) || this.pointer?.startsWith(`${AssetMode.WIKI}/`)));
       return JSON.stringify({
         viewType: this.viewType,
-        pointer: '',
+        // A workspace child reopens its content, while a top-level scope tab
+        // reopens the browser. tabHash still owns identity in both cases.
+        pointer: this.workspaceHost ? this.pointer : '',
         options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
         tabHash: this.tabHash,
         workspaceContent: workspaceContent || undefined,
