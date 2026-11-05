@@ -199,6 +199,11 @@ def count_unread(**rows) -> int:
     return project_unread(**rows).total
 
 
+#: A message the unread walk can count: ``is_read`` false, or never stored (its default).
+_UNREAD_MATCH = {"op": "$OR", "operands": [{"op": "$EQ", "operands": ["is_read", False]},
+                                          {"op": "$IS_NULL", "operands": ["is_read"]}]}
+
+
 async def _load_rows() -> tuple[list, dict]:
     """The canonical rows the formula reads: every conversation, and the keyword
     arguments :func:`project_unread` takes (the local user's stream inbox as the count scope)."""
@@ -216,11 +221,15 @@ async def _load_rows() -> tuple[list, dict]:
     conversations = await Conversation.get_all(QueryFilter(type=EntityType.CONVERSATION.value))
     return conversations, dict(
         conversations=conversations,
-        # hydrate=False: the formula reads is_read/sender/is_draft, never text —
-        # joining every reference row's SourceItem here would put a whole-mailbox
-        # join on every mutation's recompute.
+        # Only the UNREAD messages: the walk (``conversation_unread_count``) stops at the first
+        # message that is read OR absent, so leaving the read ones out answers the same — and
+        # every recompute (each read-state touch, on the main loop) no longer builds an entity
+        # for every message ever kept. A row stored without ``is_read`` reads as its default,
+        # unread. hydrate=False: the formula reads is_read/sender/is_draft, never text —
+        # joining every reference row's SourceItem here would put a whole-mailbox join on
+        # every mutation's recompute.
         fm_by_id={m.id: m for m in await FlowMessage.get_all(
-            QueryFilter(type=EntityType.FLOW_MESSAGE.value), hydrate=False
+            QueryFilter(type=EntityType.FLOW_MESSAGE.value, match=_UNREAD_MATCH), hydrate=False
         )},
         invitations=(
             await Invitation.get_all(QueryFilter(type=EntityType.INVITATION.value)) if email else []
