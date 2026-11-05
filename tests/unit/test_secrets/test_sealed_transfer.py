@@ -628,3 +628,33 @@ async def test_a_vault_share_reports_delivered_and_validated_per_receiver(world,
     assert row["recipients"] == {"bob": "filled", "carol": "pending"}
     assert row["tests"]["bob"]["state"] == "ok" and row["expired"] is False
     assert not any("acme-gmail" in body or SECRET in body for body in hub.wire)
+
+
+async def test_a_conversation_the_hub_does_not_hold_is_not_asked_about(world, monkeypatch):
+    """A channel's conversation (an email thread mirrored here, never bound to the hub) has no secured transfer.
+    Its card answers empty without a hub read: the hub's 403 for it became a "Cloud access denied" toast that sat
+    over the conversation's Send button. A hub-bound conversation is still read."""
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+
+    hub, inst = world
+    asked: list[str] = []
+
+    async def counting(method, entity_type, *a, scope=None, **kw):
+        if scope:
+            asked.append(scope[0][1])
+        return await hub.call(method, entity_type, *a, scope=scope, **kw)
+
+    monkeypatch.setattr(HubProxy, "call", counting)
+    channel = Conversation(title="Round trip", channel="email", channel_provider="cloud_email")
+    await channel.save()
+    bound = Conversation(title="Shared", remote=True)
+    await bound.save()
+    hub.messages[bound.id] = []
+
+    with inst["alice"].acting(monkeypatch):
+        assert await st.state(channel.id) == {"incoming": [], "sent": []}
+        assert await st.incoming(channel.id) == [] and await st.sent_status(channel.id) == []
+        assert asked == []
+        assert await st.state(bound.id) == {"incoming": [], "sent": []}
+    assert asked == [bound.id]
