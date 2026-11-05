@@ -137,7 +137,7 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onLaunched }: N
       })
       .catch(() => {});
     void agent
-      .requirements()
+      .fetchRequirements()
       .then((wanted) => alive && setNeeds(wanted.filter((r) => r.kind !== 'funding')))
       .catch(() => {});
     return () => {

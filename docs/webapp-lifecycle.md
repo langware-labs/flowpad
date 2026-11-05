@@ -1,3 +1,6 @@
+---
+id: eae57a63-71af-4f84-975e-706940737051
+---
 # A web app's lifecycle on this machine
 
 One record, one readiness rule, one coordinator. Everything that brings a web app up, checks it, or recovers it

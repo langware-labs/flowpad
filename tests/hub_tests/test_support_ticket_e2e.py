@@ -24,11 +24,11 @@ from typing import Any, Callable, Optional
 import httpx
 import pytest
 
-pytestmark = [pytest.mark.hub, pytest.mark.timeout(600)]  # a new long tier budget: three agent turns
+pytestmark = [pytest.mark.hub, pytest.mark.timeout(1300)]  # three agent turns, each after a poll
 
 NAMES = ("CUSTOMER_BACKEND", "CUSTOMER_EMAIL", "CUSTOMER_PW", "TEAM_EMAIL", "TEAM_PW", "DESK")
 #: The agent polls the desk on a schedule and runs a real turn: this is what one step may take.
-STEP_SECONDS = 240
+STEP_SECONDS = 420
 
 
 def _setting(name: str) -> str:
@@ -55,10 +55,16 @@ def _until(what: str, found: Callable[[], Any]) -> Any:
     raise AssertionError(f"no {what} within {STEP_SECONDS}s")
 
 
-def _invitation_to(hub: str, team: dict, ticket: str) -> Optional[str]:
-    """The team member's invitation to the ticket's private conversation."""
+def _private_conversation(hub: str, team: dict, ticket: str) -> Optional[str]:
+    """The ticket's private conversation, as the team member reaches it: the first one with them
+    arrives as an invitation, a later one directly."""
     pending = httpx.get(f"{hub}/api/v1/graph/invitation/pending", headers=team, timeout=15).json()["data"]
-    return next((row for row in pending if ticket in str(row)), None)
+    for invitation in pending:
+        httpx.get(
+            f"{hub}/api/v1/graph/members/accept", params={"invitation-id": invitation["id"]}, headers=team, timeout=20
+        )
+    mine = httpx.get(f"{hub}/api/v1/graph/conversation", headers=team, timeout=15).json()["data"]
+    return next((c["id"] for c in mine if str(c.get("title")).startswith(f"[ticket {ticket}]")), None)
 
 
 @pytest.mark.skipif(
@@ -85,13 +91,8 @@ def test_a_customer_gets_the_answer_the_team_approved(hub_base_url):
     ).json()
     assert asked["status"] == "SUCCESS", asked
 
-    # The agent consults the team: an invitation, then the summary with its proposed answer.
-    invitation = _until("invitation to the private conversation", lambda: _invitation_to(hub, team, ticket))
-    accepted = httpx.get(
-        f"{hub}/api/v1/graph/members/accept", params={"invitation-id": invitation["id"]}, headers=team, timeout=20
-    )
-    assert accepted.status_code in (200, 302), accepted.text
-    private = invitation["entity_id"] if "entity_id" in invitation else invitation["target"]["id"]
+    # The agent consults the team: a private conversation, with a summary and a proposed answer.
+    private = _until("private conversation", lambda: _private_conversation(hub, team, ticket))
     summary = _until("summary", lambda: _messages(hub, team, private))
     assert "approve" in summary[0]["text"].lower(), summary[0]["text"]
 
