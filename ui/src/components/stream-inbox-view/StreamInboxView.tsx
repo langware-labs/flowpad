@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { markdownToPlain } from '@src/components/conversation/message-markdown';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import {
@@ -187,6 +187,10 @@ interface ConversationListRowProps {
   /** The newest session an automation started on a message of this conversation. */
   automationMark?: AgenticProcess;
   conv: Conversation;
+  /** What the row shows of `conv` and `automationMark`, as one string (`rowRevision`). The store
+   *  updates an entity IN PLACE, so its identity never says it changed — this does, and lets an
+   *  unchanged row skip the list's re-renders (`memo`). */
+  revision: string;
   isFocused: boolean;
   /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
    *  server-side; row auto-revives when a FlowMessage newer than the stamp
@@ -234,7 +238,33 @@ interface ConversationListRowProps {
   onOpenConversation?: (conversationId: string) => void;
 }
 
-export function ConversationListRow({
+/** `ConversationListRow`'s `revision`: everything stored on the row's conversation, plus its
+ *  automation mark's state. A field the row reads through a hook (its messages, the viewer)
+ *  re-renders it on its own. */
+export function rowRevision(conv: Conversation, automationMark?: AgenticProcess): string {
+  return `${entityRevision(conv)}|${automationMark?.id ?? ''}:${automationMark?.status ?? ''}`;
+}
+
+/** Every own field of an entity (stored, projected and private alike), as JSON. One that cannot
+ *  be written out reads as changed every time — a re-render, never a stale row. */
+function entityRevision(entity: object): string {
+  const fields: Record<string, unknown> = {};
+  for (const key of Object.keys(entity)) {
+    const value = (entity as Record<string, unknown>)[key];
+    if (typeof value !== 'function') fields[key] = value;
+  }
+  try {
+    return JSON.stringify(fields);
+  } catch {
+    return `unserializable:${Math.random()}`;
+  }
+}
+
+/** One stream-inbox row. Memoized: a list re-render (a new message elsewhere, a selection, the
+ *  dialog behind it) leaves the rows whose props and `revision` did not change alone. */
+export const ConversationListRow = memo(ConversationListRowView);
+
+function ConversationListRowView({
   conv,
   isFocused,
   onArchive,
@@ -907,6 +937,25 @@ export function StreamInboxView({
     },
     [agentId, refetch],
   );
+
+  // The rows' handlers, stable across renders so a memoized row that did not change is left alone.
+  const archiveRow = useCallback((convId: string) => void handleArchive(convId), [handleArchive]);
+  const unarchiveRow = useCallback((convId: string) => void handleUnarchive(convId), [handleUnarchive]);
+  const toggleReadRow = useCallback(
+    (messageId: string, isRead: boolean) => void handleToggleRead(messageId, isRead),
+    [handleToggleRead],
+  );
+  const rowRefSetters = useRef(new Map<string, (el: HTMLDivElement | null) => void>());
+  const rowRefSetter = useCallback((convId: string) => {
+    let setter = rowRefSetters.current.get(convId);
+    if (!setter) {
+      setter = (el: HTMLDivElement | null) => {
+        if (convId) rowRefs.current.set(convId, el);
+      };
+      rowRefSetters.current.set(convId, setter);
+    }
+    return setter;
+  }, []);
 
   const handleMarkAllRead = useCallback(async () => {
     // No optimistic zero: the backend reconciles StreamInboxManager.unread after the
@@ -1593,9 +1642,10 @@ export function StreamInboxView({
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
-              onArchive={(convId) => void handleArchive(convId)}
-              onUnarchive={(convId) => void handleUnarchive(convId)}
-              onToggleRead={(messageId, isRead) => void handleToggleRead(messageId, isRead)}
+              revision={rowRevision(conv, conv.id ? automationMarks.get(conv.id) : undefined)}
+              onArchive={archiveRow}
+              onUnarchive={unarchiveRow}
+              onToggleRead={toggleReadRow}
               selected={!!conv.id && selectedIds.has(conv.id)}
               onToggleSelect={toggleSelect}
               selectMode={selectedCount > 0}
@@ -1605,9 +1655,7 @@ export function StreamInboxView({
               channelMatch={channelMatch}
               columnFilter={columnFilterActive ? columnFilter : undefined}
               attributionFor={attributionFor}
-              refSetter={(el) => {
-                if (conv.id) rowRefs.current.set(conv.id, el);
-              }}
+              refSetter={rowRefSetter(conv.id ?? '')}
               agentId={agentId}
               onOpenConversation={onOpenConversation}
               automationMark={conv.id ? automationMarks.get(conv.id) : undefined}
