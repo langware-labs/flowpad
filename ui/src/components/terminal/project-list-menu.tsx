@@ -469,6 +469,12 @@ export function useProjectListMenu({
       await handleRecover(bucket);
       return;
     }
+    // The project already in front is a no-op: re-entering it re-addressed the page (a top-level resume
+    // dock, without the mode the address stated), so "pick the current project" changed the URL.
+    if (bucket.projectId === currentProjectId) {
+      setOpen(false);
+      return;
+    }
     if (bucket.state === 'live' && bucket.project) {
       closeForNavigation();
       // A resumed tab is a TOP-LEVEL tab, as its chip is: never a child of the

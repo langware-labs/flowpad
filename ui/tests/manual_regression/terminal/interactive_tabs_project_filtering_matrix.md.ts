@@ -485,7 +485,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'codex');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    // A bare address shows the session in the last-selected mode (Standard = chat, no terminal-panels);
+    // this asserts the terminal surface, like test 3, so it states Advanced.
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
@@ -595,7 +597,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    // A bare address shows the session in the last-selected mode (Standard = chat, no terminal-panels);
+    // this asserts the terminal surface, like test 3, so it states Advanced.
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
@@ -1345,7 +1349,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced')); // terminal surface: state Advanced (see test 4)
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
@@ -1363,7 +1367,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { projectId } = await bootstrapIds(rq);
     const { id, shellId } = await createProcess(rq, projectId, 'claude_code');
     await createShell(rq, projectId); // a 2nd tab to switch to
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced')); // terminal surface: state Advanced (see test 4)
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
@@ -1427,7 +1431,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let r = 0; r < 2; r++) {
       await clickHome(page);
       await waitForRootUrl(page);
-      await page.goto('/dock/shell');
+      // Re-enter the way gotoDockShell entered: a bare /dock/shell shows the UNSTATED mode (Vibe), whose
+      // strip lists no shell tabs, so the count read 0.
+      await page.goto(withViewMode('/dock/shell', 'advanced'));
       await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
       await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
       expect(await tabIds(page)).toEqual(before);
