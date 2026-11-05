@@ -125,12 +125,16 @@ const transcriptRows = async (processId: string) =>
   (await readFile(transcripts.get(processId)!, 'utf8'))
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as { type: string; message?: { content?: unknown } });
+    .map((line) => JSON.parse(line) as { type: string; timestamp?: string; message?: { content?: unknown } });
 
-/** Commands Claude Code ran in its shell mode (each is a `<bash-input>` user entry). */
-async function shellInputs(processId: string): Promise<number> {
+/**
+ * Commands Claude Code ran in its shell mode (each is a `<bash-input>` user entry), typed at or
+ * after `since`. Claude appends a run's rows a moment after the command itself has run, so a count
+ * taken right after an earlier test's run may not hold it yet; the row's own time says when it ran.
+ */
+async function shellInputs(processId: string, since: string): Promise<number> {
   return (await transcriptRows(processId)).filter(
-    (row) => row.type === 'user' && String(row.message?.content).startsWith('<bash-input>'),
+    (row) => row.type === 'user' && String(row.message?.content).startsWith('<bash-input>') && (row.timestamp ?? '') >= since,
   ).length;
 }
 
@@ -364,7 +368,7 @@ for (const surface of SURFACES) {
         }
         return;
       }
-      const inputsBefore = await shellInputs(processId);
+      const since = new Date().toISOString();
       for (const form of surface.forms) {
         const before = (await runs(form)).length;
         await surface.click(page, form);
@@ -372,7 +376,7 @@ for (const surface of SURFACES) {
         expect(page.url()).toBe(surfaceUrl);
       }
       // Claude Code recorded each as its own shell input, never as a message to the model.
-      await expect.poll(() => shellInputs(processId)).toBe(inputsBefore + surface.forms.length);
+      await expect.poll(() => shellInputs(processId, since)).toBe(surface.forms.length);
       const asPrompt = (await transcriptRows(processId)).filter(
         (row) => row.type === 'user' && /^!?\s*sh mark\.sh/.test(String(row.message?.content)),
       );
