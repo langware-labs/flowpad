@@ -28,6 +28,8 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
+// The server's own sentence (e.g. a name another project already holds), never Axios's status line.
+import { errorMessage } from '@src/lib/error-message';
 
 /** Free-text match against a project's display name or cwd. `q` must already be
  *  trimmed + lowercased. */
@@ -461,7 +463,7 @@ function NewProjectDialog({
     try {
       await onCreate(projectName.trim(), parentFolder.trim());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create project');
+      setError(errorMessage(err, 'Failed to create project'));
     } finally {
       setIsSubmitting(false);
     }
@@ -661,7 +663,7 @@ export function OpenProjectComponent({
         await ensureProjectAndSetContext(path);
         onOpenChange(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : t`Failed to open project`);
+        setError(errorMessage(err, t`Failed to open project`));
       } finally {
         setOpeningProjectId(null);
       }
@@ -682,7 +684,7 @@ export function OpenProjectComponent({
       }
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Failed to open project`);
+      setError(errorMessage(err, t`Failed to open project`));
     } finally {
       setIsSubmitting(false);
     }
