@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { apiBase, apiContext } from '../_shared/api';
 import { printedLinkPoint, sdkModule } from '../_shared/xterm';
 import { openVibe } from '../vibe/_helpers';
+import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 const PROFILE = { browser: 'chrome', profile: 'Profile 7' };
@@ -170,8 +171,22 @@ function domSurface(name: string, open: Surface['open']): Surface {
 }
 
 /** A form's command in the xterm — on its newest row, which may be Claude Code's echo of a run (`!  sh …`). */
-const xtermPoint = (page: Page, form: Form) =>
-  printedLinkPoint(page, new RegExp(`!\\s+sh mark\\.sh ${form}`), '', { scrollBack: true });
+const xtermPoint = async (page: Page, form: Form) => {
+  // Claude Code answers every `!` command, repainting the screen as it streams; a point read while
+  // the rows still move is a different row by the time the mouse lands. Read it from a still screen,
+  // the way a person clicks what they see.
+  const rows = page.locator('.xterm-rows:visible').first();
+  let last = '';
+  await expect
+    .poll(async () => {
+      const now = await rows.innerText();
+      const still = now === last;
+      last = now;
+      return still;
+    }, { intervals: [1_000], timeout: adjusted(120_000) })
+    .toBe(true);
+  return printedLinkPoint(page, new RegExp(`!\\s+sh mark\\.sh ${form}`), '', { scrollBack: true });
+};
 
 const SURFACES: Surface[] = [
   {
