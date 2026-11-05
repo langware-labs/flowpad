@@ -155,7 +155,9 @@ test.describe('vibe exit — the end-to-end proof', () => {
     url.searchParams.set('viewMode', 'vibe');
     await page.goto(`${url.pathname}${url.search}`);
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
-    await page.locator('[data-tag="TopNavTabs"]').click();
+    // In Vibe the rail's Chats resumes the last real chat (the build) — the journey's `open_build` step.
+    // (The top bar's "Back to tabs" button it used to press is gone.)
+    await page.locator('[data-tag="RailChats"]').click();
     await expect(page.locator('[data-tag="VibeDisplay"]')).toBeVisible();
   }
 
@@ -199,9 +201,13 @@ test.describe('the root carries view mode', () => {
 
     await page.goto('/?viewMode=vibe');
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
+    // The home has no view mode of its own (home-loader canonicalizes `/?viewMode=…` to the plain
+    // home, so no history entry can show a second home): the address settles on `/` while the mode
+    // it asked for holds — through a reload too.
+    await expect.poll(() => here()).toBe('/');
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
-    await expect.poll(() => here()).toContain('viewMode=vibe');
+    await expect.poll(() => here()).toBe('/');
   });
 });
 

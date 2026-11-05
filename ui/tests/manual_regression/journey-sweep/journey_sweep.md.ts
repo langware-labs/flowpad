@@ -100,7 +100,8 @@ async function launch(): Promise<void> {
 test('a build opens from the rail (warm-up)', async () => {
   await page.goto('/?viewMode=vibe');
   await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
-  await page.locator('[data-tag="TopNavTabs"]').click();
+  // In Vibe the rail's Chats resumes the last real chat (the build); the top bar's "Back to tabs" is gone.
+  await page.locator('[data-tag="RailChats"]').click();
   await expect(workspace()).toBeVisible();
 });
 

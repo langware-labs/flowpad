@@ -92,10 +92,12 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
     step(
       'open_build',
       'Open a build',
-      'Click the tabs button in the top bar to go back to your last build. This is the real thing — an agent session, not a demo.',
+      'Click Chats on the rail to go back to your last build. This is the real thing — an agent session, not a demo.',
       {
-        present: { dock: { kind: 'root', viewMode: 'vibe' }, highlight: 'TopNavTabs' },
-        act: { kind: 'click', target: 'TopNavTabs' },
+        // The top bar's "Back to tabs" button (TopNavTabs) is gone (Home is just Home now); in Vibe the
+        // rail's Chats resumes the last real chat in the project — the build.
+        present: { dock: { kind: 'root', viewMode: 'vibe' }, highlight: 'RailChats' },
+        act: { kind: 'click', target: 'RailChats' },
         waitFor: [{ element: { present: 'VibeDisplay' } }],
       },
     ),
