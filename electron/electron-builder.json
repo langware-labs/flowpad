@@ -15,6 +15,7 @@
     "backend-wait.js",
     "startup-error.js",
     "runtime-repair.js",
+    "engine-ownership.js",
     "native-deps.json",
     "fatal-failure.js",
     "update-recovery.js",

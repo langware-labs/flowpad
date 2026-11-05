@@ -31,9 +31,14 @@ ureq = { version = "2", default-features = false, features = ["native-tls"] }
 native-tls = "0.2"
 sha2 = "0.10"
 base64 = "0.22"
+# uninstall (FLOWPAD-2250): the desktop's engine-ownership.json and the uninstaller's result.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]
 # flowpad-install: WinVerifyTrust + CertGetNameString (Authenticode check), MessageBox.
+# uninstall (FLOWPAD-2250): handle-relative no-follow deletion (NtCreateFile, disposition
+# by handle), file identity, known folders.
 windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_Security_WinTrust",
@@ -41,6 +46,20 @@ windows = { version = "0.58", features = [
   "Win32_Security_Cryptography_Catalog",
   "Win32_Security_Cryptography_Sip",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Wdk_Foundation",
+  "Wdk_Storage_FileSystem",
+  "Wdk_System_Threading",
+  "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock",
+  "Win32_System_JobObjects",
+  "Win32_System_Registry",
 ] }
 
 [build-dependencies]

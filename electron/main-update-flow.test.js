@@ -152,6 +152,7 @@ function load(opts = {}) {
     async stop() { uv.stopped = (uv.stopped || 0) + 1; }
     isInstalling() { return false; }
     setFailureSharer(fn) { this.sharer = fn; }
+    backfillEngineOwnership() { uv.ownershipBackfills = (uv.ownershipBackfills || 0) + 1; uv.installsAtBackfill = uv.installs || 0; }
     openPackageDialogVersion() { return null; }
     async getLatestPypiVersion() { return null; }
     getInstalledFlowBinSync() { return '/fake/bin/flow'; }
@@ -427,6 +428,8 @@ const HOUR = 60 * 60 * 1000;
     const r = await env.t.installAndStartBackend();
     eq(r.ok, true, 'first run, desktop current: startup succeeds');
     eq(env.uv.installs, 1, 'first run, desktop current: the engine is installed');
+    eq(env.uv.ownershipBackfills, 1, 'the engine ownership backfill runs once per launch');
+    eq(env.uv.installsAtBackfill, 0, '…before the first install, which would otherwise record an existing engine as adopted');
     eq(env.autoUpdater.downloads.length, 0, 'first run, desktop current: no desktop download');
   }
   {

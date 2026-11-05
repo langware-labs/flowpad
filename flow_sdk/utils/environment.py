@@ -52,6 +52,32 @@ def get_execution_scope() -> list:
 INVOCATION_ENV = "FLOWPAD_INVOCATION_ID"
 PARENT_CALL_ENV = "FLOWPAD_PARENT_CALL_ID"
 
+#: Stamped "1" on every worker spawn by ``apply_worker_env`` (and inherited by a worker's own
+#: children). It is the ONE signal that tells a worker apart from a human: the FlowPad desktop
+#: terminal never calls ``apply_worker_env`` so it never carries this — unlike
+#: ``FLOWPAD_EXECUTION_SCOPE``, which the desktop terminal sets too and so cannot distinguish them.
+WORKER_ENV = "FLOWPAD_WORKER"
+
+
+def is_worker_process() -> bool:
+    """Whether this process is (or runs under) a FlowPad worker — see :data:`WORKER_ENV`."""
+    return os.environ.get(WORKER_ENV) == "1"
+
+
+def without_worker_signal(env: "dict[str, str] | None" = None) -> dict[str, str]:
+    """A copy of *env* (or ``os.environ``) with the worker signal (:data:`WORKER_ENV`) removed.
+
+    FLOWPAD-2112: use this to build the environment of any FlowPad *infrastructure* process — a
+    backend, the monitor, a detached respawn, a browser. Such a process is never a worker, so it
+    must not inherit ``FLOWPAD_WORKER`` (which only ``apply_worker_env`` sets). Were it to leak, a
+    human in a terminal that infrastructure later spawns would be wrongly treated as a worker and
+    blocked by the lifecycle gate. Every env-copying spawn path routes through here, so there is one
+    place the signal is stripped rather than several that must each remember to.
+    """
+    base = dict(env) if env is not None else os.environ.copy()
+    base.pop(WORKER_ENV, None)
+    return base
+
 
 def inherited_trace() -> dict:
     """The run this process's calls join: ``{"invocation_id", "parent_call_id"}``, or ``{}`` for none."""

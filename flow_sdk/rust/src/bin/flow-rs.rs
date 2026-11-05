@@ -39,6 +39,74 @@ enum Cmd {
     },
     /// Remove the entry at (service, name). No-op if absent.
     DeleteKey { service: String, name: String },
+    /// The Windows uninstaller's engine (FLOWPAD-2250), called by the NSIS uninstaller. Exits 0
+    /// (complete), 10 (the rest is scheduled for the next sign-in), 20 (partial) or 124 (deadline).
+    #[cfg(windows)]
+    #[command(rename_all = "kebab-case")]
+    Uninstall {
+        /// $INSTDIR of the installation being removed.
+        #[arg(long)]
+        install_dir: std::path::PathBuf,
+        /// Only classify and write --ini for the uninstaller's page; change nothing.
+        #[arg(long)]
+        classify_only: bool,
+        #[arg(long)]
+        ini: Option<std::path::PathBuf>,
+        /// Consent to remove an engine that is offered, not removed by default.
+        #[arg(long)]
+        remove_engine: bool,
+        /// Remove only the app's own state; keep the engine and its runtime whatever they are (the
+        /// uninstaller's page could not classify them).
+        #[arg(long)]
+        app_only: bool,
+        #[arg(long)]
+        delete_app_data: bool,
+        #[arg(long)]
+        delete_instance_data: bool,
+        #[arg(long)]
+        log: Option<std::path::PathBuf>,
+        #[arg(long)]
+        result: Option<std::path::PathBuf>,
+        #[arg(long, default_value_t = 300)]
+        deadline_secs: u64,
+    },
+    /// Finish an uninstall's pending removals (started by RunOnce, the installer, or by hand).
+    #[cfg(windows)]
+    #[command(name = "deferred-cleanup", rename_all = "kebab-case")]
+    DeferredCleanup {
+        #[arg(long, default_value = "logon")]
+        trigger: String,
+        #[arg(long)]
+        log: Option<std::path::PathBuf>,
+        #[arg(long, default_value_t = 300)]
+        deadline_secs: u64,
+    },
+    /// Prove this binary can run from where it is (application-control policies).
+    #[cfg(windows)]
+    #[command(name = "self-test")]
+    SelfTest,
+    /// Is `<install dir>\Flowpad.exe` running? Exit 0 no, 1 yes. With --stop, stop exactly those
+    /// processes and exit 0 once none is left. Used by the uninstaller instead of electron-builder's
+    /// PowerShell/WMI check, which can hang (FLOWPAD-2250, Phase 0 P8).
+    #[cfg(windows)]
+    #[command(name = "app-running", rename_all = "kebab-case")]
+    AppRunning {
+        #[arg(long)]
+        install_dir: std::path::PathBuf,
+        #[arg(long)]
+        stop: bool,
+        #[arg(long, default_value_t = 30)]
+        deadline_secs: u64,
+    },
+}
+
+/// Exit with 124 at the deadline, whatever is in progress: nothing may hang the uninstaller.
+#[cfg(windows)]
+fn watchdog(secs: u64) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(secs));
+        std::process::exit(124);
+    });
 }
 
 fn main() -> anyhow::Result<()> {
@@ -68,5 +136,75 @@ fn main() -> anyhow::Result<()> {
             val,
         } => rust_set_key_restricted(&service, &name, &val),
         Cmd::DeleteKey { service, name } => rust_delete_key(&service, &name),
+        #[cfg(windows)]
+        Cmd::Uninstall {
+            install_dir,
+            classify_only,
+            ini,
+            remove_engine,
+            app_only,
+            delete_app_data,
+            delete_instance_data,
+            log,
+            result,
+            deadline_secs,
+        } => {
+            watchdog(deadline_secs);
+            let options = flow_rs::uninstall::run::Options {
+                install_dir,
+                classify_only,
+                remove_engine,
+                app_only,
+                delete_app_data,
+                delete_instance_data,
+                log,
+                result,
+                ini,
+            };
+            std::process::exit(flow_rs::uninstall::run::run(&options))
+        }
+        #[cfg(windows)]
+        Cmd::DeferredCleanup { trigger, log, deadline_secs } => {
+            use flow_rs::uninstall::deferred::{self, Trigger};
+            watchdog(deadline_secs);
+            let trigger = match trigger.as_str() {
+                "installer" => Trigger::Installer,
+                "reinstall" => Trigger::Reinstall,
+                "manual" => Trigger::Manual,
+                _ => Trigger::Logon,
+            };
+            let layout = match flow_rs::uninstall::win::Layout::resolve(std::path::Path::new("")) {
+                Ok(l) => l,
+                Err(e) => anyhow::bail!("cannot resolve the user's folders: {e}"),
+            };
+            let mut log = flow_rs::uninstall::report::Log::open(log.as_deref());
+            std::process::exit(deferred::run(&layout, trigger, &mut log))
+        }
+        #[cfg(windows)]
+        Cmd::SelfTest => {
+            println!("{}", flow_rs::uninstall::deferred::SELF_TEST_OK);
+            Ok(())
+        }
+        #[cfg(windows)]
+        Cmd::AppRunning { install_dir, stop, deadline_secs } => {
+            use flow_rs::uninstall::procs;
+            watchdog(deadline_secs);
+            let exe = install_dir.join("Flowpad.exe");
+            let running = || procs::app_processes(&procs::scan(), &exe.display().to_string());
+            let found = running();
+            if !stop {
+                std::process::exit(if found.is_empty() { 0 } else { 1 });
+            }
+            for p in &found {
+                let _ = procs::terminate(p.pid, p.created);
+            }
+            for _ in 0..50 {
+                if running().is_empty() {
+                    std::process::exit(0);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            std::process::exit(1)
+        }
     }
 }

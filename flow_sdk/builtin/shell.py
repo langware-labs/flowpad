@@ -1075,8 +1075,8 @@ class Shell(Entity):
         fg = await self._foreground_pgid()
         if fg is None:
             return True
-        _, survivors = await asyncio.to_thread(terminate_tree, await self._foreground_job(fg))
-        return not survivors
+        _, survivors, refused = await asyncio.to_thread(terminate_tree, await self._foreground_job(fg))
+        return not survivors and not refused
 
     @classmethod
     def sentinel_exit(cls, data: bytes, marker: str) -> "tuple[int, int] | None":
