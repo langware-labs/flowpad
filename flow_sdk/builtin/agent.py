@@ -1461,6 +1461,8 @@ class Agent(Entity):
         from flow_sdk.builtin import agent_places  # noqa: PLC0415
 
         async def run():
+            # Local now, the hub's list in the background: a change lands as ``deployment.synced``.
+            Deployment.reconcile_soon(str(self.typeid))
             rows = await agent_places.list_places(self)
             return [{**row, "deployment": row["deployment"].model_dump(mode="json")} for row in rows]
 

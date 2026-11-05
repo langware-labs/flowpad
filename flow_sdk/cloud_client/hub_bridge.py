@@ -1275,28 +1275,14 @@ class HubWsBridge:
         """
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
-        existing = await Deployment.get_one({"id": deployment_id})
-        if op == "delete":
-            if existing is not None:
-                existing.remote = False  # the hub already deleted it: nothing to ask the hub
-                await existing.delete()
-            return
-
         payload = {**(data or {}), "id": deployment_id}
-        if existing is None:
-            await Deployment.adopt_from_hub(payload)
-            logger.info("[bridge] deployment op %s materialized %s", op, deployment_id)
-            return
-
-        # The sender receives its OWN op too, so check staleness before doing any
-        # work — an echo would otherwise re-save and re-broadcast every time.
-        if not Deployment.is_stale(existing, payload):
-            return
-        merged = Deployment.merge_hub_payload(existing, payload)
-        refreshed = Deployment(**merged)
-        refreshed.remote = True
-        await refreshed.save()
-        logger.info("[bridge] deployment op %s refreshed %s", op, deployment_id)
+        # A delete carries no row: the parent the list is under is the local copy's.
+        existing = await Deployment.get_one({"id": deployment_id}) if op == "delete" else None
+        if await Deployment.mirror_hub_row(payload, op):
+            logger.info("[bridge] deployment op %s mirrored %s", op, deployment_id)
+            parent = payload.get("parent_type_id") or getattr(existing, "parent_type_id", None)
+            if parent:
+                Deployment.announce_synced(str(parent))
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that

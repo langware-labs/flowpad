@@ -68,6 +68,9 @@ if TYPE_CHECKING:
 #: Per event loop, per deployment (``stream_inbox/_locks``): ``keep_in``'s read-modify-write of a binding.
 _SECRETS_LOCKS = new_registry()
 
+#: Background hub reconciles in flight, per parent typeid (:meth:`Deployment.reconcile_soon`).
+_RECONCILES: dict[str, Any] = {}
+
 #: Who a box logs in as for a deployment: nobody, the placed agent's own identity, or its owner.
 DeploymentIdentity = Literal["none", "agent", "user"]
 
@@ -529,6 +532,85 @@ class Deployment(Entity):
         )
         await deployment.save()
         return deployment.with_element(element)
+
+    @classmethod
+    async def mirror_hub_row(cls, payload: dict[str, Any], op: str = "update") -> bool:
+        """Bring the local copy in line with the hub's row: adopt it, refresh it when the hub's is newer,
+        or drop it on ``delete``. True when the local row changed. The one writer for both the bridge's
+        push and the list reconcile (:meth:`reconcile_with_hub`)."""
+        deployment_id = str(payload.get("id") or "")
+        if not deployment_id:
+            return False
+        existing = await cls.get_one({"id": deployment_id})
+        if op == "delete":
+            if existing is None:
+                return False
+            existing.remote = False  # the hub already deleted it: nothing to ask the hub
+            await existing.delete()
+            return True
+        if existing is None:
+            return await cls.adopt_from_hub(payload) is not None
+        # An echo of our own write is not newer: no save, no broadcast.
+        if not cls.is_stale(existing, payload):
+            return False
+        refreshed = cls(**cls.merge_hub_payload(existing, payload))
+        refreshed.remote = True
+        await refreshed.save()
+        return True
+
+    @classmethod
+    async def reconcile_with_hub(cls, parent_type_id: str) -> bool:
+        """Align the local placements of *parent_type_id* with the hub's list — the conversation list's
+        rule: every page is read; a placement the hub no longer has is dropped only when the hub sent the
+        WHOLE list (a partial walk is missing rows it never saw). This computer's own placement is never
+        the hub's to drop. Never raises; True when anything changed (``deployment.synced`` is emitted)."""
+        from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_base_url  # noqa: PLC0415
+
+        if not hub_base_url() or not hub_auth_available():
+            return False
+        try:
+            walk = await HubProxy.walk(EntityType.DEPLOYMENT, match={"parent_type_id": str(parent_type_id)})
+            changed = False
+            for row in walk.rows:
+                if isinstance(row, dict) and await cls.mirror_hub_row(row):
+                    changed = True
+            if walk.complete:
+                on_hub = {str(row.get("id")) for row in walk.rows if isinstance(row, dict)}
+                for local in await cls.get_all({"match": {"parent_type_id": str(parent_type_id)}}):
+                    if local.remote and not local.is_local and str(local.id) not in on_hub:
+                        changed = await cls.mirror_hub_row({"id": str(local.id)}, "delete") or changed
+        except Exception:  # noqa: BLE001 — a background refresh must never break the list it refreshes
+            logger.warning("deployment reconcile for %s failed", parent_type_id, exc_info=True)
+            return False
+        if changed:
+            cls.announce_synced(parent_type_id)
+        return changed
+
+    @classmethod
+    def reconcile_soon(cls, parent_type_id: str) -> None:
+        """Run :meth:`reconcile_with_hub` in the background — the caller answers with the local rows now.
+        One reconcile per parent at a time: a second ask while one runs joins it."""
+        import asyncio  # noqa: PLC0415
+
+        key = str(parent_type_id)
+        running = _RECONCILES.get(key)
+        if running is not None and not running.done():
+            return
+        task = asyncio.ensure_future(cls.reconcile_with_hub(key))
+        _RECONCILES[key] = task
+        task.add_done_callback(lambda _t: _RECONCILES.pop(key, None))
+
+    @staticmethod
+    def announce_synced(parent_type_id: str) -> None:
+        """``deployment.synced`` — the placements of *parent_type_id* changed from the hub; a list re-reads."""
+        try:
+            from flow_sdk.tags import emit_tag  # noqa: PLC0415
+
+            emit_tag("deployment.synced", str(parent_type_id), {"parent_type_id": str(parent_type_id)})
+        except Exception:  # noqa: BLE001
+            logger.debug("deployment.synced emission failed", exc_info=True)
 
     # ── placement ─────────────────────────────────────────────────────────
 

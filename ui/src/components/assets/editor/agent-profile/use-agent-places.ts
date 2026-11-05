@@ -55,6 +55,12 @@ export function useAgentPlaces(agent: Agent | null | undefined): {
   useOnTag('agent.status', () => {
     if (dataContext.caps.localFiles) void read();
   });
+  // Listing answers with the local rows and asks the hub in the background (like the conversation
+  // list); what the hub changed — a box made elsewhere, stopped, deleted — lands here.
+  useOnTag('deployment.synced', (event) => {
+    const parent = String((event.data as { parent_type_id?: string } | undefined)?.parent_type_id ?? '');
+    if (agentId && parent.endsWith(agentId) && dataContext.caps.localFiles) void read();
+  });
 
   const reload = useCallback(async () => {
     await read();
