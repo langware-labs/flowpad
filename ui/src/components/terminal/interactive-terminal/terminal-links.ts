@@ -322,6 +322,9 @@ export function registerTerminalLinks(terminal: Terminal, handlers: LinkHandlers
   terminal.element?.addEventListener('mouseup', (event) => {
     const link = pressed;
     pressed = null;
+    // A press that dragged out a selection is the user selecting the text, not clicking it, even
+    // when the release lands back on the same link.
+    if (terminal.hasSelection()) return;
     if (link && isPrimaryClick(event) && linkAtEvent(event) === link) handlers.activate(event, link);
   });
   // An OSC 8 link's URI is not in the cells it decorates, so only xterm's hover knows it.
