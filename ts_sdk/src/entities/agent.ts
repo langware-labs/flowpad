@@ -97,8 +97,9 @@ export interface PublicDeploymentSetup {
   mode: PublicDeploymentMode;
   max_deployments: number | null;
   wrong_code_limit_per_hour?: number;
-  llm_source?: string;
-  cap_usd?: number;
+  /** Required: every public box is funded, so a visitor is never asked for a token source. */
+  llm_source: string;
+  cap_usd: number;
 }
 
 /** One invite code, as the owner sees it: never the code itself, only its last four characters. */
@@ -632,7 +633,7 @@ export class Agent extends APIEntity<Agent> {
     await this.publicDeploymentsCall('revoke_public_code', 'POST', { code_id: codeId });
   }
 
-  /** `reset` deletes the box (status `DELETED`); the code stays and gets a fresh box next time. */
+  /** `reset` gives the same deployment a brand-new machine, filled from scratch; it answers like `open`. */
   async managePublicDeployment(nodeTypeId: string, op: PublicDeploymentOp): Promise<PublicDeploymentOpResult> {
     return this.publicDeploymentsCall('manage_public_deployment', 'POST', { node_typeid: nodeTypeId, op });
   }

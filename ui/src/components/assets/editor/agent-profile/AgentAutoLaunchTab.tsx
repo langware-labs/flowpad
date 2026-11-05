@@ -57,7 +57,7 @@ function draftOf(state: PublicDeploymentsState | null): Draft {
 }
 
 const sameDraft = (a: Draft, b: Draft) =>
-  a.mode === b.mode && a.max === b.max && a.source === b.source && (!a.source || a.capUsd === b.capUsd);
+  a.mode === b.mode && a.max === b.max && a.source === b.source && a.capUsd === b.capUsd;
 
 /**
  * "Public deployments": visitors open `/open-pc/<id>` — by invite code, or anyone with the link — and land in
@@ -127,7 +127,10 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
 
   const enabled = state.settings?.allow_visitor_deployment === true;
   const saved = draftOf(state);
-  const ready = !draft.source || (draft.capUsd !== null && draft.capUsd > 0);
+  // Every public box is funded: a visitor came for the agent, never to set up a token source. The
+  // first enable takes the owner's first endpoint; they can pick another below.
+  const source = draft.source || (sources[0] ? endpointTypeId(sources[0].id) : '');
+  const ready = Boolean(source) && draft.capUsd !== null && draft.capUsd > 0;
   const link = openPcLink(agent);
   const activeCodes = state.codes.filter((c) => c.state !== 'revoked').length;
 
@@ -139,7 +142,8 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
         mode: draft.mode,
         max_deployments: draft.max,
         ...(state.settings ? { wrong_code_limit_per_hour: state.settings.wrong_code_limit_per_hour } : {}),
-        ...(draft.source && draft.capUsd !== null ? { llm_source: draft.source, cap_usd: draft.capUsd } : {}),
+        llm_source: source,
+        cap_usd: draft.capUsd as number,
       };
       await agent.enablePublicDeployments(setup);
       // Visitors reach `visitor-sandbox` only through the `runner` stamp (hub policies.json, agent role
@@ -222,7 +226,7 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
       <label className="flex items-center gap-2 text-sm">
         <Checkbox
           checked={enabled}
-          disabled={busy}
+          disabled={busy || (!enabled && !ready)}
           onCheckedChange={(v) => void (v === true ? enable() : disable())}
           data-testid="agent-autolaunch-allow"
         />
@@ -232,6 +236,11 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
       <p className="-mt-3 ms-6 text-xs text-muted-foreground" data-testid="agent-autolaunch-consent">
         <Trans>Each visitor gets a copy of this agent&apos;s project in their own sandbox.</Trans>
       </p>
+      {!enabled && sources.length === 0 && (
+        <p className="-mt-2 ms-6 text-xs text-destructive" data-testid="agent-autolaunch-no-source">
+          <Trans>Add an LLM endpoint you administer first (LLM Endpoints): visitors are funded from it.</Trans>
+        </p>
+      )}
 
       {enabled && (
         <>
@@ -314,7 +323,7 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
               aria-label={t`Visitor LLM source`}
               data-testid="agent-autolaunch-source"
             >
-              <option value="">{t`No budget — visitors bring their own`}</option>
+              {!draft.source && <option value="">{t`Choose the LLM endpoint visitors spend`}</option>}
               {sources.map((e) => (
                 <option key={e.id} value={endpointTypeId(e.id)}>
                   {e.name}
@@ -335,7 +344,6 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
               step="0.5"
               className="h-8 w-24 text-xs"
               value={draft.capUsd ?? ''}
-              disabled={!draft.source}
               onChange={(e) => setDraft({ ...draft, capUsd: e.target.value === '' ? null : Number(e.target.value) })}
               data-testid="agent-autolaunch-cap"
             />
@@ -428,7 +436,7 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
         open={resetting !== null}
         onOpenChange={(o) => !o && setResetting(null)}
         title={t`Reset sandbox`}
-        description={t`Its sandbox is deleted. The next visit opens a fresh one.`}
+        description={t`This code gets a fresh machine. Everything on the current one is erased; the same code opens the new one.`}
         confirmLabel={t`Reset`}
         cancelLabel={t`Cancel`}
         variant="destructive"

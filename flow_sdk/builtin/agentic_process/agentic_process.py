@@ -808,6 +808,13 @@ def _change_summary(loaded: Any, current: Any) -> str:
     return f"{_short_item(loaded)} → {_short_item(current)}"
 
 
+
+#: A shell command typed again within this many seconds is the same click (a double click on a run link).
+_SHELL_COMMAND_REPEAT_S = 5.0
+_SHELL_COMMAND_LOCKS = new_registry()
+#: Each session's last typed command and when; entries older than the window are dropped on write.
+_last_shell_command: dict[str, tuple[str, float]] = {}
+
 class AgenticProcess(Entity):
     _api_visible = True
     type: str = APIField(default="agentic_process")
@@ -1449,7 +1456,10 @@ class AgenticProcess(Entity):
 
     async def _watch_launch_screen(self, shell: "Shell", screen) -> None:
         """For the PTY's life, no deadline: launch prompts until the composer, then refused credentials (new text only)."""
-        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import latch_credential_failure, strip_pty_controls
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+            latch_credential_failure,
+            strip_pty_controls,
+        )
 
         async with shell._output_feed() as feed:
             text, shown, booted = strip_pty_controls(feed.initial[-16384:]) if feed else "", None, False
@@ -3825,6 +3835,21 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message=f"{self.driver.name} has no shell mode", status_code=409)
         if not await self._is_live_pty():
             return ApiFailResponse(message="the session has no live terminal to type into", status_code=409)
+        # One command at a time per session, and the same one again moments later is the same click:
+        # typing takes seconds (each step waits for the terminal to go quiet), and two runs typed at
+        # once interleave into one broken line -- ``!`` ``!`` paste paste Enter.
+        async with keyed_loop_lock(_SHELL_COMMAND_LOCKS, self.id):
+            now = time.monotonic()
+            last = _last_shell_command.get(self.id)
+            if last is not None and last[0] == command and now - last[1] < _SHELL_COMMAND_REPEAT_S:
+                return ApiSuccessResponse(data={"status": "duplicate"})
+            for stale in [k for k, (_, at) in _last_shell_command.items() if now - at >= _SHELL_COMMAND_REPEAT_S]:
+                del _last_shell_command[stale]
+            _last_shell_command[self.id] = (command, now)
+            return await self._type_shell_command(escape, command)
+
+    async def _type_shell_command(self, escape: str, command: str) -> ApiSuccessResponse | ApiFailResponse:
+        """The three typed steps of ``run_shell_command``, under its lock."""
         if is_turn_busy(self):
             # Keys typed while the agent answers are lost; the queue delivers it once the turn ends.
             entry = await self._enqueue(f"{escape} {command}", source="shell-command")
