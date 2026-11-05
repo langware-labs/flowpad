@@ -877,6 +877,13 @@ class Deployment(Entity):
         """`GET /deployment/<id>/secrets` — what the hub holds for this cloud placement. Names only."""
         return await self._answer("secrets", self.secrets_inventory)
 
+    @action.get(action_name="funding")
+    async def funding_action(self):
+        """`GET /deployment/<id>/funding` — what pays for this placement's turns (the hub's answer; ``null``
+        when the hub cannot say). Without it the desktop answered the bare path with the deployment row
+        itself, so the hub page's "Funded by" printed the deployment's own name."""
+        return await self._answer("funding", self.funding)
+
     @action.post(action_name="authorize")
     async def authorize_action(self):
         """`POST /deployment/<id>/authorize  {"provider", "permissions"?}` — let its machine use your
