@@ -21,7 +21,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { expect, test } from '@playwright/test';
-import { withViewMode, type QaViewMode } from '../_shared/view-mode';
+import type { QaViewMode } from '../_shared/view-mode';
 import { apiOrigin } from '../_shared/api';
 import { awaitSteerable, flow as runFlow } from '../_shared/control-plane';
 
@@ -42,6 +42,26 @@ const contract = JSON.parse(
 
 /** The three shipped surfaces. `dev` is a hidden developer skin, not a path. */
 const MODES: QaViewMode[] = ['vibe', 'standard', 'advanced'];
+
+/**
+ * A view mode belongs to a session tab, and nowhere else (5a67651f9): a session's own dock states it
+ * in its address (`shell` in standard/advanced, `vibe` IS the vibe mode), while every other page has
+ * one look — the unstated mode — whatever its address says. So a page is swept once, in that look,
+ * and a session dock in each mode that keeps it the same dock.
+ */
+const UNSTATED: QaViewMode = 'vibe';
+function modesFor(c: UrlCase): QaViewMode[] {
+  if (c.view_type === 'vibe') return ['vibe'];
+  if (c.view_type === 'shell') return MODES.filter((m) => m !== 'vibe');
+  return [UNSTATED];
+}
+
+/** The address with a session's mode stated (pages state none). */
+function addressIn(c: UrlCase, mode: QaViewMode): string {
+  const address = addressOf(c);
+  if (c.view_type !== 'shell') return address;
+  return `${address}${address.includes('?') ? '&' : '?'}viewMode=${mode}`;
+}
 
 /**
  * Exceptions this HEADLESS environment produces regardless of app correctness:
@@ -99,18 +119,17 @@ test.describe('dock sweep', () => {
         if (r.status() >= 400 && r.url().includes('/api/v1/')) badResponses.push(`${r.status()} ${r.url()}`);
       });
 
-      for (const mode of MODES) {
-        // Park somewhere neutral IN THE REQUESTED MODE first, so the tab this
-        // navigate steers is the one under test. instance_ctl seeds `vibe`, so
-        // the mode is always set explicitly and never inherited.
-        await page.goto(withViewMode('/dock/desktop', mode));
-        await expect(page.locator('html')).toHaveAttribute('data-view', mode);
+      for (const mode of modesFor(c)) {
+        // Park somewhere neutral first, so the tab this navigate steers is the one under test. The
+        // desktop is a page: it shows the unstated look whatever mode was last used.
+        await page.goto('/dock/desktop');
+        await expect(page.locator('html')).toHaveAttribute('data-view', UNSTATED);
         // `data-view` proves the page rendered, not that the backend can steer
         // it: the navigate targets the tab's WebSocket registration, which lands
         // after first paint (see awaitSteerable for why one 200 is not enough).
         await awaitSteerable(page, BACKEND);
 
-        const res = flow(['navigate', 'view', address]);
+        const res = flow(['navigate', 'view', addressIn(c, mode)]);
 
         if (res.code === 4) {
           // The guard, from the outside: an address naming something that does
