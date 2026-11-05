@@ -689,30 +689,55 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
 
 
 async def _automations_here(project: "Project", *, include_ready: bool = False) -> list[SetupRequirementSpec]:
-    """Each automation the project RECOMMENDS that nobody here has turned on or off yet (``Trigger.decided``) —
-    a row to decide with Enable / Disable (``decide_automation``). ``include_ready`` adds the decided ones as
-    set up. Flowpad's own, rules made here (no file) and ones the project does not recommend are never rows."""
+    """The automations the project RECOMMENDS, as setup rows to decide with Enable / Disable (``decide_automation``):
+    one row per package (the agent or wizard whose folder holds them; on or off together), and one row per rule
+    that has no parent. A row is left while any of its rules is undecided here (``Trigger.decided``);
+    ``include_ready`` lists the decided ones as set up too. Flowpad's own, rules made here (no file) and ones the
+    project does not recommend are never rows."""
     from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
 
-    rules = await Trigger.get_all({"match": {"project_id": str(project.id)}})
-    return [
-        SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=str(rule.name), title=str(rule.name),
-                             typeid=str(rule.typeid), used_by=[PROJECT], satisfied=bool(rule.decided),
-                             needed_for=str(rule.description or ""),
-                             note="" if not rule.decided else ("on here" if rule.enabled else "off here"))
-        for rule in rules
-        if rule.asset_ref and rule.recommended and not rule.is_builtin and (include_ready or not rule.decided)
-    ]
+    rules = [rule for rule in await Trigger.get_all({"match": {"project_id": str(project.id)}})
+             if rule.asset_ref and rule.recommended and not rule.is_builtin]
+    by_parent: dict[str, list] = {}
+    for rule in rules:
+        by_parent.setdefault(str(rule.parent_type_id or ""), []).append(rule)
+    rows = [_automation_row(rule) for rule in by_parent.pop("", [])]
+    rows += await asyncio.gather(*(_automation_group_row(p, group) for p, group in by_parent.items()))
+    return [row for row in rows if include_ready or not row.satisfied]
+
+
+def _automation_row(rule: Any) -> SetupRequirementSpec:
+    return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=str(rule.name), title=str(rule.name),
+                                typeid=str(rule.typeid), used_by=[PROJECT], satisfied=bool(rule.decided),
+                                needed_for=str(rule.description or ""),
+                                note="" if not rule.decided else ("on here" if rule.enabled else "off here"))
+
+
+async def _automation_group_row(parent_typeid: str, rules: list) -> SetupRequirementSpec:
+    """One setup step for a package (a parent's automations): its name and description; on/off together."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    parent = await Trigger.get_by_typeid(parent_typeid)
+    decided = all(rule.decided for rule in rules)
+    note = "" if not decided else ("on here" if all(rule.enabled for rule in rules) else "off here")
+    name = str(getattr(parent, "name", "") or parent_typeid)
+    return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=name, title=name, typeid=parent_typeid,
+                                used_by=[PROJECT], satisfied=decided, note=note,
+                                needed_for=str(getattr(parent, "description", "") or ""))
 
 
 async def decide_automation(project: "Project", typeid: str, on: bool) -> None:
-    """Turn one of the project's automations on or off HERE — the setup window's Enable / Disable."""
-    from flow_sdk.builtin.trigger import Trigger, set_trigger_on  # noqa: PLC0415
+    """Turn the project's automations on or off HERE — the setup window's Enable / Disable. ``typeid`` is one
+    rule with no package, or a package (its parent): every rule of it, together."""
+    from flow_sdk.builtin.trigger import Trigger, set_package_on, set_trigger_on  # noqa: PLC0415
 
     rule = await Trigger.get_by_typeid(typeid)
-    if not isinstance(rule, Trigger) or str(rule.project_id or "") != str(project.id):
+    if isinstance(rule, Trigger):
+        if str(rule.project_id or "") != str(project.id):
+            raise SkipRefused("That automation is not part of this project.")
+        await set_trigger_on(rule, on)
+    elif not await set_package_on(typeid, on, project_id=str(project.id)):
         raise SkipRefused("That automation is not part of this project.")
-    await set_trigger_on(rule, on)
 
 
 def setup_run_address(project_id: str, root: str = "") -> str:

@@ -67,3 +67,35 @@ async def test_recommended_undecided_rules_are_setup_rows_and_deciding_clears_th
     assert await _automations_here(project) == []
     row = await Trigger.get_by_id(str(asked.id))
     assert (row.enabled, row.decided) == (False, True)
+
+
+async def test_a_package_is_one_setup_step_and_one_switch(tmp_path):
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.builtin.project_setup import _automations_here, decide_automation
+    from flow_sdk.builtin.trigger import set_package_on
+
+    project = Project(name="grouped", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    agent = Agent(name="Team code review", description="Reviews PRs.", project_id=str(project.id))
+    await agent.save()
+
+    def rule(name, parent=""):
+        return Trigger(name=name, project_id=str(project.id), asset_ref=str(tmp_path / name), recommended=True,
+                       enabled=False, decided=False, parent_type_id=parent or None)
+
+    answer, pick, alone = rule("answer", str(agent.typeid)), rule("pick", str(agent.typeid)), rule("alone")
+    for one in (answer, pick, alone):
+        await one.save()
+    await set_trigger_on(pick, False)                  # already decided: the package switch still covers it
+
+    rows = {r.name: r for r in await _automations_here(project)}
+    assert set(rows) == {"Team code review", "alone"}
+    assert (rows["Team code review"].typeid, rows["Team code review"].needed_for) == (str(agent.typeid), "Reviews PRs.")
+
+    await decide_automation(project, str(agent.typeid), True)
+    assert [(await Trigger.get_by_id(str(r.id))).enabled for r in (answer, pick)] == [True, True]
+    assert {r.name for r in await _automations_here(project)} == {"alone"}
+
+    await set_package_on(str(agent.typeid), False)
+    assert [(await Trigger.get_by_id(str(r.id))).enabled for r in (answer, pick)] == [False, False]

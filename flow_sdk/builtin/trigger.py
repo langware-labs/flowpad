@@ -1207,6 +1207,17 @@ class Trigger(ProjectedFields, Entity):
         own rules: the top-bar count, cheap enough to poll."""
         return ApiSuccessResponse(data=await cls.started_last_hour())
 
+    @core_action.post(action_name="set-package-on")
+    async def set_package_on_action(cls, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/set-package-on {parent_type_id, on} — turn every automation of one package
+        (the agent or wizard whose folder holds them) on or off on THIS machine. Answers how many changed."""
+        body = await get_current_request_info().get_post_data() or {}
+        parent = str(body.get("parent_type_id") or "")
+        if not parent:
+            return ApiFailResponse(message="parent_type_id is required", status_code=422)
+        changed = await set_package_on(parent, bool(body.get("on", True)))
+        return ApiSuccessResponse(data={"changed": len(changed)})
+
     @core_action.get(action_name="overview")
     async def overview_action(cls, request: Request) -> ApiResponse:
         """GET /api/v1/graph/trigger/overview — every automation, this machine's and the Flowpad cloud's, as
@@ -1515,7 +1526,7 @@ class Trigger(ProjectedFields, Entity):
         return ApiSuccessResponse(data={"log_mode": log_mode})
 
 
-async def set_trigger_on(trigger: Trigger, on: bool) -> Trigger:
+async def set_trigger_on(trigger: Trigger, on: bool, *, notify: bool = True) -> Trigger:
     """Turn ``trigger`` on or off on THIS machine — the only writer of ``enabled``.
 
     The row alone is saved (``write_projection``): the trigger's file is never touched, so a person's
@@ -1528,8 +1539,25 @@ async def set_trigger_on(trigger: Trigger, on: bool) -> Trigger:
     trigger._set_projection("decided", True, PROJECTION_SENTINEL)
     await write_projection(trigger, "enabled", bool(on))
     await arm_trigger(trigger, replace=True)
-    _project_setup_changed(trigger)
+    if notify:
+        _project_setup_changed(trigger)
     return trigger
+
+
+async def set_package_on(parent_type_id: str, on: bool, *, project_id: str = "") -> list[Trigger]:
+    """A package is one switch: every automation of ``parent_type_id`` (in ``project_id`` when given) on or off
+    here, together. Answers the rules it set."""
+    match: dict[str, Any] = {"parent_type_id": parent_type_id}
+    if project_id:
+        match["project_id"] = project_id
+    rules = [rule for rule in await Trigger.get_all({"match": match}) if not rule.is_builtin]
+    for rule in rules:
+        await set_trigger_on(rule, on, notify=False)
+    for project in {str(rule.project_id) for rule in rules if rule.project_id}:  # one re-read per project
+        from flow_sdk.core.project_status import SETUP, mark_stale  # noqa: PLC0415
+
+        mark_stale(project, [SETUP])
+    return rules
 
 
 def _project_setup_changed(trigger: Trigger) -> None:

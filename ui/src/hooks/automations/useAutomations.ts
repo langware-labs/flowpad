@@ -194,6 +194,15 @@ export function useSetAutomationEnabled() {
   });
 }
 
+/** A package's one switch: every rule of the parent on or off here. */
+export function useSetPackageEnabled() {
+  const invalidate = useInvalidateAutomations();
+  return useMutation<number, Error, { parentTypeId: string; on: boolean }>({
+    mutationFn: ({ parentTypeId, on }) => Trigger.setPackageEnabled(parentTypeId, on),
+    onSettled: () => void invalidate(),
+  });
+}
+
 /** Create (no id) or update (id) an automation from its fields. */
 export function useSaveAutomation() {
   const invalidate = useInvalidateAutomations();
