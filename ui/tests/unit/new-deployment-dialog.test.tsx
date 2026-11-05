@@ -157,7 +157,7 @@ describe('New deployment', () => {
   it('a value typed before Launch travels with the deploy, so one Launch is enough', async () => {
     const { deploy, agent } = renderDialog();
     vi.spyOn(agent, 'deployDefaults').mockResolvedValue({ environment: 'staging', environments: ['staging'] });
-    vi.spyOn(agent, 'requirements').mockResolvedValue([
+    vi.spyOn(agent, 'fetchRequirements').mockResolvedValue([
       {
         kind: 'credential',
         name: 'support_team',
