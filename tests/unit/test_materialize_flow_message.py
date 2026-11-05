@@ -228,3 +228,67 @@ async def test_remote_payload_preserves_hub_created_by_verbatim(monkeypatch, tmp
          "created_by": "hub-stamped-author"},
     )
     assert created_by == "hub-stamped-author"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_live_arrival_updates_the_conversation_before_thread_and_child_edge_work(monkeypatch, tmp_path):
+    """The recipient's bubble waits for the conversation UPDATE that names the new pointer
+    (realtime SLO: sender click -> bubble < 500 ms). That UPDATE follows the FlowMessage
+    CREATE at once; thread healing, the parent stamp and the child edge come after it, and
+    ``child_created`` is still announced only once the pointer is projected."""
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.record_paths.get_default_records_data_root",
+        lambda: tmp_path,
+    )
+    canonical = default_jsonl_path(_CONV_ID)
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    canonical.write_text("")
+
+    conv = Conversation(context_entities=[f"task-{_TASK_ID}"])
+    conv.id = _CONV_ID
+    calls: list[str] = []
+
+    async def _save(self, *args, **kwargs):
+        calls.append("fm_save")
+        return self
+
+    def _rec(name, result=None):
+        async def run(*args, **kwargs):
+            calls.append(name)
+            return result
+
+        return run
+
+    async def _entity_op(msg):
+        op = getattr(msg.op, "value", msg.op)
+        calls.append(f"op_{op}_{str(msg.to_entity).split('-')[0]}")
+
+    with (
+        patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+        patch.object(FlowMessage, "save", new=_save),
+        patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv)),
+        patch.object(Conversation, "notify_updated", new=_rec("conv_update")),
+        patch.object(Conversation, "_has_child_edge", new=AsyncMock(return_value=False)),
+        patch.object(Conversation, "attach_child", new=_rec("attach_child")),
+        patch.object(Conversation, "emit_child_op", new=_rec("child_created")),
+        patch("flow_sdk.core.network.resource_tracker.handle_entity_op", new=_entity_op),
+        patch("flow_sdk.stream_inbox.native_threads.heal_thread_root", new=_rec("heal_thread")),
+        patch(
+            "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
+            new=_rec("project_pointers"),
+        ),
+        patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
+    ):
+        await materialize_flow_message(
+            {"id": _FM_ID, "text": "hi"},
+            conversation_id=_CONV_ID,
+            someone_typeid=None,
+            notify=True,
+            remote=True,
+        )
+
+    assert calls.index("op_create_flow_message") < calls.index("project_pointers") < calls.index("conv_update"), calls
+    for later in ("heal_thread", "attach_child", "child_created"):
+        assert calls.index("conv_update") < calls.index(later), calls
+    assert calls.index("project_pointers") < calls.index("child_created")
