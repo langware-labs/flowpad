@@ -3786,6 +3786,7 @@ class AgenticProcess(Entity):
             if path is not None
             else not is_turn_busy(self)
         )
+        logger.info("run_shell_command %s: settled=%s verifiable=%s %r", self.id, settled, path is not None, command)
         if not settled:
             entry = await self._enqueue(f"{escape} {command}", source="shell-command")
             return ApiSuccessResponse(data={"status": "queued", "entry_id": entry.get("id")})
@@ -3795,6 +3796,7 @@ class AgenticProcess(Entity):
             if isinstance(typed, ApiFailResponse):
                 return typed
             if path is None or await self._shell_command_arrived(landed, path, command, since):
+                logger.info("run_shell_command %s: ran on attempt %d", self.id, attempt)
                 return ApiSuccessResponse(data={"status": "ran"})
             # The TUI dropped the keys (typed into a turn it was still running). Once it is
             # truly idle again, type it once more — never a third time.
