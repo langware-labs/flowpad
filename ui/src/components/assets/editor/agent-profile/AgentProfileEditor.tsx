@@ -30,6 +30,7 @@ import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfil
 import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
 import { AgentModelSizeField } from './AgentModelSizeField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
+import { AgentAutoLaunchTab } from './AgentAutoLaunchTab';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import type { AgentDocumentPatch } from './agent-fields';
@@ -415,6 +416,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   </span>
                 )}
               </TabsTrigger>
+              {!hub && (
+                <TabsTrigger value="autolaunch" data-testid="agent-tab-autolaunch">
+                  <Trans>Auto-launch</Trans>
+                </TabsTrigger>
+              )}
             </TabsList>
             <TabsContent
               value="instructions"
@@ -687,6 +693,12 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             <TabsContent value="deployments" className="mt-3">
               <AgentPlacesColumn agent={agent} />
             </TabsContent>
+            {/* Not force-mounted: read on first open, and its 10s poll stops when another tab is shown. */}
+            {!hub && (
+              <TabsContent value="autolaunch" className="mt-3">
+                <AgentAutoLaunchTab agent={agent} version={version} />
+              </TabsContent>
+            )}
           </Tabs>
         </section>
       </div>

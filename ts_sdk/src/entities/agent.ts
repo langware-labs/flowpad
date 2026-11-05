@@ -79,13 +79,68 @@ export interface AgentTokenAllocation {
   model: string;
 }
 
-/** How signed-out visitors run an agent: the hub's `VisitorDeployment` -- whether the owner allows it, and
- *  optionally the LLM endpoint each visitor's budget is drawn from and what each visitor may spend of it.
- *  With no `llm_source` the visitor brings their own token source. */
-export interface AgentVisitorDeployment {
+/** Who may open a public deployment: anyone with the `/open-pc/<id>` link, or only a holder of an invite code. */
+export type PublicDeploymentMode = 'link' | 'code';
+
+/** The hub's public-deployment settings on an agent (`agent/<id>/public_deployments`). */
+export interface PublicDeploymentSettings {
   allow_visitor_deployment: boolean;
-  llm_source?: string | null;
-  cap_usd?: number | null;
+  mode: PublicDeploymentMode;
+  max_deployments: number | null;
+  wrong_code_limit_per_hour: number;
+  llm_source: string | null;
+  cap_usd: number | null;
+}
+
+/** The body of `enable_public_deployments`: `llm_source` and `cap_usd` come together or not at all. */
+export interface PublicDeploymentSetup {
+  mode: PublicDeploymentMode;
+  max_deployments: number | null;
+  wrong_code_limit_per_hour?: number;
+  llm_source?: string;
+  cap_usd?: number;
+}
+
+/** One invite code, as the owner sees it: never the code itself, only its last four characters. */
+export interface PublicInviteCode {
+  id: string;
+  last4: string;
+  state: 'unused' | 'in_use' | 'revoked';
+  node_typeid: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/** A freshly minted code: the only time its plaintext is ever answered. */
+export interface NewPublicInviteCode {
+  id: string;
+  code: string;
+  last4: string;
+}
+
+/** One visitor's box. `code_id` is null for a link visitor. */
+export interface PublicDeployment {
+  node_typeid: string;
+  name: string;
+  status: string;
+  code_id: string | null;
+  code_last4: string | null;
+  created_date: string | null;
+  last_used_at: string | null;
+}
+
+export interface PublicDeploymentsState {
+  settings: PublicDeploymentSettings | null;
+  codes: PublicInviteCode[];
+  deployments: PublicDeployment[];
+}
+
+export type PublicDeploymentOp = 'open' | 'pause' | 'resume' | 'reset';
+
+export interface PublicDeploymentOpResult {
+  node_typeid: string;
+  workspace_url?: string;
+  status?: string;
 }
 
 export interface AgentReadinessItem {
@@ -542,17 +597,51 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
-   * Allow (or stop) signed-out visitors running this agent, each in a sandbox of their own -- funded, when
-   * `setup.llm_source` is given, by a public child of it capped at `setup.cap_usd`:
-   * `POST agent/<id>/setup_visitor_deployment`. Hub-owned and owner-only, so it is reflected to the hub;
-   * allowing is refused (409) for an agent visitors could not run, (403) for a source the caller may not
-   * allocate from. Visitors reach it only through the agent's `visitor` audience (`PUBLIC_VIEWER_ROLE`).
+   * Public deployments: visitors open `/open-pc/<id>` (with an invite code in `code` mode) and get a sandbox of
+   * their own. Hub-owned and owner-only, so every call is reflected to the hub.
    */
-  async setupVisitorDeployment(setup: AgentVisitorDeployment): Promise<AgentVisitorDeployment> {
-    const info = new ActionInfo('setup_visitor_deployment', this.getType(), this.id, 'POST');
+  async enablePublicDeployments(setup: PublicDeploymentSetup): Promise<PublicDeploymentSettings> {
+    return this.publicDeploymentsCall('enable_public_deployments', 'POST', { ...setup });
+  }
+
+  async disablePublicDeployments(): Promise<PublicDeploymentSettings> {
+    return this.publicDeploymentsCall('disable_public_deployments', 'POST', {});
+  }
+
+  /** Settings, codes and boxes; each list defaults to empty (an unpublished agent is answered by the desktop). */
+  async publicDeployments(): Promise<PublicDeploymentsState> {
+    const data =
+      (await this.publicDeploymentsCall<Partial<PublicDeploymentsState> | null>('public_deployments', 'GET')) ?? {};
+    return {
+      settings: data.settings ?? null,
+      codes: Array.isArray(data.codes) ? data.codes : [],
+      deployments: Array.isArray(data.deployments) ? data.deployments : [],
+    };
+  }
+
+  /** Mint `count` (1..100) codes; their plaintext is answered this once only. */
+  async addPublicCodes(count: number): Promise<NewPublicInviteCode[]> {
+    const data = await this.publicDeploymentsCall<{ codes?: NewPublicInviteCode[] }>('add_public_codes', 'POST', {
+      count,
+    });
+    return data?.codes ?? [];
+  }
+
+  /** Revoke a code: its sandbox is deleted and it stops working. */
+  async revokePublicCode(codeId: string): Promise<void> {
+    await this.publicDeploymentsCall('revoke_public_code', 'POST', { code_id: codeId });
+  }
+
+  /** `reset` deletes the box (status `DELETED`); the code stays and gets a fresh box next time. */
+  async managePublicDeployment(nodeTypeId: string, op: PublicDeploymentOp): Promise<PublicDeploymentOpResult> {
+    return this.publicDeploymentsCall('manage_public_deployment', 'POST', { node_typeid: nodeTypeId, op });
+  }
+
+  private publicDeploymentsCall<T>(name: string, method: 'GET' | 'POST', body?: Record<string, unknown>): Promise<T> {
+    const info = new ActionInfo(name, this.getType(), this.id, method);
     info.hubReflect = true;
-    info.bodyParameters = { ...setup };
-    return await dataManager.callAction<unknown, AgentVisitorDeployment>(info);
+    if (body) info.bodyParameters = body;
+    return dataManager.callAction<unknown, T>(info);
   }
 
   /**
