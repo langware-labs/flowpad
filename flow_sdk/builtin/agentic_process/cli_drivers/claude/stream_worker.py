@@ -56,7 +56,6 @@ from typing import AsyncIterator
 from uuid import uuid4
 
 from flow_sdk import toplog
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.launch_screen import classify_auth
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.claude_cron_job import (
     SCHEDULE_TOOLS,
     ClaudeCronJob,
@@ -72,6 +71,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata impor
     convert_event,
     final_end_frame,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.launch_screen import classify_auth
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import get_session_jsonl_path
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     STREAM_JSON_LINE_LIMIT_BYTES,
@@ -96,6 +96,7 @@ from flow_sdk.builtin.agentic_process.turn_abort import (
     TURN_TERMINATED_ATTR,
     abort_status_frame,
 )
+from flow_sdk.builtin.process_lifecycle import is_recoverable_worker_interruption
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowElementType,
@@ -107,6 +108,12 @@ logger = logging.getLogger(__name__)
 # Grace period before escalating SIGTERM → SIGKILL. Keep under the UI's cancel
 # timeout (~10 s) so a stuck subprocess never wedges the chat.
 CANCEL_GRACE_SECONDS = 5.0
+
+
+def _killed_from_outside(returncode: int) -> bool:
+    """The CLI turns SIGTERM into the shell's 128+N (143); a signal it does not catch arrives as -N."""
+    return is_recoverable_worker_interruption(128 - returncode if returncode > 128 else returncode)
+
 
 # What a user sees in place of the CLI's raw auth 401. The raw text is always
 # logged first — see ``_humanize_auth_error``.
@@ -658,14 +665,23 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 asyncio.get_running_loop().create_task(self._terminate_process())
 
     def turn_failure(self):
-        """Taken once: a refused credential, or exit ≠ 0 before any result (not a user stop)."""
+        """Taken once: a refused credential, or exit ≠ 0 before any result (not a user stop, not killed from outside)."""
         from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
+
         proc, ended = self._proc, self._result_seen or self._cancel_requested or self._stopped_while_parked
-        crashed = proc is not None and proc.returncode not in (None, 0) and not ended
+        crashed = (
+            proc is not None
+            and proc.returncode not in (None, 0)
+            and not ended
+            and not _killed_from_outside(proc.returncode)
+        )
         if self._failure_taken or not (self._auth_failure or crashed):
             return None
         self._failure_taken = True
-        code, message = self._auth_failure or ("cli_crashed", f"claude exited with code {proc.returncode} before answering")
+        code, message = self._auth_failure or (
+            "cli_crashed",
+            f"claude exited with code {proc.returncode} before answering",
+        )
         return LaunchError.of(code, message, "claude"), message if self._auth_failure else "\n".join(self._stderr_tail)
 
     async def _terminate_process(self) -> None:

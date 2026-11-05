@@ -1242,6 +1242,18 @@ class Agent(Entity):
             )
         return list(specs.values())
 
+    async def hub_desks(self) -> list[str]:
+        """The hub help desks this agent's sources read (their driver's ``hub_desk`` config key), by project id."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
+
+        desks: list[str] = []
+        for source in await DataSource.find_owned(self.typeid):
+            driver = await driver_of(str(source.provider or ""))
+            entry = (source.config or {}).get(driver.hub_desk) if driver is not None and driver.hub_desk else None
+            desks.append(str((entry.get("id") if isinstance(entry, dict) else entry) or "").strip())
+        return list(dict.fromkeys(d for d in desks if d))
+
     async def plan_deployment(
         self,
         environment: str | None = None,
@@ -1255,7 +1267,8 @@ class Agent(Entity):
         before it has a machine: where "use mine" stores values ahead of a deploy. A new row on each call;
         ``deployment_id`` plans the one it names again, and the deploy that follows names the row it plans. Its
         :meth:`webhook_specs` are kept on the hub, following its machine, each URL stored as its variable —
-        so readiness finds them and "use mine" never copies this computer's. ``token_allocation`` gives the
+        so readiness finds them and "use mine" never copies this computer's. Its :meth:`hub_desks` go along, so
+        the hub staffs the agent on them before a machine polls. ``token_allocation`` gives the
         placement its own hub LLM endpoint drawn from ``source`` (``None`` releases it back to the owner's
         default; omitted leaves it as it is)."""
         from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
@@ -1268,6 +1281,7 @@ class Agent(Entity):
             "environment": environment,
             "provider": provider or DEFAULT_CLOUD_PROVIDER,
             "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()],
+            "help_desks": await self.hub_desks(),
             **({"deployment_id": deployment_id} if deployment_id else {}),
         }
         if token_allocation is not _UNSET:

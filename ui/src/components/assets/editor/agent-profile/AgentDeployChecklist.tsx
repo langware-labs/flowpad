@@ -187,7 +187,16 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
         // renders its own green "Linked to cloud" chip once the project is
         // linked — which is why it is mounted only while this row is the
         // blocker, so that chip never doubles up with the row's Done marker.
-        if (!projectId) return <AgentProjectPicker agent={agent} onMoved={setMovedTo} />;
+        if (!projectId)
+          return (
+            <AgentProjectPicker
+              agent={agent}
+              onMoved={(id) => {
+                setMovedTo(id);
+                void loadVersion(); // the version row answers for the new project's checkout
+              }}
+            />
+          );
         return project ? <ProjectCloudLinkButton project={project} /> : undefined;
       case 'version':
         // A git checkout is fixed in git, not by a Publish button.

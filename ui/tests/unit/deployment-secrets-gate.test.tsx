@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent, Deployment, credentialsService, type AgentReadiness, type AgentReadinessItem } from '@sdk';
 
@@ -197,38 +198,55 @@ describe('the Secrets tab', () => {
 });
 
 describe('the new deployment dialog', () => {
-  it('a Launch refused as not ready lists what is missing and keeps Launch off until it is fixed', async () => {
-    const a = agent();
-    const refusal = {
-      response: {
-        status: 409,
-        data: {
+  // The refusal names the placement planned for the machine and environment as they were: changing either
+  // one drops it, or Launch would go on to deploy the old placement.
+  it.each([
+    ['the machine', () => Promise.resolve(void fireEvent.click(screen.getByTestId('new-deployment-type-e2b-md')))],
+    [
+      'the environment',
+      async () => {
+        Element.prototype.hasPointerCapture = vi.fn(() => false);
+        Element.prototype.releasePointerCapture = vi.fn();
+        Element.prototype.scrollIntoView = vi.fn();
+        await userEvent.click(screen.getByTestId('new-deployment-environment'));
+        await userEvent.click(screen.getByRole('option', { name: /Another name/ }));
+      },
+    ],
+  ])(
+    'a Launch refused as not ready lists what is missing and keeps Launch off until %s changes',
+    async (_what, change) => {
+      const a = agent();
+      const refusal = {
+        response: {
+          status: 409,
           data: {
-            code: 'not_ready',
-            readiness: readiness([item('stripe', { vars: ['STRIPE_KEY'], missing: ['STRIPE_KEY'] })]),
-            deployment: DEPLOYMENT,
+            data: {
+              code: 'not_ready',
+              readiness: readiness([item('stripe', { vars: ['STRIPE_KEY'], missing: ['STRIPE_KEY'] })]),
+              deployment: DEPLOYMENT,
+            },
           },
         },
-      },
-    };
-    const deploy = vi.spyOn(a, 'deploy').mockRejectedValue(refusal);
-    const onLaunched = vi.fn();
+      };
+      const deploy = vi.spyOn(a, 'deploy').mockRejectedValue(refusal);
+      const onLaunched = vi.fn();
 
-    renderInQuery(<NewDeploymentDialog agent={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
-    fireEvent.click(screen.getByTestId('new-deployment-type-e2b-sm'));
-    fireEvent.click(screen.getByTestId('new-deployment-launch'));
+      renderInQuery(<NewDeploymentDialog agent={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
+      fireEvent.click(screen.getByTestId('new-deployment-type-e2b-sm'));
+      fireEvent.click(screen.getByTestId('new-deployment-launch'));
 
-    expect(await screen.findByTestId('deployment-secret-stripe')).toHaveTextContent('flow credentials set stripe');
-    expect(deploy).toHaveBeenCalledWith({
-      environment: 'production',
-      provider: 'e2b',
-      tokenAllocation: null,
-      machineSize: 'sm',
-    });
-    expect(screen.getByTestId('new-deployment-launch')).toBeDisabled();
-    expect(onLaunched).not.toHaveBeenCalled();
+      expect(await screen.findByTestId('deployment-secret-stripe')).toHaveTextContent('flow credentials set stripe');
+      expect(deploy).toHaveBeenCalledWith({
+        environment: 'production',
+        provider: 'e2b',
+        tokenAllocation: null,
+        machineSize: 'sm',
+      });
+      expect(screen.getByTestId('new-deployment-launch')).toBeDisabled();
+      expect(onLaunched).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByTestId('new-deployment-type-e2b-md'));
-    expect(screen.queryByTestId('deployment-secrets-gate')).toBeNull();
-  });
+      await change();
+      expect(screen.queryByTestId('deployment-secrets-gate')).toBeNull();
+    },
+  );
 });

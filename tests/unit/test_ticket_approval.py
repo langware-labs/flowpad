@@ -1,5 +1,6 @@
 """A reply into a help-desk ticket waits for a team member's `approve` in the ticket's private conversation."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -37,13 +38,29 @@ def _world(monkeypatch, messages, *, kind=ConversationKind.HELPDESK, private=Tru
     monkeypatch.setattr(approval.User, "self_ids", self_ids)
 
 
+_CLOCK = iter(range(1, 1000))
+
+
 def _said(user_id, text):
-    return SimpleNamespace(sender=MessageSender.user(user_id), text=text)
+    return SimpleNamespace(
+        sender=MessageSender.user(user_id), text=text, occurred_at=datetime.fromtimestamp(next(_CLOCK), UTC)
+    )
 
 
 async def test_a_team_members_approve_lets_the_reply_go(monkeypatch):
     _world(monkeypatch, [_said("me", "proposal"), _said("dana", "Approve")])
     assert await approval.unapproved_reason(TICKET) == ""
+
+
+@pytest.mark.parametrize("text", ["I do not approve this", "not approved - the refund is wrong", "should I approve?"])
+async def test_a_message_that_merely_mentions_approve_is_not_approval(monkeypatch, text):
+    _world(monkeypatch, [_said("me", "proposal"), _said("dana", text)])
+    assert "not approved" in await approval.unapproved_reason(TICKET)
+
+
+async def test_a_changed_proposal_needs_a_fresh_approve(monkeypatch):
+    _world(monkeypatch, [_said("dana", "approve"), _said("me", "updated proposal")])
+    assert "not approved" in await approval.unapproved_reason(TICKET)
 
 
 async def test_the_agents_own_account_cannot_approve(monkeypatch):
