@@ -853,20 +853,20 @@ async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> 
     between that read and this write. Saving the snapshot row would write its
     stale ``visible=True`` back and resurrect the closed tab — so the order is
     applied to the LIVE row, and a row hidden or gone meanwhile is skipped."""
-    wrote = False
+    moved: dict[str, int] = {}
     for idx, tid in enumerate(new_order):
         tab = by_id.get(tid)
         if tab is None or getattr(tab, "tab_order", 0) == idx:
             continue
-        # Field-scoped stamp: the earlier live-read-then-save() still lost a
-        # `close_many` that committed between the read and the save (the whole
-        # row went back, visible=True included). The driver stamp hydrates the
-        # authoritative row INSIDE the writer transaction, no-ops on a hidden
-        # row, and json_sets only tab_order. Callers broadcast tabs_changed.
         tab.tab_order = idx
-        _, stamped = await Tab._db.stamp_tab_order(tid, idx)
-        wrote = wrote or stamped
-    return wrote
+        moved[tid] = idx
+    # Field-scoped stamp: the earlier live-read-then-save() still lost a
+    # `close_many` that committed between the read and the save (the whole
+    # row went back, visible=True included). The driver reads the
+    # authoritative rows INSIDE the writer transaction, skips hidden ones,
+    # and json_sets only tab_order — all moved rows in one statement.
+    # Callers broadcast tabs_changed.
+    return bool(await Tab._db.stamp_tab_orders(moved))
 
 
 # The two live-session target types: their rows are ALWAYS DB-backed, so absence
