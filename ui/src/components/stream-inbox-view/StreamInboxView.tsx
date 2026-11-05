@@ -116,18 +116,24 @@ type RowDeleteAction =
 
 // ── Time formatter (Gmail-style) ────────────────────────────────────────────
 // today → "12:34 PM"  ·  this year → "Apr 28"  ·  older → locale date
+// Every row formats its time on every render of the list, and the list re-renders on each
+// conversation/message change: ``toLocale*String(undefined, opts)`` builds a fresh
+// Intl.DateTimeFormat per call (311 ms of one create in a profile). One formatter per shape.
+const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const DAY_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const DATE_FMT = new Intl.DateTimeFormat(undefined);
 function formatGmailTime(iso?: string | Date | null): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+    return TIME_FMT.format(d);
   }
   if (d.getFullYear() === now.getFullYear()) {
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return DAY_FMT.format(d);
   }
-  return d.toLocaleDateString();
+  return DATE_FMT.format(d);
 }
 
 // ── Conversation list row (Gmail thread row) ────────────────────────────────
