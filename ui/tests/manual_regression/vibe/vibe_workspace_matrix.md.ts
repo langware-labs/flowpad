@@ -15,7 +15,6 @@ import path from 'node:path';
 
 import {
   API,
-  activeDisplayHash,
   createVibeFixture,
   destroyVibeFixture,
   displayUrlRe,
@@ -470,14 +469,16 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       process.execPath,
       [
         '-e',
-        "require('http').createServer((q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><p id=\"marker\">VW25_APP_READY</p>')}).listen(0,'127.0.0.1',function(){console.log(this.address().port)})",
+        "require('http').createServer((q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><p id=\"marker\">VW25_APP_READY</p>')}).listen(0,'127.0.0.1',function(){process.stdout.write(this.address().port+'\\n')})",
       ],
       { cwd: fixture.root, stdio: ['ignore', 'pipe', 'inherit'] },
     );
     try {
       const port = await new Promise<number>((resolve, reject) => {
         server.once('error', reject);
-        server.stdout.once('data', (chunk) => resolve(Number(String(chunk).trim())));
+        // The port as plain digits: the worker's FORCE_COLOR made a console.log'd number arrive as
+        // '\u001b[33m37385\u001b[39m', which Number() reads as NaN (an artifact registered with no port).
+        server.stdout.once('data', (chunk) => resolve(Number(/\d+/.exec(String(chunk))?.[0])));
       });
       const address = { port };
 
@@ -501,19 +502,31 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       // Re-showing the same app is idempotent, and still one row.
       await showApp(request, fixture.processId, artifactId);
       await expect(app.locator('#marker')).toHaveText('VW25_APP_READY');
+      // One row for the app: a child of the session's tab (5f383111f: each shown target is its own
+      // workspace child; there is no host-keyed active-display row any more).
       const tabs = (await (await request.get(`${API}/api/v1/graph/tab/list_all`)).json()).data?.tabs ?? [];
-      const displays = tabs.filter((t: { pointer?: string }) =>
-        (t.pointer ?? '').includes(activeDisplayHash(fixture.processId)),
-      );
-      expect(displays).toHaveLength(1);
-      expect(displays[0].pointer).toContain(`artifact-${artifactId}`);
+      const host = tabs.find((t: { target_id?: string }) => t.target_id === fixture.processId);
+      const appRows = tabs.filter((t: { pointer?: string }) => (t.pointer ?? '').includes(`artifact-${artifactId}`));
+      expect(appRows).toHaveLength(1);
+      expect(appRows[0].parent_tab_id).toBe(host?.id);
 
-      // VW-26: leaving vibe strips BOTH the host and the active-display marker —
-      // they only mean something while a display pane is on screen to be one.
+      // VW-26: leaving vibe strips the host — it only means something while a display pane is on
+      // screen to be one — and the app keeps its artifact address. The session's own switch
+      // (5a67651f9 retired the footer toggle) re-points the SESSION tab to Chat, so the page shows the
+      // session; the app's row is carried out as a top-level tab (docs/tab-management.md "Leaving
+      // Vibe carries children out"), still addressed by its artifact.
       await page.getByTestId('session-surface-chat').click();
-      await expect(page).not.toHaveURL(/activeDisplay=1/);
       await expect(page).not.toHaveURL(/[?&]host=/);
-      await expect(page).toHaveURL(new RegExp(`/dock/app/artifact-${artifactId}`));
+      await expect(page).toHaveURL(new RegExp(`/dock/shell/[^?]*${fixture.processId}[^?]*\\?(.*&)?viewMode=standard`));
+      const appRowAfter = async () => {
+        const all = (await (await request.get(`${API}/api/v1/graph/tab/list_all`)).json()).data?.tabs ?? [];
+        const rows = all.filter((t: { pointer?: string }) => (t.pointer ?? '').includes(`artifact-${artifactId}`));
+        return rows.map((t: { parent_tab_id?: string | null; pointer?: string }) => ({
+          top: !t.parent_tab_id,
+          hosted: /[?&]host=/.test(t.pointer ?? ''),
+        }));
+      };
+      await expect.poll(appRowAfter).toEqual([{ top: true, hosted: false }]);
     } finally {
       server.kill();
       await destroyVibeFixture(request, fixture);
