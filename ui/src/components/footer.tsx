@@ -13,7 +13,7 @@ import { HubReleaseLabel } from '@src/components/version-popover/hub-release-lab
 import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
-import { SubAgent, TypeId } from '@sdk';
+import { SubAgent, TypeId, dataContext } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { HelpdeskLoadDialog } from '@src/components/helpdesk/HelpdeskLoadDialog';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
@@ -49,9 +49,9 @@ export function Footer({ className = '' }: FooterProps) {
   const { version, project } = useContext();
   const { t } = useLingui();
   const { agentId } = useParams();
-  // `isHubOnly()`, not the page: a desktop showing the hub page still has a backend that
+  // The runtime's capability, not the page: a desktop showing the hub page still has a backend that
   // can ask for help (and a person who lands there after signing in still needs to).
-  const canAskForHelp = !isHubOnly();
+  const canAskForHelp = dataContext.caps.localFiles;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<SubAgent>(agentTypeId);
   const [showHelpdesk, setShowHelpdesk] = useState(false);
