@@ -636,8 +636,10 @@ export class Agent extends APIEntity<Agent> {
     this.project_id = projectId;
   }
 
-  /** What this agent needs to run anywhere — credentials, permissions, variables. Names only. */
-  async requirements(): Promise<AgentRequirement[]> {
+  /** What this agent needs to run anywhere — credentials, permissions, variables. Names only.
+   *  Not named `requirements`: the record carries a field of that name (agent.json), and the base
+   *  constructor copies every wire field onto the instance, which would replace this method. */
+  async fetchRequirements(): Promise<AgentRequirement[]> {
     return (await this.get<AgentRequirement[] | null>('requirements')) ?? [];
   }
 
