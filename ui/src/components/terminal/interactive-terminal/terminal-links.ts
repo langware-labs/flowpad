@@ -11,6 +11,8 @@ interface LogicalLine {
   ends: Array<{ x: number; y: number }>;
   /** Each character's foreground color; -1 is the default color. */
   fg: number[];
+  /** Each character's background color; -1 is the default color. */
+  bg: number[];
 }
 
 /** What a TUI draws down the side of a box or a quote; layout, never part of the text. */
@@ -194,7 +196,7 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
   while (below(end) && (end - start + 1) * cols < maxCells) end++;
   if ((end - start + 1) * cols >= maxCells) return undefined;
 
-  const line: LogicalLine = { text: '', starts: [], ends: [], fg: [] };
+  const line: LogicalLine = { text: '', starts: [], ends: [], fg: [], bg: [] };
   for (let row = start; row <= end; row++) {
     const bufferLine = buffer.getLine(row);
     if (!bufferLine) continue;
@@ -222,8 +224,10 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
       const chars = cell.getChars() || ' ';
       line.text += chars;
       const fg = cell.isFgDefault() ? -1 : (cell.getFgColorMode() << 24) | cell.getFgColor();
+      const bg = cell.isBgDefault() ? -1 : (cell.getBgColorMode() << 24) | cell.getBgColor();
       for (let i = 0; i < chars.length; i++) {
         line.fg.push(fg);
+        line.bg.push(bg);
         line.starts.push({ x: col + 1, y: row + 1 });
         line.ends.push({ x: col + cell.getWidth(), y: row + 1 });
       }
@@ -250,9 +254,26 @@ function coloredCommands(line: LogicalLine): LinkMatch[] {
   return found;
 }
 
+/**
+ * A command ends where the background its `!` sits on ends. A TUI paints its own decoration over
+ * the rows in another background: Claude Code's "Jump to bottom (ctrl+End) ↓" pill lands on
+ * whatever row is at the bottom of its scrolled view, overwriting the rest of a command echoed there.
+ */
+function withinBackground(line: LogicalLine, match: LinkMatch): LinkMatch | undefined {
+  const bg = line.bg[match.index];
+  let end = match.index;
+  while (end < match.index + match.text.length && line.bg[end] === bg) end++;
+  const text = line.text.slice(match.index, end).trimEnd();
+  return COMMAND_LINK.test(text) ? { text, index: match.index } : undefined;
+}
+
 /** Every link on a logical line: commands (plain-text and colored), then files and URLs. */
 function lineMatches(line: LogicalLine): LinkMatch[] {
-  return linkMatches(line.text, [...coloredCommands(line), ...commandLinkMatches(line.text)]);
+  const commands = [...coloredCommands(line), ...commandLinkMatches(line.text)];
+  return linkMatches(
+    line.text,
+    commands.map((match) => withinBackground(line, match)).filter((match): match is LinkMatch => !!match),
+  );
 }
 
 function rangeOf(line: LogicalLine, match: LinkMatch): IBufferRange {
