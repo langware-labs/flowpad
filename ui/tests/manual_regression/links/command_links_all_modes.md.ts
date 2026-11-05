@@ -175,17 +175,31 @@ const xtermPoint = async (page: Page, form: Form) => {
   // Claude Code answers every `!` command, repainting the screen as it streams; a point read while
   // the rows still move is a different row by the time the mouse lands. Read it from a still screen,
   // the way a person clicks what they see.
-  const rows = page.locator('.xterm-rows:visible').first();
-  let last = '';
-  await expect
-    .poll(async () => {
-      const now = await rows.innerText();
-      const still = now === last;
-      last = now;
-      return still;
-    }, { intervals: [1_000], timeout: adjusted(120_000) })
-    .toBe(true);
-  return printedLinkPoint(page, new RegExp(`!\\s+sh mark\\.sh ${form}`), '', { scrollBack: true });
+  const screen = page.locator('.xterm-rows:visible').first();
+  const still = async () => {
+    let last = '';
+    await expect
+      .poll(async () => {
+        const now = await screen.innerText();
+        const same = now === last;
+        last = now;
+        return same;
+      }, { intervals: [1_000], timeout: adjusted(120_000) })
+      .toBe(true);
+  };
+  const pattern = new RegExp(`!\\s+sh mark\\.sh ${form}`);
+  await still();
+  // An earlier form can have left the screen. Never scroll for it: in its fullscreen renderer
+  // Claude Code owns the wheel (there is no xterm scrollback) and its scrolled view paints a
+  // "Jump to bottom" pill over the rows. Give the terminal more rows instead: Claude Code repaints
+  // its view at the new size, earlier turns included.
+  const forForm = page.locator('.xterm-rows:visible > div').filter({ hasText: pattern });
+  for (let grow = 0; (await forForm.count()) === 0 && grow < 3; grow++) {
+    const size = page.viewportSize() ?? { width: 1280, height: 720 };
+    await page.setViewportSize({ width: size.width, height: size.height * 2 });
+    await still();
+  }
+  return printedLinkPoint(page, pattern);
 };
 
 const SURFACES: Surface[] = [
@@ -226,6 +240,14 @@ test.beforeAll(async () => {
     '#!/bin/sh\nd=$(dirname "$0")/out; mkdir -p "$d"; printf %s "$BROWSER" > "$d/$1-$(date +%s)-$$"\n',
   );
   await chmod(join(root, 'mark.sh'), 0o755);
+  // Claude Code may answer a run, and its own Bash tool shares the shell that `!` runs in: once it
+  // ran `cd out` to look at the files, and the next `! sh mark.sh` found no mark.sh. Its tools are
+  // not under test, so the session folder denies them; `!` is the user's shell mode, not a tool.
+  await mkdir(join(root, '.claude'), { recursive: true });
+  await writeFile(
+    join(root, '.claude', 'settings.json'),
+    JSON.stringify({ permissions: { deny: ['Bash', 'Edit', 'Write', 'NotebookEdit'] } }),
+  );
   const rq = await apiContext();
   const project = await (
     await rq.post(`${API}/api/v1/graph/project`, { data: { name: `cmdlinks-${Date.now()}`, fs_storage_mount_path: root } })
