@@ -134,7 +134,7 @@ async def _unplaced(ctx: DeployContext) -> Optional[str]:
         ctx.provider or DEFAULT_CLOUD_PROVIDER,
         environment=ctx.environment or DEFAULT_CLOUD_ENVIRONMENT,
     )
-    return str(row.id) if row is not None and not row.origin.external_id else None
+    return str(row.id) if row is not None and not (row.origin and row.origin.external_id) else None
 
 
 async def _plan(ctx: DeployContext) -> None:
