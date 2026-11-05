@@ -243,7 +243,7 @@ class AskResult(ReturnedValue):               # compute.returned.ask
 
 class WizardResult(ReturnedValue):            # compute.returned.wizard
     steps: dict[str, ReturnedValue]           # step id → that step's OWN answer
-    stopped_at: str                           # the step whose on_fail: stop ended the run early
+    stopped_at: str                           # the step whose on_fail: stop or on_result ended the run early
 
 class DecisionVerdict(ReturnedValue):         # compute.returned.decision
     met: bool                                 # every requirement held
@@ -446,6 +446,14 @@ A wizard sequences calls. Its answer is a `WizardResult` whose `steps` are the
 ops' own results; a step never reached is absent. This is also how a fallback
 is written: a cli op, then an agent op with the same check — when the first
 reached the goal, the second's check holds and it does nothing.
+
+Ordered step `on_result` rules can return the step's outcome or end the wizard
+as `NOT_APPLICABLE`; see the executable [wizard example](wizards.md#6-return-early-with-an-explicit-outcome).
+Non-success early returns expose no consumable value, even if earlier steps
+produced one. Refusals cannot be overridden, and busy or timed-out work cannot
+be remapped to a skip. A successful early return still validates the declared
+output. Every wizard outcome and progress snapshot carries its `invocation_id`,
+including preflight refusal; a supplied call context preserves the caller's ID.
 
 ```python
 install = ComputeOpSpec(name="marker", subkind="cli",

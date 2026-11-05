@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from typing import ClassVar, Optional, Union
 
-from pydantic import ConfigDict, model_serializer, model_validator
+from pydantic import ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec._form import ShapeForm
@@ -72,6 +72,38 @@ class StepKind(StrEnum):
     WIZARD = "wizard"
 
 
+class ResultReturn(StrEnum):
+    """How a matching step result ends its containing wizard."""
+
+    RESULT = "result"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class WizardResultRule(DataSpec):
+    """An ordered equality match on result fields, never an expression."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    when: dict[str, Union[StrictBool, StrictInt, StrictFloat, StrictStr, None]]
+    return_: ResultReturn = Field(alias="return")
+
+    @model_validator(mode="after")
+    def _legal(self) -> "WizardResultRule":
+        if not self.when:
+            raise ValueError("on_result requires a nonempty when")
+        for path in self.when:
+            if not all(part.isidentifier() and not part.startswith("_") for part in path.split(".")):
+                raise ValueError(f"on_result field path {path!r} is not a public field path")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _return_alias(self, handler):
+        data = handler(self)
+        if "return_" in data:
+            data["return"] = data.pop("return_")
+        return data
+
+
 class WizardStepSpec(DataSpec):
     """One step: a call.
 
@@ -107,6 +139,8 @@ class WizardStepSpec(DataSpec):
     #: and naming it by default would put every value into the environment.
     bind: str = ""
     on_fail: str = ON_FAIL_ABORT
+    #: First matching result rule returns from this wizard; unmatched results keep on_fail.
+    on_result: list[WizardResultRule] = []
     #: Run this step only while every named scope value EQUALS the text given
     #: (``{"TEAM": "billing"}``), else it is passed as not applicable. An equality on
     #: values already in scope, like ``args``: never a template, never an expression.

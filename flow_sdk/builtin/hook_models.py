@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.change_event import ChangeEvent
@@ -94,6 +94,8 @@ class ExecutedAction(BaseModel):
     trigger_name: str
     action_type: ActionType
     counter: int
+    # Keep invocation evidence out of the existing hook wire response.
+    _execution: Any = PrivateAttr(default=None)
 
 
 

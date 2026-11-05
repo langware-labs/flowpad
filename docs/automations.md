@@ -42,7 +42,37 @@ a request itself (`ui/tests/unit/triggers-view-url.test.ts` fails if one does).
 | `bus_map`, `match_pattern` | `automations/bus_map.py`, `tags/bus.explain_subscription_match` | the bus map; the sandbox |
 | `create`, `{id}/update`, `{id}/delete` | `automations/spec_file.py` for file-defined rows | — |
 
-## The gate and the wizard (stream inbox automations)
+## Execution is a wizard
+
+The backend compiles the existing automation declaration into a `WizardSpec`
+(`automations/compiler.py`) and calls the ordinary wizard runner
+(`automations/execution.py`). It does not create a Wizard entity or rewrite the
+automation's file. The automation screens, SDK methods and trigger fields keep
+their existing forms.
+
+The trigger handles delivery: subscription or schedule, enabled state, execution
+location, cycle prevention and storm protection. The compiled wizard calls
+ComputeOps for confirmation, subject preparation, the decision, acceptance,
+GraphWorkflow activation and the work. Legacy `actions` and schedule `instruction`
+are calls in that same sequence; legacy actions still continue after an action
+fails, and launch-only actions still return admission rather than waiting for
+their child to finish. A `then` keeps its awaited wizard behavior.
+
+Acceptance stays after confirmation and decision, before effects: a declined
+event spends no counter or `fire_once`; an accepted event spends them before
+running its work, even if that work fails. The TAG invocation keeps its existing
+per-trigger lock across those steps. Test runs omit confirmation and accounting,
+while still evaluating the message decision. Decision previews run the decision
+sequence without acceptance, effects or automation history; cached preview
+answers remain cached. Check validates the same compiled definition without importing
+executable blocks. The automation run ID is the wizard invocation ID.
+
+Overlapping Wizard invocations are recorded as skipped and do not accept a
+second fire. Execution exceptions produce terminal failed history with the
+completed-step outline. Public history keeps outlines and invocation IDs,
+not private prepared payloads or a new per-operation receipt store.
+
+## The gate and the work (stream inbox automations)
 
 An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbox-automations.md`):
 
@@ -50,11 +80,11 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   API and what each answer must be. A string in the file is the sentence a person typed, worded
   into one yes/no question by the event's **subject** (`automations/decision_subjects.py` — the
   stream inbox answers for `source_item` targets with a `stream_inbox.message.state`). The gate
-  runs in the TAG fire path after every cheap check and **before the counter**: a "no" writes a
+  runs as a step in the compiled wizard after every cheap check and **before acceptance**: a "no" writes a
   `tag_declined` row (`reason_code` `decision_no` / `decision_unavailable`) and spends nothing —
   no counter, no `fire_once`, no `trigger.fired`. Every ask emits `trigger.decided`.
 - **`then`** is a wizard (`trigger.then`: a `ref`, inline `steps` + `ops`, or the `run_agent` /
-  `run_script` sugar) run by `automations/then.py` through the ordinary wizard runner with the
+  `run_script` sugar) composed by `automations/then.py` and called from the compiled wizard with the
   fire's scope: the subject's state under its key (`MESSAGE`), the `LaunchContext` the agent step
   stamps (the session keyed to the conversation, the message as a chip, what the rule decided
   under `context_data["automation"]`), the envelope under `EVENT`. The state is in scope only
@@ -97,6 +127,10 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   answers the lookups by id (`by_id`, `test_event`) so the automation code never names a message.
   Check reports a missing Decision API under its own area, `decider`: the rule is fine, the machine
   is not ready.
+
+`Trigger.invoke` uses the same wizard execution path for callable hooks. The
+removed `ActivationRule` engine is not restored: testing that unsupported legacy
+rule-folder form returns the existing configuration-refusal response (422).
 
 ## On, off and recommended
 
