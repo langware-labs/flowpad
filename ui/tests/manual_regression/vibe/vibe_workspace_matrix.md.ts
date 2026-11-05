@@ -272,14 +272,13 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
     }
   });
-      // A project's document outside its project (the bare `/dock/assets/…` form)
-      // is the GLOBAL assets scope: that tab belongs to no project (a scope-keyed
-      // tab's project is its scope — 68a23b08a), so Discuss has nowhere to start a
-      // session and says so.
+      // A project's document outside its project (the bare `/dock/assets/…` form). Since 983df222b the
+      // viewer's own Chat toggle replaced the top-bar Discuss icon, and it needs no project: a chat runs in
+      // the doc's project, else the active one, else a per-instance scratch folder. So it is offered here.
       await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`);
-      const globalDiscuss = page.getByTestId('top-nav-bar').getByTestId('asset-discuss-in-vibe');
-      await expect(globalDiscuss).toBeDisabled();
-      await expect(globalDiscuss).toHaveAccessibleName('Select a project to discuss this file');
+      const globalChat = page.getByTestId('viewer-chat-toggle');
+      await expect(globalChat).toBeEnabled();
+      await expect(globalChat).toHaveAccessibleName('Chat about this file');
 
       // Opened inside its project — the address the app itself places a project's
       // document at (`rebaseAssetsOntoProject`: /dock/project/<P>/<editor tail>).
@@ -289,14 +288,15 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       // under more than one root, so a bare text match is ambiguous.
       const crumb = page.getByTestId('top-nav-crumb-details-trigger');
       await expect(crumb).toHaveAttribute('title', 'vibe-origin-source.md');
-      // Discuss lives in the bar's action cluster now (the editor header is gone).
-      await expect(page.getByTestId('top-nav-bar').getByTestId('asset-discuss-in-vibe')).toBeVisible();
+      // The viewer's Chat toggle is the one in/out control for "chat with this doc" (983df222b).
+      await expect(page.getByTestId('viewer-chat-toggle')).toBeVisible();
+      await expect(page.getByTestId('viewer-chat-toggle')).toHaveAttribute('data-active', 'false');
       expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('0.0');
       expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('100.0');
       const before = new URL(page.url());
-      await page.getByTestId('asset-discuss-in-vibe').click();
+      await page.getByTestId('viewer-chat-toggle').click();
 
-      // Discuss opens a Vibe HOST tab with the document as its child (bd2e5b0d1,
+      // Entering the chat opens a Vibe HOST tab with the document as its child (bd2e5b0d1,
       // `navigation.discussAsset`): the document keeps its own editor tail, now
       // addressed under the session that discusses it.
       const tail = before.pathname.slice(`/dock/project/${fixture.projectId}/`.length);
@@ -352,10 +352,10 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
 
       // A `flow show` steers only the workspace of the process that shows, and it
       // does so by NAVIGATING: the URL becomes the target's own display address,
-      // named by the host (`.../process/<typeid>/display/...`) and marked as the
-      // workspace's replaceable active display. A prior target reopened from the
-      // history popover is promoted to its own DURABLE child — same address, no
-      // marker.
+      // named by the host (`.../process/<typeid>/display/...`). Since 5f383111f there
+      // is no `activeDisplay` marker: each shown target is its own workspace child
+      // tab (keyed `|@<host>`), and a prior target reopened from the history popover
+      // returns to that same address.
       const hosted = (id: string) =>
         new RegExp(
           `/dock/project/${fixture.projectId}/process/agentic_process-${fixture.processId}/display/editor/markdown/typeid/markdown-${id}`,
@@ -364,13 +364,10 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await showTypeId(request, fixture.processId, `markdown-${source.id}`);
       await expect(page.getByText('VW17_ORIGINAL')).toBeVisible();
       await expect(page).toHaveURL(hosted(source.id));
-      await expect(page).toHaveURL(/activeDisplay=1/);
 
       await showTypeId(request, fixture.processId, `markdown-${related.id}`);
       await expect(page.getByText('VW20_RELATED')).toBeVisible();
-      // The SAME active-display row re-points at the new target.
       await expect(page).toHaveURL(hosted(related.id));
-      await expect(page).toHaveURL(/activeDisplay=1/);
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
 
       await page.getByTestId('display-history').click();
@@ -380,9 +377,8 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await expect(history.nth(0)).toContainText(related.id.slice(0, 8));
       await expect(history.nth(1)).toContainText(source.id.slice(0, 8));
       await history.nth(1).click();
-      // Promoted, so it keeps the address but sheds the active-display marker.
+      // Reopened at its own hosted address.
       await expect(page).toHaveURL(hosted(source.id));
-      await expect(page).not.toHaveURL(/activeDisplay=1/);
       await expect(page.getByText('VW17_ORIGINAL')).toBeVisible();
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
       await page.reload();
