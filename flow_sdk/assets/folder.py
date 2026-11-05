@@ -37,7 +37,7 @@ def remove_asset_files(type_name: str, asset_ref: str | None) -> None:
 
     info = SchemaRegistry.get(type_name)
     path = Path(asset_ref) if asset_ref else None
-    if path is None or info is None or not info.owns_main_ref:
+    if path is None or info is None or not (info.owns_main_ref or info.deletes_files):
         return
     if isinstance(info.shape, File):
         owned = path.is_file() and path.suffix.lower() in info.shape.exts

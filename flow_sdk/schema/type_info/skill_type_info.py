@@ -38,6 +38,8 @@ SKILL = TypeInfo(
     ),
     editor="skill",
     hub_main_file="SKILL.md",
+    # The folder IS the skill: a delete takes it, or the next index brings the skill back.
+    deletes_files=True,
     fts_content=("name", "description", "body"),
     identity_carrier=frontmatter_identity(),
     asset_hash_fn=skill_asset_hash,
