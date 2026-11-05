@@ -45,10 +45,12 @@ async function openFixtureTerminal(page: Page) {
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
   await page.goto('/dock/shell/new_terminal?viewMode=advanced');
   await expect(page).toHaveURL(/\/dock\/shell\/shell-/);
+  // The project is named after its own temp root: names are unique (d0c2a3ee8), and a worker restart
+  // after a failure makes a fresh root, so a fixed name was refused (400) for every later test.
   const shellId = await page.evaluate(async ({ sdkModule, root }) => {
     const sdk = await import(sdkModule);
     const project = await sdk.Project.getProjectByPath(root) ??
-      await new sdk.Project({ name: 'Terminal link project', fs_storage_mount_path: root }).save();
+      await new sdk.Project({ name: `Terminal link project ${root.split('/').pop()}`, fs_storage_mount_path: root }).save();
     const cn = sdk.dataContext.computeNode;
     const shell = sdk.Shell.create(cn, { name: 'Link terminal', workdir: root });
     shell.project_id = project.id;
