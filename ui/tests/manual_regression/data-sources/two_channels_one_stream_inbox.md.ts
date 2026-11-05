@@ -17,7 +17,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { apiContext } from '../_shared/api';
 
 const PER_SOURCE = 60;
-// The inbox shows one page (STREAM_INBOX_PAGE_SIZE = 100) of the merged 2 × 60 and badges a full page "100+".
+// The StreamInbox shows one page (STREAM_INBOX_PAGE_SIZE = 100) of the merged 2 × 60 and badges a full page "100+".
 const PAGE = 100;
 const ALL_SHOWN = Math.min(2 * PER_SOURCE, PAGE);
 const PER_CALL = 20;

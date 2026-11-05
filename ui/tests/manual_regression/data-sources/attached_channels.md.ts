@@ -161,7 +161,7 @@ test('1. the header line shows the user\'s channels as round marks', async ({ pa
   await expect(mark.locator(':scope > :first-child')).toHaveCSS('filter', 'none');
   const glyph = await glyphOf(mark);
   expect(glyph, 'the mark drew no glyph').toBeTruthy();
-  // Every message this runbook delivered wears the Slack glyph. (The inbox also lists whatever else the
+  // Every message this runbook delivered wears the Slack glyph. (The StreamInbox also lists whatever else the
   // instance's user holds — other conversations that have no channel — so only the delivered rows are read.)
   for (const nonce of nonces) {
     const chip = rows.filter({ hasText: nonce }).locator('[data-chip-type="source"]');
