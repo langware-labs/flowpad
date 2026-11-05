@@ -12,7 +12,9 @@ import { notify } from '@src/notifications';
 import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn(), hub: false }));
-const { AGENT_URL } = vi.hoisted(() => ({ AGENT_URL: '/dock/assets/editor/agent/typeid/agent-33333333-3333-4333-8333-333333333333' }));
+const { AGENT_URL } = vi.hoisted(() => ({
+  AGENT_URL: '/dock/assets/editor/agent/typeid/agent-33333333-3333-4333-8333-333333333333',
+}));
 vi.mock('@src/navigation/useDockNavigation', async () => {
   const { DockPointer } = await import('@src/navigation/DockPointer');
   const currentDock = DockPointer.fromUrl(AGENT_URL);
@@ -22,7 +24,9 @@ vi.mock('@sdk/utils/hub-runtime', () => ({ isHubOnly: () => nav.hub }));
 vi.mock('@src/components/assets/editor/agent-profile/NewDeploymentDialog', () => ({
   NewDeploymentDialog: () => <div data-testid="mock-new-deployment" />,
 }));
-vi.mock('@src/notifications', () => ({ notify: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
+vi.mock('@src/notifications', () => ({
+  notify: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() },
+}));
 // Watching registers this connection with the backend; there is none here.
 const { useWatch } = vi.hoisted(() => ({ useWatch: vi.fn() }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({ ...(await importOriginal<object>()), useWatch }));
@@ -51,10 +55,28 @@ function place(id: string, isLocal: boolean, extra: Partial<AgentPlace> = {}): A
 }
 
 /** One node of the agent's `deploy` activity, as the app reports it. */
-const node = (id: string, name: string, state: ActivityState, message: string | null, children: ActivityProgressSpec[] = []) =>
+const node = (
+  id: string,
+  name: string,
+  state: ActivityState,
+  message: string | null,
+  children: ActivityProgressSpec[] = [],
+) =>
   ({
-    activity_id: id, subject_entity: 'agent-33333333-3333-4333-8333-333333333333', path: name === 'deploy' ? name : `deploy/${name}`,
-    name, label: name, state, message, done: 0, skipped: 0, errors_count: 0, errors: [], counters: {}, children, seq: 1,
+    activity_id: id,
+    subject_entity: 'agent-33333333-3333-4333-8333-333333333333',
+    path: name === 'deploy' ? name : `deploy/${name}`,
+    name,
+    label: name,
+    state,
+    message,
+    done: 0,
+    skipped: 0,
+    errors_count: 0,
+    errors: [],
+    counters: {},
+    children,
+    seq: 1,
   }) as ActivityProgressSpec;
 
 // The hub is a backend with no disk of its own: it has no places.
@@ -84,7 +106,9 @@ describe('Deployments', () => {
       place(LOCAL_ID, true, { last_active: new Date(Date.now() - 5 * 60_000).toISOString() }),
       place(CLOUD_ID, false, { enabled: false }),
     ]);
-    expect(await screen.findByTestId(`agent-place-row-${LOCAL_ID}`)).toHaveTextContent('Development · local');
+    expect(await screen.findByTestId(`agent-place-row-${LOCAL_ID}`)).toHaveTextContent(
+      'This computer · not in the cloud',
+    );
     expect(screen.getByTestId(`agent-place-row-${CLOUD_ID}`)).toHaveTextContent('Cloud · brief-1');
     expect(screen.getByTestId(`agent-place-state-${LOCAL_ID}`)).toHaveTextContent('On');
     expect(screen.getByTestId(`agent-place-state-${CLOUD_ID}`)).toHaveTextContent('Off');
@@ -120,6 +144,7 @@ describe('Deployments', () => {
     nav.hub = true;
     renderColumn([place(LOCAL_ID, true), place(CLOUD_ID, false)]);
     expect(await screen.findByTestId('agent-places-empty')).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- asserting on the spy, not calling it
     expect(Agent.prototype.listPlaces).not.toHaveBeenCalled();
     expect(screen.queryByTestId(`agent-place-row-${CLOUD_ID}`)).toBeNull();
     expect(screen.queryByTestId(`agent-place-row-${LOCAL_ID}`)).toBeNull();
@@ -146,7 +171,9 @@ describe('Deployments', () => {
       cleanup();
     }
     expect(notify.warning).toHaveBeenCalledTimes(1);
-    expect(notify.warning).toHaveBeenCalledWith(expect.objectContaining({ message: 'No LLM funding for brief: limit exceeded' }));
+    expect(notify.warning).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'No LLM funding for brief: limit exceeded' }),
+    );
 
     act(() => handleActivitySnapshot(deploy('finished-deploy', 'completed')));
     renderColumn([]);
@@ -156,8 +183,10 @@ describe('Deployments', () => {
 
   it('a deploy seen running that then fails says so once — not one that completes, nor one already over', async () => {
     // A later report of the same deploy carries a higher seq: the store keeps only the newest.
-    const machine = (id: string, state: ActivityState, message: string | null = null, seq = 1) =>
-      ({ ...node(id, 'deploy', state, message, [node(id, 'machine', state, message)]), seq });
+    const machine = (id: string, state: ActivityState, message: string | null = null, seq = 1) => ({
+      ...node(id, 'deploy', state, message, [node(id, 'machine', state, message)]),
+      seq,
+    });
 
     act(() => handleActivitySnapshot(machine('failing-deploy', 'running')));
     renderColumn([]);

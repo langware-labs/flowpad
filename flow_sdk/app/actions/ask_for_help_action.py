@@ -70,6 +70,9 @@ async def ask_for_help() -> ApiResponse:
         return ApiFailResponse(message="Say what you need help with", status_code=400)
     if ask.conversation_id and not is_valid_entity_id(ask.conversation_id):
         return ApiFailResponse(message="conversation_id must be a UUID (v4/v5)", status_code=400)
+    recorded = await _recorded(ask.diagnosis_id) if ask.diagnosis_id else None
+    if ask.diagnosis_id and recorded is None:
+        return ApiFailResponse(message=f"diagnosis {ask.diagnosis_id} not found", status_code=404)
 
     someone = request_info.someone_typeid
     conv, task, created = await _capture_conversation(ask, someone)
@@ -82,7 +85,9 @@ async def ask_for_help() -> ApiResponse:
                 await _discard(conv, task)
             return sent
         opening = await FlowMessage.get_one({"id": sent.data["id"]})
-        if ask.diagnose:
+        if recorded is not None:
+            await write_diagnosis(conv.id, recorded, someone)
+        elif ask.diagnose:
             diagnosing = _diagnose_in_background(conv, ask, someone)
 
     # One attempt now; the outbox owns every later one. Its outcome never changes the verdict.
@@ -137,13 +142,32 @@ def _diagnose_in_background(conv: Conversation, ask: AskForHelpRequest, someone)
     return True
 
 
+async def _recorded(diagnosis_id: str):
+    """A diagnosis taken earlier, as the value that is sent."""
+    from flow_sdk.app.actions.diagnose_action import diagnosis_value, recorded_diagnosis  # noqa: PLC0415
+
+    record = await recorded_diagnosis(diagnosis_id)
+    return await diagnosis_value(record) if record is not None else None
+
+
+def _where(context) -> list[str]:
+    """Where the person was, in words -- the lines of the context a desk reads before pickup."""
+    if context is None:
+        return []
+    session = context.session
+    return [
+        *([f"Screen: {context.view}"] if context.view else []),
+        *([f"Session: {session.title or session.process} ({session.status})"] if session else []),
+    ]
+
+
 def diagnosis_text(diagnosis, *, desk: bool) -> str:
     """The message the diagnosis rides in. A desk can read a ticket's text before anyone picks
     it up, but not its attachments, so a desk is also told what was found."""
     head = f"Diagnostic: {diagnosis.title or diagnosis.status}"
     if not desk:
         return head
-    lines = [head, diagnosis.summary]
+    lines = [head, diagnosis.summary, *_where(diagnosis.context)]
     lines += [f"- {f.title}" + (f": {f.detail}" if f.detail else "") for f in diagnosis.findings[:5]]
     lines += [f"(diagnosing failed: {e})" for e in diagnosis.errors]
     return "\n".join(line for line in lines if line)
@@ -155,19 +179,26 @@ async def send_diagnosis(conv_id: str, ask: AskForHelpRequest, someone) -> Optio
 
     Sent like any message of mine, so the outbox owns it: signed out or offline, it waits and goes
     with the rest; refused, the person's Retry covers it."""
-    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, run_diagnose  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
+    from flow_sdk.diagnose import DiagnosePurpose, build_flow_context, run_diagnose  # noqa: PLC0415
 
     to = ask.recipient.name or ask.recipient.email or "the help desk"
-    ctx = FlowContextSpec(
+    ctx = await build_flow_context(
         purpose=DiagnosePurpose.REPORT,
         project_id=ask.project_id,
         process=ask.process,
         user_report=ask.text,
         origin=ask.origin.value,
+        connection_id=ask.connection_id,
     )
     diagnosis = await run_diagnose(ctx, label=f"Diagnosing for {to}")
+    return await write_diagnosis(conv_id, diagnosis, someone)
+
+
+async def write_diagnosis(conv_id: str, diagnosis, someone) -> Optional[str]:
+    """Send a diagnosis into a conversation as its own message. Returns the message id."""
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
+
     try:
         conv = await Conversation.get_one({"id": conv_id})
         if conv is None:
@@ -196,7 +227,9 @@ async def send_diagnosis(conv_id: str, ask: AskForHelpRequest, someone) -> Optio
 
 def member_of(recipient) -> dict:
     """A person recipient as a conversation member: only the fields it has."""
-    return {k: v for k, v in (("email", recipient.email), ("user_id", recipient.user_id), ("name", recipient.name)) if v}
+    return {
+        k: v for k, v in (("email", recipient.email), ("user_id", recipient.user_id), ("name", recipient.name)) if v
+    }
 
 
 async def _capture_conversation(ask: AskForHelpRequest, someone) -> tuple[Conversation, Optional[Task], bool]:
@@ -528,6 +561,7 @@ async def help_requests() -> ApiResponse:
         if conv is None or opening is None:
             continue
         rows.append(_request_row(conv, opening, task))
+    rows.sort(key=lambda row: row.pop("_recency"), reverse=True)
     return ApiSuccessResponse(data={"requests": rows})
 
 
@@ -545,6 +579,8 @@ def _request_row(conv: Conversation, opening: FlowMessage, task: Optional[Task])
         "status": status,
         "delivery": _delivery(opening),
         "delivered": delivery_rank(opening.delivery_status) >= delivery_rank(DeliveryStatus.SENT),
+        "unread": conv.unread_count or 0,
+        "_recency": str(conv.updated_date or ""),
     }
 
 

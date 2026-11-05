@@ -1,7 +1,5 @@
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
-import { useAgentContext } from '@src/contexts/agent-context';
-import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -75,7 +73,6 @@ export function AssistantChat({
   const { t } = useLingui();
   const { project: assistantProject, target, isLoading } = useFlowpadAssistantProject();
   // Help is asked about where the user is — their project, not the assistant's.
-  const { project: userProject } = useAgentContext();
   const [ptyExperiment] = useState<boolean>(() => loadPtyChatExperiment());
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -211,18 +208,10 @@ export function AssistantChat({
           autoPrompt={autoPrompt}
           className="h-full"
           emptyStateText={t`Ask the Flowpad Assistant anything about this page.`}
-          // Vibe's header, same UX: "+ New" · "Recent" · ask-for-help, on the left.
+          // Vibe's header, same UX: "+ New" · "Recent", on the left.
           leadingSlot={({ startNewSession }) => <NewSessionPill onClick={startNewSession} title={t`New chat`} />}
           historyTriggerLabel={t`Recent`}
           historyOnLeft
-          afterHistorySlot={({ activeProcess }) => (
-            <AskForHelpButton
-              // Hidden → no project → its live task query is off.
-              projectId={visible ? (userProject?.id ?? null) : null}
-              sessionTypeId={activeProcess?.typeId ?? null}
-              origin="assistant"
-            />
-          )}
           historyLabel={t`Chat history`}
           pastSessionsLabel={t`Past chats`}
           noPastSessionsLabel={t`No past chats`}

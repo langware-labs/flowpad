@@ -71,6 +71,7 @@ vi.mock('@src/components/top-nav-bar/use-entity-breadcrumbs', () => ({
   }),
 }));
 vi.mock('@src/components/top-nav-bar/TopBarActions', () => ({ TopBarActions: () => null }));
+vi.mock('@src/components/top-nav-bar/TopBarAskForHelp', () => ({ TopBarAskForHelp: () => null }));
 /** The ⚡'s counter reads react-query; the bar's own tests pin the counter in top-nav-automations.test.tsx. */
 vi.mock('@src/hooks/automations/useAutomations', () => ({ useStartedLastHour: () => 0 }));
 // The project switcher is a heavy surface with its own tests; here we only care

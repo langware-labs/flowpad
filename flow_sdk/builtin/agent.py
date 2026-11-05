@@ -914,6 +914,72 @@ class Agent(Entity):
             return ApiFailResponse(message=f"publish failed: {exc}")
         return ApiSuccessResponse(data={"agent_id": self.id, "published": published, "already_on_hub": not published})
 
+    # ── its project ───────────────────────────────────────────────────────
+
+    async def move_to_project(self, project_id: str) -> None:
+        """Move this project-less agent into a project, its channels with it: a deploy publishes the agent's
+        project, so an agent in the user scope has nowhere to go, and a channel left there would not reach
+        the machine. Rows keep their ids (each document carries its own). Refused, with nothing moved, when
+        the agent has a project or the target already holds one of the names."""
+        import asyncio  # noqa: PLC0415
+        import shutil  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.fs_store import FSRecord  # noqa: PLC0415
+
+        if self.project_id:
+            raise ValueError(f"{self.name!r} already belongs to a project")
+        project = await Project.get_by_id(project_id)
+        if project is None or project.system or not project.fs_storage_mount_path:
+            raise ValueError("that project cannot hold an agent")
+        if not Path(self.asset_ref or "").is_dir():
+            raise ValueError(f"{self.name!r} has no folder on this computer")
+        channels = [s for s in await DataSource.find_owned(self.typeid) if s.asset_ref and not s.project_id]
+        moves = []
+        for asset in (self, *channels):
+            source = Path(asset.asset_ref)
+            target = Path(project.fs_storage_mount_path) / AGENTIC_ASSETS_DIR / asset.type / source.name
+            if target.exists():
+                raise ValueError(f"{project.name!r} already has a {asset.type} named {source.name!r}")
+            moves.append((asset, source, target))
+        for asset, source, target in moves:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(shutil.move, str(source), str(target))
+            # A save writes where the shadow says the asset is: left as it was, it would rebuild the old folder.
+            FSRecord.load(asset.type, asset.id).save_metadata({"asset_ref": str(target)})
+            asset.asset_ref, asset.project_id = str(target), str(project.id)
+            await asset.save()
+
+    @action.get(action_name="deploy_defaults")
+    async def deploy_defaults_action(self):
+        """`GET /agent/<id>/deploy_defaults` — the environment a deploy dialog starts on, and the ones to offer."""
+        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, default_cloud_environment  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        placed = await Deployment.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        used = [row.environment for row in placed if row.environment and not row.is_local]
+        return ApiSuccessResponse(
+            data={
+                "environment": default_cloud_environment(),
+                "environments": sorted({DEFAULT_CLOUD_ENVIRONMENT, "staging", *used}),
+            }
+        )
+
+    @action.post(action_name="move_to_project")
+    async def move_to_project_action(self):
+        """`POST /agent/<id>/move_to_project {project_id}` — what the deploy dialog offers a project-less agent."""
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        try:
+            await self.move_to_project(str((await self._body()).get("project_id") or ""))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"project_id": self.project_id})
+
     # ── requirements and readiness ────────────────────────────────────────
 
     @action.get(action_name="requirements")
@@ -1251,6 +1317,7 @@ class Agent(Entity):
                 token_allocation=body.token_allocation if body.allocation_given else _UNSET,
                 machine_size=body.machine_size,
                 deployment_id=body.deployment_id,
+                values=body.values,
             )
         except DeployRunning as exc:
             return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})

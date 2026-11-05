@@ -15,6 +15,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
 import { useContext as useDataContext } from '@src/hooks/useContext';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { Dialog } from '@src/components/ui/dialog';
@@ -139,6 +140,8 @@ export function DataSourceDialog({
   // asks to add the source — before that the red box reads as a broken dialog, not as guidance.
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A refused save stays in the dialog, beside the button that failed: a toast can land behind it.
+  const [saveError, setSaveError] = useState('');
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Seed the form once per opening, keyed on WHAT is being edited. `specFor`
@@ -211,6 +214,7 @@ export function DataSourceDialog({
   const submit = async () => {
     if (problems.length) return;
     setBusy(true);
+    setSaveError('');
     try {
       if (provisioned) {
         // The one provisioned account today is the agent's mailbox; allocating wires
@@ -299,7 +303,7 @@ export function DataSourceDialog({
       }
       onOpenChange(false);
     } catch (e) {
-      notify.error({ title: e instanceof Error ? e.message : String(e) });
+      setSaveError(errorMessage(e, String(e)));
     } finally {
       setBusy(false);
     }
@@ -441,6 +445,11 @@ export function DataSourceDialog({
             </Button>
           ) : (
             <>
+              {saveError && (
+                <p className="me-auto text-xs text-destructive" role="alert" data-testid="ds-save-error">
+                  {saveError}
+                </p>
+              )}
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
                 <Trans>Cancel</Trans>
               </Button>

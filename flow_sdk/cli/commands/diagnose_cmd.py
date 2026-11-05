@@ -250,12 +250,18 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     return last
 
 
-async def _sweep(message: str, project_id: str | None, *, origin: str, emit):
+async def _sweep(message: str, project_id: str | None, *, origin: str, emit, connection_id: str | None = None):
     """Step 1: the Flowpad Assistant's diagnose — ALWAYS, whatever project is open (only Ask for
     help takes a project's own) — its progress narrated on ``emit``."""
-    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, resolve_shipped, run_diagnose  # noqa: PLC0415
+    from flow_sdk.diagnose import DiagnosePurpose, build_flow_context, resolve_shipped, run_diagnose  # noqa: PLC0415
 
-    ctx = FlowContextSpec(purpose=DiagnosePurpose.REPAIR, project_id=project_id, user_report=message, origin=origin)
+    ctx = await build_flow_context(
+        purpose=DiagnosePurpose.REPAIR,
+        project_id=project_id,
+        user_report=message,
+        origin=origin,
+        connection_id=connection_id,
+    )
     emit({"type": "status", "text": "  Checking this machine…"})
     sweep = await run_diagnose(
         ctx,
@@ -415,6 +421,7 @@ async def _run_diagnose(
     report_only: bool = False,
     share=None,
     someone: str | None = None,
+    connection_id: str | None = None,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -468,7 +475,8 @@ async def _run_diagnose(
     await _bootstrap_local()
 
     # Step 1 — the diagnose spec. Never raises; a failing or hanging diagnose answers its baseline.
-    sweep = await _sweep(message, project_id, origin="cli" if isinstance(emit, _TerminalSink) else "footer", emit=emit)
+    origin = "cli" if isinstance(emit, _TerminalSink) else "footer"
+    sweep = await _sweep(message, project_id, origin=origin, emit=emit, connection_id=connection_id)
 
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "
@@ -711,7 +719,7 @@ async def _run_diagnose(
             diag = await _load_recorded_diagnosis(_diag_cls, did)
             merged = _merge_agent_into(sweep, diag, recorded.get("status"))
             # What only this runner knows, set on the ONE copy that is saved: the person's own words
-            # (report.py sees only the agent's ``symptoms``, and the "Report issue" email reads them),
+            # (report.py sees only the agent's ``symptoms``),
             # the project they were in (named, so a helper on another machine sees where it
             # happened), and the merged diagnosis. A second writer beside this copy is how the
             # record once lost all three: the cross-link saved the copy loaded before them.

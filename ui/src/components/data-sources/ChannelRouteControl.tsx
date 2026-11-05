@@ -4,6 +4,7 @@ import type { ChannelRoute, DataSource } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
 /**
@@ -39,8 +40,7 @@ export function ChannelRouteControl({ source }: { source: DataSource }) {
       await run();
       await load();
     } catch (e) {
-      const said = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      notify.error({ title: said || (e instanceof Error ? e.message : String(e)) });
+      notify.error({ title: errorMessage(e, String(e)) });
     } finally {
       setMoving(false);
     }

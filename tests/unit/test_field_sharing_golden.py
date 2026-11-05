@@ -193,7 +193,14 @@ CONVERGED_TO_PRIVATE = {
 # APIField for security". Born private: fields added since, which were PRIVATE
 # from their first line — `published` is a cache of the project manifest row,
 # reconciled from a local FILE that no receiver has.
-NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "published", "visitor_role", "public_roles", "authenticated_roles", "visitor_roles"}
+NEWLY_DECLARED_PRIVATE = {
+    "fs_storage_provider",
+    "published",
+    "visitor_role",
+    "public_roles",
+    "authenticated_roles",
+    "visitor_roles",
+}
 BASE_LOCAL_ONLY = ["asset_occurrences", "asset_ref", "fetched_at", "remote", "system"]
 HUB_AUTHORITATIVE = ["updated_date"]
 
@@ -227,7 +234,7 @@ def test_the_two_egress_seams_now_agree():
 # Fields a type takes FROM the hub under the hub's own name (HUB_READ): not private, never sent,
 # owned by the hub — the conversation's owner (``initiated_by``), its roster (``members``) and who
 # picked a ticket up.
-HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "members", "picked_up_by"}}
+HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "members", "picked_up_by", "staffed"}}
 
 
 @pytest.mark.parametrize(
@@ -305,7 +312,17 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `mark`: what a channel message did (a review's verdict), projected from the SourceItem.
             # `outbound` / `delivery_failure`: this machine's outbox — "I wrote this to send" and why
             # the hub does not have it yet. Facts about this machine's sending, nowhere else.
-            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions", "mark", "outbound", "delivery_failure"],
+            [
+                "origin_local",
+                "source_item_id",
+                "sent_at",
+                "envelope",
+                "sender",
+                "reactions",
+                "mark",
+                "outbound",
+                "delivery_failure",
+            ],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -405,9 +422,27 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `updated_date`: local recency (the hub clock is `hub_updated_date`).
             # `archived_at`/`dismissed_at`: this viewer's own archive/dismiss — never travel.
             # `marks`: the chips a local source puts on the whole conversation — local.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "archived",
-             "channel_spec", "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
-             "channel_answered", "updated_date", "archived_at", "dismissed_at", "marks"],
+            [
+                "hub_updated_date",
+                "message_ids",
+                "owner",
+                "channel_source_id",
+                "is_unread",
+                "unread_count",
+                "archived",
+                "channel_spec",
+                "address",
+                "started_at",
+                "ended_at",
+                "channel_provider",
+                "awaits_hub",
+                "origin_project_id",
+                "channel_answered",
+                "updated_date",
+                "archived_at",
+                "dismissed_at",
+                "marks",
+            ],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.

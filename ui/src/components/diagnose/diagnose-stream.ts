@@ -1,3 +1,4 @@
+import { connectionManager } from '@sdk/websocket';
 import { ActionInfo, dataContext, dataManager, requestWithFiles, type DiagnosisSpec, type HelpRecipient } from '@sdk';
 
 /** Who the diagnosis goes to, and when (``flow_sdk.diagnose.share.DiagnoseShare``). */
@@ -64,6 +65,7 @@ export async function streamDiagnose(
     {
       message,
       project_id: dataContext.project?.id ?? null,
+      connection_id: connectionManager.id,
       ...(share?.share_with.length
         ? {
             share_with: JSON.stringify(share.share_with),

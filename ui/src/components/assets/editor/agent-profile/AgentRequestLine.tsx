@@ -5,8 +5,8 @@ import { CompactExecutionInput } from '@src/components/entity-execution-panel/Co
 import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
 
 /**
- * "What would you like the agent <name> to do?" — a request about THIS agent,
- * handed to the Flowpad Assistant's chat for this page, which answers it with
+ * "Ask Flowpad Assistant to change <name>" — a request about THIS agent, not to
+ * it: it goes to the Flowpad Assistant's chat for this page, which answers it with
  * the agent-builder skill. The composer is the standard one: attachments,
  * drag-and-drop, and pasted images through the annotator.
  */
@@ -32,7 +32,7 @@ export function AgentRequestLine({ agent, displayName }: { agent: Agent; display
     <div ref={barRef} className="shrink-0 border-t border-border px-5 py-3" data-testid="agent-request-line">
       <CompactExecutionInput
         onSend={onSend}
-        placeholder={t`What would you like the agent ${displayName} to do?`}
+        placeholder={t`Ask Flowpad Assistant to change ${displayName}`}
         allowAttachments
         draftScope={`agent-request:${agent.typeId.toString()}`}
       />

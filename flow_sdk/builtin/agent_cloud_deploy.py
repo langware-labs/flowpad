@@ -1,7 +1,7 @@
 """An agent's cloud deploy over HTTP (``POST agent/<id>/deploy``): the request, its steps, and the activity they run under.
 
-The deploy is five plain steps (``DEPLOYMENT_STEPS``) — publish the agent, share its hub dependencies, plan its
-placement on the hub, check readiness, have the hub place it on a machine — that know nothing of progress.
+The deploy is six plain steps (``DEPLOYMENT_STEPS``) — publish the agent, share its hub dependencies, plan its
+placement on the hub, store the values typed for it, check readiness, have the hub place it on a machine — that know nothing of progress.
 :func:`run_deployment_steps` runs them under the agent's ``deploy`` activity, each one a child of it: everything up
 to readiness before it answers, so a refusal (a missing value, a publish problem) is the answer; the machine after,
 the activity telling the screen how it goes.
@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from flow_sdk.schema.data_spec.credential_contract import is_valid_environment
 from flow_sdk.schema.data_spec.requirement_spec import REQUIREMENT_FUNDING
@@ -56,6 +56,9 @@ class AgentDeployRequest(DataSpec):
     machine_size: Optional[Literal["sm", "md", "lg"]] = None
     #: The planned placement this deploy is for (the one a refused deploy named); empty: a new one.
     deployment_id: Optional[str] = None
+    #: Values typed in the deploy dialog, ``{credential: {variable: value}}``: stored on the placement before
+    #: the readiness gate, so one Launch is enough and an abandoned dialog leaves no row. Never logged.
+    values: dict[str, dict[str, str]] = Field(default_factory=dict, repr=False)
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -97,6 +100,7 @@ class DeployContext:
     deployment_id: Optional[str] = None
     deployment: Optional["Deployment"] = None
     ready: Optional["ReadinessSpec"] = None
+    values: Optional[dict[str, dict[str, str]]] = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -119,11 +123,40 @@ async def _share_dependencies(ctx: DeployContext) -> None:
     await share_hub_dependencies(ctx.agent, await owning_project(ctx.agent))
 
 
+async def _unplaced(ctx: DeployContext) -> Optional[str]:
+    """The placement an earlier attempt planned and never put on a machine: this attempt continues it, so a
+    refused deploy leaves no second row and a value stored on the first is not lost."""
+    from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    row = await Deployment.find_existing(
+        str(ctx.agent.typeid),
+        ctx.provider or DEFAULT_CLOUD_PROVIDER,
+        environment=ctx.environment or DEFAULT_CLOUD_ENVIRONMENT,
+    )
+    return str(row.id) if row is not None and not row.origin.external_id else None
+
+
 async def _plan(ctx: DeployContext) -> None:
     # The hub makes a new placement for a plan that names none: a deploy for a planned one names it.
     ctx.deployment = await ctx.agent.plan_deployment(
-        ctx.environment, provider=ctx.provider, token_allocation=ctx.token_allocation, deployment_id=ctx.deployment_id
+        ctx.environment,
+        provider=ctx.provider,
+        token_allocation=ctx.token_allocation,
+        deployment_id=ctx.deployment_id or await _unplaced(ctx),
     )
+
+
+async def _store_values(ctx: DeployContext) -> None:
+    # Into the placement's own store, the one the readiness gate reads next.
+    from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+    from flow_sdk.builtin.credential_service import set_credential_by_name  # noqa: PLC0415
+
+    project = await owning_project(ctx.agent)
+    for credential, values in (ctx.values or {}).items():
+        await set_credential_by_name(
+            credential, values, project_id=str(project.id) if project else None, deployment_id=str(ctx.deployment.id)
+        )
 
 
 async def _check_readiness(ctx: DeployContext) -> str:
@@ -193,10 +226,17 @@ DEPLOYMENT_STEPS = [
     DeployStep("publish", "Publish the agent", lambda ctx: ctx.agent.ensure_on_hub(ctx.actor, force=True), inline=True),
     DeployStep("dependencies", "Share its dependencies", _share_dependencies, inline=True),
     DeployStep("plan", "Plan the deployment", _plan, inline=True),
+    DeployStep("values", "Store the values you typed", _store_values, inline=True),
     # The gate: a missing value refuses the deploy before a machine is paid for, as the request's answer.
     DeployStep("readiness", "Check what it needs", _check_readiness, inline=True),
     DeployStep("machine", "Start a machine", _start_machine),
 ]
+
+
+async def _record_deploy_failed(deployment: "Deployment", reason: str) -> None:
+    """The placement says it failed, and why: otherwise its row reads as if the machine were on its way."""
+    deployment.status = deployment.status.model_copy(update={"sync_state": "error", "message": reason})
+    await deployment.save()
 
 
 async def _tell_deploy_failed(agent: "Agent", reason: str) -> None:
@@ -220,6 +260,7 @@ async def run_deployment_steps(
     token_allocation: Any = _UNSET,
     machine_size: Optional[str] = None,
     deployment_id: Optional[str] = None,
+    values: Optional[dict[str, dict[str, str]]] = None,
 ) -> dict[str, Any]:
     """``DEPLOYMENT_STEPS`` under *agent*'s ``deploy`` activity, each as its child — running, then done or failed
     with its error — then the activity's end. The ``inline`` steps run first, a failure raised to the caller (and
@@ -243,7 +284,9 @@ async def run_deployment_steps(
     root.label(f"Deploy {agent.name or agent.id}").plan(
         [{"name": step.name, "label": step.label} for step in DEPLOYMENT_STEPS]
     )
-    ctx = DeployContext(agent, actor, environment, provider, token_allocation, machine_size, deployment_id)
+    ctx = DeployContext(
+        agent, actor, environment, provider, token_allocation, machine_size, deployment_id, values=values
+    )
 
     async def run(steps: list[DeployStep]) -> None:
         for step in steps:
@@ -262,6 +305,7 @@ async def run_deployment_steps(
             reason = str(exc) or type(exc).__name__
             root.fail(reason)
             logger.warning("cloud deploy of %s failed: %s", subject, exc)
+            await _record_deploy_failed(ctx.deployment, reason)
             await _tell_deploy_failed(agent, reason)
             return
         root.done()

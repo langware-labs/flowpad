@@ -11,7 +11,7 @@ sweep, identical to pressing Enter at the CLI prompt.
 Feed card + modal — every completed run posts exactly one Home-Feed card (via
 ``_run_diagnose`` → ``_post_home_feed_entry``), the same as the CLI, whether or not the
 modal was still open when it finished. The modal remains the live window onto the run —
-it streams the narration and (for an issue) shows the report buttons — but it no longer
+it streams the narration and (for an issue) shows the action buttons — but it no longer
 gates the card: the result always lands on the Home Feed too. The diagnosis (and, for a
 real issue, its support Conversation/FlowMessage) is recorded by ``report.py``.
 
@@ -19,6 +19,7 @@ If the SSE client disconnects early (the modal closed mid-run), the run is delib
 NOT cancelled — it finishes detached so the diagnosis is still recorded and its card
 posted.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -88,11 +89,20 @@ async def diagnosis_value(record):
     from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisSpec  # noqa: PLC0415
 
     value = getattr(record, "diagnosis", None)
+    if isinstance(value, DiagnosisSpec):
+        return value
     if isinstance(value, dict) and value:
         return DiagnosisSpec.model_validate(value)
-    return DiagnosisSpec(**{
-        k: getattr(record, k, None) or "" for k in ("title", "summary", "symptoms", "rca", "fix")
-    })
+    return DiagnosisSpec(**{k: getattr(record, k, None) or "" for k in ("title", "summary", "symptoms", "rca", "fix")})
+
+
+async def recorded_diagnosis(diagnosis_id: str):
+    """The ``flowpad_diagnosis`` of this id, or ``None``."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(EntityType.FLOWPAD_DIAGNOSIS)
+    return await cls.get_by_id(diagnosis_id) if (cls and diagnosis_id) else None
 
 
 @action.post(action_name="diagnose-send", types=None)
@@ -101,8 +111,6 @@ async def diagnose_send() -> ApiResponse:
     "Send to …" of the not-sent toast and of the Feed card. The same send the run makes when the
     person chose "Send report once done"."""
     from flow_sdk.diagnose.share import send_diagnosis_to  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     request_info = get_current_request_info()
     if not request_info or not request_info.someone_typeid:
@@ -115,13 +123,14 @@ async def diagnose_send() -> ApiResponse:
     if not share.recipients:
         return ApiFailResponse(message="Pick who gets the diagnosis", status_code=400)
     did = (fields.get("diagnosis_id") or "").strip()
-    cls = SchemaRegistry.get_entity_cls(EntityType.FLOWPAD_DIAGNOSIS)
-    record = await cls.get_by_id(did) if (cls and did) else None
+    record = await recorded_diagnosis(did)
     if record is None:
         return ApiFailResponse(message=f"diagnosis {did or '(none)'} not found", status_code=404)
     share.conversation_id = share.conversation_id or did  # one send per diagnosis, however often clicked
     diagnosis = await diagnosis_value(record)
-    sent = await send_diagnosis_to(share, diagnosis, getattr(record, "user_report", "") or "", request_info.someone_typeid)
+    sent = await send_diagnosis_to(
+        share, diagnosis, getattr(record, "user_report", "") or "", request_info.someone_typeid
+    )
     if not sent:
         return ApiFailResponse(message="The diagnosis could not be sent.", status_code=502)
     return ApiSuccessResponse(data={"shared": [s.model_dump() for s in sent]})
@@ -136,6 +145,7 @@ async def diagnose() -> StreamingResponse:
     # The active project the user was in when they triggered the diagnosis — stamped
     # onto the record as its origin project so "Open in terminal" can reopen there.
     project_id = fields.get("project_id") or None
+    connection_id = fields.get("connection_id") or None
     try:
         share = parse_share(fields)
     except (ValueError, TypeError):
@@ -156,15 +166,28 @@ async def diagnose() -> StreamingResponse:
             # Every completed run posts its own Home-Feed card (issue card or no-issue
             # summary card) — same as the CLI — so the result always reaches the feed.
             await _run_diagnose(
-                message, DEFAULT_TRANSCRIPT_TIMEOUT_S, emit=emit, project_id=project_id, prompt_extra=prompt_extra,
-                share=share, someone=someone,
+                message,
+                DEFAULT_TRANSCRIPT_TIMEOUT_S,
+                emit=emit,
+                project_id=project_id,
+                prompt_extra=prompt_extra,
+                share=share,
+                someone=someone,
+                connection_id=connection_id,
             )
         except Exception as e:  # surface the failure into the stream, never 500 silently
             emit({"type": "error", "text": f"diagnose error: {e}"})
-            emit({
-                "type": "done", "ok": False, "diagnosis_id": None, "conversation_id": None,
-                "flow_message_id": None, "feed_posted": False, "feed_entry_id": None,
-            })
+            emit(
+                {
+                    "type": "done",
+                    "ok": False,
+                    "diagnosis_id": None,
+                    "conversation_id": None,
+                    "flow_message_id": None,
+                    "feed_posted": False,
+                    "feed_entry_id": None,
+                }
+            )
         finally:
             if attach_dir:
                 shutil.rmtree(attach_dir, ignore_errors=True)
@@ -177,8 +200,9 @@ async def diagnose() -> StreamingResponse:
     async def _events():
         # Immediate acknowledgment — bootstrap + agent spin-up before the first
         # "Diagnosing (session=…)" line can take several seconds (mirrors the CLI).
-        ack = ("Diagnosing your issue" if message or attach_dir else "Running a full diagnostic sweep") + \
-            " — spinning up the agent (this can take a few seconds)…"
+        ack = (
+            "Diagnosing your issue" if message or attach_dir else "Running a full diagnostic sweep"
+        ) + " — spinning up the agent (this can take a few seconds)…"
         yield f"data: {json.dumps({'type': 'status', 'text': ack})}\n\n"
         while True:
             event = await queue.get()

@@ -228,7 +228,7 @@ describe('the new deployment dialog', () => {
     expect(screen.getByTestId('new-deployment-launch')).toBeDisabled();
     expect(onLaunched).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByTestId('new-deployment-environment'), { target: { value: 'staging' } });
+    fireEvent.click(screen.getByTestId('new-deployment-type-e2b-md'));
     expect(screen.queryByTestId('deployment-secrets-gate')).toBeNull();
   });
 });

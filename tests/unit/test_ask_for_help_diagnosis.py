@@ -20,7 +20,7 @@ import flow_sdk.diagnose as diagnose_pkg
 from flow_sdk.app.actions import ask_for_help_action as afh
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
-from flow_sdk.diagnose import DiagnosisSpec, DiagnosisStatus
+from flow_sdk.diagnose import DiagnosisEnvironment, DiagnosisSpec, DiagnosisStatus, FlowContextSpec
 from flow_sdk.server.routes.bootstrap import get_or_create_local_user
 from flow_sdk.storage import get_entity_embedded_storage
 
@@ -208,3 +208,39 @@ async def test_a_desk_is_told_what_was_found_in_the_text(diagnose_with):
 
     _request, follow = await _messages(ask["conversation_id"])
     assert follow.text.splitlines() == ["Diagnostic: Backend down", "It does not answer.", "- Backend down: Restart."]
+
+
+async def test_a_diagnosis_already_taken_is_sent_as_it_stands(diagnose_with):
+    """ "Check first": the person read the diagnosis; asking sends that one and runs nothing."""
+    from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+
+    diagnose_with("def diagnose(ctx):\n    raise RuntimeError('must not run')\n")
+    value = DiagnosisSpec(
+        status=DiagnosisStatus.NEEDS_ACTION,
+        title="Hub unreachable",
+        environment=DiagnosisEnvironment(os="macOS-15"),
+        context=FlowContextSpec(view="helpdesk", hub_login="signed_in"),
+    )
+    record = await FlowpadDiagnosis(
+        name="Hub unreachable", title="Hub unreachable", reported_by="me", diagnosis=value.model_dump(mode="json")
+    ).save()
+    body = _person(diagnose=False, diagnosis_id=record.id)
+
+    response = await _ask(body)
+    assert response.data["diagnosing"] is False
+
+    _request, follow = await _messages(body["conversation_id"])
+    assert follow.text == "Diagnostic: Hub unreachable"
+    sent = _diagnosis_of(follow)
+    assert sent["title"] == "Hub unreachable"
+    assert sent["environment"]["os"] == "macOS-15", "the whole diagnosis travels, not its headline"
+    assert sent["context"]["view"] == "helpdesk" and sent["context"]["hub_login"] == "signed_in"
+
+
+async def test_an_unknown_diagnosis_writes_no_request():
+    body = _person(diagnosis_id=str(uuid.uuid4()))
+
+    response = await _ask(body)
+
+    assert response.status_code == 404
+    assert await Conversation.get_one({"id": body["conversation_id"]}) is None

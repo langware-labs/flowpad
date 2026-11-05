@@ -3,8 +3,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/compon
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 import { useCopied } from '@src/components/ui/copy-button';
-import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
-import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { VersionChip } from '@src/components/version-popover/version-chip';
 import { upgradeOfferVersion } from '@src/components/version-popover/upgrade-offer';
 import apiClient from '@sdk/client';
@@ -26,7 +24,6 @@ import {
   KeyRound,
   Loader2,
   RefreshCw,
-  Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -303,11 +300,6 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
   const runningVersion = data?.pypi?.current || pageVersion;
   const pageIsStale = runningVersion !== pageVersion;
   const [restarting, setRestarting] = useState(false);
-  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
-  const [diagReport, setDiagReport] = useState<{
-    diagnosisId: string;
-    conversationId?: string;
-  } | null>(null);
 
   const isDev = useIsDev();
   const context = useContext();
@@ -496,7 +488,9 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
               data-testid="version-page-stale"
             >
               <span>
-                <Trans>The server now runs v{runningVersion}; this page is still v{pageVersion}.</Trans>
+                <Trans>
+                  The server now runs v{runningVersion}; this page is still v{pageVersion}.
+                </Trans>
               </span>
               <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => window.location.reload()}>
                 <Trans>Reload</Trans>
@@ -834,38 +828,9 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
                 <Trans>Harness status</Trans>
               </span>
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="flex-1"
-              onClick={() => {
-                setOpen(false);
-                setDiagnoseOpen(true);
-              }}
-              title={t`Diagnose a Flowpad issue`}
-            >
-              <Stethoscope />
-              <span>
-                <Trans>Diagnose</Trans>
-              </span>
-            </Button>
           </div>
         </div>
       </PopoverContent>
-      <DiagnoseModal
-        open={diagnoseOpen}
-        onClose={() => setDiagnoseOpen(false)}
-        onViewDiagnosis={(d) => {
-          setDiagnoseOpen(false);
-          setDiagReport(d);
-        }}
-      />
-      <DiagnosisReportModal
-        open={!!diagReport}
-        diagnosisId={diagReport?.diagnosisId}
-        conversationId={diagReport?.conversationId}
-        onClose={() => setDiagReport(null)}
-      />
     </Popover>
   );
 }

@@ -41,7 +41,7 @@ function renderDialog() {
   const onLaunched = vi.fn();
   const onOpenChange = vi.fn();
   renderInQuery(<NewDeploymentDialog agent={agent} open onOpenChange={onOpenChange} onLaunched={onLaunched} />);
-  return { deploy, onLaunched, onOpenChange };
+  return { agent, deploy, onLaunched, onOpenChange };
 }
 
 describe('New deployment', () => {
@@ -106,7 +106,7 @@ describe('New deployment', () => {
     deploy.mockResolvedValue({ deployment: { id: 'dep-2' } } as never);
     fireEvent.click(screen.getByTestId('new-deployment-type-e2b-md'));
     expect(screen.getByTestId('mock-checklist')).toBeInTheDocument();
-    expect(screen.getByTestId('new-deployment-environment')).toHaveValue('production');
+    expect(screen.getByTestId('new-deployment-environment')).toHaveTextContent('production');
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
     // Unchecked "Token allocation" = the owner's default: `null` releases any earlier allocation.
     // The size travels with the deploy; nothing is written into agent.json (it would dirty the checkout).
@@ -152,5 +152,32 @@ describe('New deployment', () => {
     renderDialog();
     expect(screen.getByTestId('new-deployment-type-local')).toBeEnabled();
     expect(screen.getByTestId('new-deployment-type-local')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('a value typed before Launch travels with the deploy, so one Launch is enough', async () => {
+    const { deploy, agent } = renderDialog();
+    vi.spyOn(agent, 'deployDefaults').mockResolvedValue({ environment: 'staging', environments: ['staging'] });
+    vi.spyOn(agent, 'requirements').mockResolvedValue([
+      {
+        kind: 'credential',
+        name: 'support_team',
+        vars: ['SUPPORT_TEAM_EMAILS'],
+        scopes: [],
+        on: '',
+        why: '',
+        derived: true,
+        used_by: [],
+      },
+    ]);
+    fireEvent.click(screen.getByTestId('new-deployment-type-e2b-sm'));
+    fireEvent.change(await screen.findByTestId('new-deployment-value-SUPPORT_TEAM_EMAILS'), {
+      target: { value: 'a@b.c' },
+    });
+    fireEvent.click(screen.getByTestId('new-deployment-launch'));
+    await waitFor(() =>
+      expect(deploy).toHaveBeenCalledWith(
+        expect.objectContaining({ values: { support_team: { SUPPORT_TEAM_EMAILS: 'a@b.c' } } }),
+      ),
+    );
   });
 });

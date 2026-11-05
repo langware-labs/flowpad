@@ -128,7 +128,7 @@ def hub_base_url() -> Optional[str]:
 
 def hub_public_url(sub_path: str) -> Optional[str]:
     """Full hub URL for a PUBLIC (non-graph, unauthenticated) API route — e.g.
-    ``health/version`` or ``diagnosis-report`` — or None if the hub isn't
+    ``health/version`` — or None if the hub isn't
     configured. The non-graph sibling of ``hub_graph_url``: "public" marks that it
     targets routes outside ``/graph`` that need no bearer (callable signed-out)."""
     base = hub_base_url()
