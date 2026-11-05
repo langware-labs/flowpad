@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { selectViewMode } from '../_shared/view-mode';
 import { destroyVibeFixture, seedLastVibeChat, type VibeFixture } from '../vibe/_helpers';
 
 /**
@@ -26,8 +27,8 @@ const JOURNEY = '@vibe-exit-mode-switch';
 /** The authored steps, in order — from the journey document itself, so a drifted
  *  graph fails here rather than silently. */
 const STEPS = [
-  'Start in Vibe',
   'Open a build',
+  'Enter Vibe',
   'This is what you have',
   'Now take the exit',
   'Look at what went, then come back',
@@ -71,6 +72,19 @@ async function openAt(n: number, extra = ''): Promise<void> {
   await page.locator('[data-tag]').first().waitFor();
 }
 
+/**
+ * Leave the build OUTSIDE Vibe, through its own mode switch. A view mode belongs to the session tab
+ * (2026-10-11) and a session reopens in the mode it remembers, so this is the state the entrance starts
+ * from — set the way a person sets it, not stated in an address.
+ */
+async function buildOutsideVibe(): Promise<void> {
+  await page.goto(`/dock/vibe/agentic_process-${fixture.processId}`);
+  // The build's own mode switch is what sets it — wait for it, not for a particular pane.
+  await expect(page.locator('[data-tag="ViewModeChat"]:visible').first()).toBeVisible();
+  await selectViewMode(page, 'standard');
+  await expect(workspace()).toHaveCount(0);
+}
+
 /** Start from the beginning, through the tray's own Start/Restart. */
 async function launch(): Promise<void> {
   await page.goto(`/?journeyId=${encodeURIComponent(JOURNEY)}`);
@@ -108,28 +122,26 @@ test('a build opens from the rail (warm-up)', async () => {
 test.describe('the journey demonstrates — the app really moves', () => {
   /**
    * Six presses of one button, and the app is somewhere different after each.
-   * Deliberately entered from INSIDE vibe: step 1 names `standard`, so the
-   * journey normalizes its own opening state instead of inheriting one — a
-   * journey about entering Vibe cannot start already in it, or its first step
-   * has nothing left to show.
+   * The build starts OUTSIDE Vibe (its own mode switch set it there) — a journey
+   * about entering Vibe cannot start already in it, or its entrance has nothing
+   * left to show. Entrance and exit both go through the build's own mode switch:
+   * a view mode belongs to the session tab and nowhere else.
    */
   test('entrance and exit, in six presses of one button', async () => {
-    await page.goto('/?viewMode=vibe');
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
+    await buildOutsideVibe();
     await launch();
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
 
-    await next(); // the wand — enters Vibe
+    await next(); // the rail — opens the real build, in the mode it remembers (outside Vibe)
     await expectStep(2);
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
+    await expect(workspace()).toHaveCount(0);
 
-    await next(); // the rail — opens a real build
-    // The step is GATED on the build actually opening (`element.present:
-    // VibeDisplay` in the journey graph); assert the gate's own condition
-    // first, then the step. Under full-suite load the open can outlast one
-    // expect budget while the tray correctly holds at step 2.
+    await next(); // the wand in the build's own mode switch — enters Vibe
+    // The step is GATED on the workspace actually being there (`element.present: VibeDisplay`);
+    // assert the gate's own condition first, then the step.
     await expect(workspace()).toBeVisible();
     await expectStep(3);
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 
     await next(); // commentary
     await expectStep(4);
@@ -207,13 +219,13 @@ test.describe('Back', () => {
 
 test.describe('the gate holds a press, it does not drive', () => {
   test('a gated step does not land until its condition is true', async () => {
+    await buildOutsideVibe();
     await launch();
-    await next(); // into vibe
+    await next(); // into the build, outside Vibe
     await expectStep(2);
 
-    // Step 2 waits for the workspace to exist. Its act opens one, so the press
-    // completes on its own — but only once the workspace is REALLY there, and
-    // never before.
+    // Step 2 waits for the workspace to exist. Its act (the wand) opens one, so the press
+    // completes on its own — but only once the workspace is REALLY there, and never before.
     await expect(workspace()).toHaveCount(0);
     await next();
     await expect(workspace()).toBeVisible();
