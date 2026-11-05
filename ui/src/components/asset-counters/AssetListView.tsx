@@ -59,7 +59,7 @@ function AssetListBody<T>({ group, selectedKey }: { group: AssetCounterGroup<T>;
           const id = group.itemKey(item);
           return (
             <div key={id} className="rounded-lg border border-border bg-card" data-testid="asset-list-row">
-              <EntityCard type={group.type} id={id} />
+              <EntityCard type={group.type} id={id} fallbackName={(item as { name?: string }).name ?? id} />
               <button
                 type="button"
                 className="m-2 rounded-md border border-border px-3 py-1 text-sm hover:bg-muted"
