@@ -2549,7 +2549,8 @@ class AgenticProcess(Entity):
         own. Holding out for the slot also means the NEXT turn is admitted
         rather than refused as in flight.
 
-        Polling interval: 2s, or the driver's ``transcript_poll_seconds`` when shorter. Raises
+        Local headless task completion wakes the waiter immediately. Status updates and
+        PTY/remote turns poll every 2s, or the driver's shorter interval. Raises
         TimeoutError if timeout elapses first.
 
         ``on_status`` observes the status this loop ALREADY reads on every
@@ -2573,7 +2574,16 @@ class AgenticProcess(Entity):
                 return
             if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
-            await asyncio.sleep(min(2.0, float(getattr(self.driver, "transcript_poll_seconds", 2.0))))
+            interval = min(2.0, float(getattr(self.driver, "transcript_poll_seconds", 2.0)))
+            if deadline is not None:
+                interval = min(interval, max(0.0, deadline - time.monotonic()))
+            turn = _PROMPT_TASKS.get(str(self.id))
+            if turn is not None and not turn.done():
+                # Wake on the turn's final writes, without cancelling it when this
+                # observer times out or is cancelled. PTY/remote turns still poll.
+                await asyncio.wait({turn}, timeout=interval)
+            else:
+                await asyncio.sleep(interval)
 
     async def waitForIdle(self, timeout: float | None = None) -> None:
         """Block until the worker is ready for input (``is_ready_for_input(self)``).
