@@ -89,6 +89,24 @@ describe('command links in a terminal', () => {
     expect(await lineLinks('  ! gcloud auth login')).toEqual(['! gcloud auth login']);
   });
 
+  it("stops a command where Claude Code's own decoration is painted over its row", async () => {
+    // Claude Code 2.1.310, view scrolled by the wheel: the echo of a run (`! sh mark.sh inline`, on
+    // the user-message background) with the "Jump to bottom" pill drawn over the rest of that row
+    // in a background of its own (as dumped from a real run).
+    const echo = '\x1b[48;2;65;60;65m\x1b[38;2;253;93;177m! \x1b[38;2;255;255;255msh mark.sh inline' + ' '.repeat(40) + '\x1b[0m';
+    const pill = '\x1b[1;22H\x1b[48;2;55;55;55m\x1b[38;2;255;255;255m Jump to bottom (ctrl+End) ↓ \x1b[0m';
+    expect(await lineLinks(echo + pill)).toEqual(['! sh mark.sh inline']);
+    // The same pill over a plain command line, flush against its last word.
+    expect(await lineLinks('! sh mark.sh line\x1b[48;2;55;55;55m Jump to bottom (ctrl+End) ↓ \x1b[0m')).toEqual([
+      '! sh mark.sh line',
+    ]);
+  });
+
+  it('a command drawn on one background keeps its colored words', async () => {
+    const echo = '\x1b[48;2;65;60;65m\x1b[38;2;253;93;177m! \x1b[38;2;255;255;255msh mark.sh line --fast\x1b[0m';
+    expect(await lineLinks(echo)).toEqual(['! sh mark.sh line --fast']);
+  });
+
   it('a colored ! that starts no command is not a link', async () => {
     expect(await lineLinks('(The \x1b[38;5;153m!\x1b[39m prefix runs it)')).toEqual([]);
   });
