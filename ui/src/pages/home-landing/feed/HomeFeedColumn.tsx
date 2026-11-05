@@ -5,7 +5,6 @@ import {
   QueryRequest,
   UserNote,
   forwardDiagnosis,
-  sendDiagnosisEmailReport,
   type EntityFeedData,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -66,9 +65,6 @@ export function HomeFeedColumn() {
   const { navigation } = useDockNavigation();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<{ entryId: string; message: string } | null>(null);
-  // Entry ids whose "Report issue" email already went out this session — the card
-  // shows a disabled "✓ Reported" instead, so a re-click can't email a duplicate.
-  const [reportedIds, setReportedIds] = useState<ReadonlySet<string>>(new Set());
   const [commentOpen, setCommentOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [creatingNote, setCreatingNote] = useState(false);
@@ -95,27 +91,6 @@ export function HomeFeedColumn() {
       setDismissingAll(false);
     }
   };
-
-  // "Report issue" — email the diagnosis to the Flowpad team (via the backend
-  // `report` action → hub → SendGrid). Does NOT dismiss the card (only eye-off does).
-  const handleReportIssue = useCallback(async (entry: FeedEntry, suggest: MessageSuggest) => {
-    if (!suggest.diagnosis_id) return;
-    setBusyId(entry.id ?? null);
-    setSendError(null);
-    try {
-      await sendDiagnosisEmailReport(suggest.diagnosis_id);
-      if (entry.id) {
-        setReportedIds((prev) => new Set(prev).add(entry.id));
-      }
-    } catch (err: unknown) {
-      setSendError({
-        entryId: entry.id ?? '',
-        message: err instanceof Error ? err.message : t`Failed to send report`,
-      });
-    } finally {
-      setBusyId(null);
-    }
-  }, []);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForwardMessageSuggest = useCallback(
@@ -249,8 +224,6 @@ export function HomeFeedColumn() {
                   busy={busyId === entry.id}
                   error={sendError?.entryId === entry.id ? sendError.message : undefined}
                   onDismiss={(item) => void handleDismiss(item)}
-                  onReportIssue={(item, suggest) => void handleReportIssue(item, suggest)}
-                  reported={!!entry.id && reportedIds.has(entry.id)}
                   onForwardMessageSuggest={(item, suggest, conversationId) =>
                     void handleForwardMessageSuggest(item, suggest, conversationId)
                   }

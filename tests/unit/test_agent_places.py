@@ -4,6 +4,7 @@ A place is a Deployment of the agent. Its choices live in agent.json keyed by th
 Deployment id (``places``, ``email_place``), so they travel with the definition
 and each machine applies only the ones naming a placement that runs there.
 """
+
 from __future__ import annotations
 
 import json
@@ -43,7 +44,8 @@ def _document(agent: Agent) -> dict:
 
 async def _cloud_place(agent: Agent, node: str = "compute_node-11111111-2222-4333-8444-555555555555") -> Deployment:
     deployment = Deployment(
-        name=f"{agent.name} (e2b)", parent_type_id=str(agent.typeid),
+        name=f"{agent.name} (e2b)",
+        parent_type_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": node},
     )
@@ -68,11 +70,22 @@ async def _publish_into_hub_repo(tmp_path: Path, monkeypatch, agent: Agent):
         root=hub_repo_sync.mirror_root(repo.repo_id), clone_url=str(hub), branch="main", token="hub-token"
     )
     synced = await hub_repo_sync.sync_asset_with_hub(
-        mirror=mirror, asset_root=folder, rel_path=rel, is_file=False, last_tree=None,
-        author=GitAuthor(name="t", email="t@t"), asset_typeid=str(agent.typeid),
+        mirror=mirror,
+        asset_root=folder,
+        rel_path=rel,
+        is_file=False,
+        last_tree=None,
+        author=GitAuthor(name="t", email="t@t"),
+        asset_typeid=str(agent.typeid),
     )
-    hub_repo_sync.remember_sync(repo.repo_id, repo=repo.repo, rel_path=rel, tree=synced.tree,
-                                head_commit=synced.head_commit, local_path=str(folder.resolve()))
+    hub_repo_sync.remember_sync(
+        repo.repo_id,
+        repo=repo.repo,
+        rel_path=rel,
+        tree=synced.tree,
+        head_commit=synced.head_commit,
+        local_path=str(folder.resolve()),
+    )
     agent.remote = True
     agent.origin = HubRepoOrigin(repo=repo.repo, rel_path=rel, head_commit=synced.head_commit, tree=synced.tree)
     return synced
@@ -143,11 +156,13 @@ def test_a_hub_recorded_node_id_is_recognised_as_this_machine():
     """The hub records a node as ``compute_node-<uuid>``; the local id is bare.
     Unnormalized, every hub-created placement read as elsewhere — on its own box too."""
     here = Deployment(
-        name="here", target={"provider": "e2b", "scope": "machine"},
+        name="here",
+        target={"provider": "e2b", "scope": "machine"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": f"compute_node-{ComputeNode._local_id()}"},
     )
     elsewhere = Deployment(
-        name="elsewhere", target={"provider": "e2b", "scope": "machine"},
+        name="elsewhere",
+        target={"provider": "e2b", "scope": "machine"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
     )
     assert here.is_local is True
@@ -227,9 +242,13 @@ async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
     local = await agent.local_deployment()
     cloud = await _cloud_place(agent)
     source = DataSource(
-        name=f"Mailbox {uuid.uuid4().hex[:8]}", provider=CloudEmailDriver.provider, kind=CloudEmailDriver.kind,
-        config={CloudEmailDriver.identity_config_key: agent.id}, account_key="a@x.io",
-        owner=agent.typeid, status=SourceStatus.ACTIVE.value,
+        name=f"Mailbox {uuid.uuid4().hex[:8]}",
+        provider=CloudEmailDriver.provider,
+        kind=CloudEmailDriver.kind,
+        config={CloudEmailDriver.identity_config_key: agent.id},
+        account_key="a@x.io",
+        owner=agent.typeid,
+        status=SourceStatus.ACTIVE.value,
     )
     await source.save()
 
@@ -284,7 +303,13 @@ async def test_version_of_an_agent_published_into_its_hub_repo(tmp_path, monkeyp
 
     state = version_state(agent)
     assert not (folder.parents[2] / ".git").exists()
-    assert state == {"published": True, "published_commit": synced.head_commit, "has_repo": True, "git_native": False, "pending_changes": 0}
+    assert state == {
+        "published": True,
+        "published_commit": synced.head_commit,
+        "has_repo": True,
+        "git_native": False,
+        "pending_changes": 0,
+    }
 
     (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
     assert version_state(agent)["pending_changes"] == 1
@@ -365,3 +390,59 @@ async def test_a_place_can_be_switched_off_on_its_own(tmp_path):
         await set_place_enabled(fresh, local.id, "no")
     await set_place_enabled(fresh, local.id, None)
     assert (await Agent.get_by_id(agent.id)).enabled_on(local.id) is True
+
+
+async def test_a_project_less_agent_moves_into_a_project_keeping_its_id(tmp_path):
+    """A deploy publishes into the agent's project, so the dialog offers to move a project-less agent there."""
+    from flow_sdk.builtin.data_source import DataSource
+
+    project = await seed_project(tmp_path / "home-project")
+    agent = await seed_agent(tmp_path / "user-scope", "helper")
+    agent_id = agent.id
+    channel = DataSource(
+        name="desk",
+        provider="rss",
+        config={"feed_url": "https://example.com/feed"},
+        owner=agent.typeid,
+        asset_ref=str(tmp_path / "user-scope" / "agentic-assets" / "data_source" / "desk"),
+    )
+    await channel.save()
+
+    before, channel_before = Path(agent.asset_ref), Path(channel.asset_ref)
+    await agent.move_to_project(str(project.id))
+
+    assert not before.exists(), "the save after the move wrote nothing back to the old folder"
+    assert not channel_before.exists()
+    travelled = await DataSource.get_by_id(channel.id)
+    assert travelled.project_id == str(project.id)
+    assert Path(travelled.asset_ref).is_relative_to(project.fs_storage_mount_path)
+    assert (Path(travelled.asset_ref) / "data_source.json").is_file()
+    moved = await Agent.get_by_id(agent_id)
+    assert moved.project_id == str(project.id)
+    assert (Path(moved.asset_ref) / "agent.json").is_file()
+    assert Path(moved.asset_ref).is_relative_to(project.fs_storage_mount_path)
+    with pytest.raises(ValueError, match="already belongs"):
+        await moved.move_to_project(str(project.id))
+
+
+async def test_values_typed_in_the_dialog_are_stored_on_the_placement_before_the_gate(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin import agent_cloud_deploy
+    from flow_sdk.builtin.agent_cloud_deploy import DEPLOYMENT_STEPS, DeployContext, _store_values
+
+    stored = {}
+
+    async def store(name, values, *, project_id=None, deployment_id=None):
+        stored[name] = (values, deployment_id)
+
+    monkeypatch.setattr("flow_sdk.builtin.credential_service.set_credential_by_name", store)
+    agent = await _agent(tmp_path, "typed")
+    ctx = DeployContext(agent, None, None, None, agent_cloud_deploy._UNSET, values={"team": {"EMAILS": "a@b.c"}})
+    ctx.deployment = SimpleNamespace(id="dep-1")
+
+    await _store_values(ctx)
+
+    assert stored == {"team": ({"EMAILS": "a@b.c"}, "dep-1")}
+    names = [step.name for step in DEPLOYMENT_STEPS]
+    assert names.index("values") < names.index("readiness")

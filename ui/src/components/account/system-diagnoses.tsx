@@ -12,7 +12,7 @@ import {
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { diagnosisToText } from '@src/components/diagnose/diagnosis-details';
-import { useDiagnosisReportAvailability } from '@src/components/diagnose/use-diagnosis-report-availability';
+import { useAskForHelpStore } from '@src/components/help/ask-for-help-store';
 import { ForwardDiagnosisShareDialog } from '@src/components/diagnose/forward-diagnosis-share-dialog';
 import { OpenInTerminalButton } from '@src/components/diagnose/open-in-terminal-button';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
@@ -21,15 +21,8 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { Copy, Eye, Flag, Forward, MessageSquarePlus, Stethoscope, Trash2 } from 'lucide-react';
-import {
-  systemTools,
-  copyToClipboard,
-  forwardDiagnosis,
-  sendDiagnosisEmailReport,
-  FlowpadDiagnosis,
-  QueryRequest,
-} from '@sdk';
+import { Copy, Eye, Forward, LifeBuoy, MessageSquarePlus, Stethoscope, Trash2 } from 'lucide-react';
+import { systemTools, copyToClipboard, forwardDiagnosis, FlowpadDiagnosis, QueryRequest } from '@sdk';
 
 /** Format a record's `created_date` (ISO string or Date) as a local date+time (or em-dash). */
 function formatRecorded(value?: string | Date): string {
@@ -124,20 +117,7 @@ function DiagnosisRowActions({
   onForwarded: (conversationId: string) => void;
 }) {
   const { t } = useLingui();
-  const reportAvailability = useDiagnosisReportAvailability();
-  // "Report issue" — email the diagnosis to the Flowpad team (no conversation).
-  const handleReport = useCallback(async () => {
-    if (!reportAvailability.canReport) return;
-    try {
-      await sendDiagnosisEmailReport(diag.id);
-      notify.success({ title: t`Diagnosis reported to the Flowpad team` });
-    } catch (e) {
-      notify.error({
-        title: t`Could not report diagnosis`,
-        message: e instanceof Error ? e.message : t`Report failed.`,
-      });
-    }
-  }, [diag, reportAvailability.canReport, t]);
+  const askForHelp = useAskForHelpStore((s) => s.open);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
@@ -177,12 +157,11 @@ function DiagnosisRowActions({
         size="sm"
         variant="ghost"
         className="h-7 w-7 p-0"
-        aria-label={t`Report issue`}
-        title={reportAvailability.disabledReason ?? t`Report issue`}
-        disabled={!reportAvailability.canReport}
-        onClick={() => void handleReport()}
+        aria-label={t`Ask for help`}
+        title={t`Ask for help`}
+        onClick={() => askForHelp({ diagnosisId: diag.id, title: diag.title || diag.name || '' })}
       >
-        <Flag className="h-4 w-4" />
+        <LifeBuoy className="h-4 w-4" />
       </Button>
       <ConvPickerButton
         icon={Forward}

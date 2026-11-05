@@ -5,6 +5,7 @@ session (one process per session on the engine's placement) or which live proces
 message — ``docs/snippets/agent-deployment.md`` §6. The routing is the caller's; refusing a
 sender, the loop guard and the ack are not.
 """
+
 from types import SimpleNamespace
 
 import pytest
@@ -74,7 +75,9 @@ def engine(monkeypatch):
     monkeypatch.setattr(agent_serve, "admits", lambda _s, author: author != "stranger")
     monkeypatch.setattr(agent_serve, "conversation_of", lambda *_: _async("conv-1"))
     monkeypatch.setattr(engine, "process_for", process_for)
-    monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", lambda ap: _async(f"re: {ap.prompts[-1]}"))
+    monkeypatch.setattr(
+        "flow_sdk.app.actions.execute_prompt._capture_assistant_reply", lambda ap: _async(f"re: {ap.prompts[-1]}")
+    )
     return engine
 
 
@@ -109,3 +112,20 @@ async def test_routing_does_not_open_the_gate_and_a_gated_message_is_acked(engin
     assert await answer(engine, m, session="customer/stranger") is False
     assert engine.sessions == {} and m.replies == []
     assert m.acks == 1, "settled, so a per-message loop is not handed it again"
+
+
+async def test_only_the_last_message_of_the_turn_is_the_reply(engine, monkeypatch):
+    """The text a turn writes on the way (progress lines) never reaches the sender: the reply is its final message."""
+    from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry, UserMessageEntry
+
+    base = {"session_id": "s1", "timestamp": "2026-09-06T00:00:00Z", "worker": "claude"}
+    entries = [
+        UserMessageEntry(id="u1", text="my invoice is wrong", **base),
+        AssistantMessageEntry(id="a1", text="I am checking the invoice", **base),
+        AssistantMessageEntry(id="a2", text="We received your message.", **base),
+    ]
+    monkeypatch.setattr(agent_serve, "transcript_entries", lambda _ap: entries)
+    m = _Message()
+
+    assert await answer(engine, m, session="customer/972500000000") is True
+    assert m.replies == ["We received your message."]

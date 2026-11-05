@@ -51,6 +51,28 @@ class DiagnoseSpec(DataSpec):
     timeout_s: float = Field(default=300, gt=0)
 
 
+class SessionTurn(DataSpec):
+    """One thing said in a session, cut short and redacted."""
+
+    spec_kind: ClassVar[str] = "diagnosis.session_turn"
+
+    role: str  # user | assistant
+    text: str
+
+
+class SessionState(DataSpec):
+    """A session as it stood when the diagnosis was taken. Only the session on screen carries turns."""
+
+    spec_kind: ClassVar[str] = "diagnosis.session"
+
+    #: The agentic process (a TypeId).
+    process: str
+    title: str = ""
+    status: str = ""
+    worker: str = ""
+    turns: list[SessionTurn] = Field(default_factory=list)
+
+
 class FlowContextSpec(DataSpec):
     """Where the person is when a diagnosis is asked for -- what ``diagnose(ctx)`` is called with."""
 
@@ -69,6 +91,17 @@ class FlowContextSpec(DataSpec):
     origin: str = ""
     #: The Flowpad instance (``FLOW_INSTANCE``) diagnosed.
     instance: str = ""
+    #: The screen the person was on (a ``navigation.place`` view) and its address; empty with no tab open.
+    view: str = ""
+    address: str = ""
+    #: What was open on that screen: its name, else its TypeId.
+    entity: str = ""
+    #: The session on screen, with its last turns.
+    session: Optional[SessionState] = None
+    #: This Flowpad's hub login (``status.hub``), empty when it could not be read.
+    hub_login: str = ""
+    #: The other sessions running here, without their turns.
+    other_sessions: list[SessionState] = Field(default_factory=list)
 
 
 class DiagnosisFinding(DataSpec):

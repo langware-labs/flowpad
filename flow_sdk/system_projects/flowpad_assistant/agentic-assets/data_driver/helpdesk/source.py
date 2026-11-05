@@ -24,18 +24,19 @@ it has never seen — so an idle ticket costs no fetch.
 plus the ids seen AT it (a burst can share a second); an edited message re-arrives because its
 stamp moved.
 """
+
 from __future__ import annotations
 
 import heapq
 import json
 from datetime import datetime, timezone
-from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol, Union
 
 from pydantic import StringConstraints
 
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import InvalidCursor, NotFound, OutcomeUnknown, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
@@ -51,7 +52,9 @@ _DESK = "desk:"
 class HubTransport(Protocol):
     """The Flowpad hub, as whoever holds the login reaches it. Raises the contract's errors."""
 
-    async def get(self, entity_type: str, entity_id: str, action: str, *, params: Optional[Mapping[str, Any]] = None) -> Any: ...
+    async def get(
+        self, entity_type: str, entity_id: str, action: str, *, params: Optional[Mapping[str, Any]] = None
+    ) -> Any: ...
 
     async def post(self, entity_type: str, payload: dict, entity_id: str, action: str) -> Any: ...
 
@@ -71,14 +74,17 @@ class HelpdeskMessageData(MessageData):
     raw: Optional[dict] = None
 
 
+#: A desk this login holds no role on: a source reading it would see no tickets and raise no error.
+NOT_ON_DESK = "you are not on this desk's team, so its tickets will not show"
+
+
 class HelpdeskConfig(SourceConfig):
     """What a helpdesk source is configured with."""
 
-    desk_project_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    desk_project_id: Union[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)], ChoiceEntry]
 
 
 class HelpdeskSource(MessageSource):
-
     Config = HelpdeskConfig
     provider = "helpdesk"
     origin_kind = CHANNEL
@@ -111,7 +117,8 @@ class HelpdeskSource(MessageSource):
 
     @property
     def desk(self) -> str:
-        return str(self.config.get("desk_project_id") or "").strip()
+        entry = self.config.get("desk_project_id") or ""
+        return str((entry.get("id") if isinstance(entry, dict) else entry) or "").strip()
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
         return super().origin(key, *(within or (self.desk or CHANNEL,)))
@@ -132,7 +139,16 @@ class HelpdeskSource(MessageSource):
 
         return HelpdeskMessageSpec
 
-    def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
+    def message_for(
+        self,
+        *,
+        thread_key: str,
+        to: str,
+        text: str,
+        subject: str = "",
+        in_reply_to: str = "",
+        conversation_id: str = "",
+    ):
         """A reply goes to the TICKET — the hub conversation id — which the hub threads by."""
         ticket = str(to or "").strip() or str(thread_key or "").strip()
         if not ticket:
@@ -141,28 +157,37 @@ class HelpdeskSource(MessageSource):
 
     @classmethod
     async def choices_for(cls, row: Any, field: str) -> list:
-        """The desks this login can reach: the deployment's default desk and every desk adopted into a
-        local project. Application state, not the hub's — so it is read from the application. Typing
-        an id still works."""
+        """The desks known here: the deployment's default desk and every desk adopted into a local
+        project. Application state, not the hub's — so it is read from the application. A desk this login
+        is not on is still offered, with a warning: its tickets stay hidden from a source that reads it.
+        Typing an id still works."""
         from flow_sdk.app.actions.flow_message_action import resolve_helpdesk  # noqa: PLC0415
         from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
 
         if field != "desk_project_id":
             return []
-        out: list = []
+        known: list[tuple[str, str, str]] = []
         default = await resolve_helpdesk()
         if default is not None:
-            out.append(Choice(id=default.project_id, name="Flowpad Support", detail="the deployment's default desk"))
+            known.append((default.project_id, "Flowpad Support", "the deployment's default desk"))
         try:
             desks = await Helpdesk.get_all({})
         except Exception:  # noqa: BLE001 — no adopted desks is not a failure
             desks = []
         for desk in desks or []:
             queue = str(getattr(desk, "desk_project_id", "") or "").strip()
-            if queue and all(c.id != queue for c in out):
-                out.append(Choice(id=queue, name=str(getattr(desk, "display_name", "") or queue), detail="adopted desk"))
-        return out
+            if queue and all(k[0] != queue for k in known):
+                known.append((queue, str(getattr(desk, "display_name", "") or queue), "adopted desk"))
+        if not known:
+            return []
+        walk = await HubProxy.walk("project")
+        reachable = {str(p.get("id") or "") for p in walk.rows if (p.get("helpdesk") or {}).get("enabled")}
+        return [
+            Choice(id=key, name=name, detail=detail if not walk.complete or key in reachable else NOT_ON_DESK)
+            for key, name, detail in known
+        ]
 
     @classmethod
     async def ensure_sources(cls) -> int:
@@ -196,7 +221,11 @@ class HelpdeskSource(MessageSource):
         return MessageQuery()
 
     async def fetch(
-        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+        self,
+        cursor: Optional[str] = None,
+        *,
+        page_size: Optional[int] = None,
+        narrow: Optional[Mapping[str, Any]] = None,
     ) -> ChangePage:
         """Walk the pool newest activity first; read messages only of a ticket whose change token
         differs from the one the cursor holds for it (a new ticket has none). A ticket read to its
@@ -214,7 +243,9 @@ class HelpdeskSource(MessageSource):
         pool = await self._pool()
         live = {ticket for ticket, _stamp, _at in pool}
         if only is None:
-            state.tickets = {t: m for t, m in state.tickets.items() if t in live}  # a ticket gone from the pool drops out
+            state.tickets = {
+                t: m for t, m in state.tickets.items() if t in live
+            }  # a ticket gone from the pool drops out
         items: list[MessageItem] = []
         more = False
         for ticket, stamp, updated_at in pool:
@@ -231,7 +262,11 @@ class HelpdeskSource(MessageSource):
                 continue
             mark = mark or _Mark()
             children = _rows_of(await self.hub.get("conversation", ticket, "messages"))
-            fresh = [fm for fm in sorted(children, key=_stamp_of) if str(fm.get("id") or "").strip() and mark.is_new(_stamp_of(fm), str(fm["id"]).strip())]
+            fresh = [
+                fm
+                for fm in sorted(children, key=_stamp_of)
+                if str(fm.get("id") or "").strip() and mark.is_new(_stamp_of(fm), str(fm["id"]).strip())
+            ]
             taken = fresh[: limit - len(items)]
             for fm in taken:
                 mark.advance(_stamp_of(fm), str(fm["id"]).strip())
@@ -298,13 +333,17 @@ class HelpdeskSource(MessageSource):
         """``(ticket, change token, updated_at)`` for every ticket in the pool, picked up or not,
         newest activity first."""
         self._desk_required()
-        rows = _rows_of(await self.hub.get("project", self.desk, "helpdesk_conversations", params={"include_closed": "true"}))
+        rows = _rows_of(
+            await self.hub.get("project", self.desk, "helpdesk_conversations", params={"include_closed": "true"})
+        )
         pool = []
         for row in rows:
             ticket = str(row.get("conversation_id") or "").strip()
             if ticket:
                 updated_at = str(row.get("updated_at") or "")
-                pool.append((ticket, f"{row.get('message_count') or 0}:{updated_at}:{row.get('status') or ''}", updated_at))
+                pool.append(
+                    (ticket, f"{row.get('message_count') or 0}:{updated_at}:{row.get('status') or ''}", updated_at)
+                )
         return sorted(pool, key=lambda entry: (entry[2], entry[0]), reverse=True)
 
     def _item(self, ticket: str, fm: dict) -> MessageItem:
@@ -312,7 +351,9 @@ class HelpdeskSource(MessageSource):
         data = HelpdeskMessageData(
             text=str(fm.get("text") or ""),
             conversation=self.ticket_origin(ticket),
-            sender=UserProfile(origin=self.origin(sender, ticket), name=str(fm.get("sender_name") or "") or sender) if sender else None,
+            sender=UserProfile(origin=self.origin(sender, ticket), name=str(fm.get("sender_name") or "") or sender)
+            if sender
+            else None,
             sent_at=_when(fm.get("created_date")),
             hub_conversation_id=ticket,
             hub_message_id=fm_id,
@@ -367,7 +408,11 @@ class HelpdeskSource(MessageSource):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
         account = self.binding.account_key
         prefix = f"{account}/" if account else ""
-        ticket = origin.namespace[len(prefix):] if origin.kind == self._scope.kind and origin.namespace.startswith(prefix) else ""
+        ticket = (
+            origin.namespace[len(prefix) :]
+            if origin.kind == self._scope.kind and origin.namespace.startswith(prefix)
+            else ""
+        )
         if not ticket or "/" in ticket:
             raise ValueError(f"{origin!r} is outside this source's scope")
         if ticket in (self.desk, CHANNEL):
@@ -414,7 +459,7 @@ class _DeskCursor:
         if not isinstance(cursor, str):
             raise TypeError(f"cursor must be a string, got {type(cursor).__name__}")
         try:
-            state = json.loads(cursor[len(_DESK):]) if cursor.startswith(_DESK) else None
+            state = json.loads(cursor[len(_DESK) :]) if cursor.startswith(_DESK) else None
         except ValueError:
             state = None
         tickets = state.get("tickets") if isinstance(state, dict) else None
@@ -422,14 +467,22 @@ class _DeskCursor:
             raise InvalidCursor("not a help-desk cursor")
         marks = {}
         for ticket, entry in tickets.items():
-            if not (isinstance(entry, list) and len(entry) == 3 and isinstance(entry[0], str) and isinstance(entry[1], str) and isinstance(entry[2], list)):
+            if not (
+                isinstance(entry, list)
+                and len(entry) == 3
+                and isinstance(entry[0], str)
+                and isinstance(entry[1], str)
+                and isinstance(entry[2], list)
+            ):
                 raise InvalidCursor("not a help-desk cursor")
             marks[str(ticket)] = _Mark(entry[1], [str(i) for i in entry[2]], stamp=entry[0])
         return cls(state["watermark"], marks)
 
     def encode(self) -> str:
         tickets = {t: [m.stamp, m.high_water, m.boundary_ids] for t, m in sorted(self.tickets.items())}
-        return _DESK + json.dumps({"watermark": self.watermark, "tickets": tickets}, sort_keys=True, separators=(",", ":"))
+        return _DESK + json.dumps(
+            {"watermark": self.watermark, "tickets": tickets}, sort_keys=True, separators=(",", ":")
+        )
 
 
 def _rows_of(payload: Any) -> list[dict]:

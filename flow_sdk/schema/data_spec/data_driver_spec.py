@@ -1,4 +1,5 @@
 """Filesystem contracts independent of application entities."""
+
 from __future__ import annotations
 
 from typing import Any, ClassVar, Optional
@@ -12,8 +13,6 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 
 CURRENT_SCHEMA = 1
-
-
 
 
 class ReflectMode(StrEnum):
@@ -134,7 +133,12 @@ class AuthSpec(DataSpec):
 
     @model_validator(mode="after")
     def _one_shape(self) -> "AuthSpec":
-        present = (("connector", self.connector), ("env", self.env), ("secrets", self.secrets), ("credential", self.credential))
+        present = (
+            ("connector", self.connector),
+            ("env", self.env),
+            ("secrets", self.secrets),
+            ("credential", self.credential),
+        )
         shapes = [name for name, value in present if value]
         if len(shapes) > 1:
             raise ValueError(f"auth declares {' and '.join(shapes)}; a source has one credential lifetime")
@@ -162,7 +166,7 @@ class DataDriverSpec(DataSpec):
 
     main_file: ClassVar[str | None] = "data_driver.json"
 
-    model_config = ConfigDict(populate_by_name=True)   # extra="forbid" is DataSpec's
+    model_config = ConfigDict(populate_by_name=True)  # extra="forbid" is DataSpec's
 
     #: The registry key AND the folder name. One noun: `rss` resolves the folder's own source class.
     name: str
@@ -221,6 +225,9 @@ class DataDriverSpec(DataSpec):
     #: This driver takes provider pushes: which ``auth.vars`` key holds the machine's public webhook URL, and
     #: what a genuine delivery looks like. A cloud deployment gets a hub webhook for it (``webhook_spec.py``).
     webhook: Optional[DriverWebhookSpec] = None
+    #: This driver reads a hub help desk: which config key names it. A cloud deployment asks the hub to
+    #: give the agent's Identity its role on that desk (``Agent.hub_desks``).
+    hub_desk: Optional[str] = None
     #: The wizards a source of this driver is set up with, in order (``setup_stage_spec.py``).
     setup_wizards: list[SetupStageSpec] = Field(default_factory=list)
     #: Drivers that are ONE choice to a person ("WhatsApp") and several ways to it (Flowpad's number, your
@@ -244,7 +251,9 @@ class DataDriverSpec(DataSpec):
     @model_validator(mode="after")
     def _webhook_url_is_a_var(self) -> "DataDriverSpec":
         if self.webhook is not None and (self.auth is None or self.webhook.url_var not in self.auth.vars):
-            raise ValueError(f"webhook.url_var {self.webhook.url_var!r} must be a key of auth.vars: the URL is a credential variable")
+            raise ValueError(
+                f"webhook.url_var {self.webhook.url_var!r} must be a key of auth.vars: the URL is a credential variable"
+            )
         return self
 
     @field_validator("name")

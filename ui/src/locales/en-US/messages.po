@@ -2551,6 +2551,14 @@ msgstr "a credential"
 msgid "A cron expression has five parts."
 msgstr "A cron expression has five parts."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "A deploy uploads only this agent's folder to Flowpad cloud."
+msgstr "A deploy uploads only this agent's folder to Flowpad cloud."
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "A deploy uploads this project's commits to Flowpad cloud — the whole repository, not only the agent."
+msgstr "A deploy uploads this project's commits to Flowpad cloud — the whole repository, not only the agent."
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A deployment"
 msgstr "A deployment"
@@ -3498,6 +3506,7 @@ msgstr "Additional plugin marketplace URLs"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Address"
 msgstr "Address"
@@ -3607,6 +3616,10 @@ msgstr "Agent funding"
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "Agent Hook"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Agent is in a project"
+msgstr "Agent is in a project"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Agent is public"
@@ -4321,6 +4334,10 @@ msgstr "another hub budget — {label}"
 msgid "another machine"
 msgstr "another machine"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Another name…"
+msgstr "Another name…"
+
 #: src/components/session-taken-over-overlay.tsx
 msgid "Another person signed in to this shared machine, so you were signed out. Sign back in to take it back."
 msgstr "Another person signed in to this shared machine, so you were signed out. Sign back in to take it back."
@@ -4826,12 +4843,21 @@ msgstr "Ask anything — I can search the guides and walk you through them."
 msgid "Ask every time"
 msgstr "Ask every time"
 
+#: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
+msgid "Ask Flowpad Assistant to change {displayName}"
+msgstr "Ask Flowpad Assistant to change {displayName}"
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "ask for a refund or dispute a charge"
 msgstr "ask for a refund or dispute a charge"
 
+#: src/components/account/system-diagnoses.tsx
+#: src/components/account/system-diagnoses.tsx
+#: src/components/diagnose/diagnose-run-store.ts
+#: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskAsk.tsx
+#: src/components/version-popover/diagnose-modal.tsx
 msgid "Ask for help"
 msgstr "Ask for help"
 
@@ -5029,6 +5055,7 @@ msgid "Assistance"
 msgstr "Assistance"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Assistant"
 msgstr "Assistant"
@@ -6047,6 +6074,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
@@ -6562,6 +6590,10 @@ msgstr "Check every service now"
 msgid "Check failed"
 msgstr "Check failed"
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Check first"
+msgstr "Check first"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
@@ -6686,8 +6718,12 @@ msgid "checks pass"
 msgstr "checks pass"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
-msgstr "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
+msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request, with what is on your screen and your session's last turns."
+msgstr "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request, with what is on your screen and your session's last turns."
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
+#~ msgstr "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -6718,6 +6754,7 @@ msgstr "Choose a model for these teams"
 msgid "Choose a model…"
 msgstr "Choose a model…"
 
+#: src/components/assets/editor/agent-profile/AgentProjectPicker.tsx
 #: src/components/install/AddAssetDialog.tsx
 msgid "Choose a project"
 msgstr "Choose a project"
@@ -7361,6 +7398,7 @@ msgstr "Close to the Right"
 #~ msgstr "Close workspace"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/help/MyHelpRequests.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "Closed"
@@ -7654,6 +7692,8 @@ msgstr "Comment"
 msgid "Comments"
 msgstr "Comments"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -7683,6 +7723,11 @@ msgstr "Commit all changes (no push)"
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Commit and push"
+msgstr "Commit and push"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Commit and push this file"
@@ -8109,6 +8154,7 @@ msgid "Content"
 msgstr "Content"
 
 #: src/components/conversation/ConversationPanel.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/types/ViewType.ts
 msgid "Context"
@@ -8669,6 +8715,8 @@ msgstr "Could not check — {failed}"
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/hooks/use-git-share-gate.ts
 #: src/hooks/use-git-share-gate.ts
 msgid "Could not commit and push"
@@ -8919,6 +8967,10 @@ msgstr "Could not link this project."
 msgid "Could not list budgets: {loadError}"
 msgstr "Could not list budgets: {loadError}"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Could not list the changes"
+msgstr "Could not list the changes"
+
 #: src/components/credentials/SecretVaultPicker.tsx
 msgid "Could not list the secret managers."
 msgstr "Could not list the secret managers."
@@ -8992,6 +9044,10 @@ msgstr "Could not make the agent public"
 
 #~ msgid "Could not move email here"
 #~ msgstr "Could not move email here"
+
+#: src/components/assets/editor/agent-profile/AgentProjectPicker.tsx
+msgid "Could not move the agent"
+msgstr "Could not move the agent"
 
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Could not move the project"
@@ -9216,8 +9272,8 @@ msgid "Could not replay {0}."
 msgstr "Could not replay {0}."
 
 #: src/components/account/system-diagnoses.tsx
-msgid "Could not report diagnosis"
-msgstr "Could not report diagnosis"
+#~ msgid "Could not report diagnosis"
+#~ msgstr "Could not report diagnosis"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Could not request access"
@@ -9386,8 +9442,8 @@ msgid "Could not send it"
 msgstr "Could not send it"
 
 #: src/components/diagnose/use-diagnosis-report.ts
-msgid "Could not send report to the Flowpad team"
-msgstr "Could not send report to the Flowpad team"
+#~ msgid "Could not send report to the Flowpad team"
+#~ msgstr "Could not send report to the Flowpad team"
 
 #: src/components/diagnose/diagnose-run-store.ts
 msgid "Could not send the diagnosis"
@@ -11266,7 +11322,6 @@ msgstr "Developer mode is on — double-click to turn it off"
 msgid "Developer Tools"
 msgstr "Developer Tools"
 
-#: src/components/assets/editor/agent-profile/use-place-display.ts
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 msgid "Development · local"
 msgstr "Development · local"
@@ -11285,14 +11340,13 @@ msgstr "Device login"
 msgid "Device logins"
 msgstr "Device logins"
 
-#: src/components/version-popover/version-popover.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Diagnose"
 msgstr "Diagnose"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Diagnose a Flowpad issue"
-msgstr "Diagnose a Flowpad issue"
+#~ msgid "Diagnose a Flowpad issue"
+#~ msgstr "Diagnose a Flowpad issue"
 
 #. placeholder {0}: e instanceof Error ? e.message : String(e)
 #: src/components/diagnose/diagnose-run-store.ts
@@ -11353,8 +11407,8 @@ msgid "Diagnosis recorded."
 msgstr "Diagnosis recorded."
 
 #: src/components/account/system-diagnoses.tsx
-msgid "Diagnosis reported to the Flowpad team"
-msgstr "Diagnosis reported to the Flowpad team"
+#~ msgid "Diagnosis reported to the Flowpad team"
+#~ msgstr "Diagnosis reported to the Flowpad team"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -12980,6 +13034,10 @@ msgstr "Everyone's budget inside {0} is deleted with it. This cannot be undone."
 #~ msgid "Everything available is already connected."
 #~ msgstr "Everything available is already connected."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Everything below goes into the commit, not only the agent:"
+msgstr "Everything below goes into the commit, not only the agent:"
+
 #: src/components/inbound/InboundView.tsx
 #~ msgid "Everything else to this number"
 #~ msgstr "Everything else to this number"
@@ -13290,6 +13348,7 @@ msgstr "Extracting…"
 msgid "failed"
 msgstr "failed"
 
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -13680,9 +13739,7 @@ msgstr "Failed to send draft"
 msgid "Failed to send reply."
 msgstr "Failed to send reply."
 
-#: src/components/diagnose/use-diagnosis-report.ts
-#: src/components/diagnose/use-diagnosis-report.ts
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx
+#: src/components/diagnose/use-forward-diagnosis.ts
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Failed to send report"
 msgstr "Failed to send report"
@@ -14214,8 +14271,12 @@ msgid "Finish the setup above before deploying"
 msgstr "Finish the setup above before deploying"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "Finish the setup above first"
-msgstr "Finish the setup above first"
+#~ msgid "Finish the setup above first"
+#~ msgstr "Finish the setup above first"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Finish the setup above first."
+msgstr "Finish the setup above first."
 
 #: src/components/data-sources/source-attention.ts
 #~ msgid "Finish the step above, then press Verify."
@@ -16084,6 +16145,10 @@ msgstr "Hub endpoints your FlowPad account can spend"
 msgid "Hub errors suppressed"
 msgstr "Hub errors suppressed"
 
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Hub login"
+msgstr "Hub login"
+
 #: src/components/assets/dependency-sources.tsx
 #~ msgid "Hub project"
 #~ msgstr "Hub project"
@@ -17027,7 +17092,10 @@ msgstr "It doesn't appear to be installed on your computer. Would you like to in
 msgid "It failed without saying why."
 msgstr "It failed without saying why."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+#: src/components/assets/editor/agent-profile/AgentProjectPicker.tsx
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "It failed."
 msgstr "It failed."
@@ -17154,6 +17222,10 @@ msgstr "Its manifest has no usable desk id, so requests would go to the default 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "its own servers"
 msgstr "its own servers"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Its project could not be loaded"
+msgstr "Its project could not be loaded"
 
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/credentials-view/CredentialView.tsx
@@ -17645,6 +17717,10 @@ msgstr "Launch {name}"
 #: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Launch a session first"
 msgstr "Launch a session first"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#~ msgid "Launch asks for any that are missing."
+#~ msgstr "Launch asks for any that are missing."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Launch bot"
@@ -20276,6 +20352,10 @@ msgstr "Next: check again"
 msgid "no"
 msgstr "no"
 
+#: src/components/diagnose/diagnosis-details.tsx
+#~ msgid "No"
+#~ msgstr "No"
+
 #: src/pages/entry/entry-shell.tsx
 msgid "No {label} with this id was found"
 msgstr "No {label} with this id was found"
@@ -21220,9 +21300,9 @@ msgstr "No projects to choose from — use a git repo."
 #~ msgid "No projects to choose from — use GitHub or a git URL."
 #~ msgstr "No projects to choose from — use GitHub or a git URL."
 
-#: src/components/credentials-view/CredentialsView.tsx
-#~ msgid "No projects yet"
-#~ msgstr "No projects yet"
+#: src/components/assets/editor/agent-profile/AgentProjectPicker.tsx
+msgid "No projects yet"
+msgstr "No projects yet"
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "No projects yet — the connection is saved to your account; attach it when you create one."
@@ -22069,6 +22149,7 @@ msgstr "Not runnable here"
 msgid "not running"
 msgstr "not running"
 
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Not running"
 msgstr "Not running"
@@ -22091,6 +22172,7 @@ msgid "Not sent"
 msgstr "Not sent"
 
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/help/MyHelpRequests.tsx
 #: src/notifications/ingest.ts
 msgid "Not sent yet"
 msgstr "Not sent yet"
@@ -22860,8 +22942,10 @@ msgstr "Oops! Page not found"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnose-run-store.ts
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/help/MyHelpRequests.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/notes/NoteViews.tsx
@@ -24021,6 +24105,10 @@ msgstr "Other project"
 #: src/components/automations/AutomationsList.tsx
 msgid "Other projects"
 msgstr "Other projects"
+
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Other sessions"
+msgstr "Other sessions"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "output"
@@ -25784,6 +25872,7 @@ msgid "Pulling…"
 msgstr "Pulling…"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -27050,38 +27139,38 @@ msgid "Report"
 msgstr "Report"
 
 #: src/components/account/system-diagnoses.tsx
-msgid "Report failed."
-msgstr "Report failed."
+#~ msgid "Report failed."
+#~ msgstr "Report failed."
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
-msgid "Report issue"
-msgstr "Report issue"
+#~ msgid "Report issue"
+#~ msgstr "Report issue"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Report page errors"
 msgstr "Report page errors"
 
 #: src/components/diagnose/use-diagnosis-report.ts
-msgid "Report sent to the Flowpad team"
-msgstr "Report sent to the Flowpad team"
+#~ msgid "Report sent to the Flowpad team"
+#~ msgstr "Report sent to the Flowpad team"
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
-msgid "Reported"
-msgstr "Reported"
+#~ msgid "Reported"
+#~ msgstr "Reported"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Reported by"
 msgstr "Reported by"
 
 #: src/components/diagnose/use-diagnosis-report-availability.ts
-msgid "Reporting is disabled in Local data privacy mode"
-msgstr "Reporting is disabled in Local data privacy mode"
+#~ msgid "Reporting is disabled in Local data privacy mode"
+#~ msgstr "Reporting is disabled in Local data privacy mode"
 
 #: src/components/diagnose/use-diagnosis-report-availability.ts
-msgid "Reporting needs an internet connection"
-msgstr "Reporting needs an internet connection"
+#~ msgid "Reporting needs an internet connection"
+#~ msgstr "Reporting needs an internet connection"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Repos"
@@ -27298,6 +27387,10 @@ msgstr "Resize the From column"
 msgid "Resolve"
 msgstr "Resolve"
 
+#: src/components/help/MyHelpRequests.tsx
+msgid "Resolved"
+msgstr "Resolved"
+
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Resolving [[{name}]]…"
 msgstr "Resolving [[{name}]]…"
@@ -27444,6 +27537,10 @@ msgstr "Result"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Results"
 msgstr "Results"
+
+#: src/components/diagnose/ShareWithRow.tsx
+msgid "Results include your screen and your session's last turns."
+msgstr "Results include your screen and your session's last turns."
 
 #: src/components/automations/BusStream.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
@@ -27831,6 +27928,10 @@ msgstr "Run `flow connect` on a machine and enter its code here"
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Run a command"
 msgstr "Run a command"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Run a diagnosis first and read it. Nothing is sent until you choose to."
+msgstr "Run a diagnosis first and read it. Nothing is sent until you choose to."
 
 #. placeholder {0}: seed.kind
 #: src/components/version-popover/diagnose-modal.tsx
@@ -28309,6 +28410,7 @@ msgstr "Sandbox upgraded"
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+#: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 #: src/components/automations/AutomationPage.tsx
@@ -28695,6 +28797,10 @@ msgstr "scope: user + {0} project{1}"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "scope: user only"
 msgstr "scope: user only"
+
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Screen"
+msgstr "Screen"
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 #: src/components/top-nav-bar/use-screen-recorder.ts
@@ -29327,8 +29433,12 @@ msgid "Send anyway"
 msgstr "Send anyway"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Send diagnostic"
-msgstr "Send diagnostic"
+#~ msgid "Send diagnostic"
+#~ msgstr "Send diagnostic"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send diagnostic (includes your screen and session)"
+msgstr "Send diagnostic (includes your screen and session)"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
@@ -29428,6 +29538,10 @@ msgstr "Sending…"
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Sends replies"
 msgstr "Sends replies"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Sends the diagnosis you checked, with what was on your screen and your session's last turns."
+msgstr "Sends the diagnosis you checked, with what was on your screen and your session's last turns."
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Sends the results to {goesTo} when the diagnosis finishes — even if you close this window."
@@ -29559,6 +29673,7 @@ msgid "session"
 msgstr "session"
 
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/project-resource-list/resource-meta.ts
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -32794,6 +32909,10 @@ msgstr "The changes did not finish"
 msgid "The check did not run."
 msgstr "The check did not run."
 
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "The check is done"
+msgstr "The check is done"
+
 #: src/notifications/ingest.ts
 msgid "The cloud service returned an error. Please try again in a moment."
 msgstr "The cloud service returned an error. Please try again in a moment."
@@ -32844,6 +32963,10 @@ msgstr "The default — what you want 99% of the time."
 #: src/components/workspace/workspace-switcher.tsx
 msgid "The default workspace. Every project outside another workspace's folder belongs here."
 msgstr "The default workspace. Every project outside another workspace's folder belongs here."
+
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+msgid "The deployment failed."
+msgstr "The deployment failed."
 
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -32982,6 +33105,10 @@ msgstr "The help desk is not set up on this machine yet."
 msgid "the host"
 msgstr "the host"
 
+#: src/components/assets/editor/agent-profile/deployment/use-deployment-threads.ts
+msgid "The hub could not reach this machine. It may be paused or still starting."
+msgstr "The hub could not reach this machine. It may be paused or still starting."
+
 #: src/components/install/InstallButton.tsx
 msgid "The hub did not accept the request."
 msgstr "The hub did not accept the request."
@@ -33075,8 +33202,12 @@ msgid "The logout did not complete."
 msgstr "The logout did not complete."
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "The machine reads this environment's credentials."
-msgstr "The machine reads this environment's credentials."
+#~ msgid "The machine reads this environment's credentials."
+#~ msgstr "The machine reads this environment's credentials."
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#~ msgid "The machine will need:"
+#~ msgstr "The machine will need:"
 
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "The mail plan has no free mailbox left. Remove a mailbox you no longer use, or ask whoever runs the hub to upgrade the plan."
@@ -33596,6 +33727,10 @@ msgstr "this agent"
 #~ msgid "This agent has no email address yet."
 #~ msgstr "This agent has no email address yet."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "This agent is in no project, so the cloud has nowhere to put it — choose one"
+msgstr "This agent is in no project, so the cloud has nowhere to put it — choose one"
+
 #~ msgid "This agent isn't published from a git repository, so there's nothing to launch."
 #~ msgstr "This agent isn't published from a git repository, so there's nothing to launch."
 
@@ -33704,6 +33839,10 @@ msgstr "This computer · {0}"
 #: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "This computer · every machine"
 msgstr "This computer · every machine"
+
+#: src/components/assets/editor/agent-profile/use-place-display.ts
+msgid "This computer · not in the cloud"
+msgstr "This computer · not in the cloud"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "This computer (fetches its own)"
@@ -34140,6 +34279,10 @@ msgstr "This project has no dataset."
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This project has no folder on disk and can't be opened."
 msgstr "This project has no folder on disk and can't be opened."
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "This project has no folder on this computer."
+msgstr "This project has no folder on this computer."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project has no secret manager yet — Share secrets continues to set one up."
@@ -35400,6 +35543,7 @@ msgid "Untitled project"
 msgstr "Untitled project"
 
 #: src/components/help/AskForHelpButton.tsx
+#: src/components/help/MyHelpRequests.tsx
 msgid "Untitled request"
 msgstr "Untitled request"
 
@@ -35769,6 +35913,7 @@ msgstr "user"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -36708,6 +36853,10 @@ msgstr "What the {0} machine still needs"
 #~ msgid "what the form asks"
 #~ msgstr "what the form asks"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "What the machine needs. Leave a field empty to keep the value it already has."
+msgstr "What the machine needs. Leave a field empty to keep the value it already has."
+
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "What this machine's assistants are funded by right now"
 msgstr "What this machine's assistants are funded by right now"
@@ -36740,8 +36889,8 @@ msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "What went wrong? (leave empty for a full sweep)"
 
 #: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
-msgid "What would you like the agent {displayName} to do?"
-msgstr "What would you like the agent {displayName} to do?"
+#~ msgid "What would you like the agent {displayName} to do?"
+#~ msgstr "What would you like the agent {displayName} to do?"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -36905,6 +37054,10 @@ msgstr "Which engine does the heavy file scanning: Python (built in), or Rust (a
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Which project should it work on?"
 msgstr "Which project should it work on?"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Which set of values the machine reads. It joins the hub you are signed in to either way."
+msgstr "Which set of values the machine reads. It joins the hub you are signed in to either way."
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "While it is offline, the hub answers 503 and your server retries — nothing is lost and nothing is stored. Messages from other senders keep flowing."
@@ -37647,6 +37800,10 @@ msgstr "Your new API key has been created. Please save it securely."
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
 msgstr "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Your open requests"
+msgstr "Your open requests"
 
 #. placeholder {0}: t(spec.label)
 #: src/components/organization/tabs/BillingTab.tsx

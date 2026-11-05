@@ -9,6 +9,19 @@
 export type DiagnosisStatus = 'ok' | 'informational' | 'needs_action' | 'fixed' | 'unrecognized' | 'partial';
 export type DiagnosePurpose = 'report' | 'repair';
 
+export interface SessionTurn {
+  role: string;
+  text: string;
+}
+
+export interface SessionState {
+  process: string;
+  title: string;
+  status: string;
+  worker: string;
+  turns: SessionTurn[];
+}
+
 export interface FlowContextSpec {
   purpose: DiagnosePurpose;
   project_id: string | null;
@@ -17,6 +30,12 @@ export interface FlowContextSpec {
   user_report: string;
   origin: string;
   instance: string;
+  view: string;
+  address: string;
+  entity: string;
+  session: SessionState | null;
+  hub_login: string;
+  other_sessions: SessionState[];
 }
 
 export interface DiagnosisFinding {

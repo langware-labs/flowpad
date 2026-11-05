@@ -2,7 +2,6 @@ import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
-import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
 import {
   continueVibeSessionForProject,
@@ -282,12 +281,7 @@ export function VibeChatPane({
         // a transcript is reachable from the build composer it belongs to.
         historyProjectId={chatProjectId}
         showProcessNameBar
-        afterHistorySlot={
-          <>
-            <VibeDocChip process={process} />
-            <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
-          </>
-        }
+        afterHistorySlot={<VibeDocChip process={process} />}
         pastSessionsLabel={t`Past builds`}
         noPastSessionsLabel={t`No past builds`}
         defaultProjectId={project?.id ?? null}

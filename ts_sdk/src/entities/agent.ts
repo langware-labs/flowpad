@@ -174,6 +174,8 @@ export class Agent extends APIEntity<Agent> {
   /** One of Flowpad's own agents (ships inside a system project) — backend-computed, read-only.
    *  Absent on hub rows, which reads as not shipped. */
   shipped?: boolean;
+  /** The project holding this agent; null for one in the user scope, which cannot be deployed to the cloud. */
+  project_id?: string | null;
   /** Where the hub keeps this agent's files. A published agent lives in its project's
    *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
    *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
@@ -243,6 +245,7 @@ export class Agent extends APIEntity<Agent> {
     this.enabled = entity.enabled ?? true;
     this.asset_ref = entity.asset_ref;
     this.shipped = entity.shipped;
+    this.project_id = entity.project_id ?? null;
     this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
@@ -487,11 +490,17 @@ export class Agent extends APIEntity<Agent> {
     provider,
     tokenAllocation,
     machineSize,
+    deploymentId,
+    values,
   }: {
     environment?: string;
     provider?: 'local' | CloudDeployProvider;
     tokenAllocation?: AgentTokenAllocation | null;
     machineSize?: string;
+    /** The placement a refused deploy named: a retry continues it, keeping what was stored on it. */
+    deploymentId?: string;
+    /** Values typed for this deploy, `{credential: {variable: value}}`, stored on its placement. */
+    values?: Record<string, Record<string, string>>;
   } = {}): Promise<AgentDeployResult> {
     const body = {
       ...(environment ? { environment } : {}),
@@ -499,6 +508,8 @@ export class Agent extends APIEntity<Agent> {
       ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
       // This deploy's box size; never written into agent.json (that would dirty the checkout it deploys).
       ...(machineSize ? { machine_size: machineSize } : {}),
+      ...(deploymentId ? { deployment_id: deploymentId } : {}),
+      ...(values && Object.keys(values).length ? { values } : {}),
     };
     return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
   }
@@ -614,6 +625,17 @@ export class Agent extends APIEntity<Agent> {
    * Agent's mail surface — everything else about a mailbox (its allowlist, its
    * lifecycle) belongs to `AgentMailbox`, which this hydrates.
    */
+  /** The environment a deploy starts on, and the ones to offer. */
+  async deployDefaults(): Promise<{ environment: string; environments: string[] }> {
+    return this.get('deploy_defaults');
+  }
+
+  /** Move this project-less agent into a project (`Agent.move_to_project`). */
+  async moveToProject(projectId: string): Promise<void> {
+    await this.post('move_to_project', { project_id: projectId });
+    this.project_id = projectId;
+  }
+
   /** What this agent needs to run anywhere — credentials, permissions, variables. Names only. */
   async requirements(): Promise<AgentRequirement[]> {
     return (await this.get<AgentRequirement[] | null>('requirements')) ?? [];

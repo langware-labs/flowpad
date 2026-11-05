@@ -86,14 +86,13 @@ _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
 # not observe the same record between those two stores.  Locks are loop-scoped
 # (asyncio locks cannot cross pytest/server event loops) and weakly held so a
 # long-lived server does not retain one lock for every record it ever touched.
-_RECORD_SYNC_LOCKS: "WeakValueDictionary[tuple[object, str, str], asyncio.Lock]" = (
-    WeakValueDictionary()
-)
+_RECORD_SYNC_LOCKS: "WeakValueDictionary[tuple[object, str, str], asyncio.Lock]" = WeakValueDictionary()
 
 
 _HELD_RECORD_SYNC_KEYS: "ContextVar[frozenset[tuple[object, str, str]]]" = ContextVar(
     "_held_record_sync_keys", default=frozenset()
 )
+
 
 @asynccontextmanager
 async def record_sync_guard(record_type: str, record_id: str):
@@ -164,6 +163,7 @@ def _write_json_atomic(path: Path, data: dict) -> None:
 def _get_default_records_root() -> Path:
     """Lazy lookup so tests can monkeypatch FS_RECORD_PATH between sessions."""
     from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
+
     return get_default_records_root()
 
 
@@ -175,6 +175,7 @@ def _digest(raw: str) -> str:
     bounded ``<hexdigest>`` half of the ``.hash`` sentinel filename.
     """
     import hashlib
+
     return hashlib.blake2b(raw.encode(), digest_size=8).hexdigest()
 
 
@@ -256,9 +257,9 @@ class FSRecord(Generic[M]):
         If ``TypeInfo.meta_model`` is registered for this type, returns an
         instance of that Pydantic model instead of a dict.
         """
-        d = {k: v for k, v in self.__dict__.items()
-             if k not in _SYSTEM_ATTRS and not k.startswith("_")}
+        d = {k: v for k, v in self.__dict__.items() if k not in _SYSTEM_ATTRS and not k.startswith("_")}
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
         info = SchemaRegistry.get(self.type)
         model_cls = getattr(info, "effective_meta_model", None) if info else None
         if model_cls is not None:
@@ -525,9 +526,7 @@ class FSRecord(Generic[M]):
             return None
         if len(matches) > 1:
             types = ", ".join(sorted(m.parent.name for m in matches))
-            raise ValueError(
-                f"Ambiguous FSRecord id {id!r}: found under multiple types ({types})"
-            )
+            raise ValueError(f"Ambiguous FSRecord id {id!r}: found under multiple types ({types})")
         return cls.load_record(matches[0])
 
     @classmethod
@@ -789,9 +788,7 @@ class FSRecord(Generic[M]):
 
     # ── Asset placement (read from TypeInfo) ──────────────────────────────
 
-    def compute_asset_ref(
-        self, scope_root: str | Path, entity, *, default_worker: str = "claude"
-    ) -> FSRef | None:
+    def compute_asset_ref(self, scope_root: str | Path, entity, *, default_worker: str = "claude") -> FSRef | None:
         """Resolve the user-facing asset location under scope_root.
 
         The family subdir comes from ``placement`` (``asset_class`` / ``harness``
@@ -821,7 +818,6 @@ class FSRecord(Generic[M]):
             raise ValueError(f"Derived {self.type} asset path escapes its scope root")
         return FSRef(resolved_target)
 
-
     # ── DB integration ────────────────────────────────────────────────────
 
     async def sync_to_db(self, fts_batch: list | None = None, notify: bool = True) -> None:
@@ -834,9 +830,7 @@ class FSRecord(Generic[M]):
         async with record_sync_guard(self.type, str(self.id)):
             await self._sync_to_db_unlocked(fts_batch=fts_batch, notify=notify)
 
-    async def _sync_to_db_unlocked(
-        self, fts_batch: list | None = None, notify: bool = True
-    ) -> None:
+    async def _sync_to_db_unlocked(self, fts_batch: list | None = None, notify: bool = True) -> None:
         """Implementation of :meth:`sync_to_db`; caller owns its record guard.
 
         Pipeline (single shared session for cache coherence):
@@ -862,16 +856,17 @@ class FSRecord(Generic[M]):
         try:
             async with _db_session():
                 entity = await Entity.from_record(self, notify=notify)
+                if entity is None:  # the type declined it (a project record on a path no project may have)
+                    return
                 wiki_run_scope.lookups().note(entity)
 
                 # Mirror entity state back to disk metadata.json (id, scope, project_id, etc.).
                 import asyncio  # noqa: PLC0415
+
                 await asyncio.to_thread(self.sync_from_entity, entity)
 
                 # FTS — read directly from instance attrs, no per-record parse.
-                entry = FtsEntry.from_record(
-                    entity.id, entity.type, self.__dict__.get("name"), self
-                )
+                entry = FtsEntry.from_record(entity.id, entity.type, self.__dict__.get("name"), self)
                 if fts_batch is not None:
                     fts_batch.append(entry)
                 else:
@@ -884,8 +879,12 @@ class FSRecord(Generic[M]):
                     await wiki.index(self.type, self.id, self.wiki_body())
                 except Exception as wiki_exc:
                     import logging  # noqa: PLC0415
+
                     logging.getLogger(__name__).warning(
-                        "wiki.index failed for %s:%s — %s", self.type, self.id, wiki_exc,
+                        "wiki.index failed for %s:%s — %s",
+                        self.type,
+                        self.id,
+                        wiki_exc,
                     )
 
                 # Type-specific post-sync hook.
@@ -897,9 +896,13 @@ class FSRecord(Generic[M]):
                         await callback(self)
                     except Exception as post_exc:
                         import logging  # noqa: PLC0415
+
                         logging.getLogger(__name__).warning(
                             "post_sync_fn %s failed for %s:%s — %s",
-                            getattr(callback, "__name__", callback), self.type, self.id, post_exc,
+                            getattr(callback, "__name__", callback),
+                            self.type,
+                            self.id,
+                            post_exc,
                         )
         except Exception as exc:
             _record_error_from_exception(self, exc, trigger="sync_to_db").save()
@@ -940,11 +943,13 @@ class FSRecord(Generic[M]):
     async def get_links(self) -> list:
         """Outgoing wiki links from this record."""
         from flow_sdk import wiki  # noqa: PLC0415
+
         return await wiki.outgoing(self.type, self.id)
 
     async def get_backlinks(self) -> list:
         """Inbound wiki links pointing at this record."""
         from flow_sdk import wiki  # noqa: PLC0415
+
         return await wiki.backlinks(self.type, self.id)
 
     async def unindex(self) -> None:
@@ -959,9 +964,12 @@ class FSRecord(Generic[M]):
             await wiki.delete_for_id(self.type, str(self.id))
         except Exception as wiki_exc:
             import logging  # noqa: PLC0415
+
             logging.getLogger(__name__).warning(
                 "wiki.delete_for_id failed for %s:%s — %s",
-                self.type, self.id, wiki_exc,
+                self.type,
+                self.id,
+                wiki_exc,
             )
 
         # Query through the registered typed class — a base-``Entity`` query
@@ -981,6 +989,7 @@ class FSRecord(Generic[M]):
         .hash sentinel — everything under ``shadow_dir``)."""
         await self.unindex()
         import shutil  # noqa: PLC0415
+
         try:
             shutil.rmtree(self.shadow_dir)
         except (FileNotFoundError, OSError, ValueError):

@@ -29,7 +29,6 @@ from . import (  # noqa: F401
     project_git_share_action,
     prompt_pin_action,
     rag_index_action,
-    report_action,
     screen_recording_action,
     share_action,
     task_assign_action,

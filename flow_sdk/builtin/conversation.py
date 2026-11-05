@@ -303,6 +303,8 @@ class Conversation(ProjectedFields, Entity):
     updated_date: Optional[datetime] = APIField(None, sharing=Sharing.PRIVATE)
     # The staffers who picked a helpdesk ticket up (user ids); the hub computes it.
     picked_up_by: List[str] = APIField(default_factory=list, sharing=Sharing.HUB_READ)
+    # Whether anyone picked it up -- all a requester learns: their ``picked_up_by`` stays empty.
+    staffed: bool = APIField(default=False, sharing=Sharing.HUB_READ)
 
     async def on_hub_mirror(self, hub_row: dict, *, created: bool, changed: set[str]) -> bool:
         """A conversation that lands here from the hub starts at the hub's clock and in the local
@@ -332,6 +334,7 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.builtin.user import normalize_roster  # noqa: PLC0415
 
         return normalize_roster(value) if isinstance(value, list) else value
+
     # True once ``share()`` succeeded — the conversation has a hub-side mirror
     # with the same id, and future replies should route through the bridge.
     # NOTE: Entity base class already defines `remote`, this is a documentation
@@ -1304,7 +1307,9 @@ class Conversation(ProjectedFields, Entity):
         body = self.add_message_body(text, **fields)
         # The one hub seam: every way this fails raises a classified ``HubError`` (signed out
         # before anything is sent, offline, refused, broken) that delivery records as is.
-        data = await HubProxy.call("POST", BuiltinEntityType.CONVERSATION, self.id, "add_message", payload=body, strict=True)
+        data = await HubProxy.call(
+            "POST", BuiltinEntityType.CONVERSATION, self.id, "add_message", payload=body, strict=True
+        )
         # Some hub deployments do not echo conversation_id on the FlowMessage
         # payload even though the add_message route is scoped to this
         # conversation. Preserve the known parent locally so callers that pack

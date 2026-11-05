@@ -113,6 +113,20 @@ def test_a_meta_user_entry_does_not_end_the_turn():
     assert reply == "thinking about tools\n\nfinal answer", reply
 
 
+def test_last_only_returns_just_the_final_message():
+    """A reply that reaches a customer is the turn's last message, not the progress lines before it."""
+    entries = [
+        _user("u1", "question"),
+        _assistant("a1", "I am checking the schema"),
+        _user("u2", "tool result", is_meta=True),
+        _assistant("a2", "final answer"),
+        _assistant("a3", "   "),
+    ]
+
+    assert _last_turn_assistant_text(entries, last_only=True) == "final answer"
+    assert _last_turn_assistant_text(entries) == "I am checking the schema\n\nfinal answer"
+
+
 def test_a_repeated_id_counts_once_with_the_last_write_winning():
     """A streamed chunk and its finalized snapshot share an id — one line, and
     the finalized text is the one that survives."""

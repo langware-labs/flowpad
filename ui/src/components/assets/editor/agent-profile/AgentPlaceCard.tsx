@@ -40,7 +40,7 @@ interface AgentPlaceCardProps {
 }
 
 /**
- * The selected environment: Development · local, or a cloud machine.
+ * The selected environment: This computer · local, or a cloud machine.
  *
  * The selected tab and the open chat live in the URL (dock options) — a click
  * only navigates, per the URL-first rule.
@@ -85,6 +85,8 @@ export function AgentPlaceCard({ agent, place, pendingChanges = 0, onChanged }: 
       await onChanged();
     } catch (e) {
       notify.error({ title: failure, message: errorMessage(e, failure), forceToast: true });
+      // A verb that lost its answer may still have happened: show what is, not what was.
+      await onChanged();
     } finally {
       setBusy(null);
     }
@@ -101,7 +103,8 @@ export function AgentPlaceCard({ agent, place, pendingChanges = 0, onChanged }: 
             await deployment.delete();
             // Shown on the deployment's own page, the URL still names the machine just destroyed:
             // go back to the agent, the page that lists what is left.
-            if (currentDock?.child?.typeId === `deployment-${deployment.id}`) navigation.openDock(currentDock.withoutChild());
+            if (currentDock?.child?.typeId === `deployment-${deployment.id}`)
+              navigation.openDock(currentDock.withoutChild());
           },
           t`Could not delete the cloud machine`,
         ),

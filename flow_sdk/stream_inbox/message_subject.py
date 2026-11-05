@@ -149,12 +149,19 @@ class ConversationMessageSubject(MessageSubject):
     target_type: ClassVar[str] = "flow_message"
 
     async def of(self, target: str) -> MessageState:
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
         _, message_id = parse_target(str(target))
         try:
             fm = await _message(message_id)
         except LookupError:
             raise NotCaught("no such message") from None
-        return state_of(fm, await _self_ids())
+        state = state_of(fm, await _self_ids())
+        # A conversation message has no subject line of its own: the conversation's title stands for it,
+        # so a rule can tell which conversation the message is in.
+        conversation = await Conversation.get_by_id(state.conversation_id) if state.conversation_id else None
+        title = str(getattr(conversation, "title", "") or "")
+        return state.model_copy(update={"subject": title}) if title else state
 
     async def test_event(self, subject_id: str) -> dict[str, Any]:
         from flow_sdk.stream_inbox.stream_inbox_on_tag import conversation_message_envelope  # noqa: PLC0415

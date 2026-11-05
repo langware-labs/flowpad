@@ -26,6 +26,18 @@ if TYPE_CHECKING:  # pragma: no cover
 #: A cloud placement's credential environment when the caller names none.
 DEFAULT_CLOUD_ENVIRONMENT = "production"
 
+
+def default_cloud_environment() -> str:
+    """The credential environment a deploy dialog starts on: ``staging`` when this instance is signed in to
+    a staging hub, so a test machine does not read the production values by default."""
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    from flow_sdk.config import default_service_config  # noqa: PLC0415
+
+    host = urlparse(default_service_config.flowpad_hub_url or "").hostname or ""
+    return "staging" if "staging" in host else DEFAULT_CLOUD_ENVIRONMENT
+
+
 #: The hub compute provider a cloud placement lands on when the caller names none. Which providers
 #: exist is the hub's to say: it refuses one it does not offer.
 DEFAULT_CLOUD_PROVIDER = "e2b"

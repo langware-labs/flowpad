@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, Settings2 } from 'lucide-react';
 import { cloudManager, Deployment, TypeId, type Agent, type DeploymentThread } from '@sdk';
@@ -42,6 +42,22 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
   const { data: funding } = useDeploymentFunding(deployment);
   const fundedModel = funding?.model ? (funding.size ? `${funding.size} → ${funding.model}` : funding.model) : null;
   const worker = place?.overrides?.worker_type ?? agent.worker_type;
+  const failed =
+    deployment?.status.sync_state === 'error' ? deployment.status.message || t`The deployment failed.` : null;
+  // "On" is a wish; a local deployment's process is the fact.
+  const [notRunning, setNotRunning] = useState(false);
+  const local = deployment?.target.provider === 'local';
+  useEffect(() => {
+    if (!deployment || !local) return;
+    let alive = true;
+    void deployment
+      .process()
+      .then((process) => alive && setNotRunning(!process?.pid))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [deployment, local]);
 
   const options = currentDock?.options ?? {};
   const selectedId = options[THREAD_OPTION] ?? threads?.[0]?.conversation_id ?? null;
@@ -94,16 +110,33 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
             <ArrowUpRight className="h-4 w-4" />
           </a>
         )}
-        {place && (
+        {failed ? (
           <span
-            className={
-              place.enabled
-                ? 'inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:text-green-400'
-                : 'rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground'
-            }
+            className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:text-red-400"
+            data-testid="deployment-state"
           >
-            {place.enabled ? <Trans>On</Trans> : <Trans>Off</Trans>}
+            <Trans>Failed</Trans>
           </span>
+        ) : place && notRunning && place.enabled ? (
+          <span
+            className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+            data-testid="deployment-state"
+          >
+            <Trans>Not running</Trans>
+          </span>
+        ) : (
+          place && (
+            <span
+              data-testid="deployment-state"
+              className={
+                place.enabled
+                  ? 'inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:text-green-400'
+                  : 'rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground'
+              }
+            >
+              {place.enabled ? <Trans>On</Trans> : <Trans>Off</Trans>}
+            </span>
+          )
         )}
         <span className="text-xs text-muted-foreground">
           {[agent.name, worker && workerLabel(worker), fundedModel ?? place?.overrides?.model ?? agent.model]
@@ -121,6 +154,11 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
           {t`Settings`}
         </Button>
       </header>
+      {failed && (
+        <p className="border-b px-6 py-2 text-sm text-destructive" role="alert" data-testid="deployment-failed">
+          {failed}
+        </p>
+      )}
       {deployment && (
         <div className="px-4">
           <DeploymentHealth deployment={deployment} />

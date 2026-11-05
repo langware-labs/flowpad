@@ -6,6 +6,7 @@ twin conversation beside the mirrored one); a reply picks the ticket up first (t
 ticket out to participants only); and "not a member of this desk" must park the source in words
 a person can act on, while an unreachable hub must not.
 """
+
 from __future__ import annotations
 
 import json
@@ -39,17 +40,40 @@ DESK = "4f9f1fd1-39b6-5465-9c20-cb4c59b08318"
 TICKET = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ME = "11111111-1111-4111-8111-111111111111"
 GUEST = "22222222-2222-4222-8222-222222222222"
-POOL = [{"conversation_id": TICKET, "title": None, "preview": "my printer is broken", "initiated_by": GUEST, "message_count": 1,
-         "member_count": 1, "picked_up": False, "created_at": "2026-09-06T10:00:00+00:00", "updated_at": "2026-09-06T10:00:00+00:00"}]
-MSG = {"id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "text": "my printer is broken", "sender_id": GUEST, "sender_name": "Guest",
-       "created_date": "2026-09-06T10:00:00+00:00", "updated_date": "2026-09-06T10:00:00+00:00"}
+POOL = [
+    {
+        "conversation_id": TICKET,
+        "title": None,
+        "preview": "my printer is broken",
+        "initiated_by": GUEST,
+        "message_count": 1,
+        "member_count": 1,
+        "picked_up": False,
+        "created_at": "2026-09-06T10:00:00+00:00",
+        "updated_at": "2026-09-06T10:00:00+00:00",
+    }
+]
+MSG = {
+    "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "text": "my printer is broken",
+    "sender_id": GUEST,
+    "sender_name": "Guest",
+    "created_date": "2026-09-06T10:00:00+00:00",
+    "updated_date": "2026-09-06T10:00:00+00:00",
+}
 
 
 class _Hub:
     """A hub that answers what it is told, records what it was asked, and knows its tickets."""
 
     def __init__(self, *, pool=None, messages=None, user=ME):
-        self.pool, self.messages, self.user, self.calls, self.tickets = pool or [], list(messages or []), user, [], {TICKET}
+        self.pool, self.messages, self.user, self.calls, self.tickets = (
+            pool or [],
+            list(messages or []),
+            user,
+            [],
+            {TICKET},
+        )
         self.params = {}
 
     async def get(self, entity_type, entity_id, action, *, params=None):
@@ -62,8 +86,13 @@ class _Hub:
         if entity_id not in self.tickets:
             raise NotFound("no such ticket")
         if action == "add_message":
-            sent = {"id": str(uuid.uuid4()), "text": payload["text"], "sender_id": ME, "created_date": "2026-09-06T11:00:00+00:00",
-                    "updated_date": "2026-09-06T11:00:00+00:00"}
+            sent = {
+                "id": str(uuid.uuid4()),
+                "text": payload["text"],
+                "sender_id": ME,
+                "created_date": "2026-09-06T11:00:00+00:00",
+                "updated_date": "2026-09-06T11:00:00+00:00",
+            }
             self.messages.append(sent)
             return sent
         return {}
@@ -73,8 +102,14 @@ class _Hub:
 
 
 def _row(**config):
-    return SimpleNamespace(id=f"ds-{uuid.uuid4().hex[:8]}", name="Desk", provider="helpdesk",
-                           config={"desk_project_id": DESK, **config}, account_key="", account_identities=[])
+    return SimpleNamespace(
+        id=f"ds-{uuid.uuid4().hex[:8]}",
+        name="Desk",
+        provider="helpdesk",
+        config={"desk_project_id": DESK, **config},
+        account_key="",
+        account_identities=[],
+    )
 
 
 def _view(prior=None, *, cursor=None):
@@ -90,15 +125,27 @@ def hub(monkeypatch):
 
 @pytest.mark.parametrize("check", checks_for(HelpdeskSource), ids=str)
 async def test_conformance(check):
-    fake = _Hub(pool=POOL, messages=[{**MSG, "id": f"m{n}", "created_date": f"2026-09-06T10:0{n}:00+00:00",
-                                      "updated_date": f"2026-09-06T10:0{n}:00+00:00"} for n in (1, 2, 3)])
+    fake = _Hub(
+        pool=POOL,
+        messages=[
+            {
+                **MSG,
+                "id": f"m{n}",
+                "created_date": f"2026-09-06T10:0{n}:00+00:00",
+                "updated_date": f"2026-09-06T10:0{n}:00+00:00",
+            }
+            for n in (1, 2, 3)
+        ],
+    )
     binding = SourceBinding(config={"desk_project_id": DESK})
     probe = HelpdeskSource(binding, hub=fake)
-    await check.run(Subject(
-        source=lambda: HelpdeskSource(binding, hub=fake),
-        conversation=probe.ticket_origin(TICKET),
-        recipient=UserProfile(origin=probe.origin(GUEST), name="Guest"),
-    ))
+    await check.run(
+        Subject(
+            source=lambda: HelpdeskSource(binding, hub=fake),
+            conversation=probe.ticket_origin(TICKET),
+            recipient=UserProfile(origin=probe.origin(GUEST), name="Guest"),
+        )
+    )
 
 
 class TestTheSource:
@@ -122,9 +169,19 @@ class TestTheSource:
 
 
 OTHER = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
-OTHER_ROW = {**POOL[0], "conversation_id": OTHER, "preview": "the wifi is down", "updated_at": "2026-09-06T09:00:00+00:00"}
-OTHER_MSG = {**MSG, "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "text": "the wifi is down",
-             "created_date": "2026-09-06T09:00:00+00:00", "updated_date": "2026-09-06T09:00:00+00:00"}
+OTHER_ROW = {
+    **POOL[0],
+    "conversation_id": OTHER,
+    "preview": "the wifi is down",
+    "updated_at": "2026-09-06T09:00:00+00:00",
+}
+OTHER_MSG = {
+    **MSG,
+    "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    "text": "the wifi is down",
+    "created_date": "2026-09-06T09:00:00+00:00",
+    "updated_date": "2026-09-06T09:00:00+00:00",
+}
 
 
 class _Desk(_Hub):
@@ -159,8 +216,13 @@ class TestThePool:
         desk = _Desk({TICKET: [MSG], OTHER: [OTHER_MSG]}, [POOL[0], OTHER_ROW])
         driver = _serve(monkeypatch, desk)
         first = await driver.traverse(_row(), _view())
-        reply = {**MSG, "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "text": "have you tried turning it off",
-                 "created_date": "2026-09-06T10:05:00+00:00", "updated_date": "2026-09-06T10:05:00+00:00"}
+        reply = {
+            **MSG,
+            "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            "text": "have you tried turning it off",
+            "created_date": "2026-09-06T10:05:00+00:00",
+            "updated_date": "2026-09-06T10:05:00+00:00",
+        }
         desk.threads[TICKET].append(reply)
         desk.pool = [{**POOL[0], "message_count": 2, "updated_at": reply["updated_date"]}, OTHER_ROW]
         desk.calls.clear()
@@ -186,8 +248,13 @@ class TestThePool:
         closed = await driver.traverse(_row(), _view(first))
         assert desk.reads() == [TICKET], "a close with no new message still counts as change"
         assert closed.items == []
-        reply = {**MSG, "id": "ffffffff-ffff-4fff-8fff-ffffffffffff", "text": "still broken",
-                 "created_date": "2026-09-06T10:09:00+00:00", "updated_date": "2026-09-06T10:09:00+00:00"}
+        reply = {
+            **MSG,
+            "id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            "text": "still broken",
+            "created_date": "2026-09-06T10:09:00+00:00",
+            "updated_date": "2026-09-06T10:09:00+00:00",
+        }
         desk.threads[TICKET].append(reply)
         desk.pool = [{**POOL[0], "status": "closed", "message_count": 2, "updated_at": reply["updated_date"]}]
         after = await driver.traverse(_row(), _view(closed))
@@ -231,7 +298,9 @@ class TestThePool:
 class TestMapping:
     async def test_a_ticket_message_becomes_a_record_with_the_hub_ids_as_hints(self, hub):
         (item,) = (await DataDriver.loaded("helpdesk").traverse(_row(), _view())).items
-        assert item.external_id == MSG["id"] and item.message_id == MSG["id"], "the projection mints the FlowMessage with the hub's id"
+        assert item.external_id == MSG["id"] and item.message_id == MSG["id"], (
+            "the projection mints the FlowMessage with the hub's id"
+        )
         assert item.conversation_id == TICKET, "the projection adopts the hub conversation"
         assert (item.thread_key, item.body, item.kind) == (TICKET, "my printer is broken", "content.message.chat")
         assert (item.author_external_id, item.author_display) == (GUEST, "Guest")
@@ -239,13 +308,17 @@ class TestMapping:
     async def test_the_cursor_holds_each_tickets_change_token_and_message_watermark(self, hub):
         first = await DataDriver.loaded("helpdesk").traverse(_row(), _view())
         stamp = f"{POOL[0]['message_count']}:{POOL[0]['updated_at']}:"
-        assert first.cursor == HelpdeskSource.resume_at(POOL[0]["updated_at"], {TICKET: (stamp, MSG["updated_date"], [MSG["id"]])})
+        assert first.cursor == HelpdeskSource.resume_at(
+            POOL[0]["updated_at"], {TICKET: (stamp, MSG["updated_date"], [MSG["id"]])}
+        )
         again = await DataDriver.loaded("helpdesk").traverse(_row(), _view(first))
         assert again.items == [] and again.unchanged is True
 
     async def test_an_edit_re_arrives_because_its_stamp_moved(self, hub):
         hub.messages = [{**MSG, "text": "my printer is on fire", "updated_date": "2026-09-06T10:05:00+00:00"}]
-        cursor = HelpdeskSource.resume_at(POOL[0]["updated_at"], {TICKET: ("1:earlier", MSG["updated_date"], [MSG["id"]])})
+        cursor = HelpdeskSource.resume_at(
+            POOL[0]["updated_at"], {TICKET: ("1:earlier", MSG["updated_date"], [MSG["id"]])}
+        )
         result = await DataDriver.loaded("helpdesk").traverse(_row(), _view(cursor=cursor))
         assert [i.body for i in result.items] == ["my printer is on fire"]
 
@@ -253,7 +326,10 @@ class TestMapping:
 class TestSend:
     async def test_it_picks_the_ticket_up_before_answering_every_time(self, hub):
         out = await DataDriver.loaded("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
-        assert [c for c in hub.calls if c[0] == "post"] == [("post", "conversation", TICKET, "pickup"), ("post", "conversation", TICKET, "add_message")]
+        assert [c for c in hub.calls if c[0] == "post"] == [
+            ("post", "conversation", TICKET, "pickup"),
+            ("post", "conversation", TICKET, "add_message"),
+        ]
         assert out.recorded is True, "recorded at send, on the hub's id — the next poll's copy lands on the same row"
         assert out.external_id == hub.messages[-1]["id"]
 
@@ -265,7 +341,9 @@ class TestSend:
 
         row = _row()
         out = await DataDriver.loaded("helpdesk").send(row, thread_key=TICKET, to=TICKET, text="try restarting it")
-        (item,) = [i for i in await SourceItem.get_all({"data_source_id": str(row.id)}) if i.external_id == out.external_id]
+        (item,) = [
+            i for i in await SourceItem.get_all({"data_source_id": str(row.id)}) if i.external_id == out.external_id
+        ]
         assert item.message_id == out.external_id, "the projection must land the sent copy on the hub's message id"
         assert item.conversation_id == TICKET, "the projection must adopt the hub conversation"
 
@@ -287,18 +365,25 @@ class TestSend:
 
 
 class TestTheAppHub:
-    @pytest.mark.parametrize("error,signed_in,health,words", [
-        (HubError(403, "forbidden"), True, SourceHealth.CONFIG_ERROR, "member"),
-        (HubError(401, "Forbidden access"), True, SourceHealth.CONFIG_ERROR, "member"),
-        (HubError(401, "Forbidden access"), False, SourceHealth.CONFIG_ERROR, "Log in"),
-        (HubError(404, "gone"), True, SourceHealth.CONFIG_ERROR, "no longer exists"),
-        (HubError(0, "hub not configured"), True, SourceHealth.CONFIG_ERROR, "not configured"),
-        # HubProxy.call's own no-hub error: told by its kind, whatever the reason's words.
-        (HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED), True, SourceHealth.CONFIG_ERROR,
-         "not configured"),
-        (HubError(0, "connection reset"), True, SourceHealth.TRANSIENT_ERROR, "reached"),
-        (HubError(429, "slow down"), True, SourceHealth.TRANSIENT_ERROR, "429"),
-    ])
+    @pytest.mark.parametrize(
+        "error,signed_in,health,words",
+        [
+            (HubError(403, "forbidden"), True, SourceHealth.CONFIG_ERROR, "member"),
+            (HubError(401, "Forbidden access"), True, SourceHealth.CONFIG_ERROR, "member"),
+            (HubError(401, "Forbidden access"), False, SourceHealth.CONFIG_ERROR, "Log in"),
+            (HubError(404, "gone"), True, SourceHealth.CONFIG_ERROR, "no longer exists"),
+            (HubError(0, "hub not configured"), True, SourceHealth.CONFIG_ERROR, "not configured"),
+            # HubProxy.call's own no-hub error: told by its kind, whatever the reason's words.
+            (
+                HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED),
+                True,
+                SourceHealth.CONFIG_ERROR,
+                "not configured",
+            ),
+            (HubError(0, "connection reset"), True, SourceHealth.TRANSIENT_ERROR, "reached"),
+            (HubError(429, "slow down"), True, SourceHealth.TRANSIENT_ERROR, "429"),
+        ],
+    )
     def test_a_hub_failure_maps_to_the_health_a_person_needs(self, error, signed_in, health, words):
         refusal = hub_refusal(error, signed_in=signed_in)
         assert classify(refusal)[0] is health and words in str(refusal)
@@ -330,6 +415,31 @@ class TestChoices:
         assert offered and isinstance(offered[0], Choice) and offered[0].id == DESK
         assert await DataDriver.loaded("helpdesk").choices(_row(), "other") == []
 
+    async def test_a_desk_this_login_is_not_on_is_flagged(self, monkeypatch):
+        from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
+
+        async def default():
+            return HelpdeskTarget(DESK, None)
+
+        async def none(_q):
+            return []
+
+        async def walk(_type):
+            return SimpleNamespace(rows=[{"id": "other", "helpdesk": {"enabled": True}}], complete=True)
+
+        monkeypatch.setattr("flow_sdk.app.actions.flow_message_action._hub_default_helpdesk", default)
+        monkeypatch.setattr("flow_sdk.builtin.helpdesk.Helpdesk.get_all", none)
+        monkeypatch.setattr(HubProxy, "walk", walk)
+        offered = await DataDriver.loaded("helpdesk").choices(_row(), "desk_project_id")
+        assert "not on this desk" in offered[0].detail
+
+    def test_a_picked_desk_is_accepted_and_read_by_its_id(self):
+        driver = DataDriver.loaded("helpdesk")
+        config = driver.cls.Config.validated({"desk_project_id": {"id": DESK, "name": "Flowpad Support"}})
+        assert config.desk_project_id.id == DESK
+        picked = SourceBinding(config={"desk_project_id": {"id": DESK, "name": "Flowpad Support"}})
+        assert HelpdeskSource(picked, hub=_Hub()).desk == DESK
+
 
 class TestReadingBackwards:
     """``narrow={"before": t}``: one page of what was sent strictly before ``t``, newest first, trimmed,
@@ -337,8 +447,18 @@ class TestReadingBackwards:
 
     @staticmethod
     def _desk():
-        mine = [{**MSG, "id": f"m{n}", "created_date": f"2026-09-06T10:0{n}:00+00:00", "updated_date": f"2026-09-06T10:0{n}:00+00:00"} for n in (1, 2, 3)]
-        return _Desk({TICKET: mine, OTHER: [OTHER_MSG]}, [{**POOL[0], "updated_at": "2026-09-06T10:03:00+00:00"}, OTHER_ROW])
+        mine = [
+            {
+                **MSG,
+                "id": f"m{n}",
+                "created_date": f"2026-09-06T10:0{n}:00+00:00",
+                "updated_date": f"2026-09-06T10:0{n}:00+00:00",
+            }
+            for n in (1, 2, 3)
+        ]
+        return _Desk(
+            {TICKET: mine, OTHER: [OTHER_MSG]}, [{**POOL[0], "updated_at": "2026-09-06T10:03:00+00:00"}, OTHER_ROW]
+        )
 
     async def test_only_older_newest_first_and_trimmed(self):
         from datetime import datetime  # noqa: PLC0415

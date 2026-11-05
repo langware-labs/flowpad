@@ -12,10 +12,11 @@
  * project folder does not have to be a git checkout, have a remote, be pushed,
  * or have GitHub connected — none of that is a gate any more.
  *
- * `version` is the one OPTIONAL row: whether the published version already has
- * this computer's edits (the agent's `version()` `pending_changes`). It never
- * disables Deploy — a stale published version still deploys — it only offers to
- * publish the edits first.
+ * `version` is OPTIONAL for a folder project: whether the published version already
+ * has this computer's edits (the agent's `version()` `pending_changes`). A stale
+ * published version still deploys, so the row only offers to publish the edits
+ * first. In a git checkout it is a gate: the deploy refuses uncommitted or unpushed
+ * work (`GitSourceState.refusal`).
  *
  * Pure and React-free on purpose: the mapping is the part worth pinning in a
  * test, and it stays pinnable only while it takes plain values in.
@@ -99,9 +100,13 @@ export function deployBlocker(states: DeployReadiness): DeployStepId | null {
  * `null` — still checking — is NOT `false`: a slow or unanswerable probe must
  * never take away a button that works today. Only a step we positively know is
  * unmet disables Deploy; the backend's error toast stays the backstop.
+ * `gitNative`: a git checkout, whose `version` row is a gate too.
  */
-export function deployReadyState(states: DeployReadiness): boolean | null {
-  if (REQUIRED_DEPLOY_STEP_IDS.every((id) => states[id] === 'done')) return true;
-  if (REQUIRED_DEPLOY_STEP_IDS.some((id) => states[id] === 'todo' || states[id] === 'blocked')) return false;
+export function deployReadyState(states: DeployReadiness, gitNative = false): boolean | null {
+  const required: readonly DeployStepId[] = gitNative
+    ? [...REQUIRED_DEPLOY_STEP_IDS, 'version']
+    : REQUIRED_DEPLOY_STEP_IDS;
+  if (required.every((id) => states[id] === 'done')) return true;
+  if (required.some((id) => states[id] === 'todo' || states[id] === 'blocked')) return false;
   return null;
 }

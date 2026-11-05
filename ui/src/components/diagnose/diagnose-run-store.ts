@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { DiagnosisSpec, HelpRecipient } from '@sdk';
 import { t } from '@lingui/core/macro';
+import { useAskForHelpStore, type AskDraft } from '@src/components/help/ask-for-help-store';
 import { notify } from '@src/notifications';
 import { registerCommand } from '@src/notifications/command-registry';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -40,12 +41,31 @@ interface DiagnoseRunState {
   done: DiagnoseDone | null;
   /** Who the results go to and when — the window shows it while running, the toast after. */
   share: DiagnoseShare | null;
-  start: (message: string, files: File[], share: DiagnoseShare | null) => void;
+  /** "Check first": the request the person is checking before they send it. */
+  draft: AskDraft | null;
+  start: (message: string, files: File[], share: DiagnoseShare | null, draft?: AskDraft | null) => void;
   reset: () => void;
 }
 
 /** The not-sent toast's "Send to …": actions are serializable, so the send is a named command. */
 const SEND_COMMAND = 'diagnose.send';
+
+/** The finished "Check first" toast's "Ask for help". */
+const ASK_COMMAND = 'diagnose.ask';
+
+/** Ask for help with a finished diagnosis — and, after "Check first", what the person had written. */
+export function askWithDiagnosis(done: DiagnoseDone, draft: AskDraft | null): void {
+  useAskForHelpStore.getState().open({
+    ...draft,
+    title: draft?.title || done.diagnosis?.title || '',
+    diagnosisId: done.diagnosisId,
+  });
+}
+
+registerCommand(ASK_COMMAND, () => {
+  const { done, draft } = useDiagnoseRunStore.getState();
+  if (done) askWithDiagnosis(done, draft);
+});
 
 /** "Diagnosis sent to …" — after the run's own send, and after a "Send to …" click. */
 function notifySent(diagnosisId: string, sent: DiagnoseShared[], title: string): void {
@@ -76,9 +96,19 @@ registerCommand(SEND_COMMAND, (args) => {
 });
 
 /** The finish toast — raised here, not by the window, because the window is usually closed by then. */
-function announce(done: DiagnoseDone, share: DiagnoseShare | null): void {
+function announce(done: DiagnoseDone, share: DiagnoseShare | null, draft: AskDraft | null): void {
   if (!done.ok && !done.diagnosisId) return; // nothing recorded; the window (if open) says why
   const title = done.diagnosis?.title || done.diagnosis?.summary || '';
+  if (draft) {
+    notify.info({
+      id: `diagnose:${done.diagnosisId}`,
+      title: t`The check is done`,
+      message: title,
+      actions: [{ label: t`Ask for help`, command: ASK_COMMAND }],
+      forceToast: true,
+    });
+    return;
+  }
   if (done.shared.length && done.diagnosisId) {
     notifySent(done.diagnosisId, done.shared, title);
     return;
@@ -117,9 +147,10 @@ export const useDiagnoseRunStore = create<DiagnoseRunState>((set, get) => ({
   lines: [],
   done: null,
   share: null,
-  start: (message, files, share) => {
+  draft: null,
+  start: (message, files, share, draft = null) => {
     if (get().running) return;
-    set({ running: true, lines: [], done: null, share });
+    set({ running: true, lines: [], done: null, share, draft });
     const push = (line: DiagnoseLine) => set((s) => ({ lines: [...s.lines, line] }));
     const onEvent = (ev: DiagnoseEvent) => {
       if (ev.type === 'narration') push({ kind: 'narration', text: ev.text });
@@ -136,7 +167,7 @@ export const useDiagnoseRunStore = create<DiagnoseRunState>((set, get) => ({
           sharePending: !!ev.share_pending,
         };
         set({ done });
-        announce(done, share);
+        announce(done, share, draft);
       }
     };
     void streamDiagnose(message, onEvent, undefined, files, share)
@@ -146,6 +177,6 @@ export const useDiagnoseRunStore = create<DiagnoseRunState>((set, get) => ({
       .finally(() => set({ running: false }));
   },
   reset: () => {
-    if (!get().running) set({ lines: [], done: null, share: null });
+    if (!get().running) set({ lines: [], done: null, share: null, draft: null });
   },
 }));

@@ -5,6 +5,7 @@ import {
   type AskForHelpResult,
   ConversationParticipant,
   type HelpOrigin,
+  type HelpRequestRow,
   type HelpRecipient,
   helpRecipients,
   type HelpRecipients,
@@ -13,11 +14,13 @@ import {
 } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { errorMessage } from '@src/lib/error-message';
+import { connectionManager } from '@sdk/websocket';
 import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
+import { useDiagnoseRunStore } from '@src/components/diagnose/diagnose-run-store';
 import {
   AttachFilesButton,
   PickedFileList,
@@ -34,9 +37,10 @@ import {
 } from '@src/components/ui/dialog';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { notify } from '@src/notifications';
+import { navigateTo, notify, useDiagnoseErrorStore } from '@src/notifications';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import type { VibeTaskRow } from '@src/hooks/use-my-vibe-tasks';
+import { HelpRequestList, useHelpRequests } from './MyHelpRequests';
 
 export interface AskForHelpDialogProps {
   open: boolean;
@@ -58,6 +62,10 @@ export interface AskForHelpDialogProps {
   /** Filled in when the dialog opens — a surface that knows what went wrong says it (still editable). */
   initialTitle?: string;
   initialNotes?: string;
+  initialFiles?: File[];
+  initialPerson?: ConversationParticipant | null;
+  /** A diagnosis already taken: "Send diagnostic" sends this one instead of running a new one. */
+  diagnosisId?: string | null;
 }
 
 /**
@@ -68,6 +76,10 @@ export interface AskForHelpDialogProps {
  * Submit is one call: the request is written on this machine and the dialog closes; reaching the
  * hub happens after, and its state shows on the conversation, not here. The dialog cannot be
  * dismissed only while that write runs — closing then would lose what was typed.
+ *
+ * Two ways through. "Ask" sends now, the diagnostic following in the background. "Check first" runs
+ * the Diagnose window on what was written; when it finishes the dialog comes back with that
+ * diagnosis, for the person to read and then send (`diagnosisId`).
  *
  * Test ids keep their ``vibe-assign-*`` names: the dialog grew out of the Vibe one.
  */
@@ -84,10 +96,13 @@ export function AskForHelpDialog({
   onOpenExisting,
   initialTitle = '',
   initialNotes = '',
+  initialFiles,
+  initialPerson = null,
+  diagnosisId = null,
 }: AskForHelpDialogProps) {
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
-  const [picked, setPicked] = useState<ConversationParticipant[]>([]);
+  const [picked, setPicked] = useState<ConversationParticipant[]>(initialPerson ? [initialPerson] : []);
   const [recipients, setRecipients] = useState<HelpRecipients | null>(null);
   const [deskId, setDeskId] = useState<string | null>(desk?.desk_project_id ?? null);
   const [title, setTitle] = useState('');
@@ -100,6 +115,18 @@ export function AskForHelpDialog({
   const conversationId = useRef<string>(crypto.randomUUID());
   const picker = usePickedFiles({ enabled: true, disabled: busy });
   const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy, setText: setNotes });
+  const diagnoseRunning = useDiagnoseRunStore((s) => s.running);
+  const requests = useHelpRequests(open);
+  const myOpenRequests = requests.filter((row) => row.status === 'open');
+  const openRequest = (row: HelpRequestRow) => {
+    onOpenChange(false);
+    navigateTo(DockPointer.forConversation(row.conversation_id).toUrl());
+  };
+
+  const { addFiles } = picker;
+  useEffect(() => {
+    if (initialFiles?.length) addFiles(initialFiles);
+  }, [initialFiles, addFiles]);
 
   useEffect(() => {
     if (!open || (!initialTitle && !initialNotes)) return;
@@ -155,8 +182,10 @@ export function AskForHelpDialog({
           text: [title.trim(), notes.trim()].filter(Boolean).join('\n\n'),
           project_id: projectId,
           origin,
-          diagnose: sendDiagnostic,
+          diagnose: sendDiagnostic && !diagnosisId,
+          diagnosis_id: sendDiagnostic ? diagnosisId : null,
           process: sessionTypeId ? sessionTypeId.toString() : null,
+          connection_id: connectionManager.id,
         },
         picker.files,
       );
@@ -195,6 +224,26 @@ export function AskForHelpDialog({
     }
   };
 
+  // "Check first": run the Diagnose window on what was written. The request waits in the run, and
+  // comes back here when it finishes.
+  const checkFirst = () => {
+    if (!what) return;
+    useDiagnoseRunStore
+      .getState()
+      .start([title.trim(), notes.trim()].filter(Boolean).join('\n\n'), picker.files, null, {
+        title: title.trim(),
+        notes: notes.trim(),
+        files: picker.files,
+        person,
+        desk: recipient?.kind === 'desk' ? recipient : null,
+        origin,
+        projectId,
+        sessionTypeId,
+      });
+    useDiagnoseErrorStore.getState().watch();
+    onOpenChange(false);
+  };
+
   // While the request is being written, closing would throw away what was typed.
   const holdWhileBusy = (event: Event) => {
     if (busy) event.preventDefault();
@@ -224,6 +273,15 @@ export function AskForHelpDialog({
         >
           {note && (
             <p className="rounded border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{note}</p>
+          )}
+
+          {myOpenRequests.length > 0 && (
+            <div className="rounded border border-border" data-testid="ask-for-help-my-requests">
+              <div className="px-2 pt-1.5 text-xs font-medium text-muted-foreground">{t`Your open requests`}</div>
+              <div className="max-h-32 overflow-y-auto p-1">
+                <HelpRequestList rows={myOpenRequests} onOpen={openRequest} />
+              </div>
+            </div>
           )}
 
           {!person && desks.length > 0 && (
@@ -311,7 +369,11 @@ export function AskForHelpDialog({
             />
             <label
               className="flex items-center gap-2 text-sm text-muted-foreground"
-              title={t`Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request.`}
+              title={
+                diagnosisId
+                  ? t`Sends the diagnosis you checked, with what was on your screen and your session's last turns.`
+                  : t`Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request, with what is on your screen and your session's last turns.`
+              }
             >
               <input
                 type="checkbox"
@@ -320,7 +382,7 @@ export function AskForHelpDialog({
                 disabled={busy}
                 data-testid="ask-for-help-send-diagnostic"
               />
-              {t`Send diagnostic`}
+              {t`Send diagnostic (includes your screen and session)`}
             </label>
           </div>
 
@@ -335,6 +397,17 @@ export function AskForHelpDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             {t`Cancel`}
           </Button>
+          {!diagnosisId && (
+            <Button
+              variant="outline"
+              onClick={checkFirst}
+              disabled={!what || busy || diagnoseRunning}
+              title={t`Run a diagnosis first and read it. Nothing is sent until you choose to.`}
+              data-testid="ask-for-help-check-first"
+            >
+              {t`Check first`}
+            </Button>
+          )}
           <Button onClick={() => void submit()} disabled={!canSubmit} data-testid="vibe-assign-submit">
             {busy ? t`Saving…` : t`Ask`}
           </Button>

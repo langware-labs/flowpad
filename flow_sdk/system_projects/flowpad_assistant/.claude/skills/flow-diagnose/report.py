@@ -95,8 +95,8 @@ def _environment_snapshot() -> dict:
     """Who / when / where, as of the machine that is recording the diagnosis.
 
     Persisted ONTO the record rather than computed when it is read, because both
-    read surfaces are potentially on someone else's machine: the "Report issue"
-    email can be sent by a helper the diagnosis was forwarded to, and the details
+    read surfaces are potentially on someone else's machine: Ask for help can be
+    sent by a helper the diagnosis was forwarded to, and the details
     the receiver sees must still describe the reporter's Windows box, not theirs.
     """
     # The same snapshot every diagnosis carries (``flow_sdk.diagnose.baseline``), so the record and
@@ -152,7 +152,7 @@ async def create_support_conversation(
     flow_message_id}``. Creates the @local user/project if missing, so it always
     records.
 
-    This is what the report buttons (Report issue / Forward) in the Feed card and
+    This is what the action buttons (Ask for help / Forward) in the Feed card and
     the UI diagnose modal act on. It does NOT create a Feed ``FeedEntry``: posting
     the Home-Feed card is the CLI runner's job (CLI surface only).
 
@@ -218,7 +218,7 @@ async def create_support_conversation(
     append_message_pointer(rec, msg.id, datetime.now(UTC).isoformat())
     await project_pointers_to_entity(rec, notify=False)
 
-    # 3) Hide from the strip until "Report issue". Stamp dismissed_at AFTER the
+    # 3) Hide from the strip until it is sent. Stamp dismissed_at AFTER the
     #    message so it is newer than the latest message ts (no auto-revive).
     conv = await Conversation.get_one({"id": conv.id})
     conv.dismissed_at = datetime.now(UTC)

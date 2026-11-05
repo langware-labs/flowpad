@@ -5,9 +5,9 @@ import { ForwardDiagnosisShareDialog } from '@src/components/diagnose/forward-di
 import { OpenInTerminalButton } from '@src/components/diagnose/open-in-terminal-button';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { Check, EyeOff, Forward, MessageSquarePlus } from 'lucide-react';
+import { EyeOff, Forward, MessageSquarePlus } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useDiagnosisReportAvailability } from './use-diagnosis-report-availability';
+import { useAskForHelpStore } from '@src/components/help/ask-for-help-store';
 
 interface DiagnosisActionButtonsProps {
   /** The support conversation — excluded from the Forward list (you don't forward
@@ -19,13 +19,8 @@ interface DiagnosisActionButtonsProps {
   showDismiss?: boolean;
   /** Dismiss the diagnosis surface (Feed card: dismiss the entry; modal: close). */
   onDismiss: () => void;
-  /** "Report issue" — email the diagnosis to the Flowpad team. */
-  onReportIssue: () => void;
-  /** Whether reporting is available (a diagnosis id is known). Defaults to true. */
-  canReport?: boolean;
-  /** The report was already sent — render "✓ Reported" disabled so the user
-   *  sees it succeeded and can't email the team a duplicate. */
-  reported?: boolean;
+  /** "Ask for help" opened its dialog — a surface that sits over it closes itself. */
+  onAsking?: () => void;
   /** "Forward" — post the formatted report into the chosen conversation. */
   onForward: (conversationId: string) => void;
   /** The FlowpadDiagnosis entity id. When set, the Forward list gains a "Start
@@ -45,11 +40,10 @@ interface DiagnosisActionButtonsProps {
 }
 
 /**
- * The action row at the bottom of a diagnosis surface: Dismiss / Report issue /
+ * The action row at the bottom of a diagnosis surface: Dismiss / Ask for help /
  * Forward (with a recent-conversation picker). Shared between the Home-Feed
- * `FeedEntryCard` and the UI diagnose modals so both render and behave identically;
- * the data/mutation wiring lives in each caller's `onDismiss` / `onReportIssue` /
- * `onForward`. "Report issue" emails the team; "Forward" posts into a conversation.
+ * `FeedEntryCard` and the diagnosis viewer so both render and behave identically.
+ * "Ask for help" opens the dialog with this diagnosis; "Forward" posts into a conversation.
  */
 export function DiagnosisActionButtons({
   suggestedConversationId,
@@ -57,9 +51,7 @@ export function DiagnosisActionButtons({
   error,
   showDismiss = true,
   onDismiss,
-  onReportIssue,
-  canReport = true,
-  reported,
+  onAsking,
   onForward,
   diagnosisId,
   diagnosisTitle,
@@ -68,11 +60,11 @@ export function DiagnosisActionButtons({
   trailing,
 }: DiagnosisActionButtonsProps) {
   const { t } = useLingui();
-  const reportAvailability = useDiagnosisReportAvailability();
+  const askForHelp = useAskForHelpStore((s) => s.open);
   const [forwardOpen, setForwardOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   // Forward target list: most recent conversations, fetched only while open. The
-  // suggested support conversation is excluded — "Report issue" already targets it.
+  // suggested support conversation is excluded — it already holds the diagnosis.
   const conversations = useRecentConversations(forwardOpen, {
     excludeId: suggestedConversationId,
   });
@@ -84,9 +76,6 @@ export function DiagnosisActionButtons({
   useEffect(() => {
     if (forwardOpen) listRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [forwardOpen, conversations.length]);
-
-  const reportDisabledReason = !canReport ? t`Diagnosis is not available yet` : reportAvailability.disabledReason;
-  const reportDisabled = busy || !canReport || !reportAvailability.canReport;
 
   return (
     <>
@@ -103,23 +92,20 @@ export function DiagnosisActionButtons({
             <EyeOff className="h-3.5 w-3.5" />
           </button>
         )}
-        {reported ? (
-          <Button type="button" size="sm" variant="outline" disabled className="h-6 gap-1 px-2 text-xs">
-            <Check className="h-3.5 w-3.5" />
-            <Trans>Reported</Trans>
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            disabled={reportDisabled}
-            title={reportDisabledReason}
-            onClick={onReportIssue}
-            className="h-6 px-2 text-xs"
-          >
-            <Trans>Report issue</Trans>
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy || !diagnosisId}
+          title={diagnosisId ? undefined : t`Diagnosis is not available yet`}
+          onClick={() => {
+            askForHelp({ diagnosisId, title: diagnosisTitle });
+            onAsking?.();
+          }}
+          className="h-6 px-2 text-xs"
+          data-testid="diagnosis-ask-for-help"
+        >
+          <Trans>Ask for help</Trans>
+        </Button>
         <Button
           type="button"
           size="sm"
