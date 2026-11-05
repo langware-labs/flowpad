@@ -409,11 +409,11 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await openVibe(page, fixture.processId);
       await expect(page).toHaveURL(processUrlRe(fixture.processId));
 
-      // VW-21: a show NAVIGATES. The URL names the deliverable and marks it as the
-      // workspace's replaceable display.
+      // VW-21: a show NAVIGATES. The URL names the deliverable. Since 5f383111f there is no
+      // `activeDisplay` marker and no single re-pointing row: each shown target is its own child tab
+      // of the workspace (keyed `|@<host>`), under the session's one top-level tab.
       await showPath(request, fixture.processId, first);
       await expect(page).toHaveURL(displayUrlRe(fixture.projectId, fixture.processId));
-      await expect(page).toHaveURL(/activeDisplay=1/);
       await expect(page.getByText('VW21_FIRST')).toBeVisible();
       // The address names the RESOLVED target, not the path: a shown file that the
       // display verb indexed resolves to its entity, so assertions compare URLs
@@ -425,50 +425,36 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       const secondUrl = page.url();
       expect(secondUrl).not.toBe(firstUrl);
       await expect(page).toHaveURL(displayUrlRe(fixture.projectId, fixture.processId));
-      await expect(page).toHaveURL(/activeDisplay=1/);
 
-      // ONE row for both shows: identity is the workspace, the target is what moves.
-      const tabsResponse = await request.get(`${API}/api/v1/graph/tab/list_all`);
-      const tabs = (await tabsResponse.json()).data?.tabs ?? [];
-      // Scoped to THIS workspace: the active-display hash is host-keyed, so a
-      // global filter would also count rows left by other fixtures on the instance.
-      const displayHash = activeDisplayHash(fixture.processId);
-      const children = tabs.filter((t: { pointer?: string }) => (t.pointer ?? '').includes(displayHash));
-      expect(children).toHaveLength(1);
-      // ...and it points at the NEWEST target rather than freezing on the first.
-      const secondPointer = new URL(secondUrl).pathname.split('/display/')[1];
-      expect(JSON.stringify(children[0].pointer)).toContain(secondPointer.split('/').pop());
-      const processTabs = tabs.filter((t: { target_id?: string }) => t.target_id === fixture.processId);
+      const workspaceRows = async () => {
+        const tabs = (await (await request.get(`${API}/api/v1/graph/tab/list_all`)).json()).data?.tabs ?? [];
+        const processTabs = tabs.filter((t: { target_id?: string }) => t.target_id === fixture.processId);
+        const host = processTabs[0];
+        const children = host ? tabs.filter((t: { parent_tab_id?: string }) => t.parent_tab_id === host.id) : [];
+        return { processTabs, children };
+      };
+      // ONE top-level tab for the session, and each show a child of it; the newest show is a child.
+      const secondTail = new URL(secondUrl).pathname.split('/display/')[1].split('/').pop()!;
+      const { processTabs, children } = await workspaceRows();
       expect(processTabs).toHaveLength(1);
       expect(processTabs[0].parent_tab_id ?? null).toBeNull();
+      expect(children).toHaveLength(2);
+      expect(children.some((t: { pointer?: string }) => (t.pointer ?? '').includes(secondTail))).toBe(true);
 
-      // VW-23: agent shows REPLACE, so Back returns to the first show (the one that
-      // pushed), not through every show the agent made.
+      // VW-23: Back returns to the first show and Forward to the second (Back-safe).
       await page.goBack();
       await expect(page).toHaveURL(firstUrl);
       await page.goForward();
       await expect(page).toHaveURL(secondUrl);
 
-      // VW-24: promotion is the same address minus the marker — a separate durable
-      // chip, leaving the replaceable row untouched.
-      await page.getByTestId('display-open-in-tab').click();
-      await expect(page).not.toHaveURL(/activeDisplay=1/);
-      await expect(page).toHaveURL(new RegExp(secondPointer.split('/').pop()!));
-
-      const afterPromote = await request.get(`${API}/api/v1/graph/tab/list_all`);
-      const afterTabs = (await afterPromote.json()).data?.tabs ?? [];
-      // The replaceable row survives the promotion untouched...
-      expect(
-        afterTabs.filter((t: { pointer?: string }) => (t.pointer ?? '').includes(displayHash)),
-      ).toHaveLength(1);
-      // ...and the promoted document now has a DURABLE row of its own beside it.
-      expect(
-        afterTabs.filter(
-          (t: { pointer?: string }) =>
-            (t.pointer ?? '').includes(secondPointer.split('/').pop()!) &&
-            !(t.pointer ?? '').includes(displayHash),
-        ),
-      ).not.toHaveLength(0);
+      // VW-24: a shown target is already a durable tab of its own — nothing to promote (the display's
+      // "Open in a new tab" is not offered on a workspace child) — and it survives a reload as one.
+      await expect(page.getByTestId('display-open-in-tab')).toHaveCount(0);
+      await page.reload();
+      await expect(page.getByText('VW21_SECOND')).toBeVisible();
+      const afterReload = await workspaceRows();
+      expect(afterReload.processTabs).toHaveLength(1);
+      expect(afterReload.children).toHaveLength(2);
     } finally {
       await destroyVibeFixture(request, fixture);
     }
