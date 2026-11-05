@@ -75,6 +75,7 @@ def _process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drops: int):
     _append(path, {"type": "assistant", "timestamp": _iso(datetime.now(timezone.utc)), "message": {"role": "assistant"}})
     _quiet(path)
     fake = types.SimpleNamespace(
+        id="agentic_process-test",
         driver=types.SimpleNamespace(pty_shell_escape="!", shell_command_landed=staticmethod(shell_command_landed)),
         transcript_path=path,
         typed=[],
