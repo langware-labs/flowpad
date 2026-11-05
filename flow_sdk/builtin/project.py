@@ -1100,6 +1100,20 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message=str(exc), status_code=409)
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
 
+    @action.post(action_name="setup-automation")
+    async def setup_automation_action(self, typeid: str = "", on: bool = True) -> "ApiResponse":
+        """`POST /project/<id>/setup-automation {typeid, on}` — turn one of this project's automations on or off
+        on THIS machine (never in its file). Answers with the readiness that follows."""
+        from flow_sdk.builtin.project_setup import SkipRefused, decide_automation, readiness_of  # noqa: PLC0415
+
+        if not typeid:
+            return ApiFailResponse(message="typeid is required", status_code=400)
+        try:
+            await decide_automation(self, typeid, bool(on))
+        except SkipRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
     @action.post(action_name="setup-unskip")
     async def setup_unskip_action(self, typeid: str = "", name: str = "") -> "ApiResponse":
         """`POST /project/<id>/setup-unskip {typeid, name?}` — undo a local skip. Answers with the readiness."""

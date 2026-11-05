@@ -461,10 +461,10 @@ class CopilotDriver:
         """
         return assets_dir / ".github" / "skills"
 
-    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str], own: Sequence[str] = ()) -> bool:
         from flow_sdk.assets.process_projection import link_mounted_skills
 
-        return link_mounted_skills(assets_dir, add_dirs, native_mount=".github/skills")
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".github/skills", own=own)
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path = copilot_transcript_path_for_process(process.id)

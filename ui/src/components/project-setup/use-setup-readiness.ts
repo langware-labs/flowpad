@@ -102,8 +102,19 @@ export function useSetupReadiness(
     [projectId, change],
   );
 
+  /** Enable / Disable one of the project's automations here (an `automation` row). */
+  const decide = useCallback(
+    (req: ProjectSetupRequirement, on: boolean) =>
+      change(
+        [req],
+        (r) => Project.decideAutomation(projectId, r.typeid, on),
+        (name) => t`Could not change ${name}`,
+      ),
+    [projectId, change, t],
+  );
+
   /** The stored answer is being checked again right now (it is shown meanwhile). */
   const checking = !!setup?.checking;
 
-  return { readiness, busy, load, skip, unskip, checking };
+  return { readiness, busy, load, skip, unskip, decide, checking };
 }

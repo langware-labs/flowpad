@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
@@ -162,7 +163,8 @@ async def _upsert_one(spec: dict[str, Any], *, existing: "Optional[Trigger]" = N
     """
     # A seed is Flowpad's own: without this the row took its scope from the path
     # it landed under, which reads as "user" and lists every seed as the person's.
-    spec = {"scope": "system", **spec}
+    # Flowpad's own follow their seed (on unless it says off): they are not a project's advice.
+    spec = {"scope": "system", "enabled": True, **spec}
     uname = spec["uname"]
     if existing is None:
         # Only when the caller has not already read it. A reconcile that reads
@@ -186,6 +188,9 @@ async def _upsert_one(spec: dict[str, Any], *, existing: "Optional[Trigger]" = N
     # trigger type (HOOK/SCHEDULE/FSOP) updates correctly across restarts.
     for key, value in spec.items():
         if key in _UPSERT_SKIP_KEYS:
+            continue
+        if key in Trigger.projected_fields:  # the machine's switch — only the sanctioned setter moves it
+            existing._set_projection(key, value, PROJECTION_SENTINEL)
             continue
         setattr(existing, key, value)
     try:

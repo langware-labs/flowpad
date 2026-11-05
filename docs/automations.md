@@ -98,6 +98,25 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   Check reports a missing Decision API under its own area, `decider`: the rule is fine, the machine
   is not ready.
 
+## On, off and recommended
+
+**On/off belongs to the machine, never to the file.** A rule's switch is its row's `enabled` (with
+`decided`), both PRIVATE and guarded like a projection: only `set_trigger_on` (`builtin/trigger.py`)
+writes them, the row alone, so no re-index, `git pull` or edit to `trigger.json` can move a person's choice.
+`trigger.json` says only `recommended` (default `true`; a legacy `enabled` key is read as it).
+
+| The rule | Starts |
+|---|---|
+| made here (the rules API, a schedule added here, a seed) | on |
+| indexed from a file — it came with a project | off, undecided: it does not run |
+| Flowpad's own (`is_builtin`) | as its seed or file says |
+| on a machine the hub runs only for a deployed agent (`RuntimeKind.AGENT`) | on when recommended — the deploy was its owner's choice |
+
+A recommended undecided rule is a row of the project's setup (`automation` requirement, `project_setup.
+_automations_here`): the setup window lists it under "Recommended automations" with **Enable / Disable**
+(`POST project/<id>/setup-automation {typeid, on}`), and the "Setup required" button counts it. The
+Automations screen's switch writes the same machine-local value.
+
 ## Rules that are easy to break
 
 - **Run once now** runs even when the automation is off and spends nothing a real

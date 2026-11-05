@@ -216,7 +216,7 @@ export type ProjectSetupSkipScope = 'local' | 'always';
 export interface ProjectSetupRequirement {
   /** `dependency`: a dependency that is not here — name = the dependency, title = its source, note = why.
    *  `oauth` is retired: a connection is a `pack` whose `credential_kind` is `oauth`. */
-  kind: 'pack' | 'gap' | 'dependency' | 'source' | 'webapp';
+  kind: 'pack' | 'gap' | 'dependency' | 'source' | 'webapp' | 'automation';
   name: string;
   title: string;
   /** pack: what the credential is needed for, in one line, and the full reason (`CredentialSpec`). */
@@ -1198,6 +1198,14 @@ export class Project extends APIEntity<Project> {
     if (root) actionInfo.bodyParameters = { root };
     const data = await dataManager.callAction<{ root: string } | void, { stopped: boolean }>(actionInfo);
     return data?.stopped ?? false;
+  }
+
+  /** Turn one of the project's automations on or off on THIS machine (`POST project/<id>/setup-automation`) —
+   *  never in its file. Answers with the readiness that follows. */
+  static async decideAutomation(projectId: string, typeid: string, on: boolean): Promise<ProjectReadiness | null> {
+    const actionInfo = new ActionInfo('setup-automation', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { typeid, on };
+    return (await dataManager.callAction<Record<string, unknown>, ProjectReadiness>(actionInfo)) ?? null;
   }
 
   /** Undo a local skip (`POST project/<id>/setup-unskip`). Answers with the readiness that follows. */

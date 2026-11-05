@@ -191,8 +191,7 @@ async def test_disabled_trigger_does_not_catch_up(tmp_path, trigger_log_dir):
     """Disabled triggers skip catch-up (would no-op inside _fire anyway, but cleaner to short-circuit)."""
     f = tmp_path / "a.txt"
     f.write_text("hi")
-    t = _make_file_trigger(f)
-    t.enabled = False
+    t = _make_file_trigger(f).model_copy(update={"enabled": False})
     # File changed but trigger is disabled → no fire
     await _catch_up_if_changed(t)
     assert t.counter == 0

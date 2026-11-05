@@ -137,7 +137,7 @@ function nodesById(tree: SetupTreeResult | null): Map<string, SetupNodeResult> {
 export function ProjectSetupPage({ projectId, projectName }: { projectId: string; projectName: string }) {
   const { t, i18n } = useLingui();
   const { navigation } = useDockNavigation();
-  const { readiness, busy, load, unskip } = useSetupReadiness(projectId, { includeReady: true });
+  const { readiness, busy, load, unskip, decide } = useSetupReadiness(projectId, { includeReady: true });
   const run = useSetupRun(projectId, '', load);
   // The credential being edited; its form (and the credentials it reads) mounts only then.
   const [editing, setEditing] = useState<ProjectSetupRequirement | null>(null);
@@ -275,6 +275,7 @@ export function ProjectSetupPage({ projectId, projectName }: { projectId: string
                   ) : null
                 }
                 onRun={req.node ? () => startAt(req.node) : undefined}
+                onDecide={req.kind === 'automation' && !req.satisfied ? (on) => void decide(req, on) : undefined}
                 onUndo={() => void unskip(req, t`Could not undo the skip of ${req.name}`)}
               />
             ))}
@@ -363,6 +364,7 @@ function StepRow({
   onEdit,
   test,
   onRun,
+  onDecide,
   onUndo,
 }: {
   req: ProjectSetupRequirement;
@@ -375,6 +377,8 @@ function StepRow({
   /** A credential's Test, when it declares one. */
   test?: ReactNode;
   onRun?: () => void;
+  /** An automation the project recommends that is not decided here: Enable / Disable it on this machine. */
+  onDecide?: (on: boolean) => void;
   onUndo: () => void;
 }) {
   const { t, i18n } = useLingui();
@@ -437,6 +441,16 @@ function StepRow({
               <StepAction icon={Play} testId={`project-setup-step-run-${id}`} disabled={running} onClick={onRun}>
                 <Trans>Run</Trans>
               </StepAction>
+            )}
+            {onDecide && (
+              <>
+                <StepAction icon={Play} testId={`project-setup-step-enable-${id}`} disabled={busy} onClick={() => onDecide(true)}>
+                  <Trans>Enable</Trans>
+                </StepAction>
+                <StepAction icon={XCircle} testId={`project-setup-step-disable-${id}`} disabled={busy} onClick={() => onDecide(false)}>
+                  <Trans>Disable</Trans>
+                </StepAction>
+              </>
             )}
           </>
         )}

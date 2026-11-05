@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, FrozenSet, Optional, Union
 
 from pydantic import model_validator
 from starlette.requests import Request
@@ -19,6 +19,7 @@ from flow_sdk.builtin.hook_models import (
 )
 from flow_sdk.core import action as core_action
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
@@ -443,8 +444,13 @@ async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_te
     logger.debug(f"Schedule trigger {entity.name} fired (counter={entity.counter}, process_id={process_id})")
 
 
-class Trigger(Entity):
+class Trigger(ProjectedFields, Entity):
     """Entity representing a trigger that matches hook data and executes actions."""
+
+    #: ``enabled`` is THIS machine's switch: guarded like a projection, so the indexer's re-save,
+    #: a client PUT or a hub frame can never move it — only ``set_trigger_on``.
+    projected_fields: ClassVar[FrozenSet[str]] = frozenset({"enabled", "decided"})
+    projection_writer: ClassVar[str] = "flow_sdk.builtin.trigger.set_trigger_on"
 
     type: str = APIField(default=BuiltinEntityType.TRIGGER.value)
     name: str = APIField()
@@ -462,7 +468,15 @@ class Trigger(Entity):
     # Plural actions — the new canonical list. Each fired event dispatches every
     # action in order via its action handler.
     actions: list[TriggerAction] = APIField(default_factory=list, description="List of actions to dispatch on fire")
-    enabled: bool = APIField(default=True)
+    #: On or off on THIS machine — never read from or written to the trigger's file
+    #: (docs/automations.md "On, off and recommended"). A row made here starts on; a rule that
+    #: arrived in a file is indexed off and ``decided=False`` until the person here chooses. Both
+    #: are kept in the record metadata (Persist.TRUE), so a full index rebuild keeps the choice.
+    enabled: bool = APIField(True, sharing=Sharing.PRIVATE, persist=Persist.TRUE)
+    #: False only for a rule that came in a file and nobody here has turned on or off yet.
+    decided: bool = APIField(True, sharing=Sharing.PRIVATE, persist=Persist.TRUE)
+    #: The file's advice (``TriggerSpec.recommended``): offered in the project's setup while undecided.
+    recommended: bool = APIField(default=True)
     #: The trigger's folder on disk, when it came from one. Empty for a row the
     #: rules API or the service seed minted — those stay rowful and fileless.
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
@@ -856,6 +870,12 @@ class Trigger(Entity):
         if self.is_builtin and set(body) - {"log_mode"}:
             return ApiFailResponse(message="This automation is built into Flowpad and can't be changed here.",
                                    status_code=409)
+        if "enabled" in body:
+            # This machine's switch: the row alone, never the file (``set_trigger_on``).
+            await set_trigger_on(self, bool(body["enabled"]))
+            body = {k: v for k, v in body.items() if k != "enabled"}
+            if not body:
+                return ApiSuccessResponse(data=self)
         if document_path(self) is not None:
             # Defined in a trigger.json: the FILE is the truth and the row its
             # index, so a row-only write would be reverted by the next re-index.
@@ -1493,3 +1513,29 @@ class Trigger(Entity):
                 except Exception:
                     pass
         return ApiSuccessResponse(data={"log_mode": log_mode})
+
+
+async def set_trigger_on(trigger: Trigger, on: bool) -> Trigger:
+    """Turn ``trigger`` on or off on THIS machine — the only writer of ``enabled``.
+
+    The row alone is saved (``write_projection``): the trigger's file is never touched, so a person's
+    choice is not a change to the project and no ``git pull`` can move it. Then it is re-armed, the way
+    every edit ends: each kind honours off itself (a tag unsubscribes, a schedule's job pauses)."""
+    from flow_sdk.builtin.trigger_arming import arm_trigger  # noqa: PLC0415
+    from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL  # noqa: PLC0415
+    from flow_sdk.core.setup.skip_mark import write_projection  # noqa: PLC0415
+
+    trigger._set_projection("decided", True, PROJECTION_SENTINEL)
+    await write_projection(trigger, "enabled", bool(on))
+    await arm_trigger(trigger, replace=True)
+    _project_setup_changed(trigger)
+    return trigger
+
+
+def _project_setup_changed(trigger: Trigger) -> None:
+    """A project's rule was decided or arrived: its "Setup required" answer is re-read (``core/project_status``)."""
+    if not trigger.project_id:
+        return
+    from flow_sdk.core.project_status import SETUP, mark_stale  # noqa: PLC0415
+
+    mark_stale(str(trigger.project_id), [SETUP])

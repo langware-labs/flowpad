@@ -675,10 +675,10 @@ class ClaudeDriver:
         )
         return roots
 
-    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str], own: Sequence[str] = ()) -> bool:
         from flow_sdk.assets.process_projection import link_mounted_skills
 
-        return link_mounted_skills(assets_dir, add_dirs, native_mount=".claude/skills")
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".claude/skills", own=own)
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Claude discovers skills from ``.claude/skills`` under the mounted

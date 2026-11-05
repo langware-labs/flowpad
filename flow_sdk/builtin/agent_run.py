@@ -161,6 +161,10 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, place=No
         existing = str(context_data.get("instructions") or "").strip()
         context_data["instructions"] = "\n\n".join(p for p in (agent.system_prompt.strip(), existing) if p)
     context_data.setdefault("launched_by_agent", agent.name)
+    # The agent's own skills (``<agent>/skills/<name>/SKILL.md``) reach its session; a project skill of the
+    # same name replaces one (``process_projection.link_mounted_skills``).
+    if agent.asset_ref:
+        context_data.setdefault("agent_skills_dir", str(Path(agent.asset_ref) / "skills"))
     # Chief of Staff mode — CoS.md, the skill, the native staff roster. Off: nothing changes.
     from flow_sdk.tasks.cos import apply_to_launch, staff_dir  # noqa: PLC0415
 

@@ -28,4 +28,5 @@ const STEP_KIND: Record<string, MessageDescriptor> = {
   source: msg`Data source`,
   webapp: msg`Web app`,
   dependency: msg`Dependency`,
+  automation: msg`Automation`,
 };

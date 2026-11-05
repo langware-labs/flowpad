@@ -37,6 +37,7 @@ from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, ways
 from flow_sdk.schema.data_spec.project_setup_spec import (
     ONE_OF_INPUT,
+    REQUIREMENT_AUTOMATION,
     REQUIREMENT_DEPENDENCY,
     REQUIREMENT_GAP,
     REQUIREMENT_PACK,
@@ -578,7 +579,7 @@ def unsatisfied(req: SetupRequirementSpec) -> bool:
         return req.satisfied is False
     if req.kind == REQUIREMENT_PACK:
         return bool(req.missing)
-    if req.kind in (REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
+    if req.kind in (REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP, REQUIREMENT_AUTOMATION):
         return req.satisfied is False
     return False
 
@@ -602,13 +603,16 @@ async def readiness_of(project: "Project", deployment_id: str = "", *,
     tree node (``node``, the ``root`` that runs it alone) — work the footer's poll does not pay for."""
     requirements, needs = await _collect(project, deployment_id)
     if not deployment_id:  # what runs HERE: a source in setup, a web app that does not answer (and, asked, what does)
-        requirements += _beyond_credentials(
-            await _running_here(project, needs.sources, include_ready=include_ready), requirements)
+        running, automations = await asyncio.gather(
+            _running_here(project, needs.sources, include_ready=include_ready),
+            _automations_here(project, include_ready=include_ready))
+        requirements += _beyond_credentials(running, requirements) + automations
     if include_ready:
         from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415 — derive imports this module
 
-        requirements = [r if r.kind == REQUIREMENT_GAP else r.model_copy(update={"node": requirement_node_id(r)})
-                        for r in requirements]
+        # A gap and an automation have no tree node: nobody can run a gap, and an automation is a choice.
+        requirements = [r if r.kind in (REQUIREMENT_GAP, REQUIREMENT_AUTOMATION)
+                        else r.model_copy(update={"node": requirement_node_id(r)}) for r in requirements]
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
         project_id=str(project.id), ready=not left, to_do=left, updates=needs.updates,
@@ -682,6 +686,33 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
         for app, rec, ok in zip(apps, records, answers) if include_ready or not ok
     ]
     return out
+
+
+async def _automations_here(project: "Project", *, include_ready: bool = False) -> list[SetupRequirementSpec]:
+    """Each automation the project RECOMMENDS that nobody here has turned on or off yet (``Trigger.decided``) —
+    a row to decide with Enable / Disable (``decide_automation``). ``include_ready`` adds the decided ones as
+    set up. Flowpad's own, rules made here (no file) and ones the project does not recommend are never rows."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    rules = await Trigger.get_all({"match": {"project_id": str(project.id)}})
+    return [
+        SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=str(rule.name), title=str(rule.name),
+                             typeid=str(rule.typeid), used_by=[PROJECT], satisfied=bool(rule.decided),
+                             needed_for=str(rule.description or ""),
+                             note="" if not rule.decided else ("on here" if rule.enabled else "off here"))
+        for rule in rules
+        if rule.asset_ref and rule.recommended and not rule.is_builtin and (include_ready or not rule.decided)
+    ]
+
+
+async def decide_automation(project: "Project", typeid: str, on: bool) -> None:
+    """Turn one of the project's automations on or off HERE — the setup window's Enable / Disable."""
+    from flow_sdk.builtin.trigger import Trigger, set_trigger_on  # noqa: PLC0415
+
+    rule = await Trigger.get_by_typeid(typeid)
+    if not isinstance(rule, Trigger) or str(rule.project_id or "") != str(project.id):
+        raise SkipRefused("That automation is not part of this project.")
+    await set_trigger_on(rule, on)
 
 
 def setup_run_address(project_id: str, root: str = "") -> str:

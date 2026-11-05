@@ -98,7 +98,7 @@ async def test_update_changes_only_what_it_manages_and_pauses_when_disabled(tmp_
     assert on_disk["description"] == "written by hand"
     assert on_disk["fire_once"] is True
     assert on_disk["schedule"]["expr"] == "30 8 * * *"
-    assert on_disk["enabled"] is False
+    assert "enabled" not in on_disk, "on/off is this machine's, never the file's"
     assert on_disk["actions"] == [{"run_agent": {"prompt": "Triage yesterday's tickets"}}]
     assert updated.id == trigger.id, "an edit must keep the trigger's identity"
     assert updated.enabled is False and updated.expr == "30 8 * * *"
