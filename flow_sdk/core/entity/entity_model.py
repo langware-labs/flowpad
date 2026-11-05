@@ -16,6 +16,7 @@ from typing import (
     AsyncIterator,
     ClassVar,
     Dict,
+    Iterable,
     List,
     Literal,
     Optional,
@@ -3331,7 +3332,7 @@ class Entity(DBEntity):
         # Call parent update
         return await super().update()
 
-    async def emit_flow_data(self, flow_data: dict) -> None:
+    async def emit_flow_data(self, flow_data: dict, *, only: Optional[Iterable[str]] = None) -> None:
         """Send FlowData to all frontend watchers of this entity.
 
         Transforms backend FlowData format to frontend-expected format:
@@ -3377,9 +3378,12 @@ class Entity(DBEntity):
             if value is not None:
                 frontend_flow_data[key] = value
 
-        await send_flow_data_to_entity(self.typeid, frontend_flow_data)
+        # ``only`` rides only when set, so every existing caller's (and fake's) call is unchanged.
+        await send_flow_data_to_entity(self.typeid, frontend_flow_data, **({"only": only} if only is not None else {}))
 
-    async def emit_entity_event(self, event: str, payload: dict | None = None) -> None:
+    async def emit_entity_event(
+        self, event: str, payload: dict | None = None, *, only: Optional[Iterable[str]] = None
+    ) -> None:
         """Outbound entity event — push a typed event to all WS watchers of this entity.
 
         Counterpart to :meth:`entity_event` (which dispatches inbound events from
@@ -3403,7 +3407,8 @@ class Entity(DBEntity):
                     "event": event,
                     "payload": payload or {},
                 },
-            }
+            },
+            **({"only": only} if only is not None else {}),
         )
 
     async def save_relationship(self, to_e, relationship_or_str, direction=RelationshipDirection.Outgoing, create=True):
