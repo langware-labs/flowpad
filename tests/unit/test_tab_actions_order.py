@@ -381,3 +381,24 @@ async def test_display_row_reap_keeps_order_contiguous() -> None:
     d = await ensure_tab("g/d", project_id=P1)
     order = await _order(P1)
     assert order == [a.id, c.id, d.id] or order.index(d.id) == order.index(c.id) + 1
+
+
+async def test_a_tab_write_answers_the_global_list_at_the_version_its_ping_carries() -> None:
+    """``new_tab`` answers its scoped list AND the global one with the version its
+    ``tabs_changed`` ping announced, so the writer adopts it instead of re-listing
+    (a conversation open re-listed every Tab twice per write); ``list_all`` says the
+    version it read at."""
+    from flow_sdk.builtin.tab import _http_list_all, tabs_version
+
+    other = await ensure_tab(f"v/other/{uuid.uuid4()}", project_id=PA)
+    pointer = f"v/{uuid.uuid4()}"
+    before = tabs_version()
+    answer = (await _http_new_tab(Tab, pointer=pointer, project_id=P1)).data
+
+    assert answer["version"] == tabs_version() != before
+    all_ids = [row["id"] for row in answer["all_tabs"]]
+    assert tab_id_for(pointer) in all_ids and other.id in all_ids, "the global list holds every project"
+    assert other.id not in [row["id"] for row in answer["tabs"]], "tabs stays the scoped list"
+    assert [r["id"] for r in (await _http_list(Tab, project=P1)).data["tabs"]] == [r["id"] for r in answer["tabs"]]
+    listed = (await _http_list_all(Tab)).data
+    assert listed["version"] == answer["version"] and [r["id"] for r in listed["tabs"]] == all_ids

@@ -182,7 +182,17 @@ export interface IEnsureTabOpts {
 export interface TabEnsureResult {
   tabs: Tab[];
   created: boolean;
+  /** The GLOBAL list read with the write (``all_tabs``) and its version — a writer adopts it
+   *  instead of re-listing. Absent from an older backend. */
+  all?: Tab[];
+  version?: string;
+  /** Set by `TabManager.ensureDock`: the manager adopted `all` (no refetch needed). */
+  adopted?: boolean;
 }
+
+/** A list answer. `version`: the list's version (`<epoch>:<seq>`) — the `tabs_changed`
+ *  pings at or before it are in it. On a write's answer, `all`: the GLOBAL list read with it. */
+export type TabList = Tab[] & { all?: Tab[]; version?: string };
 
 export interface INewTabOpts extends IEnsureTabOpts {
   /** The opener (current active tab id): a fresh tab lands right after it. */
@@ -393,8 +403,15 @@ export class Tab extends APIEntity<Tab> implements ITab {
       after_tab_id: opts.afterTabId ?? null,
       parent_tab_id: opts.parentTabId ?? null,
     };
-    const res = await dataManager.callAction<unknown, { tabs: ITab[]; created?: boolean }>(info);
-    return { tabs: Tab.fromResponse(res?.tabs ?? []), created: res?.created ?? false };
+    const res = await dataManager.callAction<
+      unknown,
+      { tabs: ITab[]; created?: boolean; all_tabs?: ITab[]; version?: string }
+    >(info);
+    return {
+      tabs: Tab.fromResponse(res?.tabs ?? []),
+      created: res?.created ?? false,
+      ...(res?.all_tabs && res.version ? { all: Tab.fromResponse(res.all_tabs), version: res.version } : {}),
+    };
   }
 
   /**
@@ -477,13 +494,15 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  resolved, in global order. The single unscoped projection that the developer
    *  sessions view + footer projects-chip read; replaces the old reactive
    *  `tab?visible=true` entity query. (Project-scoped views use `list`.) */
-  static async listAll(): Promise<Tab[]> {
+  static async listAll(): Promise<TabList> {
     // Hub mode runs ephemeral: the hub backend has no `tab` entity, so a
     // `list_all` would 422. Return an empty set — tabs are never persisted here.
     if (isHubOnly()) return [];
     const info = new ActionInfo('list_all', Tab.type, null, 'GET');
-    const res = await dataManager.callAction<undefined, { tabs: ITab[] }>(info);
-    return Tab.fromResponse(res?.tabs ?? []);
+    const res = await dataManager.callAction<undefined, { tabs: ITab[]; version?: string }>(info);
+    const tabs: TabList = Tab.fromResponse(res?.tabs ?? []);
+    if (res?.version) tabs.version = res.version;
+    return tabs;
   }
 
   /** POST /graph/tab/order — drag-drop commit. Splices `reorderId` into the
@@ -556,11 +575,18 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  already saved the live name onto its Shell/AgenticProcess; this keeps the
    *  durable `Tab.name` in step so the chip stays right once inactive. NOT `rename`
    *  (which would pin `auto_rename=false` and stop future auto-titles). */
-  static async setNameById(id: string, name: string): Promise<Tab[]> {
+  static async setNameById(id: string, name: string): Promise<TabList> {
     const info = new ActionInfo('set_name', Tab.type, id, 'POST');
     info.bodyParameters = { name };
-    const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
-    return Tab.fromResponse(res?.tabs ?? []);
+    const res = await dataManager.callAction<{ name: string }, { tabs: ITab[]; all_tabs?: ITab[]; version?: string }>(
+      info,
+    );
+    const tabs: TabList = Tab.fromResponse(res?.tabs ?? []);
+    if (res?.all_tabs && res.version) {
+      tabs.all = Tab.fromResponse(res.all_tabs);
+      tabs.version = res.version;
+    }
+    return tabs;
   }
 
   /** A closed tab: `visible=false` is the whole of "closed" (the row is never deleted). */
