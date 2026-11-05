@@ -8,7 +8,19 @@ import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { Cloud, ExternalLink, File, FolderDown, GitBranch, Globe, Loader2, Package, Trash2 } from 'lucide-react';
+import {
+  Cloud,
+  ExternalLink,
+  File,
+  FolderDown,
+  GitBranch,
+  Globe,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Package,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -286,6 +298,7 @@ function AttachmentReviewDialog({
   }, []);
 
   const [selectedId, setSelectedId] = useState(initialAttachmentId);
+  const [fullscreen, setFullscreen] = useState(false);
   // Reopening the dialog (or clicking a different chip) re-pins the clicked one.
   useEffect(() => {
     if (open) setSelectedId(initialAttachmentId);
@@ -502,7 +515,24 @@ function AttachmentReviewDialog({
         if (!o) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-3xl" data-testid="asset-review-dialog">
+      <DialogContent
+        className={cn(
+          'sm:max-w-3xl',
+          fullscreen &&
+            'h-screen max-h-screen w-screen max-w-none sm:max-w-none sm:rounded-none [&_[data-testid=staged-review]]:h-[calc(100vh-15rem)]',
+        )}
+        data-testid="asset-review-dialog"
+      >
+        <button
+          type="button"
+          onClick={() => setFullscreen((f) => !f)}
+          title={fullscreen ? t`Exit full screen` : t`Full screen`}
+          aria-label={fullscreen ? t`Exit full screen` : t`Full screen`}
+          data-testid="asset-review-fullscreen"
+          className="absolute right-11 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </button>
         {/* Per-attachment subscriptions (render nothing): live MA row + the
             asset entity's parent_id for left-list nesting. */}
         {open && ordered.map((a) => <AttachmentLiveSubscriber key={`ma:${a.id}`} id={a.id} onUpdate={applyLive} />)}
@@ -611,7 +641,12 @@ function AttachmentReviewDialog({
         {/* Two panes: entity list | selected entity's default content view. */}
         <div className="flex min-h-0 gap-3 border-t border-border pt-3">
           {multi && (
-            <div className="max-h-[55vh] w-52 shrink-0 overflow-y-auto border-e border-border pe-2">
+            <div
+              className={cn(
+                'w-52 shrink-0 overflow-y-auto border-e border-border pe-2',
+                fullscreen ? 'max-h-[calc(100vh-15rem)]' : 'max-h-[55vh]',
+              )}
+            >
               {rows.map(({ a, depth }) => {
                 const r = resolve(a);
                 const RowIcon = iconFor(r);
