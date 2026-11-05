@@ -2319,6 +2319,10 @@ msgstr "⚡ {latencyMs} ms"
 msgid "✓ {label} · {when}"
 msgstr "✓ {label} · {when}"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "✓ Update sent to {guest}"
+msgstr "✓ העדכון נשלח אל {guest}"
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "✓ Webhook set at Meta for you — Meta now sends this number's messages here. Removing the channel removes it from Meta too."
 msgstr "✓ ה-webhook הוגדר עבורך ב-Meta — מעכשיו Meta שולחת את ההודעות של המספר הזה לכאן. הסרת הערוץ מסירה אותו גם מ-Meta."
@@ -6027,6 +6031,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -6129,6 +6134,7 @@ msgstr "ביטול ההשבה"
 msgid "Cancel request"
 msgstr "ביטול הבקשה"
 
+#: src/components/conversation/SessionCard.tsx
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "בוטל"
@@ -10366,6 +10372,7 @@ msgstr "מוגדר בכרטיס הסוכן. טרם הוחל על העובד."
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/git/InvitationsStrip.tsx
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -10385,6 +10392,7 @@ msgid "Decline failed"
 msgstr "הדחייה נכשלה"
 
 #: src/components/conversation/PromptCallCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "declined"
 msgstr "נדחה"
@@ -11686,6 +11694,7 @@ msgid "Don't show again until Flowpad restarts"
 msgstr "אל תציגו שוב עד להפעלה מחדש של Flowpad"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
@@ -13214,6 +13223,7 @@ msgstr "נכשל"
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -21885,6 +21895,7 @@ msgid "Not run on this machine yet"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "not run yet"
 msgstr "טרם הורץ"
@@ -22685,6 +22696,7 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnose-run-store.ts
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -23412,6 +23424,10 @@ msgstr "פתחו את הפרויקט"
 
 #~ msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 #~ msgstr ""
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Open the prompt's run"
+msgstr "פתח את הריצה של הפרומפט"
 
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Open the provider, approve access, then paste the authorization code shown there."
@@ -25285,6 +25301,10 @@ msgstr "שם הפרומפט"
 msgid "Prompt Queue"
 msgstr "תור הפרומפטים"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Prompt request · {other}"
+msgstr "בקשת פרומפט · {other}"
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Prompt sent to Claude Haiku for decision-making. Use ${variable} for interpolation."
 msgstr "פרומפט שנשלח ל-Claude Haiku לקבלת החלטות. השתמשו ב-${variable} לאינטרפולציה."
@@ -26940,6 +26960,7 @@ msgid "Requesting access to {hostName}'s machine…"
 msgstr "מבקש גישה למחשב של {hostName}…"
 
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 msgid "requesting…"
 msgstr "מבקש…"
 
@@ -27288,6 +27309,7 @@ msgstr "חודש — הבדיקה הבאה תתבצע במחזור הקרוב."
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/SessionEventLine.tsx
 #: src/components/graph-view/webglSupport.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -27589,6 +27611,7 @@ msgstr "חוקים"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/links/LinkMenu.tsx
@@ -27613,6 +27636,10 @@ msgstr "הריצו את {0}"
 #: src/components/automations/automation-words.ts
 msgid "run {name}"
 msgstr "הרצת {name}"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Run & Update {guest}"
+msgstr "הרץ ועדכן את {guest}"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Run `flow connect` on a machine and enter its code here"
@@ -27930,6 +27957,7 @@ msgstr ""
 msgid "Running the setup. Steps that pass stay green; you are asked only for what is missing."
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "running, with problems"
 msgstr ""
@@ -29226,6 +29254,10 @@ msgstr "נשלח"
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
 msgstr "נשלח — התשובה הקולית תופיע בשיחה."
+
+#: src/components/conversation/SessionCard.tsx
+msgid "sending…"
+msgstr "שולח…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Sent along"
@@ -31435,6 +31467,10 @@ msgstr "הסשן מתחיל ללא הקבצים המצורפים."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Starting your sandbox…"
 msgstr "ה-Sandbox שלכם מופעל…"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "starting…"
+msgstr "מתחיל…"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -35216,6 +35252,10 @@ msgstr "העדכון נכשל"
 msgid "Update Plan"
 msgstr "עדכנו תכנית"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Update from {host}"
+msgstr "עדכון מ-{host}"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update plan based on <plan-note> sections"
 msgstr "עדכנו תכנית בהתאם לסעיפי <plan-note>"
@@ -36007,6 +36047,10 @@ msgstr "מבקרים יכולים לנסות את הסוכן הזה"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "ממתין לאישור של {hostName} לסשן זמן האמת…"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "waiting for {other}"
+msgstr "ממתין ל-{other}"
 
 #: src/components/conversation/SealedValuesPanel.tsx
 #~ msgid "Waiting for {waiting} recipient(s) · only they can open them"

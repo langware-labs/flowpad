@@ -166,7 +166,7 @@ async def test_main_thread_prompt_mints_a_session(bootstrapped_client, user):
     assert sid and is_valid_entity_id(sid)
     [carrier] = _carrier(fm, sid)
     marker = json.loads(carrier.prompt_preview)
-    assert marker["session_start"] == {"reply_policy": "auto"}
+    assert marker["session_start"] == {"reply_policy": "auto", "prompt_limit": 1}  # a prompt request
     assert marker["snapshot"]["id"] == sid  # the wire snapshot rides beside the start marker
     session = await RemoteWorkerSession.get_one({"id": sid})
     assert session is not None

@@ -38,6 +38,18 @@ collaborator's machine, and it is a session.
 3. **Follow-up prompts never render in the main thread** — only in the session
    view (`/dock/live_session/<id>`).
 4. **Replies never render in the main thread** either, including review drafts.
+5. **A plain prompt is a prompt request** (amended 2026-11-04). A prompt sent when
+   the conversation has no open LIVE session opens a session with
+   `prompt_limit = 1`. It is shown as `Prompt request · <other side>` under the
+   sender's message (text + prompt stay visible): the host answers **Run & Update
+   <guest>** (`reply_policy=auto`, then approve) / **Run** (`review`: the answer stays
+   a host draft) / **Decline**; while it runs the guest has Open / Cancel; when done
+   the guest sees the update under the row. The host counts answered turns in
+   `prompts_used` and, once the limit is reached and the reply has gone out, ends
+   the session (`end("ended")`, as Disconnect) — approving one prompt never leaves
+   the machine open to the next. A prompt request is never joined
+   (`open_for_conversation` returns live sessions only); the live-session button
+   opens `prompt_limit = None` — no limit, unchanged.
 
 Session settings live on the session, proposed on the first prompt and editable
 in the session view: `reply_policy` = `auto` (default) | `review`. Consent is
@@ -52,12 +64,14 @@ action `auto_approve_session`, project-scoped or global).
 | `reply_policy` | guest proposes via the start marker; host authoritative | `auto` sends replies; `review` saves a host draft inside the session |
 | `status` | host authoritative | `DRAFT → PENDING → IDLE ⇄ RUNNING → ENDED / DECLINED`; `ERROR` returns to IDLE on the next turn |
 | `approved_at`, `approved_via` | host | `manual` or `standing_grant` |
+| `prompt_limit` | guest proposes via the start marker; host fill-only | `1` = prompt request; `None` = live session (no limit) |
+| `prompts_used` | host authoritative | answered turns; a failed turn does not count |
 | `host_process_id`, `project_id` | host, never shipped | host-local, excluded from `SNAPSHOT_FIELDS` |
 
 **Wire contract (hub-optional, unchanged):** session state rides the
 `remote_worker_session-<id>` TYPE_ID carrier attachment on every session
 message; the starting prompt's carrier carries
-`prompt_preview = {"session_start": {"reply_policy": …}}`; lifecycle lines
+`prompt_preview = {"session_start": {"reply_policy": …, "prompt_limit": 1}}` (`prompt_limit` only on a prompt request); lifecycle lines
 carry `{"live_session_event": …}`. The hub stores and fans out; it never
 inspects or approves. The host backend is the trust boundary.
 

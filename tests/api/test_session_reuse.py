@@ -44,14 +44,25 @@ def _opens_a_session(fm: FlowMessage) -> bool:
     )
 
 
-async def test_prompts_in_one_conversation_join_its_open_session(bootstrapped_client, user):
+async def test_plain_prompts_are_each_their_own_prompt_request(bootstrapped_client, user):
     conv_id = await make_conversation(bootstrapped_client)
     first = await _send_prompt(bootstrapped_client, conv_id, "what is your git user name")
     second = await _send_prompt(bootstrapped_client, conv_id, "does it cover langware too")
 
-    assert second.remote_worker_session_id == first.remote_worker_session_id
-    assert _opens_a_session(first) and not _opens_a_session(second)
-    assert len(await RemoteWorkerSession.get_all({"conversation_id": conv_id})) == 1
+    # One approval never covers the next prompt: each opens its own one-prompt session.
+    assert second.remote_worker_session_id != first.remote_worker_session_id
+    assert _opens_a_session(first) and _opens_a_session(second)
+    sessions = await RemoteWorkerSession.get_all({"conversation_id": conv_id})
+    assert sorted(s.prompt_limit for s in sessions) == [1, 1]
+
+
+async def test_prompts_join_an_open_live_session(bootstrapped_client, user):
+    conv_id = await make_conversation(bootstrapped_client)
+    live = await make_session(conv_id, S.IDLE.value)  # the live-session button: no limit
+    sent = await _send_prompt(bootstrapped_client, conv_id, "next turn")
+
+    assert sent.remote_worker_session_id == live.id
+    assert not _opens_a_session(sent)
 
 
 async def test_after_the_session_ends_the_next_prompt_opens_another(bootstrapped_client, user):

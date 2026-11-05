@@ -94,6 +94,15 @@ export function pendingPromptOf(messages: FlowMessage[]): string | null {
   return (prompt && !answered && promptTextOf(prompt).trim()) || null;
 }
 
+/** The answer the host SENT back — the newest non-draft reply's text (a held draft is not an update). */
+export function sentResultOf(messages: FlowMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const text = messages[i].is_draft ? null : resultTextOf(messages[i]);
+    if (text !== null) return text;
+  }
+  return null;
+}
+
 /** A prompt as one line: its first line, truncated. */
 export function sessionTitle(prompt: string, max = 80): string {
   return truncate(prompt.trim().split('\n')[0] ?? '', max - 1);

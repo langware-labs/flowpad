@@ -2320,6 +2320,10 @@ msgstr "⚡ {latencyMs} ms"
 msgid "✓ {label} · {when}"
 msgstr "✓ {label} · {when}"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "✓ Update sent to {guest}"
+msgstr "✓ أُرسل التحديث إلى {guest}"
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "✓ Webhook set at Meta for you — Meta now sends this number's messages here. Removing the channel removes it from Meta too."
 msgstr "✓ تم إعداد الـ webhook لك في Meta — ترسل Meta الآن رسائل هذا الرقم إلى هنا. إزالة القناة تزيله من Meta أيضًا."
@@ -6027,6 +6031,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -6129,6 +6134,7 @@ msgstr "إلغاء الرد"
 msgid "Cancel request"
 msgstr "إلغاء الطلب"
 
+#: src/components/conversation/SessionCard.tsx
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "أُلغي"
@@ -10366,6 +10372,7 @@ msgstr "معلن على بطاقة الوكيل. لم يُطبَّق على ال
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/git/InvitationsStrip.tsx
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -10385,6 +10392,7 @@ msgid "Decline failed"
 msgstr "فشل الرفض"
 
 #: src/components/conversation/PromptCallCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "declined"
 msgstr "مرفوض"
@@ -11686,6 +11694,7 @@ msgid "Don't show again until Flowpad restarts"
 msgstr "عدم الإظهار مرة أخرى حتى إعادة تشغيل Flowpad"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
@@ -13214,6 +13223,7 @@ msgstr "فشل"
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -21885,6 +21895,7 @@ msgid "Not run on this machine yet"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "not run yet"
 msgstr "لم يُشغَّل بعد"
@@ -22685,6 +22696,7 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnose-run-store.ts
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -23412,6 +23424,10 @@ msgstr "فتح المشروع"
 
 #~ msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 #~ msgstr ""
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Open the prompt's run"
+msgstr "افتح تشغيل الأمر"
 
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Open the provider, approve access, then paste the authorization code shown there."
@@ -25289,6 +25305,10 @@ msgstr "اسم الموجه"
 msgid "Prompt Queue"
 msgstr "طابور الموجهات"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Prompt request · {other}"
+msgstr "طلب أمر · {other}"
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Prompt sent to Claude Haiku for decision-making. Use ${variable} for interpolation."
 msgstr "الموجِّه المُرسَل إلى Claude Haiku لاتخاذ القرار. استخدموا ${variable} للاستبدال."
@@ -26944,6 +26964,7 @@ msgid "Requesting access to {hostName}'s machine…"
 msgstr "جارٍ طلب الوصول إلى جهاز {hostName}…"
 
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 msgid "requesting…"
 msgstr "جارٍ الطلب…"
 
@@ -27292,6 +27313,7 @@ msgstr "استُؤنِف — سيتم الفحص في الدورة التالي�
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/SessionEventLine.tsx
 #: src/components/graph-view/webglSupport.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -27593,6 +27615,7 @@ msgstr "القواعد"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/links/LinkMenu.tsx
@@ -27617,6 +27640,10 @@ msgstr "تشغيل {0}"
 #: src/components/automations/automation-words.ts
 msgid "run {name}"
 msgstr "تشغيل {name}"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Run & Update {guest}"
+msgstr "شغّل وحدّث {guest}"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Run `flow connect` on a machine and enter its code here"
@@ -27934,6 +27961,7 @@ msgstr ""
 msgid "Running the setup. Steps that pass stay green; you are asked only for what is missing."
 msgstr ""
 
+#: src/components/conversation/SessionCard.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "running, with problems"
 msgstr ""
@@ -29230,6 +29258,10 @@ msgstr "تم الإرسال"
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
 msgstr "أُرسل — ستظهر الإجابة المنطوقة في المحادثة."
+
+#: src/components/conversation/SessionCard.tsx
+msgid "sending…"
+msgstr "يُرسَل…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Sent along"
@@ -31439,6 +31471,10 @@ msgstr "جاري بدء الجلسة بدون الملفات المرفقة."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Starting your sandbox…"
 msgstr "جارٍ بدء تشغيل بيئتكم المعزولة…"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "starting…"
+msgstr "يبدأ…"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -35220,6 +35256,10 @@ msgstr "فشل التحديث"
 msgid "Update Plan"
 msgstr "تحديث الخطة"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Update from {host}"
+msgstr "تحديث من {host}"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update plan based on <plan-note> sections"
 msgstr "تحديث الخطة استناداً إلى أقسام <plan-note>"
@@ -36011,6 +36051,10 @@ msgstr "يمكن للزوار تجربة هذا الوكيل"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "في انتظار موافقة {hostName} على الجلسة المباشرة…"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "waiting for {other}"
+msgstr "بانتظار {other}"
 
 #: src/components/conversation/SealedValuesPanel.tsx
 #~ msgid "Waiting for {waiting} recipient(s) · only they can open them"

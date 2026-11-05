@@ -679,6 +679,7 @@ async def resolve_or_mint_session(
             project_id=getattr(conv, "project_id", None),
             status=RemoteWorkerSessionStatus.PENDING,
             reply_policy=(start.reply_policy if start else None),
+            prompt_limit=(start.prompt_limit if start else None),
         )
     else:
         # Fill-only: an existing row keeps what it has; save only when a field
@@ -695,6 +696,7 @@ async def resolve_or_mint_session(
         if start is not None:
             _fill("starting_message_id", fm.id)
             _fill("reply_policy", start.reply_policy)
+            _fill("prompt_limit", start.prompt_limit)
         _fill("guest_user_id", getattr(fm, "sender_id", None))
         _fill("guest_name", getattr(fm, "sender_name", None))
         _fill("host_user_id", host_user_id)
@@ -879,6 +881,9 @@ async def run_session_turn(
             # The reply still goes out (it answers a prompt the guest sent), but a
             # session either side ended while this turn ran stays ended.
             await _set_turn_status(session, RemoteWorkerSessionStatus.IDLE, fresh=fresh)
+            # Counted here, on an answered turn — a failed turn does not use up a
+            # prompt request's one prompt (its Retry runs in the same session).
+            session.prompts_used += 1
             await session.save()
 
             from flow_sdk.app.actions.notification_action import handle_add_message
@@ -904,6 +909,11 @@ async def run_session_turn(
                 },
                 someone_typeid,
             )
+            # A prompt request ends once its prompt is answered — AFTER the reply
+            # went out, so the guest gets the answer and then the ENDED snapshot.
+            # Approving one prompt never leaves the host's machine open to the next.
+            if session.limit_reached and session.is_open:
+                await session.end("ended", announce=True, someone_typeid=someone_typeid)
             feed_entry_id = None
             if review and not _conversation_is_open(conversation.id):
                 draft_id = (getattr(result, "data", None) or {}).get("id")
@@ -1240,6 +1250,8 @@ async def redrive_session_prompts(
         while True:
             if session.is_expired():  # the cap can pass mid-drain
                 await session.expire(local_is_host=True, someone_typeid=someone_typeid)
+                return
+            if not session.is_open:  # a prompt request ended after its one turn
                 return
             queued = [fm for fm in await _queued_turns(session) if fm.id not in ran]
             if not queued:

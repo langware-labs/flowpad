@@ -2334,6 +2334,10 @@ msgstr "⚡ {latencyMs} ms"
 msgid "✓ {label} · {when}"
 msgstr "✓ {label} · {when}"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "✓ Update sent to {guest}"
+msgstr "✓ Update sent to {guest}"
+
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "✓ Webhook set at Meta for you — Meta now sends this number's messages here. Removing the channel removes it from Meta too."
 msgstr "✓ Webhook set at Meta for you — Meta now sends this number's messages here. Removing the channel removes it from Meta too."
@@ -6065,6 +6069,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -6167,6 +6172,7 @@ msgstr "Cancel reply"
 msgid "Cancel request"
 msgstr "Cancel request"
 
+#: src/components/conversation/SessionCard.tsx
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "cancelled"
@@ -10428,6 +10434,7 @@ msgstr "Declared on the agent's card. Not yet applied to the worker."
 #: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/git/InvitationsStrip.tsx
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -10447,6 +10454,7 @@ msgid "Decline failed"
 msgstr "Decline failed"
 
 #: src/components/conversation/PromptCallCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "declined"
 msgstr "declined"
@@ -11752,6 +11760,7 @@ msgid "Don't show again until Flowpad restarts"
 msgstr "Don't show again until Flowpad restarts"
 
 #: src/components/conversation/ConversationAutomationChip.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
@@ -13293,6 +13302,7 @@ msgstr "failed"
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -22051,6 +22061,7 @@ msgid "Not run on this machine yet"
 msgstr "Not run on this machine yet"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "not run yet"
 msgstr "not run yet"
@@ -22857,6 +22868,7 @@ msgstr "Oops! Page not found"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnose-run-store.ts
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -23588,6 +23600,10 @@ msgstr "Open the project"
 
 #~ msgid "Open the project and use \"Link to cloud\" to finish setting it up."
 #~ msgstr "Open the project and use \"Link to cloud\" to finish setting it up."
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Open the prompt's run"
+msgstr "Open the prompt's run"
 
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Open the provider, approve access, then paste the authorization code shown there."
@@ -25476,6 +25492,10 @@ msgstr "Prompt name"
 msgid "Prompt Queue"
 msgstr "Prompt Queue"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Prompt request · {other}"
+msgstr "Prompt request · {other}"
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Prompt sent to Claude Haiku for decision-making. Use ${variable} for interpolation."
 msgstr "Prompt sent to Claude Haiku for decision-making. Use ${variable} for interpolation."
@@ -27141,6 +27161,7 @@ msgid "Requesting access to {hostName}'s machine…"
 msgstr "Requesting access to {hostName}'s machine…"
 
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 msgid "requesting…"
 msgstr "requesting…"
 
@@ -27493,6 +27514,7 @@ msgstr "Resumed — it polls on the next tick."
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/SessionEventLine.tsx
 #: src/components/graph-view/webglSupport.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -27797,6 +27819,7 @@ msgstr "Rules"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/links/LinkMenu.tsx
@@ -27821,6 +27844,10 @@ msgstr "Run {0}"
 #: src/components/automations/automation-words.ts
 msgid "run {name}"
 msgstr "run {name}"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "Run & Update {guest}"
+msgstr "Run & Update {guest}"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Run `flow connect` on a machine and enter its code here"
@@ -28142,6 +28169,7 @@ msgstr "Running the old definition — Restart to apply"
 msgid "Running the setup. Steps that pass stay green; you are asked only for what is missing."
 msgstr "Running the setup. Steps that pass stay green; you are asked only for what is missing."
 
+#: src/components/conversation/SessionCard.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "running, with problems"
 msgstr "running, with problems"
@@ -29445,6 +29473,10 @@ msgstr "Sent"
 #: src/components/voice/CallControls.tsx
 msgid "Sent — the spoken answer lands in the conversation."
 msgstr "Sent — the spoken answer lands in the conversation."
+
+#: src/components/conversation/SessionCard.tsx
+msgid "sending…"
+msgstr "sending…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Sent along"
@@ -31665,6 +31697,10 @@ msgstr "Starting the session without the attached files."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Starting your sandbox…"
 msgstr "Starting your sandbox…"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "starting…"
+msgstr "starting…"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -35475,6 +35511,10 @@ msgstr "Update failed"
 msgid "Update Plan"
 msgstr "Update Plan"
 
+#: src/components/conversation/SessionCard.tsx
+msgid "Update from {host}"
+msgstr "Update from {host}"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update plan based on <plan-note> sections"
 msgstr "Update plan based on <plan-note> sections"
@@ -36268,6 +36308,10 @@ msgstr "Visitors can try this agent"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "Waiting for {hostName} to approve the live session…"
+
+#: src/components/conversation/SessionCard.tsx
+msgid "waiting for {other}"
+msgstr "waiting for {other}"
 
 #: src/components/conversation/SealedValuesPanel.tsx
 #~ msgid "Waiting for {waiting} recipient(s) · only they can open them"

@@ -209,6 +209,7 @@ _IGNORED_TYPES: frozenset[str] = frozenset(
         "bridge-session",
         "atis-latch",
         "cost-state",
+        "session-owner",  # Claude 2.1.318+: written after last-prompt
     }
 )
 

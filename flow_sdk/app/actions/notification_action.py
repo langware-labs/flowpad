@@ -945,7 +945,11 @@ async def handle_add_message(
     # (uuid4; the host validates-on-adopt) and the opening proposal (reply
     # policy) rides the start marker on the carrier attachment. A prompt WITH a
     # session id is a follow-up turn.
-    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+        can_transition,
+    )
     from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
 
     is_prompt_send = bool(prompt_text_preview or prompt_files_preview)
@@ -962,7 +966,8 @@ async def handle_add_message(
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
 
         remote_worker_session_id = mint_uuid()
-        start_settings = SessionStartSettings(reply_policy=reply_policy)
+        # A prompt with no open live session is a prompt request: one prompt, then the host ends it.
+        start_settings = SessionStartSettings(reply_policy=reply_policy, prompt_limit=1)
     elif remote_worker_session_id and is_prompt_send:
         existing_session = await RemoteWorkerSession.resolve_state(remote_worker_session_id)
         if existing_session is not None and not existing_session.is_open:
@@ -970,6 +975,24 @@ async def handle_add_message(
                 message="this live session has ended — send a new prompt to start another",
                 status_code=409,
             )
+        if existing_session is not None and not is_draft:
+            # A follow-up prompt is activity, and the sender's Live chip reads its
+            # direction from the status: RUNNING = a prompt went out. The host's
+            # next snapshot replaces it with the real state.
+            # Only an approved session: PENDING→RUNNING is the host's pre-granted
+            # fast path, never the guest's to claim before the host answered.
+            next_status = (
+                RemoteWorkerSessionStatus.RUNNING
+                if existing_session.status
+                in (RemoteWorkerSessionStatus.IDLE, RemoteWorkerSessionStatus.ERROR)
+                and can_transition(existing_session.status, RemoteWorkerSessionStatus.RUNNING)
+                else None
+            )
+            # Never while PENDING: stamping the guest's clock there makes the host's
+            # approval snapshot look stale, so the guest would ignore it until the reply.
+            if next_status is not None:
+                existing_session.mark_activity(next_status)
+                await existing_session.save(someone_typeid)
 
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
@@ -1101,6 +1124,7 @@ async def handle_add_message(
             host_user_id=peer_id,
             host_name=peer_name,
             reply_policy=start_settings.reply_policy,
+            prompt_limit=start_settings.prompt_limit,
             status=RemoteWorkerSessionStatus.DRAFT if is_draft else RemoteWorkerSessionStatus.PENDING,
         )
         guest_session.mark_activity()
@@ -1206,7 +1230,7 @@ async def handle_add_message(
 
                 from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
 
-                marker = _json.dumps({SESSION_START_MARKER_KEY: start_settings.model_dump()})
+                marker = _json.dumps({SESSION_START_MARKER_KEY: start_settings.model_dump(exclude_none=True)})
             reply_fm.attachment = [
                 *(reply_fm.attachment or []),
                 Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data, prompt_preview=marker),
@@ -1368,7 +1392,7 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
         someone_typeid,
         # Read on BOTH sides (the guest's session view shows it too): no "your".
         text=f"{sender_name or 'Your collaborator'} asks {host_name or 'the host'} for a live session",
-        marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump()},
+        marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump(exclude_none=True)},
     )
     return ApiSuccessResponse(data=session.model_dump(mode="json"))
 
