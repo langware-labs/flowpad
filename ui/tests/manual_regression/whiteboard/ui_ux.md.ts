@@ -89,19 +89,20 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     );
     const createdRow = await openWhiteboardListExpanded(page, projectId, id);
 
-    // The created whiteboard row's leading icon is a lucide Palette glyph (the
-    // whiteboard TypeInfo icon = 'Palette'). Walk from its delete
+    // The created whiteboard row's leading icon is the Chart TypeInfo icon — a
+    // whiteboard is a chart of format excalidraw (icon 'ChartNetwork', rendered as
+    // lucide-chart-network; it was 'Palette' while whiteboard was its own type). Walk from its delete
     // button up to the treeitem and inspect its non-trash svg.
     const hasPalette = await createdRow.evaluate((delBtn) => {
       let row: Element | null = delBtn ? delBtn.parentElement : null;
       for (let i = 0; i < 10 && row; i++) {
         const svgs = Array.from(row.querySelectorAll('svg')).map((s) => s.getAttribute('class') || '');
-        if (svgs.some((c) => c.includes('lucide-palette'))) return true;
+        if (svgs.some((c) => c.includes('lucide-chart-network'))) return true;
         row = row.parentElement;
       }
       return false;
     });
-    expect(hasPalette, 'whiteboard row has a lucide-palette icon').toBe(true);
+    expect(hasPalette, 'whiteboard row has the chart (lucide-chart-network) icon').toBe(true);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
     await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
@@ -132,8 +133,9 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
       const all = Array.from(document.querySelectorAll('[data-testid^="browseable-toolbar-delete:"]')).map((e) =>
         (e.getAttribute('data-testid') || '').split(':')[1],
       );
-      const wb = all.filter((t) => t === 'whiteboard').length;
-      const other = all.filter((t) => t !== 'whiteboard');
+      // A whiteboard is a chart (format excalidraw): its rows are `chart` rows.
+      const wb = all.filter((t) => t === 'chart').length;
+      const other = all.filter((t) => t !== 'chart');
       return { total: all.length, wb, otherTypes: Array.from(new Set(other)) };
     });
     expect(counts.wb, 'at least one whiteboard row present').toBeGreaterThanOrEqual(1);
