@@ -15,6 +15,7 @@ import {
   PageId,
   Project,
   RemoteWorkerSession,
+  Conversation,
   Shell,
   TypeId,
   VFSPath,
@@ -2589,6 +2590,14 @@ export class DockPointer implements IDockPointer {
     // target, leaving it untitled and projectless (Global-scoped). Puts the
     // session on the same entity rail as every other tab: the mint resolves its
     // title (host/guest) and the loader its project.
+    // A conversation dock targets its conversation — also from a message deep
+    // link (`<conversationId>/message/<id>`), which the generic fallback below
+    // rejects for its `/`. Without the target, the tab took the project it was
+    // opened in rather than the conversation's own.
+    if (this.viewType === ViewType.CONVERSATION) {
+      const { conversationId } = DockPointer.parseConversationPointer(pointer);
+      return conversationId ? DockPointer.tryTypeId(Conversation.type, conversationId) : null;
+    }
     if (this.viewType === ViewType.LIVE_SESSION) {
       return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
     }
