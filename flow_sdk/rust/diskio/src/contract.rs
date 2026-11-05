@@ -5,7 +5,7 @@
 //! `flow_sdk/schema/data_spec/diskio_spec.py`). A change to either list is a
 //! `CONTRACT_VERSION` bump on both sides (diskio.md §0 Values).
 
-pub const CONTRACT_VERSION: u32 = 1;
+pub const CONTRACT_VERSION: u32 = 2;
 
 /// The envelope key of a `Tagged` value (`flow_sdk/schema/data_spec/spec.py`).
 pub const TAG: &str = "spec_kind";

@@ -38,6 +38,27 @@ and indexing would treat an enormous tree as the workspace, which is slow and
 easy to make unintended changes in. Pick (or create) a dedicated folder for each
 piece of work.
 
+## Keeping files out of Flowpad: `.flowignore`
+
+A `.flowignore` file lists what Flowpad never indexes, scans, or stamps an id
+into. It uses `.gitignore` syntax and is matched exactly the way git matches
+(patterns are case-sensitive on every computer). It applies to its own folder
+and everything below it, and a `.flowignore` in any parent folder counts too, so
+`~/.flowignore` covers your whole home folder.
+
+```gitignore
+# never index these
+drafts/
+*.secret
+.claude/skills/old-skill/
+# but do index this folder even though .gitignore hides it
+!reports/
+```
+
+Where `.flowignore` and `.gitignore` disagree, `.flowignore` wins. Files already
+indexed leave the index the next time the project is indexed. Flowpad's own
+skip list (`node_modules`, `.git`, build and cache folders) always applies.
+
 ## Creating and opening
 
 - **Open project folder** points Flowpad at an existing directory.

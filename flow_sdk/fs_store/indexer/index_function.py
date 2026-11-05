@@ -25,6 +25,7 @@ from flow_sdk.fs_store.asset_occurrences import (
 )
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.gitignore import FlowIgnore
 from flow_sdk.fs_store.indexer.progress_table import (
     PROGRESS_TEXT_COMPLETE,
     SWEEP_ROW_NAME,
@@ -528,10 +529,16 @@ def _source_gone_orphans(
     exists. The declaration is read from the row, else from the record home's
     metadata.json. A record that declares no source isn't file-backed → never
     orphan. A source under an UNREACHABLE root (an unmounted volume) is not
-    gone either — absence there is not deletion. Stat-per-candidate — callers
-    run this off-loop via ``asyncio.to_thread``.
+    gone either — absence there is not deletion. A source a ``.flowignore``
+    now excludes IS gone: it leaves the index as a deleted file does.
+    Stat-per-candidate — callers run this off-loop via ``asyncio.to_thread``.
     """
     from flow_sdk.fs_store.path_utils import source_gone  # noqa: PLC0415
+
+    flowignore = FlowIgnore()
+
+    def gone(source: str) -> bool:
+        return source_gone(source) or (Path(source).is_absolute() and flowignore.excludes(source))
 
     def _declared_source(eid: str) -> str:
         row = db_rows.get(eid)
@@ -543,7 +550,7 @@ def _source_gone_orphans(
         eid
         for eid in candidates
         # An unreachable root is not a deletion — see ``source_gone``.
-        if source_gone(_declared_source(eid))
+        if gone(_declared_source(eid))
     }
 
 
@@ -1657,6 +1664,18 @@ class FSIndexer:
         # are accumulated inside the chunk and awaited on the main loop after
         # the chunk returns.
         functions = self._functions
+        # A path a .flowignore excludes is never indexed, whatever walker found it: many
+        # walkers list files themselves (a folder's markdown, a memory dir's glob), so the
+        # walk's own pruning cannot be the only gate.
+        flowignore = FlowIgnore()
+
+        def kept(children: list[FSRef]) -> list[FSRef]:
+            return [
+                child for child in children
+                if not flowignore.excludes(child.path, True if child.record_type is RecordType.FOLDER else None)
+            ]
+
+        stack[:] = kept(stack)
 
         # Type-gate the dispatcher: when opts.types is set, build the closure
         # of output types whose walk transitively produces a requested type
@@ -1708,7 +1727,7 @@ class FSIndexer:
                     if _is_async_walker(fn):
                         pending.append((node, fn))
                     else:
-                        children = fn([node], opts)
+                        children = kept(fn([node], opts))
                         stack.extend(reversed(children))
                 if opts.limit is not None and len(visited) >= opts.limit:
                     hit_limit = True
@@ -1723,7 +1742,7 @@ class FSIndexer:
             )
             # Drain any async walkers seen inside the chunk on the main loop.
             for node, fn in pending:
-                children = await fn([node], opts)
+                children = kept(await fn([node], opts))
                 stack.extend(reversed(children))
             await progress.emit()
             if hit_limit:

@@ -74,10 +74,6 @@ The indexer imports `flow_sdk.diskio` only inside functions, so there is no impo
 Each is a behavior change the spec lists in §14, deferred because steps 1-2
 change no behavior. The conformance kit pins today's behavior for each.
 
-- **Unparseable `.gitignore` line.** Spec: the line is dropped. Today
-  `GitIgnoreSpec.from_lines` raises `GitIgnorePatternError` and the walk
-  aborts. The backend shares the walk, so it raises too. The fix belongs in
-  `push_gitignore` / `load_gitignore_stack`.
 - **`DocumentRead.fields` is not JSON-shaped.** It is what `yaml.SafeLoader`
   returns: a date is a `datetime.date`. No `CSafeLoader`, no timestamp-as-text.
   Only the `yaml11` profile is accepted; the other two raise `ValueError`.
