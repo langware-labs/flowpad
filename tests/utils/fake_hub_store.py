@@ -19,6 +19,11 @@ class FakeHubStore:
         self.webhooks: dict[str, list[str]] = {}
         #: ``deployment/<id>/funding`` answers by deployment id; none = the hub cannot say.
         self.funding: dict[str, dict] = {}
+        #: the placement id each ``plan_deployment`` answered, in order.
+        self.planned: list[str] = []
+        #: ``True``: answer ``plan_deployment`` as the hub does, a new row per call without ``deployment_id``
+        #: (off by default: most tests plan once and read the row back through ``deployment``).
+        self.mint_per_plan = False
 
     def deployment(self, agent_typeid: str, environment: str) -> dict:
         return {"id": self._ids.setdefault((agent_typeid, environment), str(uuid.uuid4())), "name": f"agent ({environment})",
@@ -53,7 +58,14 @@ class FakeHubStore:
             self.authorized.setdefault(eid, []).append(payload["provider"])
             return {"provider": payload["provider"]}
         if action == "plan_deployment":
-            deployment = self.deployment(f"agent-{eid}", payload["environment"])
+            key = (f"agent-{eid}", payload["environment"])
+            if payload.get("deployment_id"):
+                self._ids[key] = payload["deployment_id"]
+            elif self.mint_per_plan:
+                # The real hub: a NEW placement on every call unless ``deployment_id`` names the one to plan again.
+                self._ids[key] = str(uuid.uuid4())
+            deployment = self.deployment(*key)
+            self.planned.append(deployment["id"])
             # The hub keeps each asked-for webhook and stores its URL as the driver's variable.
             self.webhooks[deployment["id"]] = [hook["name"] for hook in payload.get("webhooks") or []]
             for hook in payload.get("webhooks") or []:

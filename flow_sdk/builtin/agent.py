@@ -1158,11 +1158,18 @@ class Agent(Entity):
         from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
 
         environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
+        provider = provider or DEFAULT_CLOUD_PROVIDER
         body = {
             "environment": environment,
-            "provider": provider or DEFAULT_CLOUD_PROVIDER,
+            "provider": provider,
             "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()],
         }
+        # The hub mints a NEW placement on every call unless told which one to plan again: name the
+        # one this agent already has there, or changing its allocation (the deployment page's "Change
+        # allocation", the deploy dialog's token allocation) left the old row and made a second one.
+        existing = await Deployment.find_existing(str(self.typeid), provider, environment=environment)
+        if existing is not None:
+            body["deployment_id"] = existing.id
         if token_allocation is not _UNSET:
             body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
         data = await HubProxy.call("POST", self.type, self.id, "plan_deployment", payload=body)

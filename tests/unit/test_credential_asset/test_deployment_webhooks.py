@@ -124,3 +124,14 @@ async def test_placing_the_values_verifies_the_sources_that_read_them(home, proj
     for source in await DataSource.find_owned(agent.typeid):
         expected = SourceStatus.ACTIVE.value if source.provider == _Pushed.provider else SourceStatus.SETUP.value
         assert source.status == expected
+
+
+async def test_planning_again_replans_the_placement_it_has(home, project, drivers, hub):
+    """The hub mints a new placement per ``plan_deployment`` unless ``deployment_id`` names one. Changing a
+    planned deployment's allocation plans it again: it must be the same row, not a second placement."""
+    hub.mint_per_plan = True
+    agent = await _agent(project)
+    first = await agent.plan_deployment("production", provider="e2b")
+    again = await agent.plan_deployment("production", provider="e2b", token_allocation=None)
+    assert again.id == first.id
+    assert hub.planned == [str(first.id), str(first.id)]
