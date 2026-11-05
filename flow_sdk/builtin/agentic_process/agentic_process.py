@@ -3300,6 +3300,32 @@ class AgenticProcess(Entity):
         await self.emit_entity_event("on_show", {**payload, "placement": placement})
         return placement
 
+    async def replay_missed_show(self, connection_id: str) -> bool:
+        """Re-send the newest ``on_show`` to ONE connection that has just begun watching, when that
+        show was emitted after the connection opened — i.e. while its ``/watch`` was still in
+        flight, so the live event (sent to watchers only) reached no one there. A show older than
+        the connection was the page loader's to restore (``routeProcessPointer``), so it is never
+        replayed: that would resurrect a display the user left. True when it re-sent."""
+        from flow_sdk.builtin.tab import show_placement
+        from flow_sdk.core.network.connections import connected_at
+
+        opened = connected_at(connection_id)
+        context = self.context_data if isinstance(self.context_data, dict) else {}
+        shown = context.get("last_shown")
+        stack = context.get("display_stack") or []
+        newest = stack[-1] if stack and isinstance(stack[-1], dict) else {}
+        shown_at = newest.get("shown_at")
+        if opened is None or not isinstance(shown, dict) or not shown_at:
+            return False
+        try:
+            if datetime.fromisoformat(str(shown_at)) < opened:
+                return False
+        except ValueError:
+            return False
+        placement = await show_placement(self.id)
+        await self.emit_entity_event("on_show", {**shown, "placement": placement}, only=[connection_id])
+        return True
+
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
         """Resolve a show target and emit it.

@@ -7,6 +7,7 @@ without creating circular dependencies.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Optional
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
@@ -37,12 +38,17 @@ class ConnectionRegistry:
 
     def __init__(self):
         self._connections: Dict[str, WebSocket] = {}
+        # When each live connection was registered: an event emitted after this but before the
+        # connection's ``/watch`` landed was sent to no one, and the watch path replays it.
+        self._connected_at: Dict[str, datetime] = {}
 
     def add_connection(self, connection_id: str, websocket: WebSocket) -> None:
         self._connections[connection_id] = websocket
+        self._connected_at[connection_id] = datetime.now(timezone.utc)
         logger.debug(f"Added connection {connection_id}")
 
     def remove_connection(self, connection_id: str) -> None:
+        self._connected_at.pop(connection_id, None)
         if connection_id in self._connections:
             del self._connections[connection_id]
             logger.debug(f"Removed connection {connection_id}")
@@ -50,12 +56,16 @@ class ConnectionRegistry:
     def get_connection(self, connection_id: str) -> Optional[WebSocket]:
         return self._connections.get(connection_id)
 
+    def connected_at(self, connection_id: str) -> Optional[datetime]:
+        return self._connected_at.get(connection_id)
+
     def get_all_connections(self) -> Dict[str, WebSocket]:
         return dict(self._connections)
 
     def clear(self) -> None:
         """Clear all connections (useful for testing)."""
         self._connections.clear()
+        self._connected_at.clear()
         logger.debug("Cleared all connections")
 
 
@@ -73,6 +83,11 @@ def remove_connection(connection_id: str) -> None:
 
 def get_connection(connection_id: str) -> Optional[WebSocket]:
     return _registry.get_connection(connection_id)
+
+
+def connected_at(connection_id: str) -> Optional[datetime]:
+    """When ``connection_id`` was registered (UTC), or ``None`` when it is not live."""
+    return _registry.connected_at(connection_id)
 
 
 def get_all_connections() -> Dict[str, WebSocket]:
