@@ -98,7 +98,11 @@ test.describe('navigation collapse — root is a location', () => {
   });
 
   test('back from a dock returns to the root as a real history entry', async () => {
-    await page.goto('/');
+    // Reach the root the way a user does (Home), not by opening a bare `/`: a document opened at a
+    // bare `/` is a LAUNCH, which reopens the last place (here the explorer the test before left).
+    await page.goto('/dock/explorer');
+    await page.getByTestId('top-nav-home').click();
+    await expect.poll(() => herePath()).toBe('/');
     await page.goto('/dock/explorer');
     await expect.poll(() => here()).toContain('/dock/explorer');
     await page.goBack();
