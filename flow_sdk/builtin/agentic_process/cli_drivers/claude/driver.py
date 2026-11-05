@@ -206,6 +206,8 @@ def headless_parent_model(cli_cfg: dict, env: Mapping[str, str]) -> str | None:
     return cli_cfg.get("model") or (None if env.get("ANTHROPIC_MODEL") else "sonnet")
 
 
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.shell_command_rows import shell_command_landed
+
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
@@ -223,6 +225,9 @@ class ClaudeDriver:
     spawns_subagents = True
     pty_submits_on_paste = True
     pty_shell_escape = "!"
+    # Reads the transcript to say whether a typed ``!`` command reached the TUI
+    # (``AgenticProcess.run_shell_command`` verifies delivery with it).
+    shell_command_landed = staticmethod(shell_command_landed)
     # Real Claude Code PTY captures expose two grounded blank-composer frames:
     # a fresh boot paints the rotating ``Try "…"`` placeholder (2.1.207+),
     # while a resumed session can paint a bare prompt followed immediately by
