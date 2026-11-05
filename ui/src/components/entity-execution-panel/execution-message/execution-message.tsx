@@ -82,7 +82,8 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
       {name}
     </span>
   );
-  const sentAt = new Date(flowData.timestamp);
+  // An optimistic echo's `timestamp` is an ordering key (may be the process's creation); `submittedAt` is when it was sent.
+  const sentAt = new Date(flowData.submittedAt ?? flowData.timestamp);
   const hasTime = !Number.isNaN(sentAt.getTime());
   const timeNode = hasTime ? (
     <span
