@@ -57,7 +57,7 @@ export function DeploymentFundingCard({ agent, deployment }: { agent: Agent; dep
   const { navigation } = useDockNavigation();
   const { data, error } = useDeploymentFunding(deployment);
   const told = useRef('');
-  const problem = error ? String(error.message ?? error) : (data?.exhausted ?? '');
+  const problem = error ? errorMessage(error, String(error)) : (data?.exhausted ?? '');
 
   useEffect(() => {
     if (problem && told.current !== problem) {

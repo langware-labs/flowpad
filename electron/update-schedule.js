@@ -20,6 +20,10 @@ const REGULAR_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const INTERNAL_INTERVAL_MS = 60 * 60 * 1000;
 const INTERNAL_DOMAIN = 'langware.ai';
 const SCHEDULE_FILE = 'update-schedule.json';
+// The DESKTOP feed is also checked at every launch and on this cadence, for every account: a new desktop is
+// the update that leads (the engine follows its dependencies), so it is never a day away. Desktop-only
+// checks do not move the shared anchor above — the engine keeps its own cadence.
+const DESKTOP_INTERVAL_MS = 60 * 60 * 1000;
 // The tick only ASKS whether a check is due; the real cadence is the interval above.
 const SCHEDULER_TICK_MS = 5 * 60 * 1000;
 // Failed checks retry sooner than the interval (an outage must not cost a day), but never
@@ -123,6 +127,25 @@ function planLaunchCheck({ state, intervalMs, now }) {
   return { run: true, reason: 'no-usable-answer' };
 }
 
+/** Is a desktop-only check due? An hour after the last look at the feed (any kind of check). */
+function desktopCheckDue({ state, now }) {
+  const seen = [attemptMs(state.lastAttemptAt, now), attemptMs(state.lastDesktopCheckAt, now)].filter((v) => v !== null);
+  return seen.length === 0 || now >= Math.max(...seen) + DESKTOP_INTERVAL_MS;
+}
+
+/**
+ * A desktop-only check ran: paces the next one and, when it answered, keeps the answer (a follow-up and
+ * the next launch read it) — never the shared cadence anchor or the backoff.
+ */
+function recordDesktopCheck(state, { at, result = null }) {
+  const answered = result && result.state && result.state !== 'unknown';
+  return {
+    ...state,
+    lastDesktopCheckAt: new Date(at).toISOString(),
+    ...(answered ? { lastResult: { state: result.state, version: result.version || null } } : {}),
+  };
+}
+
 /** An answered check: sets the cadence anchor, keeps what it found, ends any backoff. */
 function recordSuccess(state, { result, at }) {
   const iso = new Date(at).toISOString();
@@ -212,6 +235,9 @@ function decideDesktopAction({ state, version, isNewer, deferredVersion, offered
 }
 
 module.exports = {
+  DESKTOP_INTERVAL_MS,
+  desktopCheckDue,
+  recordDesktopCheck,
   REGULAR_INTERVAL_MS,
   INTERNAL_INTERVAL_MS,
   SCHEDULE_FILE,

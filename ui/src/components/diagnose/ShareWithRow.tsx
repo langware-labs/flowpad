@@ -62,6 +62,7 @@ export function ShareWithRow({ projectId, onChange }: ShareWithRowProps) {
       <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {t`Share the results with`}
       </div>
+      <p className="text-[11px] text-muted-foreground">{t`Results include your screen and your session's last turns.`}</p>
       {desks.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {desks.map((d) => {

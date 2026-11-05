@@ -10,7 +10,7 @@ import { ActionInfo } from '../models/ActionInfo';
  */
 
 export type HelpRecipientKind = 'person' | 'desk';
-export type HelpOrigin = 'vibe' | 'footer' | 'portal' | 'portal_agent_chat' | 'load_failure' | 'assistant' | 'credential';
+export type HelpOrigin = 'vibe' | 'footer' | 'top_bar' | 'portal' | 'portal_agent_chat' | 'load_failure' | 'assistant' | 'credential';
 
 export type HelpRecipient = {
   kind: HelpRecipientKind;
@@ -34,8 +34,12 @@ export type AskForHelpRequest = {
   /** "Send diagnostic": diagnose this machine in the background; the diagnosis follows the
    *  request as its own message. The request never waits for it. */
   diagnose?: boolean;
+  /** A diagnosis already taken ("Check first"): sent as it stands, nothing is diagnosed again. */
+  diagnosis_id?: string | null;
   /** The session on screen (a TypeId) — context for the diagnose only, never attached. */
   process?: string | null;
+  /** The window asked from (its socket's id): what the diagnosis says was on screen. */
+  connection_id?: string | null;
 };
 
 /** Why the hub does not have something — mirrors ``HubFailure``. Match ``kind``, never ``message``. */
@@ -103,6 +107,7 @@ export interface HelpRequestRow {
   status: 'open' | 'resolved' | 'closed';
   delivery: DeliveryState;
   delivered: boolean;
+  unread: number;
 }
 
 /** My help requests, both kinds — including ones not delivered yet. */

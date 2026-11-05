@@ -189,6 +189,12 @@ const stateLabel = (inp: CategoryInputs) => {
 };
 
 describe('ticketState', () => {
+  it('is picked for a requester told only that someone took it, no names', () => {
+    expect(ticketState({ status: 'open', initiatedBy: REQUESTER, members: [], pickedUpBy: [], staffed: true })).toBe(
+      'picked',
+    );
+  });
+
   it('waiting: only the requester is in it', () => {
     expect(ticketState({ status: 'open', initiatedBy: REQUESTER, members: [requesterMember] })).toBe('waiting');
   });

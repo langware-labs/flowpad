@@ -1,6 +1,4 @@
-import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
-import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
-import { recipientsLabel, useDiagnoseRunStore } from '@src/components/diagnose/diagnose-run-store';
+import { askWithDiagnosis, recipientsLabel, useDiagnoseRunStore } from '@src/components/diagnose/diagnose-run-store';
 import { ShareWithRow } from '@src/components/diagnose/ShareWithRow';
 import { prefsAfterAnswer, SendOnceDoneDialog, shouldAsk } from '@src/components/diagnose/SendOnceDoneDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -12,7 +10,6 @@ import {
   usePickedFiles,
 } from '@src/components/conversation/FileAttachmentPicker';
 import { cn } from '@src/lib/utils';
-import { KindValue } from '@src/components/value-viewer/KindValue';
 import { dataContext, PrefKey, type HelpRecipient } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
@@ -33,12 +30,8 @@ interface DiagnoseModalProps {
   onClose: () => void;
   /** Open the full-diagnosis popup in place of this one (the "View diagnosis" button). */
   onViewDiagnosis: (args: { diagnosisId: string; conversationId?: string }) => void;
-  /** Opened from an error / warning: that text is the subject (the one window for both entry points). */
+  /** Opened from an error / warning: that text is the subject. */
   seed?: DiagnoseSeed | null;
-  /** False where the window is mounted above the router (the error-toast host in `main.tsx`, which
-   *  must survive a crashed route): the parts that need the router — Forward, the sweep viewer —
-   *  are left out; the finish toast carries Open / Send to instead. */
-  inRouter?: boolean;
 }
 
 /** The prompt a seeded diagnosis runs with — what the error toast's window always sent. */
@@ -47,31 +40,24 @@ function seededPrompt(seed: DiagnoseSeed, notes: string): string {
 }
 
 /**
- * Diagnose Flowpad — THE window, from the footer and from an error / warning toast alike.
+ * Diagnose Flowpad — THE window, from an error / warning toast and from Ask for help's "Check first".
  *
  * Who gets the results is picked here (help desk chips, the address book, an email), and "Send report
  * once done" (remembered) decides whether they go when the run ends. The run lives in
  * `useDiagnoseRunStore`, not here: closing the window never stops it, and its finish toast says what
  * was sent — the window is usually long closed by then.
  */
-export function DiagnoseModal({ open, onClose, onViewDiagnosis, seed = null, inRouter = true }: DiagnoseModalProps) {
+export function DiagnoseModal({ open, onClose, onViewDiagnosis, seed = null }: DiagnoseModalProps) {
   const { t } = useLingui();
   const [message, setMessage] = useState('');
   const [picked, setPicked] = useState<HelpRecipient[]>([]);
   const [asking, setAsking] = useState(false);
   const [sendWhenDone, setSendWhenDone] = usePreference<boolean>(PrefKey.DIAGNOSE_SEND_WHEN_DONE);
   const [askBeforeSend, setAskBeforeSend] = usePreference<boolean>(PrefKey.DIAGNOSE_ASK_BEFORE_SEND);
-  const { running, lines, done, share, start, reset } = useDiagnoseRunStore();
+  const { running, lines, done, share, draft, start, reset } = useDiagnoseRunStore();
   const started = running || lines.length > 0 || !!done;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const {
-    report,
-    forward,
-    busy: reporting,
-    error: reportError,
-    reset: resetReport,
-  } = useDiagnosisReport(done?.diagnosisId ?? null);
   const {
     inputId,
     files,
@@ -94,10 +80,9 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis, seed = null, inR
       setPicked([]);
       setAsking(false);
       reset();
-      resetReport();
       clearFiles();
     }
-  }, [open, reset, resetReport, clearFiles]);
+  }, [open, reset, clearFiles]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -125,20 +110,6 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis, seed = null, inR
     if (running) animateMinimizeToProcessChip(contentRef.current);
     onClose();
   }, [onClose, running]);
-
-  const handleReportIssue = useCallback(async () => {
-    if (await report()) handleClose();
-  }, [report, handleClose]);
-
-  const handleForward = useCallback(
-    async (conversationId: string) => {
-      if (await forward(conversationId)) {
-        navigateTo(DockPointer.forConversation(conversationId).toUrl());
-        handleClose();
-      }
-    },
-    [forward, handleClose],
-  );
 
   const goesTo = recipientsLabel(started ? (share?.share_with ?? []) : picked);
   const isWarning = seed?.kind === 'warning';
@@ -283,12 +254,6 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis, seed = null, inR
             </div>
           )}
 
-          {inRouter && done && !done.ok && done.diagnosis && (
-            <div className="max-h-80 overflow-y-auto rounded-md border p-2" data-testid="diagnose-sweep-result">
-              <KindValue kind="diagnosis" value={done.diagnosis} />
-            </div>
-          )}
-
           {running && (
             <div className="flex items-start gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-2 text-[11px] font-medium text-blue-700 dark:border-blue-400/40 dark:text-blue-300">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -334,20 +299,6 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis, seed = null, inR
             </div>
           )}
 
-          {inRouter && done?.ok && done.conversationId && !done.shared.length && (
-            <DiagnosisActionButtons
-              suggestedConversationId={done.conversationId}
-              canReport={!!done.diagnosisId}
-              diagnosisId={done.diagnosisId ?? undefined}
-              busy={reporting}
-              error={reportError}
-              onDismiss={handleClose}
-              onReportIssue={() => void handleReportIssue()}
-              onForward={(conversationId) => void handleForward(conversationId)}
-              onForwardedNew={handleClose}
-            />
-          )}
-
           {started && (
             <div className="flex justify-end gap-2">
               {running ? null : done?.shared.length ? (
@@ -376,6 +327,19 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis, seed = null, inR
                   <Trans>View diagnosis</Trans>
                 </button>
               ) : null}
+              {done?.diagnosisId && !done.shared.length && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    askWithDiagnosis(done, draft);
+                    handleClose();
+                  }}
+                  className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
+                  data-testid="diagnose-ask-for-help"
+                >
+                  <Trans>Ask for help</Trans>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleClose}

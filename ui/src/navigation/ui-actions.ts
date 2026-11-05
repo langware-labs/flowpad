@@ -149,16 +149,15 @@ export const UI_ACTIONS: Record<string, Handler> = {
     if (forked) await h.navigation.openShellProcess(forked.id);
   },
   ...Object.fromEntries(Object.entries(HOSTS).map(([id, address]) => [id, hosted(id, address)])),
-  ...Object.fromEntries(ON_PROJECT_HOME.map((id) => [id, hosted(id, '/dock/assets/project-home', { notInVibe: true })])),
+  ...Object.fromEntries(
+    ON_PROJECT_HOME.map((id) => [id, hosted(id, '/dock/assets/project-home', { notInVibe: true })]),
+  ),
   'setup-wizard': () => openSetupWizard(),
   'view-mode-vibe': (h) => switchMode(h, 'vibe'),
   'view-mode-advanced': (h) => switchMode(h, 'advanced'),
   logout: () => dataContext.cloudLogout(),
-  // The ask-for-help button lives in the assistant's chat: open it, then ask.
-  'ask-for-help-dialog': () => {
-    requestUiAction('assistant-chat');
-    requestUiAction('ask-for-help-dialog');
-  },
+  // The ask-for-help button lives in the top bar, on every screen.
+  'ask-for-help-dialog': () => requestUiAction('ask-for-help-dialog'),
 };
 
 /** Carry out the action `id`. False when there is no such action, or no host to run it yet. */

@@ -7,6 +7,7 @@ import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { badgeVariants } from '@src/components/ui/badge';
+import { errorMessage } from '@src/lib/error-message';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -101,11 +102,12 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
           setConversationId(event.conversationId);
           remember(deployment.id, event.conversationId);
         } else if (event.type === 'text') patchReply((reply) => ({ ...reply, content: reply.content + event.text }));
-        else if (event.type === 'tool') patchReply((reply) => ({ ...reply, tools: [...(reply.tools ?? []), event.name] }));
+        else if (event.type === 'tool')
+          patchReply((reply) => ({ ...reply, tools: [...(reply.tools ?? []), event.name] }));
         else if (event.type === 'error') setError(event.message);
       }
     } catch (err) {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err));
+      if (!controller.signal.aborted) setError(errorMessage(err, String(err)));
     } finally {
       setSending(false);
     }
@@ -135,7 +137,10 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
           </div>
           <button
             type="button"
-            className={badgeVariants({ variant: 'secondary', className: 'mt-0.5 cursor-pointer px-1.5 py-0 text-[10px]' })}
+            className={badgeVariants({
+              variant: 'secondary',
+              className: 'mt-0.5 cursor-pointer px-1.5 py-0 text-[10px]',
+            })}
             onClick={() => navigation.openDock(agent.dockPointer)}
             data-testid="deployed-agent-chat-agent-link"
           >
@@ -197,7 +202,11 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
           disabled={!chat}
           data-testid="deployed-agent-chat-input"
         />
-        <Button onClick={() => void send()} disabled={!chat || sending || !draft.trim()} data-testid="deployed-agent-chat-send">
+        <Button
+          onClick={() => void send()}
+          disabled={!chat || sending || !draft.trim()}
+          data-testid="deployed-agent-chat-send"
+        >
           <Trans>Send</Trans>
         </Button>
       </div>

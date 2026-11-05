@@ -112,3 +112,61 @@ def test_an_invite_the_viewer_already_joined_does_not_keep_the_row_unread():
     )
     assert projection.counts["conv-joined"] == 0
     assert projection.by_conversation["conv-joined"] is False
+
+
+def _project(case, fm_by_id):
+    viewer = TABLE["viewer"]
+    return project_unread(
+        conversations=[_conversation(c) for c in case["conversations"]],
+        fm_by_id=fm_by_id,
+        invitations=[_invitation(i) for i in case["invitations"]],
+        self_ids={viewer["cloud_user_id"], viewer["local_user_id"]},
+        viewer_email=viewer["email"],
+        now=_dt(TABLE["now"]),
+        stream_inbox_owner=TypeId(case["stream_inbox_owner"]) if case.get("stream_inbox_owner") else None,
+    )
+
+
+def _reader(messages: dict):
+    """``fetch(ids)`` over a dict, recording every id asked for."""
+    asked: list = []
+
+    async def fetch(ids):
+        asked.extend(ids)
+        return [messages[i] for i in ids if i in messages]
+
+    return fetch, asked
+
+
+@pytest.mark.parametrize("case", TABLE["cases"], ids=[c["name"] for c in TABLE["cases"]])
+async def test_reading_only_what_the_rule_walks_projects_the_same(case):
+    # The recompute no longer loads every message: it reads, window by window, the ones the rule
+    # walks. Over every truth-table case the projection must be the one the full load gives.
+    from flow_sdk.stream_inbox import _messages_the_formula_reads
+
+    viewer = TABLE["viewer"]
+    messages = {mid: _message(mid, m) for mid, m in case["messages"].items()}
+    fetch, _asked = _reader(messages)
+    read = await _messages_the_formula_reads(
+        [_conversation(c) for c in case["conversations"]], {viewer["cloud_user_id"], viewer["local_user_id"]}, fetch
+    )
+    full, lazy = _project(case, messages), _project(case, read)
+    assert (lazy.total, lazy.by_conversation, lazy.counts) == (full.total, full.by_conversation, full.counts), case["name"]
+
+
+async def test_a_read_conversation_costs_one_message_and_an_unread_streak_only_its_length():
+    from flow_sdk.stream_inbox import _messages_the_formula_reads
+
+    them = "user-00000000-0000-4000-8000-0000000000aa"
+    pointers = lambda prefix, n: [{"fm": f"{prefix}{i}", "ts": f"2026-01-01T00:{i:02d}:00Z"} for i in range(n)]  # noqa: E731
+    quiet = _conversation({"id": "quiet", "pointers": pointers("q", 40)})
+    streak = _conversation({"id": "streak", "pointers": pointers("s", 40)})
+    messages = {f"q{i}": _message(f"q{i}", {"is_read": True, "sender_id": them}) for i in range(40)}
+    # The 5 newest of "streak" are unread, the rest read.
+    messages.update({f"s{i}": _message(f"s{i}", {"is_read": i < 35, "sender_id": them}) for i in range(40)})
+    fetch, asked = _reader(messages)
+    read = await _messages_the_formula_reads([quiet, streak], {"user-self"}, fetch)
+    assert [i for i in asked if i.startswith("q")] == ["q39"], "a read conversation: its newest message only"
+    assert {i for i in asked if i.startswith("s")} >= {f"s{i}" for i in range(34, 40)}, "the streak and the read one ending it"
+    assert len([i for i in asked if i.startswith("s")]) <= 8, "windows of 1, 2, 4: never the whole conversation"
+    assert len(read) < len(messages)

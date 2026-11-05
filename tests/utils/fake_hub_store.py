@@ -23,6 +23,7 @@ class FakeHubStore:
         self.deploy_ids: list[str | None] = []
         self.authorized: dict[str, list[str]] = {}
         self.webhooks: dict[str, list[str]] = {}
+        self.help_desks: dict[str, list[str] | None] = {}
         #: ``deployment/<id>/funding`` answers by deployment id; none = the hub cannot say.
         self.funding: dict[str, dict] = {}
         #: Every placement planned, by id, in the order made.
@@ -89,6 +90,7 @@ class FakeHubStore:
             deployment = self._plan(f"agent-{eid}", payload)
             # The hub keeps each asked-for webhook and stores its URL as the driver's variable.
             self.webhooks[deployment["id"]] = [hook["name"] for hook in payload.get("webhooks") or []]
+            self.help_desks[deployment["id"]] = payload.get("help_desks")
             for hook in payload.get("webhooks") or []:
                 self.values.setdefault(deployment["id"], {})[hook["var"]] = self.webhook_url(hook["name"])
             return {"deployment": deployment}

@@ -151,20 +151,6 @@ export async function forwardDiagnosis(
   });
 }
 
-/**
- * Email a diagnosis to the Flowpad team. Calls the backend ``report`` action
- * (``POST /api/v1/graph/report``), which gathers the diagnosis's interesting
- * parts (what happened, the user's own words, who/when/which OS) and relays them
- * to the hub — the hub holds the SendGrid key and sends to diagnosis@langware.ai.
- * Used by the Home-Feed card's and the diagnose modal's "Report issue" button.
- */
-export async function sendDiagnosisEmailReport(diagnosisId: string): Promise<void> {
-  // Null-entity graph service action → POST /api/v1/graph/report.
-  const info = new ActionInfo('report', null, null, 'POST');
-  info.bodyParameters = { diagnosis_id: diagnosisId };
-  await dataManager.callAction<{ diagnosis_id: string }, { sent: boolean }>(info);
-}
-
 export interface CreateAndSendParams {
   /** Required for project-local conversations; for a cross-user bundle it is
    *  the sender's local-only project mapping — pass it whenever one is selected. */

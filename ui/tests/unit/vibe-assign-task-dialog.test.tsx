@@ -43,6 +43,8 @@ import { dataManager, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
+import { useDiagnoseRunStore } from '@src/components/diagnose/diagnose-run-store';
+import { useDiagnoseErrorStore } from '@src/notifications';
 
 afterEach(() => {
   cleanup();
@@ -154,6 +156,30 @@ describe('AskForHelpButton — the current task button', () => {
     expect(screen.getByTestId('vibe-assign-task')).toHaveTextContent('7');
   });
 
+  it('lists my open desk tickets too, and a click opens the ticket', async () => {
+    const ticket = {
+      conversation_id: 'ticket-1',
+      task_id: null,
+      kind: 'desk',
+      recipient_label: 'Help desk',
+      title: 'Login fails',
+      status: 'open',
+      delivery: { header: 'sent', body: null, failure: null },
+      delivered: true,
+      unread: 2,
+    };
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ requests: [ticket] });
+    render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('vibe-assign-task').getAttribute('title')).toBe('Your help requests'),
+    );
+    fireEvent.pointerDown(screen.getByTestId('vibe-assign-task'), { button: 0 });
+    fireEvent.click(screen.getByTestId('vibe-assign-task'));
+    fireEvent.click(await screen.findByTestId('help-request-ticket-1'));
+    expect(h.openDock).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps asking anew from the list', async () => {
     h.tasks = [helpTask()];
     render(<AskForHelpButton projectId={P1} sessionTypeId={null} origin="vibe" />);
@@ -205,6 +231,7 @@ describe('AskForHelpDialog — asking again', () => {
   /** Fill the required fields, run `attach`, submit; returns the one `ask-for-help` call. */
   async function submit(attach: () => void | Promise<void> = () => {}) {
     const calls: unknown[] = [];
+    // eslint-disable-next-line @typescript-eslint/require-await -- the mock stands in for an async action
     vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
       if (info.name === 'ask-for-help') {
         calls.push(info.bodyParameters);
@@ -245,6 +272,60 @@ describe('AskForHelpDialog — asking again', () => {
     const body = (await submit()) as Record<string, unknown>;
     expect(body.diagnose).toBe(true);
     expect(body.context ?? []).toEqual([]);
+  });
+
+  it('a diagnosis already taken goes as it stands, and nothing is diagnosed again', async () => {
+    const calls: Record<string, unknown>[] = [];
+    // eslint-disable-next-line @typescript-eslint/require-await -- the mock stands in for an async action
+    vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
+      if (info.name === 'ask-for-help') {
+        calls.push(info.bodyParameters as Record<string, unknown>);
+        return {
+          conversation_id: 'c',
+          task_id: null,
+          message_id: 'm',
+          delivery: { header: 'sent', body: null, failure: null },
+        };
+      }
+      return { desks: [{ kind: 'desk', desk_project_id: 'd1', name: 'Support' }], default_state: 'known' };
+    });
+    render(
+      <AskForHelpDialog
+        open
+        onOpenChange={() => {}}
+        projectId={P1}
+        origin="footer"
+        diagnosisId="diag-1"
+        initialTitle="Hub down"
+      />,
+    );
+    await screen.findByTestId('ask-for-help-desks');
+    expect(screen.queryByTestId('ask-for-help-check-first')).toBeNull();
+    fireEvent.click(screen.getByTestId('vibe-assign-submit'));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toMatchObject({ diagnosis_id: 'diag-1', diagnose: false, title: 'Hub down' });
+  });
+
+  it('"Check first" runs the diagnosis with what was written and sends nothing', () => {
+    const start = vi.fn();
+    const watch = vi.fn();
+    vi.spyOn(useDiagnoseRunStore, 'getState').mockReturnValue({ start } as never);
+    vi.spyOn(useDiagnoseErrorStore, 'getState').mockReturnValue({ watch } as never);
+    const callAction = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ desks: [], default_state: 'unknown' });
+    const onOpenChange = vi.fn();
+    render(<AskForHelpDialog open onOpenChange={onOpenChange} projectId={P1} origin="footer" />);
+    fireEvent.change(screen.getByTestId('vibe-assign-title'), { target: { value: 'It broke' } });
+    fireEvent.click(screen.getByTestId('ask-for-help-check-first'));
+
+    expect(start).toHaveBeenCalledWith(
+      'It broke',
+      [],
+      null,
+      expect.objectContaining({ title: 'It broke', origin: 'footer' }),
+    );
+    expect(watch).toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(callAction.mock.calls.some(([info]) => info.name === 'ask-for-help')).toBe(false);
   });
 
   it('unticking "Send diagnostic" asks without one', async () => {

@@ -5,6 +5,7 @@ project mount) and names a store (``env`` = the scope's ``.env.local``,
 ``vault`` = the encrypted per-instance store). Every combination has to put the
 value in one predictable place, report it, inject it, and remove it again.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,12 +26,18 @@ from flow_sdk.builtin.credential_service import (
 from flow_sdk.builtin.credential_status import credentials_status
 from flow_sdk.builtin.project import Project
 from flow_sdk.cli.auth.secrets import get_secrets, read_secret
+from flow_sdk.utils.git_ignore import IGNORED, ignore_status
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
 def _manifest(name: str, *env_vars: str, **extra) -> dict:
-    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"Store it: `flow credentials set {name} ...`.", **extra}
+    return {
+        "name": name,
+        "vars": {v: {"label": v} for v in env_vars},
+        "setup": f"Store it: `flow credentials set {name} ...`.",
+        **extra,
+    }
 
 
 def _env(root: Path) -> dict[str, str]:
@@ -73,7 +80,7 @@ async def test_project_env_writes_the_project_env_file_and_gitignores_it(home, p
     )
 
     assert _env(mount) == {"QA_PROJ": "p1"}
-    assert ".env.local" in (mount / ".gitignore").read_text()
+    assert ignore_status(mount / ".env.local") == IGNORED, "git ignores it, without a change in the repo"
     assert Path(spec.asset_ref) == mount / "agentic-assets" / "credential" / "team"
     assert (spec.scope, spec.project_id) == ("project", str(project.id))
 
@@ -82,7 +89,8 @@ async def test_project_vault_is_scoped_to_that_project(home, project):
     await save_credential(
         scope="project",
         project_id=str(project.id),
-        manifest=_manifest("team", "QA_PROJ"), store="vault",
+        manifest=_manifest("team", "QA_PROJ"),
+        store="vault",
         values={"QA_PROJ": "p2"},
     )
 
@@ -131,7 +139,9 @@ async def test_detected_keys_are_listed_until_packed(home, project):
     file = next(f for f in status.files if f.scope == "project")
     assert [k.key for k in file.detected] == ["QA_A", "QA_B", "VITE_PORT"]
 
-    spec = await save_credential(scope="project", project_id=str(project.id), manifest=_manifest("pack", "QA_A", "QA_B"))
+    spec = await save_credential(
+        scope="project", project_id=str(project.id), manifest=_manifest("pack", "QA_A", "QA_B")
+    )
 
     assert (mount / ".env.local").read_bytes() == before, "packing writes no value"
     status = await credentials_status(project)
@@ -165,7 +175,10 @@ async def test_a_variable_is_declared_once_per_scope(home, project):
 async def test_a_project_declaration_overrides_the_user_one(home, project):
     user = await save_credential(scope="user", manifest=_manifest("mine", "QA_SHARED"), values={"QA_SHARED": "user"})
     proj = await save_credential(
-        scope="project", project_id=str(project.id), manifest=_manifest("team", "QA_SHARED"), values={"QA_SHARED": "proj"}
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("team", "QA_SHARED"),
+        values={"QA_SHARED": "proj"},
     )
 
     assert (await resolve_project_secrets(project))["QA_SHARED"].get_secret_value() == "proj"
@@ -276,7 +289,12 @@ async def test_rotating_a_value_keeps_the_location(home, project):
     )
     names_before = _vault_names()
 
-    await set_credential_values(str(spec.typeid), {"QA_USER": "new", })
+    await set_credential_values(
+        str(spec.typeid),
+        {
+            "QA_USER": "new",
+        },
+    )
 
     assert read_secret("credential.user.QA_USER") == "new"
     assert _vault_names() == names_before
@@ -307,7 +325,8 @@ async def test_deleting_a_vault_credential_removes_values_and_folder(home, proje
     spec = await save_credential(
         scope="project",
         project_id=str(project.id),
-        manifest=_manifest("team", "QA_PROJ"), store="vault",
+        manifest=_manifest("team", "QA_PROJ"),
+        store="vault",
         values={"QA_PROJ": "p"},
     )
 
@@ -327,7 +346,9 @@ async def test_deleting_an_env_credential_removes_its_lines_and_only_its_lines(h
     result = await delete_credential(str(spec.typeid))
 
     assert (result.removed, result.deleted, result.kept) == (True, ["QA_USER"], [])
-    assert [(s.type, s.where, s.deleted) for s in result.stores] == [("env_file", str(home / ".env.local"), ["QA_USER"])]
+    assert [(s.type, s.where, s.deleted) for s in result.stores] == [
+        ("env_file", str(home / ".env.local"), ["QA_USER"])
+    ]
     assert _env(home) == {"OTHER_TOOL": "1"}
     assert (home / ".env.local").read_text().startswith("# mine\n")
     assert not Path(spec.asset_ref).exists()
@@ -341,8 +362,11 @@ async def test_a_store_that_cannot_remove_keeps_the_credential_as_the_handle_to_
 
     monkeypatch.setattr(VaultStore, "forget", refuses)
     spec = await save_credential(
-        scope="project", project_id=str(project.id),
-        manifest=_manifest("team", "QA_PROJ"), store="vault", values={"QA_PROJ": "p"},
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("team", "QA_PROJ"),
+        store="vault",
+        values={"QA_PROJ": "p"},
     )
 
     result = await delete_credential(str(spec.typeid))
@@ -359,12 +383,18 @@ async def test_deleting_one_project_credential_leaves_another_projects_value(hom
     other.fs_storage_mount_path = str(other_mount)
     await other.save()
     mine = await save_credential(
-        scope="project", project_id=str(project.id),
-        manifest=_manifest("team", "QA_SAME"), store="vault", values={"QA_SAME": "mine"},
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("team", "QA_SAME"),
+        store="vault",
+        values={"QA_SAME": "mine"},
     )
     await save_credential(
-        scope="project", project_id=str(other.id),
-        manifest=_manifest("team", "QA_SAME"), store="vault", values={"QA_SAME": "theirs"},
+        scope="project",
+        project_id=str(other.id),
+        manifest=_manifest("team", "QA_SAME"),
+        store="vault",
+        values={"QA_SAME": "theirs"},
     )
 
     await delete_credential(str(mine.typeid))
@@ -409,7 +439,10 @@ async def test_status_never_carries_a_value(home, project):
 
 async def test_flow_credentials_delete_removes_it_and_reports_each_store(home, project, run_flow):
     await save_credential(
-        scope="project", project_id=str(project.id), manifest=_manifest("team", "QA_PROJ"), values={"QA_PROJ": "p"},
+        scope="project",
+        project_id=str(project.id),
+        manifest=_manifest("team", "QA_PROJ"),
+        values={"QA_PROJ": "p"},
     )
 
     said = await run_flow("credentials", "delete", "team", "--project", str(project.id))
@@ -426,7 +459,10 @@ async def test_a_saved_credential_writes_its_setup_as_setup_md(home, project):
     """Authored in-app: the guide lands in setup.md beside credential.json, never inline."""
     import json as _json
 
-    manifest = {**_manifest("guided", "QA_GUIDED"), "setup": "## Where\n\nPipe it into `flow credentials set guided --stdin`."}
+    manifest = {
+        **_manifest("guided", "QA_GUIDED"),
+        "setup": "## Where\n\nPipe it into `flow credentials set guided --stdin`.",
+    }
     spec = await save_credential(scope="user", manifest=manifest)
 
     folder = Path(spec.asset_ref)

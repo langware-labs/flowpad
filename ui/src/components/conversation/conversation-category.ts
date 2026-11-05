@@ -57,6 +57,8 @@ export interface TicketStateInputs {
   members?: EntityMember[] | null;
   /** Staff ids from the desk pool row, when the caller has one. */
   pickedUpBy?: string[] | null;
+  /** The hub's word that someone picked it up — all a requester gets: their roster is masked. */
+  staffed?: boolean | null;
 }
 
 /** The staff members of a ticket: everyone on the roster who is not the requester. */
@@ -74,7 +76,7 @@ export function ticketStaff(inp: TicketStateInputs): EntityMember[] {
 /** Pure: the state chip a help desk ticket wears. */
 export function ticketState(inp: TicketStateInputs): TicketState {
   if (isClosedConversation(inp.status)) return 'closed';
-  return ticketStaff(inp).length > 0 ? 'picked' : 'waiting';
+  return inp.staffed || ticketStaff(inp).length > 0 ? 'picked' : 'waiting';
 }
 
 export interface TicketFacet {
@@ -150,9 +152,10 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
       status: conv.status,
       initiatedBy: conv.initiated_by ?? null,
       members: inp.members ?? conv.members ?? [],
-      // The hub computes `picked_up_by` on the ticket itself (the requester's roster is masked,
-      // so it is the only way their side learns a staffer joined); a pool row may supplement it.
+      // The hub computes these on the ticket itself. A requester's `picked_up_by` is masked empty,
+      // so `staffed` is how their side learns a staffer joined; a pool row may supplement the ids.
       pickedUpBy: inp.pickedUpBy ?? (conv as { picked_up_by?: string[] | null }).picked_up_by ?? null,
+      staffed: (conv as { staffed?: boolean | null }).staffed ?? null,
     };
     const state = ticketState(tin);
     const staffView = inp.staffView ?? (!!conv.initiated_by && !isViewer(conv.initiated_by, viewer));

@@ -2583,6 +2583,14 @@ msgstr ""
 msgid "A cron expression has five parts."
 msgstr "تتكوّن صيغة cron من خمسة أجزاء."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "A deploy uploads only this agent's folder to Flowpad cloud."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "A deploy uploads this project's commits to Flowpad cloud — the whole repository, not only the agent."
+msgstr ""
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A deployment"
 msgstr "عملية نشر"
@@ -3527,6 +3535,7 @@ msgstr "روابط إضافية لأسواق الملحقات"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Address"
 msgstr "العنوان"
@@ -3635,6 +3644,10 @@ msgstr "تمويل الوكيل"
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "خطاف الوكيل"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Agent is in a project"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Agent is public"
@@ -4291,7 +4304,7 @@ msgstr "نطاق وقت التثبيت"
 
 #: src/components/diagnose/diagnose-run-store.ts
 msgid "and"
-msgstr ""
+msgstr "و"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
@@ -4358,6 +4371,10 @@ msgstr "ميزانية Hub أخرى — {label}"
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "another machine"
 msgstr "جهاز آخر"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Another name…"
+msgstr ""
 
 #: src/components/session-taken-over-overlay.tsx
 msgid "Another person signed in to this shared machine, so you were signed out. Sign back in to take it back."
@@ -4871,12 +4888,21 @@ msgstr "يمكن طرح أي سؤال — سأبحث في الأدلة وأرش�
 msgid "Ask every time"
 msgstr "السؤال في كل مرة"
 
+#: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
+msgid "Ask Flowpad Assistant to change {displayName}"
+msgstr ""
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "ask for a refund or dispute a charge"
 msgstr "تطلب استرداد مبلغ أو تعترض على رسوم"
 
+#: src/components/account/system-diagnoses.tsx
+#: src/components/account/system-diagnoses.tsx
+#: src/components/diagnose/diagnose-run-store.ts
+#: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskAsk.tsx
+#: src/components/version-popover/diagnose-modal.tsx
 msgid "Ask for help"
 msgstr "طلب المساعدة"
 
@@ -5073,6 +5099,7 @@ msgid "Assistance"
 msgstr "المساعدة"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Assistant"
 msgstr "المساعد"
@@ -6100,6 +6127,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
@@ -6628,6 +6656,10 @@ msgstr "فحص كل الخدمات الآن"
 msgid "Check failed"
 msgstr "فشل الفحص"
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Check first"
+msgstr "تحقق أولًا"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
@@ -6751,8 +6783,12 @@ msgid "checks pass"
 msgstr "نجحت الفحوصات"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
-msgstr "يفحص Flowpad على هذا الجهاز في الخلفية حالته والمركز والأخطاء الأخيرة في سجلاته، ويُرسل النتائج بعد طلبكم."
+msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request, with what is on your screen and your session's last turns."
+msgstr "يفحص Flowpad على هذا الجهاز في الخلفية (سلامته، والـ hub، والأخطاء الأخيرة في السجلات) ويرسل ما يجده بعد طلبك، مع ما يظهر على شاشتك وآخر أدوار جلستك."
+
+#: src/components/help/AskForHelpDialog.tsx
+#~ msgid "Checks this machine's Flowpad (its health, the hub, recent errors in its logs) in the background and sends what it finds after your request."
+#~ msgstr "يفحص Flowpad على هذا الجهاز في الخلفية حالته والمركز والأخطاء الأخيرة في سجلاته، ويُرسل النتائج بعد طلبكم."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -6783,6 +6819,7 @@ msgstr ""
 msgid "Choose a model…"
 msgstr "اختيار نموذج…"
 
+#: src/components/assets/editor/agent-profile/AgentProjectPicker.tsx
 #: src/components/install/AddAssetDialog.tsx
 msgid "Choose a project"
 msgstr "اختيار مشروع"
@@ -7425,6 +7462,7 @@ msgstr "إغلاق ما على اليمين"
 #~ msgstr "إغلاق مساحة العمل"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/help/MyHelpRequests.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "مغلق"
@@ -7718,6 +7756,8 @@ msgstr "تعليق"
 msgid "Comments"
 msgstr "التعليقات"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -7747,6 +7787,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "الالتزام بجميع التغييرات ودمج الفرع الحالي مع الفرع الأصل. سيغادر Claude بيئة العمل عند الانتهاء."
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Commit and push"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Commit and push this file"
@@ -8170,6 +8215,7 @@ msgid "Content"
 msgstr "المحتوى"
 
 #: src/components/conversation/ConversationPanel.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/types/ViewType.ts
 msgid "Context"
@@ -8750,6 +8796,8 @@ msgstr "تعذّر التحقق — {failed}"
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/hooks/use-git-share-gate.ts
 #: src/hooks/use-git-share-gate.ts
 msgid "Could not commit and push"
@@ -9000,6 +9048,10 @@ msgstr "تعذّر ربط هذا المشروع."
 msgid "Could not list budgets: {loadError}"
 msgstr "تعذّر عرض الميزانيات: {loadError}"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Could not list the changes"
+msgstr ""
+
 #: src/components/credentials/SecretVaultPicker.tsx
 msgid "Could not list the secret managers."
 msgstr ""
@@ -9072,6 +9124,10 @@ msgstr "تعذّر جعل الوكيل عامًا"
 
 #~ msgid "Could not move email here"
 #~ msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProjectPicker.tsx
+msgid "Could not move the agent"
+msgstr ""
 
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Could not move the project"
@@ -9294,8 +9350,8 @@ msgid "Could not replay {0}."
 msgstr "تعذر إعادة تشغيل {0}."
 
 #: src/components/account/system-diagnoses.tsx
-msgid "Could not report diagnosis"
-msgstr "تعذر الإبلاغ عن التشخيص"
+#~ msgid "Could not report diagnosis"
+#~ msgstr "تعذر الإبلاغ عن التشخيص"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Could not request access"
@@ -9468,8 +9524,8 @@ msgid "Could not send it"
 msgstr "تعذّر إرساله"
 
 #: src/components/diagnose/use-diagnosis-report.ts
-msgid "Could not send report to the Flowpad team"
-msgstr "تعذر إرسال التقرير إلى فريق Flowpad"
+#~ msgid "Could not send report to the Flowpad team"
+#~ msgstr "تعذر إرسال التقرير إلى فريق Flowpad"
 
 #: src/components/diagnose/diagnose-run-store.ts
 msgid "Could not send the diagnosis"
@@ -11372,7 +11428,6 @@ msgstr "وضع المطوّر مفعَّل — النقر المزدوج لإي�
 msgid "Developer Tools"
 msgstr "أدوات المطورين"
 
-#: src/components/assets/editor/agent-profile/use-place-display.ts
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 msgid "Development · local"
 msgstr "التطوير · محلي"
@@ -11391,14 +11446,13 @@ msgstr "تسجيل الدخول عبر الجهاز"
 msgid "Device logins"
 msgstr "تسجيلات دخول الجهاز"
 
-#: src/components/version-popover/version-popover.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Diagnose"
 msgstr "تشخيص"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Diagnose a Flowpad issue"
-msgstr "تشخيص مشكلة في Flowpad"
+#~ msgid "Diagnose a Flowpad issue"
+#~ msgstr "تشخيص مشكلة في Flowpad"
 
 #. placeholder {0}: e instanceof Error ? e.message : String(e)
 #: src/components/diagnose/diagnose-run-store.ts
@@ -11459,8 +11513,8 @@ msgid "Diagnosis recorded."
 msgstr "تم تسجيل التشخيص."
 
 #: src/components/account/system-diagnoses.tsx
-msgid "Diagnosis reported to the Flowpad team"
-msgstr "تم الإبلاغ عن التشخيص إلى فريق Flowpad"
+#~ msgid "Diagnosis reported to the Flowpad team"
+#~ msgstr "تم الإبلاغ عن التشخيص إلى فريق Flowpad"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -13091,6 +13145,10 @@ msgstr "تُحذف ميزانية كل فرد داخل {0} معه. لا يمكن
 #~ msgid "Everything available is already connected."
 #~ msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Everything below goes into the commit, not only the agent:"
+msgstr ""
+
 #: src/components/inbound/InboundView.tsx
 #~ msgid "Everything else to this number"
 #~ msgstr "كل ما عدا ذلك إلى هذا الرقم"
@@ -13399,6 +13457,7 @@ msgstr "جارٍ الاستخراج…"
 msgid "failed"
 msgstr "فشل"
 
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -13786,9 +13845,7 @@ msgstr "فشل إرسال المسودة"
 msgid "Failed to send reply."
 msgstr "فشل إرسال الرد."
 
-#: src/components/diagnose/use-diagnosis-report.ts
-#: src/components/diagnose/use-diagnosis-report.ts
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx
+#: src/components/diagnose/use-forward-diagnosis.ts
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Failed to send report"
 msgstr "فشل إرسال التقرير"
@@ -14319,8 +14376,12 @@ msgid "Finish the setup above before deploying"
 msgstr "أكملوا الإعداد أعلاه قبل النشر"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "Finish the setup above first"
-msgstr "يجب إكمال الإعداد أعلاه أولًا"
+#~ msgid "Finish the setup above first"
+#~ msgstr "يجب إكمال الإعداد أعلاه أولًا"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Finish the setup above first."
+msgstr ""
 
 #~ msgid "Finish the step above, then press Verify."
 #~ msgstr "أكمل الخطوة أعلاه، ثم اضغط «تحقق»."
@@ -16165,6 +16226,10 @@ msgstr "نقاط نهاية المركز التي يمكن لحساب FlowPad ا
 msgid "Hub errors suppressed"
 msgstr "تم قمع أخطاء Hub"
 
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Hub login"
+msgstr "تسجيل الدخول إلى Hub"
+
 #: src/components/assets/dependency-sources.tsx
 #~ msgid "Hub project"
 #~ msgstr ""
@@ -16747,6 +16812,7 @@ msgid "Install failed"
 msgstr "فشل التثبيت"
 
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
 msgstr "فشل التثبيت."
 
@@ -17120,7 +17186,10 @@ msgstr "يبدو أنه غير مثبّت على جهازكم. هل تريدون
 msgid "It failed without saying why."
 msgstr "فشل التشغيل دون ذكر السبب."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+#: src/components/assets/editor/agent-profile/AgentProjectPicker.tsx
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "It failed."
 msgstr "فشلت العملية."
@@ -17250,6 +17319,10 @@ msgstr "ليس في ملف البيان الخاص به معرّف صالح، ل
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "its own servers"
 msgstr "خوادمه الخاصة"
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Its project could not be loaded"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #~ msgid "Its sandbox is deleted. The next visit opens a fresh one."
@@ -17733,6 +17806,10 @@ msgstr "تشغيل {name}"
 #: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Launch a session first"
 msgstr "يجب بدء جلسة أولاً"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#~ msgid "Launch asks for any that are missing."
+#~ msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Launch bot"
@@ -20347,7 +20424,7 @@ msgstr "لا"
 #: src/components/conversation/FormAnswersCard.tsx
 #: src/components/conversation/MessageFormCard.tsx
 msgid "No"
-msgstr ""
+msgstr "لا"
 
 #: src/pages/entry/entry-shell.tsx
 msgid "No {label} with this id was found"
@@ -21297,8 +21374,9 @@ msgstr "لا توجد مشاريع للاختيار — استخدم مستود�
 #~ msgid "No projects to choose from — use GitHub or a git URL."
 #~ msgstr "لا توجد مشاريع متاحة — يمكن استخدام GitHub أو رابط Git."
 
-#~ msgid "No projects yet"
-#~ msgstr "لا توجد مشاريع بعد"
+#: src/components/assets/editor/agent-profile/AgentProjectPicker.tsx
+msgid "No projects yet"
+msgstr "لا توجد مشاريع بعد"
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "No projects yet — the connection is saved to your account; attach it when you create one."
@@ -22143,6 +22221,7 @@ msgstr "لا يمكن تشغيله هنا"
 msgid "not running"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Not running"
 msgstr ""
@@ -22165,6 +22244,7 @@ msgid "Not sent"
 msgstr "لم يُرسل"
 
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/help/MyHelpRequests.tsx
 #: src/notifications/ingest.ts
 msgid "Not sent yet"
 msgstr "لم تُرسَل بعد"
@@ -22934,8 +23014,10 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnose-run-store.ts
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/help/MyHelpRequests.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/notes/NoteViews.tsx
@@ -24115,6 +24197,10 @@ msgstr "مشروع آخر"
 #: src/components/automations/AutomationsList.tsx
 msgid "Other projects"
 msgstr "مشاريع أخرى"
+
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Other sessions"
+msgstr "جلسات أخرى"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "output"
@@ -25876,6 +25962,7 @@ msgid "Pulling…"
 msgstr "جاري السحب…"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -27148,38 +27235,38 @@ msgid "Report"
 msgstr "التقرير"
 
 #: src/components/account/system-diagnoses.tsx
-msgid "Report failed."
-msgstr "فشل الإبلاغ."
+#~ msgid "Report failed."
+#~ msgstr "فشل الإبلاغ."
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
-msgid "Report issue"
-msgstr "الإبلاغ عن مشكلة"
+#~ msgid "Report issue"
+#~ msgstr "الإبلاغ عن مشكلة"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Report page errors"
 msgstr ""
 
 #: src/components/diagnose/use-diagnosis-report.ts
-msgid "Report sent to the Flowpad team"
-msgstr "تم إرسال التقرير إلى فريق Flowpad"
+#~ msgid "Report sent to the Flowpad team"
+#~ msgstr "تم إرسال التقرير إلى فريق Flowpad"
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
-msgid "Reported"
-msgstr "مُبلَّغ عنه"
+#~ msgid "Reported"
+#~ msgstr "مُبلَّغ عنه"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Reported by"
 msgstr "أبلغ عنه"
 
 #: src/components/diagnose/use-diagnosis-report-availability.ts
-msgid "Reporting is disabled in Local data privacy mode"
-msgstr "الإبلاغ معطّل في وضع خصوصية البيانات المحلية"
+#~ msgid "Reporting is disabled in Local data privacy mode"
+#~ msgstr "الإبلاغ معطّل في وضع خصوصية البيانات المحلية"
 
 #: src/components/diagnose/use-diagnosis-report-availability.ts
-msgid "Reporting needs an internet connection"
-msgstr "يتطلب الإبلاغ اتصالاً بالإنترنت"
+#~ msgid "Reporting needs an internet connection"
+#~ msgstr "يتطلب الإبلاغ اتصالاً بالإنترنت"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Repos"
@@ -27402,6 +27489,10 @@ msgstr "تغيير حجم عمود «من»"
 msgid "Resolve"
 msgstr "حل التعارضات"
 
+#: src/components/help/MyHelpRequests.tsx
+msgid "Resolved"
+msgstr "تم الحل"
+
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Resolving [[{name}]]…"
 msgstr "جاري البحث عن [[{name}]]…"
@@ -27544,6 +27635,10 @@ msgstr "النتيجة"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Results"
 msgstr "النتائج"
+
+#: src/components/diagnose/ShareWithRow.tsx
+msgid "Results include your screen and your session's last turns."
+msgstr "تتضمن النتائج شاشتك وآخر أدوار جلستك."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/automations/BusStream.tsx
@@ -27950,10 +28045,14 @@ msgstr "شغِّلوا `flow connect` على الجهاز وأدخلوا الر�
 msgid "Run a command"
 msgstr "تشغيل أمر"
 
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Run a diagnosis first and read it. Nothing is sent until you choose to."
+msgstr "شغّل التشخيص أولًا واقرأه. لن يُرسل شيء حتى تختار ذلك."
+
 #. placeholder {0}: seed.kind
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Run a diagnosis on the {0} below? The assistant inspects Flowpad, repairs what's safe, and records the result."
-msgstr ""
+msgstr "هل تريد تشغيل تشخيص لـ {0} أدناه؟ يفحص المساعد Flowpad ويصلح ما هو آمن ويسجل النتيجة."
 
 #: src/notifications/diagnose/DiagnoseErrorModal.tsx
 #~ msgid "Run a diagnosis on the error below? The assistant inspects Flowpad, repairs what's safe, and records the result."
@@ -28429,6 +28528,7 @@ msgstr "تمت ترقية البيئة المعزولة"
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
+#: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 #: src/components/automations/AutomationPage.tsx
@@ -28813,6 +28913,10 @@ msgstr "النطاق: المستخدم + {0} مشروع{1}"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "scope: user only"
 msgstr "النطاق: المستخدم فقط"
+
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Screen"
+msgstr "الشاشة"
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 #: src/components/top-nav-bar/use-screen-recorder.ts
@@ -29440,8 +29544,12 @@ msgid "Send anyway"
 msgstr "الإرسال رغم ذلك"
 
 #: src/components/help/AskForHelpDialog.tsx
-msgid "Send diagnostic"
-msgstr "إرسال التشخيص"
+#~ msgid "Send diagnostic"
+#~ msgstr "إرسال التشخيص"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Send diagnostic (includes your screen and session)"
+msgstr "إرسال التشخيص (يشمل شاشتك وجلستك)"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
@@ -29549,6 +29657,10 @@ msgstr "جارٍ الإرسال…"
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Sends replies"
 msgstr "يرسل الردود"
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Sends the diagnosis you checked, with what was on your screen and your session's last turns."
+msgstr "يرسل التشخيص الذي فحصته، مع ما كان على شاشتك وآخر أدوار جلستك."
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Sends the results to {goesTo} when the diagnosis finishes — even if you close this window."
@@ -29688,6 +29800,7 @@ msgid "session"
 msgstr "الجلسة"
 
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/project-resource-list/resource-meta.ts
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -32914,6 +33027,10 @@ msgstr ""
 msgid "The check did not run."
 msgstr "لم يتم تنفيذ الفحص."
 
+#: src/components/diagnose/diagnose-run-store.ts
+msgid "The check is done"
+msgstr "اكتمل الفحص"
+
 #: src/notifications/ingest.ts
 msgid "The cloud service returned an error. Please try again in a moment."
 msgstr "حدث خطأ في الخدمة السحابية. يرجى المحاولة مرة أخرى بعد قليل"
@@ -32964,6 +33081,10 @@ msgstr "الخيار الافتراضي — الأنسب في 99% من الحا�
 #: src/components/workspace/workspace-switcher.tsx
 msgid "The default workspace. Every project outside another workspace's folder belongs here."
 msgstr "مساحة العمل الافتراضية. تنتمي إليها كل المشاريع الواقعة خارج مجلد أي مساحة عمل أخرى."
+
+#: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+msgid "The deployment failed."
+msgstr ""
 
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -33101,6 +33222,10 @@ msgstr "لم يتم إعداد مركز المساعدة على هذا الجه�
 msgid "the host"
 msgstr "المضيف"
 
+#: src/components/assets/editor/agent-profile/deployment/use-deployment-threads.ts
+msgid "The hub could not reach this machine. It may be paused or still starting."
+msgstr ""
+
 #: src/components/install/InstallButton.tsx
 msgid "The hub did not accept the request."
 msgstr "لم يقبل المركز الطلب."
@@ -33195,8 +33320,12 @@ msgid "The logout did not complete."
 msgstr "لم يكتمل تسجيل الخروج."
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-msgid "The machine reads this environment's credentials."
-msgstr "يقرأ الجهاز بيانات اعتماد هذه البيئة."
+#~ msgid "The machine reads this environment's credentials."
+#~ msgstr "يقرأ الجهاز بيانات اعتماد هذه البيئة."
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#~ msgid "The machine will need:"
+#~ msgstr ""
 
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "The mail plan has no free mailbox left. Remove a mailbox you no longer use, or ask whoever runs the hub to upgrade the plan."
@@ -33717,6 +33846,10 @@ msgstr "هذا الوكيل"
 #~ msgid "This agent has no email address yet."
 #~ msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "This agent is in no project, so the cloud has nowhere to put it — choose one"
+msgstr ""
+
 #~ msgid "This agent isn't published from a git repository, so there's nothing to launch."
 #~ msgstr ""
 
@@ -33830,6 +33963,10 @@ msgstr "هذا الكمبيوتر · {0}"
 
 #: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "This computer · every machine"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/use-place-display.ts
+msgid "This computer · not in the cloud"
 msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
@@ -34269,6 +34406,10 @@ msgstr "لا توجد مجموعة بيانات في هذا المشروع."
 msgid "This project has no folder on disk and can't be opened."
 msgstr "لا يوجد لهذا المشروع مجلد على القرص، لذلك يتعذّر فتحه."
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "This project has no folder on this computer."
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project has no secret manager yet — Share secrets continues to set one up."
 msgstr ""
@@ -34366,7 +34507,7 @@ msgstr "لم يكتب هذا التشغيل أي ملفات. التشغيلات 
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "This runs in the background — when it's done, the result (and any actions) waits on your Home feed."
-msgstr ""
+msgstr "يعمل هذا في الخلفية، وعند الانتهاء ستجد النتيجة (وأي إجراءات) في موجز الصفحة الرئيسية."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "this sandbox"
@@ -35535,6 +35676,7 @@ msgid "Untitled project"
 msgstr "مشروع بدون عنوان"
 
 #: src/components/help/AskForHelpButton.tsx
+#: src/components/help/MyHelpRequests.tsx
 msgid "Untitled request"
 msgstr "طلب بلا عنوان"
 
@@ -35682,7 +35824,7 @@ msgstr "ترقية FlowPad على هذه البيئة المعزولة"
 msgid "Upgrade FlowPad on this sandbox?"
 msgstr "ترقية FlowPad على هذه البيئة المعزولة؟"
 
-#. placeholder {0}: pypi.latest
+#. placeholder {0}: String(upgradeVersion)
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
 msgstr "الترقية إلى الإصدار {0}"
@@ -35908,6 +36050,7 @@ msgstr "المستخدم"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -36846,6 +36989,10 @@ msgstr "ما الذي لا يزال يحتاجه جهاز {0}"
 #~ msgid "what the form asks"
 #~ msgstr ""
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "What the machine needs. Leave a field empty to keep the value it already has."
+msgstr ""
+
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "What this machine's assistants are funded by right now"
 msgstr "ما الذي يموّل مساعدي هذا الجهاز الآن"
@@ -36878,8 +37025,8 @@ msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "ما المشكلة؟ (يُترك الحقل فارغاً لإجراء فحص شامل)"
 
 #: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
-msgid "What would you like the agent {displayName} to do?"
-msgstr "ما المطلوب من الوكيل {displayName}؟"
+#~ msgid "What would you like the agent {displayName} to do?"
+#~ msgstr "ما المطلوب من الوكيل {displayName}؟"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -37042,6 +37189,10 @@ msgstr "المحرّك الذي ينفّذ فحص الملفات الثقيل: P
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Which project should it work on?"
 msgstr "على أي مشروع يجب أن يعمل؟"
+
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+msgid "Which set of values the machine reads. It joins the hub you are signed in to either way."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/useChainSession.tsx
 msgid "Which worker reviews it?"
@@ -37792,6 +37943,10 @@ msgstr "تم إنشاء مفتاح API الجديد. يُرجى حفظه بأم�
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
 msgstr "رمزكم لمرة واحدة أدناه. يُرجى النقر على <0>نسخ الرمز وفتح GitHub</0> — سيتم نسخه إلى الحافظة وفتح صفحة تفعيل GitHub حتى يمكن لصقه هناك."
+
+#: src/components/help/AskForHelpDialog.tsx
+msgid "Your open requests"
+msgstr "طلباتك المفتوحة"
 
 #. placeholder {0}: t(spec.label)
 #: src/components/organization/tabs/BillingTab.tsx

@@ -396,8 +396,12 @@ async def _emit_prompt_completion(
     }
 
 
-def _last_turn_assistant_text(entries) -> str:
+def _last_turn_assistant_text(entries, *, last_only: bool = False) -> str:
     """The assistant text of the LAST turn, from typed transcript entries.
+
+    All of the turn's assistant text, joined; with *last_only* just its final
+    assistant message -- for a reply that reaches a third party, where the
+    progress lines written on the way must not.
 
     Pure and vendor-agnostic: it reads the analyzer's normalized
     ``TranscriptEntry`` model (``kind`` / ``text`` / ``is_meta`` / ``id``), which
@@ -431,6 +435,8 @@ def _last_turn_assistant_text(entries) -> str:
                 continue  # an earlier copy of a line already taken
             seen.add(eid)
         out.append(text)
+        if last_only:
+            break  # walking backwards, the first text is the turn's final message
     return "\n\n".join(reversed(out)).strip()
 
 

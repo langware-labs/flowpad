@@ -1,4 +1,7 @@
+#[cfg(windows)]
+pub mod authenticode;
 pub mod keychain;
+pub mod uninstall;
 
 pub use keychain::{
     delete_key as rust_delete_key,

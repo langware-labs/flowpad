@@ -7,6 +7,7 @@ import { MarkdownView } from '@src/components/markdown-view';
 import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
 import { translateCliMessage } from '@src/i18n/cli-messages';
 import { cn } from '@src/lib/utils';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { User } from 'lucide-react';
 import React, { useMemo } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -81,6 +82,17 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
       {name}
     </span>
   );
+  const sentAt = new Date(flowData.timestamp);
+  const hasTime = !Number.isNaN(sentAt.getTime());
+  const timeNode = hasTime ? (
+    <span
+      className="text-[11px] text-muted-foreground tabular-nums"
+      title={sentAt.toLocaleString()}
+      data-testid="execution-message-time"
+    >
+      {sentAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {formatTimeAgo(sentAt)}
+    </span>
+  ) : null;
   const accent = isUser
     ? { circle: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', body: 'text-blue-700 dark:text-blue-200' }
     : { circle: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', body: 'text-foreground' };
@@ -103,6 +115,7 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({
             {nameNode}
           </>
         )}
+        {timeNode}
       </div>
       <div
         className={cn(

@@ -28,6 +28,7 @@ class HelpOrigin(str, Enum):
 
     VIBE = "vibe"
     FOOTER = "footer"
+    TOP_BAR = "top_bar"
     PORTAL = "portal"
     PORTAL_AGENT_CHAT = "portal_agent_chat"
     LOAD_FAILURE = "load_failure"
@@ -76,6 +77,11 @@ class AskForHelpRequest(DataSpec):
     #: "Send diagnostic": diagnose this machine in the background and send the diagnosis after
     #: the request, as its own message (``flow_sdk.diagnose``). The request never waits for it.
     diagnose: bool = False
+    #: A diagnosis already taken ("Check first"): it is sent after the request as it stands, and
+    #: nothing is diagnosed again. Takes the place of ``diagnose``.
+    diagnosis_id: Optional[str] = None
     #: The session on screen (a TypeId) -- what the diagnose is told the person was in. Context
     #: for the diagnose only; it is not attached.
     process: Optional[str] = None
+    #: The browser window asked from (its socket's id): what the diagnosis says was on screen.
+    connection_id: Optional[str] = None

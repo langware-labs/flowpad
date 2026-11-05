@@ -50,6 +50,7 @@ def _line(text: str, width: int = 90) -> str:
     flat = " ".join(str(text or "").split())
     return flat if len(flat) <= width else f"{flat[: width - 1]}…"
 
+
 # ── the turn record, on the process (durable, so a redelivery is answered from it) ──
 
 TURNS = "turns"
@@ -88,7 +89,12 @@ def done_record(started: Optional[dict], text: str, status: str = DONE) -> dict:
     """The record of a turn that ended (``DONE``, or ``FAILED``) with *text* — keeping when it began
     (a timeline shows both)."""
     began = (started or {}).get("at")
-    return {"status": status, "text": text, **({"at": began} if began else {}), "ended_at": datetime.now(timezone.utc).isoformat()}
+    return {
+        "status": status,
+        "text": text,
+        **({"at": began} if began else {}),
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 async def _forget_turn(ap, key: str) -> None:
@@ -329,16 +335,25 @@ class TurnEngine:
             prior = turns_of(ap).get(turn.key)
             if prior and prior.get("status") == DONE:
                 # Answered before — the same reply again, and nothing runs now.
-                yield done(PromptResult.satisfied(
-                    "The turn was answered before.", text=prior.get("text", ""), ran=False, executor=executor,
-                ))
+                yield done(
+                    PromptResult.satisfied(
+                        "The turn was answered before.",
+                        text=prior.get("text", ""),
+                        ran=False,
+                        executor=executor,
+                    )
+                )
                 return
             if prior and prior.get("status") == FAILED:
                 # Ended in error before. Running it again could repeat what it did
                 # on the way down; a person decides that, not a redelivery.
-                yield done(PromptResult.not_yet(
-                    "An earlier attempt at this turn ended in error.", ran=False, executor=executor,
-                ))
+                yield done(
+                    PromptResult.not_yet(
+                        "An earlier attempt at this turn ended in error.",
+                        ran=False,
+                        executor=executor,
+                    )
+                )
                 return
             if prior and prior.get("status") == STARTED:
                 # Died mid-turn. Did the agent finish? The transcript knows -- when there is one. A worker that
@@ -347,9 +362,14 @@ class TurnEngine:
                 text = await _left_reply(ap, prior) if has_transcript(ap) else ""
                 if text:
                     await stamp_turn(ap, turn.key, done_record(prior, text))
-                    yield done(PromptResult.satisfied(
-                        "The turn had finished.", text=text, ran=False, executor=executor,
-                    ))
+                    yield done(
+                        PromptResult.satisfied(
+                            "The turn had finished.",
+                            text=text,
+                            ran=False,
+                            executor=executor,
+                        )
+                    )
                     return
             start = len(transcript_entries(ap)) if stream else 0
             await stamp_turn(ap, turn.key, started_record())
@@ -366,15 +386,23 @@ class TurnEngine:
                 if stream:
                     async for event in _follow(ap, start):
                         yield event
-                    text = _last_turn_assistant_text(transcript_entries(ap)[start:]) or await _capture_assistant_reply(ap)
+                    text = _last_turn_assistant_text(
+                        transcript_entries(ap)[start:], last_only=True
+                    ) or await _capture_assistant_reply(ap)
                 else:
+                    # The wait is the capture's; the reply is the turn's FINAL message, not its progress lines.
                     text = await _capture_assistant_reply(ap)
+                    text = _last_turn_assistant_text(transcript_entries(ap), last_only=True) or text
             except TimeoutError:
                 # The wait ended, not necessarily the turn. The STARTED stamp stays:
                 # a redelivery reads the transcript to learn whether it finished.
-                yield done(PromptResult.not_yet(
-                    "The agent did not finish its turn in time.", timed_out=True, executor=executor,
-                ))
+                yield done(
+                    PromptResult.not_yet(
+                        "The agent did not finish its turn in time.",
+                        timed_out=True,
+                        executor=executor,
+                    )
+                )
                 return
             except RuntimeError as ended:
                 # The worker ended with no end-of-turn marker — it never came up (no funding,
@@ -474,7 +502,7 @@ async def _left_reply(ap, started: dict) -> str:
         return ""
     if path is None or path.stat().st_mtime <= began or ap.driver.tail_status(path) is not WorkerStatus.COMPLETE:
         return ""
-    return _last_turn_assistant_text(transcript_entries(ap))
+    return _last_turn_assistant_text(transcript_entries(ap), last_only=True)
 
 
 def has_transcript(ap) -> bool:
@@ -725,7 +753,9 @@ def deployment_chat_driver():
 
 def is_request_channel(cls) -> bool:
     """A driver class an HTTP request can be a message on (``events_from_request`` / ``reply_payload``)."""
-    return all(callable(getattr(cls, verb, None)) for verb in ("events_from_request", "reply_payload", "request_thread"))
+    return all(
+        callable(getattr(cls, verb, None)) for verb in ("events_from_request", "reply_payload", "request_thread")
+    )
 
 
 async def ensure_chat_channel(agent, deployment):
@@ -834,7 +864,9 @@ def bound_at(deployment, source) -> Optional[datetime]:
     """When *deployment* took *source*: the later of their creations (UTC), or None."""
     from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
 
-    stamps = [iso_to_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s]
+    stamps = [
+        iso_to_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s
+    ]
     return max(stamps, default=None)
 
 
@@ -984,7 +1016,9 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
         Turn(
             session=session,
             key=turn_key(message),
-            body=turn_body(message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None),
+            body=turn_body(
+                message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None
+            ),
             name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
         ),
         process=process,
@@ -1037,8 +1071,10 @@ async def _hold_failed(engine: TurnEngine, message, source, session: str, key: s
         # Sent straight through the source, not ``message.reply``: that would record the message as replied
         # to, and the held answer sent later would then be taken for a resend and never go out.
         make = getattr(message, "reply_spec", None)
-        spec = await make(body=UNAVAILABLE_REPLY, quote=False) if callable(make) else source.reply_spec(
-            message, body=UNAVAILABLE_REPLY, quote=False
+        spec = (
+            await make(body=UNAVAILABLE_REPLY, quote=False)
+            if callable(make)
+            else source.reply_spec(message, body=UNAVAILABLE_REPLY, quote=False)
         )
         await source.send(spec)
         console.info("→ %s  the person was told the agent cannot answer right now", source.channel or source.provider)
@@ -1328,9 +1364,13 @@ class AgentServer:
             if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
                 deployment.provider_labels = {**(deployment.provider_labels or {}), **labels}
                 await deployment.save()
-            logger.info("agent %s: deployment %s started in terminal %s", agent.name or agent.id, deployment.id,
-                        labels.get(deployment_process.SHELL_LABEL))
-        self._running[str(deployment.id)] = deployment   # started now, or alive from before a restart: adopted
+            logger.info(
+                "agent %s: deployment %s started in terminal %s",
+                agent.name or agent.id,
+                deployment.id,
+                labels.get(deployment_process.SHELL_LABEL),
+            )
+        self._running[str(deployment.id)] = deployment  # started now, or alive from before a restart: adopted
 
     async def _stop_process(self, deployment) -> None:
         """Stop the deployment's loop; its terminal stays, showing how it ended."""
@@ -1363,6 +1403,7 @@ class AgentServer:
                 await sync_tasks_channel(agents[aid])
             except Exception:  # noqa: BLE001 — one agent's channel must not stop the rest
                 logger.exception("agent %s: tasks channel sync failed", aid)
+
 
 #: Each running :func:`serve` loop's stop — how :func:`stop_serving` asks it to end.
 _STOPS: "weakref.WeakKeyDictionary[asyncio.Task, asyncio.Event]" = weakref.WeakKeyDictionary()

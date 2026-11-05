@@ -81,6 +81,7 @@ async def test_a_deploy_answers_once_ready_and_before_its_machine_starts(agent, 
         ("publish", ActivityState.COMPLETED),
         ("dependencies", ActivityState.COMPLETED),
         ("plan", ActivityState.COMPLETED),
+        ("values", ActivityState.COMPLETED),
         ("readiness", ActivityState.COMPLETED),
         ("machine", ActivityState.PENDING),
     ]
@@ -106,6 +107,7 @@ async def test_a_step_refused_before_the_answer_is_the_answer_and_ends_the_deplo
         ("publish", ActivityState.COMPLETED, None),
         ("dependencies", ActivityState.COMPLETED, None),
         ("plan", ActivityState.FAILED, "the hub refused"),
+        ("values", ActivityState.INTERRUPTED, None),
         ("readiness", ActivityState.INTERRUPTED, None),
         ("machine", ActivityState.INTERRUPTED, None),
     ]

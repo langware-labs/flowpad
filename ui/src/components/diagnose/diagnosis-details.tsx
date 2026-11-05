@@ -1,8 +1,8 @@
 import { t } from '@lingui/core/macro';
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { KindValue } from '@src/components/value-viewer/KindValue';
-import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
-import { copyToClipboard, FlowpadDiagnosis, TypeId } from '@sdk';
+import { useForwardDiagnosis } from '@src/components/diagnose/use-forward-diagnosis';
+import { copyToClipboard, FlowpadDiagnosis, TypeId, type FlowContextSpec } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -17,7 +17,7 @@ interface DiagnosisDetailsProps {
   /** The support conversation — excluded from the Forward picker (you don't forward
    *  a diagnosis back into the conversation that already holds it). */
   conversationId?: string;
-  /** Called after a successful report/forward send (e.g. the modal closes). */
+  /** Called once the diagnosis was forwarded or handed to Ask for help (e.g. the modal closes). */
   onActionDone?: () => void;
   /**
    * Typography scale. `'modal'` (default) is the compact popup body; `'page'` is
@@ -43,8 +43,7 @@ function diagnosisFields(diag: FlowpadDiagnosis): Field[] {
 }
 
 /**
- * The provenance rows — the same block the "Report issue" email prints under
- * `Details`. Every value is read off the record (stamped by the flow-diagnose
+ * The provenance rows. Every value is read off the record (stamped by the flow-diagnose
  * reporter at record time and carried in the share bundle), NOT recomputed here:
  * when a diagnosis is forwarded, the person reading this is on a different
  * machine, and `navigator.platform` there would describe the helper's box rather
@@ -58,6 +57,20 @@ function diagnosisDetailFields(diag: FlowpadDiagnosis, diagnosisId: string): Fie
     { label: t`OS`, value: diag.os },
     { label: t`App version`, value: diag.app_version },
     { label: t`Diagnosis id`, value: diagnosisId },
+  ];
+}
+
+/** Where the person was when it was taken — the context that travels with the diagnosis. */
+function diagnosisContextFields(context: FlowContextSpec | null | undefined): Field[] {
+  if (!context) return [];
+  const { session, other_sessions: others } = context;
+  return [
+    { label: t`Screen`, value: context.view },
+    { label: t`Address`, value: context.address },
+    { label: t`Open`, value: context.entity },
+    { label: t`Session`, value: session ? `${session.title || session.process} (${session.status})` : undefined },
+    { label: t`Hub login`, value: context.hub_login },
+    { label: t`Other sessions`, value: others?.map((s) => s.title || s.process).join(', ') },
   ];
 }
 
@@ -76,16 +89,22 @@ export function diagnosisToText(diag: FlowpadDiagnosis): string {
     .filter((f) => f.value)
     .map((f) => `${f.label}: ${f.value}`)
     .join('\n');
-  return [title, body, details ? `Details\n${details}` : ''].filter(Boolean).join('\n\n');
+  const context = diagnosisContextFields(diag.diagnosis?.context)
+    .filter((f) => f.value)
+    .map((f) => `${f.label}: ${f.value}`)
+    .join('\n');
+  return [title, body, details ? `Details\n${details}` : '', context ? `Context\n${context}` : '']
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 /**
  * The shared diagnosis body — title, the four fields (summary / symptoms / root
- * cause / fix), a Copy-all button, and the same Report/Forward buttons as a Feed
- * entry. Rendered identically by the popup (`DiagnosisReportModal`), the routed
+ * cause / fix), a Copy-all button, and the same Ask for help / Forward buttons as a
+ * Feed entry. Rendered identically by the popup (`DiagnosisReportModal`), the routed
  * full-tab viewer (`DiagnosisViewer`), and the feed's View action, so the three
- * never diverge. Report emails the team (`sendDiagnosisEmailReport`); Forward
- * attaches the diagnosis entity into the chosen conversation (`forwardDiagnosis`).
+ * never diverge. Forward attaches the diagnosis entity into the chosen conversation
+ * (`forwardDiagnosis`).
  */
 export function DiagnosisDetails({
   diagnosisId,
@@ -99,21 +118,19 @@ export function DiagnosisDetails({
   const typeId = useMemo(() => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null), [diagnosisId]);
   const { data: diag, isLoading } = useEntity<FlowpadDiagnosis>(typeId, { enabled: !!typeId });
 
-  const { report, forward, busy, reported, error: reportError } = useDiagnosisReport(diagnosisId);
+  const { forward, busy, error: forwardError } = useForwardDiagnosis(diagnosisId);
 
   const fields: Field[] = diag ? diagnosisFields(diag) : [];
   const detailFields: Field[] = diag ? diagnosisDetailFields(diag, diagnosisId) : [];
+  const context = diag?.diagnosis?.context;
+  const contextFields = diagnosisContextFields(context).filter((f) => f.value);
+  const turns = context?.session?.turns ?? [];
 
   const handleCopy = useCallback(async () => {
     if (!diag) return;
     await copyToClipboard(diagnosisToText(diag));
     notify.success({ title: t`Diagnosis copied to clipboard` });
   }, [diag, t]);
-
-  // "Report issue" — email the diagnosis to the Flowpad team.
-  const handleReportIssue = useCallback(async () => {
-    if (await report()) onActionDone?.();
-  }, [report, onActionDone]);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
@@ -188,8 +205,7 @@ export function DiagnosisDetails({
           ))}
       </div>
 
-      {/* Provenance — the same block the report email prints under `Details`, so a
-          helper who received a forwarded diagnosis sees who/when/where without
+      {/* Provenance — so a helper who received a forwarded diagnosis sees who/when/where without
           having to ask. Values travel with the record; rows missing on a
           diagnosis are skipped rather than shown blank. */}
       <div className={isPage ? 'space-y-3 border-t pt-7' : 'space-y-2 border-t pt-3'}>
@@ -220,6 +236,44 @@ export function DiagnosisDetails({
         </dl>
       </div>
 
+      {/* Where the person was — what the helper would otherwise have to ask. */}
+      {(contextFields.length > 0 || turns.length > 0) && (
+        <div className={isPage ? 'space-y-3 border-t pt-7' : 'space-y-2 border-t pt-3'} data-testid="diagnosis-context">
+          <p
+            className={
+              isPage
+                ? 'text-sm font-semibold uppercase tracking-wide text-muted-foreground'
+                : 'text-[11px] font-semibold uppercase tracking-wide text-muted-foreground'
+            }
+          >
+            <Trans>Context</Trans>
+          </p>
+          <dl
+            className={
+              isPage
+                ? 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm'
+                : 'grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]'
+            }
+          >
+            {contextFields.map((f) => (
+              <Fragment key={f.label}>
+                <dt className="text-muted-foreground">{f.label}</dt>
+                <dd className="break-words text-foreground">{f.value}</dd>
+              </Fragment>
+            ))}
+          </dl>
+          {turns.map((turn, i) => (
+            <p
+              key={i}
+              className={isPage ? 'whitespace-pre-wrap break-words text-sm' : 'whitespace-pre-wrap break-words text-xs'}
+            >
+              <span className="text-muted-foreground">{turn.role === 'user' ? t`User` : t`Assistant`}: </span>
+              {turn.text}
+            </p>
+          ))}
+        </div>
+      )}
+
       {/* The full diagnosis (findings, machine, log tails) — the same viewer a helper sees. */}
       {diag.diagnosis && (
         <div className={isPage ? 'border-t pt-7' : 'border-t pt-3'}>
@@ -227,20 +281,18 @@ export function DiagnosisDetails({
         </div>
       )}
 
-      {/* Same actions as a Feed entry: Report issue emails the team (needs only the
-          diagnosis), Forward posts the report into a chosen conversation. */}
+      {/* Same actions as a Feed entry: Ask for help sends this diagnosis, Forward posts it
+          into a chosen conversation. */}
       <DiagnosisActionButtons
         suggestedConversationId={conversationId}
         busy={busy}
-        error={reportError}
-        reported={reported}
+        error={forwardError}
         showDismiss={false}
-        canReport={!!diagnosisId}
         diagnosisId={diagnosisId}
         diagnosisTitle={diag.title || diag.name || undefined}
         showOpenInTerminal
         onDismiss={() => onActionDone?.()}
-        onReportIssue={() => void handleReportIssue()}
+        onAsking={onActionDone}
         onForward={(targetConversationId) => void handleForward(targetConversationId)}
         onForwardedNew={() => onActionDone?.()}
       />

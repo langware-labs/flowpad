@@ -13,7 +13,7 @@ import { HubReleaseLabel } from '@src/components/version-popover/hub-release-lab
 import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
-import { SubAgent, TypeId } from '@sdk';
+import { SubAgent, TypeId, dataContext } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { HelpdeskLoadDialog } from '@src/components/helpdesk/HelpdeskLoadDialog';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
@@ -21,9 +21,7 @@ import { LifeBuoy } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useContext } from '@sdk/react/hooks';
-import { PageId } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { useColorPalette } from '../hooks/useColorPalette';
 
 interface FooterProps {
@@ -51,14 +49,9 @@ export function Footer({ className = '' }: FooterProps) {
   const { version, project } = useContext();
   const { t } = useLingui();
   const { agentId } = useParams();
-  // Same signal the rail uses (`collapsed-sidebar.tsx`), NOT `isHubOnly()`: this
-  // must also hold when a desktop is showing the hub page, and that case has a
-  // desk-serving backend. It hides Help desk
-  // (desk-only actions — `helpdesk-ticket-list` 404s on the hub, so the button
-  // could only fail). `useCurrentDock`, not `useDockNavigation`: only the page id
-  // is needed, and the latter also builds a NavigationActions and rewrites the
-  // `navigation` global on every URL change.
-  const hubMode = useCurrentDock()?.page === PageId.HUB;
+  // The runtime's capability, not the page: a desktop showing the hub page still has a backend that
+  // can ask for help (and a person who lands there after signing in still needs to).
+  const canAskForHelp = dataContext.caps.localFiles;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<SubAgent>(agentTypeId);
   const [showHelpdesk, setShowHelpdesk] = useState(false);
@@ -111,7 +104,7 @@ export function Footer({ className = '' }: FooterProps) {
               stepped load flow, which materializes the helpdesk portal
               checkout and then navigates to its project home; the ticket
               dialog now lives on that screen's banner. */}
-          {!hubMode && (
+          {canAskForHelp && (
             <button
               type="button"
               onClick={() => setShowHelpdesk(true)}
@@ -126,8 +119,7 @@ export function Footer({ className = '' }: FooterProps) {
               </span>
             </button>
           )}
-          {/* `isHubOnly()`, not `hubMode`: this gate is runtime-shaped, not
-              page-shaped. A desktop showing the hub page still has a desk
+          {/* Runtime-shaped, not page-shaped: a desktop showing the hub page still has a desk
               backend, so the popover's actions work there — and the label would
               print the DESK's version under the word "hub". */}
           {isHubOnly() && <HubReleaseLabel hubVersion={version} />}
@@ -144,7 +136,7 @@ export function Footer({ className = '' }: FooterProps) {
           straight over to the ticket flow — which is what the button is for.
           Mounted with the button, not beside it: gating only the button would
           leave both dialogs mounted on the hub with no way to ever open them. */}
-      {!hubMode && (
+      {canAskForHelp && (
         <>
           <HelpdeskLoadDialog
             open={showHelpdesk}
