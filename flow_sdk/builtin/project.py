@@ -3755,11 +3755,10 @@ class Project(SetupSkippable, Entity):
         await broadcast_tabs_changed()
 
     def _child_record_metas(self) -> list[dict]:
-        """The ``metadata.json`` of every record whose ``project_id`` is this project,
-        read from the shadow store: ``Entity.get_all`` is type-locked, but each record
-        carries its ``project_id``, so one sweep of the records root finds children of
-        every type. Malformed records and the project's own are skipped. Blocking — it
-        reads every record on the instance."""
+        """The ``metadata.json`` of every on-disk record whose ``project_id`` is this
+        project, including shadow-only ones with no row (the delete reads rows from the
+        DB and uses this only for those, and for a folder unindex). Malformed records and
+        the project's own are skipped. Blocking — it reads every record on the instance."""
         import json  # noqa: PLC0415
 
         from flow_sdk.fs_store import get_default_records_root  # noqa: PLC0415
@@ -3786,6 +3785,23 @@ class Project(SetupSkippable, Entity):
                     continue
                 metas.append(data)
         return metas
+
+    async def _sweep_shadow_orphans(self, done: set[str]) -> int:
+        """Destroy this project's records that exist only on disk — the ones the
+        delete's DB query could not see. Reads every record, so it runs in a thread
+        after the delete has answered. Returns how many were removed."""
+        from flow_sdk.fs_store import FSRecord  # noqa: PLC0415
+
+        removed = 0
+        for meta in await asyncio.to_thread(self._child_record_metas):
+            if meta["id"] in done:
+                continue
+            try:
+                await FSRecord.from_dict(meta).destroy()
+                removed += 1
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[project-delete] orphan %s:%s failed: %s", meta.get("type"), meta.get("id"), exc)
+        return removed
 
     async def unindex_folder(self, root: str) -> int:
         """Drop every record of this project that was indexed from a file under ``root``
@@ -3839,7 +3855,10 @@ class Project(SetupSkippable, Entity):
         ``protected_path`` policy permits that destructive operation
         (``fs_storage_mount_path`` — the user's real files).
 
-        The children come from ``_child_record_metas`` (one sweep of the shadow store).
+        The children come from the DB (one ``project_id`` query); records that exist
+        only as an on-disk shadow are swept afterwards in the background
+        (``_sweep_shadow_orphans``), so the delete never reads every record on the
+        instance while the person waits.
         """
         import logging  # noqa: PLC0415
         import shutil  # noqa: PLC0415
@@ -3867,23 +3886,22 @@ class Project(SetupSkippable, Entity):
 
         async def _destroy(meta: dict) -> None:
             rtype, rid = meta["type"], meta["id"]
-            # Build the record from the metadata we already read — no second
-            # read of metadata.json. destroy() = DB row + FTS + wiki + shadow.
+            # Build the record from the row we already read — no read of
+            # metadata.json. destroy() = DB row + FTS + wiki + shadow.
             try:
                 if rtype == ap_type and not delete_chats:
                     proc = await AgenticProcess.get_by_id(rid)
                     if proc is not None:
-                        await proc.removeSearchIndex()
                         await proc.delete(delete_chats=False)
                 await FSRecord.from_dict(meta).destroy()
             except Exception as exc:  # noqa: BLE001
                 log.warning("[project-delete] destroy %s:%s failed: %s", rtype, rid, exc)
-            _purge_data(rtype, rid)
+            await asyncio.to_thread(_purge_data, rtype, rid)
 
-        # 1. Collect every child record's metadata by scanning the shadow store.
-        #    Materialize the full list first — destroy() rmtree's folders, so we
-        #    must not mutate the directory tree while iterating it.
-        targets = self._child_record_metas()
+        # 1. Every child row, from one DB query (materialized before any destroy).
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+        targets = [m for m in await get_db_driver().entity_metas_for_project(pid) if m["id"] != pid]
 
         # 1b. Terminate live workers BEFORE destroying their rows. ``_destroy``
         #     only removes the DB row + shadow; it never touches the OS child.
@@ -3940,7 +3958,7 @@ class Project(SetupSkippable, Entity):
                     from flow_sdk.claude_env import _rmtree_safe  # noqa: PLC0415
 
                     # git writes pack files read-only; on Windows a bare rmtree stops on them.
-                    _rmtree_safe(mount)  # idempotent — FileNotFoundError when absent
+                    await asyncio.to_thread(_rmtree_safe, mount)  # idempotent — FileNotFoundError when absent
             except FileNotFoundError:
                 pass
             except OSError as exc:
@@ -3975,6 +3993,12 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.builtin.faas.project_list import invalidate_project_list_cache  # noqa: PLC0415
 
         invalidate_project_list_cache()
+
+        # 7. Shadow-only records (a metadata.json with no row) are invisible to the
+        #    query above; sweep them off the request path.
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        create_detached_task(self._sweep_shadow_orphans({m["id"] for m in targets}), name=f"project-orphans-{pid}")
 
         return {
             "project_id": pid,

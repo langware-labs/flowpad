@@ -2315,15 +2315,11 @@ class FsRecordsActionsMixin:
                     return ApiFailResponse(message="Record uid is required for delete", status_code=400)
                 # Remove Entity + FTS before deleting from disk
                 from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-                from flow_sdk.db import get_db_driver  # noqa: PLC0415
                 from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
                 entity = await Entity.get_one(QueryFilter.parse({"id": uid}, record_type))
                 if entity is not None:
-                    driver = get_db_driver()
-                    if hasattr(driver, "fts_delete"):
-                        await driver.fts_delete(entity.id)
-                    await entity.delete()
+                    await entity.delete()  # the driver drops its FTS row with it
                 # Remove from disk — including the live asset_ref folder so
                 # records like Skill don't re-surface via discover() after delete.
                 record = await asyncio.to_thread(record_list.get, uid)

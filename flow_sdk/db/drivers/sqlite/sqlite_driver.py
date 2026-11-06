@@ -1248,6 +1248,26 @@ class SQLiteDBDriver(DBDriver):
             result = await session.execute(text(f"DELETE FROM entities WHERE {where_clause}"), bindings)
             return result.rowcount or 0
 
+    async def entity_metas_for_project(self, project_id: str) -> list[dict]:
+        """Every row whose ``project_id`` is ``project_id``, any type and scope, as a
+        flat record dict (``data`` plus ``type``/``id``). One query: a project's
+        children without reading every record's metadata.json off disk."""
+        if not self.session_factory:
+            return []
+        async with self._session_ctx(write=False) as session:
+            result = await session.execute(
+                text("SELECT id, type, data FROM entities WHERE json_extract(data, '$.project_id') = :pid"),
+                {"pid": project_id},
+            )
+            metas = []
+            for rid, rtype, data in result.all():
+                try:
+                    payload = json.loads(data) if isinstance(data, str) else dict(data or {})
+                except ValueError:
+                    payload = {}
+                metas.append({**payload, "type": rtype, "id": rid})
+            return metas
+
     async def create_db(self):
         """Create database tables."""
         if self.engine:
@@ -1895,6 +1915,10 @@ class SQLiteDBDriver(DBDriver):
                     )
                 )
 
+            # Their FTS rows go in the same transaction — a cascaded descendant
+            # must not stay searchable after its row is gone.
+            await self._fts_delete_batch(session, entity_ids, 500)
+
             # Delete entities
             for entity_id in entity_ids:
                 await session.execute(delete(EntitySchema).where(EntitySchema.id == entity_id))
@@ -1917,7 +1941,8 @@ class SQLiteDBDriver(DBDriver):
                     (RelationshipSchema.from_id == eid) | (RelationshipSchema.to_id == eid)
                 )
             )
-            # Delete entity
+            # Delete entity and its FTS row together
+            await self._fts_delete_batch(session, [eid], 500)
             await session.execute(delete(EntitySchema).where(EntitySchema.id == eid))
             return True
 
