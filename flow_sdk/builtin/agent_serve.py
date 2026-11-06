@@ -804,7 +804,8 @@ async def running_deployments() -> list:
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     rows = await Deployment.get_all({"match": {"serving": True}})
-    return [d for d in rows if d.serving and d.places_agent and d.is_local and deployment_process.alive(d)]
+    async with deployment_process.process_table():
+        return [d for d in rows if d.serving and d.places_agent and d.is_local and deployment_process.alive(d)]
 
 
 async def polled_by_a_deployment(sources=None) -> set[str]:
@@ -1309,7 +1310,7 @@ class AgentServer:
                 logger.exception("agent server: reconcile failed")
 
     async def reconcile(self, *, chiefs: bool = True) -> None:
-        async with self._reconciling:
+        async with self._reconciling, deployment_process.process_table():
             if chiefs:
                 await self._sync_chiefs_of_staff()
             wanted, strays = await self._wanted()
