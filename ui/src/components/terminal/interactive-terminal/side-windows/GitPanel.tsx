@@ -4,7 +4,9 @@ import { AgenticProcess, GitWorkdir, type GitRevision, type GitStatus, type GitS
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Check,
   Copy,
   Eye,
@@ -374,6 +376,11 @@ const UnpushedCommitsBadge: React.FC<{
 export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPushed, onReviewLaunched }) => {
   const [data, setData] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  // Row order within each bucket: by added or removed lines; null = git's order.
+  const [sort, setSort] = useState<{ by: 'insertions' | 'deletions'; dir: 'desc' | 'asc' } | null>(null);
+  // Click cycles that column: descending → ascending → off.
+  const toggleSort = (by: 'insertions' | 'deletions') =>
+    setSort((s) => (s?.by !== by ? { by, dir: 'desc' } : s.dir === 'desc' ? { by, dir: 'asc' } : null));
   const [initing, setIniting] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const { currentDock, navigation } = useDockNavigation();
@@ -630,8 +637,14 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const buckets = BUCKETS.map((b) => ({
     ...b,
     label: i18n._(b.label),
-    files: data?.files.filter((f) => bucketOf(f.status) === b.key) ?? [],
+    files: (data?.files.filter((f) => bucketOf(f.status) === b.key) ?? []).sort((x, y) =>
+      sort ? ((x[sort.by] ?? 0) - (y[sort.by] ?? 0)) * (sort.dir === 'asc' ? 1 : -1) : 0,
+    ),
   }));
+  const SortArrow = ({ by }: { by: 'insertions' | 'deletions' }) =>
+    sort?.by === by ? (
+      sort.dir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />
+    ) : null;
 
   // Line totals across every file, so the chips answer "how big is this
   // change" and not just "how many files". Binary files carry null counts and
@@ -852,12 +865,26 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 <Trans>Lines</Trans>
               </span>
-              <span className="font-semibold text-green-500" data-testid="git-panel-sloc-added">
+              <button
+                type="button"
+                className="flex items-center gap-0.5 font-semibold text-green-500 hover:underline"
+                onClick={() => toggleSort('insertions')}
+                title={t`Sort by added lines`}
+                data-testid="git-panel-sloc-added"
+              >
                 +{sloc.added}
-              </span>
-              <span className="font-semibold text-red-500" data-testid="git-panel-sloc-removed">
+                <SortArrow by="insertions" />
+              </button>
+              <button
+                type="button"
+                className="flex items-center gap-0.5 font-semibold text-red-500 hover:underline"
+                onClick={() => toggleSort('deletions')}
+                title={t`Sort by removed lines`}
+                data-testid="git-panel-sloc-removed"
+              >
                 -{sloc.removed}
-              </span>
+                <SortArrow by="deletions" />
+              </button>
               <span
                 className={`font-semibold ${net > 0 ? 'text-green-500' : net < 0 ? 'text-red-500' : 'text-muted-foreground'}`}
                 data-testid="git-panel-sloc-net"
