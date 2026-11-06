@@ -41,7 +41,8 @@ const codeRequired = (e: unknown) => errorStatus(e) === 401 && /code required/i.
  */
 export default function OpenPcLanding() {
   const { t } = useLingui();
-  const { agentId = '' } = useParams();
+  // Trimmed: a copied or clicked link can carry a trailing newline (`%0A`), which the hub reads as another id.
+  const agentId = (useParams().agentId ?? '').trim();
   const agent = useAnonymousAgent(agentId || null);
   const name = agent ? agent.getDisplayName() || agent.name : '';
   const [phase, setPhase] = useState<'probing' | 'code' | 'opening' | 'failed'>('probing');
