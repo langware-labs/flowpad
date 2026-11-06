@@ -1023,12 +1023,20 @@ async def _reconcile(project: "Project", desired: dict[str, tuple["Folder", dict
                 added.append(tid)
     if changed:
         await project.save()
+        # The scope resolver walks dependency links off the cached project list
+        # (Dependencies scope, Mine's plain-folder exclusion); a link change is
+        # exactly what makes that snapshot wrong.
+        from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache  # noqa: PLC0415
+
+        invalidate_projects_cache()
     return added
 
 
 async def _index(project: "Project", linked: list[tuple["Folder", dict]]) -> None:
     """Index newly linked roots. Rows found in a folder that is itself a project's mount
-    belong to THAT project; anything else belongs to the project that depends on it."""
+    belong to THAT project, as its project content (``scope="project"`` — the same stamp
+    the provider's own index gives them, so the result does not depend on which walk ran
+    last); anything else belongs to the project that depends on it, as user scope."""
     if not linked:
         return
     from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
@@ -1036,8 +1044,13 @@ async def _index(project: "Project", linked: list[tuple["Folder", dict]]) -> Non
 
     mounts = await load_project_mounts()
     for _folder, data in linked:
-        owner = deepest_project_id_for_path(data["path"], mounts, default=str(project.id))
-        await _index_additional_dir(data["path"], read_only=bool(data.get("read_only")), project_id=owner)
+        provider = deepest_project_id_for_path(data["path"], mounts)
+        await _index_additional_dir(
+            data["path"],
+            read_only=bool(data.get("read_only")),
+            project_id=provider or str(project.id),
+            own=provider is not None,
+        )
 
 
 # ── authoring ───────────────────────────────────────────────────────────────

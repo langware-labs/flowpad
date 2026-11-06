@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import React, { useMemo } from 'react';
-import { Filter, Layers, User } from 'lucide-react';
+import { Filter, FolderTree, Layers, User } from 'lucide-react';
 import { scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
@@ -10,8 +10,8 @@ import { useScopeFilterChips, type ScopeMode } from './useScopeFilterChips';
 /**
  * Icon-only scope filter — same hook/model/data/context as ScopeFilterBar
  * (all behavior lives in `useScopeFilterChips`), compact square-icon
- * presentation for the Assets sidebar. Single-select, four icons:
- * All (Layers) · User · Project (type-registry icon) · Selected (funnel → picker).
+ * presentation for the Assets sidebar. Single-select icons:
+ * All (Layers) · Mine · Project (type-registry icon) · [Dependencies] · Selected (funnel → picker).
  */
 interface ScopeFilterIconBarProps {
   scope: ScopeFilter;
@@ -19,6 +19,9 @@ interface ScopeFilterIconBarProps {
   /** Current project display name — shown in the Project icon's tooltip. */
   currentProjectName?: string | null;
   onScopeChange: (next: ScopeFilter) => void;
+  /** Offer "Dependencies" (project + its dependency closure). Only for surfaces
+   *  whose lists carry dependency assets; others keep the four modes. */
+  showDependencies?: boolean;
 }
 
 export function ScopeFilterIconBar({
@@ -26,6 +29,7 @@ export function ScopeFilterIconBar({
   currentProjectId,
   currentProjectName,
   onScopeChange,
+  showDependencies = false,
 }: ScopeFilterIconBarProps): React.ReactElement {
   const { activeMode, selectedCount, projectDisabled, handleSelect, pickerOpen, setPickerOpen, onPickerConfirm } =
     useScopeFilterChips({ scope, currentProjectId, onScopeChange });
@@ -36,7 +40,7 @@ export function ScopeFilterIconBar({
   const options: ScopeBarOption<ScopeMode>[] = useMemo(
     () => [
       { value: 'all', label: t`All`, icon: Layers, title: t`All assets (user + every project)` },
-      { value: 'user', label: t`User`, icon: User, title: t`User assets only` },
+      { value: 'user', label: t`Mine`, icon: User, title: t`My assets only` },
       {
         value: 'project',
         label: t`Project`,
@@ -46,6 +50,21 @@ export function ScopeFilterIconBar({
           ? 'No current project'
           : `Current project${currentProjectName ? `: ${currentProjectName}` : ''}`,
       },
+      ...(showDependencies
+        ? [
+            {
+              value: 'dependencies' as const,
+              label: t`Dependencies`,
+              icon: FolderTree,
+              disabled: projectDisabled,
+              title: projectDisabled
+                ? t`No current project`
+                : currentProjectName
+                  ? t`${currentProjectName} and its dependencies`
+                  : t`Current project and its dependencies`,
+            },
+          ]
+        : []),
       {
         value: 'selected',
         label: t`Selected`,
@@ -54,7 +73,7 @@ export function ScopeFilterIconBar({
         title: t`Pick specific projects…`,
       },
     ],
-    [ProjectIcon, projectDisabled, currentProjectName, activeMode, selectedCount],
+    [ProjectIcon, projectDisabled, currentProjectName, activeMode, selectedCount, showDependencies],
   );
 
   return (

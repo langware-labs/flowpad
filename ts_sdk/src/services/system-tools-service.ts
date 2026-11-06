@@ -10,7 +10,7 @@ import { FlowpadDiagnosis } from '../entities/flowpad-diagnosis';
 import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { connectionManager } from '../websocket';
-import { projectScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
+import { projectScope, scopeIncludesDependencies, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
 import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 
 const ACTION = 'desktop-db';
@@ -432,6 +432,7 @@ export class SystemToolsService extends EventEmitter {
     if (scope) {
       qs.set('user', scopeIncludesUser(scope) ? 'true' : 'false');
       qs.set('projects', scopeProjectIds(scope).join(','));
+      if (scopeIncludesDependencies(scope)) qs.set('deps', 'true');
     }
     if (options?.force) qs.set('force', 'true');
     if (options?.orphanAction) qs.set('orphan_action', options.orphanAction);

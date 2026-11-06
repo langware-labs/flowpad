@@ -52,6 +52,7 @@ vi.mock('@src/components/stream-inbox-view/stream-inbox-api', () => ({
 
 vi.mock('@src/components/stream-inbox-view/MembershipInvitations', () => ({
   MembershipInvitations: () => null,
+  InvitesChannelChip: () => null,
 }));
 
 vi.mock('@src/components/new-conversation-dialog/NewConversationDialog', () => ({

@@ -1094,6 +1094,7 @@ class SQLiteDBDriver(DBDriver):
             (system rows carry the system project's id, so selecting that project
             surfaces them; they stay hidden otherwise)
           - scope is empty/missing → kept only for non-scoped record types
+          - asset_ref under a ``dependency_roots`` folder → kept (deps scope)
 
         Returns "" when scope is None (caller-side opt-out). Mutates
         ``bindings`` to add any new bind parameters.
@@ -1122,7 +1123,19 @@ class SQLiteDBDriver(DBDriver):
                 scoped_type_placeholders.append(f":{key}")
             clauses.append(f"({empty_scope} AND type NOT IN ({','.join(scoped_type_placeholders)}))")
         if keep_user:
-            clauses.append("json_extract(data, '$.scope') = 'user'")
+            # Plain dependency folders index as user scope but belong to the project
+            # depending on them — "Mine" leaves them out (mirrors apply_scope_filter).
+            excluded = []
+            for i, root in enumerate(getattr(scope, "user_excluded_roots", ()) or ()):
+                key = f"__sf_xu_{i}"
+                bindings[key] = root
+                bindings[f"{key}_slash"] = root + "/"
+                excluded.append(
+                    f"json_extract(data, '$.asset_ref') = :{key} OR "
+                    f"substr(json_extract(data, '$.asset_ref'), 1, length(:{key}_slash)) = :{key}_slash"
+                )
+            not_excluded = f" AND NOT (coalesce({' OR '.join(excluded)}, 0))" if excluded else ""
+            clauses.append(f"(json_extract(data, '$.scope') = 'user'{not_excluded})")
         if projects:
             placeholders = []
             for i, pid in enumerate(projects):
@@ -1137,6 +1150,17 @@ class SQLiteDBDriver(DBDriver):
             clauses.append(
                 f"(json_extract(data, '$.scope') IN ({','.join(scope_placeholders)}) AND "
                 f"json_extract(data, '$.project_id') IN ({','.join(placeholders)}))"
+            )
+        # Dependency folders (a `deps` scope): a row under one is in scope
+        # whatever its stamp — mirrors `under_dependency_root`. `substr` rather
+        # than LIKE, so `_`/`%` in a path are not wildcards.
+        for i, root in enumerate(getattr(scope, "dependency_roots", ()) or ()):
+            key = f"__sf_dep_{i}"
+            bindings[key] = root
+            bindings[f"{key}_slash"] = root + "/"
+            clauses.append(
+                f"(json_extract(data, '$.asset_ref') = :{key} OR "
+                f"substr(json_extract(data, '$.asset_ref'), 1, length(:{key}_slash)) = :{key}_slash)"
             )
         # Without `user` and without any projects, only non-scoped record
         # types can still match via the empty-scope branch above.

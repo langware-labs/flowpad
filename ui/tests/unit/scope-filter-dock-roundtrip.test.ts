@@ -10,10 +10,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   allScope,
+  applyScopeToParams,
+  dependenciesScope,
   dockOptionsToScopeFilter,
   filterScope,
+  parseScopeFilterKey,
+  pinnedProjectId,
   projectScope,
   scopeFilterEqual,
+  scopeFilterKey,
   scopeFilterToDockOptions,
   userScope,
   type ScopeFilter,
@@ -30,6 +35,7 @@ const CASES: Array<[string, ScopeFilter]> = [
   ['all', allScope()],
   ['user only', userScope()],
   ['single project', projectScope(PA)],
+  ['project + dependencies', dependenciesScope(PA)],
   ['selected projects', filterScope(false, ['p1', 'p2'])],
   ['user + project union', filterScope(true, ['p1'])],
 ];
@@ -40,6 +46,17 @@ describe('scope filter ⇄ dock options round-trip', () => {
     const back = dockOptionsToScopeFilter(opts);
     expect(back).not.toBeNull();
     expect(scopeFilterEqual(back as ScopeFilter, scope)).toBe(true);
+  });
+
+  it('keeps "project" and "dependencies" distinct, both pinned to the project', () => {
+    const deps = dependenciesScope(PA);
+    expect(scopeFilterEqual(deps, projectScope(PA))).toBe(false);
+    expect(scopeFilterKey(deps)).toBe(`dependencies:${PA}`);
+    expect(scopeFilterEqual(parseScopeFilterKey(scopeFilterKey(deps)) as ScopeFilter, deps)).toBe(true);
+    expect(pinnedProjectId(deps)).toBe(PA);
+    const wire = new URLSearchParams();
+    applyScopeToParams(wire, deps);
+    expect(wire.toString()).toBe(`user=false&projects=${PA}&deps=true`);
   });
 
   it('encodes the mode explicitly so "all" is distinct from unspecified', () => {
