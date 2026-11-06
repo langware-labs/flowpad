@@ -80,6 +80,29 @@ def opening_text(diagnosis: Any, user_report: str, *, desk: bool) -> str:
     return "\n\n".join(p for p in (_one_liner(diagnosis) if desk else "", (user_report or "").strip()) if p)
 
 
+def _where(context) -> list[str]:
+    """Where the person was, in words -- the lines of the context a desk reads before pickup."""
+    if context is None:
+        return []
+    session = context.session
+    return [
+        *([f"Screen: {context.view}"] if context.view else []),
+        *([f"Session: {session.title or session.process} ({session.status})"] if session else []),
+    ]
+
+
+def diagnosis_text(diagnosis, *, desk: bool) -> str:
+    """The message the diagnosis rides in. A desk can read a ticket's text before anyone picks
+    it up, but not its attachments, so a desk is also told what was found."""
+    head = f"Diagnostic: {diagnosis.title or diagnosis.status}"
+    if not desk:
+        return head
+    lines = [head, diagnosis.summary, *_where(diagnosis.context)]
+    lines += [f"- {f.title}" + (f": {f.detail}" if f.detail else "") for f in diagnosis.findings[:5]]
+    lines += [f"(diagnosing failed: {e})" for e in diagnosis.errors]
+    return "\n".join(line for line in lines if line)
+
+
 async def _capture(conv_id: str, title: str, people: list[HelpRecipient], desk: Optional[HelpRecipient],
                    project_id: Optional[str], someone: str):
     """The conversation for ``conv_id`` -- found, or written (not yet delivered). True when written."""
@@ -107,7 +130,7 @@ async def _capture(conv_id: str, title: str, people: list[HelpRecipient], desk: 
 
 async def _write_messages(conv, diagnosis: Any, user_report: str, someone: str) -> bool:
     """The person's words, then the diagnosis as its own message with ``diagnosis.value.json``."""
-    from flow_sdk.app.actions.ask_for_help_action import DIAGNOSIS_FILE, _Upload, diagnosis_text  # noqa: PLC0415
+    from flow_sdk.app.actions.ask_for_help_action import DIAGNOSIS_FILE, _Upload  # noqa: PLC0415
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
     from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415

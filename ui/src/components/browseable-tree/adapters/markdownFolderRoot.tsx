@@ -53,10 +53,10 @@ export interface MarkdownFolderRootDeps {
    *  actions (toolbar, right-click, keys, drag move/copy, upload) — see
    *  `fsFileOps`. */
   fileOps?: FsOpsHost;
-  /** The scoped project's dependency closure — every dependency folder's canonical
-   *  path, transitive (the asset menu's walk). Under the Dependencies scope a vault
-   *  at or under one of these is listed, so the Documents tree shows the same
-   *  documents its badge counts. */
+  /** The scoped project's dependency folders that hold documents — canonical paths,
+   *  transitive (the asset menu's walk). Under the Dependencies scope a vault at or
+   *  under one of these is listed, so the Documents tree shows the same documents
+   *  its badge counts. */
   dependencyRoots?: ReadonlySet<string>;
 }
 

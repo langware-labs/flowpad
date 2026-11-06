@@ -8,7 +8,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId } from '@sdk';
+import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId, type ProjectMenuNode } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -187,11 +187,18 @@ export function useAssetsModel() {
   // nested under it, every dependency (recursively). Backs the Packages rows only —
   // each folder's badge counts what that folder's row lists.
   const { nodesByPath: menuNodesByPath, refresh: reloadAssetMenu } = useProjectAssetMenu(scopeProject);
-  // The dependency closure as paths — every menu node below the project's own mount.
-  // The Documents tree lists these folders' vaults under the Dependencies scope.
+  // The dependency folders that hold documents — the menu nodes below the project's own
+  // mount with markdown of their own. Under the Dependencies scope the Documents tree
+  // lists exactly these folders' vaults: one with no documents would only read "Empty".
   const dependencyRoots = useMemo(() => {
     const mount = scopeProject?.fs_storage_mount_path ?? '';
-    return new Set(Array.from(menuNodesByPath.keys()).filter((path) => path && path !== mount));
+    const holdsDocs = (node: ProjectMenuNode) =>
+      (node.groups ?? []).some((g) => g.type_name === 'markdown' && g.own_count > 0);
+    return new Set(
+      Array.from(menuNodesByPath.entries())
+        .filter(([path, node]) => path && path !== mount && holdsDocs(node))
+        .map(([path]) => path),
+    );
   }, [menuNodesByPath, scopeProject]);
 
   // The budgets this person may spend — read once here for the count badge; the tree
@@ -730,6 +737,7 @@ export function useAssetsModel() {
     handleDropIntoContextDir,
     handleExternalDropIntoContextDir,
     menuNodesByPath,
+    dependencyRoots,
     visibleTypeNameSet,
   ]);
   return {

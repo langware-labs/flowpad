@@ -21,24 +21,34 @@ export type HelpRecipient = {
   name?: string | null;
 };
 
+/** What Ask does once the request is written: send it, or keep it here until the person shares it. */
+export type HelpSend = 'when_diagnosed' | 'review_first';
+
 export type AskForHelpRequest = {
   /** Minted by the asker and kept across resubmits: the same id is the same request. */
   conversation_id?: string | null;
-  recipient: HelpRecipient;
+  /** At most one desk and any number of people. None: a private conversation that stays here. */
+  recipients?: HelpRecipient[];
+  /** One recipient, as older callers send it. */
+  recipient?: HelpRecipient | null;
   title?: string;
   text: string;
   project_id?: string | null;
   /** Exactly what the person chose to attach (TypeIds). */
   context?: string[];
   origin?: HelpOrigin;
-  /** "Send diagnostic": diagnose this machine in the background; the diagnosis follows the
-   *  request as its own message. The request never waits for it. */
+  /** "Run diagnosis": diagnose this machine before the request is sent. */
   diagnose?: boolean;
-  /** A diagnosis already taken ("Check first"): sent as it stands, nothing is diagnosed again. */
+  /** "Share context": the diagnosis, screen, session and logs go with the request. */
+  share_context?: boolean;
+  /** Context files the person left out in the review. */
+  left_out?: string[];
+  send?: HelpSend;
+  /** A diagnosis already taken: it is the one attached, nothing is diagnosed again. */
   diagnosis_id?: string | null;
-  /** The session on screen (a TypeId) — context for the diagnose only, never attached. */
+  /** The session on screen (a TypeId) — what the diagnose is told the person was in. */
   process?: string | null;
-  /** The window asked from (its socket's id): what the diagnosis says was on screen. */
+  /** The window asked from (its socket's id): what the context says was on screen. */
   connection_id?: string | null;
 };
 
@@ -63,8 +73,42 @@ export interface AskForHelpResult {
   task_id: string | null;
   message_id: string;
   delivery: DeliveryState;
-  /** A diagnosis is being taken in the background (an activity in the footer) and will follow. */
-  diagnosing?: boolean;
+  /** It went to the hub (false: kept here — review first, or nobody to ask). */
+  shared: boolean;
+  /** Its context went with it. */
+  context_shared: boolean;
+}
+
+/** A context file: its name and text, as the review shows it. */
+export interface HelpContextItem {
+  name: string;
+  content: string;
+}
+
+/** What Ask would attach, and the title card 3 shows — nothing is written. */
+export async function helpRequestPreview(
+  request: AskForHelpRequest,
+): Promise<{ title: string; items: HelpContextItem[] }> {
+  const action = new ActionInfo('help-request-preview', null, null, 'POST');
+  action.bodyParameters = request;
+  const res = await dataManager.callAction<unknown, { title: string; items: HelpContextItem[] }>(action);
+  return res ?? { title: '', items: [] };
+}
+
+/** The context captured for a request and not shared yet. */
+export async function helpRequestContext(conversationId: string): Promise<HelpContextItem[]> {
+  const action = new ActionInfo('help-request-context', 'conversation', conversationId, 'POST');
+  action.bodyParameters = {};
+  const res = await dataManager.callAction<unknown, { items: HelpContextItem[] }>(action);
+  return res?.items ?? [];
+}
+
+/** The person's Share: the request goes to the hub, its held context follows (minus what they left out). */
+export async function helpRequestShare(conversationId: string, leftOut: string[] = []): Promise<string[]> {
+  const action = new ActionInfo('help-request-share', 'conversation', conversationId, 'POST');
+  action.bodyParameters = { left_out: leftOut };
+  const res = await dataManager.callAction<unknown, { shared: string[] }>(action);
+  return res?.shared ?? [];
 }
 
 /** An action body: the request itself, or — with files — a multipart form carrying it in ``request``. */

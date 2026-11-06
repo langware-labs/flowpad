@@ -350,12 +350,19 @@ async def resolve_project_scope(
         # flattened closure, and the recursion covers a dependency linked later.
         from flow_sdk.builtin.project import mount_key  # noqa: PLC0415
 
+        async def _links_of(proj) -> list[dict]:
+            # The links are read off a FRESH row: the cached list only has to
+            # name which project sits at which mount, and must not decide the
+            # closure — a link written by another process never reaches it.
+            fresh = await Project.get_by_id(str(proj.id))
+            return getattr(fresh or proj, "context_dir_infos", None) or []
+
         by_mount = {mount_key(getattr(p, "fs_storage_mount_path", None)): p for p in projects}
         frontier = [by_id[pid] for pid in _dedupe(entity_ids) if pid in by_id]
         seen_projects = {str(p.id) for p in frontier}
         while frontier:
             proj = frontier.pop(0)
-            for info in getattr(proj, "context_dir_infos", None) or []:
+            for info in await _links_of(proj):
                 root = mount_key(info.get("path"))
                 if not root or root in dependency_roots:
                     continue
