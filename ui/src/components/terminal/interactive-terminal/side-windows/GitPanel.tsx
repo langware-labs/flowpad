@@ -269,31 +269,37 @@ const HeaderChip: React.FC<{ title?: string; testId?: string; className?: string
 // A commit hash reviews that commit; none reviews the uncommitted changes.
 // ---------------------------------------------------------------------------
 
-function reviewPrompt(commit?: string): string {
+function reviewPrompt(commit?: string, file?: string): string {
+  if (file)
+    return commit
+      ? `Review the changes to ${file} in commit ${commit} (git show ${commit} -- ${file}).`
+      : `Review the uncommitted changes to ${file} (git diff HEAD -- ${file}).`;
   return commit
     ? `Review the changes in commit ${commit} (git show ${commit}).`
     : 'Review the uncommitted changes in this repo, staged and unstaged (git diff HEAD).';
 }
 
-const ReviewInWorker: React.FC<{ workdir: string; commit?: string; testIdPrefix: string }> = ({
+const ReviewInWorker: React.FC<{ workdir: string; commit?: string; file?: string; testIdPrefix: string }> = ({
   workdir,
   commit,
+  file,
   testIdPrefix,
 }) => {
   const onLaunched = React.useContext(ReviewLaunchedContext);
   const launch = useCallback(
     async (workerType: WorkerType) => {
       try {
-        await AgenticProcess.launch({ workerType, workdir, launchPrompt: reviewPrompt(commit), enableAssistant: true });
+        await AgenticProcess.launch({ workerType, workdir, launchPrompt: reviewPrompt(commit, file), enableAssistant: true });
         onLaunched?.();
       } catch (err) {
         console.error('[GitPanel] review launch failed', err);
         notify.error({ title: t`Failed to start session` });
       }
     },
-    [workdir, commit, onLaunched],
+    [workdir, commit, file, onLaunched],
   );
-  return <ContextWorkerToolbar onLaunch={launch} testIdPrefix={testIdPrefix} />;
+  // Standard shape on every git surface: the last-used worker, the rest behind the chevron.
+  return <ContextWorkerToolbar onLaunch={launch} mode="lastOpened" testIdPrefix={testIdPrefix} />;
 };
 
 // ---------------------------------------------------------------------------
@@ -603,6 +609,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
               </div>
               {/* Action toolbar — revealed on hover */}
               <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                <ReviewInWorker
+                  workdir={workdir}
+                  commit={revision}
+                  file={rawPath(f.path)}
+                  testIdPrefix={`git-review-file-${i}`}
+                />
                 {actions.map((a) => (
                   <IconBtn
                     key={a.key}
