@@ -424,6 +424,7 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `updated_date`: local recency (the hub clock is `hub_updated_date`).
             # `archived_at`/`dismissed_at`: this viewer's own archive/dismiss — never travel.
             # `marks`: the chips a local source puts on the whole conversation — local.
+            # `plan_sessions_indexed_at`: when this machine last linked plan sessions — local.
             [
                 "hub_updated_date",
                 "message_ids",
@@ -444,6 +445,7 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "archived_at",
                 "dismissed_at",
                 "marks",
+                "plan_sessions_indexed_at",
             ],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr

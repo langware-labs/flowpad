@@ -53,7 +53,7 @@ async def test_recommended_undecided_rules_are_setup_rows_and_deciding_clears_th
     from flow_sdk.builtin.project import Project
     from flow_sdk.builtin.project_setup import _automations_here, decide_automation
 
-    project = Project(name="p", fs_storage_mount_path=str(tmp_path))
+    project = Project(name=tmp_path.name, fs_storage_mount_path=str(tmp_path))
     await project.save()
     asked = Trigger(name="asked", project_id=str(project.id), asset_ref=str(tmp_path / "a"),
                     recommended=True, enabled=False, decided=False)
@@ -75,7 +75,7 @@ async def test_a_package_is_one_setup_step_and_one_switch(tmp_path):
     from flow_sdk.builtin.project_setup import _automations_here, decide_automation
     from flow_sdk.builtin.trigger import set_package_on
 
-    project = Project(name="grouped", fs_storage_mount_path=str(tmp_path))
+    project = Project(name=tmp_path.name, fs_storage_mount_path=str(tmp_path))
     await project.save()
     agent = Agent(name="Team code review", description="Reviews PRs.", project_id=str(project.id))
     await agent.save()
