@@ -92,7 +92,9 @@ export function AgentModeFields({
             <label
               key={channel}
               className="flex h-9 flex-1 items-center gap-2 whitespace-nowrap rounded-md border px-2.5 text-xs"
-              title={channel === 'chat_api' ? t`OpenAI-style chat endpoint, called with the person's API key` : undefined}
+              title={
+                channel === 'chat_api' ? t`OpenAI-style chat endpoint, called with the person's API key` : undefined
+              }
             >
               <ChannelMark channel={channel} />
               <span className="flex-1">{channelLabel(channel)}</span>

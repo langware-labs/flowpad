@@ -1275,9 +1275,7 @@ export class Project extends APIEntity<Project> {
     const data = await dataManager.callAction<
       { app: string; restart: boolean; wait?: boolean },
       { apps: { ok: boolean; detail: string }[] }
-    >(
-      actionInfo,
-    );
+    >(actionInfo);
     return data?.apps?.[0] ?? { ok: false, detail: `no app named ${app}` };
   }
 

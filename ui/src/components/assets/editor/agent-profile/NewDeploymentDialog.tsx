@@ -557,7 +557,11 @@ export function NewDeploymentDialog({
                 <Trans>Back</Trans>
               </Button>
               <Button disabled={blocked} onClick={() => void launch()} data-testid="new-deployment-launch">
-                {launching ? <Loader2 className="me-1.5 h-4 w-4 animate-spin" /> : <Rocket className="me-1.5 h-4 w-4" />}
+                {launching ? (
+                  <Loader2 className="me-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Rocket className="me-1.5 h-4 w-4" />
+                )}
                 <Trans>Launch</Trans>
               </Button>
             </>

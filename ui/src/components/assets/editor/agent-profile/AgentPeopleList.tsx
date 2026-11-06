@@ -36,7 +36,10 @@ function PersonRow({ person }: { person: AgentPerson }) {
       <button type="button" className="min-w-0 truncate text-start hover:underline" onClick={open}>
         {person.who}
       </button>
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid={`agent-person-state-${id}`}>
+      <span
+        className="flex items-center gap-1.5 text-xs text-muted-foreground"
+        data-testid={`agent-person-state-${id}`}
+      >
         <span className={cn('size-2 rounded-full', state.tone)} />
         {state.text}
       </span>
