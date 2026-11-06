@@ -600,7 +600,12 @@ export class Agent extends APIEntity<Agent> {
     // which has no `channels` action and returns the agent row. Each list defaults to empty.
     const data = (await dataManager.callAction<unknown, Partial<AgentChannels>>(info)) ?? {};
     const list = <T>(value: T[] | undefined): T[] => (Array.isArray(value) ? value : []);
-    return { deployments: list(data.deployments), webhooks: list(data.webhooks), connections: list(data.connections) };
+    return {
+      deployments: list(data.deployments),
+      people: list(data.people),
+      webhooks: list(data.webhooks),
+      connections: list(data.connections),
+    };
   }
 
   /** The Flowpad Assistant's skills this agent may pick from for `assistant_skills`. */
@@ -857,11 +862,35 @@ export interface PhoneNumberWire {
 
 /** `agent/<id>/channels`: what an agent is wired to, names and states only. */
 export interface AgentChannels {
-  deployments: { typeid: string; node_typeid: string | null }[];
+  deployments: {
+    typeid: string;
+    node_typeid: string | null;
+    agent_mode?: 'shared' | 'private';
+    channels?: string[];
+    idle_pause_seconds?: number | null;
+    template_deployment_id?: string | null;
+  }[];
+  /** A private deployment's people (its owner reads them): each person's own placement, its state and its cap. */
+  people?: AgentPerson[];
   /** The caller's links delivering to this agent: the channel (`slack`, `whatsapp`…), its state, who it reaches. */
   webhooks: { id: string; provider: string; status: string; sender: string; name: string; deployment_typeid: string }[];
   /** Connections a placement may use (`deployment/<id>/authorize`). */
   connections: { provider: string; deployment_typeid: string }[];
+}
+
+/** One person of a private deployment, as `agent/<id>/channels` answers it. */
+export interface AgentPerson {
+  deployment_typeid: string;
+  template_deployment_id: string;
+  /** The project the agent's deployments belong to (their pages live in its Deployments). */
+  project_id: string | null;
+  person_key: string;
+  /** The person as the provider knows them: an email, a Slack sender, an API caller. */
+  who: string;
+  /** The machine's state: running, paused, not_started, … */
+  state: string;
+  cap_usd_per_day: number | null;
+  allocation_typeid: string | null;
 }
 
 /** `GET /agent/<id>/version` — what this computer has that the published version lacks. */

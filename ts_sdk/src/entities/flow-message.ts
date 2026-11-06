@@ -53,7 +53,13 @@ export enum FlowMessageKind {
   SESSION_EVENT = 'session_event',
   /** Secured transfer: the quiet, automatic line of a key exchange in the share's thread (a slim line). */
   SEALED_NOTE = 'sealed_note',
+  /** Ask for help: a person's request, sent like any message; its context rides as ordinary files. */
+  HELP_REQUEST = 'help_request',
 }
+
+/** The file every help request carries -- what marks it as one on every machine (the hub drops ``kind``).
+ *  Mirrors flow_sdk.builtin.flow_message.HELP_REQUEST_FILE. Plumbing: never shown as an attachment. */
+export const HELP_REQUEST_FILE = 'help_request.value.json';
 
 /** Single source of truth for the body filename on the hub blob store.
  *  Must match flow_sdk.builtin.flow_message.BODY_FILENAME exactly — the

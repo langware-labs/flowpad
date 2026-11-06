@@ -99,25 +99,43 @@ async def ask_for_help() -> ApiResponse:
         return ApiFailResponse(message=f"diagnosis {ask.diagnosis_id} not found", status_code=404)
 
     someone = request_info.someone_typeid
-    conv, task, created = await _capture_conversation(ask, someone)
-    opening = await _opening_message(conv)
-    if opening is None:
-        context = await capture_context(ask, recorded)
-        sent = await _write_request(conv, task, ask, body.get("files"), context, someone)
-        if not isinstance(sent, ApiSuccessResponse):
-            if created:  # nothing of this request may stay behind half-written
-                await _discard(conv, task)
-            return sent
-        opening = await FlowMessage.get_one({"id": sent.data["id"]})
+    # People share one conversation; a desk gets its own ticket (a desk conversation cannot also hold a
+    # person). Both carry the same request and the same context, captured -- and diagnosed -- once.
+    base = ask.conversation_id or mint_uuid()
+    asks = [ask.model_copy(update={"conversation_id": base})]
+    if ask.desk is not None and ask.people:
+        from flow_sdk.diagnose.share import desk_conversation_id  # noqa: PLC0415
 
-    if conv.hub_bound:
-        # One attempt now; the outbox owns every later one. Its outcome never changes the verdict.
-        try:
-            await conv.deliver(bodies=False)
-            conv.kick_delivery()
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[ask-for-help] first delivery attempt failed: %s", e, exc_info=True)
-        opening = await FlowMessage.get_one({"id": opening.id})
+        asks = [
+            ask.model_copy(update={"conversation_id": base, "recipients": ask.people}),
+            ask.model_copy(update={"conversation_id": desk_conversation_id(base), "recipients": [ask.desk]}),
+        ]
+    context: Optional[dict[str, bytes]] = None
+    answers = []
+    for one in asks:
+        conv, task, created = await _capture_conversation(one, someone)
+        opening = await _opening_message(conv)
+        if opening is None:
+            if context is None:
+                context = await capture_context(ask, recorded)
+            sent = await _write_request(conv, task, one, body.get("files"), context, someone)
+            if not isinstance(sent, ApiSuccessResponse):
+                if created:  # nothing of this request may stay behind half-written
+                    await _discard(conv, task)
+                return sent
+            opening = await FlowMessage.get_one({"id": sent.data["id"]})
+        answers.append((conv, task, opening))
+
+    for conv, _task, _opening in answers:
+        if conv.hub_bound:
+            # One attempt now; the outbox owns every later one. Its outcome never changes the verdict.
+            try:
+                await conv.deliver(bodies=False)
+                conv.kick_delivery()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[ask-for-help] first delivery attempt failed: %s", e, exc_info=True)
+    conv, task, opening = answers[0]
+    opening = await FlowMessage.get_one({"id": opening.id})
     return ApiSuccessResponse(
         data={
             "conversation_id": conv.id,
@@ -126,6 +144,8 @@ async def ask_for_help() -> ApiResponse:
             "delivery": _delivery(opening),
             "shared": conv.hub_bound,
             "context_shared": bool(_carrier_of(opening).context_shared),
+            #: The desk's own ticket, when people were asked too.
+            "also": [c.id for c, _t, _o in answers[1:]],
         }
     )
 

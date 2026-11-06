@@ -203,6 +203,11 @@ msgstr "› Messages"
 msgid "› Messages › from {from}"
 msgstr "› Messages › from {from}"
 
+#. placeholder {0}: pendingDelete.title
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "\"{0}\" — its transcript stays on disk."
+msgstr "\"{0}\" — its transcript stays on disk."
+
 #. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
@@ -2433,6 +2438,11 @@ msgstr "🤖 Prompt - Query AI (Claude Haiku)"
 msgid "$ per visitor"
 msgstr "$ per visitor"
 
+#. placeholder {0}: person.cap_usd_per_day
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "${0}/day"
+msgstr "${0}/day"
+
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "${cost} · {sessions} sessions · {duration} active · {prompts} prompts"
 msgstr "${cost} · {sessions} sessions · {duration} active · {prompts} prompts"
@@ -3687,6 +3697,11 @@ msgstr "Advanced: per-window limits, rate caps and filters"
 msgid "Advanced: per-window limits, rate caps and filters (view only)"
 msgstr "Advanced: per-window limits, rate caps and filters (view only)"
 
+#. placeholder {0}: seconds / 60
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "After {0} min idle"
+msgstr "After {0} min idle"
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/graph-workflows/panels/RunsPanel.tsx
@@ -3752,6 +3767,11 @@ msgstr "Agent machine ready"
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Agent mailbox"
 msgstr "Agent mailbox"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Agent mode"
+msgstr "Agent mode"
 
 #~ msgid "Agent name"
 #~ msgstr "Agent name"
@@ -5479,6 +5499,10 @@ msgstr "Auto-launch reset"
 msgid "auto-login off"
 msgstr "auto-login off"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Auto-pause"
+msgstr "Auto-pause"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Auto-send"
 msgstr "Auto-send"
@@ -6659,6 +6683,7 @@ msgstr "Channel id (data source id there)"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/asset-counters/channel-project-counters.tsx
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/inbound/InboundView.tsx
@@ -6708,6 +6733,10 @@ msgstr "Chat about this file"
 #: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Chat about this message with {0}"
 msgstr "Chat about this message with {0}"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Chat API"
+msgstr "Chat API"
 
 #: src/components/floating-chat/AssistantContextChips.tsx
 msgid "Chat context"
@@ -8408,6 +8437,10 @@ msgstr "Context to share — review before sending."
 msgid "context tokens"
 msgstr "context tokens"
 
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Context:"
+msgstr "Context:"
+
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -9751,6 +9784,10 @@ msgstr "Could not set up Git"
 msgid "Could not set up vault {vault}"
 msgstr "Could not set up vault {vault}"
 
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Could not share"
+msgstr "Could not share"
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Could not share {projectName}"
@@ -10971,7 +11008,6 @@ msgstr "delete"
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/data-sources/use-source-delete.ts
-#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/helpdesk/HelpdeskResetButton.tsx
@@ -11120,6 +11156,8 @@ msgstr "Delete budget"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Delete chat"
 msgstr "Delete chat"
 
@@ -11274,8 +11312,8 @@ msgid "Delete this automation?"
 msgstr "Delete this automation?"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
-msgid "Delete this chat"
-msgstr "Delete this chat"
+#~ msgid "Delete this chat"
+#~ msgstr "Delete this chat"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Delete this chat?"
@@ -12651,6 +12689,7 @@ msgstr "Effort"
 msgid "Element"
 msgstr "Element"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/InboundView.tsx
@@ -14980,6 +15019,10 @@ msgstr "Flowpad mailbox"
 msgid "Flowpad mailbox · only allowed senders reach {0}"
 msgstr "Flowpad mailbox · only allowed senders reach {0}"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Flowpad messages always reach it."
+msgstr "Flowpad messages always reach it."
+
 #: src/components/launch-failure/LaunchFailureCard.tsx
 #~ msgid "Flowpad runs it without per-step prompts"
 #~ msgstr "Flowpad runs it without per-step prompts"
@@ -16055,6 +16098,10 @@ msgstr "Help desks"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Help desks or skills repos to load alongside it."
 msgstr "Help desks or skills repos to load alongside it."
+
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Help request"
+msgstr "Help request"
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Help URL"
@@ -22323,6 +22370,10 @@ msgstr "Nobody can log in to this sandbox, including its owner."
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
 
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Nobody has talked to it yet — each person gets their own machine on their first message."
+msgstr "Nobody has talked to it yet — each person gets their own machine on their first message."
+
 #: src/components/organization/tabs/MembersTab.tsx
 msgid "Nobody here."
 msgstr "Nobody here."
@@ -22719,6 +22770,10 @@ msgstr "Not set up for publishing"
 msgid "Not set up yet. Add your own provider key to start spending."
 msgstr "Not set up yet. Add your own provider key to start spending."
 
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Not shared"
+msgstr "Not shared"
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "not signed in"
 msgstr "not signed in"
@@ -22746,6 +22801,10 @@ msgstr "not started"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
 msgstr "Not started"
+
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Not started · starts on first message"
+msgstr "Not started · starts on first message"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Not started yet — its terminal appears when the deployment first runs."
@@ -23479,6 +23538,7 @@ msgstr "Oops! Page not found"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
+#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
@@ -24296,6 +24356,10 @@ msgstr "Open the watched file"
 msgid "Open the worker session already started for this spec/plan in this conversation"
 msgstr "Open the worker session already started for this spec/plan in this conversation"
 
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Open their threads"
+msgstr "Open their threads"
+
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 msgid "Open this agent's transcript"
 msgstr "Open this agent's transcript"
@@ -24387,6 +24451,10 @@ msgstr "OpenAI"
 #: src/components/account/secrets-section.tsx
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "OpenAI-style chat endpoint, called with the person's API key"
+msgstr "OpenAI-style chat endpoint, called with the person's API key"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "OpenCode"
@@ -24766,6 +24834,7 @@ msgstr "Overwrite"
 msgid "Owner"
 msgstr "Owner"
 
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "owner default"
@@ -25099,6 +25168,10 @@ msgstr "Paused"
 #: src/components/data-sources/source-attention.ts
 msgid "Paused — nothing is fetched from this channel."
 msgstr "Paused — nothing is fetched from this channel."
+
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Paused · wakes on next message"
+msgstr "Paused · wakes on next message"
 
 #: src/components/data-sources/use-source-toggle.ts
 msgid "Paused."
@@ -25788,14 +25861,23 @@ msgstr "primary"
 msgid "Priority"
 msgstr "Priority"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
 msgstr "Private"
+
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Private · one machine per person"
+msgstr "Private · one machine per person"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Private Context"
 msgstr "Private Context"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Private: each person who talks to it gets their own machine, started on their first message. Shared: everyone reaches one machine."
+msgstr "Private: each person who talks to it gets their own machine, started on their first message. Shared: everyone reaches one machine."
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "problem"
@@ -25897,7 +25979,6 @@ msgstr "project"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
-#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/discover-page/DiscoverRow.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -28877,6 +28958,7 @@ msgstr "running"
 
 #: src/components/asset-counters/placement.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
@@ -30882,6 +30964,7 @@ msgstr "Several matches"
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
+#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -31023,6 +31106,7 @@ msgstr "Share with team"
 msgid "Share without project membership"
 msgstr "Share without project membership"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -31132,6 +31216,7 @@ msgstr "Sharing options"
 msgid "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
 msgstr "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
 
+#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Sharing…"
@@ -32004,6 +32089,10 @@ msgstr "Skipped: the automation was off"
 #: src/components/automations/automation-words.ts
 msgid "Skipped: the check before running found nothing"
 msgstr "Skipped: the check before running found nothing"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Slack"
+msgstr "Slack"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
@@ -34436,6 +34525,10 @@ msgstr "The wizard reported an error."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again."
 msgstr "The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again."
+
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "Their transcripts stay on disk."
+msgstr "Their transcripts stay on disk."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
 #~ msgid "Theme and sign-in screens are waiting"
@@ -37441,6 +37534,10 @@ msgstr "Waiting for your message…"
 #: src/journey/JourneyTray.tsx
 msgid "Waiting…"
 msgstr "Waiting…"
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Waking up…"
+msgstr "Waking up…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift."

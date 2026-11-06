@@ -8,7 +8,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId, type ProjectMenuNode } from '@sdk';
+import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -190,16 +190,20 @@ export function useAssetsModel() {
   // The dependency folders that hold documents — the menu nodes below the project's own
   // mount with markdown of their own. Under the Dependencies scope the Documents tree
   // lists exactly these folders' vaults: one with no documents would only read "Empty".
-  const dependencyRoots = useMemo(() => {
-    const mount = scopeProject?.fs_storage_mount_path ?? '';
-    const holdsDocs = (node: ProjectMenuNode) =>
-      (node.groups ?? []).some((g) => g.type_name === 'markdown' && g.own_count > 0);
-    return new Set(
-      Array.from(menuNodesByPath.entries())
-        .filter(([path, node]) => path && path !== mount && holdsDocs(node))
-        .map(([path]) => path),
-    );
-  }, [menuNodesByPath, scopeProject]);
+  // Keyed on CONTENT, so a menu refetch with the same folders keeps the Set's identity
+  // (and the tree roots built from it) stable.
+  const scopeMount = scopeProject?.fs_storage_mount_path ?? '';
+  const dependencyRootsKey = Array.from(menuNodesByPath.entries())
+    .filter(
+      ([path, node]) =>
+        path && path !== scopeMount && (node.groups ?? []).some((g) => g.type_name === 'markdown' && g.own_count > 0),
+    )
+    .map(([path]) => path)
+    .join('|');
+  const dependencyRoots = useMemo(
+    () => new Set(dependencyRootsKey ? dependencyRootsKey.split('|') : []),
+    [dependencyRootsKey],
+  );
 
   // The budgets this person may spend — read once here for the count badge; the tree
   // adapter and the body read the same cached answer.
@@ -292,7 +296,6 @@ export function useAssetsModel() {
     .join('|');
   // The dependency closure arrives with the (async) asset menu; under the
   // Dependencies scope it decides which vaults the root lists.
-  const dependencyRootsKey = Array.from(dependencyRoots).join('|');
   useEffect(() => {
     refreshNode('asset-type:markdown');
   }, [markdownVaultsKey, dependencyRootsKey]);

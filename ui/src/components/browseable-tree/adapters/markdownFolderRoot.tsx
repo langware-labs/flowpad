@@ -5,7 +5,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { documentsTreeType, isDocumentFilePath, isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import apiClient from '@sdk/client';
-import { RecordType, TypeId } from '@sdk';
+import { isPathUnderRoot, RecordType, TypeId } from '@sdk';
 import { subscribeToEntityOps } from '@sdk/FlowSync/entity-ops';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
 import { RagToggleGlyph } from '@src/components/rag/RagToggleGlyph';
@@ -383,7 +383,7 @@ function keepVault(v: AssetTypeVault, filter: AssetFilter, dependencyRoots?: Rea
 }
 
 function underAnyRoot(path: string, roots: ReadonlySet<string>): boolean {
-  for (const root of roots) if (path === root || path.startsWith(root + '/')) return true;
+  for (const root of roots) if (isPathUnderRoot(path, root)) return true;
   return false;
 }
 

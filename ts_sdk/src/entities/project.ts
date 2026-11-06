@@ -1736,7 +1736,17 @@ export interface ProjectDeployArgs {
   tokenAllocation?: AgentTokenAllocation | null;
   deploymentId?: string;
   values?: Record<string, Record<string, string>>;
+  /** `private`: every person who talks to the agent gets a machine of their own (the deploy plans a template). */
+  agentMode?: AgentMode;
+  /** The channels it answers on besides Flowpad messages, which always reach it. */
+  channels?: AgentChannel[];
+  /** Seconds without activity before a machine pauses. */
+  idlePauseSeconds?: number;
 }
+
+export type AgentMode = 'shared' | 'private';
+export const AGENT_CHANNELS = ['email', 'slack', 'chat_api'] as const;
+export type AgentChannel = (typeof AGENT_CHANNELS)[number];
 
 /** `GET project/<id>/deploy_defaults`. */
 export interface ProjectDeployDefaults {
@@ -1761,5 +1771,8 @@ function projectDeployBody(args: ProjectDeployArgs): Record<string, unknown> {
     ...(args.tokenAllocation !== undefined ? { token_allocation: args.tokenAllocation } : {}),
     ...(args.deploymentId ? { deployment_id: args.deploymentId } : {}),
     ...(args.values && Object.keys(args.values).length ? { values: args.values } : {}),
+    ...(args.agentMode ? { agent_mode: args.agentMode } : {}),
+    ...(args.channels ? { channels: args.channels } : {}),
+    ...(args.idlePauseSeconds ? { idle_pause_seconds: args.idlePauseSeconds } : {}),
   };
 }

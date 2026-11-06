@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useDeployProviders } from '@src/hooks/use-deploy-providers';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
+import { AgentModeFields, DEFAULT_AGENT_MODE, type AgentModeValue } from './AgentModeFields';
 import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeploymentSecretsGate } from './DeploymentSecretsGate';
 import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
@@ -131,6 +132,7 @@ export function NewDeploymentDialog({
   const [typed, setTyped] = useState<Record<string, string>>({});
   // `null`: unchecked — the deployed agent spends its owner's capped default.
   const [tokenAllocation, setTokenAllocation] = useState<AgentTokenAllocation | null>(null);
+  const [agentMode, setAgentMode] = useState<AgentModeValue>(DEFAULT_AGENT_MODE);
   const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
   // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
   // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
@@ -197,6 +199,9 @@ export function NewDeploymentDialog({
         mainAgentId,
         deploymentId: refused?.deployment.id,
         values: typedValues(needs, typed),
+        ...(mainAgentId
+          ? { agentMode: agentMode.mode, channels: agentMode.channels, idlePauseSeconds: agentMode.idleSeconds }
+          : {}),
       });
       // Taken on: the machine is placed in the background, after this answer.
       notify.info({ title: t`Deployment running in the background` });
@@ -383,6 +388,7 @@ export function NewDeploymentDialog({
                   <Trans>The agent that answers every call on this machine.</Trans>
                 </span>
               </div>
+              {mainAgentId && <AgentModeFields value={agentMode} onChange={setAgentMode} disabled={launching} />}
               <div className="flex flex-wrap items-center gap-2" data-testid="new-deployment-source">
                 <Label htmlFor="new-deployment-source-kind" className="text-xs">
                   <Trans>Source</Trans>

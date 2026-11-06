@@ -202,6 +202,11 @@ msgstr "› الرسائل"
 msgid "› Messages › from {from}"
 msgstr "› الرسائل › من {from}"
 
+#. placeholder {0}: pendingDelete.title
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "\"{0}\" — its transcript stays on disk."
+msgstr ""
+
 #. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
@@ -2419,6 +2424,11 @@ msgstr "🤖 الموجِّه - الاستعلام من الذكاء الاصط�
 msgid "$ per visitor"
 msgstr "$ لكل زائر"
 
+#. placeholder {0}: person.cap_usd_per_day
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "${0}/day"
+msgstr ""
+
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "${cost} · {sessions} sessions · {duration} active · {prompts} prompts"
 msgstr "${cost} · {sessions} جلسات · {duration} نشاط · {prompts} مطالبات"
@@ -3658,6 +3668,11 @@ msgstr "متقدم: حدود كل نافذة زمنية وسقوف المعدل 
 msgid "Advanced: per-window limits, rate caps and filters (view only)"
 msgstr "متقدم: حدود كل نافذة زمنية وسقوف المعدل والمرشحات (للعرض فقط)"
 
+#. placeholder {0}: seconds / 60
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "After {0} min idle"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/graph-workflows/panels/RunsPanel.tsx
@@ -3723,6 +3738,11 @@ msgstr ""
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Agent mailbox"
 msgstr "صندوق بريد الوكيل"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Agent mode"
+msgstr ""
 
 #~ msgid "Agent name"
 #~ msgstr "اسم الوكيل"
@@ -5444,6 +5464,10 @@ msgstr "إعادة ضبط التشغيل التلقائي"
 msgid "auto-login off"
 msgstr "تسجيل الدخول التلقائي معطّل"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Auto-pause"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Auto-send"
 msgstr "إرسال تلقائي"
@@ -6621,6 +6645,7 @@ msgstr "معرّف القناة (معرّف مصدر البيانات هناك)"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/asset-counters/channel-project-counters.tsx
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/inbound/InboundView.tsx
@@ -6669,6 +6694,10 @@ msgstr "الدردشة حول هذا الملف"
 #. placeholder {0}: workerLabel(worker)
 #: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Chat about this message with {0}"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Chat API"
 msgstr ""
 
 #: src/components/floating-chat/AssistantContextChips.tsx
@@ -8356,6 +8385,10 @@ msgstr ""
 msgid "context tokens"
 msgstr "رموز السياق"
 
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Context:"
+msgstr ""
+
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -9692,6 +9725,10 @@ msgstr "تعذر إعداد Git"
 msgid "Could not set up vault {vault}"
 msgstr ""
 
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Could not share"
+msgstr ""
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Could not share {projectName}"
@@ -10909,7 +10946,6 @@ msgstr "حذف"
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/data-sources/use-source-delete.ts
-#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/helpdesk/HelpdeskResetButton.tsx
@@ -11058,6 +11094,8 @@ msgstr ""
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Delete chat"
 msgstr "حذف المحادثة"
 
@@ -11212,8 +11250,8 @@ msgid "Delete this automation?"
 msgstr "هل ترغبون في حذف هذه الأتمتة؟"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
-msgid "Delete this chat"
-msgstr "حذف هذه المحادثة"
+#~ msgid "Delete this chat"
+#~ msgstr "حذف هذه المحادثة"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Delete this chat?"
@@ -12577,6 +12615,7 @@ msgstr "مستوى الجهد"
 msgid "Element"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/InboundView.tsx
@@ -14885,6 +14924,10 @@ msgstr "صندوق بريد Flowpad"
 msgid "Flowpad mailbox · only allowed senders reach {0}"
 msgstr "صندوق بريد Flowpad · لا يصل إلى {0} إلا المرسلون المسموح لهم"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Flowpad messages always reach it."
+msgstr ""
+
 #: src/components/launch-failure/LaunchFailureCard.tsx
 #~ msgid "Flowpad runs it without per-step prompts"
 #~ msgstr ""
@@ -15950,6 +15993,10 @@ msgstr "مكاتب المساعدة"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Help desks or skills repos to load alongside it."
 msgstr "مستودعات المساعدة أو المهارات المراد تحميلها معه."
+
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Help request"
+msgstr ""
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Help URL"
@@ -22164,6 +22211,10 @@ msgstr "لا يستطيع أحد تسجيل الدخول إلى هذه البي�
 msgid "Nobody has a budget in this team yet."
 msgstr "لم تُخصَّص ميزانية لأي عضو في هذا الفريق بعد."
 
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Nobody has talked to it yet — each person gets their own machine on their first message."
+msgstr ""
+
 #: src/components/organization/tabs/MembersTab.tsx
 msgid "Nobody here."
 msgstr ""
@@ -22554,6 +22605,10 @@ msgstr "غير مُعد للنشر"
 msgid "Not set up yet. Add your own provider key to start spending."
 msgstr ""
 
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Not shared"
+msgstr ""
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "not signed in"
 msgstr "غير مسجّل الدخول"
@@ -22581,6 +22636,10 @@ msgstr "لم يبدأ"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
 msgstr "لم يبدأ بعد"
+
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Not started · starts on first message"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Not started yet — its terminal appears when the deployment first runs."
@@ -23308,6 +23367,7 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
+#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
@@ -24121,6 +24181,10 @@ msgstr "فتح الملف المراقَب"
 msgid "Open the worker session already started for this spec/plan in this conversation"
 msgstr "فتح جلسة العمل المبدوءة بالفعل لهذه المواصفات/الخطة في هذه المحادثة"
 
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Open their threads"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 msgid "Open this agent's transcript"
 msgstr "فتح سجل حوار هذا الوكيل"
@@ -24212,6 +24276,10 @@ msgstr "OpenAI"
 #: src/components/account/secrets-section.tsx
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "OpenAI-style chat endpoint, called with the person's API key"
+msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "OpenCode"
@@ -24594,6 +24662,7 @@ msgstr "استبدال"
 msgid "Owner"
 msgstr "المالك"
 
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "owner default"
@@ -24918,6 +24987,10 @@ msgstr "متوقف مؤقتاً"
 #: src/components/data-sources/source-attention.ts
 msgid "Paused — nothing is fetched from this channel."
 msgstr "متوقف مؤقتًا — لا يُجلب شيء من هذه القناة."
+
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Paused · wakes on next message"
+msgstr ""
 
 #: src/components/data-sources/use-source-toggle.ts
 msgid "Paused."
@@ -25603,14 +25676,23 @@ msgstr "أساسي"
 msgid "Priority"
 msgstr "الأولوية"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
 msgstr "خاص"
+
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
+msgid "Private · one machine per person"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Private Context"
 msgstr "السياق الخاص"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Private: each person who talks to it gets their own machine, started on their first message. Shared: everyone reaches one machine."
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "problem"
@@ -25712,7 +25794,6 @@ msgstr "مشروع"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
-#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/discover-page/DiscoverRow.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -28670,6 +28751,7 @@ msgstr "قيد التشغيل"
 
 #: src/components/asset-counters/placement.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
@@ -30663,6 +30745,7 @@ msgstr "عدة تطابقات"
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
+#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -30803,6 +30886,7 @@ msgstr "مشاركة مع الفريق"
 msgid "Share without project membership"
 msgstr "مشاركة دون عضوية في المشروع"
 
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -30912,6 +30996,7 @@ msgstr "خيارات المشاركة"
 msgid "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
 msgstr "ترسل عملية المشاركة الملفات عبر Git كي يتمكن المستقبل من سحبها. لم يُعدّ {folderName} بعد مع Git."
 
+#: src/components/conversation/HelpRequestLine.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Sharing…"
@@ -31780,6 +31865,10 @@ msgstr "تم التخطي: الأتمتة كانت متوقفة"
 #: src/components/automations/automation-words.ts
 msgid "Skipped: the check before running found nothing"
 msgstr "تم التخطي: الفحص قبل التشغيل لم يجد شيئًا"
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Slack"
+msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
@@ -34192,6 +34281,10 @@ msgstr "أبلغ المعالج عن خطأ."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again."
 msgstr "خرج العامل فور تشغيله، لذا أُوقفت إعادة التشغيل التلقائي مؤقتًا. أعيدوا المحاولة لتشغيله مرة أخرى."
+
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "Their transcripts stay on disk."
+msgstr ""
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
 #~ msgid "Theme and sign-in screens are waiting"
@@ -37184,6 +37277,10 @@ msgstr ""
 #: src/journey/JourneyTray.tsx
 msgid "Waiting…"
 msgstr "في الانتظار…"
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Waking up…"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift."

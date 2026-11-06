@@ -53,6 +53,22 @@ def split_record_types(record_type: str) -> list[str]:
     return [t.strip() for t in record_type.split(",") if t.strip()]
 
 
+
+def _asset_ref_under_sql(roots, prefix: str, bindings: dict) -> str:
+    """SQL: the row's ``asset_ref`` is one of ``roots`` or lies beneath one (OR-joined;
+    ``""`` for no roots) — the twin of ``search_filters.under_dependency_root``.
+    ``substr`` rather than LIKE, so ``_``/``%`` in a path are not wildcards."""
+    parts = []
+    for i, root in enumerate(roots or ()):
+        key = f"{prefix}_{i}"
+        bindings[key] = root
+        bindings[f"{key}_slash"] = root + "/"
+        parts.append(
+            f"json_extract(data, '$.asset_ref') = :{key} OR "
+            f"substr(json_extract(data, '$.asset_ref'), 1, length(:{key}_slash)) = :{key}_slash"
+        )
+    return " OR ".join(parts)
+
 class TransactionHandler:
     pass
 
@@ -1125,16 +1141,8 @@ class SQLiteDBDriver(DBDriver):
         if keep_user:
             # Plain dependency folders index as user scope but belong to the project
             # depending on them — "Mine" leaves them out (mirrors apply_scope_filter).
-            excluded = []
-            for i, root in enumerate(getattr(scope, "user_excluded_roots", ()) or ()):
-                key = f"__sf_xu_{i}"
-                bindings[key] = root
-                bindings[f"{key}_slash"] = root + "/"
-                excluded.append(
-                    f"json_extract(data, '$.asset_ref') = :{key} OR "
-                    f"substr(json_extract(data, '$.asset_ref'), 1, length(:{key}_slash)) = :{key}_slash"
-                )
-            not_excluded = f" AND NOT (coalesce({' OR '.join(excluded)}, 0))" if excluded else ""
+            excluded = _asset_ref_under_sql(getattr(scope, "user_excluded_roots", ()), "__sf_xu", bindings)
+            not_excluded = f" AND NOT (coalesce({excluded}, 0))" if excluded else ""
             clauses.append(f"(json_extract(data, '$.scope') = 'user'{not_excluded})")
         if projects:
             placeholders = []
@@ -1154,14 +1162,9 @@ class SQLiteDBDriver(DBDriver):
         # Dependency folders (a `deps` scope): a row under one is in scope
         # whatever its stamp — mirrors `under_dependency_root`. `substr` rather
         # than LIKE, so `_`/`%` in a path are not wildcards.
-        for i, root in enumerate(getattr(scope, "dependency_roots", ()) or ()):
-            key = f"__sf_dep_{i}"
-            bindings[key] = root
-            bindings[f"{key}_slash"] = root + "/"
-            clauses.append(
-                f"(json_extract(data, '$.asset_ref') = :{key} OR "
-                f"substr(json_extract(data, '$.asset_ref'), 1, length(:{key}_slash)) = :{key}_slash)"
-            )
+        under_dependency = _asset_ref_under_sql(getattr(scope, "dependency_roots", ()), "__sf_dep", bindings)
+        if under_dependency:
+            clauses.append(f"({under_dependency})")
         # Without `user` and without any projects, only non-scoped record
         # types can still match via the empty-scope branch above.
         if not clauses:

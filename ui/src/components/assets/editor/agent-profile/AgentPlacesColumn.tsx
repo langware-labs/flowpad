@@ -10,6 +10,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { providerIcon, useAgentChannels } from '@src/components/agent-resources/AgentWebhooksSection';
 import { useAgentPlaces, type AgentPlace } from './use-agent-places';
 import { usePlaceDisplay } from './use-place-display';
+import { AgentPeopleList } from './AgentPeopleList';
 
 interface AgentPlacesColumnProps {
   agent: Agent;
@@ -110,6 +111,7 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
           })}
         </ul>
       )}
+      {wired?.deployments.some((d) => d.agent_mode === 'private') && <AgentPeopleList people={wired.people ?? []} />}
       {wired && (wired.webhooks.length > 0 || wired.connections.length > 0) && (
         <div className="flex flex-col gap-1.5" data-testid="agent-wiring">
           <h3 className="text-xs font-semibold text-muted-foreground">

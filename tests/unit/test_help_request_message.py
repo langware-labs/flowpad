@@ -252,3 +252,24 @@ async def test_a_receiver_reads_the_kind_from_the_carrier_the_hub_keeps():
     derive_help_request_kind(fm)
 
     assert fm.kind == FlowMessageKind.HELP_REQUEST
+
+
+async def test_a_desk_and_a_person_each_get_the_request_diagnosed_once(monkeypatch):
+    runs = []
+    real = afh.capture_context
+
+    async def counted(ask, recorded=None):
+        runs.append(ask.conversation_id)
+        return await real(ask, recorded)
+
+    monkeypatch.setattr(afh, "capture_context", counted)
+    ask = _ask(recipients=[{"kind": "desk", "desk_project_id": str(uuid.uuid4())}, {"kind": "person", "email": "dana@x.test"}])
+
+    response = await _call(afh.ask_for_help, ask)
+
+    (ticket_id,) = response.data["also"]
+    people = await Conversation.get_one({"id": ask["conversation_id"]})
+    ticket = await Conversation.get_one({"id": ticket_id})
+    assert people.members and str(getattr(ticket.kind, "value", ticket.kind)) == "helpdesk"
+    assert len(await _messages(people.id)) == 1 and len(await _messages(ticket.id)) == 1
+    assert len(runs) == 1, "one request is diagnosed once"

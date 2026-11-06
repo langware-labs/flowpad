@@ -9,6 +9,7 @@ silently dropped by ``/fs-records/search``.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field, replace
 
 SCOPED_RECORD_TYPES: frozenset[str] = frozenset({
@@ -135,8 +136,10 @@ def under_dependency_root(asset_ref: object, roots: tuple[str, ...]) -> bool:
     """True when ``asset_ref`` is one of ``roots`` or lies beneath one.
 
     The Python twin of the ``dependency_roots`` branch of ``_scope_sql_clause``."""
+    from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
     ref = str(asset_ref or "")
-    return bool(ref) and any(ref == root or ref.startswith(root + "/") for root in roots)
+    return bool(ref) and any(is_path_under(ref, root) for root in roots)
 
 
 def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
@@ -166,11 +169,12 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
     # an exemption) — drop it under an explicit ScopeFilter so search doesn't
     # leak half-classified rows.
     def _keep(e) -> bool:
-        if sf.dependency_roots and under_dependency_root(getattr(e, "asset_ref", None), sf.dependency_roots):
+        ref = getattr(e, "asset_ref", None)
+        if sf.dependency_roots and under_dependency_root(ref, sf.dependency_roots):
             return True
         s = (getattr(e, "scope", None) or "")
         if s == "user":
-            return sf.user and not under_dependency_root(getattr(e, "asset_ref", None), sf.user_excluded_roots)
+            return sf.user and not under_dependency_root(ref, sf.user_excluded_roots)
         if s in PROJECT_LIKE_SCOPES:
             pid = getattr(e, "project_id", None) or ""
             return pid in pid_set
@@ -358,14 +362,16 @@ async def resolve_project_scope(
             return getattr(fresh or proj, "context_dir_infos", None) or []
 
         by_mount = {mount_key(getattr(p, "fs_storage_mount_path", None)): p for p in projects}
-        frontier = [by_id[pid] for pid in _dedupe(entity_ids) if pid in by_id]
+        frontier = deque(by_id[pid] for pid in _dedupe(entity_ids) if pid in by_id)
         seen_projects = {str(p.id) for p in frontier}
+        seen_roots: set[str] = set()
         while frontier:
-            proj = frontier.pop(0)
+            proj = frontier.popleft()
             for info in await _links_of(proj):
                 root = mount_key(info.get("path"))
-                if not root or root in dependency_roots:
+                if not root or root in seen_roots:
                     continue
+                seen_roots.add(root)
                 dependency_roots.append(root)
                 provider = by_mount.get(root)
                 if provider is not None and str(provider.id) not in seen_projects:
@@ -384,15 +390,17 @@ async def resolve_project_scope(
         and resolved_dependency_roots == sf.dependency_roots
     ):
         return sf
-    return ScopeFilter(
-        user=sf.user,
+    return replace(
+        sf,
         projects=resolved_projects,
         record_projects=resolved_records,
         project_roots=resolved_roots,
-        deps=sf.deps,
         dependency_roots=resolved_dependency_roots,
-        user_excluded_roots=sf.user_excluded_roots,
     )
+
+
+# (cached project list it was computed from, its plain dependency roots)
+_PLAIN_ROOTS_MEMO: "tuple[list, tuple[str, ...]] | None" = None
 
 
 async def plain_dependency_roots() -> tuple[str, ...]:
@@ -400,12 +408,17 @@ async def plain_dependency_roots() -> tuple[str, ...]:
 
     A folder that IS a Project (or lies inside one) indexes as that project's
     content; only these plain folders index as user scope while belonging to the
-    project that depends on them. Cached project rows only — no DB or FS walk."""
+    project that depends on them. Computed once per cached project list — the
+    cache's own invalidation (a project created, a dependency link changed)
+    yields a new list and so a recompute; no DB or FS walk."""
+    global _PLAIN_ROOTS_MEMO
     from flow_sdk.builtin.project import mount_key  # noqa: PLC0415
     from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
 
     projects = await get_cached_projects()
+    if _PLAIN_ROOTS_MEMO is not None and _PLAIN_ROOTS_MEMO[0] is projects:
+        return _PLAIN_ROOTS_MEMO[1]
     mounts = [m for m in (mount_key(getattr(p, "fs_storage_mount_path", None)) for p in projects) if m]
     roots: list[str] = []
     for proj in projects:
@@ -413,7 +426,8 @@ async def plain_dependency_roots() -> tuple[str, ...]:
             root = mount_key(info.get("path"))
             if root and not any(is_path_under(root, m) for m in mounts):
                 roots.append(root)
-    return _dedupe(roots)
+    _PLAIN_ROOTS_MEMO = (projects, _dedupe(roots))
+    return _PLAIN_ROOTS_MEMO[1]
 
 
 def apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:

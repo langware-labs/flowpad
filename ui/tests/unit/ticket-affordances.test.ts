@@ -9,9 +9,9 @@ describe('ticketAffordances', () => {
     expect(ticketAffordances(base)).toEqual({ canPickup: true, canSettle: true });
   });
 
-  it('anyone in the ticket settles it but has nothing to pick up', () => {
+  it('staff in the ticket settle it; the person who asked has a conversation, nothing to settle', () => {
     expect(ticketAffordances({ ...base, isParticipant: true })).toEqual({ canPickup: false, canSettle: true });
-    expect(ticketAffordances({ ...base, isOwner: true })).toEqual({ canPickup: false, canSettle: true });
+    expect(ticketAffordances({ ...base, isOwner: true })).toEqual({ canPickup: false, canSettle: false });
   });
 
   it('a conversation that is not a ticket has neither button', () => {

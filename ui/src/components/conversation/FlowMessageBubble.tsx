@@ -41,6 +41,7 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
+  HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
 } from '@sdk/entities/flow-message';
@@ -56,6 +57,7 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { HelpRequestLine } from './HelpRequestLine';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
@@ -582,15 +584,23 @@ export function FlowMessageBubble({
   // is staged as a MessageAttachment (asset_type='file') and rides the same
   // download→review→install lifecycle as asset entities — no project gate:
   // review/install resolve their own target. Images never get a staged row.
-  const fileAttachments = (messageAttachments ?? []).filter((ma) => ma.asset_type === 'file');
+  // What the review lists: everything the message carries except a help request's own carrier (plumbing).
+  const reviewAttachments = (messageAttachments ?? []).filter((ma) => ma.name !== HELP_REQUEST_FILE);
+  const fileAttachments = reviewAttachments.filter((ma) => ma.asset_type === 'file');
   const stagedFileNames = new Set(fileAttachments.map((ma) => ma.name ?? ''));
   // The SENDER's own downloaded files have no staged MA row (staging happens on
   // receive/unpack). Render them ungated so the sender sees their file
   // immediately — open/reveal work off the local path, no project needed.
   const senderLocalFileItems = attachmentItems.filter(
     (i) =>
-      i.state === AttachmentChipState.Downloaded && !localImageItems.includes(i) && !stagedFileNames.has(i.filename),
+      i.state === AttachmentChipState.Downloaded &&
+      !localImageItems.includes(i) &&
+      !stagedFileNames.has(i.filename) &&
+      i.filename !== HELP_REQUEST_FILE,
   );
+  // Ask for help: the message names itself, and -- while its context waits on this computer -- says so.
+  const isHelpRequest =
+    fm.kind === FlowMessageKind.HELP_REQUEST || attachmentItems.some((i) => i.filename === HELP_REQUEST_FILE);
   // The "Download N" button must not re-count what's already surfaced without a
   // download: images shown inline above, and prompt entities (previewed in the
   // prompt row, materialized on Approve & Execute).
@@ -657,7 +667,7 @@ export function FlowMessageBubble({
                 )}
                 // The whole message's attachments — the review modal lists them
                 // all on the left, with the clicked chip pinned + selected.
-                siblingAttachments={messageAttachments}
+                siblingAttachments={reviewAttachments}
               />
             ))}
           </div>
@@ -671,7 +681,7 @@ export function FlowMessageBubble({
                 key={`file:${ma.id}`}
                 attachment={ma}
                 projectId={attachmentProjectId}
-                siblingAttachments={messageAttachments}
+                siblingAttachments={reviewAttachments}
               />
             ))}
           </div>
@@ -792,6 +802,9 @@ export function FlowMessageBubble({
           answererName={fm.sender_name || t`They`}
           canChange={isCurrentUser && formAnswers.latest}
         />
+      )}
+      {isHelpRequest && (
+        <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />
       )}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (

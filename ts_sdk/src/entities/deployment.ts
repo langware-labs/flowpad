@@ -127,6 +127,13 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   /** Credential environment: `development` (this computer) or a named one (`production`, `staging`, …). */
   environment?: string;
   llm_endpoint_typeid?: string;
+  /** `private`: a template; each person who talks to the agent gets their own placement of it. */
+  agent_mode?: 'shared' | 'private';
+  channels?: string[];
+  idle_pause_seconds?: number | null;
+  /** On a person's placement: the private template it was made from, and whose it is. */
+  template_deployment_id?: string | null;
+  person_key?: string | null;
 }
 
 // `implements IDeployment` only checks the class; it contributes no members, so every
@@ -287,6 +294,11 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   environment: string;
   /** Its own token allocation on the hub (an `llm_endpoint` typeid); '' = its agent spends its owner's default. */
   llm_endpoint_typeid: string;
+  agent_mode: 'shared' | 'private';
+  channels: string[];
+  idle_pause_seconds: number | null;
+  template_deployment_id: string | null;
+  person_key: string | null;
 
   constructor(entity: Partial<IDeployment> | IEntity = {}) {
     super(entity);
@@ -325,6 +337,11 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     this.project_id = deployment.project_id ?? null;
     this.environment = deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT;
     this.llm_endpoint_typeid = deployment.llm_endpoint_typeid ?? '';
+    this.agent_mode = deployment.agent_mode ?? 'shared';
+    this.channels = deployment.channels ?? [];
+    this.idle_pause_seconds = deployment.idle_pause_seconds ?? null;
+    this.template_deployment_id = deployment.template_deployment_id ?? null;
+    this.person_key = deployment.person_key ?? null;
     this.validateStructure();
   }
 
