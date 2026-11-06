@@ -13,6 +13,7 @@ import { useEffect, useRef } from 'react';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
 import { IncomingTaskDialog } from './IncomingTaskDialog';
 import { LaunchDialog } from './LaunchDialog';
+import { useOfferSharedProjectSetUpOnOpen } from './use-shared-project-set-up';
 import { LAUNCH_ACTION, LAUNCH_PARAMS, launchPlanFromParams } from '@src/pages/entry/launch-plan';
 import { closeLaunch, openLaunch, useLaunchStore } from './launch-store';
 
@@ -115,6 +116,7 @@ export function IncomingDeepLink() {
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
   const launchPlan = useLaunchStore((state) => state.payload);
   useAnnounceNewCloudProjects();
+  useOfferSharedProjectSetUpOnOpen();
 
   useEffect(() => {
     const params = inboundParams();

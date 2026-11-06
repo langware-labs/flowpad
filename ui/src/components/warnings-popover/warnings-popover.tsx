@@ -7,7 +7,6 @@ import { useDockNavigation } from '@src/navigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext, useWarnings } from '@sdk/react/hooks';
 import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-setup-incomplete-warning';
-import { useSharedProjectWarnings } from '@src/components/task-receive/use-shared-project-warnings';
 import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
 import { notificationText, runAction, runCommand, useAlertStore, useDiagnoseErrorStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
@@ -30,6 +29,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { create } from 'zustand';
 
 // Map icon names to Lucide components
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -123,19 +123,38 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+/** A dismissed warning is hidden until it says something else — another project, another count —
+ *  so the key is its text, not only its id. */
+const dismissKey = (w: UserWarning) => `${w.id}\n${w.message}\n${w.description ?? ''}`;
+
+/** Warnings dismissed this app session, as id → the text dismissed (new text replaces it, so it
+ *  stays one entry per warning). Module-level: every layout mounts its own footer, and a dismissal
+ *  must survive switching between them. */
+const useDismissedWarnings = create<{ keys: ReadonlyMap<string, string>; dismiss: (warnings: UserWarning[]) => void }>(
+  (set) => ({
+    keys: new Map(),
+    dismiss: (warnings) =>
+      set((s) => ({ keys: new Map([...s.keys, ...warnings.map((w) => [w.id, dismissKey(w)] as const)]) })),
+  }),
+);
+
 interface WarningItemProps {
   warning: UserWarning;
   onClick: () => void;
   /** The warning's own button (`warning.action`), already wired to close the popover. */
   onAction: () => void;
+  onDismiss: () => void;
 }
 
 /**
  * A derived warning — it describes a condition that is true right now
- * (cloud down, no harness, sniffer on). Deliberately NOT dismissible: it goes
- * away when the condition does. Only the logged alerts below can be dismissed.
+ * (cloud down, no harness, sniffer on), and goes away when the condition does.
+ * Dismissing it hides it for this session, until it says something else.
  */
-function WarningItem({ warning, onClick, onAction }: WarningItemProps) {
+function WarningItem({ warning, onClick, onAction, onDismiss }: WarningItemProps) {
+  const { t } = useLingui();
+  // Named like AlertItem's placeholder, so both rows share one translated "Dismiss …".
+  const alertTitle = warning.message;
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
 
@@ -172,10 +191,16 @@ function WarningItem({ warning, onClick, onAction }: WarningItemProps) {
           subject={{ level: 'warning', title: warning.message, message: warning.description }}
           className={DIAGNOSE_BTN_CLASS}
         />
-        {/* A derived warning is never dismissible, but its neighbours are: hold
-            the empty dismiss slot so the stethoscope lands in the same top-right
-            column on every row, warning and error alike. */}
-        <span className="h-6 w-6 shrink-0" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={onDismiss}
+          className={ICON_BTN_CLASS}
+          title={t`Dismiss`}
+          aria-label={t`Dismiss ${alertTitle}`}
+          data-testid="warnings-popover-warning-dismiss"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );
@@ -269,14 +294,22 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
 export function WarningsPopover() {
   const { warnings: derivedWarnings } = useWarnings();
   const setupWarning = useSetupIncompleteWarning();
-  const sharedProjectWarnings = useSharedProjectWarnings();
+  const dismissedKeys = useDismissedWarnings((s) => s.keys);
+  const dismissWarnings = useDismissedWarnings((s) => s.dismiss);
   const warnings = useMemo(
-    () => [...derivedWarnings, ...(setupWarning ? [setupWarning] : []), ...sharedProjectWarnings],
-    [derivedWarnings, setupWarning, sharedProjectWarnings],
+    () =>
+      [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])].filter(
+        (w) => dismissedKeys.get(w.id) !== dismissKey(w),
+      ),
+    [derivedWarnings, setupWarning, dismissedKeys],
   );
   const alerts = useAlertStore((s) => s.alerts);
   const dismissAlert = useAlertStore((s) => s.dismiss);
   const dismissAllAlerts = useAlertStore((s) => s.dismissAll);
+  const dismissAll = useCallback(() => {
+    dismissWarnings(warnings);
+    dismissAllAlerts();
+  }, [dismissWarnings, warnings, dismissAllAlerts]);
   const { navigation } = useDockNavigation();
   const { project } = useContext();
   const [open, setOpen] = useState(false);
@@ -350,18 +383,14 @@ export function WarningsPopover() {
           <p className="text-xs font-medium text-muted-foreground">
             {total} {total === 1 ? 'Warning' : 'Warnings'}
           </p>
-          {/* Only the logged alerts are dismissible, so the bulk action is
-              offered only when there is at least one. */}
-          {alerts.length > 0 && (
-            <button
-              type="button"
-              onClick={dismissAllAlerts}
-              className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              data-testid="warnings-popover-dismiss-all"
-            >
-              <Trans>Dismiss all</Trans>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={dismissAll}
+            className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            data-testid="warnings-popover-dismiss-all"
+          >
+            <Trans>Dismiss all</Trans>
+          </button>
         </div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
           {warnings.map((warning) => (
@@ -373,6 +402,7 @@ export function WarningsPopover() {
                 warning.action?.onClick();
                 setOpen(false);
               }}
+              onDismiss={() => dismissWarnings([warning])}
             />
           ))}
           {alerts.map((alert) => (

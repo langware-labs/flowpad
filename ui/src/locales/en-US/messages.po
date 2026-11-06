@@ -1740,8 +1740,8 @@ msgid "{name} is listening."
 msgstr "{name} is listening."
 
 #: src/components/task-receive/use-shared-project-warnings.ts
-msgid "{name} is not set up on this machine"
-msgstr "{name} is not set up on this machine"
+#~ msgid "{name} is not set up on this machine"
+#~ msgstr "{name} is not set up on this machine"
 
 #: src/hooks/use-rag-roots.tsx
 msgid "{name} is ready to search"
@@ -2809,7 +2809,7 @@ msgstr "a server already on this machine"
 msgid "a server someone else hosts"
 msgstr "a server someone else hosts"
 
-#: src/components/task-receive/use-shared-project-warnings.ts
+#: src/components/task-receive/use-shared-project-set-up.ts
 msgid "a shared project"
 msgstr "a shared project"
 
@@ -11923,9 +11923,11 @@ msgstr "Disk I/O backend"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
 
+#: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Dismiss {alertTitle}"
 msgstr "Dismiss {alertTitle}"
@@ -17496,8 +17498,8 @@ msgid "It was not written."
 msgstr "It was not written."
 
 #: src/components/task-receive/use-shared-project-warnings.ts
-msgid "It was shared with you, but its files are not here yet."
-msgstr "It was shared with you, but its files are not here yet."
+#~ msgid "It was shared with you, but its files are not here yet."
+#~ msgstr "It was shared with you, but its files are not here yet."
 
 #. placeholder {0}: WHERE[state.mode]()
 #: src/components/links/LinkMenu.tsx
@@ -17528,9 +17530,13 @@ msgstr "Its budget is not shared with you."
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Its files are not on this machine yet"
+msgstr "Its files are not on this machine yet"
+
 #: src/components/task-receive/use-shared-project-warnings.ts
-msgid "Its files are on another machine, not here yet."
-msgstr "Its files are on another machine, not here yet."
+#~ msgid "Its files are on another machine, not here yet."
+#~ msgstr "Its files are on another machine, not here yet."
 
 #: src/components/assets/editor/GitConnectionRequiredCard.tsx
 msgid "Its files live in git, and it is not linked to a repository yet. Publish it from the FlowPad desktop app to view and edit it here."
@@ -23406,6 +23412,7 @@ msgstr "Oops! Page not found"
 #: src/components/runs/RunPreviewRoot.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 #: src/components/wiki-tip/WikiLabel.tsx
 #: src/components/workers/ContextWorkerToolbar.tsx
@@ -24221,6 +24228,10 @@ msgstr "Open this deployment's workspace in a new tab"
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Open this endpoint on the hub"
 msgstr "Open this endpoint on the hub"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Open this file in its editor"
+msgstr "Open this file in its editor"
 
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "open this flow's full run history"
@@ -30504,7 +30515,6 @@ msgstr "Set public"
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
-#: src/components/task-receive/use-shared-project-warnings.ts
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -30899,6 +30909,7 @@ msgstr "Share without project membership"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "Shared"
 msgstr "Shared"
 
@@ -32028,6 +32039,14 @@ msgstr "Something went wrong. Please try again."
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Somewhere else"
 msgstr "Somewhere else"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Sort by added lines"
+msgstr "Sort by added lines"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Sort by removed lines"
+msgstr "Sort by removed lines"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"

@@ -4,7 +4,7 @@ import { CopyButton } from '@src/components/ui/copy-button';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { canonicalPath } from '@src/components/project-selector';
-import { projectOriginOf } from '@sdk/models/FSOrigin';
+import { sharedProjectSetUpOf } from '@src/components/task-receive/use-shared-project-set-up';
 import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
@@ -660,25 +660,23 @@ export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
  * nothing pops up on its own.
  */
 function SharedProjectRows() {
+  const { t } = useLingui();
   const { projects } = useProjects();
   const setPendingProject = useIncomingProjectStore((s) => s.setPendingProject);
   const ProjectIcon = iconForType(Project.type);
   if (!canSetUpProjects(dataContext.caps)) return null;
   const rows = (projects ?? []).flatMap((project) => {
-    if (project.fs_storage_mount_path || isHiddenProject(project)) return [];
-    const gitOrigin = projectOriginOf(project);
-    return gitOrigin ? [{ project, gitOrigin }] : [];
+    const setUp = sharedProjectSetUpOf(project, t`Shared`);
+    return setUp ? [{ project, setUp }] : [];
   });
   if (!rows.length) return null;
   return (
     <ul>
-      {rows.map(({ project, gitOrigin }) => (
+      {rows.map(({ project, setUp }) => (
         <li key={project.id}>
           <button
             type="button"
-            onClick={() =>
-              setPendingProject({ gitOrigin, projectName: project.name || 'Shared', projectId: project.id })
-            }
+            onClick={() => setPendingProject(setUp)}
             className="flex w-full items-center gap-2 rounded py-1.5 pe-1 ps-2 text-left text-sm hover:bg-muted"
             data-testid={`project-shared-new-${project.id}`}
           >

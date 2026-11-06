@@ -1730,8 +1730,8 @@ msgid "{name} is listening."
 msgstr "{name} מאזין."
 
 #: src/components/task-receive/use-shared-project-warnings.ts
-msgid "{name} is not set up on this machine"
-msgstr "{name} לא הוגדר במחשב הזה"
+#~ msgid "{name} is not set up on this machine"
+#~ msgstr "{name} לא הוגדר במחשב הזה"
 
 #: src/hooks/use-rag-roots.tsx
 msgid "{name} is ready to search"
@@ -2793,7 +2793,7 @@ msgstr "שרת שכבר רץ במחשב הזה"
 msgid "a server someone else hosts"
 msgstr "שרת שמארח מישהו אחר"
 
-#: src/components/task-receive/use-shared-project-warnings.ts
+#: src/components/task-receive/use-shared-project-set-up.ts
 msgid "a shared project"
 msgstr "פרויקט משותף"
 
@@ -11857,9 +11857,11 @@ msgstr "מנוע קלט/פלט לדיסק"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Dismiss"
 msgstr "סגרו"
 
+#: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Dismiss {alertTitle}"
 msgstr "סגירת {alertTitle}"
@@ -17382,8 +17384,8 @@ msgid "It was not written."
 msgstr ""
 
 #: src/components/task-receive/use-shared-project-warnings.ts
-msgid "It was shared with you, but its files are not here yet."
-msgstr "הפרויקט שותף איתכם, אך הקבצים שלו עדיין לא הגיעו לכאן."
+#~ msgid "It was shared with you, but its files are not here yet."
+#~ msgstr "הפרויקט שותף איתכם, אך הקבצים שלו עדיין לא הגיעו לכאן."
 
 #. placeholder {0}: WHERE[state.mode]()
 #: src/components/links/LinkMenu.tsx
@@ -17414,9 +17416,13 @@ msgstr ""
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "התוכן שלו נראה כנתונים בינאריים (לדוגמה תמונה), ולכן לא ניתן להציג אותו בעורך."
 
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Its files are not on this machine yet"
+msgstr "הקבצים שלו עדיין לא נמצאים במחשב הזה"
+
 #: src/components/task-receive/use-shared-project-warnings.ts
-msgid "Its files are on another machine, not here yet."
-msgstr ""
+#~ msgid "Its files are on another machine, not here yet."
+#~ msgstr ""
 
 #: src/components/assets/editor/GitConnectionRequiredCard.tsx
 msgid "Its files live in git, and it is not linked to a repository yet. Publish it from the FlowPad desktop app to view and edit it here."
@@ -23235,6 +23241,7 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/runs/RunPreviewRoot.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 #: src/components/wiki-tip/WikiLabel.tsx
 #: src/components/workers/ContextWorkerToolbar.tsx
@@ -24046,6 +24053,10 @@ msgstr "פתיחת סביבת העבודה של הפריסה בכרטיסייה 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Open this endpoint on the hub"
 msgstr "פתחו את נקודת הקצה הזו ב-Hub"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Open this file in its editor"
+msgstr ""
 
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "open this flow's full run history"
@@ -30284,7 +30295,6 @@ msgstr "הפכו לציבורי"
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
-#: src/components/task-receive/use-shared-project-warnings.ts
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -30675,6 +30685,7 @@ msgstr "שתפו בלי חברות בפרויקט"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/terminal/project-list-menu.tsx
 msgid "Shared"
 msgstr "משותף"
 
@@ -31799,6 +31810,14 @@ msgstr "משהו השתבש. נסו שוב."
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Somewhere else"
 msgstr "במקום אחר"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Sort by added lines"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Sort by removed lines"
+msgstr ""
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"
