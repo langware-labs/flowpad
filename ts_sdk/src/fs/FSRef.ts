@@ -32,6 +32,11 @@ export class FSRef {
     this.readOnly = readOnly;
   }
 
+  /** The entity a file watch names this file by (`DocumentRef.watchId`). */
+  get watchId(): TypeId {
+    return this.typeId;
+  }
+
   /**
    * The local compute node that can service OS- and Git-specific file actions.
    *
