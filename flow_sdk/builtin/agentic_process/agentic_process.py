@@ -7230,7 +7230,7 @@ class AgenticProcess(Entity):
         if self.status == ProcessStatus.FAILED.value:
             return WorkerStatus.ERROR
         t0 = time.monotonic()
-        discovered = self._discover_status_from_transcript()
+        discovered = transcript_cache.terminal_status(self, self._discover_status_from_transcript)
         took_ms = (time.monotonic() - t0) * 1000
         # Synchronous file discovery on the event loop, run for EVERY process a
         # response serializes: a list of N processes stalls the loop N times this.

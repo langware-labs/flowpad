@@ -300,6 +300,9 @@ class Conversation(ProjectedFields, Entity):
     # Local recency (``project_pointers_to_entity``, from the messages' own clocks): the hub
     # re-stamps its ``updated_date`` on bare touches, so it is never adopted as this — the hub
     # clock is ``hub_updated_date``.
+    # When this conversation's plan sessions were last linked into its context (``index-plan-sessions``):
+    # sessions started before the link existed are found once, then never searched for again.
+    plan_sessions_indexed_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     updated_date: Optional[datetime] = APIField(None, sharing=Sharing.PRIVATE)
     # The staffers who picked a helpdesk ticket up (user ids); the hub computes it.
     picked_up_by: List[str] = APIField(default_factory=list, sharing=Sharing.HUB_READ)

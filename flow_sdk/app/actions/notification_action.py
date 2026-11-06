@@ -501,6 +501,9 @@ async def _link_message_into_context_entities(
 #: The sidecar on a conversation's context entry that marks a process as THE conversation's session
 #: (a session it was started from or that wrote into it) — not a session shared as an attachment.
 SESSION_ROLE = {"role": "session"}
+#: The sidecar that marks a linked process as a message's plan-implementation session, with the message it
+#: implements (``message_id``). Mirrors the frontend ``PLAN_ROLE``.
+PLAN_ROLE = {"role": "plan"}
 
 
 async def link_origin_session(
@@ -531,6 +534,35 @@ async def link_origin_session(
     except Exception as e:  # noqa: BLE001
         logger.warning("[link_origin_session] %s → conversation %s failed (non-fatal): %s",
                        process_id, conversation_id, e, exc_info=True)
+
+
+@action.post(action_name="index-plan-sessions", types=["conversation"])
+async def index_plan_sessions(self: Conversation) -> ApiResponse:
+    """Link this thread's plan sessions that predate the ``PLAN_ROLE`` link, once; the stamp keeps it from rerunning.
+    A process the conversation already gives a role (its own session) keeps that role."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+    if self.plan_sessions_indexed_at is not None:
+        return ApiSuccessResponse(data={"linked": 0, "indexed_at": self.plan_sessions_indexed_at})
+    thread = {ref.id for ref in self.message_refs()}
+    linked = 0
+    if thread:
+        # One pattern, not one per message: the few visible processes naming any message, narrowed below.
+        match = {"op": "$AND", "operands": [
+            {"op": "$EQ", "operands": ["visible", True]},
+            {"op": "$LIKE", "operands": ["shared_context_entities", "flow_message-"]},
+        ]}
+        for proc in await AgenticProcess.get_all(QueryFilter.parse({"match": match}, AgenticProcess.get_type())):
+            tid = TypeId(f"agentic_process-{proc.id}")
+            message_id = next((t.id for t in proc.shared_context_entities if t.type == "flow_message" and t.id in thread), None)
+            if message_id and not self.get_context_entry_data(tid) and self.add_shared_context_entities(
+                tid, data={**PLAN_ROLE, "message_id": message_id}
+            ):
+                linked += 1
+    self.plan_sessions_indexed_at = datetime.now(timezone.utc)
+    await self.save()
+    return ApiSuccessResponse(data={"linked": linked, "indexed_at": self.plan_sessions_indexed_at})
 
 
 def message_header_kwargs(reply_fm: "FlowMessage") -> dict:

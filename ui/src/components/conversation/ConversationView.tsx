@@ -387,6 +387,7 @@ export function ConversationView({
   const { runImplementPlan, openPlanSession } = useImplementPlan({
     task,
     conversationId,
+    conversation,
     pointers,
     ensureMapped,
   });
