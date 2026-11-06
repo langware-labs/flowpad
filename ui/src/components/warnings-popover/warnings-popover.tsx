@@ -9,9 +9,10 @@ import { useContext, useWarnings } from '@sdk/react/hooks';
 import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-setup-incomplete-warning';
 import { useSharedProjectWarnings } from '@src/components/task-receive/use-shared-project-warnings';
 import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
-import { notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
+import { notificationText, runAction, runCommand, useAlertStore, useDiagnoseErrorStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
 import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
+import type { DiagnoseKind } from '@src/notifications/diagnose/diagnose-error-store';
 import { ErrorDetailsButton } from '@src/notifications/ErrorDetailsDialog';
 import {
   AlertCircle,
@@ -191,6 +192,8 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
   const alertTitle = alert.title;
   const colors = colorMap[ALERT_COLOR[alert.level]] || colorMap.yellow;
   const Icon = alert.level === 'error' ? AlertCircle : AlertTriangle;
+  const openDiagnose = useDiagnoseErrorStore((s) => s.open);
+  const text = alert.fixed?.summary ?? alert.message;
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-alert">
@@ -199,28 +202,55 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">{alert.title}</p>
-        {alert.message && <p className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{alert.message}</p>}
-        <div className="mt-2 flex flex-wrap gap-2">
-          {(alert.actions ?? []).map((action, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => runAction(action, alert.id)}
-              className={`rounded px-2 py-1 text-xs font-medium ${
-                i === 0
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              }`}
+        {text && <p className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{text}</p>}
+        {alert.fixed ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-medium text-green-400"
+              data-testid="warnings-popover-fixed"
             >
-              {action.label}
+              ✓ <Trans>Fixed</Trans>
+            </span>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700"
+              data-testid="warnings-popover-done"
+            >
+              <Trans>Done — remove</Trans>
             </button>
-          ))}
-          <ErrorDetailsButton data={alert} />
-        </div>
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {(alert.actions ?? []).map((action, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => runAction(action, alert.id)}
+                className={`rounded px-2 py-1 text-xs font-medium ${
+                  i === 0
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                {action.label}
+              </button>
+            ))}
+            <ErrorDetailsButton data={alert} />
+            {/* The log holds only warnings and errors, both diagnosable. */}
+            <button
+              type="button"
+              onClick={() => openDiagnose(notificationText(alert), alert.level as DiagnoseKind, alert.id)}
+              className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              data-testid="warnings-popover-diagnose-fix"
+            >
+              <Trans>Diagnose &amp; fix</Trans>
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex shrink-0 items-start gap-0.5">
         <CopyButton text={notificationText(alert)} />
-        <DiagnoseIconButton subject={alert} className={DIAGNOSE_BTN_CLASS} />
         <button
           type="button"
           onClick={onDismiss}

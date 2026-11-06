@@ -27,6 +27,8 @@ import { connectionManager } from '@sdk/websocket';
 import { isTerminal, type ActivityProgressSpec } from '@sdk/activity';
 import { useEffect, useSyncExternalStore } from 'react';
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
+import { raiseActivityErrors } from '@src/notifications/activity-errors';
+import { errorsInTree } from '@src/components/footer/activity-one-liner';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 
 /** The FlowData element activity snapshots ride, shared with older progress payloads. */
@@ -113,6 +115,14 @@ export function handleActivitySnapshot(spec: ActivityProgressSpec): void {
 
   specs.set(k, spec);
   sortKeys.set(k, Date.parse(spec.updated_at ?? spec.started_at ?? '') || 0);
+
+  if (isTerminal(spec) && errorsInTree(spec) > 0) {
+    // Finished with errors: they move to the warnings list, one entry each, and the root
+    // leaves the footer — a red pill that never goes away is not a place to act on them.
+    raiseActivityErrors(spec);
+    forget(k);
+    return;
+  }
 
   if (isTerminal(spec)) {
     receipt = spec;

@@ -16,7 +16,9 @@ interface DiagnoseErrorState {
   kind: DiagnoseKind;
   /** The window is showing a run started elsewhere ("Check first"), with nothing to seed it. */
   watching: boolean;
-  open: (detail: string, kind: DiagnoseKind) => void;
+  /** The warnings-list entry being diagnosed, so a fix can be marked on it. */
+  alertId: string | null;
+  open: (detail: string, kind: DiagnoseKind, alertId?: string) => void;
   watch: () => void;
   close: () => void;
 }
@@ -25,7 +27,8 @@ export const useDiagnoseErrorStore = create<DiagnoseErrorState>((set) => ({
   detail: null,
   kind: 'error',
   watching: false,
-  open: (detail, kind) => set({ detail, kind }),
-  watch: () => set({ detail: null, watching: true }),
-  close: () => set({ detail: null, watching: false }),
+  alertId: null,
+  open: (detail, kind, alertId) => set({ detail, kind, alertId: alertId ?? null }),
+  watch: () => set({ detail: null, watching: true, alertId: null }),
+  close: () => set({ detail: null, watching: false, alertId: null }),
 }));

@@ -29,10 +29,12 @@ from flow_sdk.fs_store.gitignore import FlowIgnore
 from flow_sdk.fs_store.indexer.progress_table import (
     PROGRESS_TEXT_COMPLETE,
     SWEEP_ROW_NAME,
+    ErrorSample,
     IndexProgressTable,
     TypeProgressRow,
 )
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from flow_sdk.schema.data_spec.activity_spec import MAX_ERROR_SAMPLE
 from flow_sdk.fs_store.path_owners import PathOwnerIndex
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import PROJECT_LIKE_SCOPES, SCOPED_RECORD_TYPES, ScopeFilter
@@ -776,6 +778,7 @@ class FSIndexer:
             rt: {
                 "indexed": 0,
                 "errors": 0,
+                "error_samples": [],
                 "duration_ms": 0.0,
                 "skipped": 0,
                 # Files parsed this run. ``indexed`` counts RECORDS, and one file can
@@ -809,6 +812,7 @@ class FSIndexer:
                         total=total,
                         errors=int(acc["errors"]),
                         skipped=int(acc["skipped"]),
+                        error_samples=tuple(acc["error_samples"]),
                     )
                 )
             rows.sort(key=lambda r: -r.total)
@@ -952,6 +956,15 @@ class FSIndexer:
             await _commit_batch()
             await yield_to_waiting_writers()
 
+        # Why a ref's identity probe failed, by path — the probe runs in a thread and
+        # returns ref_id=None; the loop below turns that into a counted, NAMED error.
+        probe_errors: dict[str, str] = {}
+
+        def _note_error(acc: dict[str, Any], ref: FSRef, message: str, code: str) -> None:
+            acc["errors"] += 1
+            if len(acc["error_samples"]) < MAX_ERROR_SAMPLE:
+                acc["error_samples"].append(ErrorSample(ref=str(ref._path), message=message, code=code))
+
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
         ) -> list[tuple[FSRef, Any, str | None, FSRecord | None, bool, str]]:
@@ -982,6 +995,7 @@ class FSIndexer:
                         ref.record_type,
                         e,
                     )
+                    probe_errors[str(ref._path)] = str(e)
                     ref_id = None
                     probe = None
                     fresh = False
@@ -1088,7 +1102,7 @@ class FSIndexer:
                     continue
 
                 if ref_id is None or probe is None:
-                    acc["errors"] += 1
+                    _note_error(acc, ref, probe_errors.pop(str(ref._path), "could not resolve identity"), "index.identity")
                     acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     await progress.emit()
                     continue
@@ -1194,8 +1208,8 @@ class FSIndexer:
                     # only after the row commits — defer to the post-commit
                     # stamp below so a crash before commit leaves no sentinel.
                     _pending_hashes.append(probe)
-                except Exception:
-                    acc["errors"] += 1
+                except Exception as e:
+                    _note_error(acc, ref, str(e), "index.parse")
                     # Make failures observable, but cap the full traceback to
                     # the first few per type so a pathological tree (thousands
                     # of unparseable files) can't flood the log; the one-line
