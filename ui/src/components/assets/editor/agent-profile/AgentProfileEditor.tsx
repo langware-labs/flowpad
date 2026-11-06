@@ -10,6 +10,8 @@ import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { RoleChip, useItemTime } from '@src/components/items/ItemCard';
+import { roleOf } from '@src/components/items/role';
 import { AgentAvatarPicker } from '@src/components/ui/agent-avatar-picker';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { prepareAvatarImage } from '@src/lib/prepare-avatar-image';
@@ -88,7 +90,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const contentRef = useRef(content);
   contentRef.current = content;
   const profile = content.typedFields as Partial<Agent>;
-  const title = content.fields.title ?? '';
+  // A hub serves no agent document, so its draft title is empty: the agent's own name is the title then.
+  const title = content.fields.title || (hub || content.loadError ? agent.displayName : '') || '';
+  const agentTime = useItemTime({ date: agent.updated_date });
   const description = content.fields.description ?? '';
   const prompt = content.body;
   const intro = content.fields.intro ?? '';
@@ -305,6 +309,9 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
           >
             {hub ? (
               <Trans>Published version — edit it on the author's computer</Trans>
+            {/* The same role chip and time line as the agent's card (components/items). */}
+            <RoleChip role={roleOf(agent)} />
+            {agentTime && <span data-testid="item-time">{agentTime}</span>}
             ) : !version ? null : version.published ? (
               <span>
                 <Trans>Published</Trans>

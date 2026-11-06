@@ -1,7 +1,8 @@
-import { TypeId } from '@sdk';
+import { Issue, TypeId } from '@sdk';
+import { IssueView } from '@src/components/items/IssueView';
 import { useEntity } from '@sdk/react/hooks';
 import { MarkdownView } from '@src/components/markdown-view';
-import { useMemo } from 'react';
+import { useMemo, type ComponentType } from 'react';
 import { Trans } from '@lingui/react/macro';
 
 /**
@@ -17,11 +18,19 @@ import { Trans } from '@lingui/react/macro';
  * URL: /dock/hub/entity/<type>/<id>
  */
 
+/** Types with a page of their own; every other type gets the generic title + body view. */
+const OWN_VIEWS: Record<string, ComponentType<{ id: string }>> = { [Issue.type]: IssueView };
+
 // First non-empty string field is treated as the body. Order = most→least specific.
 const CONTENT_FIELDS = ['description', 'raw_content', 'content', 'text', 'body'];
 
 export function HubEntityView({ pointer }: { pointer?: string }) {
   const [type, id] = (pointer || '').split('/');
+  const Own = type && id ? OWN_VIEWS[type] : undefined;
+  return Own ? <Own id={id} /> : <GenericEntityView type={type} id={id} />;
+}
+
+function GenericEntityView({ type, id }: { type?: string; id?: string }) {
   const typeId = useMemo(() => (type && id ? new TypeId(type, id) : null), [type, id]);
 
   // Generic entity load — the concrete type is data-driven, so cast loosely.

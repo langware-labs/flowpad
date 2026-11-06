@@ -7,6 +7,10 @@ import { useProjectAgents } from '@src/hooks/use-project-agents';
 import { useMemo } from 'react';
 import { crossCounters, useScopes } from './axes';
 import { isLiveDeployment, isRunning, runPauseStatuses } from './placement';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import type { ItemCardValue } from '@src/components/items/ItemCard';
+import { agentState } from '@src/components/items/item-state';
+import { roleOf, WITH_PERMISSIONS } from '@src/components/items/role';
 import type { AssetCounter, AssetCounterGroup } from './types';
 
 /** An agent plus the placements that make it "running". */
@@ -17,7 +21,13 @@ export interface AgentRow {
 
 // Every agent on the machine: the Total counter IS this list, so the number and
 // its table are one fact.
-const ALL_AGENTS = new QueryRequest({ type: Agent.type, scope: [], name: 'assetCounters:agents' });
+/** Every agent the caller can reach, with their role on each — one request for hub and desk. */
+export const ALL_AGENTS = new QueryRequest({
+  type: Agent.type,
+  scope: [],
+  query: WITH_PERMISSIONS,
+  name: 'assetCounters:agents',
+});
 // Every deployment; `deploymentsByAgent` keeps the ones whose parent is an agent (what a placement
 // places is its parent — there is no stored kind to query by).
 // One request for every counter group, so they share one watch.
@@ -26,6 +36,14 @@ export const ALL_DEPLOYMENTS = new QueryRequest({
   scope: [],
   query: null,
   name: 'assetCounters:deployments',
+});
+
+/** The same deployments with the caller's role on each — only the Deployments tab shows it. */
+export const DEPLOYMENTS_WITH_ROLES = new QueryRequest({
+  type: Deployment.type,
+  scope: [],
+  query: WITH_PERMISSIONS,
+  name: 'assetCounters:deploymentsWithRoles',
 });
 
 /** Deployments grouped by the element they place, for those placing `type`. */
@@ -136,6 +154,17 @@ export function DeploymentBadges({ deployments }: { deployments: Deployment[] })
   );
 }
 
+/** An agent as an item card — the same on hub and desktop. */
+export const agentCard = (row: AgentRow): ItemCardValue => ({
+  title: row.agent.displayName,
+  icon: iconForType(Agent.type),
+  state: agentState(row.deployments.length > 0, isRunning(row)),
+  role: roleOf(row.agent),
+  description: row.agent.description || undefined,
+  at: { date: row.agent.updated_date },
+  footer: row.deployments.length > 0 ? <DeploymentBadges deployments={row.deployments} /> : undefined,
+});
+
 export const agentCounterGroup: AssetCounterGroup<AgentRow> = {
   id: 'agents',
   type: Agent.type,
@@ -146,6 +175,8 @@ export const agentCounterGroup: AssetCounterGroup<AgentRow> = {
       .filter(Boolean)
       .join(' '),
   itemPointer: (row) => row.agent.dockPointer,
+  card: agentCard,
+  role: (row) => roleOf(row.agent),
   columns: [
     {
       key: 'agent',

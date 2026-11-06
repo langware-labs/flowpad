@@ -1,3 +1,6 @@
+import { RoleChip, StatePill } from '@src/components/items/ItemCard';
+import { deploymentState } from '@src/components/items/item-state';
+import { roleOf } from '@src/components/items/role';
 import { useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowUpRight, Settings2 } from 'lucide-react';
@@ -110,34 +113,21 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
             <ArrowUpRight className="h-4 w-4" />
           </a>
         )}
-        {failed ? (
-          <span
-            className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:text-red-400"
-            data-testid="deployment-state"
-          >
-            <Trans>Failed</Trans>
-          </span>
-        ) : place && notRunning && place.enabled ? (
-          <span
-            className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
-            data-testid="deployment-state"
-          >
-            <Trans>Not running</Trans>
-          </span>
-        ) : (
-          place && (
-            <span
-              data-testid="deployment-state"
-              className={
-                place.enabled
-                  ? 'inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:text-green-400'
-                  : 'rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground'
+        {/* The same state words as its card: failed or stopped-while-on ask for you; else the provider's state. */}
+        {deployment && (
+          <span data-testid="deployment-state">
+            <StatePill
+              state={
+                failed || (place && notRunning && place.enabled)
+                  ? 'attention'
+                  : place && !place.enabled
+                    ? 'paused'
+                    : deploymentState(deployment.status?.provider_state)
               }
-            >
-              {place.enabled ? <Trans>On</Trans> : <Trans>Off</Trans>}
-            </span>
-          )
+            />
+          </span>
         )}
+        <RoleChip role={roleOf(deployment)} />
         <span className="text-xs text-muted-foreground">
           {[agent.name, worker && workerLabel(worker), fundedModel ?? place?.overrides?.model ?? agent.model]
             .filter(Boolean)

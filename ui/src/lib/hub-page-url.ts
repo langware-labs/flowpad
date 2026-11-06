@@ -1,5 +1,5 @@
 import type { TypeId } from '@sdk';
-import { PageId, ViewType } from '@sdk';
+import { PageId, ViewType, isHubOnly } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 function trimHubHost(hubHost: string): string {
@@ -25,6 +25,14 @@ export const HUB_HOME_PATH = '/dock/hub/home';
 export function hubHomeUrl(hubAppUrl: string | null | undefined): string | null {
   if (!hubAppUrl) return null;
   return `${trimHubHost(hubAppUrl)}${HUB_HOME_PATH}`;
+}
+
+/** The page this app serves its screens on: the hub page on the hub, the desk on a desktop. */
+export const servedPage = (): PageId => (isHubOnly() ? PageId.HUB : PageId.DESK);
+
+/** Any entity's single-item page on whichever page this app serves (an issue's own page on both). */
+export function entityDock(type: string, id: string): DockPointer {
+  return new DockPointer(ViewType.HUB_ENTITY, `${type}/${id}`, undefined, undefined, servedPage());
 }
 
 /** The hub page's generic view of any entity: `/dock/hub/entity/<type>/<id>`. */
