@@ -12,6 +12,7 @@ import { latestPerTarget } from '@src/pages/flow-page/display-stack';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
+import { QuickPromptsMenu } from '@src/components/notes/QuickPromptsMenu';
 import { SideTabTooltipContent } from './LastPromptTooltip';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
@@ -38,6 +39,8 @@ interface TerminalBottomRibbonProps {
   process?: AgenticProcess | null;
   /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
   composer?: React.ReactNode;
+  /** Type a quick prompt into the session and submit it — shows the quick prompts button. */
+  onSendPrompt?: (text: string) => void;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
@@ -69,6 +72,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenShown,
   process = null,
   composer,
+  onSendPrompt,
 }) => {
   const { t } = useLingui();
   const isAdvanced = useIsAdvanced();
@@ -85,7 +89,16 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
         {/* Left: worker status LED. The chat⇄terminal toggle that used to live
           here is now the session's own switch (SessionSurfaceSwitch). */}
         <div className="flex items-center gap-2">
-          <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+          {onSendPrompt ? (
+            <QuickPromptsMenu
+              projectId={process?.project_id}
+              lastPromptText={lastPromptText}
+              isActive={isActive}
+              onSend={onSendPrompt}
+            />
+          ) : (
+            <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+          )}
           {hasLastPlan && onOpenLastPlan && (
             <TooltipProvider delayDuration={400}>
               <Tooltip>
