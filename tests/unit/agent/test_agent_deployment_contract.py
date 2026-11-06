@@ -2,13 +2,34 @@
 
 The launch itself needs a real CLI and lives in tests/long_tests/agents/; this
 pins the parts that must hold everywhere: the options projection stays inside
-today's serialized key set, deploy() is idempotent, and the resolution seam
-accepts a name or a typeid.
+today's serialized key set, deploy() is idempotent (the project's one local
+deployment, the agent as main), and the resolution seam accepts a name or a typeid.
 """
 import pytest
 
+from flow_sdk.builtin.deployment import Deployment
+
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_registry import get_agent, get_agent_local_deployment
+
+
+async def _project_agent(tmp_path, name):
+    from tests.unit.agent._seed import seed_agent, seed_project
+
+    project = await seed_project(tmp_path / f"{name}-project")
+    return await seed_agent(tmp_path / f"{name}-project", name, project_id=project.id)
+
+
+async def _cloud(a):
+    row = Deployment(
+        name="cloud",
+        parent_type_id=f"project-{a.project_id}",
+        main_agent_id=str(a.typeid),
+        target={"provider": "e2b", "scope": "machine"},
+        origin={"kind": "e2b", "provider": "e2b", "external_id": ""},
+    )
+    await row.save()
+    return row
 
 
 async def _agent(**kw):
@@ -45,47 +66,34 @@ async def test_system_prompt_never_enters_cli_config():
 
 
 @pytest.mark.asyncio
-async def test_deploy_is_idempotent_and_local():
-    """Re-deploying converges on the SAME ROW, found by lookup rather than by a
-    derived id — and the id it keeps is a v4 that will never change again."""
+async def test_deploy_is_idempotent_and_local(tmp_path):
+    """Re-deploying converges on the SAME ROW — the project's one local deployment — found by lookup,
+    with a v4 id that never changes again."""
     from uuid import UUID
 
-    a = await _agent(name="deploy-agent")
-    first = await a.local_deployment()
-    second = await a.local_deployment()
-    assert first.id == second.id
+    a = await _project_agent(tmp_path, "deploy-agent")
+    first = await a.deploy("local")
+    second = await a.deploy("local")
+    assert first.id == second.id == (await a.local_deployment()).id
     assert UUID(first.id).version == 4
-    assert first.element_type == "agent" and first.places_agent, "what it places is its parent"
-    assert first.identity == "agent", "a box it runs on logs in as the agent"
-    assert first.target.provider == "local"
-    assert str(first.parent_type_id) == str(a.typeid)
-    assert first.is_local
+    assert first.element_type == "project" and first.places_agent
+    assert first.main_agent_id == str(a.typeid) and first.identity == "agent"
+    assert first.target.provider == "local" and first.is_local
 
 
 @pytest.mark.asyncio
-async def test_a_second_provider_is_a_second_placement():
-    """One agent, many machines. The old derived id keyed on (agent, kind), so
-    two placements of the same kind on different providers collided."""
-    a = await _agent(name="two-places-agent")
-    here = await a.deploy("local")
-    there = await a.deploy("e2b")
-    assert here.id != there.id
-    assert {d.id for d in await a.deployments()} == {here.id, there.id}
+async def test_a_cloud_deploy_is_the_projects_and_a_project_less_agent_runs_on_this_computer():
+    a = await _agent(name="no-project-agent")
+    with pytest.raises(ValueError):
+        await a.deploy("e2b")
+    assert (await a.local_deployment()).is_this_computer
 
 
 @pytest.mark.asyncio
-async def test_a_cloud_placement_with_no_node_is_never_local():
-    """The lie `dispatch_agent_run` exists to refuse.
-
-    `compute_node_id` falls back to THIS machine when a row records no node, so
-    an older local row still resolves. Applied to a cloud placement that same
-    fallback reported `is_local` True — and the dispatcher would then run the
-    agent here while the caller believed it ran in the cloud. A cloud row with
-    no node is unaddressable, and must say so.
-    """
-    a = await _agent(name="unaddressable-agent")
-    cloud = await a.deploy("e2b")
-    assert cloud.origin is not None and not cloud.origin.external_id
+async def test_a_cloud_placement_with_no_node_is_never_local(tmp_path):
+    """`compute_node_id` falls back to THIS machine for an older local row; a cloud row with no node
+    is unaddressable and must say so — else `dispatch_agent_run` would run it here."""
+    cloud = await _cloud(await _project_agent(tmp_path, "unaddressable-agent"))
     assert cloud.compute_node_id is None
     assert cloud.is_local is False
 
@@ -108,13 +116,10 @@ async def test_runs_are_the_placements_processes_newest_first():
 
 
 @pytest.mark.asyncio
-async def test_pause_without_a_machine_is_a_no_op_that_says_so():
+async def test_pause_without_a_machine_is_a_no_op_that_says_so(tmp_path):
     """Terminate is a pause, never a delete: the row survives. A cloud row with no
     node has nothing to stop, and reports False rather than pretending."""
-    from flow_sdk.builtin.deployment import Deployment
-
-    a = await _agent(name="pause-agent")
-    there = await a.deploy("e2b")
+    there = await _cloud(await _project_agent(tmp_path, "pause-agent"))
     assert await there.pause() is False
     assert (await Deployment.get_by_id(there.id)) is not None
 
@@ -149,7 +154,7 @@ def test_the_placement_vocabulary_is_pinned_on_this_side_too():
     """
     from typing import get_args
 
-    from flow_sdk.builtin.deployment import NODE_PROVIDERS, Deployment, DeploymentIdentity
+    from flow_sdk.builtin.deployment import NODE_PROVIDERS, DeploymentIdentity
 
     assert "kind" not in Deployment.model_fields and "slot" not in Deployment.model_fields
     assert set(get_args(DeploymentIdentity)) == {"none", "agent", "user"}

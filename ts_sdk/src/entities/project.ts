@@ -31,7 +31,15 @@ import { ViewType } from '../utils/ui/view-types';
 import type { CredentialRequirement, CredentialVarKind } from './credential';
 import { SubAgent } from './subagent';
 import { Artifact, IArtifact } from './artifact';
-import type { IDeployment } from './deployment';
+import type { DeploymentSourceKind, IDeployment } from './deployment';
+import type {
+  AgentPlannedDeployment,
+  AgentReadiness,
+  AgentRequirement,
+  AgentTokenAllocation,
+  CloudDeployProvider,
+} from './agent';
+import type { ActivityProgressSpec } from '../activity';
 import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
@@ -680,18 +688,49 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
-   * Run this project's app on a machine of its own in the cloud.
+   * Place this project on a machine — `provider: 'local'` is this computer, a cloud provider a box of its own.
    *
-   * The web half of deployment — a micro app is deployed by deploying the
-   * project that holds it, because the project is what has the repository the
-   * sandbox materializes. Sharing to the hub is implicit, so there is no order
-   * for a caller to get wrong.
+   * A deployment is the whole project at one source (`sourceKind` tag | release | commit, default the project's
+   * HEAD commit) with at most one main agent that answers every call on the box (`mainAgentId`, an agent TypeId;
+   * omitted = the project's recommendation, `null` = none). Publishing to the hub is implicit. Slow by nature for
+   * a cloud box: a taken-on deploy answers with the activity it reports at.
    *
-   * Slow by nature (create + boot + health on a real sandbox); callers should
-   * show progress rather than assume a snappy round trip.
+   * `tokenAllocation`: the deployment's own budget; `null` releases it back to the deployer's capped default.
+   * `deploymentId`: the placement a refused deploy named — a retry continues it.
+   * `values`: values typed for this deploy, `{credential: {variable: value}}`, stored on its placement.
    */
-  async deploy(): Promise<ProjectDeployResult> {
-    return (await this.post('deploy')) as ProjectDeployResult;
+  async deploy(args: ProjectDeployArgs = {}): Promise<ProjectDeployResult> {
+    const body = projectDeployBody(args);
+    return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as ProjectDeployResult;
+  }
+
+  /**
+   * The deployment this project will have before it has a machine, and whether it is ready — each missing value
+   * can be filled or a connection authorized before `deploy`, which is refused (409 `not_ready`) until it is.
+   */
+  async planDeployment(args: ProjectDeployArgs = {}): Promise<AgentPlannedDeployment> {
+    const body = projectDeployBody(args);
+    return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
+  }
+
+  /** The environment and source a deploy starts on, the environments to offer, and the recommended main agent. */
+  async deployDefaults(): Promise<ProjectDeployDefaults> {
+    return this.get<ProjectDeployDefaults>('deploy_defaults');
+  }
+
+  /** What a deployment of this project needs — its credentials plus the main agent's. Names only. */
+  async requirements(mainAgentId?: string | null): Promise<AgentRequirement[]> {
+    const qs = mainAgentId ? `?main_agent_id=${encodeURIComponent(mainAgentId)}` : '';
+    return (await this.get<AgentRequirement[] | null>(`requirements${qs}`)) ?? [];
+  }
+
+  /** Does that deployment satisfy each requirement? Names only. */
+  async readiness(deploymentId?: string, mainAgentId?: string | null): Promise<AgentReadiness | null> {
+    const params = new URLSearchParams();
+    if (deploymentId) params.set('deployment_id', deploymentId);
+    if (mainAgentId) params.set('main_agent_id', mainAgentId);
+    const qs = params.toString();
+    return this.get<AgentReadiness | null>(`readiness${qs ? `?${qs}` : ''}`);
   }
 
   /**
@@ -1679,4 +1718,48 @@ export interface ProjectDeployResult {
   node_typeid?: string;
   host_url?: string;
   reused?: boolean;
+  /** A cloud deploy taken on: it runs on, reporting at this activity, until its machine is placed. */
+  activity?: Pick<ActivityProgressSpec, 'path' | 'subject_entity'>;
+  /** The placement a taken-on deploy lands on, before its machine exists. */
+  deployment_id?: string;
+}
+
+/** `POST project/<id>/deploy` and `plan_deployment` — every field optional. */
+export interface ProjectDeployArgs {
+  provider?: 'local' | CloudDeployProvider;
+  environment?: string;
+  machineSize?: string;
+  sourceKind?: DeploymentSourceKind;
+  sourceRef?: string | null;
+  /** The agent TypeId (`agent-<uuid>`) that answers on the box; `null` = none; omitted = the recommendation. */
+  mainAgentId?: string | null;
+  tokenAllocation?: AgentTokenAllocation | null;
+  deploymentId?: string;
+  values?: Record<string, Record<string, string>>;
+}
+
+/** `GET project/<id>/deploy_defaults`. */
+export interface ProjectDeployDefaults {
+  environment: string;
+  environments: string[];
+  /** The project's recommended main agent (flow.json `main_agent`), as an agent TypeId; null = none. */
+  main_agent_id?: string | null;
+  /** The project's HEAD commit — a new deployment's default source. */
+  source_ref?: string | null;
+}
+
+function projectDeployBody(args: ProjectDeployArgs): Record<string, unknown> {
+  return {
+    ...(args.provider ? { provider: args.provider } : {}),
+    ...(args.environment ? { environment: args.environment } : {}),
+    // This deploy's box size; never written into a definition (that would dirty the checkout it deploys).
+    ...(args.machineSize ? { machine_size: args.machineSize } : {}),
+    ...(args.sourceKind ? { source_kind: args.sourceKind } : {}),
+    ...(args.sourceRef ? { source_ref: args.sourceRef } : {}),
+    // Absent = the project's recommendation; '' = no agent (the backend's spelling of none).
+    ...(args.mainAgentId !== undefined ? { main_agent_id: args.mainAgentId ?? '' } : {}),
+    ...(args.tokenAllocation !== undefined ? { token_allocation: args.tokenAllocation } : {}),
+    ...(args.deploymentId ? { deployment_id: args.deploymentId } : {}),
+    ...(args.values && Object.keys(args.values).length ? { values: args.values } : {}),
+  };
 }

@@ -12,6 +12,9 @@ vi.mock('@src/components/stream-inbox-view/AttachedChannelsBar', () => ({
   useAttachedChannels: () => ({ rows: [], specFor: () => undefined, offers: [], loading: false }),
 }));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => <div data-testid="agent-places" /> }));
+vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
+  useAgentPlaces: () => ({ places: [], reload: async () => undefined }),
+}));
 vi.mock('@src/components/assets/editor/agent-profile/use-agent-mcp-sync', () => ({ useAgentMcpSync: () => undefined }));
 // Milkdown needs a real browser; a textarea stands in for the markdown editor.
 vi.mock('@src/components/milkdown-editor/MilkdownEditor', () => ({

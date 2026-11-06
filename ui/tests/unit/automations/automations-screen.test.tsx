@@ -19,6 +19,9 @@ vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: { id: 'p
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 const gate = vi.hoisted(() => ({ fn: vi.fn(() => Promise.resolve({ ok: true as const })) }));
 vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => gate.fn }));
+vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
+  useAgentPlaces: () => ({ places: [], reload: async () => undefined }),
+}));
 vi.mock('@src/hooks/entity-hooks', () => ({
   // One answer for every entity query the screen makes: an agent to pick, and (as a data source) a channel.
   useEntitiesQuery: () => ({ data: [{ id: 'a1', name: 'Chief of Staff', channel: 'gmail' }] }),

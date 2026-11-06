@@ -39,7 +39,7 @@ from flow_sdk.builtin.agent_auto_open import (
     rebase_auto_open,
     start_auto_open,
 )
-from flow_sdk.builtin.agent_cloud_deploy import _UNSET, AgentDeployRequest
+from flow_sdk.builtin.agent_cloud_deploy import _UNSET
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
 from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
 from flow_sdk.builtin.deployment import Deployment
@@ -49,7 +49,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec._form import ShapeForm
-from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec, AgentSpec
+from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
@@ -65,7 +65,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
-    from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec
     from flow_sdk.schema.data_spec.webhook_spec import DeploymentWebhookSpec
 
 logger = logging.getLogger(__name__)
@@ -320,19 +319,6 @@ class Agent(Entity):
         "is the session's active display, the rest open beside it.",
     )
 
-    # ── places ────────────────────────────────────────────────────────────
-    # Where this agent runs is a Deployment; how it runs THERE may differ from
-    # the definition. Both choices live in agent.json, keyed by Deployment id, so
-    # they travel with the agent — see ``flow_sdk/builtin/agent_places.py``.
-    places: Optional[list[AgentPlaceSpec]] = APIField(
-        default=None,
-        description="Per-place launch overrides (model, permissions, effort, worker, MCP servers), keyed by Deployment id.",
-    )
-    email_place: Optional[str] = APIField(
-        default=None,
-        description="Deployment id of the one place that answers this agent's email. Empty = every polling machine.",
-    )
-
     # ── contact ───────────────────────────────────────────────────────────
     # DECLARATION ONLY: never enters `to_agent_options`.
     phone: Optional[PhoneNumberSpec] = APIField(
@@ -351,19 +337,6 @@ class Agent(Entity):
     )
 
     _api_visible: ClassVar[bool] = True
-
-    def place_for(self, deployment_id: str | None) -> "AgentPlaceSpec | None":
-        """This agent's overrides for one place, or None when it has none."""
-        if not deployment_id:
-            return None
-        return next((p for p in self.places or [] if p.deployment_id == deployment_id), None)
-
-    def enabled_on(self, deployment_id: str | None) -> bool:
-        """Whether this agent runs on one place: the place's own switch, else the definition's."""
-        place = self.place_for(deployment_id)
-        if place is not None and place.enabled is not None:
-            return place.enabled
-        return bool(self.enabled)
 
     # ── MCP servers ───────────────────────────────────────────────────────
 
@@ -748,51 +721,21 @@ class Agent(Entity):
     # ── deployment ────────────────────────────────────────────────────────
 
     async def deploy(self, provider: str = "local") -> Deployment:
-        """Idempotent upsert of this agent's placement on *provider* — one per provider and environment.
+        """Shortcut: this agent's project deployed on *provider* with this agent as its main agent. Only
+        ``local`` is answered here (the project's one local deployment); a cloud deploy is the project's."""
+        if provider != "local":
+            raise ValueError("a cloud deployment is the project's: Project.deploy(main_agent=agent)")
+        project = await self._owning_project()
+        # A project-less agent runs on this computer's own deployment, as its main agent.
+        deployment = await project.local_deployment(self) if project is not None else await Deployment.this_computer()
+        if deployment.assign_main_agent(str(self.typeid)):
+            await deployment.save()
+        return deployment.with_agent(self)
 
-        Converges through ``Deployment.find_existing`` rather than a derived id:
-        the row keeps whatever v4 it was first minted with, forever, on every
-        tier that holds it.
-        """
-        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
-        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    async def _owning_project(self):
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-        machine = get_instance_settings().instance_name
-        return await Deployment.upsert(
-            parent_type_id=str(self.typeid),
-            provider=provider,
-            element=self,
-            payload={
-                "name": f"{self.name or self.id} ({provider})",
-                # The box a placement runs on logs in as the agent itself.
-                "identity": "agent",
-                # What it exposes: its chat — an HTTP message channel its loop answers. The channel is
-                # made when the loop is launched (``ensure_chat_channel``), so the backend is not declared.
-                "exposes": [
-                    {"name": "chat", "subkind": "agent", "protocol": {"spec_kind": "api.chat.openai"}},
-                ],
-                "target": {
-                    "provider": provider,
-                    "scope": self.project_id or "machine",
-                    "location": machine,
-                },
-                "origin": {
-                    "kind": provider,
-                    "provider": provider,
-                    # The machine it runs on. `local` is, by definition, this
-                    # one; other providers pass their own node when the placement
-                    # is created for them.
-                    "external_id": ComputeNode._local_id() if provider == "local" else "",
-                },
-                "status": {"sync_state": "current", "provider_state": "configured"},
-                "provider_labels": {
-                    "flowpad.agent.name": str(self.name or ""),
-                    "flowpad.agent.worker": str(self.worker_type or ""),
-                    "flowpad.agent.model": str(self.model or ""),
-                },
-                "project_id": self.project_id,
-            },
-        )
+        return await Project.get_by_id(str(self.project_id)) if self.project_id else None
 
     async def home(self) -> str | None:
         """The folder this agent's own files are relative to — the project whose folder
@@ -822,8 +765,12 @@ class Agent(Entity):
         return canonical_posix_path(repo) if repo else None
 
     async def local_deployment(self) -> Deployment:
-        """Get-or-create the placement that runs this agent on THIS machine."""
-        return await self.deploy("local")
+        """The deployment a launch of this agent on THIS machine goes through: its project's one local
+        deployment (this computer's for a project-less agent), launching this agent."""
+        project = await self._owning_project()
+        if project is None:
+            return (await Deployment.this_computer()).with_agent(self)
+        return (await project.local_deployment()).with_agent(self)
 
     @classmethod
     async def runnable_here(cls) -> list["Agent"]:
@@ -854,8 +801,9 @@ class Agent(Entity):
         return deployment
 
     async def deployments(self) -> list[Deployment]:
-        rows = await Deployment.get_all({"match": {"parent_type_id": str(self.typeid)}})
-        return [row.with_element(self) for row in rows]
+        """The deployments this agent is the main agent of."""
+        rows = await Deployment.get_all({"match": {"main_agent_id": str(self.typeid)}})
+        return [row.with_agent(self) for row in rows]
 
     # ── publish ───────────────────────────────────────────────────────────
 
@@ -957,10 +905,9 @@ class Agent(Entity):
     async def deploy_defaults_action(self):
         """`GET /agent/<id>/deploy_defaults` — the environment a deploy dialog starts on, and the ones to offer."""
         from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, default_cloud_environment  # noqa: PLC0415
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
-        placed = await Deployment.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        placed = await self.deployments()
         used = [row.environment for row in placed if row.environment and not row.is_local]
         return ApiSuccessResponse(
             data={
@@ -1007,35 +954,6 @@ class Agent(Entity):
         except LookupError as e:
             return ApiFailResponse(message=str(e), status_code=404)
         return ApiSuccessResponse(data=(await readiness(self, deployment)).model_dump(mode="json"))
-
-    @action.post(action_name="plan_deployment")
-    async def plan_deployment_action(self):
-        """`POST /agent/<id>/plan_deployment  {"environment", "provider"}` — the cloud placement before its
-        machine, and whether it is ready: what a deploy dialog lists, with "use mine" per missing value."""
-        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
-        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
-
-        body = await self._body()
-        provider = str(body.get("provider") or "").strip() or None
-        try:
-            allocation = _token_allocation_of(body)
-        except ValueError as exc:
-            return ApiFailResponse(message=str(exc), status_code=400)
-        try:
-            deployment = await self.plan_deployment(
-                str(body.get("environment") or "").strip() or None,
-                provider=provider,
-                token_allocation=allocation,
-                deployment_id=str(body.get("deployment_id") or "").strip() or None,
-            )
-        except Exception as exc:  # noqa: BLE001
-            return ApiFailResponse(message=f"plan failed: {exc}", status_code=502)
-        return ApiSuccessResponse(
-            data={
-                "deployment": deployment.model_dump(mode="json"),
-                "readiness": (await readiness(self, deployment)).model_dump(mode="json"),
-            }
-        )
 
     async def delete(self):
         """Delete the agent with its mailbox: nobody is left to answer the address, so it is
@@ -1254,113 +1172,6 @@ class Agent(Entity):
             desks.append(str((entry.get("id") if isinstance(entry, dict) else entry) or "").strip())
         return list(dict.fromkeys(d for d in desks if d))
 
-    async def plan_deployment(
-        self,
-        environment: str | None = None,
-        *,
-        provider: str | None = None,
-        token_allocation: "TokenAllocationSpec | None | object" = _UNSET,
-        deployment_id: str | None = None,
-    ) -> "Deployment":
-        """The cloud placement this agent will have on ``provider`` (none: ``e2b``) in ``environment``
-        — the hub's row, adopted here —
-        before it has a machine: where "use mine" stores values ahead of a deploy. A new row on each call;
-        ``deployment_id`` plans the one it names again, and the deploy that follows names the row it plans. Its
-        :meth:`webhook_specs` are kept on the hub, following its machine, each URL stored as its variable —
-        so readiness finds them and "use mine" never copies this computer's. Its :meth:`hub_desks` go along, so
-        the hub staffs the agent on them before a machine polls. ``token_allocation`` gives the
-        placement its own hub LLM endpoint drawn from ``source`` (``None`` releases it back to the owner's
-        default; omitted leaves it as it is)."""
-        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
-        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
-
-        environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
-        body = {
-            "environment": environment,
-            "provider": provider or DEFAULT_CLOUD_PROVIDER,
-            "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()],
-            "help_desks": await self.hub_desks(),
-            **({"deployment_id": deployment_id} if deployment_id else {}),
-        }
-        if token_allocation is not _UNSET:
-            body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
-        data = await HubProxy.call("POST", self.type, self.id, "plan_deployment", payload=body)
-        deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
-        if deployment is None:
-            raise RuntimeError("the hub returned no deployment to plan")
-        return deployment
-
-    @action.post(action_name="deploy")
-    async def deploy_action(self, body: AgentDeployRequest):
-        """`POST /agent/<id>/deploy` — publish, then boot a box for this agent.
-
-        ``body`` is validated before this runs (an invalid environment or token allocation is a 400), and
-        bound by its annotation — so this module must not take ``from __future__ import annotations``.
-
-        ``{"provider": "local"}`` deploys it on THIS computer instead: the idempotent local placement,
-        no hub and no publish — the one way "This computer" becomes a deployment. Any other
-        ``provider`` is passed to the hub, which refuses one it does not offer; none is ``e2b``.
-
-        A cloud deploy publishes, plans and checks readiness before it answers — a refusal (a missing value, a
-        publish problem) is the answer — then answers with where its ``deploy`` activity reports and the
-        placement; the machine, minutes, starts after that and the activity says how it goes.
-        """
-        from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
-        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.builtin.agent_cloud_deploy import DeployRunning, run_deployment_steps  # noqa: PLC0415
-        from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
-        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
-        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
-
-        if not self.enabled:
-            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
-        if body.provider == "local":
-            deployment = await self.run_locally()
-            return ApiSuccessResponse(data={"agent_id": self.id, "deployment": deployment.model_dump(mode="json")})
-        request_info = get_current_request_info()
-        actor = request_info.someone_typeid if request_info else None
-        if not actor:
-            return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
-        try:
-            data = await run_deployment_steps(
-                self,
-                actor,
-                body.environment,
-                provider=body.provider or None,
-                token_allocation=body.token_allocation if body.allocation_given else _UNSET,
-                machine_size=body.machine_size,
-                deployment_id=body.deployment_id,
-                values=body.values,
-            )
-        except DeployRunning as exc:
-            return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})
-        except NotReady as exc:
-            # The gate: nothing is deployed, and each missing value is named with its fix.
-            return ApiFailResponse(
-                status_code=409,
-                message=str(exc),
-                data={
-                    "code": "not_ready",
-                    "readiness": exc.readiness.model_dump(mode="json"),
-                    "deployment": exc.deployment.model_dump(mode="json") if exc.deployment else None,
-                },
-            )
-        except AssetPublishError as exc:
-            # Deploy publishes the agent through git first, so every publish precondition is a deploy
-            # precondition: the caller's state, not a server fault — and its sentence says what to do.
-            return ApiFailResponse(
-                status_code=exc.status_code,
-                message=exc.actionable,
-                data={"code": str(exc.code), **exc.data},
-            )
-        except HubError as exc:  # the hub's own reason and status, not "deploy failed: hub error 0: ..."
-            return exc.fail_response("Could not deploy")
-        except Exception as exc:
-            return ApiFailResponse(message=f"deploy failed: {exc}")
-        return ApiSuccessResponse(data={"agent_id": self.id, **data})
-
     # ── the run verb (HTTP) ───────────────────────────────────────────────
 
     @action.post(action_name="run")
@@ -1465,7 +1276,8 @@ class Agent(Entity):
 
         async def run():
             # Local now, the hub's list in the background: a change lands as ``deployment.synced``.
-            Deployment.reconcile_soon(str(self.typeid))
+            if self.project_id:
+                Deployment.reconcile_soon(f"project-{self.project_id}")
             rows = await agent_places.list_places(self)
             return [{**row, "deployment": row["deployment"].model_dump(mode="json")} for row in rows]
 
@@ -1481,26 +1293,6 @@ class Agent(Entity):
             lambda: agent_places.set_place_override(
                 self, str(body.get("deployment_id") or ""), str(body.get("field") or ""), body.get("value")
             )
-        )
-
-    @action.post(action_name="set_place_enabled")
-    async def set_place_enabled_action(self):
-        """`POST /agent/<id>/set_place_enabled {deployment_id, enabled}` — `enabled: null` follows the definition."""
-        from flow_sdk.builtin import agent_places  # noqa: PLC0415
-
-        body = await self._body()
-        return await self._place_answer(
-            lambda: agent_places.set_place_enabled(self, str(body.get("deployment_id") or ""), body.get("enabled"))
-        )
-
-    @action.post(action_name="set_email_place")
-    async def set_email_place_action(self):
-        """`POST /agent/<id>/set_email_place {deployment_id}` — the one place that answers email."""
-        from flow_sdk.builtin import agent_places  # noqa: PLC0415
-
-        body = await self._body()
-        return await self._place_answer(
-            lambda: agent_places.set_email_place(self, str(body.get("deployment_id") or ""))
         )
 
     @action.post(action_name="place_action")
@@ -1536,22 +1328,6 @@ class Agent(Entity):
             return data
 
         return await self._place_answer(relay)
-
-    @action.post(action_name="adopt_placement")
-    async def adopt_placement_action(self):
-        """`POST /agent/<id>/adopt_placement {deployment_id}` — on a cloud machine, key this
-        machine's placement by the hub's id so the definition's place entries apply here."""
-        from flow_sdk.builtin import agent_places  # noqa: PLC0415
-
-        body = await self._body()
-
-        async def run():
-            adopted = await agent_places.adopt_placement(
-                self, str(body.get("deployment_id") or ""), body.get("environment")
-            )
-            return adopted.model_dump(mode="json")
-
-        return await self._place_answer(run)
 
     @action.get(action_name="auto_launch_state")
     async def auto_launch_state_action(self):
@@ -1689,7 +1465,7 @@ class Agent(Entity):
             deployment = await Deployment.get_by_id(deployment_id)
             if deployment is None or not deployment.is_agent_placement_of(agent):
                 return ApiFailResponse(message="agent deployment not found", status_code=404)
-            deployment = deployment.with_element(agent)
+            deployment = deployment.with_agent(agent)
         else:
             deployment = await agent.local_deployment()
         owner = request_info.someone_typeid if request_info else None

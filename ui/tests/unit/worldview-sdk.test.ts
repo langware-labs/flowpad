@@ -114,8 +114,10 @@ describe('Artifact and Deployment SDK models', () => {
     });
 
     expect('kind' in deployment).toBe(false); // what a placement places is its parent
-    expect(deployment.elementType).toBeNull();
-    expect(deployment.identity).toBe('user');
+    expect(deployment.projectTypeId).toBeNull();
+    expect(deployment.mainAgentTypeId).toBeNull();
+    expect(deployment.identity).toBe('none'); // no main agent, nothing asked for
+    expect(deployment.source_kind).toBe('commit');
     expect(deployment.toJSON()).toMatchObject({
       type: 'deployment',
       artifact_id: ARTIFACT_ID,

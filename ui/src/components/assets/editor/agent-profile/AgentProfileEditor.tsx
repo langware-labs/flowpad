@@ -27,7 +27,6 @@ import { Button } from '@src/components/ui/button';
 import { AttachedChannelsBar, useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { AddIntroTranslationButton, IntroTranslationFields } from './AgentIntroTranslations';
 import { AgentPlacesColumn } from './AgentPlacesColumn';
-import { NewDeploymentDialog } from './NewDeploymentDialog';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
 import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
@@ -132,10 +131,12 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
   // A deploy publishes the agent without touching its row, so the header follows the deployments too:
   // without this it still said "Not published yet" after a cloud deploy, until the page was reopened.
-  const { places, reload: reloadPlaces } = useAgentPlaces(hub ? null : agent);
-  const [deployOpen, setDeployOpen] = useState(false);
+  const { places } = useAgentPlaces(agent);
+  const cloudPlaces = places?.filter((p) => !p.is_local).length ?? 0;
+  const localPlace = places?.find((p) => p.is_local) ?? null;
+  const deployPage = agent.deployPagePointer;
   const placesKey = places
-    ? places.map((p) => `${p.deployment.id}:${String(p.deployment.status ?? '')}:${p.behind ?? ''}`).join(',')
+    ? places.map((p) => `${p.deployment.id}:${p.deployment.status?.provider_state ?? ''}:${p.deployment.source_revision ?? ''}`).join(',')
     : '';
   useEffect(() => {
     void loadVersion();
@@ -307,11 +308,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
             data-testid="agent-version"
           >
-            {hub ? (
-              <Trans>Published version — edit it on the author's computer</Trans>
             {/* The same role chip and time line as the agent's card (components/items). */}
             <RoleChip role={roleOf(agent)} />
             {agentTime && <span data-testid="item-time">{agentTime}</span>}
+            {hub ? (
+              <Trans>Published version — edit it on the author's computer</Trans>
             ) : !version ? null : version.published ? (
               <span>
                 <Trans>Published</Trans>
@@ -701,31 +702,37 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               <p className="whitespace-pre-wrap text-sm">
                 {description || <span className="text-muted-foreground">{t`No description yet.`}</span>}
               </p>
+              {!hub && places !== null && (
+                <p className="text-xs text-muted-foreground" data-testid="agent-summary-local">
+                  {localPlace ? (
+                    <Trans>Runs on this computer as its project's main agent</Trans>
+                  ) : (
+                    <Trans>Not running on this computer</Trans>
+                  )}
+                </p>
+              )}
               <div className="flex items-center gap-3 text-sm">
                 <span data-testid="agent-summary-deployments">
                   {places === null ? (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : places.length === 1 ? (
-                    t`1 deployment`
+                  ) : cloudPlaces === 1 ? (
+                    t`1 cloud deployment`
                   ) : (
-                    t`${places.length} deployments`
+                    t`${cloudPlaces} cloud deployments`
                   )}
                 </span>
-                {!hub && (
+                {deployPage && (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setDeployOpen(true)}
+                    onClick={() => navigation.openDock(deployPage)}
                     data-testid="agent-summary-new-deployment"
                   >
                     <Plus className="me-1.5 h-3.5 w-3.5" />
-                    <Trans>New deployment</Trans>
+                    <Trans>Deploy</Trans>
                   </Button>
                 )}
               </div>
-              {deployOpen && (
-                <NewDeploymentDialog agent={agent} open onOpenChange={setDeployOpen} onLaunched={reloadPlaces} />
-              )}
             </TabsContent>
             <TabsContent value="deployments" className="mt-3">
               <AgentPlacesColumn agent={agent} />

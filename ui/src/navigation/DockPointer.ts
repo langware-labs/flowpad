@@ -3,7 +3,7 @@ import {
   automationsPointer,
   type AutomationsRoute,
 } from '@src/components/automations/automations-pointer';
-import { pointerForWebUrl, webUrlFromPointer } from '@sdk';
+import { PROJECT_DEPLOY_MAIN_AGENT_PARAM, PROJECT_DEPLOYMENT_PARAM, pointerForWebUrl, webUrlFromPointer } from '@sdk';
 import {
   Agent,
   AgenticProcess,
@@ -172,7 +172,6 @@ export const CHILD_SECTIONS = [
   'mcp',
   'skill',
   'doc',
-  'deployment',
   'credential',
 ] as const;
 export type ChildSection = (typeof CHILD_SECTIONS)[number];
@@ -1244,6 +1243,24 @@ export class DockPointer implements IDockPointer {
   static forProjectSetup(projectId: string, layout: Layout = Layout.DOCK): DockPointer {
     return DockPointer.rebaseAssetsOntoProject(
       new DockPointer(ViewType.ASSETS, AssetMode.PROJECT_SETUP, undefined, layout),
+      projectId,
+    );
+  }
+
+  /**
+   * The project's Deployments page, rebased onto `/dock/project/<projectId>/project-deployments`: on one
+   * deployment (`deploymentId`), or with New deployment open and `mainAgentId` (an agent id) preset as main.
+   */
+  static forProjectDeployments(
+    projectId: string,
+    opts: { deploymentId?: string | null; mainAgentId?: string | null } = {},
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const options: Record<string, string> = {};
+    if (opts.deploymentId) options[PROJECT_DEPLOYMENT_PARAM] = opts.deploymentId;
+    if (opts.mainAgentId) options[PROJECT_DEPLOY_MAIN_AGENT_PARAM] = opts.mainAgentId;
+    return DockPointer.rebaseAssetsOntoProject(
+      new DockPointer(ViewType.ASSETS, AssetMode.PROJECT_DEPLOYMENTS, Object.keys(options).length ? options : undefined, layout),
       projectId,
     );
   }

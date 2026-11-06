@@ -62,7 +62,7 @@ def register_builtin_kinds() -> None:
 
     native.register()  # ``Text`` renders as ``string``; ``binary`` is its own form
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
-    import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
+    import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — agent.json's schema
     import flow_sdk.schema.data_spec.api_endpoint_spec  # noqa: F401  — registers ``api_endpoint.offer``
     import flow_sdk.schema.data_spec.asset_setup_spec  # noqa: F401  — registers ``asset.setup`` / ``setup.skip`` / ``setup.node`` / ``setup.tree``
     import flow_sdk.schema.data_spec.automation_execution_spec  # noqa: F401 — automation wizard values

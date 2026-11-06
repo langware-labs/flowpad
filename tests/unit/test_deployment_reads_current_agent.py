@@ -16,7 +16,7 @@ async def test_new_session_uses_the_agents_current_prompt_and_model(tmp_path):
     agent.system_prompt = "old prompt"
     await agent.save()
     # Loaded by id, the way the runner (``agent_loop``) holds its placement for days.
-    deployment = await Deployment.get_by_id((await agent.local_deployment()).id)
+    deployment = await Deployment.get_by_id((await agent.deploy("local")).id)
     before = await deployment.create_process()
 
     edited = await Agent.get_by_id(agent.id)  # the agent editor / REST PATCH: another copy, saved

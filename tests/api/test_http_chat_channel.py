@@ -37,9 +37,17 @@ def worker(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-async def deployed(worker, user):
-    """An agent launched here: a running local deployment and its chat channel — its loop a task."""
-    agent = Agent(name=f"chat-agent-{time.monotonic_ns()}", worker_type="claude", system_prompt="Answer briefly.")
+async def deployed(worker, user, tmp_path):
+    """An agent launched here: its project's running local deployment and its chat channel — its loop a task."""
+    from tests.unit.agent._seed import seed_project
+
+    project = await seed_project(tmp_path / "chat-project")
+    agent = Agent(
+        name=f"chat-agent-{time.monotonic_ns()}",
+        worker_type="claude",
+        system_prompt="Answer briefly.",
+        project_id=str(project.id),
+    )
     await agent.save()
     deployment = await agent.run_locally()
     chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")
@@ -243,16 +251,12 @@ async def test_a_deployment_starts_when_another_placement_of_its_agent_holds_a_c
         await agent.delete()
 
 
-async def test_a_box_reports_an_agent_placements_chat(deployed, bootstrapped_client, tmp_path):
-    """The hub names the agent's placement; the box answers with its chat — the project's web placement is untouched."""
-    from flow_sdk.builtin.project import Project
-
-    _agent, _deployment, chat = deployed
-    project = Project(name=f"agent-proj-{time.monotonic_ns()}", fs_storage_mount_path=str(tmp_path))
-    await project.save()
+async def test_a_box_reports_an_agent_placements_chat(deployed, bootstrapped_client):
+    """The hub names the project deployment whose main agent this is; the box answers with its chat."""
+    agent, _deployment, chat = deployed
 
     resp = await bootstrapped_client.post(
-        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": chat.parent_type_id}
+        f"/api/v1/graph/project/{agent.project_id}/expose-endpoints", json={"deployment_typeid": chat.parent_type_id}
     )
 
     assert resp.status_code == 200, resp.text

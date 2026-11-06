@@ -239,10 +239,9 @@ class TurnEngine:
         return next((p for p in existing if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value), None)
 
     async def _current_model(self) -> Optional[str]:
-        """The model this placement runs the agent on now: its place override, else the definition's."""
+        """The model this placement runs the agent on now: its deployment's override, else the definition's."""
         current = await type(self.agent).get_by_id(str(self.agent.id)) or self.agent
-        place = current.place_for(self.deployment.id) if self.deployment is not None else None
-        overridden = place.overrides().get("model") if place is not None else None
+        overridden = self.deployment.overrides_for(current).get("model") if self.deployment is not None else None
         return overridden or getattr(current, "model", None) or None
 
     async def process_for(self, session: str, *, name: Optional[str] = None, context: Optional[dict] = None):
@@ -658,19 +657,12 @@ def is_own_outgoing(source, author: str) -> bool:
 async def answers_here(source, deployment, agent=None) -> bool:
     """Whether *deployment* (a placement on this machine) is the one answering *source*.
 
-    ``answer_place`` names it. A mailbox still follows the agent's ``email_place``
-    until it carries its own; a source that names no place is answered wherever it
-    is held, as before places existed.
+    ``answer_place`` names it; a source that names no place is answered by the deployment here
+    whose main agent owns it (one per machine).
     """
     place = str(getattr(source, "answer_place", "") or "")
     if place:
         return place == str(deployment.id)
-    if str(getattr(source, "provider", "") or "") == "cloud_email":
-        # A mailbox that carries no place of its own follows the agent's ``email_place``.
-        agent = agent if agent is not None else await deployment.agent()
-        if agent is not None and agent.email_place:
-            return str(agent.email_place) == str(deployment.id)
-    # A source that names no place is answered by the agent's deployment here (one per machine).
     return True
 
 
@@ -832,7 +824,7 @@ async def polled_by_a_deployment(sources=None) -> set[str]:
     for deployment in await running_deployments():
         if str(deployment.id) == own:
             continue
-        agent = await deployment.agent()
+        agent = await deployment.main_agent()
         if agent is not None:
             held.update(str(s.id) for s in await answered_sources(agent, deployment))
     return held if sources is None else held & {str(s.id) for s in sources}
@@ -1344,12 +1336,14 @@ class AgentServer:
 
         wanted: dict[str, tuple] = {}
         strays: list = []
-        agents = QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["parent_type_id", "agent-%"]))
-        for deployment in await Deployment.get_all(agents):
-            if not deployment.places_agent or not deployment.is_local:
+        # A deployment with a main agent runs that agent; the rest are web-only or this computer -- and
+        # one whose main agent was just cleared is a stray when its loop is still up.
+        local = QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["target.provider", "local"]))
+        for deployment in await Deployment.get_all(local):
+            if not deployment.is_local:
                 continue
-            agent = await deployment.agent() if deployment.serving else None
-            if agent is not None and agent.enabled_on(deployment.id):
+            agent = await deployment.main_agent() if deployment.serving else None
+            if agent is not None and agent.enabled:
                 wanted[str(deployment.id)] = (agent, deployment)
             elif str(deployment.id) not in self._running and deployment_process.alive(deployment):
                 strays.append(deployment)
@@ -1362,8 +1356,12 @@ class AgentServer:
         if not deployment_process.alive(deployment):
             labels = await deployment_process.start(deployment)
             if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
-                deployment.provider_labels = {**(deployment.provider_labels or {}), **labels}
-                await deployment.save()
+                # The row as it is NOW, not the copy read before the start: a hub adopt that landed in
+                # between (a main agent cleared, an override changed) must not be written back over.
+                current = await type(deployment).get_by_id(str(deployment.id)) or deployment
+                current.provider_labels = {**(current.provider_labels or {}), **labels}
+                await current.save()
+                deployment = current
             logger.info(
                 "agent %s: deployment %s started in terminal %s",
                 agent.name or agent.id,

@@ -16,13 +16,10 @@ const HUB = 'https://staging.flowpad.ai';
 const state = vi.hoisted(() => ({ deployment: null as unknown }));
 vi.mock('@sdk/react/hooks', async (original) => ({
   ...(await original<object>()),
-  useEntity: () => ({ data: state.deployment }),
+  useEntity: (typeId: { type?: string } | null) => ({ data: typeId?.type === 'agent' ? null : state.deployment }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),
-}));
-vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
-  useAgentPlaces: () => ({ places: [], reload: vi.fn() }),
 }));
 vi.mock('@src/components/assets/editor/agent-profile/deployment/use-deployment-threads', () => ({
   useDeploymentThreads: () => ({ threads: [], error: null }),
@@ -40,11 +37,10 @@ vi.mock('@src/components/assets/editor/agent-profile/deployment/DeploymentProces
 vi.mock('@src/components/assets/editor/agent-profile/deployment/DeploymentThreads', () => ({
   DeploymentThreads: () => null,
 }));
-vi.mock('@src/components/assets/editor/agent-profile/AgentPlaceCard', () => ({ AgentPlaceCard: () => null }));
+vi.mock('@src/components/project-deployments/ProjectDeploymentCard', () => ({ ProjectDeploymentCard: () => null }));
 
-const { Agent, cloudManager, Deployment } = await import('@sdk');
-const { AgentDeploymentPage } =
-  await import('@src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage');
+const { cloudManager, Deployment, Project } = await import('@sdk');
+const { ProjectDeploymentPage } = await import('@src/components/project-deployments/ProjectDeploymentPage');
 
 const deployment = (provider: string, externalId: string) =>
   new Deployment({
@@ -57,7 +53,7 @@ const deployment = (provider: string, externalId: string) =>
 const show = (row: unknown, hubUrl = HUB) => {
   state.deployment = row;
   vi.spyOn(cloudManager, 'cloudAppUrl', 'get').mockReturnValue(hubUrl);
-  render(<AgentDeploymentPage agent={new Agent({ id: AGENT_ID, name: 'q' })} deploymentId={DEPLOYMENT_ID} />);
+  render(<ProjectDeploymentPage project={new Project({ id: AGENT_ID, name: 'q' } as never)} deploymentId={DEPLOYMENT_ID} />);
 };
 
 afterEach(() => {
@@ -65,7 +61,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('AgentDeploymentPage — open workspace', () => {
+describe('ProjectDeploymentPage — open workspace', () => {
   it("links to the hub's page for the deployment's machine, in a new tab", () => {
     show(deployment('e2b', `compute_node-${NODE_ID}`));
 
@@ -109,7 +105,7 @@ describe('AgentDeploymentPage — open workspace', () => {
   it('is absent, and the page still renders, when the machine id is not a compute_node typeid', () => {
     show(deployment('e2b', 'sbx_not-a-typeid'));
 
-    expect(screen.getByTestId('agent-deployment-page')).toBeInTheDocument();
+    expect(screen.getByTestId('project-deployment-page')).toBeInTheDocument();
     expect(screen.queryByTestId('deployment-open-workspace')).not.toBeInTheDocument();
   });
 });

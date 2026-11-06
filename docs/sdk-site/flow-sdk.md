@@ -368,7 +368,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name("researcher")
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), "chat")
@@ -971,15 +971,17 @@ agent = Agent(
     name="researcher",
     model="sm",
     system_prompt="You research; you do not summarize.",
+    project_id=PROJECT,                        # a deployment places a project
 )
 await agent.save()
 
-here = await agent.deploy("local")             # "This computer" — nothing is placed until you ask
+here = await agent.deploy("local")             # the project's ONE local deployment, the agent as main
 again = await agent.deploy("local")
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.element_type == "agent"            # what it places is its parent — no stored kind
-assert here.identity == "agent"                # a box it runs on logs in as the agent
+assert here.element_type == "project"          # what it places is its parent: the project
+assert here.main_agent_id == str(agent.typeid)
+assert here.identity == "agent"                # a box with a main agent logs in as it
 assert here.target.provider == "local"
 assert here.is_local                           # an id comparison, not a provider test
 ```
@@ -994,7 +996,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name("researcher")
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), "chat")

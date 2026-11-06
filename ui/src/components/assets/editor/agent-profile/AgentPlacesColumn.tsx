@@ -1,87 +1,41 @@
-import { Agent, type AgentPlace, type DeploymentStatus } from '@sdk';
-import { isTerminal } from '@sdk/activity';
-import { useWatch } from '@sdk/react/hooks';
+import type { Agent } from '@sdk';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useEffect, useState } from 'react';
 import { Loader2, Mail, Plus, Server } from 'lucide-react';
 
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { notify } from '@src/notifications';
-import { useActivitySpec } from '@src/store/activity-store';
-import { formatTimeAgo } from '@src/utils/format-time-ago';
 
 import { providerIcon, useAgentChannels } from '@src/components/agent-resources/AgentWebhooksSection';
-import { NewDeploymentDialog } from './NewDeploymentDialog';
-import { useAgentPlaces } from './use-agent-places';
+import { useAgentPlaces, type AgentPlace } from './use-agent-places';
 import { usePlaceDisplay } from './use-place-display';
-
-/** The deploys whose funding warning was already shown (or that were history when first seen): kept across mounts. */
-const announcedDeploys = new Set<string>();
-/** The deploys seen running whose end is not told yet: one that ends failed is told once. Kept across mounts. */
-const runningDeploys = new Set<string>();
 
 interface AgentPlacesColumnProps {
   agent: Agent;
 }
 
 /**
- * The agent's deployments — this computer (always there, listed first) and every cloud machine —
- * as one plain list under a single "New deployment" button. Channels, schedules and the other
- * resources live in the menu on the left; a row opens the deployment's own page, nested in the
- * agent (its live timeline and processes), and says when it was last active. On the hub there is no local deployment and
- * no deploy.
+ * Where the agent answers — every deployment it is the main agent of, this computer first — each a link to
+ * that deployment's page in its PROJECT's Deployments, where it is run. "Deploy" opens the project's
+ * Deployments with this agent preset as the main agent of a new deployment. A deployment belongs to its
+ * project; the agent page only shows where it is main.
  */
 export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
   const { t } = useLingui();
-  const { navigation, currentDock } = useDockNavigation();
+  const { navigation } = useDockNavigation();
   const display = usePlaceDisplay();
-  const { places, reload } = useAgentPlaces(agent);
-  // The hub has no `places` call; it answers where the agent runs and what is wired to it in one read.
+  const { places } = useAgentPlaces(agent);
+  // The hub answers what is wired to the agent (links, connections) in one read.
   const wired = useAgentChannels(agent);
-  const [deployOpen, setDeployOpen] = useState(false);
   const hub = isHubOnly();
-  // A deploy reports on the agent's `deploy` activity, sent only to the agent's watchers. Watched for as
-  // long as this column is open: the dialog closes on the deploy's answer, before its steps run.
-  useWatch(agent.typeId, !hub);
-  // The deploy's steps run after the dialog has closed: its placement is planned, then given its machine, after
-  // the list was last read. Re-read it each time the deploy moves.
-  const deploy = useActivitySpec('deploy', agent.typeId.toString());
-  const deployMoved = deploy ? `${deploy.state}:${deploy.children.map((step) => step.state).join()}` : null;
-  useEffect(() => {
-    if (deployMoved) void reload();
-  }, [deployMoved, reload]);
-  // What the deploy goes ahead without (no model funding) is the readiness step's end message: said once per deploy,
-  // however often this column mounts. A deploy that has ended by the time it is first seen is history, not news.
-  const warning = deploy?.children.find((step) => step.name === 'readiness' && step.state === 'completed')?.message;
-  useEffect(() => {
-    if (!deploy || announcedDeploys.has(deploy.activity_id)) return;
-    if (isTerminal(deploy)) {
-      announcedDeploys.add(deploy.activity_id);
-      return;
-    }
-    if (!warning) return;
-    announcedDeploys.add(deploy.activity_id);
-    notify.warning({ title: t`Deploying without model funding`, message: warning, forceToast: true });
-  }, [deploy, warning, t]);
-  // A deploy that fails after the dialog closed (its machine, most often) is told here: nothing else is on screen.
-  useEffect(() => {
-    if (!deploy) return;
-    if (!isTerminal(deploy)) {
-      runningDeploys.add(deploy.activity_id);
-      return;
-    }
-    if (!runningDeploys.delete(deploy.activity_id) || deploy.state === 'completed') return;
-    notify.error({ title: t`Could not deploy`, message: deploy.message ?? t`Deploy failed.`, forceToast: true });
-  }, [deploy, t]);
+  const deployPage = agent.deployPagePointer;
 
-  // The server lists this computer first.
-  const visible = (places ?? []).filter((place) => !hub || !place.is_local);
-  // A deployment's page opens nested in the agent — project › agent › Deployments › it — in this tab.
-  const openPage = (place: AgentPlace) =>
-    currentDock && navigation.openDock(currentDock.withChild('deployment', `deployment-${place.deployment.id}`));
+  const visible = places ?? [];
+  const openPage = (place: AgentPlace) => {
+    const pointer = place.deployment.projectPagePointer;
+    if (pointer) navigation.openDock(pointer);
+  };
 
   return (
     <section className="flex flex-col gap-3" aria-labelledby="agent-deployments" data-testid="agent-places">
@@ -89,22 +43,19 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
         <h2 id="agent-deployments" className="text-sm font-semibold">
           <Trans>Deployments</Trans>
         </h2>
-        {!hub && (
+        {deployPage && (
           <Button
             size="sm"
             variant="outline"
             className="h-8 shrink-0"
-            onClick={() => setDeployOpen(true)}
+            onClick={() => navigation.openDock(deployPage)}
             data-testid="agent-new-deployment"
           >
             <Plus className="me-1.5 h-3.5 w-3.5" />
-            <Trans>New deployment</Trans>
+            <Trans>Deploy</Trans>
           </Button>
         )}
       </div>
-      {deployOpen && !hub && (
-        <NewDeploymentDialog agent={agent} open onOpenChange={setDeployOpen} onLaunched={reload} />
-      )}
       {places === null ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       ) : visible.length === 0 && hub && wired && wired.deployments.length > 0 ? (
@@ -139,13 +90,6 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
                     data-testid={`agent-place-state-${place.deployment.id}`}
                   >
                     {stateOf(place)}
-                  </span>
-                  <span
-                    className="w-20 shrink-0 text-end text-xs text-muted-foreground"
-                    title={place.last_active ? new Date(place.last_active).toLocaleString() : undefined}
-                    data-testid={`agent-place-last-active-${place.deployment.id}`}
-                  >
-                    {formatTimeAgo(place.last_active) ?? t`never`}
                   </span>
                 </button>
                 {/* What this place answers is read in the agent's stream inbox: one StreamInbox per agent, so every
@@ -215,12 +159,7 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
   );
 
   function stateOf(place: AgentPlace): string {
-    if (!place.enabled) return t`Off`;
-    // The wire row, not `new Deployment(...)`: constructing an entity registers it in the shared cache,
-    // and doing that in render re-rendered this column forever (the app froze opening the agent).
-    const status = place.deployment.status as DeploymentStatus | undefined;
-    if (status?.provider_state === 'paused') return t`Paused`;
-    if (place.behind) return t`Update available`;
+    if (place.deployment.status?.provider_state === 'paused') return t`Paused`;
     return place.is_local ? t`On` : t`Running`;
   }
 }

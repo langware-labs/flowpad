@@ -70,9 +70,9 @@ export const Onboarding = {
     return call('create_agent', 'project', null, 'POST', { system_prompt: systemPrompt, channel, method });
   },
 
-  /** The agent's own sandbox; answers once it is up, signed in and serving the agent. */
-  deploy(agentId: string): Promise<DeployedAgent> {
-    return call('deploy', 'agent', agentId, 'POST', { provider: 'e2b' });
+  /** A sandbox of the agent's project with the agent as its main agent; answers once it is up and serving it. */
+  deploy(projectId: string, agentId: string): Promise<DeployedAgent> {
+    return call('deploy', 'project', projectId, 'POST', { provider: 'e2b', main_agent_id: `agent-${agentId}` });
   },
 
   /** Set up the agent's channel source on its sandbox (config, who may write, a credential, then verify). */

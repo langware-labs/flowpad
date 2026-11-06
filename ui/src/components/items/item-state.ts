@@ -43,6 +43,17 @@ export function deploymentState(providerState: string | null | undefined): ItemS
   }
 }
 
+/** A deployment row's state: a local one runs while it serves its main agent (its provider never reports
+ *  anything but `configured`); a remote one is what its provider says. */
+export function deploymentRowState(d: {
+  isLocal: boolean;
+  serving?: boolean;
+  status?: { provider_state?: string | null } | null;
+}): ItemState {
+  if (d.isLocal && (d.status?.provider_state ?? 'configured') === 'configured') return d.serving ? 'running' : 'off';
+  return deploymentState(d.status?.provider_state);
+}
+
 /** An issue: open errors and warnings both ask for you; resolved ones do not. */
 export function issueState(status: string | null | undefined, severity: string | null | undefined): ItemState {
   if (status === 'resolved') return 'resolved';

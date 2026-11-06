@@ -125,14 +125,33 @@ def _request(body: dict, monkeypatch, *, someone="user-11111111-1111-4111-8111-1
     return info
 
 
+async def _project_id() -> str:
+    """A project for the agent: a deployment places a project, its agent the main one."""
+    import tempfile
+    from pathlib import Path
+
+    from tests.unit.agent._seed import seed_project
+
+    return str((await seed_project(Path(tempfile.mkdtemp()) / "proj")).id)
+
+
 async def _agent(name="relay-agent") -> Agent:
-    a = Agent(name=name, system_prompt="relay me", worker_type="claude", model="haiku")
+    a = Agent(name=name, system_prompt="relay me", worker_type="claude", model="haiku", project_id=await _project_id())
     await a.save()
     return a
 
 
 async def _remote_placement(agent: Agent):
-    there = await agent.deploy("e2b")
+    from flow_sdk.builtin.deployment import Deployment
+
+    there = Deployment(
+        name=f"{agent.name} (e2b)",
+        parent_type_id=f"project-{agent.project_id}",
+        main_agent_id=str(agent.typeid),
+        target={"provider": "e2b", "scope": "machine"},
+        origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
+    )
+    await there.save()
     assert there.is_local is False
     return there
 
@@ -186,7 +205,7 @@ async def test_use_action_selects_the_exact_deployment_and_rejects_a_foreign_one
 async def test_the_auto_prompt_opt_in_never_rides_the_hub_body(hub):
     """FLOWPAD-2180: the placement machine sees its deployment as local, so the
     opt-in must stay on the originating tier — the hub body is built here."""
-    agent = Agent(name="prompted-relay", system_prompt="relay me", auto_launch_prompt="Say hello")
+    agent = Agent(name="prompted-relay", system_prompt="relay me", auto_launch_prompt="Say hello", project_id=await _project_id())
     await agent.save()
     there = await _remote_placement(agent)
 
@@ -200,9 +219,11 @@ async def test_the_auto_prompt_opt_in_never_rides_the_hub_body(hub):
 async def test_a_relayed_use_on_the_placement_machine_queues_no_auto_prompt(monkeypatch):
     """The placement machine's side of a hub relay: ``use_action`` with the body
     the hub forwards (``deployment_id`` only) on a deployment local HERE."""
-    agent = Agent(name="placement-side", system_prompt="relay me", auto_launch_prompt="Say hello")
+    agent = Agent(
+        name="placement-side", system_prompt="relay me", auto_launch_prompt="Say hello", project_id=await _project_id()
+    )
     await agent.save()
-    here = await agent.local_deployment()
+    here = await agent.deploy("local")  # the box's deployment: this agent is its main one
     assert here.is_local is True
 
     _request({"deployment_id": here.id}, monkeypatch)

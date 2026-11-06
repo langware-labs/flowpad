@@ -146,7 +146,7 @@ async def _cloud_place(agent):
     from flow_sdk.builtin.deployment import Deployment
 
     deployment = Deployment(
-        name=f"{agent.name} (e2b)", parent_type_id=str(agent.typeid),
+        name=f"{agent.name} (e2b)", parent_type_id=f"project-{agent.project_id}", main_agent_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
     )
@@ -157,7 +157,7 @@ async def _cloud_place(agent):
 @pytest.mark.asyncio
 async def test_a_schedule_on_this_computer_is_armed_here(tmp_path, scheduler):
     agent = await _agent(tmp_path, "sched-here")
-    local = await agent.local_deployment()
+    local = await agent.deploy("local")
 
     trigger = await add_schedule(agent, {**BODY, "runs_on": local.id})
 
@@ -185,14 +185,14 @@ async def test_a_schedule_cannot_run_on_another_agents_place(tmp_path, scheduler
     agent = await _agent(tmp_path, "sched-mine")
     other = await _agent(tmp_path, "sched-theirs")
     with pytest.raises(ScheduleError) as refused:
-        await add_schedule(agent, {**BODY, "runs_on": (await other.local_deployment()).id})
+        await add_schedule(agent, {**BODY, "runs_on": (await other.deploy("local")).id})
     assert refused.value.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_moving_a_schedule_to_another_place_disarms_it_here(tmp_path, scheduler):
     agent = await _agent(tmp_path, "sched-move")
-    local = await agent.local_deployment()
+    local = await agent.deploy("local")
     cloud = await _cloud_place(agent)
     trigger = await add_schedule(agent, {**BODY, "runs_on": local.id})
     assert scheduler.get_job(trigger.id) is not None

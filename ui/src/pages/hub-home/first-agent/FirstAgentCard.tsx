@@ -165,7 +165,7 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
       mark('saved');
       if (agent.mailbox?.address) mark('linked'); // the address exists the moment the agent does
       setStep('connect');
-      deploying.current = deployedMachine(agent.agent.id).then((d) => {
+      deploying.current = deployedMachine(agent.project.id, agent.agent.id).then((d) => {
         setDeployed(d);
         mark('sandbox');
         return d;

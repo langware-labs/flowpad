@@ -1,12 +1,12 @@
-"""A project's cloud deploy names the placement it already has on that provider, so the hub gives that row its
-machine (or returns it) instead of booting a second box. A first deploy names none. The hub is the in-memory double."""
+"""A project deploy names the placement it is for: a first deploy names none (the plan makes one), a redeploy
+names its row, and one an earlier attempt planned but never put on a machine is continued, not doubled. A
+project may otherwise be deployed any number of times. The hub is the in-memory double."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
+from flow_sdk.builtin.agent_cloud_deploy import run_deployment_steps
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.project import Project
 from tests.utils import fake_hub_store
@@ -24,48 +24,44 @@ async def _shared(self, *args, **kwargs):
     return False
 
 
-def _asked(monkeypatch, body: dict) -> None:
-    async def post_data():
-        return body
-
-    info = SimpleNamespace(someone_typeid="someone-user-1", get_post_data=post_data)
-    monkeypatch.setattr("flow_sdk.request_context.methods.get_current_request_info", lambda: info)
-
-
-async def _placement(project, provider: str, environment: str = "production") -> Deployment:
+async def _placement(project, provider: str, *, on_a_machine: bool) -> Deployment:
     row = Deployment(
         name="app",
         parent_type_id=str(project.typeid),
         target={"provider": provider, "scope": "s"},
-        environment=environment,
+        environment="production",
+        origin={"kind": provider, "provider": provider, "external_id": "compute_node-1" if on_a_machine else ""},
     )
     await row.save()
     return row
 
 
-async def test_a_first_deploy_names_no_placement(project, hub, monkeypatch):
-    _asked(monkeypatch, {})
+async def _deployed(project, **kwargs) -> str:
+    """The placement one deploy (run to its end) is for."""
+    import asyncio
 
-    await project.deploy_action()
+    from flow_sdk.activity import monitor
 
-    assert hub.deploy_ids == [None]
-
-
-async def test_a_redeploy_names_the_placement_the_project_has_on_that_provider(project, hub, monkeypatch):
-    await _placement(project, "local")
-    await _placement(project, "e2b", environment="staging")
-    on_gcp = await _placement(project, "gcp_vm")
-    _asked(monkeypatch, {"provider": "gcp_vm"})
-
-    await project.deploy_action()
-
-    assert hub.deploy_ids == [str(on_gcp.id)]
+    ended = asyncio.Event()
+    stop = monitor.subscribe(lambda root, _t: ended.set() if root.is_terminal else None)
+    try:
+        answer = await run_deployment_steps(project, "user-1", None, "production", provider="e2b", **kwargs)
+        await ended.wait()
+    finally:
+        stop()
+    return answer["deployment_id"]
 
 
-async def test_no_provider_is_the_default_provider_s_placement(project, hub, monkeypatch):
-    on_e2b = await _placement(project, "e2b")
-    _asked(monkeypatch, {})
+async def test_a_running_placement_is_not_reused(project, hub):
+    running = await _placement(project, "e2b", on_a_machine=True)
+    assert await _deployed(project) != str(running.id), "deployed again: a second deployment"
 
-    await project.deploy_action()
 
-    assert hub.deploy_ids == [str(on_e2b.id)]
+async def test_a_planned_placement_without_a_machine_is_continued(project, hub):
+    planned = await project.plan_deployment("production", provider="e2b")  # a deploy refused before its machine
+    assert await _deployed(project) == str(planned.id)
+
+
+async def test_a_redeploy_names_its_row(project, hub):
+    first = await _deployed(project)
+    assert await _deployed(project, deployment_id=first) == first

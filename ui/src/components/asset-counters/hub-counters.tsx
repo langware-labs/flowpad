@@ -9,6 +9,7 @@ import { crossCounters } from './axes';
 import { isLiveDeployment, isRunning, runPauseStatuses } from './placement';
 import { StatusDot } from './AssetItems';
 import type { AssetCounterGroup } from './types';
+import { DeploymentContextLine } from '@src/components/project-deployments/DeploymentContext';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { deploymentState, type ItemState } from '@src/components/items/item-state';
 import { StatePill } from '@src/components/items/ItemCard';
@@ -168,14 +169,19 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
   },
   itemKey: (d) => d.id,
   searchText: (d) => [d.name, d.target.provider].filter(Boolean).join(' '),
-  // Its own page (funding, threads, health) when it places an agent; else where it sits in the world view.
-  itemPointer: (d) => d.agentPagePointer ?? d.dockPointer,
+  // Its own page in its project's Deployments (funding, threads, health); else where it sits in the world view.
+  itemPointer: (d) => d.projectPagePointer ?? d.dockPointer,
   card: (d) => ({
     title: d.name,
     icon: iconForType(Deployment.type),
     state: deploymentState(d.status?.provider_state),
     role: roleOf(d),
-    description: <FundedBy deployment={d} />,
+    description: (
+      <span className="flex min-w-0 flex-col">
+        <DeploymentContextLine deployment={d} />
+        <FundedBy deployment={d} />
+      </span>
+    ),
     chips: [d.target.provider, d.environment].filter(Boolean),
     at: { date: d.updated_date },
   }),
@@ -184,7 +190,12 @@ export const hubDeploymentCounterGroup: AssetCounterGroup<Deployment> = {
     {
       key: 'deployment',
       header: <Trans>Deployment</Trans>,
-      cell: (d) => <span className="truncate font-medium text-foreground">{d.name}</span>,
+      cell: (d) => (
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate font-medium text-foreground">{d.name}</span>
+          <DeploymentContextLine deployment={d} />
+        </div>
+      ),
       className: 'w-[45%] max-w-0',
     },
     {

@@ -3,7 +3,7 @@ import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { appsQuery } from '@src/hooks/flow-hooks/useAssetApps';
 import { useMemo } from 'react';
-import { ALL_DEPLOYMENTS, DeploymentBadges, deploymentsByParent } from './agent-counters';
+import { ALL_DEPLOYMENTS, DeploymentBadges, deploymentsByProject } from './agent-counters';
 import { crossCounters, useScopes } from './axes';
 import { isPaused, isRunning, runPauseStatuses } from './placement';
 import type { AssetCounter, AssetCounterGroup } from './types';
@@ -24,10 +24,11 @@ function useAppCounters(): AssetCounter<AppRow>[] {
     useEntitiesQuery<Deployment>(ALL_DEPLOYMENTS);
 
   const allRows = useMemo(() => {
-    const byApp = deploymentsByParent(deployments, WebApp.type);
+    // An app runs wherever its project is deployed: a deployment places the whole project.
+    const byProject = deploymentsByProject(deployments);
     return [...apps]
       .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-      .map((app) => ({ app, deployments: byApp.get(app.typeId.toString()) ?? [] }));
+      .map((app) => ({ app, deployments: (app.project_id && byProject.get(app.project_id)) || [] }));
   }, [apps, deployments]);
   const projectId = project?.id;
   const projectRows = useMemo(

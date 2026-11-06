@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Project, TypeId, type Agent, type AgentVersionState } from '@sdk';
-import { useProject } from '@sdk/react/hooks';
+import { type Agent, type AgentVersionState, type Project } from '@sdk';
 
 import { Button } from '@src/components/ui/button';
 import { StepList } from '@src/components/ui/step-list';
@@ -15,7 +14,6 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { notify } from '@src/notifications';
 import type { Step, StepStatus } from '@src/hooks/use-step-flow';
 
-import { AgentProjectPicker } from './AgentProjectPicker';
 import { AgentPublishButton } from './AgentPublishButton';
 import {
   DEPLOY_STEP_IDS,
@@ -27,7 +25,10 @@ import {
 } from './deploy-readiness';
 
 interface AgentDeployChecklistProps {
-  agent: Agent;
+  /** The project being deployed — the whole repository goes. */
+  project: Project;
+  /** Its main agent, when it has one: its published version is the last row. */
+  agent?: Agent | null;
   /**
    * Tri-state readiness for the host's Deploy button. `null` means "still
    * checking" and must NOT disable it — see `deployReadyState`.
@@ -60,16 +61,11 @@ const STEP_STATUS: Record<DeployStepState, StepStatus> = {
  * Re-checks are EVENT-driven: the version is re-read when the agent changes and
  * after a publish. No interval, no polling.
  */
-export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployChecklistProps) {
+export function AgentDeployChecklist({ project, agent, onReadinessChange }: AgentDeployChecklistProps) {
   const { t } = useLingui();
   const hubMode = isHubOnly();
 
   const cloudAuthed = useCloudAuthed();
-  // The agent's OWN project: the one open on the page may have nothing to do with it.
-  const [movedTo, setMovedTo] = useState<string | null>(null);
-  const projectId = movedTo ?? agent.project_id ?? null;
-  const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
-  const { project, isLoading: projectLoading } = useProject(projectTypeId, { enabled: !!projectId });
   const requireCloudLogin = useCloudLoginGate();
 
   const [loginBusy, setLoginBusy] = useState(false);
@@ -79,10 +75,10 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
   const [version, setVersion] = useState<AgentVersionState | null>(null);
 
   // No project, or one that no longer loads, is an answer: only a load under way is "still checking".
-  const projectPublished = !projectId ? false : project ? project.remote === true : projectLoading ? null : false;
+  const projectPublished = project.remote === true;
 
   const loadVersion = useCallback(async () => {
-    if (hubMode) return;
+    if (hubMode || !agent) return;
     try {
       setVersion(await agent.versionState());
     } catch {
@@ -94,7 +90,7 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
 
   useEffect(() => {
     void loadVersion();
-  }, [loadVersion, agent.updated_date]);
+  }, [loadVersion, agent?.updated_date]);
 
   const states = useMemo(
     () => deployReadiness({ cloudAuthed, projectPublished, version }),
@@ -124,7 +120,7 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
     if (gitBusy || !version) return;
     setGitBusy(true);
     try {
-      const git = await project?.getGitWorkdir();
+      const git = await project.getGitWorkdir();
       const pushed = await git?.push();
       // With no remote of its own the commit is the whole job: the hub repo is the checkout's remote.
       if (!pushed?.ok && !(pushed?.committed && !version.has_remote)) {
@@ -152,7 +148,7 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
     if ((version?.uncommitted ?? 0) === 0) return runCommit();
     setGitBusy(true);
     try {
-      const git = await project?.getGitWorkdir();
+      const git = await project.getGitWorkdir();
       setCommitFiles(((await git?.getStatus())?.files ?? []).map((file) => file.path));
     } catch (e) {
       notify.error({ title: t`Could not list the changes`, message: errorMessage(e, t`It failed.`), forceToast: true });
@@ -165,7 +161,7 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
 
   const labels: Record<DeployStepId, string> = {
     'cloud-login': t`Signed in to Flowpad cloud`,
-    project: projectId ? t`Project linked to cloud` : t`Agent is in a project`,
+    project: t`Project linked to cloud`,
     version: version?.git_native ? t`Project committed and pushed` : t`Published version up to date`,
   };
 
@@ -187,17 +183,7 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
         // renders its own green "Linked to cloud" chip once the project is
         // linked — which is why it is mounted only while this row is the
         // blocker, so that chip never doubles up with the row's Done marker.
-        if (!projectId)
-          return (
-            <AgentProjectPicker
-              agent={agent}
-              onMoved={(id) => {
-                setMovedTo(id);
-                void loadVersion(); // the version row answers for the new project's checkout
-              }}
-            />
-          );
-        return project ? <ProjectCloudLinkButton project={project} /> : undefined;
+        return <ProjectCloudLinkButton project={project} />;
       case 'version':
         // A git checkout is fixed in git, not by a Publish button.
         if (version?.git_native) {
@@ -208,12 +194,14 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
         }
         // Publishes, then re-reads the version.
         return (
+          agent && (
           <AgentPublishButton
             agent={agent}
             onPublished={loadVersion}
             className="h-6 px-2 text-xs"
             testId="agent-deploy-action-version"
           />
+          )
         );
       default:
         return undefined;
@@ -221,10 +209,6 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
   };
 
   const detailFor = (id: DeployStepId, state: DeployStepState): string | undefined => {
-    if (id === 'project' && state === 'todo' && !projectId) {
-      return t`This agent is in no project, so the cloud has nowhere to put it — choose one`;
-    }
-    if (id === 'project' && state === 'todo' && !project) return t`Its project could not be loaded`;
     if (id === 'version' && state === 'todo' && version?.git_native) {
       const uncommitted = version.uncommitted ?? 0;
       const unpushed = version.unpushed ?? 0;
@@ -307,12 +291,12 @@ export function AgentDeployChecklist({ agent, onReadinessChange }: AgentDeployCh
               A deploy uploads this project's commits to Flowpad cloud — the whole repository, not only the agent.
             </Trans>
           ) : (
-            <Trans>A deploy uploads only this agent's folder to Flowpad cloud.</Trans>
+            <Trans>A deploy uploads this project to Flowpad cloud.</Trans>
           )}
         </p>
       )}
       {/* No git yet: neither its own checkout nor Flowpad git (the hub repo a linked project gets). */}
-      {project && version?.git_native === false && !projectPublished && (
+      {version?.git_native === false && !projectPublished && (
         <GitRequiredStrip project={project} className="mt-2" />
       )}
     </div>

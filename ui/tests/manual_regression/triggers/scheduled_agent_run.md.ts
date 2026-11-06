@@ -64,9 +64,11 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   await expect(page.getByRole('button', { name: 'Open project list' })).toContainText(project.name);
 
   // ── deploy to this computer: a schedule runs on a deployment ──────────────
-  await page.getByTestId('agent-new-deployment').click();
-  await page.getByTestId('new-deployment-type-local').click();
-  await page.getByTestId('new-deployment-launch').click();
+  // This computer is the Summary tab's switch, not a New deployment choice.
+  await page.getByTestId('agent-tab-summary').click();
+  await page.getByTestId('agent-local-toggle-switch').click();
+  await expect(page.getByTestId('agent-local-toggle-switch')).toBeChecked();
+  await page.getByTestId('agent-tab-deployments').click();
   await expect(page.getByTestId('agent-places-list')).toBeVisible();
 
   // The schedules manager for this computer: the menu section's `+`.

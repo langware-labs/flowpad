@@ -3,10 +3,10 @@ import { Loader2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   credentialsService,
-  type Agent,
   type AgentReadiness,
   type Deployment,
   type DeploymentSecretsInventory,
+  type Project,
 } from '@sdk';
 
 import { errorMessage } from '@src/lib/error-message';
@@ -16,7 +16,7 @@ import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { BusyButton, DeploymentSecretsGate } from './DeploymentSecretsGate';
 
 interface AgentPlaceSecretsProps {
-  agent: Agent;
+  project: Project;
   deployment: Deployment;
 }
 
@@ -29,17 +29,17 @@ const when = (ts?: number) => formatTimeAgoShort(ts ? ts * 1000 : null);
  * never reaches this page. "Use mine" re-copies this computer's value (a rotation; the hub
  * re-places it on a running machine); Revoke takes a connection back.
  */
-export function AgentPlaceSecrets({ agent, deployment }: AgentPlaceSecretsProps) {
+export function AgentPlaceSecrets({ project, deployment }: AgentPlaceSecretsProps) {
   const { t } = useLingui();
   const [inventory, setInventory] = useState<DeploymentSecretsInventory | null>(null);
   const [readiness, setReadiness] = useState<AgentReadiness | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [held, ready] = await Promise.all([deployment.secretsInventory(), agent.readiness(deployment.id)]);
+    const [held, ready] = await Promise.all([deployment.secretsInventory(), project.readiness(deployment.id, deployment.main_agent_id)]);
     setInventory(held);
     setReadiness(ready);
-  }, [agent, deployment]);
+  }, [project, deployment]);
 
   useEffect(() => {
     load().catch((e) =>
@@ -76,7 +76,7 @@ export function AgentPlaceSecrets({ agent, deployment }: AgentPlaceSecretsProps)
     <div className="flex flex-col gap-3 text-xs" data-testid="agent-place-secrets">
       {readiness && !readiness.ready && (
         <DeploymentSecretsGate
-          agent={agent}
+          project={project}
           deployment={deployment}
           readiness={readiness}
           onChange={(next) => {

@@ -55,9 +55,19 @@ async def _until(predicate) -> None:
         await asyncio.sleep(0.01)
 
 
+async def _project_id() -> str:
+    """A project for the agent: a deployment places a project, its agent the main one."""
+    import tempfile
+    from pathlib import Path
+
+    from tests.unit.agent._seed import seed_project
+
+    return str((await seed_project(Path(tempfile.mkdtemp()) / "proj")).id)
+
+
 async def test_the_loop_follows_its_channels_survives_a_failure_and_ends_with_its_deployment(mail_db, served):
     runs, fail = served
-    agent = Agent(name=f"looped-{uuid.uuid4().hex[:8]}", worker_type="claude")
+    agent = Agent(name=f"looped-{uuid.uuid4().hex[:8]}", worker_type="claude", project_id=await _project_id())
     await agent.save()
     deployment = await agent.run_locally()
     chat = (await agent_serve.answered_sources(agent, deployment))[0]

@@ -15,7 +15,7 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { ActivityProgressSpec } from '../activity';
-import type { IDeployment } from './deployment';
+import { Deployment, type IDeployment } from './deployment';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
 export type CloudDeployProvider = string;
@@ -279,10 +279,6 @@ export class Agent extends APIEntity<Agent> {
    *  (`{wizard}`). The first place is the session's active display. Opened and
    *  repaired by the backend (`Agent.use`); the frontend only renders them. */
   auto_open?: ({ viewType: string; pointer: string } | { op: string } | { wizard: string })[] | null;
-  /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
-  places?: AgentPlaceSpecWire[] | null;
-  /** Deployment id of the one place that answers this agent's email. */
-  email_place?: string | null;
   /** The agent's own phone number (agent.json `phone`) — declaration only. */
   phone?: PhoneNumberWire | null;
 
@@ -326,8 +322,6 @@ export class Agent extends APIEntity<Agent> {
     this.vibe_only = entity.vibe_only ?? false;
     this.starter_prompts = entity.starter_prompts ?? [];
     this.auto_open = entity.auto_open ?? null;
-    this.places = entity.places ?? null;
-    this.email_place = entity.email_place ?? null;
     this.phone = entity.phone ?? null;
   }
 
@@ -517,6 +511,19 @@ export class Agent extends APIEntity<Agent> {
     await this.post('resume', { process_id: processId });
   }
 
+  /** Every deployment this agent is the main agent of — the places it answers. */
+  async deployments(): Promise<Deployment[]> {
+    return Deployment.forMainAgent(this.id);
+  }
+
+  /**
+   * "Deploy this agent": its project's Deployments page with a new deployment's main agent preset to it.
+   * Null for an agent that has no project (it has to move into one first).
+   */
+  get deployPagePointer(): DockPointerData | null {
+    return this.project_id ? Deployment.projectPagePointerFor(this.project_id, null, this.id) : null;
+  }
+
   /**
    * Open a chat on one exact cloud Deployment of this Agent.
    *
@@ -532,80 +539,6 @@ export class Agent extends APIEntity<Agent> {
       ...autoPromptBody(autoPrompt),
       ...launchSurfaceField(),
     })) as AgentUseResult;
-  }
-
-  /**
-   * Give this agent a machine of its own in the cloud.
-   *
-   * Publishing to the hub is implicit — the backend does it before deploying,
-   * so there is no order for a caller to get wrong. It also holds the cloud
-   * credentials, which is why this goes through the local backend rather than
-   * the browser calling the hub.
-   *
-   * Slow by nature (create + boot + health on a real sandbox); callers should
-   * show progress rather than assume a snappy round trip.
-   *
-   * `environment` is the placement's credential environment — `production`
-   * when omitted. One cloud machine per environment.
-   */
-  /**
-   * Deploy to a cloud machine — on `provider` when given, else on the provider the hub chooses — or
-   * `provider: 'local'` — this computer.
-   */
-  /**
-   * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
-   * back to the owner's capped default; omitted leaves it as it is.
-   */
-  async deploy({
-    environment,
-    provider,
-    tokenAllocation,
-    machineSize,
-    deploymentId,
-    values,
-  }: {
-    environment?: string;
-    provider?: 'local' | CloudDeployProvider;
-    tokenAllocation?: AgentTokenAllocation | null;
-    machineSize?: string;
-    /** The placement a refused deploy named: a retry continues it, keeping what was stored on it. */
-    deploymentId?: string;
-    /** Values typed for this deploy, `{credential: {variable: value}}`, stored on its placement. */
-    values?: Record<string, Record<string, string>>;
-  } = {}): Promise<AgentDeployResult> {
-    const body = {
-      ...(environment ? { environment } : {}),
-      ...(provider ? { provider } : {}),
-      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
-      // This deploy's box size; never written into agent.json (that would dirty the checkout it deploys).
-      ...(machineSize ? { machine_size: machineSize } : {}),
-      ...(deploymentId ? { deployment_id: deploymentId } : {}),
-      ...(values && Object.keys(values).length ? { values } : {}),
-    };
-    return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
-  }
-
-  /**
-   * The cloud placement this agent will have on `provider` (omitted: the one the hub chooses) in `environment`
-   * (default `production`), before it
-   * has a machine, and whether it is ready: each missing value can be filled ("use mine",
-   * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
-   * `deploy`, which is refused (409 `not_ready`) until it is. `deploymentId` plans the existing deployment it
-   * names again (changing its allocation); omitted, the hub makes a new one.
-   */
-  async planDeployment(
-    environment?: string,
-    provider?: CloudDeployProvider,
-    tokenAllocation?: AgentTokenAllocation | null,
-    deploymentId?: string,
-  ): Promise<AgentPlannedDeployment> {
-    const body = {
-      ...(environment ? { environment } : {}),
-      ...(provider ? { provider } : {}),
-      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
-      ...(deploymentId ? { deployment_id: deploymentId } : {}),
-    };
-    return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
   }
 
   /**
@@ -670,26 +603,6 @@ export class Agent extends APIEntity<Agent> {
     return { deployments: list(data.deployments), webhooks: list(data.webhooks), connections: list(data.connections) };
   }
 
-  /** Every place this agent runs on — this computer first — with what each owns. */
-  async listPlaces(): Promise<AgentPlace[]> {
-    return (await this.get<AgentPlace[]>('places')) ?? [];
-  }
-
-  /** Set one launch override for one place; `null` resets it to the definition. */
-  async setPlaceOverride(deploymentId: string, field: AgentPlaceField, value: string | string[] | null): Promise<void> {
-    await this.post('set_place_override', { deployment_id: deploymentId, field, value });
-  }
-
-  /** Switch this agent on or off on one place; `null` follows the definition's `enabled`. */
-  async setPlaceEnabled(deploymentId: string, enabled: boolean | null): Promise<void> {
-    await this.post('set_place_enabled', { deployment_id: deploymentId, enabled });
-  }
-
-  /** Make one place the only one answering this agent's email. */
-  async setEmailPlace(deploymentId: string): Promise<void> {
-    await this.post('set_email_place', { deployment_id: deploymentId });
-  }
-
   /** The Flowpad Assistant's skills this agent may pick from for `assistant_skills`. */
   async assistantSkillCatalog(): Promise<AssistantSkillChoice[]> {
     return (await this.get<AssistantSkillChoice[] | null>('assistant_skill_catalog')) ?? [];
@@ -730,26 +643,10 @@ export class Agent extends APIEntity<Agent> {
    * Agent's mail surface — everything else about a mailbox (its allowlist, its
    * lifecycle) belongs to `AgentMailbox`, which this hydrates.
    */
-  /** The environment a deploy starts on, and the ones to offer. */
-  async deployDefaults(): Promise<{ environment: string; environments: string[] }> {
-    return this.get('deploy_defaults');
-  }
-
   /** Move this project-less agent into a project (`Agent.move_to_project`). */
   async moveToProject(projectId: string): Promise<void> {
     await this.post('move_to_project', { project_id: projectId });
     this.project_id = projectId;
-  }
-
-  /** What this agent needs to run anywhere — credentials, permissions, variables. Names only. */
-  async requirements(): Promise<AgentRequirement[]> {
-    return (await this.get<AgentRequirement[] | null>('requirements')) ?? [];
-  }
-
-  /** Does that deployment (default: this computer) satisfy each requirement? Names only. */
-  async readiness(deploymentId?: string): Promise<AgentReadiness | null> {
-    const qs = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : '';
-    return this.get<AgentReadiness | null>(`readiness${qs}`);
   }
 
   async mailboxState(): Promise<AgentMailboxState> {
@@ -952,29 +849,12 @@ export interface AgentScheduleFields {
 }
 
 /** The launch settings a place may override — `PLACE_OVERRIDABLE_FIELDS` in agent_spec.py. */
-export const AGENT_PLACE_FIELDS = ['worker_type', 'model', 'permission_mode', 'effort', 'mcp_servers'] as const;
-export type AgentPlaceField = (typeof AGENT_PLACE_FIELDS)[number];
-
-export interface AgentPlaceOverrides {
-  worker_type?: string;
-  model?: string;
-  permission_mode?: string;
-  effort?: string;
-  /** Server NAMES — names travel between machines, ids do not. */
-  mcp_servers?: string[];
-}
-
-export interface AgentPlaceSpecWire extends AgentPlaceOverrides {
-  deployment_id: string;
-}
-
 /** `PhoneNumberSpec` — digits only; the backend strips `+`, separators and one trunk `0`. */
 export interface PhoneNumberWire {
   country_code: string;
   number: string;
 }
 
-/** One place an agent runs on (`GET /agent/<id>/places`). */
 /** `agent/<id>/channels`: what an agent is wired to, names and states only. */
 export interface AgentChannels {
   deployments: { typeid: string; node_typeid: string | null }[];
@@ -982,21 +862,6 @@ export interface AgentChannels {
   webhooks: { id: string; provider: string; status: string; sender: string; name: string; deployment_typeid: string }[];
   /** Connections a placement may use (`deployment/<id>/authorize`). */
   connections: { provider: string; deployment_typeid: string }[];
-}
-
-export interface AgentPlace {
-  /** The Deployment row, as wire data — wrap with `new Deployment(...)`. */
-  deployment: Record<string, unknown> & { id: string; name: string; kind: string };
-  is_local: boolean;
-  overrides: AgentPlaceOverrides;
-  schedule_count: number;
-  answers_email: boolean;
-  /** Published commits a cloud machine does not run yet; null when unknown or for this computer. */
-  behind: number | null;
-  /** Whether the agent runs on this place: its own switch, else the definition's `enabled`. */
-  enabled: boolean;
-  /** When it last did something (ISO): its newest run here, else when a cloud machine was last seen. */
-  last_active?: string | null;
 }
 
 /** `GET /agent/<id>/version` — what this computer has that the published version lacks. */

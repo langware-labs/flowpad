@@ -28,8 +28,7 @@ export const ALL_AGENTS = new QueryRequest({
   query: WITH_PERMISSIONS,
   name: 'assetCounters:agents',
 });
-// Every deployment; `deploymentsByAgent` keeps the ones whose parent is an agent (what a placement
-// places is its parent — there is no stored kind to query by).
+// Every deployment; `deploymentsByAgent` keys them by main agent, `deploymentsByProject` by the project placed.
 // One request for every counter group, so they share one watch.
 export const ALL_DEPLOYMENTS = new QueryRequest({
   type: Deployment.type,
@@ -46,24 +45,24 @@ export const DEPLOYMENTS_WITH_ROLES = new QueryRequest({
   name: 'assetCounters:deploymentsWithRoles',
 });
 
-/** Deployments grouped by the element they place, for those placing `type`. */
-export function deploymentsByParent(deployments: Deployment[], type: string): Map<string, Deployment[]> {
-  const byParent = new Map<string, Deployment[]>();
+/** Deployments grouped by the project they place, keyed by project id (`Deployment.projectTypeId`). */
+export function deploymentsByProject(deployments: Deployment[]): Map<string, Deployment[]> {
+  const byProject = new Map<string, Deployment[]>();
   for (const deployment of deployments) {
-    if (deployment.elementType !== type) continue;
-    const key = deployment.parent_type_id as string;
-    const list = byParent.get(key) ?? [];
+    const key = deployment.projectTypeId?.id;
+    if (!key) continue;
+    const list = byProject.get(key) ?? [];
     list.push(deployment);
-    byParent.set(key, list);
+    byProject.set(key, list);
   }
-  return byParent;
+  return byProject;
 }
 
-/** Deployments grouped by the agent they place (`Deployment.agentTypeId`). */
+/** Deployments grouped by their main agent (`Deployment.mainAgentTypeId`). */
 export function deploymentsByAgent(deployments: Deployment[]): Map<string, Deployment[]> {
   const byAgent = new Map<string, Deployment[]>();
   for (const deployment of deployments) {
-    const agentKey = deployment.agentTypeId?.toString();
+    const agentKey = deployment.mainAgentTypeId?.toString();
     if (!agentKey) continue;
     const list = byAgent.get(agentKey) ?? [];
     list.push(deployment);

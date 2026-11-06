@@ -5,7 +5,7 @@ import { useEntity } from '@src/hooks/entity-hooks';
 /**
  * The Agent a process was launched through, or null.
  *
- * `AgenticProcess.deployment_id` → `Deployment.agentTypeId` → `Agent`, both
+ * `AgenticProcess.deployment_id` → `Deployment.mainAgentTypeId` → `Agent`, both
  * hops through `useEntity` (cache-first, live-updating — a rename or a new
  * avatar repaints). A process with no deployment issues no request at all.
  *
@@ -23,7 +23,7 @@ export function useLaunchingAgent(
     [deploymentId],
   );
   const deployment = useEntity<Deployment>(deploymentTypeId, { enabled }).data;
-  const agentTypeId = deployment?.agentTypeId ?? null;
+  const agentTypeId = deployment?.mainAgentTypeId ?? null;
   return useEntity<Agent>(agentTypeId, { enabled }).data ?? null;
 }
 

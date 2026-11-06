@@ -429,7 +429,7 @@ class RunAgentActionHandler(TriggerActionHandler):
         # refusal, checked here before `launch` — which would refuse too, but only
         # after announcing a run: every tick of a schedule on a switched-off place
         # would emit `agent.run.requested` / `failed`.
-        if not agent.enabled_on(deployment.id):
+        if not agent.enabled:
             return PromptResult.refused(
                 f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: agent {agent.name!r} is disabled "
                 f"on place {deployment.id}."
