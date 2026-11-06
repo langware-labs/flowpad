@@ -111,6 +111,10 @@ class FlowMessageKind(str, Enum):
     #: The quiet, automatic line of that exchange ("Bob shared public key for secured transfer") — a real local row,
     #: rendered as a slim line in the share's thread.
     SEALED_NOTE = "sealed_note"
+    #: Ask for help: a person's request, sent like any message. Its attachments (the diagnosis, the screen and
+    #: session) are ordinary files; the hub may strip this field, so receivers re-derive it from the
+    #: ``help_request.value.json`` carrier (:func:`derive_help_request_kind`).
+    HELP_REQUEST = "help_request"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -122,8 +126,8 @@ class FlowMessageKind(str, Enum):
         """The kind a caller may set via ``add_message``, or None to fall back
         to USER. USER is implicit; INVITATION is a local-only first-row
         placeholder no caller mints; SESSION_EVENT and SEALED_NOTE are the
-        explicitly sendable non-default kinds."""
-        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE) if value == k.value), None)
+        explicitly sendable non-default kinds, and HELP_REQUEST is Ask for help's."""
+        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST) if value == k.value), None)
 
 
 class DeliveryStatus(str, Enum):
@@ -366,6 +370,21 @@ def derive_session_fields(fm: "FlowMessage") -> None:
         if fm.kind == FlowMessageKind.USER and (_carrier_marker(fm) or {}).get(LIVE_SESSION_EVENT_MARKER_KEY):
             fm.kind = FlowMessageKind.SESSION_EVENT
         break
+
+
+#: The file a help request carries (a ``help.request`` value): what marks the message as one on every machine.
+HELP_REQUEST_FILE = "help_request.value.json"
+
+
+def derive_help_request_kind(fm: "FlowMessage") -> None:
+    """Refill ``kind=help_request`` the hub may have stripped, from its carrier file. Idempotent."""
+    if fm.kind != FlowMessageKind.USER:
+        return
+    if any(
+        a.attachment_type == AttachmentType.FILE and (a.data or "").rsplit("/", 1)[-1] == HELP_REQUEST_FILE
+        for a in fm.attachment or []
+    ):
+        fm.kind = FlowMessageKind.HELP_REQUEST
 
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:

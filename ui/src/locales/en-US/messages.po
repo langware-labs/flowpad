@@ -1346,6 +1346,10 @@ msgstr "{created} member task(s) created for \"{0}\"."
 msgid "{created} member task(s) created; {failedCount} failed ({failedList}). Re-run to retry."
 msgstr "{created} member task(s) created; {failedCount} failed ({failedList}). Re-run to retry."
 
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "{currentProjectName} and its dependencies"
+msgstr "{currentProjectName} and its dependencies"
+
 #: src/utils/format-time-ago.ts
 msgid "{d}d ago"
 msgstr "{d}d ago"
@@ -10452,6 +10456,10 @@ msgstr "Current file on disk"
 msgid "Current project"
 msgstr "Current project"
 
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "Current project and its dependencies"
+msgstr "Current project and its dependencies"
+
 #: src/components/status-bar.tsx
 msgid "Current project is on root folder, this is not recommended"
 msgstr "Current project is on root folder, this is not recommended"
@@ -11340,10 +11348,9 @@ msgstr "Deliveries"
 msgid "Deny"
 msgstr "Deny"
 
-#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
-#: src/components/project-home/ProjectDependenciesCard.tsx
-#~ msgid "Dependencies"
-#~ msgstr "Dependencies"
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "Dependencies"
+msgstr "Dependencies"
 
 #: src/components/project-setup/setup-labels.ts
 msgid "dependency"
@@ -19738,6 +19745,7 @@ msgstr "min: {minLabel}"
 
 #: src/components/asset-counters/axes.tsx
 #: src/components/items/ItemsSection.tsx
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "Mine"
 msgstr "Mine"
 
@@ -20087,6 +20095,10 @@ msgstr "msgs"
 #: src/components/organization/budgets/MoneyBox.tsx
 msgid "Must be a number, or blank for no limit."
 msgstr "Must be a number, or blank for no limit."
+
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "My assets only"
+msgstr "My assets only"
 
 #: src/components/automations/AutomationsNavigator.tsx
 msgid "My automations"
@@ -21055,6 +21067,10 @@ msgstr "No conversations yet. A message or a call on one of its channels starts 
 #: src/components/llm-sources/LlmEndpointsSection.tsx
 msgid "no cost cap"
 msgstr "no cost cap"
+
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "No current project"
+msgstr "No current project"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
@@ -36697,14 +36713,12 @@ msgstr "user"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
-#: src/components/scope-filter/ScopeFilterIconBar.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "User"
 msgstr "User"
 
 #: src/components/scope-filter/ScopeFilterBar.tsx
-#: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "User assets only"
 msgstr "User assets only"
 

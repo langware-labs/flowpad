@@ -1343,6 +1343,10 @@ msgstr "נוצרו {created} משימות חברים עבור \"{0}\"."
 msgid "{created} member task(s) created; {failedCount} failed ({failedList}). Re-run to retry."
 msgstr "נוצרו {created} משימות חברים; {failedCount} נכשלו ({failedList}). הריצו שוב כדי לנסות מחדש."
 
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "{currentProjectName} and its dependencies"
+msgstr ""
+
 #: src/utils/format-time-ago.ts
 msgid "{d}d ago"
 msgstr "לפני {d} ימים"
@@ -10391,6 +10395,10 @@ msgstr "הקובץ הנוכחי בדיסק"
 msgid "Current project"
 msgstr "הפרויקט הנוכחי"
 
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "Current project and its dependencies"
+msgstr ""
+
 #: src/components/status-bar.tsx
 msgid "Current project is on root folder, this is not recommended"
 msgstr "הפרויקט הנוכחי נמצא בתיקיית השורש, זה לא מומלץ"
@@ -11278,10 +11286,9 @@ msgstr "מסירות"
 msgid "Deny"
 msgstr "דחייה"
 
-#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
-#: src/components/project-home/ProjectDependenciesCard.tsx
-#~ msgid "Dependencies"
-#~ msgstr ""
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "Dependencies"
+msgstr ""
 
 #: src/components/project-setup/setup-labels.ts
 msgid "dependency"
@@ -19597,6 +19604,7 @@ msgstr "מינ׳: {minLabel}"
 
 #: src/components/asset-counters/axes.tsx
 #: src/components/items/ItemsSection.tsx
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "Mine"
 msgstr ""
 
@@ -19943,6 +19951,10 @@ msgstr "הודעות"
 #: src/components/organization/budgets/MoneyBox.tsx
 msgid "Must be a number, or blank for no limit."
 msgstr "יש להזין מספר, או להשאיר ריק ללא הגבלה."
+
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "My assets only"
+msgstr ""
 
 #: src/components/automations/AutomationsNavigator.tsx
 msgid "My automations"
@@ -20904,6 +20916,10 @@ msgstr "עדיין אין שיחות. הודעה או שיחה באחד מהער
 #: src/components/llm-sources/LlmEndpointsSection.tsx
 msgid "no cost cap"
 msgstr "ללא תקרת עלות"
+
+#: src/components/scope-filter/ScopeFilterIconBar.tsx
+msgid "No current project"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
@@ -36438,14 +36454,12 @@ msgstr "משתמש"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
-#: src/components/scope-filter/ScopeFilterIconBar.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "User"
 msgstr "משתמש"
 
 #: src/components/scope-filter/ScopeFilterBar.tsx
-#: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "User assets only"
 msgstr "נכסי משתמש בלבד"
 
