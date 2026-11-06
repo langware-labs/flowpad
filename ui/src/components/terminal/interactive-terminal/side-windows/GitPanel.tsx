@@ -8,6 +8,7 @@ import {
   Check,
   Copy,
   Eye,
+  ExternalLink,
   FileMinus,
   FilePen,
   FilePlus,
@@ -82,7 +83,7 @@ function dirname(p: string): string {
 type GitMode = 'standard' | 'advanced';
 
 interface GitAction {
-  key: 'diff' | 'discard' | 'stage' | 'unstage' | 'commit' | 'copyPath';
+  key: 'diff' | 'open' | 'discard' | 'stage' | 'unstage' | 'commit' | 'copyPath';
   label: string;
   tooltip: string;
   icon: LucideIcon;
@@ -143,8 +144,14 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
     tooltip: t`View the changes in this file`,
     icon: Eye,
   };
+  // Open the file itself in its editor; a removed file has nothing on disk.
+  const open: GitAction | null =
+    file.status === 'D'
+      ? null
+      : { key: 'open', label: t`Open`, tooltip: t`Open this file in its editor`, icon: ExternalLink };
+  const lead = open ? [view, open] : [view];
 
-  if (readOnly) return [view];
+  if (readOnly) return lead;
 
   // The state-aware "undo" action — same backend op (discard-file), but its
   // label/tooltip/icon read differently per status so it always says what it
@@ -172,7 +179,7 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
   };
 
   if (mode === 'standard') {
-    return [view, commit, undo];
+    return [...lead, commit, undo];
   }
 
   // Advanced — add stage/unstage and copy-path. Staged-ness is computed by the
@@ -200,7 +207,7 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
     tooltip: t`Copy path: ${file.path}`,
     icon: Copy,
   };
-  return [view, stageAction, commit, undo, copyPath];
+  return [...lead, stageAction, commit, undo, copyPath];
 }
 
 /** Busy/error key for the panel-wide "Commit all" (never a real row path). */
@@ -482,6 +489,10 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
         selectFile(file);
         return;
       }
+      if (action.key === 'open') {
+        navigation.openFile(`${workdir.replace(/\/+$/, '')}/${rawPath(file.path)}`);
+        return;
+      }
       if (action.key === 'copyPath') {
         void navigator.clipboard?.writeText(rawPath(file.path));
         return;
@@ -494,7 +505,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
       }
       void runFileOp(file, action.subpath);
     },
-    [runFileOp, selectFile],
+    [runFileOp, selectFile, navigation, workdir],
   );
 
   useEffect(() => {
