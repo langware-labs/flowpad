@@ -629,15 +629,14 @@ export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
  */
 export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
   if (menu.projectTotal === 0) return null;
-  const ProjectIcon = iconForType(Project.type);
+  // An outlined ring after the chevron: a count of open projects, not a
+  // notification dot, and light enough not to compete with the chevron.
   return (
     <span
-      className="inline-flex items-center gap-1 tabular-nums"
+      className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-[1.5px] border-current px-1 text-[10.5px] leading-none tabular-nums"
       data-testid="project-count-badge"
       aria-label={menu.projectsLabel}
     >
-      <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-white/40" />
-      <ProjectIcon className="h-3 w-3 shrink-0 opacity-80" />
       {menu.projectTotal}
     </span>
   );
