@@ -45,9 +45,12 @@ function fixture(extraFields: Record<string, unknown> = {}) {
   return { update, rawWrite, entitySave, markEdit, externalEdit: () => { stored = {...stored, revision: 'external', body: 'External'}; } };
 }
 
+const openInstructions = async () => fireEvent.mouseDown(await screen.findByTestId('agent-tab-instructions'), { button: 0 });
+
 describe('Agent profile document adapter', () => {
   it('sends one typed occurrence patch and no raw or entity write', async () => {
     const f = fixture();
+    await openInstructions();
     const prompt = await screen.findByRole('textbox', {name: 'System prompt'});
     fireEvent.change(prompt, {target: {value: 'My prompt'}}); fireEvent.blur(prompt);
     await waitFor(() => expect(f.update).toHaveBeenCalledTimes(1));
@@ -56,6 +59,7 @@ describe('Agent profile document adapter', () => {
   });
   it('a blur with nothing changed writes nothing and is not an edit', async () => {
     const f = fixture();
+    await openInstructions();
     fireEvent.blur(await screen.findByRole('textbox', { name: 'System prompt' }));
     fireEvent.blur(screen.getByRole('textbox', { name: 'Agent title' }));
     await new Promise((r) => setTimeout(r, 50));
@@ -67,6 +71,7 @@ describe('Agent profile document adapter', () => {
   });
   it('edits the prompt full screen and saves it once on exit', async () => {
     const f = fixture();
+    await openInstructions();
     fireEvent.click(await screen.findByTestId('full-screen-open'));
     // One editor at a time: the inline one gives way to the full-screen one.
     expect(screen.getAllByRole('textbox', { name: 'System prompt' })).toHaveLength(1);
@@ -136,6 +141,7 @@ describe('Unreadable definition', () => {
     // The header carries the agent's channels line (the stream inbox header's bar), definition or not.
     expect(screen.getByTestId('agent-header-channels')).toContainElement(screen.getByTestId('attached-channels'));
     expect(screen.getByTestId('agent-more')).toBeInTheDocument();
+    await openInstructions();
     expect(screen.getByRole('textbox', { name: 'System prompt' })).toBeDisabled();
     // Deployments sit on their own tab and stay reachable with no definition.
     fireEvent.mouseDown(screen.getByTestId('agent-tab-deployments'));
