@@ -162,6 +162,9 @@ class Conversation(ProjectedFields, Entity):
     # the hub's ``Project.start_guest_conversation`` — never trusted from a
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
+    # The hub stamps it on the 1:1 conversation that holds invite messages (every share from one person
+    # to another lands in their conversation). The stream inbox's Invites view is a query on it.
+    carries_invite: bool = APIField(default=False)
     # Settlement state, mirrored from the hub's close/reopen answers (``_hub_reflect.mirror_answer``) and by
     # ``_upsert_hub_conversation_metadata``. The requester's portal reads this
     # LOCAL row, so without the mirror a ticket they just closed keeps

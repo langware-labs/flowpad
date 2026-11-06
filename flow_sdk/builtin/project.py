@@ -1975,12 +1975,9 @@ class Project(SetupSkippable, Entity):
             async with gate:
                 if person.user_id:
                     field, recipient_key = "recipient_user_id", person.user_id
-                    admit = {"recipient_user_ids": [person.user_id]}
                 else:
                     field, recipient_key = "recipient_email", person.email
-                    admit = {"recipients": [person.email]}
-                # The project invite is the one the hub emails, so its link lands
-                # on the project; the conversation invite below sends no email.
+                # The hub emails this invite, so its link lands on the project.
                 request = {
                     field: recipient_key,
                     "invitation_targets": [{"typeid": project_ref, "roles": person.roles if person.roles is not None else [PROJECT_DEFAULT_INVITE_ROLE]}],
@@ -1994,10 +1991,9 @@ class Project(SetupSkippable, Entity):
                     await client.post(build_hub_url(self, action="members"), request)
                 except ValueError as exc:  # any non-200 (``FlowpadClient._unwrap``)
                     return ShareFailedSpec(**person.identity(), status=_hub_status_of(exc), message=str(exc))
-                conversation_id = await self._invite_conversation(
-                    client, project_name, message_text, notify_by_email=False, **admit
-                )
-                return ShareInvitedSpec(**person.identity(), conversation_id=conversation_id)
+                # The hub posts the invite into the 1:1 conversation between sharer and person, as
+                # it does for every share — no second conversation from here.
+                return ShareInvitedSpec(**person.identity())
 
         async def grant_team(team_ref: str):
             # The hub emails each person in the team the same invite a person gets,

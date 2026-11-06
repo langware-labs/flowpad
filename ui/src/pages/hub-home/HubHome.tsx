@@ -115,7 +115,8 @@ function fmtSize(cpu?: number, memMb?: number): string | null {
  * does not wake a paused machine to ask. Before this you could only learn whose
  * session a shared box was running by opening the share dialog.
  */
-function SandboxStatus({
+/** A machine's state the way the Machines card says it (also the shared-machine page). */
+export function SandboxStatus({
   info,
   now,
   launched = true,
@@ -522,7 +523,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
             to appear. Above Sandboxes deliberately: a sandbox share is the
             invitation this page will mostly receive, and accepting one changes
             the list directly below it. Renders nothing when there are none. */}
-            <MembershipInvitations recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
+            <MembershipInvitations show="pending" recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
             {pendingInviteCount > 0 && (
               <p className="-mt-2 text-xs text-muted-foreground">
                 <Trans>Accepting adds it to your Sandboxes below.</Trans>

@@ -23,6 +23,7 @@ from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
+from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -684,6 +685,10 @@ class FlowMessage(Entity):
     # ``context_entities`` carry the backing Invitation TypeId so the UI
     # can read invitation_id off it for the Accept action.
     kind: FlowMessageKind = APIField(default=FlowMessageKind.USER)
+    # An invite message (``kind=invitation``) names the share it carries and what became of it. The hub
+    # writes it and updates ``state`` in place (accepted / declined / revoked), so the card in the
+    # conversation always reads the current answer. None on every other message.
+    invite: Optional[MessageInvite] = APIField(default=None)
     # Body-bundle lifecycle on the hub. NA when the message has no body
     # (text-only, or only URL/REPO/inline-PROMPT attachments). UPLOADING is
     # stamped at hub-side add_message time when the incoming FM's attachments

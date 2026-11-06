@@ -12,6 +12,7 @@ import {
   CredentialsSubview,
   GraphWorkflow,
   Layout,
+  MachineSubview,
   PageId,
   Project,
   RemoteWorkerSession,
@@ -255,6 +256,8 @@ export const PAGE_BEFORE_PARAM = 'before';
  */
 export const STREAM_INBOX_VIEW_PARAM = 'view';
 export const STREAM_INBOX_SEARCH_PARAM = 'q';
+/** The stream inbox's picked channel marks — the same `channel` key `forAgentStreamInbox` writes. */
+export const STREAM_INBOX_CHANNEL_PARAM = 'channel';
 
 /**
  * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
@@ -677,9 +680,24 @@ export class DockPointer implements IDockPointer {
   }
 
   /** The stream inbox's view pill, or 'all' when the URL names none (or an unknown one). */
-  get streamInboxView(): 'all' | 'unread' | 'archived' {
+  get streamInboxView(): 'all' | 'unread' | 'archived' | 'invites' {
     const v = this.options?.[STREAM_INBOX_VIEW_PARAM];
-    return v === 'unread' || v === 'archived' ? v : 'all';
+    return v === 'unread' || v === 'archived' || v === 'invites' ? v : 'all';
+  }
+
+  /** The stream inbox's picked channel marks (`?channel=a,b`): null when the URL names none (the view's
+   *  own default applies), an empty list for an explicit "every channel" (`channel=all`). */
+  get streamInboxChannels(): string[] | null {
+    const v = this.options?.[STREAM_INBOX_CHANNEL_PARAM];
+    if (v === undefined) return null;
+    return v === 'all' ? [] : v.split(',').filter(Boolean);
+  }
+
+  /** Clone with these channel marks picked; `[]` = every channel, which a view with a default channel
+   *  (an agent's mailbox) must say out loud, so it is written as `all`. A new pick starts at now. */
+  withStreamInboxChannels(keys: readonly string[], hasDefault = false): DockPointer {
+    const value = keys.length ? [...keys].sort().join(',') : hasDefault ? 'all' : null;
+    return this.withPageBefore(null).withOption(STREAM_INBOX_CHANNEL_PARAM, value);
   }
 
   /** The stream inbox's search text, or '' for none. */
@@ -689,7 +707,7 @@ export class DockPointer implements IDockPointer {
 
   /** Clone with the given stream inbox filters set ('all' / '' clear them). A page is a page of ONE filter
    *  set, so any change also goes back to now. */
-  withStreamInboxFilters(f: { view?: 'all' | 'unread' | 'archived'; search?: string }): DockPointer {
+  withStreamInboxFilters(f: { view?: 'all' | 'unread' | 'archived' | 'invites'; search?: string }): DockPointer {
     let next = this.withPageBefore(null);
     if (f.view !== undefined) next = next.withOption(STREAM_INBOX_VIEW_PARAM, f.view === 'all' ? null : f.view);
     if (f.search !== undefined) next = next.withOption(STREAM_INBOX_SEARCH_PARAM, f.search || null);
@@ -845,6 +863,11 @@ export class DockPointer implements IDockPointer {
    */
   static forTab(viewType: ViewType, options?: Record<string, string>, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(viewType, undefined, options || {}, layout);
+  }
+
+  /** A machine's page: `nodeId` names it (a machine shared with you), null = the machine you are on. */
+  static forMachine(nodeId: string | null, subview?: MachineSubview, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.MACHINE, subview ?? '', nodeId ? { [NODE_PARAM]: nodeId } : undefined, layout);
   }
 
   /**

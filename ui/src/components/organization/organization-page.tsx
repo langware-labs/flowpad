@@ -1,4 +1,4 @@
-import { Organization, PageId, QueryRequest, ViewType, WorldViewProjection } from '@sdk';
+import { Organization, PageId, QueryRequest, Team, TypeId, ViewType, WorldViewProjection } from '@sdk';
 import { Building2, GitGraph, Loader2, Plus, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -6,6 +6,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks/useEntitiesQuery';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { useMembershipAvailability } from '@src/hooks/use-membership-availability';
 import { createOrganization } from '@src/components/organization/create-organization';
 import { OrgView } from '@src/components/organization/tabs/OrgView';
@@ -86,6 +87,15 @@ export function OrganizationPage() {
           <Loader2 className="h-4 w-4 animate-spin" />
           <Trans>Loading organizations…</Trans>
         </div>
+      </Shell>
+    );
+  }
+
+  if (!selected && route.teamId) {
+    // A team shared with you outside any organization of yours (its Open from the invite lands here).
+    return (
+      <Shell {...create}>
+        <SharedTeam teamId={route.teamId} />
       </Shell>
     );
   }
@@ -241,6 +251,30 @@ function EmptyState({ icon: Icon, title, body }: { icon: typeof Users; title: st
       <Icon className="h-8 w-8 text-muted-foreground" />
       <div className="text-sm font-medium">{title}</div>
       <p className="max-w-sm text-sm text-muted-foreground">{body}</p>
+    </div>
+  );
+}
+
+
+/** A team you are in that belongs to no organization of yours: its name, and that it was shared with you. */
+function SharedTeam({ teamId }: { teamId: string }) {
+  const typeId = useMemo(() => new TypeId(Team.type, teamId), [teamId]);
+  const { data: team } = useEntity<Team>(typeId);
+  return (
+    <div className="flex justify-center p-8" data-testid="shared-team">
+      <div className="flex w-full max-w-xl items-center gap-4 rounded-lg border border-border bg-muted/20 p-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+          <Users className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-base font-medium" data-testid="shared-team-name">
+            {team?.name || <Trans>Team</Trans>}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            <Trans>Shared with you · not part of an organization of yours</Trans>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

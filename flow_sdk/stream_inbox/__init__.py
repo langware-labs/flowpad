@@ -91,7 +91,9 @@ def invitation_is_pending(inv, viewer_email: Optional[str], now: datetime) -> bo
     this viewer. No cloud account → nothing is pending for us."""
     if not viewer_email:
         return False
-    if getattr(inv, "accepted", None) is True:
+    from flow_sdk.builtin.invitation import invitation_answered  # noqa: PLC0415
+
+    if invitation_answered(inv):
         return False
     expiration = getattr(inv, "expiration_at", None)
     if expiration is not None:
@@ -482,8 +484,6 @@ async def accept_mark_preview_read(
             invitation.id, linked_fm_id, conversation_id,
         )
 
-    if invitation.accepted is not True:
-        invitation.accepted = True
-        await invitation.save(owner, notify=True)
+    await invitation.resolve("accepted", owner)
 
     await recompute_unread(f"invitation-accept:{invitation.id}", owner)

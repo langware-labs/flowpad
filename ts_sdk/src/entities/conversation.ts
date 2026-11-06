@@ -121,6 +121,8 @@ export interface IConversation extends IEntity {
   /** How this conversation is interpreted. Defaults to ``direct``; the hub sets
    *  ``helpdesk`` for guest-opened support tickets. */
   kind?: ConversationKind;
+  /** The hub stamps it on the 1:1 conversation holding invite messages; the Invites view queries it. */
+  carries_invite?: boolean;
   /** Settlement state of a ticket. Hub-authoritative, mirrored locally by
    *  ``settleTicket`` and the hub-metadata upsert. Defaults to ``open``. */
   status?: ConversationStatus;
@@ -205,6 +207,7 @@ export interface Conversation extends EntityMerge<IConversation> {}
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   kind?: ConversationKind;
+  carries_invite?: boolean;
   status?: ConversationStatus;
   project_id?: string | null;
   remote_project_id?: string | null;
@@ -239,6 +242,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
     this.kind = entity.kind ?? ConversationKind.DIRECT;
+    this.carries_invite = entity.carries_invite ?? false;
     this.status = entity.status ?? ConversationStatus.OPEN;
     this.project_id = entity.project_id;
     this.remote_project_id = entity.remote_project_id;

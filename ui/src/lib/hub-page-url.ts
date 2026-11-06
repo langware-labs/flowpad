@@ -63,7 +63,8 @@ export function hubProjectAssetDock(projectId: string, assetTypeId: TypeId): Doc
  * page rather than a 404, so guessing a URL would look like it worked — we link
  * only what we know resolves.
  */
-const HUB_PAGE_TYPES = new Set(['page', 'flow', 'task', 'agent', 'knowledge_base', 'workspace']);
+// `compute_node/<id>` is the sandbox landing: it signs the visitor in and opens the box (`OpenSandboxLanding`).
+const HUB_PAGE_TYPES = new Set(['page', 'flow', 'task', 'agent', 'knowledge_base', 'workspace', 'compute_node']);
 
 /**
  * The hub page for an entity: hub host + the hub's own dock pointer for it.

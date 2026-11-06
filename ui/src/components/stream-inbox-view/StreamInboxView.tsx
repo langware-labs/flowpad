@@ -27,10 +27,9 @@ import {
   Invitation,
   QueryRequest,
   TypeId,
-  acceptInvitation,
+  answerInvitation,
   archiveAllConversations,
   archiveConversation,
-  declineInvitation,
   deleteArchivedConversations,
   deleteConversation,
   dismissConversation,
@@ -53,7 +52,7 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, STREAM_INBOX_CHANNEL_PARAM } from '@src/navigation/DockPointer';
 import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
@@ -90,7 +89,8 @@ import {
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
 import { ConversationMarkChips } from '@src/components/conversation/ChannelMessageExtras';
-import { MembershipInvitations } from './MembershipInvitations';
+import { InvitesChannelChip, MembershipInvitations } from './MembershipInvitations';
+import { InviteStateChip } from '@src/components/conversation/InviteCard';
 import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
@@ -401,7 +401,9 @@ export function ConversationListRow({
   // title source, so it must not feed the subject. Fall back to the email-style
   // "(no subject)" placeholder only when there's no title. The snippet (latest
   // message preview) still renders after it.
-  const subject = isInvitationRow ? t`You've been invited to a conversation` : conv.title?.trim() || t`(no subject)`;
+  const subject = isInvitationRow
+    ? t`You've been invited to a conversation`
+    : conv.title?.trim() || (conv.carries_invite ? t`Shared with you` : t`(no subject)`);
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
@@ -459,7 +461,7 @@ export function ConversationListRow({
     if (!invitationId) return;
     setAccepting(true);
     try {
-      await acceptInvitation({ invitation_id: invitationId });
+      await answerInvitation(invitationId, 'accept');
     } catch (e) {
       if (isInvitationGoneError(e)) {
         notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
@@ -549,6 +551,9 @@ export function ConversationListRow({
         )}
         <SourceChip attribution={attribution} className="me-1" />
         <ConversationMarkChips marks={conv.marks} />
+        {latestMessage?.invite && (
+          <InviteStateChip state={latestMessage.invite.state} resolvedAt={latestMessage.invite.resolved_at} className="me-1" />
+        )}
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -674,8 +679,19 @@ export function StreamInboxView({
     ) => attributionForOrigin(origin, originLocal ?? null, channelSpec),
     [attributionForOrigin],
   );
-  const [channelFilter, setChannelFilter] = useState<Set<string>>(
-    () => new Set(initialChannel ? [initialChannel] : []),
+  // The picked channels live in the URL (`?channel=`), like the view and the search: Back, reload and
+  // a shared link land on the same pick. `initialChannel` is the default when the URL names none.
+  const rawChannels = currentDock?.options?.[STREAM_INBOX_CHANNEL_PARAM];
+  const channelFilter = useMemo(
+    () => new Set(currentDock?.streamInboxChannels ?? (initialChannel ? [initialChannel] : [])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the raw option is the pick; the dock object changes on every navigation
+    [rawChannels, initialChannel],
+  );
+  const setChannelFilter = useCallback(
+    (next: Set<string>) => {
+      if (currentDock) navigation.openDock(currentDock.withStreamInboxChannels([...next], !!initialChannel));
+    },
+    [currentDock, navigation, initialChannel],
   );
   // The picked channels that are not listening: the strip above the list explains each one.
   const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
@@ -730,9 +746,14 @@ export function StreamInboxView({
   // The rail's Stream Inbox icon: back to every message, no filter of any kind. Only the user's own
   // stream listens; a fresh mount already starts unfiltered.
   useUiActionRequest(embedded || agentId || sourceId ? [] : ['stream-inbox.reset'], () => {
-    if (currentDock && (currentDock.streamInboxView !== 'all' || currentDock.streamInboxSearch || currentDock.pageBefore))
-      navigation.openDock(currentDock.withStreamInboxFilters({ view: 'all', search: '' }));
-    setChannelFilter(new Set());
+    if (
+      currentDock &&
+      (currentDock.streamInboxView !== 'all' ||
+        currentDock.streamInboxSearch ||
+        currentDock.pageBefore ||
+        currentDock.streamInboxChannels !== null)
+    )
+      navigation.openDock(currentDock.withStreamInboxFilters({ view: 'all', search: '' }).withStreamInboxChannels([]));
     setColumnFilter(NO_COLUMN_FILTER);
     setSelectedIds(new Set());
   });
@@ -1155,7 +1176,7 @@ export function StreamInboxView({
     if (!rowDelete) return;
     try {
       if (rowDelete.kind === 'invitation') {
-        await declineInvitation({ invitation_id: rowDelete.invitationId });
+        await answerInvitation(rowDelete.invitationId, 'decline');
         notify.success({ title: t`Invitation declined` });
       } else if (rowDelete.kind === 'owner') {
         await deleteConversation({
@@ -1225,6 +1246,7 @@ export function StreamInboxView({
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
+  const inInvitesView = viewMode === 'invites';
   // Segmented view pill — All | Unread | Archived. Active mode is filled,
   // inactive is ghost.
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
@@ -1548,6 +1570,13 @@ export function StreamInboxView({
                 <X className="h-3 w-3" />
               </button>
             )}
+            {!agentId && !embedded && (
+              <InvitesChannelChip
+                active={inInvitesView}
+                pending={membershipPendingCount}
+                onClick={() => setView(inInvitesView ? 'all' : 'invites')}
+              />
+            )}
             {channelsOwner && !embedded && (
               <AttachedChannelsBar
                 owner={channelsOwner}
@@ -1575,7 +1604,9 @@ export function StreamInboxView({
             <span className="text-sm">
               {searchActive || columnFilterActive
                 ? t`No matching conversations`
-                : inArchivedView
+                : inInvitesView
+                  ? t`Nothing has been shared with you yet`
+                  : inArchivedView
                   ? t`No archived conversations`
                   : inUnreadView
                     ? t`No unread conversations`
@@ -1606,7 +1637,11 @@ export function StreamInboxView({
         )}
 
         {!agentId && !embedded && !inArchivedView && !initialLoading && (
-          <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
+          <MembershipInvitations
+            recipientEmail={cloudUser?.email ?? null}
+            onPendingCount={setMembershipPendingCount}
+            show={inInvitesView ? 'all' : 'pending'}
+          />
         )}
 
         {/* Start the row batches in the layout phase so the rows' own reads wait

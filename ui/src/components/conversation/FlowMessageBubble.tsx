@@ -1,3 +1,4 @@
+import { InviteCard, inviteFromMessage } from '@src/components/conversation/InviteCard';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { automationLineage, automationState } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { openableValue } from './ConversationAutomationChip';
@@ -894,6 +895,15 @@ export function FlowMessageBubble({
         replyInThread={!channelTraits?.quotes}
         continuation={continuation}
       />
+      {fm.invite && (
+        <div className="ms-10" data-testid="message-invite">
+          <InviteCard
+            invite={inviteFromMessage(fm.invite, displayName, fm.created_date)}
+            layout="card"
+            mine={isCurrentUser}
+          />
+        </div>
+      )}
       <ShareReplyCard fm={fm} isMine={isCurrentUser} onForward={canForward ? () => setForwardOpen(true) : undefined} />
       {lifecycle && <MessageLifecycle lifecycle={lifecycle} />}
       {reactError && (
