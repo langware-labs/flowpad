@@ -120,7 +120,7 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
   const viewMode = useViewMode();
   // The Agent this process runs AS — signs assistant turns and owns the intro
   // row (skin-gated inside `useAgentIntro`, same rule as the file chips).
-  const launchingAgent = useLaunchingAgent(process.deployment_id);
+  const launchingAgent = useLaunchingAgent(process);
   const intro = useAgentIntro(launchingAgent);
   const hasRows = turnGroups.length > 0 || !!intro;
 

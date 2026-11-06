@@ -466,7 +466,7 @@ export function EntityExecutionPanel({
   );
   // The Agent this process runs AS — signs its assistant turns. Cache-first,
   // live (a rename / new avatar repaints); null for a plain session.
-  const launchingAgent = useLaunchingAgent(activeProcess?.deployment_id);
+  const launchingAgent = useLaunchingAgent(activeProcess);
 
   // Hydrate history on first resolution. Per AgenticProcess.loadHistory, safe to
   // call repeatedly — internally guarded by `_historyLoaded`.

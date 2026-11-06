@@ -72,7 +72,7 @@ function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
 function ProcessTabIcon({ processId, fallback }: { processId: string; fallback: React.ReactNode }) {
   const typeId = useMemo(() => new TypeId(AgenticProcess.type, processId), [processId]);
   const process = useEntity<AgenticProcess>(typeId).data;
-  const agent = useLaunchingAgent(process?.deployment_id);
+  const agent = useLaunchingAgent(process);
   if (!agent) return <>{fallback}</>;
   return (
     <AgentAvatar
