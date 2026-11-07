@@ -609,6 +609,13 @@ export const ConversationListRow = memo(function ConversationListRow({
   );
 });
 
+/** A callback whose identity never changes and that always calls the latest `fn`. */
+function useStableCallback<A extends unknown[]>(fn: (...args: A) => unknown): (...args: A) => void {
+  const latest = useRef(fn);
+  latest.current = fn;
+  return useCallback((...args: A) => void latest.current(...args), []);
+}
+
 const columnInputClass =
   'h-7 shrink-0 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring';
 
@@ -986,16 +993,11 @@ export function StreamInboxView({
     [agentId, refetch],
   );
 
-  // The rows get callbacks that never change, reading the current handlers through a ref: an
-  // inline arrow per render was a new prop on every row, so the memoized row re-rendered anyway.
-  const rowHandlers = useRef({ handleArchive, handleUnarchive, handleToggleRead });
-  rowHandlers.current = { handleArchive, handleUnarchive, handleToggleRead };
-  const rowArchive = useCallback((convId: string) => void rowHandlers.current.handleArchive(convId), []);
-  const rowUnarchive = useCallback((convId: string) => void rowHandlers.current.handleUnarchive(convId), []);
-  const rowToggleRead = useCallback(
-    (messageId: string, isRead: boolean) => void rowHandlers.current.handleToggleRead(messageId, isRead),
-    [],
-  );
+  // The rows get callbacks that never change: an inline arrow per render was a new prop on every
+  // row, so the memoized row re-rendered anyway.
+  const rowArchive = useStableCallback(handleArchive);
+  const rowUnarchive = useStableCallback(handleUnarchive);
+  const rowToggleRead = useStableCallback(handleToggleRead);
   const setRowRef = useCallback((convId: string, el: HTMLDivElement | null) => {
     rowRefs.current.set(convId, el);
   }, []);
