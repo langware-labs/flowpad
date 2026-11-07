@@ -6716,29 +6716,35 @@ class AgenticProcess(Entity):
             merge_abort_markers,
         )
 
-        history = self.driver.load_history(self)
-        # Merge flowpad-authored durable abort markers (written by
-        # ``cancel-prompt``) so a cancelled turn replays as terminated instead
-        # of leaving its last tool call rendered as still running. Worker-
-        # generic: the vendor transcript is vendor-owned and never contains
-        # these; the sidecar in the process record dir does.
-        # ``history_start`` scopes sid-less markers (written before the worker
-        # reported a session id) to rollouts they chronologically overlap — a
-        # rotated session must not inherit them as a phantom index-0 abort.
-        history = merge_abort_markers(
-            history,
-            load_abort_marker_frames(
-                self._record_dir(),
-                session_id=self.session_id,
-                history_start=history_start_time(history),
-            ),
-        )
+        def read() -> list[dict]:
+            history = self.driver.load_history(self)
+            # Merge flowpad-authored durable abort markers (written by
+            # ``cancel-prompt``) so a cancelled turn replays as terminated instead
+            # of leaving its last tool call rendered as still running. Worker-
+            # generic: the vendor transcript is vendor-owned and never contains
+            # these; the sidecar in the process record dir does.
+            # ``history_start`` scopes sid-less markers (written before the worker
+            # reported a session id) to rollouts they chronologically overlap — a
+            # rotated session must not inherit them as a phantom index-0 abort.
+            history = merge_abort_markers(
+                history,
+                load_abort_marker_frames(
+                    self._record_dir(),
+                    session_id=self.session_id,
+                    history_start=history_start_time(history),
+                ),
+            )
+            return [fd.model_dump(mode="python") for fd in history]
+
+        # Off the loop: a 5-9 MB transcript parses for ~0.3 s, and every other request
+        # waited behind it on each chat open (perf hunt 2026-11-07).
+        history = await asyncio.to_thread(read)
         return ApiSuccessResponse(
             data={
                 "session_id": self.session_id,
                 "use_worker_history": True,
                 "count": len(history),
-                "history": [fd.model_dump(mode="python") for fd in history],
+                "history": history,
             }
         )
 
