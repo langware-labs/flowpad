@@ -111,6 +111,8 @@ from flow_sdk.transcript_analyzer.worker_status import (
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 if TYPE_CHECKING:
+    from starlette.responses import JSONResponse
+
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
@@ -6706,7 +6708,7 @@ class AgenticProcess(Entity):
         )
 
     @action.get(action_name="get-history")
-    async def get_history_action(self) -> "ApiSuccessResponse":
+    async def get_history_action(self) -> "ApiSuccessResponse | JSONResponse":
         """Return this process's transcript as a list of FlowData dicts.
 
         Driver-supplied. Stateless — works for processes that have exited
@@ -6715,13 +6717,15 @@ class AgenticProcess(Entity):
         """
         if self.hub_route:
             return await self._relay_json("get-history", method="GET", refresh=False)
+        from starlette.responses import JSONResponse  # noqa: PLC0415 -- starlette is an app-layer dep
+
         from flow_sdk.builtin.agentic_process.turn_abort import (  # noqa: PLC0415
             history_start_time,
             load_abort_marker_frames,
             merge_abort_markers,
         )
 
-        def read() -> list[dict]:
+        def read() -> JSONResponse:
             history = self.driver.load_history(self)
             # Merge flowpad-authored durable abort markers (written by
             # ``cancel-prompt``) so a cancelled turn replays as terminated instead
@@ -6739,19 +6743,15 @@ class AgenticProcess(Entity):
                     history_start=history_start_time(history),
                 ),
             )
-            return [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
+            rows = [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
+            data = {"session_id": self.session_id, "use_worker_history": True, "count": len(rows), "history": rows}
+            # The same envelope and renderer the graph route would apply (``_rendered_once``),
+            # built here so the encode of these freshly-made dicts runs off the loop too.
+            return JSONResponse(content=ApiSuccessResponse(data=data).model_dump())
 
-        # Off the loop: a 5-9 MB transcript parses for ~0.3 s, and every other request
-        # waited behind it on each chat open (perf hunt 2026-11-07).
-        history = await asyncio.to_thread(read)
-        return ApiSuccessResponse(
-            data={
-                "session_id": self.session_id,
-                "use_worker_history": True,
-                "count": len(history),
-                "history": history,
-            }
-        )
+        # Off the loop: reading, encoding and rendering a multi-MB transcript held the loop
+        # 0.3-0.4 s, and every other request waited behind each chat open (perf hunt 2026-11-07).
+        return await asyncio.to_thread(read)
 
     @action.get(action_name="continuation-prompt")
     async def continuation_prompt_action(
