@@ -450,7 +450,11 @@ export function onProjectDependenciesChanged(projectId: string, listener: () => 
   };
 }
 
+const dependencyReads = new Map<string, Promise<ProjectDependencies>>();
+
 function notifyDependenciesChanged(projectId: string): void {
+  // A read started before this change answers for the old state: the refetches below start new ones.
+  for (const key of [...dependencyReads.keys()]) if (key.startsWith(`${projectId} `)) dependencyReads.delete(key);
   for (const listener of [...(dependencyListeners.get(projectId) ?? [])]) listener();
 }
 
@@ -969,7 +973,20 @@ export class Project extends APIEntity<Project> {
   /** Every dependency declared in this project's `flow.json`, as it stands on
    *  this machine, plus the warnings (required, not here, not dismissed). Never
    *  fetches: a dependency not on this machine yet reads `missing`. */
-  async dependencies(options: { asset?: string; declarers?: boolean } = {}): Promise<ProjectDependencies> {
+  dependencies(options: { asset?: string; declarers?: boolean } = {}): Promise<ProjectDependencies> {
+    // Every surface showing a project's dependencies mounts with it, so a project switch asked
+    // twice at once; identical calls in flight share one request.
+    const key = `${this.id} ${options.asset ?? ''} ${options.declarers ? 1 : 0}`;
+    const open = dependencyReads.get(key);
+    if (open) return open;
+    const request = this.readDependencies(options).finally(() => {
+      if (dependencyReads.get(key) === request) dependencyReads.delete(key);
+    });
+    dependencyReads.set(key, request);
+    return request;
+  }
+
+  private async readDependencies(options: { asset?: string; declarers?: boolean }): Promise<ProjectDependencies> {
     const { declarers, ...params } = options;
     const response = await this.get<(Partial<ProjectDependencies> & Partial<ProjectContextPayload>) | null>(
       'dependencies',

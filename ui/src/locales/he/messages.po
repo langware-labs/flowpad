@@ -650,6 +650,11 @@ msgstr ""
 msgid "{0} changed"
 msgstr "{0} שונו"
 
+#. placeholder {0}: pendingDelete.count
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "{0} chats — their transcripts stay on disk."
+msgstr ""
+
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #~ msgid "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
 #~ msgstr "{0} הערות נשמרו כנשלחו — לתרשים אין סשן, ולכן דבר לא נשלח."
@@ -23931,12 +23936,12 @@ msgstr "פתיחת רשימת הפרויקטים"
 
 #: src/components/status-bar.tsx
 #: src/components/status-bar.tsx
-msgid "Open project view"
-msgstr "פתחו תצוגת פרויקט"
+#~ msgid "Open project view"
+#~ msgstr "פתחו תצוגת פרויקט"
 
 #: src/components/status-bar.tsx
-msgid "Open project view — {projectPath}"
-msgstr "פתיחת תצוגת הפרויקט — {projectPath}"
+#~ msgid "Open project view — {projectPath}"
+#~ msgstr "פתיחת תצוגת הפרויקט — {projectPath}"
 
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -25922,6 +25927,10 @@ msgstr "הפרויקט לא פורסם"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Project not recoverable from this workdir."
 msgstr "לא ניתן לשחזר את הפרויקט מספריית העבודה הזו."
+
+#: src/components/status-bar.tsx
+msgid "Project on root folder"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Project recovered."
@@ -32926,12 +32935,10 @@ msgstr "עברו בכל זאת"
 
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-#: src/components/status-bar.tsx
 msgid "Switch project"
 msgstr "החליפו פרויקט"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/status-bar.tsx
 msgid "Switch Project"
 msgstr "החליפו פרויקט"
 
@@ -34279,8 +34286,8 @@ msgid "The worker exited immediately after launch, so auto-relaunch is paused. R
 msgstr "העובד יצא מיד לאחר ההפעלה, ולכן ההפעלה מחדש האוטומטית מושהית. נסו שוב כדי להפעיל אותו מחדש."
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
-msgid "Their transcripts stay on disk."
-msgstr ""
+#~ msgid "Their transcripts stay on disk."
+#~ msgstr ""
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
 #~ msgid "Theme and sign-in screens are waiting"
@@ -37471,7 +37478,6 @@ msgstr "מה זה {0}?"
 #~ msgid "What is a dependency?"
 #~ msgstr ""
 
-#: src/components/status-bar.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "What is a Flowpad project?"

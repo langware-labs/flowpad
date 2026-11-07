@@ -650,6 +650,11 @@ msgstr ""
 msgid "{0} changed"
 msgstr "{0} تغيّرت"
 
+#. placeholder {0}: pendingDelete.count
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "{0} chats — their transcripts stay on disk."
+msgstr ""
+
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #~ msgid "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
 #~ msgstr "تم حفظ {0} تعليقات كمُرسلة — لا توجد جلسة للمخطط، لذلك لم يُرسل شيء."
@@ -23931,12 +23936,12 @@ msgstr "فتح قائمة المشاريع"
 
 #: src/components/status-bar.tsx
 #: src/components/status-bar.tsx
-msgid "Open project view"
-msgstr "فتح عرض المشروع"
+#~ msgid "Open project view"
+#~ msgstr "فتح عرض المشروع"
 
 #: src/components/status-bar.tsx
-msgid "Open project view — {projectPath}"
-msgstr "فتح عرض المشروع — {projectPath}"
+#~ msgid "Open project view — {projectPath}"
+#~ msgstr "فتح عرض المشروع — {projectPath}"
 
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -25926,6 +25931,10 @@ msgstr "المشروع غير منشور"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Project not recoverable from this workdir."
 msgstr "المشروع غير قابل للاسترجاع من مجلد العمل هذا."
+
+#: src/components/status-bar.tsx
+msgid "Project on root folder"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Project recovered."
@@ -32930,12 +32939,10 @@ msgstr "التبديل على أي حال"
 
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-#: src/components/status-bar.tsx
 msgid "Switch project"
 msgstr "تبديل المشروع"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/status-bar.tsx
 msgid "Switch Project"
 msgstr "تبديل المشروع"
 
@@ -34283,8 +34290,8 @@ msgid "The worker exited immediately after launch, so auto-relaunch is paused. R
 msgstr "خرج العامل فور تشغيله، لذا أُوقفت إعادة التشغيل التلقائي مؤقتًا. أعيدوا المحاولة لتشغيله مرة أخرى."
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
-msgid "Their transcripts stay on disk."
-msgstr ""
+#~ msgid "Their transcripts stay on disk."
+#~ msgstr ""
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
 #~ msgid "Theme and sign-in screens are waiting"
@@ -37475,7 +37482,6 @@ msgstr "ما هو {0}؟"
 #~ msgid "What is a dependency?"
 #~ msgstr ""
 
-#: src/components/status-bar.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "What is a Flowpad project?"
