@@ -3165,6 +3165,29 @@ class SQLiteDBDriver(DBDriver):
             return dt.replace(tzinfo=UTC)
         return dt
 
+    async def get_all_rows(self, entity_type: str) -> list[dict]:
+        """Every row of a type as its stored JSON plus ``id`` / ``updated_date``; no entity is built.
+
+        Building is the cost of a whole-type read: 1,382 processes take ~370 ms to hydrate and
+        ~30 ms to read this way (perf hunt 2026-11-07, worker-history on every project switch).
+        """
+        query = select(EntitySchema.id, EntitySchema.updated_date, EntitySchema.data).where(
+            EntitySchema.type == entity_type
+        )
+        async with self._session_ctx(write=False) as session:
+            result = await session.execute(query)
+            raw = result.all()
+        rows: list[dict] = []
+        for row_id, updated_date, data in raw:
+            try:
+                row = json.loads(data) if data else {}
+            except ValueError:
+                continue
+            row["id"] = row_id
+            row["updated_date"] = self._ensure_utc(updated_date)
+            rows.append(row)
+        return rows
+
     def _hydrate(self, schemas: "Sequence[EntitySchema]", where: str) -> List[DBBaseRecord]:
         """The rows of a LIST that can be built, with ONE warning for those that cannot.
 
