@@ -73,6 +73,7 @@ def _registered_tasks() -> dict[str, HeartbeatTask]:
 async def _dispatch_heartbeat(_trigger: Any, _changes: Any) -> None:
     # Snapshot the task list — a task registering or unregistering mid-tick
     # (e.g. hot-reload during dev) must not affect this tick's iteration.
+    _start_watchdog()  # TEMP-PERF
     for name, task in list(_tasks.items()):
         import time as _t  # TEMP-PERF
         _w0, _c0 = _t.perf_counter(), _t.thread_time()
@@ -85,3 +86,39 @@ async def _dispatch_heartbeat(_trigger: Any, _changes: Any) -> None:
             )
         except Exception:
             _log.exception("heartbeat task %r raised", name)
+
+
+# TEMP-PERF watchdog: when the event loop stalls > 1 s, log what the main thread is running.
+import sys as _sys  # noqa: E402
+import threading as _th  # noqa: E402
+import time as _tm  # noqa: E402
+import traceback as _tb  # noqa: E402
+
+_beat = {"t": _tm.monotonic(), "tid": None, "started": False}
+
+
+async def _ticker() -> None:
+    _beat["tid"] = _th.get_ident()
+    while True:
+        _beat["t"] = _tm.monotonic()
+        await asyncio.sleep(0.1)
+
+
+def _watch() -> None:
+    reported = 0.0
+    while True:
+        _tm.sleep(0.25)
+        lag = _tm.monotonic() - _beat["t"]
+        if lag > 1.0 and _beat["tid"] and _tm.monotonic() - reported > 0.9:
+            frame = _sys._current_frames().get(_beat["tid"])
+            if frame is not None:
+                _log.warning("TEMP-PERF loop stalled %.1fs:\n%s", lag, "".join(_tb.format_stack(frame)[-25:]))
+                reported = _tm.monotonic()
+
+
+def _start_watchdog() -> None:
+    if _beat["started"]:
+        return
+    _beat["started"] = True
+    asyncio.get_running_loop().create_task(_ticker())
+    _th.Thread(target=_watch, daemon=True, name="temp-perf-watchdog").start()
