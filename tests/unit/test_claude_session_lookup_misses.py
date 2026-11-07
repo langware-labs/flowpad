@@ -42,7 +42,8 @@ def test_missing_sessions_list_each_folder_once_and_a_new_one_is_still_found(mon
     monkeypatch.setattr(claude_sessions.os, "scandir", spy)
     for _ in range(20):
         assert claude_sessions.find_claude_session_path(str(uuid.uuid4())) is None
-    folder_listings = [p for p in listed if p != str(projects)]
+    # Only this test's folders: the projects dir is shared, and an earlier test's folder is listed once too.
+    folder_listings = [p for p in listed if p.startswith(str(projects / "-repo-"))]
     assert len(folder_listings) == FOLDERS, "each folder is listed once, then only stat'ed"
 
     # A session written after the folders were listed is found on the very next lookup.
