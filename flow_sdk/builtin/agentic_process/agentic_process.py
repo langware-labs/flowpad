@@ -142,6 +142,11 @@ BACKGROUND_TASKS_RUNNING = "background tasks are running"
 #: How far back to look for a pending question's answer (it lands right after).
 _PENDING_INPUT_TAIL_BYTES = 256 * 1024
 
+# Text a FlowData derives from its value, dropped from ``get-history``: the client rebuilds a
+# frame from flow_value/attributes/index/created_time/process_entry and never reads these, yet
+# they were half of a 10.8 MB history (perf hunt 2026-11-07).
+_DERIVED_TEXT = {"to_xml", "content", "start_tag_xml", "end_tag_xml"}
+
 #: ``context_data`` key: the question the worker is blocked on, as its
 #: ``PreToolUse`` hook reported it. Claude may keep a pending ``AskUserQuestion``
 #: out of its transcript until it is answered, so the transcript alone cannot
@@ -6734,7 +6739,7 @@ class AgenticProcess(Entity):
                     history_start=history_start_time(history),
                 ),
             )
-            return [fd.model_dump(mode="python") for fd in history]
+            return [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
 
         # Off the loop: a 5-9 MB transcript parses for ~0.3 s, and every other request
         # waited behind it on each chat open (perf hunt 2026-11-07).
