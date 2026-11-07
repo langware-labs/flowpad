@@ -302,8 +302,10 @@ async def test_the_same_request_sent_again_is_one_message():
 
     await _call(afh.ask_for_help, ask)
     await _call(afh.ask_for_help, ask)
+    await _settle()
 
-    assert len(await _messages(ask["conversation_id"])) == 1
+    kinds = [m.kind for m in await _messages(ask["conversation_id"])]
+    assert kinds.count(FlowMessageKind.HELP_REQUEST) == 1
 
 
 async def test_a_diagnosis_already_taken_is_attached_as_it_stands(diagnose_with):
