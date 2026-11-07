@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { RoleChip, StatePill } from '@src/components/items/ItemCard';
 import { deploymentRowState } from '@src/components/items/item-state';
 import { roleOf } from '@src/components/items/role';
@@ -40,7 +41,14 @@ export function ProjectDeploymentPage({ project, deploymentId }: { project: Proj
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const deploymentTypeId = useMemo(() => new TypeId(Deployment.type, deploymentId), [deploymentId]);
-  const { data: deployment } = useEntity<Deployment>(deploymentTypeId);
+  const { data: held, notFound } = useEntity<Deployment>(deploymentTypeId);
+  // A person's placement of a private deployment lives on the hub, not here: read it there (its actions follow).
+  const { data: onHub = null } = useQuery({
+    queryKey: ['hub-deployment', deploymentId],
+    queryFn: () => Deployment.fromHub(deploymentId),
+    enabled: !!notFound,
+  });
+  const deployment = held ?? onHub;
   const { data: agent = null } = useEntity<Agent>(deployment?.mainAgentTypeId ?? null);
   const display = usePlaceDisplay();
   // Open with its controls when the URL already names its open chat (a chat link lands on it).

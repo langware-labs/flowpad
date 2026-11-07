@@ -539,6 +539,39 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   }
 
   /**
+   * Read on the hub, not held here (a private deployment's person placement, `fromHub`): this row's own actions --
+   * threads, funding, health -- go to the hub too, which answers them off that person's machine.
+   */
+  hubHeld = false;
+
+  /** A deployment this computer does not hold, read on the hub (`GET deployment/<id>`); null when it has none. */
+  static async fromHub(deploymentId: string): Promise<Deployment | null> {
+    const info = new ActionInfo('', Deployment.type, deploymentId, 'GET');
+    info.hubReflect = true;
+    const data = await dataManager.callAction<unknown, IDeployment | null>(info);
+    if (!data || !(data as { id?: string }).id) return null;
+    const row = new Deployment(data);
+    row.hubHeld = true;
+    return row;
+  }
+
+  protected override get<R>(action: string, query?: Record<string, unknown>): Promise<R> {
+    if (!this.hubHeld) return super.get<R>(action, query);
+    const info = new ActionInfo(action, this.getType(), this.id, 'GET');
+    if (query && Object.keys(query).length) info.queryParameters = query;
+    info.hubReflect = true;
+    return dataManager.callAction<undefined, R>(info);
+  }
+
+  protected override post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
+    if (!this.hubHeld) return super.post<R>(action, body);
+    const info = new ActionInfo(action, this.getType(), this.id, 'POST');
+    if (body) info.bodyParameters = body;
+    info.hubReflect = true;
+    return dataManager.callAction<undefined, R>(info);
+  }
+
+  /**
    * The threads of a deployment this computer does not hold (a private deployment's person placement): read on
    * the hub, which forwards to that person's machine (`GET deployment/<id>/threads`).
    */
