@@ -76,6 +76,7 @@ def test_screens():
         ("✻ 401 User not found. · Retrying in 10s · attempt 5/10", None, "401 User not found."),
         ("✻ 529 Overloaded · Retrying in 3s", None, None),
         ("we discussed HTTP 401", None, None),
+        ("10s · ↓ 396 tokens) ◎ /goal active (9m) 8 9 ◎ /goal active (9m)✻ 401", None, None),  # spinner + token count
     ):
         assert (screen.classify(text), (screen.classify_auth(text) or [None, None])[1]) == (verdict, auth)
 
