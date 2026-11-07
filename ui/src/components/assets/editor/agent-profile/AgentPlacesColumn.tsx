@@ -68,7 +68,7 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
             </li>
           ))}
         </ul>
-      ) : visible.length === 0 ? (
+      ) : visible.length === 0 && wired?.deployments.some((d) => d.agent_mode === 'private') ? null : visible.length === 0 ? (
         <span className="text-xs text-muted-foreground" data-testid="agent-places-empty">
           <Trans>Not deployed yet — it runs nowhere until you launch it.</Trans>
         </span>

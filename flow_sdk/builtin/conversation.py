@@ -93,7 +93,7 @@ if TYPE_CHECKING:  # pragma: no cover
 # shared `ProjectedFields` mixin (one sentinel for every projected entity).
 _PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
-_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread", "unread_count", "archived"})
+_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "attachment_count", "is_unread", "unread_count", "archived"})
 
 
 # Shared-context asset types the hub hosts as first-class nodes, so a share can
@@ -221,6 +221,9 @@ class Conversation(ProjectedFields, Entity):
     awaits_hub: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     origin_project_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
+    # Files attached across the conversation's messages — the inbox row's paperclip. Projected
+    # with ``message_count``, so the row shows it without loading a single message.
+    attachment_count: int = APIField(0, sharing=Sharing.PRIVATE)
     # Who is in the conversation: the hub's ``members``, copied as is.
     members: List[dict] = APIField(default_factory=list, sharing=Sharing.HUB_READ)
     # JSON-encoded [{"typeid": ..., "ts": ...}] — a projection of the pointer
@@ -267,7 +270,7 @@ class Conversation(ProjectedFields, Entity):
     archived: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
     projection_writer: ClassVar[str] = (
-        "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count/archived)"
+        "ConversationRecord.sync_to_db (message_ids/message_count/attachment_count) or stream_inbox.recompute_unread (is_unread/unread_count/archived)"
     )
 
     @classmethod

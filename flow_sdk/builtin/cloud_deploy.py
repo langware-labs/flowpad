@@ -60,6 +60,7 @@ async def deploy_entity_to_cloud(
     identity: str | None = None,
     source_kind: str | None = None,
     source_ref: str | None = None,
+    mode_fields: dict | None = None,
 ) -> dict[str, Any]:
     """POST ``<entity>/deploy`` on the hub and adopt the placement it returns. ``main_agent_id`` names the
     agent that answers on the box (the box logs in as it unless ``identity`` says otherwise).
@@ -96,6 +97,7 @@ async def deploy_entity_to_cloud(
         **({"identity": identity} if identity else {}),
         **({"source_kind": source_kind} if source_kind else {}),
         **({"source_ref": source_ref} if source_ref else {}),
+        **(mode_fields or {}),
         # A GitHub-backed checkout: the hub clones GitHub at this exact commit for the machine.
         **({"source": source} if source else {}),
     }

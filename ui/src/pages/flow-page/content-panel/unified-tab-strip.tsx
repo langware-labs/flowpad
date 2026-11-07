@@ -16,6 +16,7 @@
  * The controller is kept ONLY for the surrounding controls: the trailing
  * opener toolbar, the new-tab menu, spawn modals, and the close-shortcut label.
  */
+import { setTabFullScreen } from '@src/tabs/tab-full-screen';
 import { AgenticProcess, dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -182,6 +183,14 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     [tabByKey, navigation, allTabs],
   );
 
+  const handleFullScreen = useCallback(
+    (key: string) => {
+      if (key !== activeKey) handleSelect(key);
+      setTabFullScreen(true);
+    },
+    [activeKey, handleSelect],
+  );
+
   const handlePopout = useCallback(
     (key: string) => {
       const tab = tabByKey.get(key);
@@ -333,6 +342,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
           onCloseMany={handleCloseMany}
           onRename={handleRename}
           onPopout={handlePopout}
+          onFullScreen={handleFullScreen}
           onReorderPreview={handleReorderPreview}
           onReorderCommit={handleReorderCommit}
           onReorderCancel={() => void tabManager.refresh()}

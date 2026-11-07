@@ -495,6 +495,14 @@ class Attachment(BaseModel):
     local_path: Optional[str] = None
     prompt_preview: Optional[str] = None
 
+    @property
+    def is_listed_file(self) -> bool:
+        """A file the conversation lists as an attachment: a FILE, or a ``prompt/`` file.
+        The same rule as the UI's ``buildAttachmentEntries``, so the inbox count matches the list."""
+        if self.attachment_type == AttachmentType.FILE:
+            return True
+        return self.attachment_type == AttachmentType.PROMPT and str(self.data or "").startswith("prompt/")
+
 
 class MessageEnvelope(DataSpec):
     """A cached message's header, as the projection read it from the item's payload."""

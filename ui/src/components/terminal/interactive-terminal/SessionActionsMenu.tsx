@@ -47,6 +47,9 @@ import {
 import { useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useSideWindows } from '@src/navigation';
+import { useIsAdvanced } from '@src/components/view-mode';
+import { sideTabsAt } from './side-windows';
 import { CommandStatusViewer } from './command-status-viewer';
 import { EntityShareDialog } from './EntityShareDialog';
 import { SessionInfoPopover } from './SessionInfoPopover';
@@ -80,6 +83,8 @@ export function SessionActionsMenu({
 }: SessionActionsMenuProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  const sideWindows = useSideWindows();
+  const contextTabs = sideTabsAt('session-menu', useIsAdvanced());
   const [menuOpen, setMenuOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const browsers = useBrowserProfiles(menuOpen);
@@ -206,6 +211,21 @@ export function SessionActionsMenu({
               disabledReason={isRestarting ? '' : !started ? t`Session is not running` : null}
               onSelect={() => void handleRestart()}
             />
+
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              <Trans>Session context</Trans>
+            </DropdownMenuLabel>
+            {contextTabs.map((tab) => (
+              <ActionItem
+                key={tab.id}
+                testId={`session-action-side-tab-${tab.id}`}
+                icon={tab.icon}
+                label={t(tab.label)}
+                hint={t(tab.description)}
+                onSelect={() => sideWindows.open(tab.id)}
+              />
+            ))}
 
             {browsers.length > 0 && (
               <BrowserProfileMenu browsers={browsers} testIdPrefix="session-action-browser-profile" />

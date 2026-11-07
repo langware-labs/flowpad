@@ -10,9 +10,6 @@ const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf-8');
 
 const menuSource = read('../../src/components/prompt-library/PromptLibraryMenu.tsx');
 const dialogSource = read('../../src/components/prompt-library/PromptEditDialog.tsx');
-const ribbonSource = read(
-  '../../src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx',
-);
 const sdkPromptSource = read('../../../ts_sdk/src/entities/prompt.ts');
 
 describe('prompt library is pure composition (zero logic)', () => {
@@ -41,11 +38,5 @@ describe('prompt library is pure composition (zero logic)', () => {
     expect(dialogSource).not.toMatch(/fetch\(|apiClient/);
     // contrast safety comes from the curated palette, not dialog math
     expect(dialogSource).not.toMatch(/relativeLuminance|contrastRatio|hexToRgb/);
-  });
-
-  it('ribbon exposes the Queue tab and the distinct Prompt Library button', () => {
-    expect(ribbonSource).toContain('SideTabId.Queue');
-    expect(ribbonSource).toContain('PromptLibraryMenu');
-    expect(ribbonSource).toContain('Prompt Library');
   });
 });

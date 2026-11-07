@@ -163,6 +163,14 @@ class Deployment(Entity):
     #: When this placement answers from (ISO), set by the hub for a person's placement made by a message: that
     #: message is an arrival here, not history (``agent_serve.bound_at``). None: from when it was bound.
     answers_from: Optional[str] = APIField(default=None)
+    #: The hub's agent mode, kept as the hub wrote it so this machine's screens read it: ``private`` is a template
+    #: -- each person who talks to the agent gets their own placement of it, on ``channels``, paused when idle.
+    agent_mode: Literal["shared", "private"] = APIField(default="shared")
+    channels: list[str] = APIField(default_factory=list)
+    idle_pause_seconds: Optional[int] = APIField(default=None)
+    #: On a person's placement: the private template it was made from, and whose it is.
+    template_deployment_id: Optional[str] = APIField(default=None)
+    person_key: Optional[str] = APIField(default=None)
     #: The main agent's launch overrides on this box (keys: ``PLACE_OVERRIDABLE_FIELDS``).
     main_agent_overrides: dict[str, Any] = APIField(
         default_factory=dict, description="Launch overrides for the main agent on this deployment"

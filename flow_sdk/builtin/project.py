@@ -2974,6 +2974,7 @@ class Project(SetupSkippable, Entity):
         token_allocation: Any = _UNSET,
         values: Optional[dict] = None,
         deployment_id: Optional[str] = None,
+        mode_fields: Optional[dict] = None,
     ) -> dict:
         """Place this project on a machine with ``main_agent`` answering there. ``provider="local"`` is this
         computer's one local deployment (serving the main agent); any other runs ``DEPLOYMENT_STEPS``."""
@@ -3000,6 +3001,7 @@ class Project(SetupSkippable, Entity):
             values=values,
             source_kind=source_kind,
             source_ref=source_ref,
+            mode_fields=mode_fields,
         )
 
     @action.post(action_name="deploy")
@@ -3039,6 +3041,7 @@ class Project(SetupSkippable, Entity):
                 token_allocation=body.token_allocation if body.allocation_given else _UNSET,
                 values=body.values,
                 deployment_id=body.deployment_id,
+                mode_fields=body.mode_fields,
             )
         except DeployRunning as exc:
             return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})

@@ -142,6 +142,11 @@ BACKGROUND_TASKS_RUNNING = "background tasks are running"
 #: How far back to look for a pending question's answer (it lands right after).
 _PENDING_INPUT_TAIL_BYTES = 256 * 1024
 
+# Text a FlowData derives from its value, dropped from ``get-history``: the client rebuilds a
+# frame from flow_value/attributes/index/created_time/process_entry and never reads these, yet
+# they were half of a 10.8 MB history (perf hunt 2026-11-07).
+_DERIVED_TEXT = {"to_xml", "content", "start_tag_xml", "end_tag_xml"}
+
 #: ``context_data`` key: the question the worker is blocked on, as its
 #: ``PreToolUse`` hook reported it. Claude may keep a pending ``AskUserQuestion``
 #: out of its transcript until it is answered, so the transcript alone cannot
@@ -1455,28 +1460,24 @@ class AgenticProcess(Entity):
         return pending.get("code") if pending.get("kind") == "launch_blocked" else None
 
     async def _watch_launch_screen(self, shell: "Shell", screen) -> None:
-        """For the PTY's life, no deadline: launch prompts until the composer, then refused credentials (new text only)."""
-        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-            latch_credential_failure,
-            strip_pty_controls,
-        )
+        """Launch prompts until the composer, then done. Screen text after that is the transcript,
+        which a TUI repaints on resume and resize, so nothing after the composer is read: a quoted
+        "401" in the history is not a refusal. Detection only reports; it never stops the worker."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import strip_pty_controls
 
         async with shell._output_feed() as feed:
-            text, shown, booted = strip_pty_controls(feed.initial[-16384:]) if feed else "", None, False
+            text, shown = strip_pty_controls(feed.initial[-16384:]) if feed else "", None
             while feed is not None:
-                if not booted and (verdict := screen.classify(text)) != shown:
+                if (verdict := screen.classify(text)) != shown:
                     if verdict in BLOCKING_CODES or shown in BLOCKING_CODES:
                         await self._apply_launch_screen(verdict, text, screen)
-                    shown, booted = verdict, verdict == "ready"
-                    text = "" if booted else text
-                elif booted and (failure := screen.classify_auth(text)):  # stop now, latch like a headless turn
-                    await self.exit()
-                    proc = await AgenticProcess.get_by_id(self.id) or self
-                    return await latch_credential_failure(proc, LaunchError.of(*failure), text)
+                    if verdict == "ready":
+                        return
+                    shown = verdict
                 chunk = await feed.next()
                 if feed.closed:
                     return
-                text = (text + strip_pty_controls(chunk))[-(200 + len(chunk) if booted else 16384):]
+                text = (text + strip_pty_controls(chunk))[-16384:]
 
     async def _apply_launch_screen(self, verdict: str | None, text: str, screen) -> None:
         proc = await AgenticProcess.get_by_id(self.id) or self
@@ -6720,29 +6721,35 @@ class AgenticProcess(Entity):
             merge_abort_markers,
         )
 
-        history = self.driver.load_history(self)
-        # Merge flowpad-authored durable abort markers (written by
-        # ``cancel-prompt``) so a cancelled turn replays as terminated instead
-        # of leaving its last tool call rendered as still running. Worker-
-        # generic: the vendor transcript is vendor-owned and never contains
-        # these; the sidecar in the process record dir does.
-        # ``history_start`` scopes sid-less markers (written before the worker
-        # reported a session id) to rollouts they chronologically overlap — a
-        # rotated session must not inherit them as a phantom index-0 abort.
-        history = merge_abort_markers(
-            history,
-            load_abort_marker_frames(
-                self._record_dir(),
-                session_id=self.session_id,
-                history_start=history_start_time(history),
-            ),
-        )
+        def read() -> list[dict]:
+            history = self.driver.load_history(self)
+            # Merge flowpad-authored durable abort markers (written by
+            # ``cancel-prompt``) so a cancelled turn replays as terminated instead
+            # of leaving its last tool call rendered as still running. Worker-
+            # generic: the vendor transcript is vendor-owned and never contains
+            # these; the sidecar in the process record dir does.
+            # ``history_start`` scopes sid-less markers (written before the worker
+            # reported a session id) to rollouts they chronologically overlap — a
+            # rotated session must not inherit them as a phantom index-0 abort.
+            history = merge_abort_markers(
+                history,
+                load_abort_marker_frames(
+                    self._record_dir(),
+                    session_id=self.session_id,
+                    history_start=history_start_time(history),
+                ),
+            )
+            return [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
+
+        # Off the loop: a 5-9 MB transcript parses for ~0.3 s, and every other request
+        # waited behind it on each chat open (perf hunt 2026-11-07).
+        history = await asyncio.to_thread(read)
         return ApiSuccessResponse(
             data={
                 "session_id": self.session_id,
                 "use_worker_history": True,
                 "count": len(history),
-                "history": [fd.model_dump(mode="python") for fd in history],
+                "history": history,
             }
         )
 
