@@ -53,12 +53,13 @@ export function ChatHistoryRow({
   onDelete,
 }: ChatHistoryRowProps) {
   const { t } = useLingui();
-  // Subscribe to the backing process so a rename (tab/process) re-renders this
-  // row instead of leaving a stale title. Gate `enabled` on a cached hit so we
-  // only watch already-materialized processes (open-tab sessions) — never fire a
-  // fetch per history row for on-disk-only sessions. `useEntity` returns the
-  // cached instance; watch also subscribes this browser to backend data-ops,
-  // even when no terminal view is mounted here.
+  // Subscribe to the backing process in the local cache so a rename (tab/process)
+  // re-renders this row instead of leaving a stale title. Gate `enabled` on a
+  // cached hit so we never fire a fetch per history row for on-disk-only
+  // sessions. No backend `watch` here: the list's live query (useChatHistory)
+  // already brings every member's changes, and a per-row watch sent one
+  // watch/unwatch POST per row each time the navigator mounted — ~40 per
+  // process <-> doc switch.
   const cached = entry.agentic_process_id
     ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
     : null;
@@ -66,7 +67,7 @@ export function ChatHistoryRow({
     () => (entry.agentic_process_id ? new TypeId(AgenticProcess.type, entry.agentic_process_id) : null),
     [entry.agentic_process_id],
   );
-  const { data: watched } = useEntity<AgenticProcess>(typeId, { enabled: !!cached, watch: true });
+  const { data: watched } = useEntity<AgenticProcess>(typeId, { enabled: !!cached });
   const process = watched ?? cached;
   const title = pickHistoryTitle(process, entry);
   // Live "this chat is working" signal — true while its worker is mid-turn.

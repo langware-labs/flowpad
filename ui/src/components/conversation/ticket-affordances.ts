@@ -21,6 +21,7 @@ export function ticketAffordances(viewer: {
   isParticipant: boolean;
 }): { canPickup: boolean; canSettle: boolean } {
   const canPickup = viewer.helpdesk && !!viewer.cloudUserId && !viewer.isOwner && !viewer.isParticipant;
-  const canSettle = viewer.helpdesk && (viewer.isOwner || viewer.isParticipant || !!viewer.cloudUserId);
+  // Closing is the desk's: the person who asked sees a conversation, not a ticket to manage.
+  const canSettle = viewer.helpdesk && !viewer.isOwner && (viewer.isParticipant || !!viewer.cloudUserId);
   return { canPickup, canSettle };
 }

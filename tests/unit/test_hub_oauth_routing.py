@@ -275,7 +275,7 @@ def _hub_table(monkeypatch, values):
     emitted.
     """
 
-    async def _data(user_id, *, action, sub_path, on_error, level=None):
+    async def _data(user_id, *, action, sub_path, on_error, level=None, unreachable_raises=False):
         assert (action, sub_path) == ("env-var", "table")
         return {"values": values}
 

@@ -779,8 +779,11 @@ class DriverRuntime:
         in_reply_to: str = "",
         files: tuple[FileItem, ...] = (),
         quote: bool = True,
+        cc: str = "",
+        html: str = "",
     ) -> SendOutcome:
-        """One message into the channel, recorded. A refused message is a ``ValueError`` — one failed
+        """One message into the channel, recorded. ``cc`` (comma-separated) and ``html`` are email's: a channel
+        whose messages carry neither refuses them rather than dropping them. A refused message is a ``ValueError`` — one failed
         reply must never become source health.
 
         ``files`` are local files (``sources.files.local_file``), checked against the channel's
@@ -807,6 +810,10 @@ class DriverRuntime:
                     )
                     if part.files or part.text is None:
                         data = data.model_copy(update={"text": part.text, "attachments": part.files})
+                    if cc or html:
+                        if "html" not in type(data).model_fields:
+                            raise ValueError(f"{self.provider} sends no Cc or HTML")
+                        data = data.model_copy(update={"cc": source.people(cc) if cc else (), "html": html or None})
                     sents.append(await (source.reply(answered, data) if answered is not None else source.send(data)))  # type: ignore[attr-defined]
         except SourceError as exc:
             if not sents:

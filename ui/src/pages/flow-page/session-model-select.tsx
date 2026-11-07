@@ -45,7 +45,7 @@ export function SessionModelSelect({
   activeProcess: AgenticProcess | null;
   workerType?: string | null;
 }) {
-  const agent = useLaunchingAgent(activeProcess?.deployment_id);
+  const agent = useLaunchingAgent(activeProcess);
   const availableSizes = useAvailableSizes(workerType ?? activeProcess?.worker_type ?? 'claude');
   const pinned = agent?.model ? normalizeVibeModelTier(agent.model) : null;
   return (

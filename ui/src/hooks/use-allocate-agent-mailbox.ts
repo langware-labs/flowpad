@@ -37,10 +37,10 @@ export function useAllocateAgentMailbox(): (
         const status = errorStatus(error);
         // 402: the hub's mail plan has no free mailbox — a fact about the plan, said plainly.
         notify.error({
-          title: status === 503 ? t`This hub does not offer agent email` : t`Could not allocate a mailbox`,
+          title: status === 503 ? t`Built-in email is off on this hub` : t`Could not create the built-in email`,
           message:
             status === 503
-              ? t`Ask whoever runs the hub to turn agent mailboxes on, or use another channel.`
+              ? t`Whoever runs the hub can turn it on. Gmail works here meanwhile.`
               : status === 402
                 ? t`The mail plan has no free mailbox left. Remove a mailbox you no longer use, or ask whoever runs the hub to upgrade the plan.`
                 : errorMessage(error, t`Email settings could not be saved.`),

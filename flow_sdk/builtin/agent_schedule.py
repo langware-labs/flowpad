@@ -69,8 +69,6 @@ def _document(body: dict[str, Any], base: Optional[dict[str, Any]]) -> dict[str,
     for key in ("name", "description"):
         if key in body:
             doc[key] = str(body[key] or "").strip()
-    if "enabled" in body:
-        doc["enabled"] = bool(body["enabled"])
     for key in ("every", "expr", "timezone"):
         if key in body:
             schedule[key] = str(body[key] or "").strip()
@@ -187,9 +185,13 @@ async def add_schedule(agent: "Agent", body: dict[str, Any]) -> "Trigger":
             assert_create_target_available(info, folder, entity_type="schedule", name=name)
             folder.mkdir(parents=True, exist_ok=True)
             _write(folder, spec)
-            return await _index(folder)
+            trigger = await _index(folder)
     except AssetPathCollisionError as exc:
         raise ScheduleError(str(exc), status_code=409) from exc
+    # Made here, by the person here: it starts on unless they said off. On/off never goes in the file.
+    from flow_sdk.builtin.trigger import set_trigger_on  # noqa: PLC0415
+
+    return await set_trigger_on(trigger, bool(body.get("enabled", True)))
 
 
 async def update_schedule(agent: "Agent", trigger_id: str, body: dict[str, Any]) -> "Trigger":
@@ -206,7 +208,12 @@ async def update_schedule(agent: "Agent", trigger_id: str, body: dict[str, Any])
         raise ScheduleError(f"cannot read {folder / TRIGGER_JSON}: {exc}", status_code=409) from exc
     spec = _validate(_document(body, base if isinstance(base, dict) else None))
     _write(folder, spec)
-    return await _index(folder, owner=trigger)
+    fresh = await _index(folder, owner=trigger)
+    if "enabled" in body:
+        from flow_sdk.builtin.trigger import set_trigger_on  # noqa: PLC0415
+
+        fresh = await set_trigger_on(fresh, bool(body["enabled"]))
+    return fresh
 
 
 async def remove_schedule(agent: "Agent", trigger_id: str) -> None:

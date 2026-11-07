@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { AgenticProcess, Annotation, TypeId } from '@sdk';
-import { newNote, NOTE_LABEL, notesByTarget, notesOf, noteTitle } from '@src/hooks/use-entity-notes';
+import {
+  newNote,
+  NOTE_LABEL,
+  notesByTarget,
+  notesOf,
+  noteTitle,
+  QUICK_PROMPT_LABEL,
+  quickPromptsFor,
+} from '@src/hooks/use-entity-notes';
 import { DEFAULT_NOTE_COLOR, NOTE_COLOR_TOKENS, NOTE_PALETTE, noteColor } from '@src/components/notes/note-palette';
 import { buildNotePrompt, noteWorkerContext } from '@src/components/notes/useNoteWorker';
 
@@ -80,5 +88,27 @@ describe('note context worker', () => {
     const prompt = buildNotePrompt(n);
     expect(prompt).toContain(`You are working on ${target.name} (${PROC.type}/${PROC.id})`);
     expect(prompt).toContain('Ask Dana about the allocation rule\nbefore merging');
+  });
+});
+
+describe('quickPromptsFor', () => {
+  const USER = '56cb3eae-77ff-5727-8d01-08fce10852e0';
+  const PROJECT = 'c82a1115-2f20-52e0-aa2a-4658898b5873';
+  const qp = (content: string, type: string, id: string, used: string) =>
+    new Annotation({
+      labels: [NOTE_LABEL, QUICK_PROMPT_LABEL],
+      target_type: type,
+      target_id: id,
+      content,
+      data: { color: 'yellow', last_used_at: used },
+      iso_timestamp: '2026-11-01T00:00:00.000Z',
+    });
+  it("keeps this user's and this project's quick prompts, last used first", () => {
+    const mine = qp('mine', 'user', USER, '2026-11-02T00:00:00.000Z');
+    const proj = qp('project', 'project', PROJECT, '2026-11-05T00:00:00.000Z');
+    const otherProject = qp('elsewhere', 'project', OTHER, '2026-11-06T00:00:00.000Z');
+    const plainNote = note('just a note', '2026-11-06T00:00:00.000Z');
+    const got = quickPromptsFor([mine, otherProject, plainNote, proj], { userId: USER, projectId: PROJECT });
+    expect(got.map((n) => n.content)).toEqual(['project', 'mine']);
   });
 });

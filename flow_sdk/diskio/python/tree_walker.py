@@ -9,7 +9,7 @@ from typing import Iterator
 
 from flow_sdk.diskio.contract import StreamEnd, WalkEntry, WalkPolicy
 from flow_sdk.diskio.python._stream import unreadable, with_end
-from flow_sdk.fs_store.gitignore import _FORCE_INCLUDE, _WALK_IGNORED, GitignoreStack, stack_ignores
+from flow_sdk.fs_store.gitignore import _FORCE_INCLUDE, _WALK_IGNORED, FlowIgnore, GitignoreStack, stack_ignores
 from flow_sdk.fs_store.indexer.walk import SkipFn, walk_entries
 
 #: ``gitignore.py``'s ``.claude/worktrees`` skip, as data.
@@ -57,12 +57,12 @@ def _skip_for(root: Path, policy: WalkPolicy) -> SkipFn | None:
             p = p.parent
 
     if policy.gitignore:
+        flow = FlowIgnore()
+
         def skip(path: Path, is_dir: bool, stack: GitignoreStack) -> bool:
             if denied(path):
                 return True
-            if force and forced(path):
-                return False
-            return stack_ignores(path, is_dir, stack)
+            return stack_ignores(path, is_dir, stack, forced if force else None, flow)
         return skip
     if deny or segments:
         return lambda path, _is_dir, _stack: denied(path)

@@ -9,7 +9,8 @@ silently dropped by ``/fs-records/search``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections import deque
+from dataclasses import dataclass, field, replace
 
 SCOPED_RECORD_TYPES: frozenset[str] = frozenset({
     "skill", "subagent", "markdown", "chart", "task",
@@ -42,14 +43,28 @@ class ScopeFilter:
       - ``project_roots`` — backend-only ``(project_id, cwd)`` pairs used by
         scan/index paths that already resolved the all-project list and should
         not re-query or materialize Project rows just to build FS roots.
+      - ``deps``     — widen ``projects`` to each project's dependency closure
+        (flow.json, transitive). ``resolve_project_scope`` expands it: provider
+        Projects join ``projects``/``record_projects``, and every dependency
+        folder lands in ``dependency_roots``.
+      - ``dependency_roots`` — backend-only folder paths; a row whose
+        ``asset_ref`` lies under one is in scope whatever its stamp (a plain,
+        non-Project dependency folder indexes as user scope).
+      - ``user_excluded_roots`` — backend-only: every plain (non-Project)
+        dependency folder of any project. Its rows index as user scope, but they
+        belong to the project depending on them, so "Mine" (``user``) leaves them
+        out; they show under that project's Dependencies.
 
-    Wire format on the URL:  ``?user=true&projects=A,B``
+    Wire format on the URL:  ``?user=true&projects=A,B[&deps=true]``
     """
 
     user: bool = True
     projects: tuple[str, ...] = field(default_factory=tuple)
     record_projects: tuple[str, ...] = field(default_factory=tuple)
     project_roots: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    deps: bool = False
+    dependency_roots: tuple[str, ...] = field(default_factory=tuple)
+    user_excluded_roots: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
     def from_query_params(cls, params) -> "ScopeFilter":
@@ -71,14 +86,18 @@ class ScopeFilter:
             params.get("projects") if hasattr(params, "get") else params.get("projects", "")
         ) or ""
         projects = tuple(p.strip() for p in str(projects_raw).split(",") if p.strip())
-        return cls(user=user, projects=projects)
+        deps = str(params.get("deps") or "").strip().lower() in ("true", "1", "yes")
+        return cls(user=user, projects=projects, deps=deps)
 
     def to_query_dict(self) -> dict[str, str]:
         """Inverse of ``from_query_params`` for outbound URLs."""
-        return {
+        out = {
             "user": "true" if self.user else "false",
             "projects": ",".join(self.projects),
         }
+        if self.deps:
+            out["deps"] = "true"
+        return out
 
 
 def _dedupe(values) -> tuple[str, ...]:
@@ -113,6 +132,16 @@ def scope_record_project_ids(sf: "ScopeFilter | None") -> tuple[str, ...]:
     return _dedupe((*sf.projects, *sf.record_projects))
 
 
+def under_dependency_root(asset_ref: object, roots: tuple[str, ...]) -> bool:
+    """True when ``asset_ref`` is one of ``roots`` or lies beneath one.
+
+    The Python twin of the ``dependency_roots`` branch of ``_scope_sql_clause``."""
+    from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
+    ref = str(asset_ref or "")
+    return bool(ref) and any(is_path_under(ref, root) for root in roots)
+
+
 def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
     """Filter entities by the unified ``ScopeFilter``.
 
@@ -140,9 +169,12 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
     # an exemption) — drop it under an explicit ScopeFilter so search doesn't
     # leak half-classified rows.
     def _keep(e) -> bool:
+        ref = getattr(e, "asset_ref", None)
+        if sf.dependency_roots and under_dependency_root(ref, sf.dependency_roots):
+            return True
         s = (getattr(e, "scope", None) or "")
         if s == "user":
-            return sf.user
+            return sf.user and not under_dependency_root(ref, sf.user_excluded_roots)
         if s in PROJECT_LIKE_SCOPES:
             pid = getattr(e, "project_id", None) or ""
             return pid in pid_set
@@ -174,6 +206,10 @@ async def resolve_project_scope(
     real Project entity ids; ``record_projects`` carries both the entity ids
     and derived ids so row filters still match existing records.
     """
+    if sf is not None and sf.user and not sf.user_excluded_roots:
+        excluded = await plain_dependency_roots()
+        if excluded:
+            sf = replace(sf, user_excluded_roots=excluded)
     if sf is None or not sf.projects:
         return sf
     if sf.record_projects:
@@ -308,21 +344,90 @@ async def resolve_project_scope(
         entity_ids.append(token)
         record_ids.append(token)
 
+    dependency_roots: list[str] = []
+    if sf.deps:
+        # The same walk the asset menu does (``build_asset_menu``): every context
+        # folder of a project in scope is a dependency root, and one that is itself
+        # a Project contributes that Project's id (its rows carry it) and, in turn,
+        # its own context folders. Breadth-first with a visited set, so a cycle or
+        # a diamond costs one visit; the root's links are usually already the
+        # flattened closure, and the recursion covers a dependency linked later.
+        from flow_sdk.builtin.project import mount_key  # noqa: PLC0415
+
+        async def _links_of(proj) -> list[dict]:
+            # The links are read off a FRESH row: the cached list only has to
+            # name which project sits at which mount, and must not decide the
+            # closure — a link written by another process never reaches it.
+            fresh = await Project.get_by_id(str(proj.id))
+            return getattr(fresh or proj, "context_dir_infos", None) or []
+
+        by_mount = {mount_key(getattr(p, "fs_storage_mount_path", None)): p for p in projects}
+        frontier = deque(by_id[pid] for pid in _dedupe(entity_ids) if pid in by_id)
+        seen_projects = {str(p.id) for p in frontier}
+        seen_roots: set[str] = set()
+        while frontier:
+            proj = frontier.popleft()
+            for info in await _links_of(proj):
+                root = mount_key(info.get("path"))
+                if not root or root in seen_roots:
+                    continue
+                seen_roots.add(root)
+                dependency_roots.append(root)
+                provider = by_mount.get(root)
+                if provider is not None and str(provider.id) not in seen_projects:
+                    seen_projects.add(str(provider.id))
+                    add_project(provider)
+                    frontier.append(provider)
+
     resolved_projects = _dedupe(entity_ids)
     resolved_records = _dedupe(record_ids)
     resolved_roots = _dedupe_pairs((*sf.project_roots, *project_roots))
+    resolved_dependency_roots = _dedupe((*sf.dependency_roots, *dependency_roots))
     if (
         resolved_projects == sf.projects
         and resolved_records == sf.record_projects
         and resolved_roots == sf.project_roots
+        and resolved_dependency_roots == sf.dependency_roots
     ):
         return sf
-    return ScopeFilter(
-        user=sf.user,
+    return replace(
+        sf,
         projects=resolved_projects,
         record_projects=resolved_records,
         project_roots=resolved_roots,
+        dependency_roots=resolved_dependency_roots,
     )
+
+
+# (cached project list it was computed from, its plain dependency roots)
+_PLAIN_ROOTS_MEMO: "tuple[list, tuple[str, ...]] | None" = None
+
+
+async def plain_dependency_roots() -> tuple[str, ...]:
+    """Every context folder of any project that no Project mount contains.
+
+    A folder that IS a Project (or lies inside one) indexes as that project's
+    content; only these plain folders index as user scope while belonging to the
+    project that depends on them. Computed once per cached project list — the
+    cache's own invalidation (a project created, a dependency link changed)
+    yields a new list and so a recompute; no DB or FS walk."""
+    global _PLAIN_ROOTS_MEMO
+    from flow_sdk.builtin.project import mount_key  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
+    projects = await get_cached_projects()
+    if _PLAIN_ROOTS_MEMO is not None and _PLAIN_ROOTS_MEMO[0] is projects:
+        return _PLAIN_ROOTS_MEMO[1]
+    mounts = [m for m in (mount_key(getattr(p, "fs_storage_mount_path", None)) for p in projects) if m]
+    roots: list[str] = []
+    for proj in projects:
+        for info in getattr(proj, "context_dir_infos", None) or []:
+            root = mount_key(info.get("path"))
+            if root and not any(is_path_under(root, m) for m in mounts):
+                roots.append(root)
+    _PLAIN_ROOTS_MEMO = (projects, _dedupe(roots))
+    return _PLAIN_ROOTS_MEMO[1]
 
 
 def apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:

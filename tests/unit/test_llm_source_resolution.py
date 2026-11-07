@@ -522,7 +522,7 @@ def test_every_harness_declares_all_three_tiers() -> None:
     from flow_sdk.builtin.agentic_process import model_tiers
 
     assert set(model_tiers.CLAUDE_MODEL_TIERS) >= {"sm", "md", "lg"}
-    # Every vendor CLI but claude picks its own default: no model ids in code.
+    # Other native tiers need a configured binding: no model ids in code.
     assert dict(model_tiers.VENDOR_DEFAULT_TIERS) == {"sm": None, "md": None, "lg": None}
 
 

@@ -1,11 +1,9 @@
 """Worker-agnostic model **tiers** (sm / md / lg) → per-worker selection.
 
-A caller picks a *size* (small / medium / large) instead of hard-coding a vendor
-model name; each worker driver maps the tier to its own model family or to
-``None`` when the vendor should choose automatically. This keeps prompts/tests/
-configs portable across workers ("use the small model") and is the single place
-that knows, e.g., that claude's small model is ``haiku`` while native Copilot
-must omit ``--model``.
+A caller picks a size instead of a vendor model name. Claude's CLI owns native
+size aliases; other device logins use ``Capability.model_map['device']`` at
+spawn binding. An unmapped size is rejected, never silently replaced by the
+vendor default. Omitting the model still lets the vendor choose.
 
 Resolution is authoritative on the backend (driver ``cli_options``), so a tier
 that was persisted into ``cli_config['model']`` still resolves correctly on
@@ -32,11 +30,8 @@ class ModelTier(StrEnum):
     LG = "lg"
 
 
-# What a size means to a harness on its OWN login (no LLM endpoint). No model ids here: the claude
-# CLI has its own size words (``haiku``/``sonnet``/``opus``) and resolves them to whatever its
-# installed version ships; every other vendor CLI gets ``None`` and picks its own default. A worker
-# funded by an endpoint never reads these -- it runs the slug the endpoint declares for the size
-# (``LLMEndpoint.models``, inherited down the hub chain).
+# Native CLI aliases, not versioned model ids. Endpoint-funded workers use the
+# endpoint's tiers; device overrides are resolved by the spawn binding.
 CLAUDE_MODEL_TIERS: dict[str, str | None] = {
     ModelTier.SM.value: "haiku",
     ModelTier.MD.value: "sonnet",
@@ -47,7 +42,7 @@ CLAUDE_MODEL_TIERS: dict[str, str | None] = {
 # (``ApiAuthSpec.native_tiers``) so the endpoint's slug for that size runs.
 CLAUDE_CLI_ALIASES: dict[str, str] = {name: size for size, name in CLAUDE_MODEL_TIERS.items() if name}
 
-#: The vendor chooses at every size: the default for every harness but claude (read-only, shared).
+#: Unmapped native tiers; command emission refuses these until the binding supplies a model.
 VENDOR_DEFAULT_TIERS: Mapping[str, str | None] = MappingProxyType({tier.value: None for tier in ModelTier})
 
 
@@ -60,13 +55,13 @@ def is_model_tier(model: str | None) -> bool:
 
 
 def resolve_model_tier(tier_map: Mapping[str, str | None], model: str | None) -> str | None:
-    """Map a tier to a concrete model or vendor-auto via *tier_map*.
-
-    Idempotent and pass-through: a non-tier value (a real model name, or a tier
-    absent from *tier_map*) is returned unchanged. A present key mapped to
-    ``None`` means vendor auto and suppresses the model flag. The worker supplies
-    its own *tier_map* so the size→selection knowledge stays worker-local.
-    """
+    """Resolve native aliases; reject an unmapped requested size, pass model names through."""
     if not model:
         return model
-    return tier_map.get(model, model)
+    resolved = tier_map.get(model, model)
+    if is_model_tier(model) and (not resolved or resolved == model):
+        raise ValueError(
+            f"Model size {model!r} has no mapping for this worker; configure "
+            "Capability.model_map['device'] or name a concrete model"
+        )
+    return resolved

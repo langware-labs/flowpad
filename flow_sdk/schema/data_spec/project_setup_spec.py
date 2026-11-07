@@ -29,6 +29,9 @@ REQUIREMENT_DEPENDENCY = "dependency"
 REQUIREMENT_SOURCE = "source"
 #: A web app of the project whose dev server does not answer. Readiness only, like ``source``.
 REQUIREMENT_WEBAPP = "webapp"
+#: An automation the project recommends that nobody here has turned on or off yet (docs/automations.md
+#: "On, off and recommended"). Readiness only — the person decides; there is nothing for the tree to run.
+REQUIREMENT_AUTOMATION = "automation"
 
 
 def input_name(credential: str, env_var: str) -> str:
@@ -117,7 +120,7 @@ class SetupRequirementSpec(DataSpec):
     spec_kind: ClassVar[str] = "project.setup.requirement"
     model_config = ConfigDict(frozen=True)
 
-    #: ``pack`` / ``gap`` / ``dependency`` / ``source`` / ``webapp``.
+    #: ``pack`` / ``gap`` / ``dependency`` / ``source`` / ``webapp`` / ``automation``.
     kind: str
     #: The credential's name (pack), the dependency's, the source's or the web app's.
     name: str

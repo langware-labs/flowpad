@@ -162,6 +162,9 @@ class Conversation(ProjectedFields, Entity):
     # the hub's ``Project.start_guest_conversation`` — never trusted from a
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
+    # The hub stamps it on the 1:1 conversation that holds invite messages (every share from one person
+    # to another lands in their conversation). The stream inbox's Invites view is a query on it.
+    carries_invite: bool = APIField(default=False)
     # Settlement state, mirrored from the hub's close/reopen answers (``_hub_reflect.mirror_answer``) and by
     # ``_upsert_hub_conversation_metadata``. The requester's portal reads this
     # LOCAL row, so without the mirror a ticket they just closed keeps
@@ -297,6 +300,9 @@ class Conversation(ProjectedFields, Entity):
     # pattern as ``dismissed_at``). Per-message ``FlowMessage.is_read``
     # remains independent and is not affected by archive.
     archived_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # When this conversation's plan sessions were last linked into its context (``index-plan-sessions``):
+    # sessions started before the link existed are found once, then never searched for again.
+    plan_sessions_indexed_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     # Local recency (``project_pointers_to_entity``, from the messages' own clocks): the hub
     # re-stamps its ``updated_date`` on bare touches, so it is never adopted as this — the hub
     # clock is ``hub_updated_date``.
@@ -887,7 +893,13 @@ class Conversation(ProjectedFields, Entity):
 
         owed_bodies = []
         async with keyed_loop_lock(_DELIVERY_LOCKS, self.id):
-            if self.awaits_hub and not await self._open_on_hub(force=force):
+            if self.awaits_hub and self.remote:
+                # Already on the hub: stage 0 is done. A copy saved from before it finished (the hub mirror's
+                # read-modify-write) can bring the flag back; opening again would re-share with people who
+                # already joined ("User has already accepted") and hold every later message back.
+                self.awaits_hub = False
+                await self.save()
+            elif self.awaits_hub and not await self._open_on_hub(force=force):
                 return
             for fm in await self._owed_messages(force=force):
                 if delivery_rank(fm.delivery_status) < delivery_rank(DeliveryStatus.SENT):

@@ -145,3 +145,18 @@ def test_strip_pty_keeps_line_structure() -> None:
     assert _strip_pty_keep_lines(raw) == "file.txt\nsecond\n"
 
 
+
+
+@pytest.mark.asyncio
+async def test_agentic_process_opens_its_session_tab() -> None:
+    # A session has no editor: as a generic entity target nothing opens.
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+
+    process = AgenticProcess(name="probe-session")
+    await process.save()
+
+    payload = await resolve_display_target(typeid=f"agentic_process-{process.id}")
+
+    assert payload["kind"] == DisplayTargetKind.DOCK
+    assert payload["view_type"] == "shell"
+    assert payload["pointer"] == f"agentic_process-{process.id}"

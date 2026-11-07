@@ -8,36 +8,9 @@ from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
-from flow_sdk.schema.data_spec.spec import DataSpec
 
-#: The launch settings a place may override. Anything else is the definition's.
+#: The launch settings a deployment may override for its main agent (``Deployment.main_agent_overrides``).
 PLACE_OVERRIDABLE_FIELDS: tuple[str, ...] = ("worker_type", "model", "permission_mode", "effort", "mcp_servers")
-
-
-class AgentPlaceSpec(DataSpec):
-    """How this agent runs on ONE place — a Deployment it is placed on.
-
-    Keyed by the Deployment id and carried in agent.json, so a place's overrides
-    travel with the definition like its schedules do; each machine applies only
-    the entry naming a placement that runs there. ``None`` = inherit the
-    definition. ``mcp_servers`` names servers (names travel; ids do not).
-    """
-
-    spec_kind: ClassVar[str] = "agent.place"
-
-    deployment_id: str
-    #: Whether the agent runs on this place at all. ``None`` = the definition's ``enabled``.
-    #: A gate, not a launch setting — so it is not in ``overrides()``.
-    enabled: Optional[bool] = None
-    worker_type: Optional[str] = None
-    model: Optional[str] = None
-    permission_mode: Optional[str] = None
-    effort: Optional[str] = None
-    mcp_servers: Optional[list[str]] = None
-
-    def overrides(self) -> dict:
-        """The fields this place actually overrides."""
-        return {name: getattr(self, name) for name in PLACE_OVERRIDABLE_FIELDS if getattr(self, name) is not None}
 
 
 class AgentSpec(AssetDocumentSpec):
@@ -89,11 +62,6 @@ class AgentSpec(AssetDocumentSpec):
     #: What every new session as this agent opens with: a place, a ``navigate`` op that can repair
     #: it (``{"op": name}``) or a wizard (``{"wizard": name}``); the first place is the active one.
     auto_open: Optional[list[AutoOpenEntry]] = None
-    #: Per-place launch overrides, keyed by Deployment id.
-    places: Optional[list[AgentPlaceSpec]] = None
-    #: The ONE place (Deployment id) that answers this agent's email. Unset = legacy:
-    #: every machine that polls the mailbox answers.
-    email_place: Optional[str] = None
     #: The agent's own phone number (the one its WhatsApp channel answers on). Declaration only.
     phone: Optional[PhoneNumberSpec] = None
     #: What the agent needs wherever it runs — credentials, permissions, variables — derived from what

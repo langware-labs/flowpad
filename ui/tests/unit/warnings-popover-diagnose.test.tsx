@@ -1,6 +1,7 @@
 /**
- * The stethoscope in the footer warnings popover is offered for WARNINGS, not
- * only errors. Three kinds of row live in that popover and all three are
+ * Diagnosis in the footer warnings popover is offered for WARNINGS, not
+ * only errors — a "Diagnose & fix" button on a logged alert, the stethoscope on a
+ * derived warning. Three kinds of row live in that popover and all three are
  * diagnosable: a logged `error` alert, a logged `warning` alert, and a derived
  * warning (a live condition such as "No harness found", which is not a
  * notification at all). Each assertion is scoped to its own row — every row in
@@ -78,8 +79,8 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     await user.click(await screen.findByTestId('warnings-popover-trigger'));
     await screen.findAllByTestId('warnings-popover-alert');
 
-    expect(within(rowFor('Save failed')).getByLabelText('Diagnose this error')).toBeTruthy();
-    expect(within(rowFor('Slow query')).getByLabelText('Diagnose this warning')).toBeTruthy();
+    expect(within(rowFor('Save failed')).getByTestId('warnings-popover-diagnose-fix')).toBeTruthy();
+    expect(within(rowFor('Slow query')).getByTestId('warnings-popover-diagnose-fix')).toBeTruthy();
   });
 
   it('seeds the diagnosis with the warning detail and marks it as a warning', async () => {
@@ -90,14 +91,33 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     render(<WarningsPopover />);
     await user.click(await screen.findByTestId('warnings-popover-trigger'));
     await screen.findAllByTestId('warnings-popover-alert');
-    await user.click(within(rowFor('Slow query')).getByLabelText('Diagnose this warning'));
+    await user.click(within(rowFor('Slow query')).getByTestId('warnings-popover-diagnose-fix'));
 
     // `kind` is what keeps the modal from calling a warning an error, and what
     // the seeded prompt (`analyze the <kind>: …`) reads.
     expect(useDiagnoseErrorStore.getState()).toMatchObject({
       detail: 'Slow query\ntook 9s',
       kind: 'warning',
+      alertId: 'w',
     });
+  });
+
+  it('a repaired alert shows Fixed with what changed, and Done removes it', async () => {
+    const user = userEvent.setup();
+
+    notify.error({ id: 'e', title: 'Indexing failed: chart a', message: 'a/CHART.md: bad YAML' });
+    useAlertStore.getState().markFixed('e', 'Moved the stray line into the description.');
+
+    render(<WarningsPopover />);
+    await user.click(await screen.findByTestId('warnings-popover-trigger'));
+    const row = rowFor('Indexing failed: chart a');
+
+    expect(within(row).getByTestId('warnings-popover-fixed')).toBeTruthy();
+    expect(within(row).getByText('Moved the stray line into the description.')).toBeTruthy();
+    expect(within(row).queryByTestId('warnings-popover-diagnose-fix')).toBeNull();
+    await user.click(within(row).getByTestId('warnings-popover-done'));
+
+    expect(useAlertStore.getState().alerts).toEqual([]);
   });
 
   it('offers it on a derived warning, which carries no notification at all', async () => {

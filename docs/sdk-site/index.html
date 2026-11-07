@@ -1139,7 +1139,7 @@ flow<span class="w"> </span>connections<span class="w"> </span><span class="nb">
 
 </span><span class="n">agent</span> <span class="o">=</span> <span class="k">await</span> <span class="n">Agent</span><span class="o">.</span><span class="n">by_name</span><span class="p">(</span><span class="s2">&quot;researcher&quot;</span><span class="p">)</span>
 <span class="n">here</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>                <span class="c1"># a process on this computer running the agent loop</span>
-<span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>               <span class="c1"># the same deployment — one per agent here</span>
+<span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>               <span class="c1"># the same deployment — one per project here</span>
 <span class="k">assert</span> <span class="n">again</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">here</span><span class="o">.</span><span class="n">id</span> <span class="ow">and</span> <span class="n">here</span><span class="o">.</span><span class="n">serving</span>
 
 <span class="n">chat</span> <span class="o">=</span> <span class="k">await</span> <span class="n">ServiceEndpoint</span><span class="o">.</span><span class="n">find_existing</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">here</span><span class="o">.</span><span class="n">typeid</span><span class="p">),</span> <span class="s2">&quot;chat&quot;</span><span class="p">)</span>
@@ -2132,22 +2132,24 @@ flow connections test google --scope https://www.googleapis.com/auth/drive.reado
     <span class="n">name</span><span class="o">=</span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
     <span class="n">model</span><span class="o">=</span><span class="s2">&quot;sm&quot;</span><span class="p">,</span>
     <span class="n">system_prompt</span><span class="o">=</span><span class="s2">&quot;You research; you do not summarize.&quot;</span><span class="p">,</span>
+    <span class="n">project_id</span><span class="o">=</span><span class="n">PROJECT</span><span class="p">,</span>                        <span class="c1"># a deployment places a project</span>
 <span class="p">)</span>
 <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
 
-<span class="n">here</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">deploy</span><span class="p">(</span><span class="s2">&quot;local&quot;</span><span class="p">)</span>             <span class="c1"># &quot;This computer&quot; — nothing is placed until you ask</span>
+<span class="n">here</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">deploy</span><span class="p">(</span><span class="s2">&quot;local&quot;</span><span class="p">)</span>             <span class="c1"># the project&#39;s ONE local deployment, the agent as main</span>
 <span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">deploy</span><span class="p">(</span><span class="s2">&quot;local&quot;</span><span class="p">)</span>
 <span class="k">assert</span> <span class="n">again</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">here</span><span class="o">.</span><span class="n">id</span>                     <span class="c1"># converges by lookup, never a derived id</span>
 
-<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">element_type</span> <span class="o">==</span> <span class="s2">&quot;agent&quot;</span>            <span class="c1"># what it places is its parent — no stored kind</span>
-<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">identity</span> <span class="o">==</span> <span class="s2">&quot;agent&quot;</span>                <span class="c1"># a box it runs on logs in as the agent</span>
+<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">element_type</span> <span class="o">==</span> <span class="s2">&quot;project&quot;</span>          <span class="c1"># what it places is its parent: the project</span>
+<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">main_agent_id</span> <span class="o">==</span> <span class="nb">str</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">typeid</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">identity</span> <span class="o">==</span> <span class="s2">&quot;agent&quot;</span>                <span class="c1"># a box with a main agent logs in as it</span>
 <span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">provider</span> <span class="o">==</span> <span class="s2">&quot;local&quot;</span>
 <span class="k">assert</span> <span class="n">here</span><span class="o">.</span><span class="n">is_local</span>                           <span class="c1"># an id comparison, not a provider test</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="c2-ship-0" aria-label="Copy code">Copy</button></figcaption></figure></div><div class="ps-row"><div class="ps-point"><b>Run it on this computer</b><span>One process per deployment, each with a chat endpoint.</span></div><figure class="snip" id="c2-ship-1"><pre class="code lang-python" tabindex="0"><code><button type="button" class="imp-note" aria-expanded="false">⋯ 2 imports</button><span class="imp"><span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.builtin.agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">flow_sdk.builtin.service_endpoint</span><span class="w"> </span><span class="kn">import</span> <span class="n">ServiceEndpoint</span>
 
 </span><span class="n">agent</span> <span class="o">=</span> <span class="k">await</span> <span class="n">Agent</span><span class="o">.</span><span class="n">by_name</span><span class="p">(</span><span class="s2">&quot;researcher&quot;</span><span class="p">)</span>
 <span class="n">here</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>                <span class="c1"># a process on this computer running the agent loop</span>
-<span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>               <span class="c1"># the same deployment — one per agent here</span>
+<span class="n">again</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">run_locally</span><span class="p">()</span>               <span class="c1"># the same deployment — one per project here</span>
 <span class="k">assert</span> <span class="n">again</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">here</span><span class="o">.</span><span class="n">id</span> <span class="ow">and</span> <span class="n">here</span><span class="o">.</span><span class="n">serving</span>
 
 <span class="n">chat</span> <span class="o">=</span> <span class="k">await</span> <span class="n">ServiceEndpoint</span><span class="o">.</span><span class="n">find_existing</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">here</span><span class="o">.</span><span class="n">typeid</span><span class="p">),</span> <span class="s2">&quot;chat&quot;</span><span class="p">)</span>
@@ -2196,15 +2198,17 @@ agent = Agent(
     name=&quot;researcher&quot;,
     model=&quot;sm&quot;,
     system_prompt=&quot;You research; you do not summarize.&quot;,
+    project_id=PROJECT,                        # a deployment places a project
 )
 await agent.save()
 
-here = await agent.deploy(&quot;local&quot;)             # &quot;This computer&quot; — nothing is placed until you ask
+here = await agent.deploy(&quot;local&quot;)             # the project&#x27;s ONE local deployment, the agent as main
 again = await agent.deploy(&quot;local&quot;)
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.element_type == &quot;agent&quot;            # what it places is its parent — no stored kind
-assert here.identity == &quot;agent&quot;                # a box it runs on logs in as the agent
+assert here.element_type == &quot;project&quot;          # what it places is its parent: the project
+assert here.main_agent_id == str(agent.typeid)
+assert here.identity == &quot;agent&quot;                # a box with a main agent logs in as it
 assert here.target.provider == &quot;local&quot;
 assert here.is_local                           # an id comparison, not a provider test
 ```
@@ -2219,7 +2223,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name(&quot;researcher&quot;)
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), &quot;chat&quot;)
@@ -2650,7 +2654,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name(&quot;researcher&quot;)
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), &quot;chat&quot;)
@@ -3253,15 +3257,17 @@ agent = Agent(
     name=&quot;researcher&quot;,
     model=&quot;sm&quot;,
     system_prompt=&quot;You research; you do not summarize.&quot;,
+    project_id=PROJECT,                        # a deployment places a project
 )
 await agent.save()
 
-here = await agent.deploy(&quot;local&quot;)             # &quot;This computer&quot; — nothing is placed until you ask
+here = await agent.deploy(&quot;local&quot;)             # the project&#x27;s ONE local deployment, the agent as main
 again = await agent.deploy(&quot;local&quot;)
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.element_type == &quot;agent&quot;            # what it places is its parent — no stored kind
-assert here.identity == &quot;agent&quot;                # a box it runs on logs in as the agent
+assert here.element_type == &quot;project&quot;          # what it places is its parent: the project
+assert here.main_agent_id == str(agent.typeid)
+assert here.identity == &quot;agent&quot;                # a box with a main agent logs in as it
 assert here.target.provider == &quot;local&quot;
 assert here.is_local                           # an id comparison, not a provider test
 ```
@@ -3276,7 +3282,7 @@ from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name(&quot;researcher&quot;)
 here = await agent.run_locally()                # a process on this computer running the agent loop
-again = await agent.run_locally()               # the same deployment — one per agent here
+again = await agent.run_locally()               # the same deployment — one per project here
 assert again.id == here.id and here.serving
 
 chat = await ServiceEndpoint.find_existing(str(here.typeid), &quot;chat&quot;)

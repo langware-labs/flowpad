@@ -1027,16 +1027,40 @@ def _agentic_process_only_entries(
     return extra
 
 
-async def _load_agentic_processes() -> list["AgenticProcess"]:
-    """Best-effort fetch of all AgenticProcess entities. Returns ``[]`` on failure."""
+class _ProcessRow(dict):
+    """A process's stored fields, read as attributes; a field the row lacks reads as None."""
+
+    __getattr__ = dict.get
+
+
+async def _load_agentic_processes() -> list[_ProcessRow]:
+    """Every AgenticProcess as its stored fields — not as entities. Returns ``[]`` on failure.
+
+    History reads a handful of fields from every process on each call, and the UI calls it on
+    every project switch: building all of them (~1,400 on prod) blocked the event loop ~0.4 s
+    per call (perf hunt 2026-11-07). Only the rows a response returns are built, for naming.
+    """
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
     try:
-        return await AgenticProcess.get_all()
+        return [_ProcessRow(row) for row in await AgenticProcess.get_all_rows()]
     except Exception as e:
-        logger.warning("[worker_history] AgenticProcess.get_all failed: %s", e)
+        logger.warning("[worker_history] AgenticProcess.get_all_rows failed: %s", e)
         return []
 
+
+
+async def _load_processes_by_id(ids: set[str]) -> list["AgenticProcess"]:
+    """The named processes as entities (one SQL ``$IN``). Returns ``[]`` on failure."""
+    if not ids:
+        return []
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+
+    try:
+        return await AgenticProcess.get_all({"match": {"op": "$IN", "operands": ["id", sorted(ids)]}})
+    except Exception as e:
+        logger.warning("[worker_history] loading named processes failed: %s", e)
+        return []
 
 async def get_worker_history(
     limit: int = 10, project_ids: ScopeProjectIds = None
@@ -1161,7 +1185,7 @@ async def _collect_worker_history(
             continue
         counts[bucket] = n + 1
         capped.append(entry)
-    await _project_history_names(capped, processes)
+    await _project_history_names(capped)
     return capped
 
 
@@ -1201,14 +1225,14 @@ async def _legacy_name_tabs(processes: list) -> dict[str, list]:
     return grouped
 
 
-async def _project_history_names(entries: list[WorkerHistoryEntry], processes: list) -> None:
-    """One loaded process snapshot plus one batch of unmanaged filesystem reads.
+async def _project_history_names(entries: list[WorkerHistoryEntry]) -> None:
+    """The returned rows' processes, built in one query, plus one batch of unmanaged filesystem reads.
 
     History is a read path. It must not run process/tab writer transactions or
     bind subscriptions once for every row in a listing.
     """
-    by_id = {str(process.id): process for process in processes}
     selected = {entry.agentic_process_id for entry in entries if entry.agentic_process_id}
+    by_id = {str(process.id): process for process in await _load_processes_by_id(selected)}
     legacy_tabs = await _legacy_name_tabs([process for pid, process in by_id.items() if pid in selected])
     unresolved: list[WorkerHistoryEntry] = []
     for entry in entries:

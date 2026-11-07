@@ -14,7 +14,7 @@ from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.materialize import remove_path
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches
 from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult, is_in_doc_dir
-from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
+from flow_sdk.fs_store.gitignore import FlowIgnore, is_ignored, load_gitignore_stack, push_gitignore
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -37,7 +37,7 @@ def remove_asset_files(type_name: str, asset_ref: str | None) -> None:
 
     info = SchemaRegistry.get(type_name)
     path = Path(asset_ref) if asset_ref else None
-    if path is None or info is None or not info.owns_main_ref:
+    if path is None or info is None or not (info.owns_main_ref or info.deletes_files):
         return
     if isinstance(info.shape, File):
         owned = path.is_file() and path.suffix.lower() in info.shape.exts
@@ -171,10 +171,12 @@ class AssetFolder(DataSpec):
         expanded_roots: set[Path] = set()
         # Same skip policy as every other tree walker (the indexer, the
         # markdown walk): the hardcoded vendor/build denylist plus the scanned
-        # root's `.gitignore` stack. A recursive PROJECT_DIR scan of a checkout
+        # root's `.gitignore` / `.flowignore` stack. A recursive PROJECT_DIR scan of a checkout
         # otherwise descends `ui/node_modules` and classifies tens of thousands
         # of entries — `get-assets` on a live worker took minutes for it.
         ignore_stack = load_gitignore_stack(self.path)
+        # .flowignore is asked per path, so a jump straight into a declared mount still obeys it.
+        flow = FlowIgnore()
 
         def issue(path: Path, message: str) -> None:
             if path not in failed:
@@ -247,7 +249,7 @@ class AssetFolder(DataSpec):
                 for child in entries:
                     if child.name.startswith("."):
                         continue
-                    if is_ignored(child, child.is_dir(), ignore_stack, self.path):
+                    if is_ignored(child, child.is_dir(), ignore_stack, self.path, flow):
                         continue
                     asset = collect(child, allowed)
                     if asset is not None and isinstance(asset.info.shape, Folder):

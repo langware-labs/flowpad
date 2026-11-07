@@ -21,6 +21,7 @@ import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Github, Info, Loader2, Search } from 'lucide-react';
 import { projectRecencyMs } from '@src/lib/project-recency';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { AdvancedOnly } from '@src/components/view-mode';
@@ -203,18 +204,16 @@ function CompactProjectSelectDialog({
 
   const { active, rest, hiddenCount } = useMemo(() => {
     const matches = (p: ProjectListItem) => !q || matchesProjectQuery(p, q);
-    // Active section mirrors the chip: alphabetical by display name, id tie-break.
-    const activeList = projects
-      .filter((p) => tabCountByProjectId.has(p.id) && matches(p))
-      .sort((a, b) => getProjectDisplayName(a).localeCompare(getProjectDisplayName(b)) || a.id.localeCompare(b.id));
-    // `last_active_at` (UI-open recency) wins; session `modified_at` is the
-    // fallback; fully-unknown recency sorts as "now" (new project → top).
+    // Both sections sort most-recent first: `last_active_at` (UI-open recency)
+    // wins, session `modified_at` is the fallback, unknown sorts as "now".
     const now = Date.now();
-    const byRecent = projects
-      .filter((p) => !tabCountByProjectId.has(p.id) && matches(p))
-      .map((p) => ({ p, ms: projectRecencyMs(p) ?? now }))
-      .sort((a, b) => b.ms - a.ms)
-      .map((r) => r.p);
+    const byRecency = (list: ProjectListItem[]) =>
+      list
+        .map((p) => ({ p, ms: projectRecencyMs(p) ?? now }))
+        .sort((a, b) => b.ms - a.ms || a.p.id.localeCompare(b.p.id))
+        .map((r) => r.p);
+    const activeList = byRecency(projects.filter((p) => tabCountByProjectId.has(p.id) && matches(p)));
+    const byRecent = byRecency(projects.filter((p) => !tabCountByProjectId.has(p.id) && matches(p)));
     // No query → active projects always show; the rest keep the most-recent
     // cap so Standard view stays short. Querying searches all projects.
     const restList = q ? byRecent : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
@@ -231,6 +230,8 @@ function CompactProjectSelectDialog({
     const projectPath = normalizePath(project.cwd || '');
     const isCurrent = !!currentProjectPath && canonicalPath(projectPath) === canonicalPath(currentProjectPath);
     const isOpening = openingProjectId === project.id;
+    const recency = projectRecencyMs(project);
+    const lastActiveAgo = recency === null ? null : formatTimeAgo(new Date(recency));
     return (
       // A row, not a button: the info icon is a second control, and a button
       // inside a button is invalid markup whose clicks would open the project
@@ -253,7 +254,17 @@ function CompactProjectSelectDialog({
             <div className="h-3.5 w-3.5 shrink-0" />
           )}
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
+            <span className="flex min-w-0 items-baseline gap-1.5">
+              <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
+              {tabCount !== undefined && lastActiveAgo && (
+                <span
+                  className="shrink-0 text-[10px] text-muted-foreground"
+                  data-testid={`switch-project-ago-${project.id}`}
+                >
+                  {lastActiveAgo}
+                </span>
+              )}
+            </span>
             {project.cwd && (
               <span
                 className="truncate text-[10px] leading-tight text-muted-foreground"

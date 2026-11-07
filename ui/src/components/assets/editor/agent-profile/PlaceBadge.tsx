@@ -1,4 +1,4 @@
-import type { AgentPlace } from '@sdk';
+import type { AgentPlace } from './use-agent-places';
 
 import { cn } from '@src/lib/utils';
 import { usePlaceBadge, type BadgePlace } from './use-place-display';

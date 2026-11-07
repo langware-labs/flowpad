@@ -91,14 +91,18 @@ def _conversation_of(process) -> str:
 
 
 async def _agent_of(process) -> str:
+    """The agent a process runs as: the one its deployment launched, else that deployment's main agent."""
+    stamped = str((getattr(process, "context_data", None) or {}).get("agent_typeid") or "")
+    if stamped.startswith("agent-"):
+        return stamped.split("agent-", 1)[1]
     deployment_id = str(getattr(process, "deployment_id", "") or "")
     if not deployment_id:
         return ""
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     deployment = await Deployment.get_by_id(deployment_id)
-    parent = str(getattr(deployment, "parent_type_id", "") or "") if deployment is not None else ""
-    return parent.split("agent-", 1)[1] if parent.startswith("agent-") else ""
+    main = str(getattr(deployment, "main_agent_id", "") or "") if deployment is not None else ""
+    return main.split("agent-", 1)[1] if main.startswith("agent-") else ""
 
 
 __all__ = ["LOCAL_USER", "Caller", "agent_ref", "caller_of", "local_author", "local_email", "ref_kind", "subagent_ref"]

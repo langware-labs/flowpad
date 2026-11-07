@@ -203,9 +203,9 @@ async def test_resharing_still_invites_the_people_who_are_new(hub):
         invitees=[ShareInvitee(email="alice@example.com"), ShareInvitee(email="grace@example.com")]
     )
     posts = _member_posts(hub)
-    # The new person gets one project invite plus the invite conversation's own
-    # (single-target) invite; the existing member gets neither.
+    # The new person gets one project invite (the hub threads it into the 1:1
+    # conversation); the existing member gets nothing.
     assert [p for p in posts if p.startswith("/graph/project/")] == [
         f"/graph/project/{proj.id}/members"
     ], "exactly one project invite: the new person"
-    assert len([p for p in posts if p.startswith("/graph/conversation/")]) == 1
+    assert not [p for p in posts if p.startswith("/graph/conversation/")]

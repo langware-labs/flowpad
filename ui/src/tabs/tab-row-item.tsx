@@ -40,7 +40,9 @@ import { EntityCard, UrlTabCard } from '@src/components/entity-card/EntityCard';
 import { offersDocChat } from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
-import { FileText, FolderGit2 } from 'lucide-react';
+import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
+import { displayEntryIcon } from '@src/pages/flow-page/display-history-button';
+import { FileText, FolderGit2, Sparkles } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
@@ -69,10 +71,32 @@ function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
  * uses), else the provider glyph. The strip batch-loads chip processes, so the
  * process read is a cache hit; a session without a deployment fetches nothing.
  */
-function ProcessTabIcon({ processId, fallback }: { processId: string; fallback: React.ReactNode }) {
+function ProcessTabIcon({
+  processId,
+  fallback,
+  vibe,
+}: {
+  processId: string;
+  fallback: React.ReactNode;
+  vibe?: boolean;
+}) {
   const typeId = useMemo(() => new TypeId(AgenticProcess.type, processId), [processId]);
   const process = useEntity<AgenticProcess>(typeId).data;
-  const agent = useLaunchingAgent(process?.deployment_id);
+  const agent = useLaunchingAgent(process);
+  // A Vibe tab draws what its display shows, with the Vibe glyph in the corner.
+  const shown = vibe ? process?.displayStack.at(-1) : undefined;
+  if (shown) {
+    return (
+      <IconWithBadge
+        Base={displayEntryIcon(shown)}
+        Badge={Sparkles}
+        className="h-3.5 w-3.5 shrink-0"
+        baseClassName="text-muted-foreground"
+        badgeClassName="text-violet-500"
+        data-testid="tab-vibe-icon"
+      />
+    );
+  }
   if (!agent) return <>{fallback}</>;
   return (
     <AgentAvatar
@@ -165,7 +189,11 @@ function chipFor(tab: Tab, lifecycle: TabLifecycleEntry | null): TabStripItem {
       key,
       title: label || i18n._(meta.label),
       titleClassName,
-      icon: processId ? <ProcessTabIcon processId={processId} fallback={providerIcon} /> : providerIcon,
+      icon: processId ? (
+        <ProcessTabIcon processId={processId} fallback={providerIcon} vibe={dock?.viewType === ViewType.VIBE} />
+      ) : (
+        providerIcon
+      ),
       // Worktree glyph. What the agent has shown lives on the process's bottom
       // ribbon (the Shown chip beside Open Plan), not on its tab chip.
       badge: tab.worktree ? <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" /> : undefined,

@@ -51,8 +51,6 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `subagents` | Names of the SubAgents a chief of staff may hand work to | yes | chat |
 | `input` | The shape the caller must pass in (a shape form, below) | yes | typed |
 | `output` | The shape the agent must write back (a shape form, below) | yes | typed |
-| `places` | Per-deployment overrides (below) | yes | deployed |
-| `email_place` | The one deployment id that answers the agent's email | yes | deployed |
 | `phone` | The agent's own phone number, for its WhatsApp channel | declared | deployed |
 | `requirements` | Credentials, permissions and variables it needs — names only, never values | yes | deployed |
 | `machine_size` | `sm` / `md` / `lg` — sizes a hub cloud machine; a local launch ignores it | yes | deployed |
@@ -97,19 +95,7 @@ own, defined with that skill's `schema` mode and named here.
 
 ## Places
 
-A place is one deployment the agent is placed on. An entry overrides launch settings
-for that deployment only; anything it leaves out is inherited from the definition.
-Only `worker_type`, `model`, `permission_mode`, `effort` and `mcp_servers` can be
-overridden, plus `enabled` to switch the agent off on that place.
-
-```json
-{
-  "places": [
-    { "deployment_id": "0b6f0c3e-5a1d-4a8e-9a55-2f1f5d7c9e11", "model": "lg" },
-    { "deployment_id": "7d3a9e42-1c6b-4f0e-8d27-6b9c0a4e5f33", "enabled": false }
-  ]
-}
-```
-
-Deployment ids come from the app, not from you: the user creates the deployment in
-the agent editor (`references/screens.md`), and the editor writes the place.
+A deployment places the agent's whole PROJECT on a machine, with one main agent answering
+there. Per-deployment launch overrides (`worker_type`, `model`, `permission_mode`, `effort`,
+`mcp_servers`) live on the deployment row, never in agent.json; the project's `flow.json`
+may recommend the main agent (`"mainAgent": "<agent name>"`).

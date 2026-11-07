@@ -303,6 +303,17 @@ so you know what shortcuts you have:
 
 * **G17** — backend spawned but crashed / port not freed by the shell.
 
+* **H18** — **one of the person's files failed to index** ("Indexing failed: chart …", a path and a
+  parser message such as "while parsing a block mapping — did not find expected key (line 3,
+  column 3)"). The file is the cause, not Flowpad. Repair exactly that file and nothing else:
+  open it, fix the malformed part the message points at (usually frontmatter — a value wrapped
+  past its closing quote, an unquoted `:`), keeping every word of its content. Prove it parses
+  (`python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]).read().split("---")[1])' <file>`),
+  then re-index it: `flow record index <the folder or file>` must report `errors: 0`. Record with
+  `--status fixed`, and make `--fix` one sentence saying what changed in which file — the warnings
+  list shows that sentence on the entry. This is the person's own project file, so the
+  never-change-a-checkout rule does not apply to it; it still applies to Flowpad's source.
+
 Read `references/catalog.md` for each entry's exact detection + repair. The **G-series** is found
 in the `main_desktop` logs (Step 2g) — check it even when the backend is currently healthy, since a
 "won't start / stuck on Starting" is usually an Electron↔backend *timing* problem, not a dead

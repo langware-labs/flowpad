@@ -351,7 +351,7 @@
     let html = head() + `<h4>Feedback · ${esc(s.title || '')}</h4>`;
     if (s.note) html += `<div class="note">${esc(s.note)}</div>`;
     if (s.expect && s.expect.length) html += `<div class="note"><b>Test checks</b>\n${s.expect.map((e) => '✓ ' + esc(e)).join('\n')}</div>`;
-    if (!data.fbDs) {
+    if (!data.fbDs || !data.mock) {
       html += `<div class="msg">${esc(data.error || 'Loading…')}</div>`;
       panel.innerHTML = html; return;
     }
@@ -531,10 +531,11 @@
         .map((kind) => sdk.Dataset.forKind(kind, projectId || undefined)));
       if (!mocksDs || !fbDs) throw new Error('this project has no mocks / mock-feedback dataset (set MOCKIFY.project to the mock project id)');
       Object.assign(data, { sdk, mocksDs, fbDs });
+      // Subscribe BEFORE the first read: a page opened before its row is put must still pick it up.
+      mocksDs.onRowsChanged(() => loadMock().then(refresh));
+      fbDs.onRowsChanged(() => refresh());
       await loadMock();
       await refresh();
-      mocksDs.onRowsChanged(loadMock);
-      fbDs.onRowsChanged(() => refresh());
     } catch (err) {
       data.error = `Feedback is off: ${err?.message || err}`;
       data.fbDs = null;
@@ -553,7 +554,9 @@
   const loadMock = coalesced(async () => {
     const found = await data.mocksDs.query({ match: { key: CFG.key } });
     const row = found.rows[0];
-    if (!row) throw new Error(`no mock row "${CFG.key}" in the mocks dataset`);
+    // No row yet is a wait, not a failure: the subscription in boot() loads it when it is put.
+    if (!row) { data.error = `Waiting for mock row "${CFG.key}" in the mocks dataset…`; render(); return; }
+    if (data.error?.startsWith('Waiting for mock row')) data.error = null;
     const changed = row.version !== data.mock?.version;
     data.mock = row;
     // A fast mock is the person's choice, never the builder's: without its reason it is not reviewable.

@@ -15,6 +15,9 @@ const PROMPT_STATUSES = new Set([RemoteWorkerSessionStatus.RUNNING, RemoteWorker
 
 type Pulse = 'sent' | 'received' | null;
 
+/** Long enough to notice in the corner of the eye. */
+const PULSE_MS = 2000;
+
 /** Which way the session's latest activity went: the guest sends prompts (the host
  *  starts or queues a run), the host sends replies (the run settles). */
 function activityDirection(s: RemoteWorkerSession, myUserId: string | undefined): Pulse {
@@ -33,7 +36,7 @@ function usePulse(latest: RemoteWorkerSession | undefined, myUserId: string | un
     if (!latest || !clock || clock <= seen.current) return;
     seen.current = clock;
     setPulse(activityDirection(latest, myUserId));
-    const id = window.setTimeout(() => setPulse(null), 700);
+    const id = window.setTimeout(() => setPulse(null), PULSE_MS);
     return () => window.clearTimeout(id);
     // Only a clock move pulses; `latest` is read at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -66,9 +69,10 @@ export function LiveSessionsChip() {
         <button
           type="button"
           className={cn(
-            'flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] transition-shadow duration-500 hover:bg-accent',
-            pulse === 'received' && 'shadow-[0_0_10px_2px_rgba(239,68,68,0.6)] ring-1 ring-red-500/60',
-            pulse === 'sent' && 'shadow-[0_0_10px_2px_rgba(59,130,246,0.6)] ring-1 ring-blue-500/60',
+            'flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] hover:bg-accent',
+            // In-bounds glow: the footer clips anything drawn outside the chip.
+            pulse === 'received' && 'animate-pulse bg-red-500/20 ring-1 ring-inset ring-red-500',
+            pulse === 'sent' && 'animate-pulse bg-blue-500/20 ring-1 ring-inset ring-blue-500',
           )}
           data-pulse={pulse ?? undefined}
           title={t`Open live sessions`}

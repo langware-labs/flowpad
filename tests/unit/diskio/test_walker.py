@@ -100,11 +100,13 @@ def test_negation_inside_one_file_re_includes(walker, tmp_path):
     assert by_dir(walker, tmp_path)["."].files == (".gitignore", "keep.md")
 
 
-def test_a_nested_file_cannot_re_include_what_an_ancestor_ignored(walker, tmp_path):
+def test_a_nested_file_re_includes_what_an_ancestor_ignored(walker, tmp_path):
+    # git's rule: the deepest file with a matching line decides.
     touch(tmp_path / ".gitignore", "*.md\n")
     touch(tmp_path / "sub" / ".gitignore", "!keep.md\n")
     touch(tmp_path / "sub" / "keep.md")
-    assert by_dir(walker, tmp_path)["sub"].files == (".gitignore",)
+    touch(tmp_path / "sub" / "drop.md")
+    assert by_dir(walker, tmp_path)["sub"].files == (".gitignore", "keep.md")
 
 
 def test_a_directory_matches_with_and_without_the_trailing_slash(walker, tmp_path):
@@ -168,22 +170,6 @@ def test_file_exts(walker, tmp_path):
     md = by_dir(walker, tmp_path, file_exts=(".md",))
     assert md["."].files == ("B.MD", "a.md") and md["sub"].files == ("e.md",)
     assert by_dir(walker, tmp_path, file_exts=(".md", ".mdx"))["."].files == ("B.MD", "a.md", "c.mdx")
-
-
-def test_a_bad_pattern_line_fails_as_the_shared_walk_does(walker, tmp_path):
-    """Today an unparseable ``.gitignore`` line aborts the walk; the backend
-    shares that walk and must not answer differently from ``gitignore_walk``."""
-    touch(tmp_path / ".gitignore", "ok.md\na\\\n")
-    touch(tmp_path / "a.md")
-
-    def outcome(run):
-        try:
-            return run()
-        except ValueError as exc:
-            return type(exc).__name__
-
-    oracle = outcome(lambda: [str(d) for d, _s, _f in gitignore_walk(tmp_path)])
-    assert outcome(lambda: [e.dir for e in entries(walker, tmp_path)]) == oracle
 
 
 @pytest.mark.parametrize("flags", [

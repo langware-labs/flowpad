@@ -12,6 +12,9 @@
  *  - `project` — exactly ONE project: `activeProjectId`. This is the "I'm working
  *                in this project" mode. A tab opened in this mode ATTACHES to
  *                `activeProjectId` (see `Tab.getFromDockPointer`).
+ *  - `dependencies` — ONE project (`activeProjectId`) plus every folder in its
+ *                dependency closure (flow.json, transitive). Pins and attaches
+ *                exactly like `project`; the backend expands the closure.
  *  - `filter`  — an ad-hoc selection: `user` flag + a `projects` list. The
  *                multi-select / "Selected" mode. Not a single-project context, so
  *                a tab opened in this mode stays projectless (global).
@@ -36,11 +39,11 @@ import {
   registerUrlObject,
 } from './url-object-codec';
 
-export type ScopeMode = 'all' | 'user' | 'project' | 'filter';
+export type ScopeMode = 'all' | 'user' | 'project' | 'dependencies' | 'filter';
 
 export interface ScopeFilter {
   mode: ScopeMode;
-  /** Authoritative iff `mode === 'project'`: the single project this scope pins. */
+  /** Authoritative iff `mode` is `project` or `dependencies`: the single project this scope pins. */
   activeProjectId?: string | null;
   /** Only meaningful in `mode === 'filter'`: include user-scope records. */
   user?: boolean;
@@ -60,6 +63,9 @@ export function userScope(): ScopeFilter {
 }
 export function projectScope(activeProjectId: string): ScopeFilter {
   return { mode: 'project', activeProjectId };
+}
+export function dependenciesScope(activeProjectId: string): ScopeFilter {
+  return { mode: 'dependencies', activeProjectId };
 }
 export function filterScope(user: boolean, projects: string[]): ScopeFilter {
   return { mode: 'filter', user, projects: [...projects] };
@@ -95,6 +101,7 @@ export function scopeIncludesUser(sf: ScopeFilter): boolean {
     case 'user':
       return true;
     case 'project':
+    case 'dependencies':
       return false;
     case 'filter':
       return !!sf.user;
@@ -108,7 +115,7 @@ export function scopeIncludesUser(sf: ScopeFilter): boolean {
  * nothing, so only this answers "which project is this dock working in".
  */
 export function pinnedProjectId(sf: ScopeFilter | null | undefined): string | null {
-  return sf?.mode === 'project' ? (sf.activeProjectId ?? null) : null;
+  return sf?.mode === 'project' || sf?.mode === 'dependencies' ? (sf.activeProjectId ?? null) : null;
 }
 
 /**
@@ -118,6 +125,7 @@ export function pinnedProjectId(sf: ScopeFilter | null | undefined): string | nu
 export function scopeProjectIds(sf: ScopeFilter): string[] {
   switch (sf.mode) {
     case 'project':
+    case 'dependencies':
       return sf.activeProjectId ? [sf.activeProjectId] : [];
     case 'filter':
       return sf.projects ?? [];
@@ -125,6 +133,11 @@ export function scopeProjectIds(sf: ScopeFilter): string[] {
     case 'user':
       return [];
   }
+}
+
+/** Does this scope widen its project to the project's whole dependency closure? */
+export function scopeIncludesDependencies(sf: ScopeFilter): boolean {
+  return sf.mode === 'dependencies';
 }
 
 /**
@@ -143,6 +156,9 @@ export function projectIdInScope(
   if (isAllScope(scope)) return true;
   if (!projectId) return scopeIncludesUser(scope);
   if (scope.mode === 'project') return projectId === (scope.activeProjectId ?? currentProjectId);
+  // The closure is resolved server-side; a dependency row carries its own provider's id,
+  // which the client cannot map without the flow.json walk — so it never filters one OUT.
+  if (scope.mode === 'dependencies') return true;
   return scopeProjectIds(scope).includes(projectId);
 }
 
@@ -154,6 +170,7 @@ export function scopeFilterEqual(a: ScopeFilter, b: ScopeFilter): boolean {
     case 'user':
       return true;
     case 'project':
+    case 'dependencies':
       return (a.activeProjectId ?? null) === (b.activeProjectId ?? null);
     case 'filter': {
       if (!!a.user !== !!b.user) return false;
@@ -205,7 +222,10 @@ export function assetScopeBucket(
  * tab identity. Recompute per open; do not accumulate buckets across opens.
  */
 export function unionAssetBucket(base: ScopeFilter, bucket: AssetScopeBucket): ScopeFilter {
-  if (!bucket || isAllScope(base)) return base;
+  // `dependencies` already spans the project's closure, where an opened dependency
+  // asset lives; widening it to a `filter` would drop the closure and every
+  // dependency row with it.
+  if (!bucket || isAllScope(base) || base.mode === 'dependencies') return base;
   const baseUser = scopeIncludesUser(base);
   const baseProjects = scopeProjectIds(base);
   const nextUser = baseUser || 'user' in bucket;
@@ -226,6 +246,8 @@ export function scopeFilterKey(sf: ScopeFilter): string {
       return 'user';
     case 'project':
       return `project:${sf.activeProjectId ?? ''}`;
+    case 'dependencies':
+      return `dependencies:${sf.activeProjectId ?? ''}`;
     case 'filter':
       return `filter:${sf.user ? '1' : '0'}:${[...(sf.projects ?? [])].sort().join(',')}`;
   }
@@ -236,13 +258,14 @@ export function parseScopeFilterKey(key: string): ScopeFilter | null {
   if (key === 'all') return allScope();
   if (key === 'user') return userScope();
   if (key.startsWith('project:')) return projectScope(key.slice('project:'.length));
+  if (key.startsWith('dependencies:')) return dependenciesScope(key.slice('dependencies:'.length));
   const filter = /^filter:([01]):(.*)$/.exec(key);
   if (filter) return filterScope(filter[1] === '1', filter[2] ? filter[2].split(',') : []);
   return null;
 }
 
 /**
- * Serialize a ScopeFilter onto BACKEND-API URL search params: `?user=…&projects=…`.
+ * Serialize a ScopeFilter onto BACKEND-API URL search params: `?user=…&projects=…[&deps=true]`.
  * Every mode projects down to its effective `(user, projects)` set here — this is
  * the one place the mode model meets the backend's canonical wire format
  * (flow_sdk/server/search_filters.py). `all` sends no params (no filter).
@@ -254,6 +277,7 @@ export function applyScopeToParams(params: URLSearchParams, scope: ScopeFilter):
   if (scope.mode === 'all') return; // everything: send no scope params
   params.set('user', scopeIncludesUser(scope) ? 'true' : 'false');
   params.set('projects', scopeProjectIds(scope).join(','));
+  if (scopeIncludesDependencies(scope)) params.set('deps', 'true');
 }
 
 /** Build a `?user=…&projects=…` query string from a ScopeFilter. */
@@ -280,7 +304,8 @@ export const SCOPE_CODEC: UrlObjectCodec<ScopeFilter> = registerUrlObject<ScopeF
   encode(scope): Record<string, string> {
     switch (scope.mode) {
       case 'project':
-        return { mode: 'project', activeProjectId: scope.activeProjectId ?? '' };
+      case 'dependencies':
+        return { mode: scope.mode, activeProjectId: scope.activeProjectId ?? '' };
       case 'filter':
         return { mode: 'filter', user: String(!!scope.user), projects: (scope.projects ?? []).join(',') };
       case 'all':
@@ -294,7 +319,8 @@ export const SCOPE_CODEC: UrlObjectCodec<ScopeFilter> = registerUrlObject<ScopeF
       case 'all':
       case 'user':
         return { mode };
-      case 'project': {
+      case 'project':
+      case 'dependencies': {
         // Adopt-on-validate: a foreign/garbage id never becomes a scope anchor.
         const id = normalizeEntityId(fields.activeProjectId);
         return id ? { mode, activeProjectId: id } : userScope();

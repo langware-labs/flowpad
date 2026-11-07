@@ -173,7 +173,8 @@ async def upsert_artifact(
 
 
 async def local_web_deployment(project, *, artifact=None) -> Optional[Any]:
-    """The local web placement of *project* — or of this machine, for what has no project.
+    """The ONE local deployment of *project* (the same row its main agent runs on) — or this machine's,
+    for what has no project.
 
     Parented to the PROJECT, not the Artifact: an Artifact records how an app was
     generated and lives under its own parent, while the placement belongs to the
@@ -844,7 +845,7 @@ async def adopt_project_placement(project, deployment_typeid: str):
     The hub placed the project here and names its placement; the box already has
     (or now mints) its own local one. One placement, one id everywhere — so the
     row is re-keyed rather than translated at every read, the way
-    ``agent_places.adopt_placement`` re-keys an agent's. Everything the box
+    ``agent_places.adopt_deployment`` does. Everything the box
     registers afterwards (a dev server shown by port, an app registration, an
     indexed webapp) lands on the hub's placement by the ordinary
     :func:`local_web_deployment` lookup.
@@ -863,23 +864,19 @@ async def adopt_project_placement(project, deployment_typeid: str):
 
 
 async def _agent_placement(deployment_typeid: str):
-    """The agent placement *deployment_typeid* names on this machine (running, with its ``chat``), or None.
-
-    An agent deploy places the agent (re-keyed at ``adopt_placement``), not the
-    project's web runtime — so its apps and its chat are endpoints of the AGENT's
-    placement, and the project's web placement is left alone. On this machine it RUNS:
-    ``serving``, so this machine's supervisor keeps its loop process up.
+    """The project deployment *deployment_typeid* names on this machine when it has a main agent (running,
+    with the agent's ``chat``), or None. Its apps and the main agent's chat are endpoints of the same
+    deployment; on this machine it RUNS: ``serving``, so the supervisor keeps the agent's loop up.
     """
-    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.agent_serve import ensure_chat_channel  # noqa: PLC0415
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     deployment = await Deployment.get_by_id(deployment_typeid.partition("-")[2])
     if deployment is None or not deployment.places_agent:
         return None
-    agent = await Agent.get_by_id(str(deployment.parent_type_id or "").partition("-")[2])
+    agent = await deployment.main_agent()
     if agent is None or not deployment.is_local:
-        raise ValueError(f"{deployment_typeid} is not an agent placement on this machine")
+        raise ValueError(f"{deployment_typeid} is not a deployment with an agent on this machine")
     if not deployment.serving:
         deployment.serving = True
         await deployment.save()

@@ -94,7 +94,9 @@ async def test_the_lift_keeps_one_local_deployment_per_agent(monkeypatch):
     monkeypatch.setattr(app_config, "get_config", lambda key, *a, **k: None)
     monkeypatch.setattr(app_config, "set_config", lambda *a, **k: None)
     agent = await Agent(name=f"slots-{uuid.uuid4().hex[:6]}", worker_type="claude").save()
-    default = await agent.deploy("local")
+    # The old shape: agent-parented local rows, one per slot.
+    default = Deployment(name="first", parent_type_id=str(agent.typeid), target={"provider": "local", "scope": "m"})
+    await default.save()
     extra = Deployment(name="second", parent_type_id=str(agent.typeid), target={"provider": "local", "scope": "m"})
     await extra.save()
     await _write_raw(extra.id, {"slot": "2"})
@@ -102,4 +104,4 @@ async def test_the_lift_keeps_one_local_deployment_per_agent(monkeypatch):
     report = await lift_module.lift(dry_run=False)
 
     assert not report.failed, report.failed
-    assert [d.id for d in await agent.deployments()] == [default.id]
+    assert [d.id for d in await Deployment.get_all({"match": {"parent_type_id": str(agent.typeid)}})] == [default.id]

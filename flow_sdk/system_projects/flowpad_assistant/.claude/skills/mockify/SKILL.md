@@ -161,6 +161,7 @@ On every screen, both modes:
    screen. An empty pane, "not found" or an error captured where the scenario expects content is a blocker — reach
    the real state, or build that pane from its component and mark the step `built` — never ship it as the screen.
 3. **Serve it through Flowpad** so feedback saves:
+   Put the mock row FIRST and check the put printed `"ok": true` (a refused put writes nothing) — then serve and show it.
    ```bash
    flow app serve "Mock — <title>"      # from the mock folder; endpoint URL = app_url
    DM ds-put <mocks dataset> <slug> '{"input": {…, "app_url": "<url>", "status": "in_review"}}'

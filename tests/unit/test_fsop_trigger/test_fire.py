@@ -5,12 +5,11 @@ for entity reload + persistence; `_fire` just mutates the passed Trigger and dis
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.trigger import Trigger
@@ -58,7 +57,7 @@ def _make_trigger(
         actions=actions or [],
         enabled=enabled,
     )
-    t.id = f"id-{name}"
+    t.id = str(mint_uuid())
     return t
 
 
@@ -228,7 +227,7 @@ async def test_fire_emits_exactly_one_envelope_per_batch(trigger_log_dir):
 
     assert len(fired) == 1, f"expected 1 envelope for a 50-file batch, got {len(fired)}"
     ev = fired[0]
-    assert ev.target == "trigger:id-batch_test"
+    assert ev.target == f"trigger:{t.id}"
     assert ev.data["detail"]["changes_total"] == 50
     assert ev.data["detail"]["first_path"] == "/tmp/f0"
     assert ev.ctx.actor == "system"
@@ -253,7 +252,7 @@ async def test_log_row_and_envelope_are_the_same_fact(trigger_log_dir):
 
     row = json.loads((trigger_log_dir / "join_test" / "calls.jsonl").read_text().strip())
     assert row["event_id"] == fired[0].id
-    assert row["trigger_id"] == "id-join_test"
+    assert row["trigger_id"] == t.id
     assert row["trigger_type"] == "fsop"
 
 

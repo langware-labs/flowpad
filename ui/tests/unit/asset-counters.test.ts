@@ -21,7 +21,7 @@ const agent = (id: string, name: string, bundleDirectory: string | null = null) 
 const deployment = (id: string, parent: string | null, state: string | null = null) =>
   ({
     id,
-    agentTypeId: parent?.startsWith('agent:') ? { toString: () => parent } : null,
+    mainAgentTypeId: parent?.startsWith('agent:') ? { toString: () => parent } : null,
     status: { provider_state: state },
   }) as unknown as Deployment;
 

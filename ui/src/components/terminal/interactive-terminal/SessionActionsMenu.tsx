@@ -11,6 +11,8 @@
  */
 
 import { AgenticProcess } from '@sdk';
+import { BrowserProfileMenu } from '@src/components/links/BrowserProfileMenu';
+import { useBrowserProfiles } from '@src/lib/browser-profiles';
 import { isProcessRunning } from '@sdk/process/agentic-types.js';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import {
@@ -80,6 +82,7 @@ export function SessionActionsMenu({
   const { navigation } = useDockNavigation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const browsers = useBrowserProfiles(menuOpen);
   // The session info card opens once the menu has finished closing — on the
   // menu's own close event — not from the item's select: opened while the menu
   // is still dismissing, the card reads that dismissal as an interaction
@@ -203,6 +206,10 @@ export function SessionActionsMenu({
               disabledReason={isRestarting ? '' : !started ? t`Session is not running` : null}
               onSelect={() => void handleRestart()}
             />
+
+            {browsers.length > 0 && (
+              <BrowserProfileMenu browsers={browsers} testIdPrefix="session-action-browser-profile" />
+            )}
 
             {!embedded && (
               <>

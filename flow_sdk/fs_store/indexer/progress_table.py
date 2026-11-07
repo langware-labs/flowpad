@@ -30,6 +30,15 @@ SWEEP_ROW_NAME: str = "cleanup"
 
 
 @dataclass(frozen=True, slots=True)
+class ErrorSample:
+    """One error, kept so the person can see WHAT failed, not only how many."""
+
+    ref: str      # the file the error is about
+    message: str  # the exception text, e.g. the YAML parser's
+    code: str = ""  # what failed: "index.identity" | "index.parse"
+
+
+@dataclass(frozen=True, slots=True)
 class TypeProgressRow:
     type_name: str
     done: int          # records processed (parsed + skipped-fresh)
@@ -37,6 +46,7 @@ class TypeProgressRow:
     errors: int = 0
     skipped: int = 0   # subset of done that was skipped-fresh
     finished: bool = False  # the producer is done with this row, whatever its count
+    error_samples: tuple[ErrorSample, ...] = ()  # the first MAX_ERROR_SAMPLE errors, by message
 
 
 @dataclass(frozen=True, slots=True)

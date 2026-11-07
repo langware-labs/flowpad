@@ -35,7 +35,7 @@ export function ActivityDetailsModalRoot() {
     (receipt && payload && receipt.path === payload.path && (receipt.subject_entity ?? null) === payload.subject_entity
       ? receipt
       : null);
-  const elapsedMs = useElapsedMs(spec);
+  const elapsedMs = useElapsedMs(open ? spec : null);
   const { t } = useLingui();
   const [terminating, setTerminating] = useState(false);
 

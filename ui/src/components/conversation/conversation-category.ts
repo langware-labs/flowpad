@@ -235,7 +235,8 @@ export function chipsFor(f: ConversationFacets): ChipSpec[] {
   if (f.kind === 'helpdesk') {
     chips.push({ key: 'helpdesk', icon: LifeBuoy, label: t`Support`, className: VIOLET_CHIP });
   }
-  if (f.ticket) chips.push(ticketChip(f.ticket));
+  // The asker's side is just a conversation: the queue state is the desk's to show, not theirs.
+  if (f.ticket && f.ticket.perspective === 'staff') chips.push(ticketChip(f.ticket));
   if (f.isArchived) {
     chips.push({ key: 'archived', icon: Archive, label: t`Archived`, className: MUTED_CHIP });
   }

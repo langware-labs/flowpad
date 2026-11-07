@@ -56,8 +56,13 @@ async def deploy_entity_to_cloud(
     require: list[str] | None = None,
     deployment_id: str | None = None,
     machine_size: str | None = None,
+    main_agent_id: str | None = None,
+    identity: str | None = None,
+    source_kind: str | None = None,
+    source_ref: str | None = None,
 ) -> dict[str, Any]:
-    """POST ``<entity>/deploy`` on the hub and adopt the placement it returns.
+    """POST ``<entity>/deploy`` on the hub and adopt the placement it returns. ``main_agent_id`` names the
+    agent that answers on the box (the box logs in as it unless ``identity`` says otherwise).
 
     Deliberately takes no node and no principal. Were either passable from here
     they would be passable from anywhere, which is the exact hole the hub's
@@ -87,6 +92,10 @@ async def deploy_entity_to_cloud(
         **({"require": require} if require else {}),
         **({"deployment_id": deployment_id} if deployment_id else {}),
         **({"machine_size": machine_size} if machine_size else {}),
+        **({"main_agent_id": main_agent_id} if main_agent_id else {}),
+        **({"identity": identity} if identity else {}),
+        **({"source_kind": source_kind} if source_kind else {}),
+        **({"source_ref": source_ref} if source_ref else {}),
         # A GitHub-backed checkout: the hub clones GitHub at this exact commit for the machine.
         **({"source": source} if source else {}),
     }

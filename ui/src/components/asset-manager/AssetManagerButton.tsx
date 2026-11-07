@@ -181,7 +181,7 @@ export function AssetManagerButton({
   }, [open, process, processSnapshot]);
 
   const assets = useProcessAssets(activeProcess, { enabled: open });
-  const launchingAgent = useLaunchingAgent(activeProcess?.deployment_id, { enabled: open });
+  const launchingAgent = useLaunchingAgent(activeProcess, { enabled: open });
   const { refresh } = assets;
   // Only the type registry is wanted; `withVaults` would fetch a payload we discard.
   const { types: assetTypes } = useAssetTypes({ withVaults: false });

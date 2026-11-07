@@ -1,5 +1,7 @@
 import { QueryRequest, Skill } from '@sdk';
 import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { roleOf } from '@src/components/items/role';
 import { Trans } from '@lingui/react/macro';
 import { useMemo } from 'react';
 import { crossCounters, useScopes } from './axes';
@@ -61,6 +63,15 @@ const common = {
   itemKey: (skill: Skill) => skill.id,
   searchText: (skill: Skill) => [skill.name, skill.description, skillSource(skill)].filter(Boolean).join(' '),
   itemPointer: (skill: Skill) => skill.dockPointer,
+  card: (skill: Skill) => ({
+    title: skill.name,
+    icon: iconForType(Skill.type),
+    role: roleOf(skill),
+    description: skill.description || undefined,
+    chips: skillSource(skill) ? [skillSource(skill)] : undefined,
+    at: { date: skill.updated_date },
+  }),
+  role: (skill: Skill) => roleOf(skill),
   columns,
 };
 
@@ -89,5 +100,4 @@ export const hubSkillCounterGroup: AssetCounterGroup<Skill> = {
     const { items, isLoading } = useAllSkills();
     return useMemo(() => crossCounters({ label: <Trans>Skills</Trans>, items, isLoading }), [items, isLoading]);
   },
-  card: (skill) => ({ title: skill.name, description: skill.description, footer: skillSource(skill) || undefined }),
 };

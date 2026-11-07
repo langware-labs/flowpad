@@ -26,6 +26,7 @@ from pydantic.alias_generators import to_camel
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.builtin.agent_cloud_deploy import _UNSET, DeployRequest
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -354,6 +355,25 @@ def _share_team_ref(value: str) -> Optional[str]:
     if text.startswith("team-") and is_valid_uuid(text.removeprefix("team-")):
         return text
     return None
+
+
+def _local_deployment_payload(project, main_agent, machine: str) -> dict:
+    """A new local deployment of ``project`` on this computer, answering with ``main_agent`` (or none)."""
+    return {
+        "name": f"{project.name or project.id} (local)",
+        "main_agent_id": str(main_agent.typeid) if main_agent is not None else None,
+        "identity": "agent" if main_agent is not None else "none",
+        # Its main agent's chat: an HTTP message channel its loop answers, made when the loop launches.
+        "exposes": (
+            [{"name": "chat", "subkind": "agent", "protocol": {"spec_kind": "api.chat.openai"}}]
+            if main_agent is not None
+            else []
+        ),
+        "target": {"provider": "local", "scope": str(project.id), "location": machine},
+        "origin": {"kind": "local", "provider": "local", "external_id": ComputeNode._local_id()},
+        "status": {"sync_state": "current", "provider_state": "configured"},
+        "project_id": str(project.id),
+    }
 
 
 def _invite_credentials(invitees: Optional[List["ShareInvitee"]]):
@@ -1096,6 +1116,20 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message="typeid is required", status_code=400)
         try:
             await skip_requirement(self, typeid, scope=scope, name=name, note=note, by=current_user_id())
+        except SkipRefused as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @action.post(action_name="setup-automation")
+    async def setup_automation_action(self, typeid: str = "", on: bool = True) -> "ApiResponse":
+        """`POST /project/<id>/setup-automation {typeid, on}` — turn one of this project's automations on or off
+        on THIS machine (never in its file). Answers with the readiness that follows."""
+        from flow_sdk.builtin.project_setup import SkipRefused, decide_automation, readiness_of  # noqa: PLC0415
+
+        if not typeid:
+            return ApiFailResponse(message="typeid is required", status_code=400)
+        try:
+            await decide_automation(self, typeid, bool(on))
         except SkipRefused as exc:
             return ApiFailResponse(message=str(exc), status_code=409)
         return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
@@ -1961,12 +1995,9 @@ class Project(SetupSkippable, Entity):
             async with gate:
                 if person.user_id:
                     field, recipient_key = "recipient_user_id", person.user_id
-                    admit = {"recipient_user_ids": [person.user_id]}
                 else:
                     field, recipient_key = "recipient_email", person.email
-                    admit = {"recipients": [person.email]}
-                # The project invite is the one the hub emails, so its link lands
-                # on the project; the conversation invite below sends no email.
+                # The hub emails this invite, so its link lands on the project.
                 request = {
                     field: recipient_key,
                     "invitation_targets": [{"typeid": project_ref, "roles": person.roles if person.roles is not None else [PROJECT_DEFAULT_INVITE_ROLE]}],
@@ -1980,10 +2011,9 @@ class Project(SetupSkippable, Entity):
                     await client.post(build_hub_url(self, action="members"), request)
                 except ValueError as exc:  # any non-200 (``FlowpadClient._unwrap``)
                     return ShareFailedSpec(**person.identity(), status=_hub_status_of(exc), message=str(exc))
-                conversation_id = await self._invite_conversation(
-                    client, project_name, message_text, notify_by_email=False, **admit
-                )
-                return ShareInvitedSpec(**person.identity(), conversation_id=conversation_id)
+                # The hub posts the invite into the 1:1 conversation between sharer and person, as
+                # it does for every share — no second conversation from here.
+                return ShareInvitedSpec(**person.identity())
 
         async def grant_team(team_ref: str):
             # The hub emails each person in the team the same invite a person gets,
@@ -2425,6 +2455,7 @@ class Project(SetupSkippable, Entity):
         types: str | None = None,
         limit: int = 1000,
         browsing: BrowsingOptions | None = None,
+        query: str | None = None,
     ):
         """Discoverable assets for this project, pre-process (staging).
 
@@ -2464,18 +2495,25 @@ class Project(SetupSkippable, Entity):
         want_assets = browsing is None or browsing.assets
         sources, _seen = collect_base_source_dirs(self)
 
+        # ``query`` narrows BEFORE the cut: a list truncated at ``limit`` must still find what the person
+        # typed, or anything past the cut can never be picked (a home folder holds thousands of assets).
+        needle = (query or "").strip().lower()
         catalog = (
             await scan_path_asset_descriptors(
                 sources,
                 own_project_id=str(self.id),
                 types=requested,
-                limit=limit,
+                limit=0 if needle else limit,
             )
             if want_assets
             else None
         )
 
         descriptors = catalog.assets if catalog else []
+        if needle:
+            descriptors = [
+                d for d in descriptors if needle in (d.name or "").lower() or needle in (d.posix_path or "").lower()
+            ][:limit]
         descriptors = await hydrate_asset_descriptor_remote(descriptors)
         data = {
             "assets": [d.to_row() for d in descriptors],
@@ -2836,50 +2874,280 @@ class Project(SetupSkippable, Entity):
         except Exception:
             log.debug("[project] index-sentinel stamp on create failed", exc_info=True)
 
-    @action.post(action_name="deploy")
-    async def deploy_action(self) -> "ApiResponse":
-        """`POST /project/<id>/deploy  {"provider"}` — run this project's app in a cloud box, on ``provider``
-        (the hub's name, as an agent deploy takes it; none: ``e2b``).
+    # ── deployment: this project placed on a machine, with one optional main agent ──
 
-        The web half of deployment, and the same verb an Agent gets. A micro app
-        is deployed by deploying the project that holds it: the project is what
-        has a repository, and the sandbox materializes exactly that. It is also
-        what a LOCAL web placement already parents to, so both tiers agree on
-        what a web deployment hangs off.
+    async def recommended_main_agent(self):
+        """The agent ``flow.json`` recommends as main (``mainAgent``, a name), resolved here; None when it
+        names none or one this project does not hold."""
+        from flow_sdk.assets import flow_json  # noqa: PLC0415
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
 
-        Sharing is implicit — a deploy names a project the hub has to already
-        know, so the two are never separately orderable by a caller.
+        root = Path(self.fs_storage_mount_path) if self.fs_storage_mount_path else None
+        try:
+            name = flow_json.read_main_agent(root) if root is not None else None
+        except Exception:  # noqa: BLE001 — a malformed flow.json recommends nothing
+            name = None
+        if not name:
+            return None
+        rows = await Agent.get_all({"match": {"name": name, "project_id": str(self.id)}})
+        return rows[0] if rows else None
 
-        Long by nature (E2B create + boot + health is tens of seconds); if that
-        becomes a timeout in practice the fix is 202-and-poll on the node's
-        ``ops/status``, which already exists, not a longer client timeout.
-        """
-        from flow_sdk.builtin.cloud_deploy import (  # noqa: PLC0415
-            DEFAULT_CLOUD_ENVIRONMENT,
-            DEFAULT_CLOUD_PROVIDER,
-            deploy_entity_to_cloud,
-        )
+    async def main_agent_for(self, main_agent_id: Optional[str] = None, *, given: bool = False):
+        """The main agent a deployment of this project gets: the one named (``""`` with ``given``: none),
+        else the project's recommendation. ``ValueError`` for a named agent that is missing or another
+        project's."""
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+        if not given:
+            return await self.recommended_main_agent()
+        raw = str(main_agent_id or "").strip().removeprefix("agent-")
+        if not raw:
+            return None
+        agent = await Agent.get_by_id(raw)
+        if agent is None:
+            raise ValueError(f"agent {main_agent_id!r} not found")
+        if agent.project_id and str(agent.project_id) != str(self.id):
+            raise ValueError(f"agent {agent.name!r} belongs to another project")
+        return agent
+
+    async def local_deployment(self, main_agent=None) -> "Any":
+        """Get-or-create this project's ONE deployment on this computer. A new one takes ``main_agent``
+        (else the project's recommendation) as its main agent; an existing one keeps its own."""
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        existing = await Deployment.find_existing(str(self.typeid), "local")
+        if existing is not None:
+            return existing.with_element(self)
+        main = main_agent if main_agent is not None else await self.recommended_main_agent()
+        return await Deployment.upsert(
+            parent_type_id=str(self.typeid),
+            provider="local",
+            element=self,
+            payload=_local_deployment_payload(self, main, get_instance_settings().instance_name),
+        )
+
+    async def plan_deployment(
+        self,
+        environment: Optional[str] = None,
+        *,
+        provider: Optional[str] = None,
+        token_allocation: Any = _UNSET,
+        deployment_id: Optional[str] = None,
+        main_agent=None,
+    ) -> "Any":
+        """The cloud placement of this project on ``provider`` in ``environment`` — the hub's row, adopted
+        here — before it has a machine. ``main_agent`` answers on it: its webhooks and help desks go along
+        so the hub stores their URLs ahead of the machine. ``deployment_id`` plans the row it names again.
+        ``token_allocation``: the placement's own budget (``None`` releases it; omitted leaves it)."""
+        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
+
+        body: dict[str, Any] = {
+            "environment": normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT),
+            "provider": provider or DEFAULT_CLOUD_PROVIDER,
+            "main_agent_id": str(main_agent.typeid) if main_agent is not None else None,
+            "webhooks": [w.model_dump(mode="json") for w in await main_agent.webhook_specs()] if main_agent else [],
+            "help_desks": await main_agent.hub_desks() if main_agent else [],
+            **({"deployment_id": deployment_id} if deployment_id else {}),
+        }
+        if token_allocation is not _UNSET:
+            body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
+        data = await HubProxy.call("POST", self.get_type(), self.id, "plan_deployment", payload=body)
+        deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
+        if deployment is None:
+            raise RuntimeError("the hub returned no deployment to plan")
+        return deployment
+
+    async def deploy(
+        self,
+        actor,
+        *,
+        provider: Optional[str] = None,
+        environment: Optional[str] = None,
+        machine_size: Optional[str] = None,
+        source_kind: str = "commit",
+        source_ref: Optional[str] = None,
+        main_agent=None,
+        token_allocation: Any = _UNSET,
+        values: Optional[dict] = None,
+        deployment_id: Optional[str] = None,
+    ) -> dict:
+        """Place this project on a machine with ``main_agent`` answering there. ``provider="local"`` is this
+        computer's one local deployment (serving the main agent); any other runs ``DEPLOYMENT_STEPS``."""
+        from flow_sdk.builtin.agent_cloud_deploy import run_deployment_steps  # noqa: PLC0415
+
+        if provider == "local":
+            deployment = await self.local_deployment(main_agent)
+            if main_agent is not None and deployment.assign_main_agent(str(main_agent.typeid)):
+                await deployment.save()
+            if deployment.main_agent_id:
+                agent = await deployment.main_agent()
+                if agent is not None:
+                    deployment = await agent.run_locally()
+            return {"deployment_id": str(deployment.id), "deployment": deployment.model_dump(mode="json")}
+        return await run_deployment_steps(
+            self,
+            actor,
+            main_agent,
+            environment,
+            provider=provider or None,
+            token_allocation=token_allocation,
+            machine_size=machine_size,
+            deployment_id=deployment_id,
+            values=values,
+            source_kind=source_kind,
+            source_ref=source_ref,
+        )
+
+    @action.post(action_name="deploy")
+    async def deploy_action(self, body: DeployRequest) -> "ApiResponse":
+        """`POST /project/<id>/deploy {provider, environment, machine_size, source_kind, source_ref,
+        main_agent_id, token_allocation, deployment_id, values}` — place this project on a machine.
+
+        ``main_agent_id`` absent: the project's ``mainAgent`` recommendation; ``""``: no agent. A cloud
+        deploy publishes, plans and checks readiness (project credentials + the main agent's needs) before
+        it answers; the machine starts after, reported on the project's ``deploy`` activity.
+        """
+        from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.builtin.agent_cloud_deploy import DeployRunning  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
         actor = request_info.someone_typeid if request_info else None
-        if not actor:
+        if body.provider != "local" and not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
-            body = (await request_info.get_post_data()) or {}
-            provider = str(body.get("provider") or "").strip() or None
-            # The hub makes a new placement (and box) for a deploy that names none: a redeploy names the one it has.
-            existing = await Deployment.find_existing(
-                str(self.typeid), provider or DEFAULT_CLOUD_PROVIDER, environment=DEFAULT_CLOUD_ENVIRONMENT
+            main = await self.main_agent_for(body.main_agent_id, given=body.main_agent_given)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if main is not None and not main.enabled:
+            return ApiFailResponse(message=f"agent {main.name!r} is disabled", status_code=409)
+        try:
+            data = await self.deploy(
+                actor,
+                provider=body.provider or None,
+                environment=body.environment,
+                machine_size=body.machine_size,
+                source_kind=body.source_kind,
+                source_ref=body.source_ref,
+                main_agent=main,
+                token_allocation=body.token_allocation if body.allocation_given else _UNSET,
+                values=body.values,
+                deployment_id=body.deployment_id,
             )
-            await self.ensure_on_hub()
-            data = await deploy_entity_to_cloud(
-                self, provider=provider, deployment_id=str(existing.id) if existing else None
+        except DeployRunning as exc:
+            return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})
+        except NotReady as exc:
+            return ApiFailResponse(
+                status_code=409,
+                message=str(exc),
+                data={
+                    "code": "not_ready",
+                    "readiness": exc.readiness.model_dump(mode="json"),
+                    "deployment": exc.deployment.model_dump(mode="json") if exc.deployment else None,
+                },
             )
-        except Exception as exc:
+        except AssetPublishError as exc:
+            return ApiFailResponse(
+                status_code=exc.status_code, message=exc.actionable, data={"code": str(exc.code), **exc.data}
+            )
+        except HubError as exc:
+            return exc.fail_response("Could not deploy")
+        except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"project_id": self.id, **data})
+
+    async def _main_from_query(self):
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        info = get_current_request_info()
+        raw = info.get_param("main_agent_id") if info else None
+        return await self.main_agent_for(raw, given=raw is not None), info
+
+    @action.get(action_name="deploy_defaults")
+    async def deploy_defaults_action(self) -> "ApiResponse":
+        """`GET /project/<id>/deploy_defaults` — {environment, environments, main_agent_id, source_ref}."""
+        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, default_cloud_environment  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.utils.git import _sync  # noqa: PLC0415
+
+        placed = await Deployment.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        used = [row.environment for row in placed if row.environment and not row.is_local]
+        main = await self.recommended_main_agent()
+        head = _sync(self.fs_storage_mount_path, "rev-parse", "HEAD") if self.fs_storage_mount_path else ""
+        return ApiSuccessResponse(
+            data={
+                "environment": default_cloud_environment(),
+                "environments": sorted({DEFAULT_CLOUD_ENVIRONMENT, "staging", *used}),
+                "main_agent_id": str(main.typeid) if main is not None else None,
+                "source_ref": head.strip() or None,
+            }
+        )
+
+    @action.get(action_name="requirements")
+    async def requirements_action(self) -> "ApiResponse":
+        """`GET /project/<id>/requirements?main_agent_id=` — what a deployment with that main agent needs."""
+        from flow_sdk.builtin.readiness import requirements  # noqa: PLC0415
+
+        try:
+            main, _ = await self._main_from_query()
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        rows = await requirements(main, self) if main is not None else []
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in rows])
+
+    @action.get(action_name="readiness")
+    async def readiness_action(self) -> "ApiResponse":
+        """`GET /project/<id>/readiness?deployment_id=&main_agent_id=` — does that deployment (default: this
+        computer) hold what the project and its main agent need? Names only."""
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
+
+        try:
+            main, info = await self._main_from_query()
+            deployment = await Deployment.resolve((info.get_param("deployment_id") if info else None) or "")
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        if main is None and deployment.main_agent_id:
+            main = await deployment.main_agent()
+        return ApiSuccessResponse(data=(await readiness(main, deployment, project=self)).model_dump(mode="json"))
+
+    @action.post(action_name="plan_deployment")
+    async def plan_deployment_action(self) -> "ApiResponse":
+        """`POST /project/<id>/plan_deployment {environment, provider, deployment_id, main_agent_id,
+        token_allocation}` — the cloud placement before its machine, and its readiness."""
+        from flow_sdk.builtin.agent import _token_allocation_of  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        try:
+            allocation = _token_allocation_of(body)
+            main = await self.main_agent_for(body.get("main_agent_id"), given="main_agent_id" in body)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        try:
+            deployment = await self.plan_deployment(
+                str(body.get("environment") or "").strip() or None,
+                provider=str(body.get("provider") or "").strip() or None,
+                token_allocation=allocation,
+                deployment_id=str(body.get("deployment_id") or "").strip() or None,
+                main_agent=main,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"plan failed: {exc}", status_code=502)
+        ready = await readiness(main, deployment, project=self)
+        return ApiSuccessResponse(
+            data={"deployment": deployment.model_dump(mode="json"), "readiness": ready.model_dump(mode="json")}
+        )
 
     @action.post(action_name="expose-endpoints")
     async def expose_endpoints_action(self) -> "ApiResponse":
@@ -3741,11 +4009,10 @@ class Project(SetupSkippable, Entity):
         await broadcast_tabs_changed()
 
     def _child_record_metas(self) -> list[dict]:
-        """The ``metadata.json`` of every record whose ``project_id`` is this project,
-        read from the shadow store: ``Entity.get_all`` is type-locked, but each record
-        carries its ``project_id``, so one sweep of the records root finds children of
-        every type. Malformed records and the project's own are skipped. Blocking — it
-        reads every record on the instance."""
+        """The ``metadata.json`` of every on-disk record whose ``project_id`` is this
+        project, including shadow-only ones with no row (the delete reads rows from the
+        DB and uses this only for those, and for a folder unindex). Malformed records and
+        the project's own are skipped. Blocking — it reads every record on the instance."""
         import json  # noqa: PLC0415
 
         from flow_sdk.fs_store import get_default_records_root  # noqa: PLC0415
@@ -3772,6 +4039,23 @@ class Project(SetupSkippable, Entity):
                     continue
                 metas.append(data)
         return metas
+
+    async def _sweep_shadow_orphans(self, done: set[str]) -> int:
+        """Destroy this project's records that exist only on disk — the ones the
+        delete's DB query could not see. Reads every record, so it runs in a thread
+        after the delete has answered. Returns how many were removed."""
+        from flow_sdk.fs_store import FSRecord  # noqa: PLC0415
+
+        removed = 0
+        for meta in await asyncio.to_thread(self._child_record_metas):
+            if meta["id"] in done:
+                continue
+            try:
+                await FSRecord.from_dict(meta).destroy()
+                removed += 1
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[project-delete] orphan %s:%s failed: %s", meta.get("type"), meta.get("id"), exc)
+        return removed
 
     async def unindex_folder(self, root: str) -> int:
         """Drop every record of this project that was indexed from a file under ``root``
@@ -3825,7 +4109,10 @@ class Project(SetupSkippable, Entity):
         ``protected_path`` policy permits that destructive operation
         (``fs_storage_mount_path`` — the user's real files).
 
-        The children come from ``_child_record_metas`` (one sweep of the shadow store).
+        The children come from the DB (one ``project_id`` query); records that exist
+        only as an on-disk shadow are swept afterwards in the background
+        (``_sweep_shadow_orphans``), so the delete never reads every record on the
+        instance while the person waits.
         """
         import logging  # noqa: PLC0415
         import shutil  # noqa: PLC0415
@@ -3853,23 +4140,22 @@ class Project(SetupSkippable, Entity):
 
         async def _destroy(meta: dict) -> None:
             rtype, rid = meta["type"], meta["id"]
-            # Build the record from the metadata we already read — no second
-            # read of metadata.json. destroy() = DB row + FTS + wiki + shadow.
+            # Build the record from the row we already read — no read of
+            # metadata.json. destroy() = DB row + FTS + wiki + shadow.
             try:
                 if rtype == ap_type and not delete_chats:
                     proc = await AgenticProcess.get_by_id(rid)
                     if proc is not None:
-                        await proc.removeSearchIndex()
                         await proc.delete(delete_chats=False)
                 await FSRecord.from_dict(meta).destroy()
             except Exception as exc:  # noqa: BLE001
                 log.warning("[project-delete] destroy %s:%s failed: %s", rtype, rid, exc)
-            _purge_data(rtype, rid)
+            await asyncio.to_thread(_purge_data, rtype, rid)
 
-        # 1. Collect every child record's metadata by scanning the shadow store.
-        #    Materialize the full list first — destroy() rmtree's folders, so we
-        #    must not mutate the directory tree while iterating it.
-        targets = self._child_record_metas()
+        # 1. Every child row, from one DB query (materialized before any destroy).
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+        targets = [m for m in await get_db_driver().entity_metas_for_project(pid) if m["id"] != pid]
 
         # 1b. Terminate live workers BEFORE destroying their rows. ``_destroy``
         #     only removes the DB row + shadow; it never touches the OS child.
@@ -3926,7 +4212,7 @@ class Project(SetupSkippable, Entity):
                     from flow_sdk.claude_env import _rmtree_safe  # noqa: PLC0415
 
                     # git writes pack files read-only; on Windows a bare rmtree stops on them.
-                    _rmtree_safe(mount)  # idempotent — FileNotFoundError when absent
+                    await asyncio.to_thread(_rmtree_safe, mount)  # idempotent — FileNotFoundError when absent
             except FileNotFoundError:
                 pass
             except OSError as exc:
@@ -3961,6 +4247,12 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.builtin.faas.project_list import invalidate_project_list_cache  # noqa: PLC0415
 
         invalidate_project_list_cache()
+
+        # 7. Shadow-only records (a metadata.json with no row) are invisible to the
+        #    query above; sweep them off the request path.
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        create_detached_task(self._sweep_shadow_orphans({m["id"] for m in targets}), name=f"project-orphans-{pid}")
 
         return {
             "project_id": pid,

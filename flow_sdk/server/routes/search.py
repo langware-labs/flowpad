@@ -105,6 +105,9 @@ async def search_records(
     projects: Optional[str] = Query(
         default=None, description="ScopeFilter.projects: comma-separated project entity IDs to include."
     ),
+    deps: Optional[str] = Query(
+        default=None, description="ScopeFilter.deps: 'true' widens projects to their dependency closure."
+    ),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
     parent_path: Optional[str] = Query(
         default=None,
@@ -154,7 +157,7 @@ async def search_records(
     # caller), pass None so the filter is disabled (back-compat for any
     # request that hasn't migrated to the new wire format yet).
     scope_filter = (
-        ScopeFilter.from_query_params({"user": user, "projects": projects})
+        ScopeFilter.from_query_params({"user": user, "projects": projects, "deps": deps})
         if user is not None or projects is not None
         else None
     )

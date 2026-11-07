@@ -62,9 +62,10 @@ def register_builtin_kinds() -> None:
 
     native.register()  # ``Text`` renders as ``string``; ``binary`` is its own form
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
-    import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
+    import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — agent.json's schema
     import flow_sdk.schema.data_spec.api_endpoint_spec  # noqa: F401  — registers ``api_endpoint.offer``
     import flow_sdk.schema.data_spec.asset_setup_spec  # noqa: F401  — registers ``asset.setup`` / ``setup.skip`` / ``setup.node`` / ``setup.tree``
+    import flow_sdk.schema.data_spec.automation_execution_spec  # noqa: F401 — automation wizard values
     import flow_sdk.schema.data_spec.automation_spec  # noqa: F401  — registers ``automation.*``
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
@@ -89,6 +90,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.git_share_spec  # noqa: F401  — registers ``project.git_share``
     import flow_sdk.schema.data_spec.health_spec  # noqa: F401  — registers ``health.endpoint`` / ``health.node``
     import flow_sdk.schema.data_spec.help_request_spec  # noqa: F401  — registers ``help.recipient`` / ``help.request``
+    import flow_sdk.schema.data_spec.message_invite_spec  # noqa: F401  — registers ``message.invite``
     import flow_sdk.schema.data_spec.hub_failure_spec  # noqa: F401  — registers ``hub.failure``
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
     import flow_sdk.schema.data_spec.launch_failure_spec  # noqa: F401  — registers ``agent.launch_failure``
@@ -101,6 +103,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
+    import flow_sdk.schema.data_spec.message_form_spec  # noqa: F401  — registers ``message.form`` / ``message.form_answers``
     import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``

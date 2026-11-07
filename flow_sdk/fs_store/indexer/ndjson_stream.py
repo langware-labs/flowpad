@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.progress_table import IndexProgressTable, TypeProgressRow
+from flow_sdk.fs_store.indexer.progress_table import ErrorSample, IndexProgressTable, TypeProgressRow
 from flow_sdk.fs_store.record_types import RecordType
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,7 @@ def table_from_json(d: dict) -> IndexProgressTable:
             total=int(r.get("total", 0)),
             errors=int(r.get("errors", 0)),
             skipped=int(r.get("skipped", 0)),
+            error_samples=tuple(ErrorSample(**e) for e in r.get("error_samples", ())),
         )
         for r in d.get("rows", [])
     )

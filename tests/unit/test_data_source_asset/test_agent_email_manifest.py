@@ -1,4 +1,4 @@
-"""Agent Email is what people are offered; the mail vendor behind it is not.
+"""Built-in email is what people are offered; the mail vendor behind it is not.
 
 ``cloud_email`` is the mailbox the cloud allocates for an agent, so its manifest is
 ``provisioned`` and has no field a person fills — allocation writes the agent id.
@@ -10,7 +10,7 @@ from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, asset_module, read_man
 
 def test_agent_email_is_provisioned_and_names_no_vendor():
     manifest = read_manifest(SHIPPED_ROOT / "cloud_email")
-    assert manifest.title == "Agent Email"
+    assert manifest.title == "Built-in email"
     assert manifest.provisioned is True
     assert "agentmail" not in f"{manifest.title} {manifest.description} {manifest.icon_name}".lower()
     config = asset_module("cloud_email").CloudEmailConfig

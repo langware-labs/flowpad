@@ -106,7 +106,11 @@ def _state_findings(trigger: Any) -> list[CheckFinding]:
     from flow_sdk.builtin.trigger_arming import is_foreign_copy  # noqa: PLC0415
 
     out: list[CheckFinding] = []
-    if not trigger.enabled:
+    if not trigger.decided:
+        out.append(CheckFinding(area="state", ok=False,
+                                message="It came with the project and is not turned on here yet, so it will not run "
+                                        "until you turn it on."))
+    elif not trigger.enabled:
         out.append(CheckFinding(area="state", ok=False,
                                 message="It is switched off, so it will not run until you turn it on."))
     if trigger.fire_once and (trigger.counter or 0) >= 1:
@@ -161,8 +165,19 @@ async def check(trigger: Any, event: Optional[dict[str, Any]] = None) -> Automat
         event_findings, would_fire = _event_findings(trigger, event)
         findings += event_findings
     findings += _state_findings(trigger)
-    # Independent: the gate asks the endpoint list, the then its names.
-    gate_findings, then = await asyncio.gather(_gate_findings(trigger), describe_then(trigger))
+    # Parse the exact execution definition without resolving or importing executable blocks.
+    from flow_sdk.automations.compiler import compile_automation
+    from flow_sdk.automations.execution import AutomationMode
+
+    try:
+        compile_automation(trigger, mode=AutomationMode.REAL,
+                           include_instruction=bool(trigger.instruction), hook=kind_of(trigger) == "agent_hook")
+    except (ValueError, TypeError) as exc:
+        findings.append(CheckFinding(area="then", ok=False, message=f"The work can't be read: {exc}"))
+        gate_findings, then = await _gate_findings(trigger), []
+    else:
+        # Independent: the gate asks the endpoint list, the then its names.
+        gate_findings, then = await asyncio.gather(_gate_findings(trigger), describe_then(trigger))
     findings += gate_findings
 
     for part in then:

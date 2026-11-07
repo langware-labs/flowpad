@@ -48,6 +48,7 @@ async def _hub_data(
     on_error: str,
     level: int = logging.WARNING,
     params: Optional[dict[str, str]] = None,
+    unreachable_raises: bool = False,
 ) -> Optional[dict[str, Any]]:
     """One hub GET on the user, unwrapped to its data dict.
 
@@ -58,11 +59,25 @@ async def _hub_data(
     field read.
 
     ``on_error`` is logged with the exception appended, at ``level``.
+
+    ``unreachable_raises``: a hub that could not ANSWER (offline, or broken itself) raises
+    ``SourceUnavailable`` instead of answering None — for a reader whose None means "not held",
+    where "could not ask" must not pass for "the user is signed out".
     """
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
     try:
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-        payload = await HubProxy.try_call("GET", BuiltinEntityType.USER, user_id, action, sub_path, params=params or None)
+        payload = await HubProxy.call("GET", BuiltinEntityType.USER, user_id, action, sub_path, params=params or None)
+    except HubError as e:
+        if unreachable_raises and e.kind in (HubFailureKind.OFFLINE, HubFailureKind.SERVER_ERROR):
+            from flow_sdk.sources.errors import SourceUnavailable  # noqa: PLC0415
+
+            raise SourceUnavailable(f"{on_error}: {e.user_message()}") from e
+        logger.debug("%s: %s", on_error, e)
+        return None
     except Exception as e:  # noqa: BLE001
         logger.log(level, "%s: %s", on_error, e)
         return None
@@ -254,7 +269,7 @@ async def hub_credentials_ref(provider: str) -> str:
     return hub_credentials_name_for(provider)
 
 
-async def hub_holds_credential(credentials_name: str) -> bool:
+async def hub_holds_credential(credentials_name: str, *, unreachable_raises: bool = False) -> bool:
     """Whether the hub now holds the token stored under ``credentials_name``.
 
     Read against the hub's own table rather than a status endpoint, so there is
@@ -275,6 +290,7 @@ async def hub_holds_credential(credentials_name: str) -> bool:
         sub_path="table",
         on_error="[oauth] hub credential check failed",
         level=logging.DEBUG,
+        unreachable_raises=unreachable_raises,
     )
     values = data.get("values") if data is not None else None
     if not isinstance(values, list):
@@ -323,7 +339,7 @@ async def hub_credential_value(credentials_name: str, *, verify_held: bool = Tru
     # not hold is not merely wasted — a refusal from the hub surfaces to the user
     # as "Cloud request rejected", so the routine "not connected yet" case would
     # pop an error toast at them for nothing.
-    if verify_held and not await hub_holds_credential(credentials_name):
+    if verify_held and not await hub_holds_credential(credentials_name, unreachable_raises=True):
         logger.debug("[oauth] hub does not hold %r; not asking for its value", credentials_name)
         return None
 
@@ -332,6 +348,7 @@ async def hub_credential_value(credentials_name: str, *, verify_held: bool = Tru
         action="env-var",
         sub_path=f"{credentials_name}/value",
         on_error=f"[oauth] could not read {credentials_name!r} from the hub",
+        unreachable_raises=True,
     )
     if data is None:
         return None

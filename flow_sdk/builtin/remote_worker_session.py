@@ -223,6 +223,15 @@ class RemoteWorkerSession(Entity):
         default=None, description="ReplyPolicy: auto (send replies) | review (host drafts)."
     )
     approved_at: Optional[str] = APIField(default=None, description="ISO-UTC when the host approved.")
+    # How many prompts this session may run: 1 for a session a plain prompt
+    # opened (a "prompt request"), None for a live session (no limit). The
+    # guest proposes it on the start marker; the host fills it once. The host
+    # counts answered turns in ``prompts_used`` and ends the session when the
+    # limit is reached, so approving one prompt never approves the next.
+    prompt_limit: Optional[int] = APIField(
+        default=None, description="Prompts this session may run; None = unlimited (a live session)."
+    )
+    prompts_used: int = APIField(default=0, description="Turns answered so far (host-authoritative).")
     approved_via: Optional[str] = APIField(default=None, description="ApprovedVia: manual | standing_grant.")
 
     # Host-authoritative, synced projection so the guest can render live state.
@@ -240,6 +249,16 @@ class RemoteWorkerSession(Entity):
         return bool(self.host_user_id) and user_id == self.host_user_id
 
     @property
+    def is_prompt_request(self) -> bool:
+        """Opened by a plain prompt: a limited session, never joined by the next prompt."""
+        return self.prompt_limit is not None
+
+    @property
+    def limit_reached(self) -> bool:
+        """A prompt request that already answered its prompt(s) — the host ends it."""
+        return self.is_prompt_request and self.prompts_used >= self.prompt_limit
+
+    @property
     def effective_reply_policy(self) -> ReplyPolicy:
         try:
             return ReplyPolicy(self.reply_policy) if self.reply_policy else ReplyPolicy.AUTO
@@ -255,12 +274,14 @@ class RemoteWorkerSession(Entity):
         "host_user_id", "guest_user_id", "host_name", "guest_name",
         "status", "last_activity_at", "started_at",
         "starting_message_id", "reply_policy", "approved_at", "approved_via",
+        "prompt_limit", "prompts_used",
     })
     # Host-authoritative subset: adopted from a snapshot only on the guest,
     # and only when the snapshot's activity clock is fresher.
     _HOST_AUTHORITATIVE_FIELDS: ClassVar[frozenset[str]] = frozenset({
         "status", "last_activity_at", "host_user_id", "host_name",
         "collaboration_room_id", "reply_policy", "approved_at", "approved_via",
+        "prompts_used",
     })
     # Identity the host row may be MISSING when it materialized from a guest
     # carrier packed before the guest's roster resolved — filled once, never
@@ -268,7 +289,7 @@ class RemoteWorkerSession(Entity):
     # opening proposal, adopted the same fill-only way.
     _HOST_FILL_FIELDS: ClassVar[tuple[str, ...]] = (
         "guest_user_id", "guest_name", "conversation_id", "host_user_id", "host_name",
-        "starting_message_id", "reply_policy",
+        "starting_message_id", "reply_policy", "prompt_limit",
     )
 
     @classmethod
@@ -380,15 +401,17 @@ class RemoteWorkerSession(Entity):
         """The conversation's open live session — its newest one not ENDED/DECLINED
         and not past its length cap (a prompt after the cap opens a new session).
 
-        A conversation holds ONE open session: every prompt sent in it joins
+        A conversation holds ONE open live session: every prompt sent in it joins
         that session (queued while PENDING, re-run after an ERROR) until either
-        side ends it; only then does the next prompt open another. A lookup on
-        the natural key, never a derived id.
+        side ends it; only then does the next prompt open another. A prompt
+        request (``prompt_limit`` set) is never joined — it runs the prompt that
+        opened it and ends — so it is not "the open session". A lookup on the
+        natural key, never a derived id.
         """
         if not conversation_id:
             return None
         rows = await cls.get_all({"conversation_id": conversation_id})
-        open_rows = [r for r in rows if r.is_open]
+        open_rows = [r for r in rows if r.is_open and not r.is_prompt_request]
         if not open_rows:
             return None
         return max(open_rows, key=lambda r: r.started_at or r.last_activity_at or "")

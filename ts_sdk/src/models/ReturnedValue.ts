@@ -129,6 +129,18 @@ export interface NavigatorResult extends ReturnedValue {
   run?: { reason?: string; decision?: Record<string, unknown> | null } | null;
 }
 
+/** An automation's gate: did its condition let the action run (`automation_execution_spec.py`). */
+export interface AutomationGateResult extends ReturnedValue {
+  verdict?: DecisionVerdict | null;
+  reason_code?: string;
+}
+
+/** An automation's legacy action: the callee's own answer, kept as it came back. */
+export interface AutomationActionResult extends ReturnedValue {
+  answer?: ReturnedValue;
+  action_type?: string;
+}
+
 /**
  * The `spec_kind` a NESTED answer (a wizard step's, a check's) carries on the
  * wire — the one way a reader tells which class it holds. Mirrors the
@@ -143,6 +155,8 @@ export const ANSWER_KIND = {
   navigator: 'compute.returned.navigator',
   navigate: 'compute.returned.navigate',
   collection: 'compute.returned.collection',
+  automationGate: 'automation.gate_result',
+  automationAction: 'automation.action_result',
 } as const;
 
 export const isNavigateResult = (answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined): answer is NavigateResult =>

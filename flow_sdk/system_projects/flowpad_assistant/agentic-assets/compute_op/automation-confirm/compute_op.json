@@ -1,0 +1,8 @@
+{
+  "name": "automation-confirm",
+  "subkind": "python",
+  "exe_data": {},
+  "input": "automation.prepared",
+  "output": "automation.prepared",
+  "id": "0430185a-6b03-4536-ab94-fd12d756e275"
+}

@@ -223,7 +223,13 @@ def test_cli_options_match_golden(vendor, cid, kwargs, platform, monkeypatch):
     # ["claude"], reproducing the frozen golden byte-for-byte on every platform.
     monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    assert _capture(vendor, kwargs, platform) == golden[vendor][cid][platform], (
+    expected = golden[vendor][cid][platform]
+    if "error" in expected:
+        with pytest.raises(ValueError) as error:
+            _capture(vendor, kwargs, platform)
+        assert str(error.value) == expected["error"]
+        return
+    assert _capture(vendor, kwargs, platform) == expected, (
         f"{vendor}/{cid}/{platform} diverged from the frozen golden — the consolidation changed output"
     )
 
@@ -239,6 +245,13 @@ def test_spawn_contract_preserves_argv_env_and_prompt_channel(
     monkeypatch.setattr(sys, "platform", platform)
     monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
     options = _VENDORS[vendor](**kwargs)
+    expected = json.loads(GOLDEN.read_text(encoding="utf-8"))[vendor][cid][platform]
+    if "error" in expected:
+        for emit in (options.to_spawn, options.to_spawn_args, options.to_shell_string):
+            with pytest.raises(ValueError) as error:
+                emit(instruction=instruction)
+            assert str(error.value) == expected["error"]
+        return
     argv, env, stdin = options.to_spawn(instruction=instruction)
     compat_argv, compat_env = options.to_spawn_args(instruction=instruction)
 

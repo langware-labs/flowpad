@@ -27,10 +27,9 @@ import {
   Invitation,
   QueryRequest,
   TypeId,
-  acceptInvitation,
+  answerInvitation,
   archiveAllConversations,
   archiveConversation,
-  declineInvitation,
   deleteArchivedConversations,
   deleteConversation,
   dismissConversation,
@@ -53,7 +52,8 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, STREAM_INBOX_CHANNEL_PARAM } from '@src/navigation/DockPointer';
+import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
@@ -89,7 +89,8 @@ import {
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
 import { ConversationMarkChips } from '@src/components/conversation/ChannelMessageExtras';
-import { MembershipInvitations } from './MembershipInvitations';
+import { InvitesChannelChip, MembershipInvitations } from './MembershipInvitations';
+import { InviteStateChip } from '@src/components/conversation/InviteCard';
 import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
@@ -400,7 +401,9 @@ export function ConversationListRow({
   // title source, so it must not feed the subject. Fall back to the email-style
   // "(no subject)" placeholder only when there's no title. The snippet (latest
   // message preview) still renders after it.
-  const subject = isInvitationRow ? t`You've been invited to a conversation` : conv.title?.trim() || t`(no subject)`;
+  const subject = isInvitationRow
+    ? t`You've been invited to a conversation`
+    : conv.title?.trim() || (conv.carries_invite ? t`Shared with you` : t`(no subject)`);
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
@@ -458,7 +461,7 @@ export function ConversationListRow({
     if (!invitationId) return;
     setAccepting(true);
     try {
-      await acceptInvitation({ invitation_id: invitationId });
+      await answerInvitation(invitationId, 'accept');
     } catch (e) {
       if (isInvitationGoneError(e)) {
         notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
@@ -548,6 +551,9 @@ export function ConversationListRow({
         )}
         <SourceChip attribution={attribution} className="me-1" />
         <ConversationMarkChips marks={conv.marks} />
+        {latestMessage?.invite && (
+          <InviteStateChip state={latestMessage.invite.state} resolvedAt={latestMessage.invite.resolved_at} className="me-1" />
+        )}
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -632,7 +638,9 @@ export function StreamInboxView({
   // rows whose ``archived_at`` is set and not yet revived by newer activity.
   // "Delete all" is gated behind the 'archived' view — a destructive op only
   // exposed once the user has explicitly archived rows.
-  const [viewMode, setViewMode] = useState<StreamInboxViewMode>('all');
+  // URL-owned (`?view=`), so navigation back to the stream inbox restores the pill.
+  const { navigation, currentDock } = useDockNavigation();
+  const viewMode: StreamInboxViewMode = currentDock?.streamInboxView ?? 'all';
   // Read state, archive, search and channel pulls are this machine's; the hub page offers none of them.
   const desktopStreamInbox = !isHubOnly();
   // Set of conv ids whose row currently chose to render. Driven by row-level
@@ -658,6 +666,7 @@ export function StreamInboxView({
     rows: ownerChannels,
     specFor,
     offers: channelOffers,
+    builtInOffered,
     loading: channelsLoading,
   } = useAttachedChannels(channelsOwner);
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
@@ -671,8 +680,19 @@ export function StreamInboxView({
     ) => attributionForOrigin(origin, originLocal ?? null, channelSpec),
     [attributionForOrigin],
   );
-  const [channelFilter, setChannelFilter] = useState<Set<string>>(
-    () => new Set(initialChannel ? [initialChannel] : []),
+  // The picked channels live in the URL (`?channel=`), like the view and the search: Back, reload and
+  // a shared link land on the same pick. `initialChannel` is the default when the URL names none.
+  const rawChannels = currentDock?.options?.[STREAM_INBOX_CHANNEL_PARAM];
+  const channelFilter = useMemo(
+    () => new Set(currentDock?.streamInboxChannels ?? (initialChannel ? [initialChannel] : [])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the raw option is the pick; the dock object changes on every navigation
+    [rawChannels, initialChannel],
+  );
+  const setChannelFilter = useCallback(
+    (next: Set<string>) => {
+      if (currentDock) navigation.openDock(currentDock.withStreamInboxChannels([...next], !!initialChannel));
+    },
+    [currentDock, navigation, initialChannel],
   );
   // The picked channels that are not listening: the strip above the list explains each one.
   const attention = useMemo(() => attentionAmong(ownerChannels, channelFilter), [ownerChannels, channelFilter]);
@@ -727,10 +747,15 @@ export function StreamInboxView({
   // The rail's Stream Inbox icon: back to every message, no filter of any kind. Only the user's own
   // stream listens; a fresh mount already starts unfiltered.
   useUiActionRequest(embedded || agentId || sourceId ? [] : ['stream-inbox.reset'], () => {
-    setViewMode('all');
-    setChannelFilter(new Set());
+    if (
+      currentDock &&
+      (currentDock.streamInboxView !== 'all' ||
+        currentDock.streamInboxSearch ||
+        currentDock.pageBefore ||
+        currentDock.streamInboxChannels !== null)
+    )
+      navigation.openDock(currentDock.withStreamInboxFilters({ view: 'all', search: '' }).withStreamInboxChannels([]));
     setColumnFilter(NO_COLUMN_FILTER);
-    setSearchQuery('');
     setSelectedIds(new Set());
   });
   const setColumn = useCallback(
@@ -757,23 +782,32 @@ export function StreamInboxView({
   // action rather than a `$LIKE` entity query: under the reference model a
   // channel message's body lives on its SourceItem (the FlowMessage row stores
   // `text: ""`), so the backend searches BOTH residences and hands back
-  // conversation ids. Debounced per keystroke; the previous result is held
+  // conversation ids. The URL commit debounces typing; the previous result is held
   // while the next request is in flight so the list doesn't blank.
-  const [searchQuery, setSearchQuery] = useState('');
+  // URL-owned (`?q=`): the box types into local state and commits to the dock URL after a pause,
+  // so history doesn't take one entry per keystroke. Back/forward re-seeds the box.
+  const searchQuery = currentDock?.streamInboxSearch ?? '';
+  const [searchInput, setSearchInput] = useState(searchQuery);
+  useEffect(() => setSearchInput(searchQuery), [searchQuery]);
+  const settledSearch = useDebounced(searchInput);
+  useEffect(() => {
+    if (settledSearch !== searchQuery && currentDock)
+      navigation.openDock(currentDock.withStreamInboxFilters({ search: settledSearch }));
+    // Commit only when the typed text settles; a dock change alone must not re-commit stale text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settledSearch]);
   const needle = searchQuery.trim();
   const searchActive = needle !== '';
   const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!searchActive) return;
+    // `needle` is the URL's, already debounced on its way there.
     let stale = false;
-    const timer = setTimeout(() => {
-      void searchStreamInbox(needle, agentId).then((ids) => {
-        if (!stale) setMatchIds(ids);
-      });
-    }, 200);
+    void searchStreamInbox(needle, agentId).then((ids) => {
+      if (!stale) setMatchIds(ids);
+    });
     return () => {
       stale = true;
-      clearTimeout(timer);
     };
   }, [agentId, needle, searchActive]);
 
@@ -782,7 +816,6 @@ export function StreamInboxView({
   // `channelsOwner` is rebuilt whenever its inputs change identity, and a fresh request re-subscribes.
   // One PAGE, not the whole stream inbox: the view's latest N (`before` null = now, live) or the N older
   // than the dock URL's `before`. A body search lists its hits instead.
-  const { navigation, currentDock } = useDockNavigation();
   const pageBefore = currentDock?.pageBefore ?? null;
   const ownerKey = channelsOwner?.toString() ?? '';
   // The channel marks narrow the QUERY to the picked marks' sources: a page is then rows of those
@@ -1144,7 +1177,7 @@ export function StreamInboxView({
     if (!rowDelete) return;
     try {
       if (rowDelete.kind === 'invitation') {
-        await declineInvitation({ invitation_id: rowDelete.invitationId });
+        await answerInvitation(rowDelete.invitationId, 'decline');
         notify.success({ title: t`Invitation declined` });
       } else if (rowDelete.kind === 'owner') {
         await deleteConversation({
@@ -1200,23 +1233,21 @@ export function StreamInboxView({
 
   const setView = useCallback(
     (next: StreamInboxViewMode) => {
-      setViewMode((cur) => {
-        if (cur === next) return cur;
-        // Visible-ids tracks the previous mode's rows; reset so the count
-        // badge doesn't flash stale during the swap. Selection is per-view, so
-        // drop it too — carrying ticks across modes would act on hidden rows.
-        setVisibleIds(new Set());
-        setSelectedIds(new Set());
-        return next;
-      });
+      if (next === viewMode || !currentDock) return;
+      // Visible-ids tracks the previous mode's rows; reset so the count
+      // badge doesn't flash stale during the swap. Selection is per-view, so
+      // drop it too — carrying ticks across modes would act on hidden rows.
+      setVisibleIds(new Set());
+      setSelectedIds(new Set());
       // A page is a page of ONE view: another view starts at now.
-      if (currentDock?.pageBefore) navigation.openDock(currentDock.withPageBefore(null));
+      navigation.openDock(currentDock.withStreamInboxFilters({ view: next }));
     },
-    [currentDock, navigation],
+    [viewMode, currentDock, navigation],
   );
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
+  const inInvitesView = viewMode === 'invites';
   // Segmented view pill — All | Unread | Archived. Active mode is filled,
   // inactive is ghost.
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
@@ -1372,8 +1403,8 @@ export function StreamInboxView({
                   <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
                   <input
                     type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
                     placeholder={t`Search messages`}
                     className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                     data-testid="stream-inbox-search-input"
@@ -1382,7 +1413,10 @@ export function StreamInboxView({
                   {searchActive && (
                     <button
                       type="button"
-                      onClick={() => setSearchQuery('')}
+                      onClick={() => {
+                        setSearchInput('');
+                        if (currentDock) navigation.openDock(currentDock.withStreamInboxFilters({ search: '' }));
+                      }}
                       className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
                       aria-label={t`Clear search`}
                       data-testid="stream-inbox-search-clear"
@@ -1537,11 +1571,19 @@ export function StreamInboxView({
                 <X className="h-3 w-3" />
               </button>
             )}
+            {!agentId && !embedded && (
+              <InvitesChannelChip
+                active={inInvitesView}
+                pending={membershipPendingCount}
+                onClick={() => setView(inInvitesView ? 'all' : 'invites')}
+              />
+            )}
             {channelsOwner && !embedded && (
               <AttachedChannelsBar
                 owner={channelsOwner}
                 rows={ownerChannels}
                 offers={channelOffers}
+                builtInOffered={builtInOffered}
                 specFor={specFor}
                 selected={channelFilter}
                 onSelectedChange={setChannelFilter}
@@ -1564,7 +1606,9 @@ export function StreamInboxView({
             <span className="text-sm">
               {searchActive || columnFilterActive
                 ? t`No matching conversations`
-                : inArchivedView
+                : inInvitesView
+                  ? t`Nothing has been shared with you yet`
+                  : inArchivedView
                   ? t`No archived conversations`
                   : inUnreadView
                     ? t`No unread conversations`
@@ -1595,7 +1639,11 @@ export function StreamInboxView({
         )}
 
         {!agentId && !embedded && !inArchivedView && !initialLoading && (
-          <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
+          <MembershipInvitations
+            recipientEmail={cloudUser?.email ?? null}
+            onPendingCount={setMembershipPendingCount}
+            show={inInvitesView ? 'all' : 'pending'}
+          />
         )}
 
         {/* Start the row batches in the layout phase so the rows' own reads wait

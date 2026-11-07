@@ -111,9 +111,9 @@ def test_permission_mode_gates_auto():
 def test_model_tier_resolves_but_raw_intent_is_preserved():
     cmd = OpenCodeAgentOptions(workdir="/repo", model="sm")
     assert cmd.model == "sm"  # persisted intent stays portable
-    # Unfunded, opencode picks its own default for a size; a funded spawn stamps the endpoint's slug.
-    assert cmd.resolved_model is None
-    assert "sm" not in cmd.cli_cmd()
+    # A funded spawn must stamp the endpoint's slug before command emission.
+    with pytest.raises(ValueError, match="has no mapping"):
+        cmd.cli_cmd()
 
 
 def test_concrete_model_passes_through():

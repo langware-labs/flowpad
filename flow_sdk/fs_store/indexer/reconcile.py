@@ -28,6 +28,7 @@ from typing import Any
 
 from flow_sdk.assets.identity_carrier import Foreign, Found, Unstamped, foreign_detail
 from flow_sdk.assets.layout import Layout
+from flow_sdk.fs_store.gitignore import flowignored
 from flow_sdk.fs_store.indexer.index_log import FOREIGN_ID, ScanIssue, append_scan_issue
 
 
@@ -46,6 +47,8 @@ def reconcile(
     carries more than the path. Sync; never touches the DB."""
     carrier = info.carrier
     where = carrier.locate(layout)
+    # No id is ever written into a file a .flowignore excludes.
+    write = write and (where is None or not flowignored(where))
     found = carrier.read(where)
 
     def _fallback() -> str:

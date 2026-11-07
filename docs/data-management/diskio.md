@@ -373,22 +373,22 @@ way.
 **Decision order per entry** (`gitignore.py:128-172`, `walk.py:78-100`; every backend reproduces
 it exactly):
 
-0. On descending into a dir, its `.gitignore` (if a regular file) is read as UTF-8 with U+FFFD
-   replacement (`gitignore.py:133`); a line pathspec cannot parse (e.g. `a\`, a bare `!`) is
-   DROPPED — git's own behaviour — and the file's remaining lines apply. An unreadable
-   `.gitignore` contributes nothing. (Today an unparseable line raises `GitIgnorePatternError`,
-   a `ValueError` that `push_gitignore` does not catch, and aborts the whole root before it is
-   yielded — §14.)
+0. `gitignore=True` only: on descending into a dir, its `.gitignore` and `.flowignore` (each if a
+   regular file — a symlink is not followed, as git does not) are read as bytes; every
+   `.flowignore` ABOVE the root is read before the walk starts, and a root one of them excludes
+   yields with nothing under it. An unreadable file contributes nothing. Lines are parsed as git
+   parses them (`ignore_rules.py`): no line is an error — one that can match nothing just never
+   matches.
 1. Entry type from the readdir cache: a real directory (not a symlink) is a dir; anything else
    must be a file after following symlinks, or it is dropped. A stat error drops the entry.
 2. Basename in `deny_basenames` → ignored (files named `build`/`dist` too); any `(a, b)` of
    `skip_segments` appearing as consecutive path segments → ignored. Empty lists make this step
    vacuous.
-3. `gitignore=True` only: any ancestor UP TO AND INCLUDING the root whose basename is in
-   `force_include` → kept, no further test; else the `.gitignore` stack, outermost → innermost,
-   last match wins, a dir tried as `rel/` and as `rel`; a nested file can only ADD ignores (no
-   cross-file `!` re-include). (`is_ignored`, `gitignore.py:152-172`: denylist, then
-   force-include, then the stack.)
+3. `gitignore=True` only, every file matched exactly as git matches it (`ignore_rules.py`, the
+   port of git's `wildmatch.c` + `dir.c`; `gitignore.rs` in Rust): the deepest `.flowignore` with
+   a matching line decides (ignored, or kept by a `!` line); failing that, any ancestor UP TO AND
+   INCLUDING the root whose basename is in `force_include` → kept; else the deepest `.gitignore`
+   with a matching line decides. (`is_ignored` / `stack_ignores` in `gitignore.py`.)
 4. A surviving file is listed only if `file_exts` admits it (`None` admits all).
 
 The root is walked AS GIVEN (no `resolve()`) and is always yielded, even when a pattern matches

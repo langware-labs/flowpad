@@ -6,11 +6,12 @@ policy lives in exactly one place (:mod:`flow_sdk.fs_store.gitignore`):
 
   * ``denylist`` — the ``_WALK_IGNORED`` basename fast-path plus the
     ``.claude/worktrees`` skip (:func:`is_denylisted`).
-  * ``gitignore`` — the nested ``.gitignore`` stack (pushed on descend, popped
-    on backtrack), with the ``.claude/`` force-include. Implies the denylist
-    (``is_ignored`` consults it first). Monotonic across stacked files — a
-    child ``!`` re-include of something an ancestor ``.gitignore`` ignored is
-    NOT honored; negation within a single file works.
+  * ``gitignore`` — the ignore files: ``.flowignore`` first (every one from
+    ``/`` down, through one ``FlowIgnore``), then the nested ``.gitignore``
+    stack (pushed on descend, popped on backtrack), with the ``.claude/``
+    force-include. Implies the denylist (``is_ignored`` consults it first).
+    Matched as git matches: the deepest file with a matching line decides, so
+    a child ``!`` re-includes what an ancestor file ignored.
 
 Symlinked directories are never followed; unreadable directories are skipped,
 never fatal. The root is always yielded, even when a pattern matches it — the
@@ -25,6 +26,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from flow_sdk.fs_store.gitignore import (
+    FlowIgnore,
     GitignoreStack,
     is_denylisted,
     is_ignored,
@@ -66,8 +68,8 @@ def walk_entries(
 
     The ONE descent — :func:`gitignore_walk` and ``flow_sdk.diskio``'s Python
     ``TreeWalker`` are both thin views of it. ``gitignore`` says whether the
-    nested ``.gitignore`` stack is read (pushed on descend, popped on
-    backtrack); ``skip`` decides each entry and is handed that stack. ``error``
+    ``.gitignore`` stack is read (pushed on descend, popped on backtrack);
+    ``skip`` decides each entry and is handed that stack. ``error``
     is the ``OSError`` that left a directory's listing empty, ``None`` when it
     was read.
     """
@@ -138,7 +140,8 @@ def gitignore_walk(
     """Pre-order DFS yielding ``(dir_path, subdirs, files)`` per directory.
 
     ``subdirs``/``files`` are sorted ascending and already filtered per the
-    module policy. ``gitignore=False, denylist=True`` skips only the hardcoded
+    module policy. ``gitignore=True`` honors ``.gitignore`` AND ``.flowignore``.
+    ``gitignore=False, denylist=True`` skips only the hardcoded
     denylist; ``gitignore=False, denylist=False`` is a pure pass-through (only
     symlink/unreadable skips) — the FSIndexer's legacy ``gitignore=False``
     behavior. ``include_files=False`` yields empty file lists and skips the
@@ -150,8 +153,10 @@ def gitignore_walk(
         return
     skip: SkipFn | None
     if gitignore:
+        flow = FlowIgnore()
+
         def skip(path: Path, is_dir: bool, stack: GitignoreStack) -> bool:
-            return is_ignored(path, is_dir, stack, root)
+            return is_ignored(path, is_dir, stack, root, flow)
     elif denylist:
         def skip(path: Path, is_dir: bool, stack: GitignoreStack) -> bool:
             return is_denylisted(path)

@@ -8,7 +8,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Agent, Deployment, credentialsService, type AgentReadiness, type AgentReadinessItem } from '@sdk';
+import { Deployment, Project, credentialsService, type AgentReadiness, type AgentReadinessItem } from '@sdk';
 
 vi.mock('@src/notifications', () => ({
   notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
@@ -17,6 +17,7 @@ vi.mock('@src/notifications', () => ({
 vi.mock('@src/components/assets/editor/agent-profile/AgentDeployChecklist', () => ({
   AgentDeployChecklist: () => <div data-testid="mock-checklist" />,
 }));
+vi.mock('@src/hooks/entity-hooks', () => ({ useEntitiesQuery: () => ({ data: [] }) }));
 vi.mock('@src/hooks/use-deploy-providers', () => ({
   useDeployProviders: () => ({ providers: ['e2b', 'gcp_vm'], isLoading: false }),
 }));
@@ -71,7 +72,7 @@ function readiness(items: AgentReadinessItem[]): AgentReadiness {
   };
 }
 
-const agent = () => new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
+const agent = () => new Project({ id: '66666666-6666-4666-8666-666666666666', name: 'proj' } as never);
 
 afterEach(() => {
   cleanup();
@@ -92,7 +93,7 @@ describe('the deploy gate', () => {
 
     render(
       <DeploymentSecretsGate
-        agent={a}
+        project={a}
         deployment={new Deployment(DEPLOYMENT as never)}
         readiness={readiness([stripe])}
         onChange={onChange}
@@ -102,7 +103,7 @@ describe('the deploy gate', () => {
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ ready: true })));
     expect(useMine).toHaveBeenCalledWith(DEPLOYMENT.id, ['STRIPE_KEY']);
-    expect(asked).toHaveBeenCalledWith(DEPLOYMENT.id);
+    expect(asked).toHaveBeenCalledWith(DEPLOYMENT.id, null);
   });
 
   it('a value this computer lacks too says so and offers no "Use mine" again', async () => {
@@ -113,7 +114,7 @@ describe('the deploy gate', () => {
 
     render(
       <DeploymentSecretsGate
-        agent={a}
+        project={a}
         deployment={new Deployment(DEPLOYMENT as never)}
         readiness={readiness([stripe])}
         onChange={vi.fn()}
@@ -137,7 +138,7 @@ describe('the deploy gate', () => {
 
     renderInQuery(
       <DeploymentSecretsGate
-        agent={agent()}
+        project={agent()}
         deployment={new Deployment(DEPLOYMENT as never)}
         readiness={readiness([stripe, funding])}
         onChange={vi.fn()}
@@ -164,7 +165,7 @@ describe('the deploy gate', () => {
 
     render(
       <DeploymentSecretsGate
-        agent={a}
+        project={a}
         deployment={new Deployment(DEPLOYMENT as never)}
         readiness={readiness([drive])}
         onChange={vi.fn()}
@@ -187,7 +188,7 @@ describe('the Secrets tab', () => {
     });
     const revoke = vi.spyOn(deployment, 'revoke').mockResolvedValue();
 
-    render(<AgentPlaceSecrets agent={a} deployment={deployment} />);
+    render(<AgentPlaceSecrets project={a} deployment={deployment} />);
 
     expect(await screen.findByTestId('agent-place-secret-STRIPE_KEY')).toHaveTextContent('placed');
     expect(screen.queryByTestId('deployment-secrets-gate')).toBeNull();
@@ -201,7 +202,7 @@ describe('the new deployment dialog', () => {
   // The refusal names the placement planned for the machine and environment as they were: changing either
   // one drops it, or Launch would go on to deploy the old placement.
   it.each([
-    ['the machine', () => Promise.resolve(void fireEvent.click(screen.getByTestId('new-deployment-type-e2b-md')))],
+    ['the machine', () => Promise.resolve(void (fireEvent.click(screen.getByTestId('new-deployment-back')), fireEvent.click(screen.getByTestId('new-deployment-size-md')), fireEvent.click(screen.getByTestId('new-deployment-next'))))],
     [
       'the environment',
       async () => {
@@ -231,8 +232,8 @@ describe('the new deployment dialog', () => {
       const deploy = vi.spyOn(a, 'deploy').mockRejectedValue(refusal);
       const onLaunched = vi.fn();
 
-      renderInQuery(<NewDeploymentDialog agent={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
-      fireEvent.click(screen.getByTestId('new-deployment-type-e2b-sm'));
+      renderInQuery(<NewDeploymentDialog project={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
+      (fireEvent.click(screen.getByTestId('new-deployment-size-sm')), fireEvent.click(screen.getByTestId('new-deployment-next')));
       fireEvent.click(screen.getByTestId('new-deployment-launch'));
 
       expect(await screen.findByTestId('deployment-secret-stripe')).toHaveTextContent('flow credentials set stripe');
@@ -241,6 +242,9 @@ describe('the new deployment dialog', () => {
         provider: 'e2b',
         tokenAllocation: null,
         machineSize: 'sm',
+        sourceKind: 'commit',
+        sourceRef: null,
+        mainAgentId: null,
       });
       expect(screen.getByTestId('new-deployment-launch')).toBeDisabled();
       expect(onLaunched).not.toHaveBeenCalled();

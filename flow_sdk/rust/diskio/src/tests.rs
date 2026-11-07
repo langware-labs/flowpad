@@ -140,7 +140,7 @@ fn step_3_the_force_include_applies_only_when_gitignore_is_on() {
 }
 
 #[test]
-fn step_3_a_nested_gitignore_only_adds_ignores() {
+fn step_3_the_deepest_file_with_a_matching_line_decides() {
     let t = Tree::new();
     t.file(".gitignore", "*.log\nsecret/\n")
         .file("sub/.gitignore", "!keep.log\n!secret/\nlocal.txt\n")
@@ -150,8 +150,34 @@ fn step_3_a_nested_gitignore_only_adds_ignores() {
         .file("sub/secret/s.txt", "");
     let lines = scan(&t.0, policy(true, Value::Null), json!([]));
     let sub = entry(&lines, &t.path("sub"));
-    assert_eq!(sub["files"], json!([".gitignore", "ok.txt"]));
-    assert_eq!(sub["subdirs"], json!([]));
+    assert_eq!(sub["files"], json!([".gitignore", "keep.log", "ok.txt"]));
+    assert_eq!(sub["subdirs"], json!(["secret"]));
+}
+
+#[test]
+fn step_3_a_flowignore_decides_before_the_force_include_and_the_gitignore() {
+    let t = Tree::new();
+    t.file("proj/.gitignore", "reports/\n.claude/\n")
+        .file("proj/.flowignore", "!reports/\n.claude/skills/old/\n*.secret\n")
+        .file("proj/reports/r.md", "")
+        .file("proj/.claude/skills/old/SKILL.md", "")
+        .file("proj/.claude/skills/new/SKILL.md", "")
+        .file("proj/x.secret", "")
+        .file(".flowignore", "proj/drop/\n")
+        .file("proj/drop/d.md", "");
+    let lines = scan(&t.0.join("proj"), policy(true, Value::Null), json!([]));
+    assert_eq!(entry(&lines, &t.path("proj"))["subdirs"], json!([".claude", "reports"]));
+    assert_eq!(entry(&lines, &t.path("proj/.claude/skills"))["subdirs"], json!(["new"]));
+    assert_eq!(entry(&lines, &t.path("proj"))["files"], json!([".flowignore", ".gitignore"]));
+}
+
+#[test]
+fn a_root_a_flowignore_above_it_excludes_yields_nothing_under_it() {
+    let t = Tree::new();
+    t.file(".flowignore", "proj/\n").file("proj/.flowignore", "!*\n").file("proj/sub/x.md", "");
+    let lines = scan(&t.0.join("proj"), policy(true, Value::Null), json!([]));
+    assert_eq!(dirs(&lines), [t.path("proj")]);
+    assert_eq!(lines[0]["files"], json!([]));
 }
 
 #[test]
@@ -163,7 +189,7 @@ fn step_3_negation_inside_one_file_works() {
 }
 
 #[test]
-fn step_0_an_unparseable_gitignore_line_is_dropped() {
+fn step_0_a_line_that_can_match_nothing_never_matches() {
     let t = Tree::new();
     t.file(".gitignore", "a\\\n!\n*.tmp\n").file("x.tmp", "").file("a", "");
     let lines = scan(&t.0, policy(true, Value::Null), json!([]));

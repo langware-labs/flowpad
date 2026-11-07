@@ -130,7 +130,7 @@ async def test_2_variant_a_the_app_answers_on_the_channel(whatsapp, monkeypatch,
     monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: worker)
     ns = await run_fence(fence_under(doc(DOC), "2."), _names(whatsapp), filename=f"{DOC} §2")
     source, agent = ns["source"], ns["agent"]
-    (deployment,) = [d for d in await Deployment.get_all({"match": {"parent_type_id": str(agent.typeid)}}) if d.serving]
+    (deployment,) = [d for d in await Deployment.get_all({"match": {"main_agent_id": str(agent.typeid)}}) if d.serving]
     stop = asyncio.Event()
     loop = asyncio.create_task(run(deployment.id, stop=stop))
     try:

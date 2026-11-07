@@ -51,5 +51,5 @@ async def project_git_share() -> ApiResponse:
     except GitShareError as exc:
         return ApiFailResponse(message=str(exc), status_code=409, data={"error_code": NOT_SHAREABLE})
     except HubError as exc:
-        return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 502)
+        return exc.fail_response("Could not share the project")
     return ApiSuccessResponse(data=share.model_dump(mode="json"))

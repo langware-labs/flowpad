@@ -41,3 +41,23 @@ def test_prompt_completion_attachment_is_not_a_runnable_prompt():
     assert _is_prompt_attachment(prompt_att) is True
     assert _has_prompt_attachment([result_att]) is False
     assert _has_prompt_attachment([prompt_att]) is True
+
+
+def test_prompt_limit_rides_the_snapshot_and_the_count_is_the_hosts():
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession as RWS
+
+    # host row materialized without the guest's proposal: the limit is filled once
+    host = RWS(conversation_id="c", host_user_id="h", status="pending")
+    RWS.apply_snapshot(host, {"prompt_limit": 1, "prompts_used": 5}, local_is_host=True)
+    assert host.prompt_limit == 1 and host.prompts_used == 0  # a guest never writes the count
+    assert not host.limit_reached
+
+    # guest adopts the count only from a fresher host snapshot
+    guest = RWS(conversation_id="c", prompt_limit=1, last_activity_at="2026-11-04T10:00:00+00:00")
+    RWS.apply_snapshot(guest, {"prompts_used": 1, "last_activity_at": "2026-11-04T09:00:00+00:00"}, local_is_host=False)
+    assert guest.prompts_used == 0
+    RWS.apply_snapshot(guest, {"prompts_used": 1, "last_activity_at": "2026-11-04T11:00:00+00:00"}, local_is_host=False)
+    assert guest.prompts_used == 1 and guest.limit_reached
+
+    # a live session has no limit, whatever it counts
+    assert not RWS(conversation_id="c", prompts_used=40).limit_reached

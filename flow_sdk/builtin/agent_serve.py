@@ -239,10 +239,9 @@ class TurnEngine:
         return next((p for p in existing if str(getattr(p, "status", "")) != ProcessStatus.FAILED.value), None)
 
     async def _current_model(self) -> Optional[str]:
-        """The model this placement runs the agent on now: its place override, else the definition's."""
+        """The model this placement runs the agent on now: its deployment's override, else the definition's."""
         current = await type(self.agent).get_by_id(str(self.agent.id)) or self.agent
-        place = current.place_for(self.deployment.id) if self.deployment is not None else None
-        overridden = place.overrides().get("model") if place is not None else None
+        overridden = self.deployment.overrides_for(current).get("model") if self.deployment is not None else None
         return overridden or getattr(current, "model", None) or None
 
     async def process_for(self, session: str, *, name: Optional[str] = None, context: Optional[dict] = None):
@@ -630,11 +629,14 @@ def admits(source, author: str) -> bool:
     non-empty list restricts either way. Explicit source ``open_to_all`` overrides
     the allowlist, but a paused source always admits nobody.
     """
-    from flow_sdk.builtin.agent_mailbox import sender_allowed  # noqa: PLC0415
+    from flow_sdk.builtin.agent_mailbox import on_list, sender_allowed  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
+        return False
+    blocked = getattr(source, "blocked_senders", None) or []
+    if on_list(blocked, author):
         return False
     if getattr(source, "open_to_all", False) or (str(getattr(source, "id", "")), author) in _PROBES:
         return True
@@ -658,19 +660,12 @@ def is_own_outgoing(source, author: str) -> bool:
 async def answers_here(source, deployment, agent=None) -> bool:
     """Whether *deployment* (a placement on this machine) is the one answering *source*.
 
-    ``answer_place`` names it. A mailbox still follows the agent's ``email_place``
-    until it carries its own; a source that names no place is answered wherever it
-    is held, as before places existed.
+    ``answer_place`` names it; a source that names no place is answered by the deployment here
+    whose main agent owns it (one per machine).
     """
     place = str(getattr(source, "answer_place", "") or "")
     if place:
         return place == str(deployment.id)
-    if str(getattr(source, "provider", "") or "") == "cloud_email":
-        # A mailbox that carries no place of its own follows the agent's ``email_place``.
-        agent = agent if agent is not None else await deployment.agent()
-        if agent is not None and agent.email_place:
-            return str(agent.email_place) == str(deployment.id)
-    # A source that names no place is answered by the agent's deployment here (one per machine).
     return True
 
 
@@ -812,7 +807,22 @@ async def running_deployments() -> list:
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     rows = await Deployment.get_all({"match": {"serving": True}})
-    return [d for d in rows if d.serving and d.places_agent and d.is_local and deployment_process.alive(d)]
+    async with deployment_process.process_table():
+        return [d for d in rows if d.serving and d.places_agent and d.is_local and deployment_process.alive(d)]
+
+
+async def serving_deployments() -> list:
+    """The local agent deployments set to run here (``serving``) -- their process alive or not yet.
+
+    What the app leaves a deployment's channels for. Not :func:`running_deployments`: the app's poll only
+    RECORDS a message, it never answers one, so a mail it records while the deployment's process is starting
+    (a woken machine boots with mail waiting) or restarting is consumed and never answered. The supervisor
+    starts that process again within ``RESTART_SECONDS``; the channel waits for it.
+    """
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    rows = await Deployment.get_all({"match": {"serving": True}})
+    return [d for d in rows if d.serving and d.places_agent and d.is_local]
 
 
 async def polled_by_a_deployment(sources=None) -> set[str]:
@@ -820,7 +830,8 @@ async def polled_by_a_deployment(sources=None) -> set[str]:
 
     A deployment's loop polls the channels it answers (:func:`answered_sources`) from its own
     process; the app's heartbeat polling the same source at the same moment would race its cursor
-    (the in-flight guard is per process). A dead deployment's channels are polled here as ever.
+    (the in-flight guard is per process). The app leaves them to every deployment set to serve here,
+    its process up or not yet (:func:`serving_deployments`): recording a message nobody answers loses it.
     *sources* narrows the answer to those.
 
     Held means held by ANOTHER process: asked from inside a deployment's own process
@@ -829,10 +840,10 @@ async def polled_by_a_deployment(sources=None) -> set[str]:
     """
     own = os.environ.get(deployment_process.DEPLOYMENT_ENV, "").strip()
     held: set[str] = set()
-    for deployment in await running_deployments():
+    for deployment in await serving_deployments():
         if str(deployment.id) == own:
             continue
-        agent = await deployment.agent()
+        agent = await deployment.main_agent()
         if agent is not None:
             held.update(str(s.id) for s in await answered_sources(agent, deployment))
     return held if sources is None else held & {str(s.id) for s in sources}
@@ -867,7 +878,12 @@ def bound_at(deployment, source) -> Optional[datetime]:
     stamps = [
         iso_to_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s
     ]
-    return max(stamps, default=None)
+    bound = max(stamps, default=None)
+    # A placement made BY a message (a private deployment's person, placed on their first mail) answers from
+    # that message: it waited before this machine existed and is the reason it does.
+    raw = getattr(deployment, "answers_from", None)
+    since = iso_to_utc(raw) if raw else None
+    return min(bound, since) if bound is not None and since is not None else bound
 
 
 def is_history(message, since: Optional[datetime]) -> bool:
@@ -1317,7 +1333,7 @@ class AgentServer:
                 logger.exception("agent server: reconcile failed")
 
     async def reconcile(self, *, chiefs: bool = True) -> None:
-        async with self._reconciling:
+        async with self._reconciling, deployment_process.process_table():
             if chiefs:
                 await self._sync_chiefs_of_staff()
             wanted, strays = await self._wanted()
@@ -1344,12 +1360,14 @@ class AgentServer:
 
         wanted: dict[str, tuple] = {}
         strays: list = []
-        agents = QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["parent_type_id", "agent-%"]))
-        for deployment in await Deployment.get_all(agents):
-            if not deployment.places_agent or not deployment.is_local:
+        # A deployment with a main agent runs that agent; the rest are web-only or this computer -- and
+        # one whose main agent was just cleared is a stray when its loop is still up.
+        local = QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["target.provider", "local"]))
+        for deployment in await Deployment.get_all(local):
+            if not deployment.is_local:
                 continue
-            agent = await deployment.agent() if deployment.serving else None
-            if agent is not None and agent.enabled_on(deployment.id):
+            agent = await deployment.main_agent() if deployment.serving else None
+            if agent is not None and agent.enabled:
                 wanted[str(deployment.id)] = (agent, deployment)
             elif str(deployment.id) not in self._running and deployment_process.alive(deployment):
                 strays.append(deployment)
@@ -1362,8 +1380,12 @@ class AgentServer:
         if not deployment_process.alive(deployment):
             labels = await deployment_process.start(deployment)
             if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
-                deployment.provider_labels = {**(deployment.provider_labels or {}), **labels}
-                await deployment.save()
+                # The row as it is NOW, not the copy read before the start: a hub adopt that landed in
+                # between (a main agent cleared, an override changed) must not be written back over.
+                current = await type(deployment).get_by_id(str(deployment.id)) or deployment
+                current.provider_labels = {**(current.provider_labels or {}), **labels}
+                await current.save()
+                deployment = current
             logger.info(
                 "agent %s: deployment %s started in terminal %s",
                 agent.name or agent.id,

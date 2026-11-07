@@ -26,6 +26,7 @@ Every command emits the standard parseable envelope (``ok``/``fail`` from
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Optional
@@ -207,6 +208,25 @@ def summary_conversation(
     _ok({"conversation_id": cid, "summary": data.get("summary") or ""})
 
 
+def _form_attachment_line(a: dict) -> Optional[str]:
+    """A form or its answers, as an agent reads them — ``None`` for any other attachment."""
+    from flow_sdk.schema.data_spec.message_form_spec import (  # noqa: PLC0415
+        answers_in, answers_line, form_in, form_summary,
+    )
+
+    raw = [{"attachment_type": a.get("type"), "data": a.get("data"), "prompt_preview": a.get("prompt_preview")}]
+    form = form_in(raw)
+    if form is not None:
+        asks = ", ".join(
+            f"{f.id}:{f.type}" + (f"={f.default}" if f.default is not None else "" if f.optional else "=?")
+            for f in form.fields)
+        return f"  📋 form {form.form_id}: {form_summary(form)} — {asks}"
+    answers = answers_in(raw)
+    if answers is not None:
+        return f"  ✅ answers to form {answers.form_id}: {answers_line(None, answers)}"
+    return None
+
+
 def _render_message(m: dict) -> str:
     """One message as an agent reads it: a header line, the full text, then
     one line per attachment saying where its bytes are — or that they are not
@@ -224,6 +244,10 @@ def _render_message(m: dict) -> str:
     lines.append(text if text else "(no text)")
     for a in m.get("attachments") or []:
         where = a.get("local_path") or ("(not on this machine — body not downloaded)" if not a.get("available") else "")
+        form_line = _form_attachment_line(a)
+        if form_line:
+            lines.append(form_line)
+            continue
         desc = f"  📎 {a.get('type')}: {a.get('data')}"
         if a.get("prompt_preview"):
             desc += f" — {' '.join(a['prompt_preview'].split())[:200]}"
@@ -345,6 +369,39 @@ def _emit_send_result(conversation_id: str, data: dict) -> None:
     )
 
 
+_FORM_HELP = (
+    "Questions the receiver answers in place, with one Submit: JSON or @file — "
+    '{"title": "...", "fields": [{"id", "label", "type", "options"?, "default"?, "optional"?, "min"?, "max"?}]}. '
+    "Types: text long_text number date one many yesno buttons select file. A field without a default must be filled."
+)
+
+
+def _form_attachment(arg: str) -> dict:
+    """``--form`` as the attachment it rides on; a bad form stops the send before anything is written."""
+    from pathlib import Path  # noqa: PLC0415
+
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.message_form_spec import MessageForm, form_attachment  # noqa: PLC0415
+
+    raw = arg.strip()
+    try:
+        if raw.startswith("@"):
+            raw = Path(raw[1:]).expanduser().read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, ValueError) as e:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--form is not readable JSON: {e}")
+    if not isinstance(data, dict):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--form must be a JSON object")
+    data.setdefault("form_id", mint_uuid())
+    try:
+        return form_attachment(MessageForm.model_validate(data))
+    except ValidationError as e:
+        problems = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors())
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--form: {problems}")
+
+
 @conversation_app.command(
     "send",
     help="Add a text message to a conversation.",
@@ -376,6 +433,7 @@ def send_message(
             help="Live-session id (remote_worker_session) to send into. Needs --prompt: a session runs prompts.",
         ),
     ] = None,
+    form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
     if not (message or "").strip():
@@ -391,6 +449,8 @@ def send_message(
         if not (prompt and prompt.strip()):
             _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--session needs --prompt: the text alone is not run")
         body["remote_worker_session_id"] = session.strip()
+    if form:
+        body["attachment"] = [_form_attachment(form)]
     data = _post_json(
         _add_message_url(port, cid),
         body,
@@ -481,9 +541,11 @@ def new_conversation(
     who: Annotated[str, typer.Argument(help="Email, hub user id, or contact name; separate several with , or ;.")],
     message: Annotated[str, typer.Argument(help="First message text.")],
     title: Annotated[Optional[str], typer.Option("--title", help="Conversation title.")] = None,
+    form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
 ) -> None:
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
+    form_att = _form_attachment(form) if form else None
     wanted = split_people(who)
     if not wanted:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "name at least one person to talk to")
@@ -515,7 +577,10 @@ def new_conversation(
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
         _fail(EXIT_ACTION_FAILED, "SHARE_FAILED",
               f"inviting {shown} failed ({body.get('message') or resp.status_code}); {retry}")
-    data = _post_json(_add_message_url(port, cid), {"text": message, **_origin_session()})
+    first: dict = {"text": message, **_origin_session()}
+    if form_att:
+        first["attachment"] = [form_att]
+    data = _post_json(_add_message_url(port, cid), first)
     data["invited"] = invitees
     _emit_send_result(cid, data)
 

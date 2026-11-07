@@ -28,7 +28,7 @@ import asyncio
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Sequence
 
 from pydantic.alias_generators import to_snake
 
@@ -531,6 +531,7 @@ class Activity:
         skipped: "Optional[int]" = None,
         errors: "Optional[int]" = None,
         error_message: str = "error",
+        error_samples: "Sequence[ActivityErrorSpec]" = (),
     ) -> "Activity":
         """Move the structural counters to ABSOLUTE values, never backwards.
 
@@ -556,7 +557,14 @@ class Activity:
             delta = int(errors) - self.errors_count
             if delta > 0:
                 self.errors_count += delta
-                self.errors.append(ActivityErrorSpec(message=str(error_message), ts=_now()))
+                # The samples the producer named, newest delta's worth; the bare
+                # message only when it named none.
+                known = {(e.ref, e.message) for e in self.errors}
+                fresh = [e for e in error_samples if (e.ref, e.message) not in known][-delta:]
+                if fresh:
+                    self.errors.extend(e.model_copy(update={"ts": e.ts or _now()}) for e in fresh)
+                else:
+                    self.errors.append(ActivityErrorSpec(message=str(error_message), ts=_now()))
                 self.errors = trim_errors(self.errors)
         return self._touch()
 

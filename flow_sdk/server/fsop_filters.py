@@ -6,7 +6,8 @@ Composition order (each layer can drop the event before later layers run):
    declared on the trigger config. Applied even when respect_gitignore=False.
 2. Nested `.gitignore` stack — only when `trigger.respect_gitignore=True`.
    Reuses `flow_sdk/fs_store/gitignore.py` (_WALK_IGNORED fast-path +
-   GitIgnoreSpec stack with last-match-wins semantics).
+   git-exact `.gitignore` stack; an event inside an ignored folder is ignored).
+   `.flowignore` does not apply: it governs the index, not triggers.
 3. Path-shape gate: relative_to(watched), single-segment for non-recursive
    folder mode, `watch_glob` fnmatch — preserves the previous behavior so
    FSEvents-emitted parent-dir events don't slip through.
@@ -37,7 +38,7 @@ from pathspec import GitIgnoreSpec
 
 from flow_sdk.fs_store.gitignore import (
     GitignoreStack,
-    is_ignored,
+    is_ignored_below,
     load_gitignore_stack,
     push_gitignore,
 )
@@ -146,7 +147,7 @@ class CompositeFsopFilter:
                 is_dir = resolved.is_dir()
             except OSError:
                 is_dir = False
-            if is_ignored(resolved, is_dir, self._gitignore_stack, self._gitignore_root):
+            if is_ignored_below(resolved, is_dir, self._gitignore_stack, self._gitignore_root):
                 return False
 
         # Layer 3 — path-shape gate (same as the previous _match impl).

@@ -92,6 +92,11 @@ const worldRows: Row[] = [
   { name: 'app: a route of an audience proxy', url: `/dock/app/service_endpoint-${PROXY}?route=sales` },
   { name: 'project: the project page', url: `/dock/project/${P}` },
   { name: 'project: the project setup page (Project Home ☰ → Project setup)', url: `/dock/project/${P}/project-setup` },
+  {
+    // An agent's "Deploy" lands here with the agent preset; a row opens one deployment by the URL.
+    name: 'project: the project deployments page, on a deployment / with a main agent preset',
+    url: `/dock/project/${P}/project-deployments?deployment=${PROC}&deploy_main_agent=${PROC}`,
+  },
   { name: 'vibe: an agentic process as the Vibe host (aligned to its project)', url: `/dock/vibe/agentic_process-${PROC}` },
   {
     name: 'vibe: an agentic process as the Vibe host (scoped)',

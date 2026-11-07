@@ -43,7 +43,14 @@ interface DiagnoseRunState {
   share: DiagnoseShare | null;
   /** "Check first": the request the person is checking before they send it. */
   draft: AskDraft | null;
-  start: (message: string, files: File[], share: DiagnoseShare | null, draft?: AskDraft | null) => void;
+  /** `onFixed` hears what changed when the diagnosis reports it repaired the cause. */
+  start: (
+    message: string,
+    files: File[],
+    share: DiagnoseShare | null,
+    draft?: AskDraft | null,
+    onFixed?: (summary: string) => void,
+  ) => void;
   reset: () => void;
 }
 
@@ -148,7 +155,7 @@ export const useDiagnoseRunStore = create<DiagnoseRunState>((set, get) => ({
   done: null,
   share: null,
   draft: null,
-  start: (message, files, share, draft = null) => {
+  start: (message, files, share, draft = null, onFixed) => {
     if (get().running) return;
     set({ running: true, lines: [], done: null, share, draft });
     const push = (line: DiagnoseLine) => set((s) => ({ lines: [...s.lines, line] }));
@@ -167,6 +174,8 @@ export const useDiagnoseRunStore = create<DiagnoseRunState>((set, get) => ({
           sharePending: !!ev.share_pending,
         };
         set({ done });
+        const d = done.diagnosis;
+        if (onFixed && d?.status === 'fixed') onFixed(d.fix || d.summary || d.title);
         announce(done, share, draft);
       }
     };

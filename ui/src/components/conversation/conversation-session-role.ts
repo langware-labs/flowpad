@@ -18,3 +18,20 @@ export function isConversationSession(
 ): boolean {
   return process.process_type === ProcessKind.Conversation || hasSessionRole(conversation, process.id);
 }
+
+/** The sidecar that marks a linked process as a message's plan-implementation session (Implement Plan), with
+ *  the message it implements. Mirrors Python `PLAN_ROLE`. Written when the session starts, so the conversation
+ *  answers "does this thread have a plan session" from its own context — never from a scan of every process. */
+export const PLAN_ROLE = { role: 'plan' } as const;
+
+/** The conversation's plan sessions: process id → the message it implements. */
+export function planSessionEntries(
+  conversation: Pick<Conversation, 'getContextEntryData' | 'contextOfType'>,
+): { processId: string; messageId: string }[] {
+  return conversation.contextOfType(AgenticProcess.type, 'shared').flatMap((tid) => {
+    const data = conversation.getContextEntryData(tid);
+    return data?.role === PLAN_ROLE.role && typeof data.message_id === 'string'
+      ? [{ processId: String(tid.id), messageId: data.message_id }]
+      : [];
+  });
+}

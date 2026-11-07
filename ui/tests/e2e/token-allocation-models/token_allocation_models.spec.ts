@@ -45,9 +45,11 @@ test('the model is picked from a searchable list of the models the source offers
   const offered = [...new Set(((await relayed.json()).data as { id: string }[]).map((m) => m.id))].sort();
 
   await page.goto(AGENT_PATH);
-  await page.getByRole('button', { name: 'New deployment' }).click();
+  // "Deploy" opens the project's Deployments with this agent preset: New deployment is open there.
+  await page.getByTestId('agent-summary-new-deployment').click();
   const dialog = page.getByTestId('new-deployment-dialog');
-  await dialog.getByTestId('new-deployment-type-sm').click();
+  await dialog.getByTestId('new-deployment-size-sm').click();
+  await dialog.getByTestId('new-deployment-next').click();
   await dialog.getByTestId('token-allocation-toggle').click();
   await dialog.getByTestId('token-allocation-source').selectOption(`llm_endpoint-${SOURCE_ID}`);
 

@@ -6,9 +6,9 @@ import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
 /**
  * useProjectAssetMenu — the scoped project's Assets menu, computed server-side.
  *
- * Backs two things in the Assets navigator: the per-type counts (which decide
- * WHICH type rows exist, not just their badges) and the nested menu under each
- * dependency row. Because the backend walks dependencies recursively, a
+ * Backs the Packages rows of the Assets navigator: the nested menu under each
+ * dependency row and each folder's per-type badge. (Type-row badges come from
+ * asset-stats, the same scoped source as their lists.) Because the backend walks dependencies recursively, a
  * folder that is itself a Project contributes its own dependencies too.
  *
  * Read-only: `get-assets` in menu mode mints nothing and indexes nothing, so

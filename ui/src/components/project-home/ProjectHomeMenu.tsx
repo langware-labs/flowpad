@@ -18,7 +18,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { type Project, vfsToOsPath, type Workspace, workspaceDisplayName, workspaceForPath } from '@sdk';
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
-import { LayoutGrid, Loader2, Menu, Wrench } from 'lucide-react';
+import { Cloud, LayoutGrid, Loader2, Menu, Wrench } from 'lucide-react';
 import { useProjectSetupLeft } from '@sdk/react/hooks/use-project-readiness';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -90,6 +90,13 @@ export function ProjectHomeMenu({ project }: { project: Project }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuItem
+            data-testid="project-home-deployments"
+            onSelect={() => navigation.openDock(DockPointer.forProjectDeployments(String(project.id)))}
+          >
+            <Cloud className="me-2 h-4 w-4" />
+            <Trans>Deployments</Trans>
+          </DropdownMenuItem>
           {!isHubOnly() && (
             <DropdownMenuItem
               data-testid="project-home-setup"

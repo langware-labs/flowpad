@@ -60,7 +60,7 @@ describe('ProjectHomeMenu — Project setup', () => {
     await owing(0);
     const item = await openMenu();
     const items = screen.getAllByRole('menuitem');
-    expect(items[0]).toBe(item);
+    expect(items[1]).toBe(item); // after Deployments
     await userEvent.setup().click(item);
     expect(openDock).toHaveBeenCalledTimes(1);
     expect(openDock.mock.calls[0][0].toUrl?.() ?? String(openDock.mock.calls[0][0].pointer)).toContain(

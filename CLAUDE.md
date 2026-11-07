@@ -268,6 +268,16 @@ Three tiers, one base:
 
 * **The authoring form** (how a schema is written as data — `data_schema.json`, an agent's `input`/`output`) is `"string"`, `{field: shape}`, `[shape]`, plus `?shape` (optional) and `"?[shape]"` (an optional list), `enum:a|b` (closed set), `{"*": shape}` (map), and a kind name as a field (`"crm.company"` — a value or a `<kind>.id.<uuid>` reference; `"a|b"` for several kinds, reference only). Those extras are INPUT only: `to_authoring_form` renders a hand-written class back without them, and a `dict[...]` field renders ONLY on a class carrying a `spec_kind` (it short-circuits to the kind). `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
 
+## Nothing from a project runs without the user's approval (non-negotiable)
+
+**An automation's on/off belongs to the machine it runs on and is never read from or written to git.** A
+project can only *recommend* an automation (`recommended` in its `trigger.json`); one that arrives with a
+project stays off until the user turns it on here — the project's setup window offers it (Enable / Disable),
+and a `git pull` that changes it never moves the choice. The one writer is `set_trigger_on`
+(`flow_sdk/builtin/trigger.py`); the rules are in [`docs/automations.md`](docs/automations.md) "On, off and
+recommended". A machine the hub runs only for a deployed agent is the exception: the deploy was its owner's
+approval, so recommended rules are on there.
+
 ## Data sources are self-contained assets (non-negotiable)
 
 **A data driver is an asset, and EVERYTHING one driver needs lives in its asset folder** — `agentic-assets/data_driver/<name>/`: `data_driver.json` (the `DataDriverSpec`), `source.py` (the one `flow_sdk.sources.Source` subclass, with the source's own `query()` and classmethods for send addressing, cache roots, webhooks, permalinks), any helper modules it splits into (`transport.py`, a mapper), its `tests/`, its editor webapp, and a `README.md` when the driver needs explaining. The manifest `name` is the folder name and the registry key. Shipped and authored sources are the same kind of thing and load through the same loader.

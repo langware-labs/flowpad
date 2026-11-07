@@ -32,6 +32,8 @@ Public helpers used outside the indexer:
 from __future__ import annotations
 
 import json
+import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -312,30 +314,68 @@ def get_claude_session(uid: str, project: str | Path | None = None) -> FSRecord 
     This is a path/envelope resolver, never a content reader: it extracts with
     ``include_content=False`` so it never runs the full ``worker_summary_log``
     transcript parse. Every caller reads only ``jsonl_path``/``cwd``/existence —
-    none touch ``.content`` — and this method is reached from hot paths (e.g.
-    ``transcript_descriptor``), so it must stay cheap.
+    none touch ``.content``. A caller that needs only the location uses
+    :func:`find_claude_session_path`, which reads no file at all.
     """
+    candidate = find_claude_session_path(uid, project)
+    if candidate is None:
+        return None
+    try:
+        return extract_claude_session_from_path(candidate, include_content=False)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def find_claude_session_path(uid: str, project: str | Path | None = None) -> Path | None:
+    """Where session ``uid``'s transcript is, without opening it. O(1) when ``project`` is the cwd."""
     projects_dir = get_instance_settings().claude_projects_dir
     if not projects_dir.is_dir():
         return None
     fname = f"{uid}.jsonl"
-
     if project:
-        encoded = str(project).replace("/", "-")
-        candidate = projects_dir / encoded / fname
+        # Claude names the folder after the cwd with every non-alphanumeric char as ``-``;
+        # a wrong guess falls through to the listing of every project folder below.
+        candidate = projects_dir / re.sub(r"[^a-zA-Z0-9]", "-", str(project)) / fname
         if candidate.exists():
-            try:
-                return extract_claude_session_from_path(candidate, include_content=False)
-            except (json.JSONDecodeError, OSError):
-                return None
+            return candidate
+    return _find_in_listing(projects_dir, fname)
 
-    for project_dir in projects_dir.iterdir():
-        if not project_dir.is_dir():
+
+# Each project folder's session files, kept with the folder's mtime. A lookup that missed the
+# cwd hint probed every project folder for its one name, on the event loop (prod: 505 processes
+# whose transcripts are gone x 652 folders = 10 ms each). Now a miss costs one stat per folder,
+# and only a folder that changed (a session created or removed in it) is listed again.
+_folders: dict[str, tuple[int, frozenset[str]]] = {}
+_folders_root: Path | None = None
+_MTIME_SETTLE_NS = 1_000_000_000
+
+
+def _find_in_listing(projects_dir: Path, fname: str) -> Path | None:
+    global _folders_root
+    if _folders_root != projects_dir:
+        _folders.clear()
+        _folders_root = projects_dir
+    try:
+        folders = [e for e in os.scandir(projects_dir) if e.is_dir()]
+    except OSError:
+        return None
+    seen = set()
+    settled_before = time.time_ns() - _MTIME_SETTLE_NS
+    for folder in folders:
+        seen.add(folder.path)
+        try:
+            mtime = folder.stat().st_mtime_ns
+            known = _folders.get(folder.path)
+            # File timestamps are coarse (a kernel tick on Linux): a session written in the same
+            # tick as the last listing leaves the mtime unchanged. A folder changed that recently
+            # is listed again rather than trusted.
+            if known is None or known[0] != mtime or mtime > settled_before:
+                known = (mtime, frozenset(e.name for e in os.scandir(folder.path) if e.name.endswith(".jsonl")))
+                _folders[folder.path] = known
+        except OSError:
             continue
-        candidate = project_dir / fname
-        if candidate.exists():
-            try:
-                return extract_claude_session_from_path(candidate, include_content=False)
-            except (json.JSONDecodeError, OSError):
-                continue
+        if fname in known[1]:
+            return Path(folder.path) / fname
+    for gone in _folders.keys() - seen:
+        del _folders[gone]
     return None

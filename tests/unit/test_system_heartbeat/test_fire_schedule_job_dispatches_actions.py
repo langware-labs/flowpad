@@ -341,8 +341,11 @@ async def test_a_fire_records_the_schedules_next_run(initialize_test_db, monkeyp
 @pytest.mark.asyncio
 async def test_a_scheduled_run_uses_its_place(initialize_test_db, tmp_path, launches) -> None:
     calls, _ = launches
-    agent = await _agent(tmp_path, "sched-place-local")
-    local = await agent.local_deployment()
+    from tests.unit.agent._seed import seed_project
+
+    project = await seed_project(tmp_path / "sched-place-project")
+    agent = await _agent(tmp_path, "sched-place-local", project_id=project.id)
+    local = await agent.deploy("local")  # its project's local deployment, the agent as main
     trigger = await Trigger(
         name="placed", trigger_type=TriggerType.SCHEDULE, sched_trigger_type="cron", expr="0 9 * * *",
         parent_type_id=str(agent.typeid), runs_on=local.id,
@@ -363,7 +366,7 @@ async def test_a_schedule_for_another_place_never_runs_here(initialize_test_db, 
     calls, log = launches
     agent = await _agent(tmp_path, "sched-place-cloud")
     cloud = Deployment(
-        name="cloud", parent_type_id=str(agent.typeid),
+        name="cloud", parent_type_id="project-11111111-2222-4333-8444-555555555556", main_agent_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
     )

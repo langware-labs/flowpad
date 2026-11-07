@@ -1,8 +1,9 @@
-"""An agent's cloud deploy over HTTP (``POST agent/<id>/deploy``): the request, its steps, and the activity they run under.
+"""A project's cloud deploy over HTTP (``POST project/<id>/deploy``): the request, its steps, and the activity they run under.
 
-The deploy is six plain steps (``DEPLOYMENT_STEPS``) — publish the agent, share its hub dependencies, plan its
+A deployment places the whole PROJECT on a machine, with one optional main agent answering every call there.
+The deploy is six plain steps (``DEPLOYMENT_STEPS``) — publish the project, share its hub dependencies, plan its
 placement on the hub, store the values typed for it, check readiness, have the hub place it on a machine — that know nothing of progress.
-:func:`run_deployment_steps` runs them under the agent's ``deploy`` activity, each one a child of it: everything up
+:func:`run_deployment_steps` runs them under the project's ``deploy`` activity, each one a child of it: everything up
 to readiness before it answers, so a refusal (a missing value, a publish problem) is the answer; the machine after,
 the activity telling the screen how it goes.
 
@@ -27,31 +28,32 @@ from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec
 if TYPE_CHECKING:
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.builtin.deployment import Deployment
+    from flow_sdk.builtin.project import Project
     from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.schema.data_spec.requirement_spec import ReadinessSpec
 
 logger = logging.getLogger(__name__)
 
-#: The activity a deploy reports on, under its agent.
+#: The activity a deploy reports on, under its project.
 DEPLOY_ACTIVITY = "deploy"
 
 #: ``token_allocation`` not given: leave the deployment's as it is.
 _UNSET = object()
 
 
-class AgentDeployRequest(DataSpec):
-    """Where to deploy an agent and how. ``provider``: ``local`` is this computer, any other the hub's name for a
+class DeployRequest(DataSpec):
+    """Where to deploy a project and how. ``provider``: ``local`` is this computer, any other the hub's name for a
     compute provider, empty the hub's default. ``environment``: the credential environment a cloud placement
     reads (empty: ``production``). ``token_allocation``: the placement's own budget — absent leaves it as it is,
     ``null`` releases it."""
 
     model_config = ConfigDict(frozen=True)
-    spec_kind: ClassVar[str] = "agent.deploy_request"
+    spec_kind: ClassVar[str] = "project.deploy_request"
 
     provider: str = ""
     environment: Optional[str] = None
     token_allocation: Optional[TokenAllocationSpec] = None
-    #: The cloud box size for THIS deploy (``sm`` | ``md`` | ``lg``); empty: the agent's own ``machine_size``.
+    #: The cloud box size for THIS deploy (``sm`` | ``md`` | ``lg``); empty: the main agent's ``machine_size``.
     #: Sent with the deploy, never written into agent.json: a deploy must not dirty the checkout it deploys.
     machine_size: Optional[Literal["sm", "md", "lg"]] = None
     #: The planned placement this deploy is for (the one a refused deploy named); empty: a new one.
@@ -59,6 +61,12 @@ class AgentDeployRequest(DataSpec):
     #: Values typed in the deploy dialog, ``{credential: {variable: value}}``: stored on the placement before
     #: the readiness gate, so one Launch is enough and an abandoned dialog leaves no row. Never logged.
     values: dict[str, dict[str, str]] = Field(default_factory=dict, repr=False)
+    #: What to deploy: a tag, a release or a commit; ``source_ref`` names it (empty: the checkout's HEAD).
+    source_kind: Literal["tag", "release", "commit"] = "commit"
+    source_ref: Optional[str] = None
+    #: The agent that answers on the box (``agent-<uuid>`` or its id); absent: the project's ``main_agent``
+    #: recommendation; ``""`` (given, empty): no agent.
+    main_agent_id: Optional[str] = None
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -80,17 +88,22 @@ class AgentDeployRequest(DataSpec):
         """Whether the request names a token allocation at all — ``null`` (release it) included."""
         return "token_allocation" in self.model_fields_set
 
+    @property
+    def main_agent_given(self) -> bool:
+        return "main_agent_id" in self.model_fields_set
+
 
 class DeployRunning(RuntimeError):
-    """A deploy of this agent is already running; a second would race it for the same placement."""
+    """A deploy of this project is already running; a second would race it for the same placement."""
 
 
 @dataclass
 class DeployContext:
     """What one deploy's steps share: what was asked, then what the steps found. ``token_allocation`` keeps
-    ``Agent.plan_deployment``'s meaning (omitted: unchanged)."""
+    ``Project.plan_deployment``'s meaning (omitted: unchanged). ``agent`` is the main agent, or None."""
 
-    agent: "Agent"
+    project: "Project"
+    agent: Optional["Agent"]
     actor: "TypeId"
     environment: Optional[str]
     provider: Optional[str]
@@ -101,6 +114,8 @@ class DeployContext:
     deployment: Optional["Deployment"] = None
     ready: Optional["ReadinessSpec"] = None
     values: Optional[dict[str, dict[str, str]]] = field(default=None, repr=False)
+    source_kind: str = "commit"
+    source_ref: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -116,58 +131,83 @@ class DeployStep:
 
 
 async def _share_dependencies(ctx: DeployContext) -> None:
-    # Its ``hub:`` dependencies are fetched on the machine with the agent's own login.
-    from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
+    # Its ``hub:`` dependencies are fetched on the machine with the main agent's own login.
     from flow_sdk.builtin.hub_dependencies import share_hub_dependencies  # noqa: PLC0415
 
-    await share_hub_dependencies(ctx.agent, await owning_project(ctx.agent))
+    if ctx.agent is not None:
+        await share_hub_dependencies(ctx.agent, ctx.project)
 
 
 async def _unplaced(ctx: DeployContext) -> Optional[str]:
-    """The placement an earlier attempt planned and never put on a machine: this attempt continues it, so a
-    refused deploy leaves no second row and a value stored on the first is not lost."""
+    """This project's placement on the same provider and environment with the same main agent: a deploy
+    continues it, planned or already on a machine, so its stored values and the triggers that run on it
+    keep their deployment id. The hub brings a placed one's machine to the new commit in place."""
     from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     row = await Deployment.find_existing(
-        str(ctx.agent.typeid),
+        str(ctx.project.typeid),
         ctx.provider or DEFAULT_CLOUD_PROVIDER,
         environment=ctx.environment or DEFAULT_CLOUD_ENVIRONMENT,
     )
-    return str(row.id) if row is not None and not (row.origin and row.origin.external_id) else None
+    if row is None:
+        return None
+    return str(row.id) if row.main_agent_id == _main_typeid(ctx) else None
+
+
+def _main_typeid(ctx: DeployContext) -> Optional[str]:
+    return str(ctx.agent.typeid) if ctx.agent is not None else None
 
 
 async def _plan(ctx: DeployContext) -> None:
-    # The hub makes a new placement for a plan that names none: a deploy for a planned one names it.
-    ctx.deployment = await ctx.agent.plan_deployment(
-        ctx.environment,
-        provider=ctx.provider,
-        token_allocation=ctx.token_allocation,
-        deployment_id=ctx.deployment_id or await _unplaced(ctx),
-    )
+    # The hub makes a new placement for a plan that names none: a redeploy names the one it continues.
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+    async def plan(deployment_id: Optional[str]):
+        return await ctx.project.plan_deployment(
+            ctx.environment,
+            provider=ctx.provider,
+            token_allocation=ctx.token_allocation,
+            deployment_id=deployment_id,
+            main_agent=ctx.agent,
+        )
+
+    if ctx.deployment_id:
+        ctx.deployment = await plan(ctx.deployment_id)
+        return
+    found = await _unplaced(ctx)
+    try:
+        ctx.deployment = await plan(found)
+    except HubError as exc:
+        # A row the hub no longer has (its placement was removed there) is not one to continue.
+        if not found or exc.status_code != 404:
+            raise
+        # Dropped here too, or every later deploy would find it first and plan yet another placement.
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+        await Deployment.mirror_hub_row({"id": found}, "delete")
+        ctx.deployment = await plan(None)
 
 
 async def _store_values(ctx: DeployContext) -> None:
     # Into the placement's own store, the one the readiness gate reads next.
-    from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
     from flow_sdk.builtin.credential_service import set_credential_by_name  # noqa: PLC0415
 
-    project = await owning_project(ctx.agent)
     for credential, values in (ctx.values or {}).items():
         await set_credential_by_name(
-            credential, values, project_id=str(project.id) if project else None, deployment_id=str(ctx.deployment.id)
+            credential, values, project_id=str(ctx.project.id), deployment_id=str(ctx.deployment.id)
         )
 
 
 async def _check_readiness(ctx: DeployContext) -> str:
-    # The gate: the placement's store must hold every value the agent needs before a machine is paid for (the
-    # hub checks the same names again). Funding is reported, never a refusal.
+    # The gate: the placement's store must hold every value the project and its main agent need before a
+    # machine is paid for (the hub checks the same names again). Funding is reported, never a refusal.
     from flow_sdk.builtin.readiness import NotReady, readiness  # noqa: PLC0415
 
-    ctx.ready = await readiness(ctx.agent, ctx.deployment)
+    ctx.ready = await readiness(ctx.agent, ctx.deployment, project=ctx.project)
     if not ctx.ready.ready:
         raise NotReady(ctx.ready, ctx.deployment)
-    return "; ".join(funding_warnings(ctx.agent, ctx.ready))
+    return "; ".join(funding_warnings(ctx.agent, ctx.ready)) if ctx.agent is not None else ""
 
 
 def funding_warnings(agent: "Agent", ready: "ReadinessSpec") -> list[str]:
@@ -201,17 +241,20 @@ async def _start_machine(ctx: DeployContext) -> None:
 
     try:
         await deploy_entity_to_cloud(
-            ctx.agent,
+            ctx.project,
             ctx.environment,
             provider=ctx.provider,
             require=ctx.ready.value_names(),
             deployment_id=str(ctx.deployment.id),
-            machine_size=ctx.machine_size,
+            machine_size=ctx.machine_size or (getattr(ctx.agent, "machine_size", None) if ctx.agent else None),
+            main_agent_id=_main_typeid(ctx),
+            source_kind=ctx.source_kind,
+            source_ref=ctx.source_ref,
         )
     except HubError as exc:
         # A transport failure (the load balancer dropped the answer): the hub's push into the local row is the answer.
         if exc.status_code == 0 and exc.kind is HubFailureKind.OFFLINE:
-            logger.warning("deploy of %s lost the hub's answer (%s); waiting for its push", ctx.agent.id, exc)
+            logger.warning("deploy of %s lost the hub's answer (%s); waiting for its push", ctx.project.id, exc)
             await wait_until_placed(str(ctx.deployment.id))
             return
         if blockers := dependency_blockers(exc.data):
@@ -221,9 +264,9 @@ async def _start_machine(ctx: DeployContext) -> None:
 
 
 DEPLOYMENT_STEPS = [
-    # A deploy names an agent the hub has to already know, at the version being deployed: published every time
+    # A deploy names a project the hub has to already know, at the version being deployed: published every time
     # (a git-backed project pushes its HEAD — a no-op when the hub has it — or refuses uncommitted/unpushed work).
-    DeployStep("publish", "Publish the agent", lambda ctx: ctx.agent.ensure_on_hub(ctx.actor, force=True), inline=True),
+    DeployStep("publish", "Publish the project", lambda ctx: _publish(ctx), inline=True),
     DeployStep("dependencies", "Share its dependencies", _share_dependencies, inline=True),
     DeployStep("plan", "Plan the deployment", _plan, inline=True),
     DeployStep("values", "Store the values you typed", _store_values, inline=True),
@@ -233,27 +276,34 @@ DEPLOYMENT_STEPS = [
 ]
 
 
+async def _publish(ctx: DeployContext) -> None:
+    await ctx.project.ensure_on_hub()
+    if ctx.agent is not None:
+        await ctx.agent.ensure_on_hub(ctx.actor, force=True)
+
+
 async def _record_deploy_failed(deployment: "Deployment", reason: str) -> None:
     """The placement says it failed, and why: otherwise its row reads as if the machine were on its way."""
     deployment.status = deployment.status.model_copy(update={"sync_state": "error", "message": reason})
     await deployment.save()
 
 
-async def _tell_deploy_failed(agent: "Agent", reason: str) -> None:
+async def _tell_deploy_failed(project: "Project", reason: str) -> None:
     """A deploy that failed after the request was answered is told to the person, not only logged."""
     from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
 
     try:
         await notify_desktop(
-            "deploy_failed", title=f"Deploy of {agent.name or agent.id} failed", body=reason, level="error"
+            "deploy_failed", title=f"Deploy of {project.name or project.id} failed", body=reason, level="error"
         )
     except Exception:  # noqa: BLE001 -- the activity row still carries the failure
-        logger.warning("could not tell the deploy failure of %s", agent.id, exc_info=True)
+        logger.warning("could not tell the deploy failure of %s", project.id, exc_info=True)
 
 
 async def run_deployment_steps(
-    agent: "Agent",
+    project: "Project",
     actor: "TypeId",
+    main_agent: Optional["Agent"] = None,
     environment: Optional[str] = None,
     *,
     provider: Optional[str] = None,
@@ -261,31 +311,43 @@ async def run_deployment_steps(
     machine_size: Optional[str] = None,
     deployment_id: Optional[str] = None,
     values: Optional[dict[str, dict[str, str]]] = None,
+    source_kind: str = "commit",
+    source_ref: Optional[str] = None,
 ) -> dict[str, Any]:
-    """``DEPLOYMENT_STEPS`` under *agent*'s ``deploy`` activity, each as its child — running, then done or failed
+    """``DEPLOYMENT_STEPS`` under *project*'s ``deploy`` activity, each as its child — running, then done or failed
     with its error — then the activity's end. The ``inline`` steps run first, a failure raised to the caller (and
     ending the activity); the rest run after this returns, a failure told only on the activity. ``deployment_id``
     names the planned placement the deploy is for; none plans a new one.
 
-    The answer: where the activity reports, and the placement it lands on. Single-flight per agent: a deploy
+    The answer: where the activity reports, and the placement it lands on. Single-flight per project: a deploy
     already running raises :class:`DeployRunning`.
     """
     from flow_sdk.activity import Activity  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_proxy import DEPLOY_TIMEOUT  # noqa: PLC0415
     from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
 
-    subject = str(agent.typeid)
+    subject = str(project.typeid)
     try:
         # Held for as long as the hub may take to place the machine; a holder past it is claimable again.
         root = Activity.try_claim(DEPLOY_ACTIVITY, subject_entity=subject, timeout_seconds=int(DEPLOY_TIMEOUT.read))
     except RuntimeError as exc:
-        raise DeployRunning(f"{agent.name or agent.id} is already being deployed") from exc
+        raise DeployRunning(f"{project.name or project.id} is already being deployed") from exc
     # The whole outline before any step starts: every step is on the screen, pending, at once.
-    root.label(f"Deploy {agent.name or agent.id}").plan(
+    root.label(f"Deploy {project.name or project.id}").plan(
         [{"name": step.name, "label": step.label} for step in DEPLOYMENT_STEPS]
     )
     ctx = DeployContext(
-        agent, actor, environment, provider, token_allocation, machine_size, deployment_id, values=values
+        project,
+        main_agent,
+        actor,
+        environment,
+        provider,
+        token_allocation,
+        machine_size,
+        deployment_id,
+        values=values,
+        source_kind=source_kind,
+        source_ref=source_ref,
     )
 
     async def run(steps: list[DeployStep]) -> None:
@@ -306,7 +368,7 @@ async def run_deployment_steps(
             root.fail(reason)
             logger.warning("cloud deploy of %s failed: %s", subject, exc)
             await _record_deploy_failed(ctx.deployment, reason)
-            await _tell_deploy_failed(agent, reason)
+            await _tell_deploy_failed(project, reason)
             return
         root.done()
 
@@ -316,7 +378,7 @@ async def run_deployment_steps(
         root.fail(str(exc) or type(exc).__name__)
         raise
     create_detached_task(
-        run_after_the_answer([step for step in DEPLOYMENT_STEPS if not step.inline]), name=f"agent-deploy:{agent.id}"
+        run_after_the_answer([step for step in DEPLOYMENT_STEPS if not step.inline]), name=f"project-deploy:{project.id}"
     )
     return {
         "activity": {"path": DEPLOY_ACTIVITY, "subject_entity": subject},
@@ -327,7 +389,7 @@ async def run_deployment_steps(
 __all__ = [
     "DEPLOY_ACTIVITY",
     "DEPLOYMENT_STEPS",
-    "AgentDeployRequest",
+    "DeployRequest",
     "DeployRunning",
     "dependency_blockers",
     "run_deployment_steps",

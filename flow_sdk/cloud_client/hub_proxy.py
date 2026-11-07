@@ -234,7 +234,8 @@ class HubProxy:
         except Exception as e:  # noqa: BLE001 — any transport failure is "offline"
             logger.warning("[hub] %s %s transport error: %s", method, url, e)
             _note_reach(0)
-            await _report_unreachable(method, url, e)
+            if not quiet:  # a quiet call owns its failure; no "hub unreachable" warning for it
+                await _report_unreachable(method, url, e)
             raise HubError(0, str(e) or type(e).__name__) from e
         _note_reach(resp.status_code)
         return resp
@@ -664,6 +665,7 @@ def _unwrap(resp: httpx.Response, *, method: str = "", url: Any = "", strict: bo
             raise HubError(
                 0, f"the hub could not be reached (HTTP {resp.status_code} from the way there)",
                 kind=HubFailureKind.OFFLINE,
+                via_status=resp.status_code,
             )
         raise HubError(
             resp.status_code, _extract_reason(resp), code=_extract_error_code(resp), data=_extract_data(resp)

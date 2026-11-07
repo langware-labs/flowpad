@@ -1025,7 +1025,7 @@ async def _self_heal_gone_invitation(inv_id: str, *, context: str) -> ApiFailRes
     try:
         orphan = await LocalInvitation.get_one({"id": inv_id})
         if orphan is not None:
-            await orphan.delete()
+            await orphan.retire("revoked")
     except Exception as del_e:  # noqa: BLE001
         logger.warning("[%s] orphan local delete failed inv=%s: %s", context, inv_id[:8], del_e)
     return ApiFailResponse(
@@ -1419,9 +1419,13 @@ async def handle_invitation_decline(
         if msg.startswith("conversation-"):
             target_conv_id = msg.removeprefix("conversation-")
         try:
-            await inv.delete()
+            if inv.target_type:
+                # A share's conversation is the 1:1 thread with the person who shared — other shares live
+                # there too, so it stays.
+                target_conv_id = None
+            await inv.retire("declined", someone_typeid)
         except Exception as e:  # noqa: BLE001
-            logger.warning("[invitation-decline] local inv delete failed: %s", e)
+            logger.warning("[invitation-decline] local inv update failed: %s", e)
     if target_conv_id:
         try:
             conv = await Conversation.get_one({"id": target_conv_id})
@@ -2638,7 +2642,31 @@ def _invitation_common_fields(hub_inv: dict) -> dict:
         "expiration_at": expiration_at or None,
         "sender_user_id": inviter.get("user_id"),
         "sender_name": inviter.get("name"),
+        **_invitation_answer_fields(hub_inv),
     }
+
+
+def _invitation_answer_fields(hub_inv: dict) -> dict:
+    """What the share is and what became of it, when the hub says: ``status`` / ``resolved_at``, and
+    the shared entity (``target``) — which a share carried in a conversation now also names. Keys the
+    hub leaves out are left out here, so an older hub never blanks what a row already knows."""
+    from flow_sdk.builtin.invitation import INVITATION_STATES  # noqa: PLC0415
+    from flow_sdk.utils.serialization import iso_to_datetime  # noqa: PLC0415
+
+    out: dict = {}
+    if hub_inv.get("status") in INVITATION_STATES:
+        out["status"] = hub_inv["status"]
+    if hub_inv.get("resolved_at"):
+        try:
+            out["resolved_at"] = iso_to_datetime(hub_inv["resolved_at"])
+        except ValueError:
+            pass
+    target = hub_inv.get("target")
+    if isinstance(target, dict) and target.get("type") and target.get("id"):
+        out.update(target_type=target["type"], target_id=target["id"], target_name=target.get("name"))
+        if target.get("roles"):
+            out["target_roles"] = target["roles"]
+    return out
 
 
 def _membership_cls(target_type: str | None):
@@ -4018,7 +4046,9 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         for c in local_rows if local_rows is not None else await Conversation.get_all({}):
             # A row a data source feeds (a help-desk ticket staff returned) is the source's to keep:
             # out of the hub list means "not in it", not "gone".
-            if c.remote and c.id and c.id not in seen_ids and not c.channel_source_id:
+            # A conversation holding invites is the record of what was shared: kept even when the hub
+            # stops listing it (a declined or revoked share leaves the person outside it).
+            if c.remote and c.id and c.id not in seen_ids and not c.channel_source_id and not c.carries_invite:
                 try:
                     if await c.heal_if_fake_remote("absent from the hub's conversation list"):
                         continue  # written here: never the person's data
@@ -4323,6 +4353,7 @@ async def _prune_expired_invitations() -> None:
     accepted rows are memberships now and are never invitations to prune.
     """
     from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+    from flow_sdk.builtin.invitation import invitation_answered  # noqa: PLC0415
 
     try:
         local_invs = await LocalInvitation.get_all({})
@@ -4331,7 +4362,8 @@ async def _prune_expired_invitations() -> None:
         return
     for inv in local_invs or []:
         try:
-            if not getattr(inv, "remote", False) or inv.accepted or not inv.is_expired():
+            # Only an unanswered invitation is pruned; an answered one is the record of the share.
+            if not getattr(inv, "remote", False) or invitation_answered(inv) or not inv.is_expired():
                 continue
             await inv.delete()
             logger.info("[invitation-sync] pruned expired invitation %s", (inv.id or "")[:8])
@@ -4739,6 +4771,14 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                             f"and login are restored: {project_payload_error[:160]}"
                         )
                     )
+            else:
+                # Any other shared entity (a machine, a team, an agent…): its hub row, so the mirror is
+                # the real thing (a machine's provider, size, status) and not a name-only husk.
+                hub_row = await HubProxy.try_call(
+                    "GET", membership_target.target_type, membership_target.target_id
+                )
+                if isinstance(hub_row, dict) and hub_row.get("id") == membership_target.target_id:
+                    target_payload.update(hub_row)
             ent = await materialize_remote_membership_entity(
                 cls,
                 target_payload,

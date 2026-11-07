@@ -960,6 +960,18 @@ class FSRecord(Generic[M]):
         from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
+        # Query through the registered typed class — a base-``Entity`` query
+        # doesn't match typed rows, which silently skipped the row delete
+        # (destroy() left the entity behind).
+        entity_cls = SchemaRegistry.get_entity_cls(self.type) or Entity
+        entity = await entity_cls.get_one(QueryFilter.parse({"id": self.id}))
+        if entity is not None:
+            # Entity.delete drops the wiki edges, and the driver drops the FTS row
+            # with the entity row — one transaction, not three.
+            await entity.delete()
+            return
+
+        # No row: clear whatever index traces a shadow-only record left behind.
         try:
             await wiki.delete_for_id(self.type, str(self.id))
         except Exception as wiki_exc:
@@ -971,17 +983,7 @@ class FSRecord(Generic[M]):
                 self.id,
                 wiki_exc,
             )
-
-        # Query through the registered typed class — a base-``Entity`` query
-        # doesn't match typed rows, which silently skipped the row delete
-        # (destroy() left the entity behind).
-        entity_cls = SchemaRegistry.get_entity_cls(self.type) or Entity
-        entity = await entity_cls.get_one(QueryFilter.parse({"id": self.id}))
-        if entity is not None:
-            driver = get_db_driver()
-            if hasattr(driver, "fts_delete"):
-                await driver.fts_delete(entity.id)
-            await entity.delete()
+        await get_db_driver().fts_delete(str(self.id))
 
     async def destroy(self) -> None:
         """Erase the record's entire existence: unindex (entity row, FTS, wiki

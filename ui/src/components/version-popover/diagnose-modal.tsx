@@ -23,6 +23,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 export interface DiagnoseSeed {
   detail: string;
   kind: 'error' | 'warning';
+  /** Called with what changed when the diagnosis repairs the cause. */
+  onFixed?: (summary: string) => void;
 }
 
 interface DiagnoseModalProps {
@@ -95,7 +97,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis, seed = null }: D
       const share = picked.length
         ? { share_with: picked, send_when_done: send, conversation_id: crypto.randomUUID() }
         : null;
-      start(text, files, share);
+      start(text, files, share, null, seed?.onFixed);
     },
     [seed, message, picked, files, start],
   );

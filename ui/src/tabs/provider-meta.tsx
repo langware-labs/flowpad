@@ -175,7 +175,7 @@ export const ProcessTabCard: React.FC<{
   const isAdvanced = useIsAdvanced();
   const inTabTip = useInTabTip();
   const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
-  const agent = useLaunchingAgent(process?.deployment_id);
+  const agent = useLaunchingAgent(process);
   const details = process && isAdvanced ? <ProcessInfoTooltip process={process} statusReason={statusReason} /> : null;
 
   if (!agent) {

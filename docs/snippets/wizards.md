@@ -6,7 +6,7 @@ id: 0a52d5f6-1145-46fd-b1c5-3cc08ed932d5
 A Wizard SEQUENCES calls. Each step names one thing — a ComputeOp or another
 wizard — and reads one answer back. Everything about HOW work is done lives in
 the op ([compute-ops](compute-ops.md)); what is left here is what only a
-sequence owns: order, `on_fail`, the values steps pass each other, and the one
+sequence owns: order, `when`, `on_result`, `on_fail`, the values steps pass each other, and the one
 answer the run gives back ([FlowCall](call-returns.md) §8).
 
 For direct typed chaining, `chain` builds this same sequence. A step's
@@ -192,7 +192,7 @@ result.steps["if-b"].detail            # "step 'if-b': LETTER is 'a', not 'b'"
 `when` is an equality on values already in scope, like `args`: a mapping, never a template
 or an expression. A name not in scope does not match, and says so.
 
-## 6. Stop quietly
+## 6. Return early, with an explicit outcome
 
 ```python
 no = ComputeOpSpec(name="no", subkind="cli", exe_data=CliOp(commands={"darwin": "false", "linux": "false"}))
@@ -213,11 +213,40 @@ result = await run_wizard(
 result.ok                              # True — a "no" was the answer, not a problem
 result.stopped_at                      # 'gate'
 "never" in result.steps                # False
+
+result = await run_wizard(
+    WizardSpec(name="not-needed", steps=[
+        WizardStepSpec(id="gate", ref="no", on_result=[
+            {"when": {"exit_code": 1}, "return": "not_applicable"},
+        ]),
+        WizardStepSpec(id="never", ref="touch"),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.exit_code                       # ExitCode.NOT_APPLICABLE — an explicit no-work outcome
+result.stopped_at                      # 'gate'
+result.value_present                   # False — a skip is not completed output
+"never" in result.steps                # False
+(tmp / "never.txt").exists()          # False
 ```
 
-The third `on_fail`, for a step whose failing IS the sequence's answer: nothing after it
-runs, the run is `OK`, and `stopped_at` says which step decided. A `decision` op is the
-step this exists for ([decisions](decisions.md) §9).
+`on_fail: "stop"` keeps its quiet-success behavior: nothing after the step runs,
+the run is `OK`, and `stopped_at` names the step. Use `on_result` when the
+caller needs to distinguish no work from success or an unavailable service.
+
+Rules are ordered; the first matching `when` returns from the containing wizard.
+Each nonempty match compares public result field paths, including nested data
+such as `verdict.met`, against scalar values. Comparisons are strict: `true`
+does not equal `1`, and a missing field does not equal null. Properties, methods,
+private fields and expressions are not evaluated.
+
+`return: "result"` retains the step's outcome; `return: "not_applicable"` returns
+an explicit skip. A refusal always stops the run and cannot be remapped; busy
+and timed-out results cannot become skips. Non-success early returns have no
+consumable output, while an `OK` return still obeys the wizard's declared output
+and `output_from`. With no matching rule, the existing `on_fail` behavior applies.
+For a decision, match its availability as well as `met` before treating a negative
+answer as no work ([decisions](decisions.md) §9).
 
 ## 7. A wizard that calls itself answers, and never recurses
 
@@ -271,7 +300,9 @@ is left where it is — asked in place, as before — when its answer only means
 something at its moment: a gate (`recheck` / `auto_continue`), one that shows a
 value an earlier step produces (`{{connect.link}}`), a typed answer nobody keeps
 (no `bind`, no wizard `output`), or one the list cannot draw whole (several
-fields, a file, a choice of ways, an AI Assist).
+fields, a file, a choice of ways, an AI Assist). Questions after an unresolved
+`on_result` boundary, including a nested one, also wait until execution reaches
+them: an early return must not ask about work that will never run.
 
 `required` (default `true`) says what a "no" means. Declining a required
 question leaves the run unfinished: the step fails and `on_fail` decides what
@@ -311,7 +342,7 @@ for a run that passed, or for one that only checked.
 | `continue` | is recorded and passed | run in order |
 | `stop` | ends the run QUIETLY: `ok=True`, `stopped_at` names the step | absent — the step's "no" was the answer |
 
-A REFUSAL is not covered by either: it stops the run whatever `on_fail` says,
+A REFUSAL is not covered by these policies: it stops the run whatever `on_fail` or `on_result` says,
 because continuing past an untrusted callee is exactly what the trust gate
 exists to prevent. The run then answers `REFUSED`, naming what it could not
 call — and `ran` still reports whether earlier steps did real work.

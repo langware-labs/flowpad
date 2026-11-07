@@ -22,6 +22,7 @@ import {
   isSessionActive,
   isSessionTerminal,
   RemoteWorkerSession,
+  SessionReplyPolicy,
   Task,
   toplog,
   dataContext,
@@ -64,6 +65,7 @@ import {
   type ConversationItem,
 } from './conversation-items';
 import { indexCalls, runningProcessCalls } from './process-call';
+import { indexForms } from './message-form';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useConversationMessageAttachments } from './useMessageAttachments';
@@ -82,7 +84,7 @@ import {
   oldestCreatedDate,
 } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
-import { failedPromptOf, pendingPromptOf } from './session-turns';
+import { failedPromptOf, pendingPromptOf, sentResultOf } from './session-turns';
 import { isSessionExpired } from './session-card-state';
 import { LiveSessionActivity } from './LiveSessionActivity';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
@@ -385,6 +387,7 @@ export function ConversationView({
   const { runImplementPlan, openPlanSession } = useImplementPlan({
     task,
     conversationId,
+    conversation,
     pointers,
     ensureMapped,
   });
@@ -590,6 +593,17 @@ export function ConversationView({
       live = false;
     };
   }, [conversationId, askRunning]);
+  const forms = useMemo(() => indexForms(messagesById.values()), [messagesById]);
+  const messageFormFor = (id: string) => {
+    const form = forms.formByMessage.get(id);
+    return form ? { form, answers: forms.answersByForm.get(form.form_id) ?? [] } : null;
+  };
+  const formAnswersFor = (id: string) => {
+    const entry = forms.answersByMessage.get(id);
+    if (!entry) return null;
+    const all = forms.answersByForm.get(entry.answers.form_id) ?? [];
+    return { entry, form: forms.formById.get(entry.answers.form_id) ?? null, latest: all.at(-1) === entry };
+  };
   const promptCallFor = (id: string) => {
     const call = calls.callByMessage.get(id);
     if (!call) return null;
@@ -617,7 +631,12 @@ export function ConversationView({
     let prev: { sender_id?: string | null; at: number } | null = null;
     for (const item of groupedItems) {
       const fm = item.kind === ConversationItemKind.POINTER ? messagesById.get(item.messageId) : null;
-      if (item.kind !== ConversationItemKind.POINTER || !fm || fm.kind === FlowMessageKind.SESSION_EVENT || fm.kind === FlowMessageKind.SEALED_NOTE) {
+      if (
+        item.kind !== ConversationItemKind.POINTER ||
+        !fm ||
+        fm.kind === FlowMessageKind.SESSION_EVENT ||
+        fm.kind === FlowMessageKind.SEALED_NOTE
+      ) {
         prev = null;
         continue;
       }
@@ -647,7 +666,11 @@ export function ConversationView({
       new Map(
         [...messagesBySession].map(([sid, fms]) => [
           sid,
-          { failed: failedPromptOf(fms), pending: pendingPromptOf(fms) },
+          {
+            failed: failedPromptOf(fms),
+            pending: pendingPromptOf(fms),
+            result: sentResultOf(fms),
+          },
         ]),
       ),
     [messagesBySession],
@@ -729,6 +752,8 @@ export function ConversationView({
           taskPeople={taskPeople}
           onLaunchWorker={launchWorkerOnMessage}
           promptCall={promptCallFor(id)}
+          messageForm={messageFormFor(id)}
+          formAnswers={formAnswersFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
           continuation={continuation}
         />
@@ -1115,10 +1140,13 @@ export function ConversationView({
               const role = sessionRole(session, cloudUserId);
               const turns = turnsBySession.get(item.sessionId);
               const failedPrompt = turns?.failed;
+              const promptRequest = !!session?.isPromptRequest;
               return (
-                // The session's ONE line — its opening prompt (or request) is not
-                // drawn as a bubble; the turns live in the session view.
-                <div key={item.key} data-testid="session-anchor">
+                // The session's ONE line — a live session's opening prompt (or request)
+                // is not drawn as a bubble; the turns live in the session view. A prompt
+                // request keeps the sender's message: its text and prompt ARE the request.
+                <div key={item.key} data-testid="session-anchor" className="flex flex-col gap-1">
+                  {promptRequest && renderConversationItem(item.anchor)}
                   <SessionCard
                     sessionId={item.sessionId}
                     session={session}
@@ -1132,6 +1160,12 @@ export function ConversationView({
                     lastPromptFailed={!!turns?.failed}
                     runningPrompt={turns?.pending ?? null}
                     chatProcessId={role === 'host' ? (session?.host_process_id ?? null) : null}
+                    onRun={
+                      role === 'host' && session
+                        ? (replyPolicy: SessionReplyPolicy) => approveSession(session, { replyPolicy })
+                        : undefined
+                    }
+                    resultText={promptRequest ? (turns?.result ?? null) : null}
                     onRetry={
                       role === 'guest' && failedPrompt && conversationId
                         ? () => retryFailedPrompt(conversationId, item.sessionId, failedPrompt.text)
@@ -1141,6 +1175,7 @@ export function ConversationView({
                   {/* Only a live session: an old one's process may be busy with something else. */}
                   {role === 'host' &&
                     session &&
+                    !promptRequest &&
                     isSessionActive(session.status) &&
                     !isSessionExpired(session, Date.now()) && (
                       <div className="px-2">
