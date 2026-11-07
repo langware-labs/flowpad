@@ -2935,6 +2935,7 @@ class Project(SetupSkippable, Entity):
         token_allocation: Any = _UNSET,
         deployment_id: Optional[str] = None,
         main_agent=None,
+        mode_fields: Optional[dict] = None,
     ) -> "Any":
         """The cloud placement of this project on ``provider`` in ``environment`` — the hub's row, adopted
         here — before it has a machine. ``main_agent`` answers on it: its webhooks and help desks go along
@@ -2952,6 +2953,8 @@ class Project(SetupSkippable, Entity):
             "webhooks": [w.model_dump(mode="json") for w in await main_agent.webhook_specs()] if main_agent else [],
             "help_desks": await main_agent.hub_desks() if main_agent else [],
             **({"deployment_id": deployment_id} if deployment_id else {}),
+            # Private is planned as such: the hub answers with the agent's one private template.
+            **(mode_fields or {}),
         }
         if token_allocation is not _UNSET:
             body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None

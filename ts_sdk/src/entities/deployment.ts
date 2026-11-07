@@ -538,6 +538,17 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     return data?.threads ?? [];
   }
 
+  /**
+   * The threads of a deployment this computer does not hold (a private deployment's person placement): read on
+   * the hub, which forwards to that person's machine (`GET deployment/<id>/threads`).
+   */
+  static async hubThreads(deploymentId: string): Promise<DeploymentThread[]> {
+    const info = new ActionInfo('threads', Deployment.type, deploymentId, 'GET');
+    info.hubReflect = true;
+    const data = await dataManager.callAction<unknown, { threads?: DeploymentThread[] } | null>(info);
+    return data?.threads ?? [];
+  }
+
   /** The latest runs on a cloud machine, read through the hub. This computer's runs are the local run list. */
   async runs<T = Record<string, unknown>>(limit: number): Promise<T[]> {
     const data = await this.get<{ runs?: T[] } | null>(`runs?limit=${encodeURIComponent(String(limit))}`);

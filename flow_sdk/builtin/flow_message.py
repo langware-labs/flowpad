@@ -115,6 +115,9 @@ class FlowMessageKind(str, Enum):
     #: session) are ordinary files; the hub may strip this field, so receivers re-derive it from the
     #: ``help_request.value.json`` carrier (:func:`derive_help_request_kind`).
     HELP_REQUEST = "help_request"
+    #: A help request's diagnosis, posted when the background run finishes: its text is the bottom line, its
+    #: ``diagnosis.value.json`` the details. Receivers re-derive it from that file when the hub strips the field.
+    DIAGNOSIS = "diagnosis"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -127,7 +130,7 @@ class FlowMessageKind(str, Enum):
         to USER. USER is implicit; INVITATION is a local-only first-row
         placeholder no caller mints; SESSION_EVENT and SEALED_NOTE are the
         explicitly sendable non-default kinds, and HELP_REQUEST is Ask for help's."""
-        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST) if value == k.value), None)
+        return next((k for k in (cls.SESSION_EVENT, cls.SEALED_NOTE, cls.HELP_REQUEST, cls.DIAGNOSIS) if value == k.value), None)
 
 
 class DeliveryStatus(str, Enum):

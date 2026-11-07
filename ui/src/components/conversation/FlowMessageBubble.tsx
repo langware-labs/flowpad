@@ -41,6 +41,7 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
+  DIAGNOSIS_FILE,
   HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
@@ -57,6 +58,7 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
@@ -603,6 +605,10 @@ export function FlowMessageBubble({
   // not re-derive it.
   const isHelpRequest =
     fm.kind === FlowMessageKind.HELP_REQUEST || attachmentItems.some((i) => i.filename === HELP_REQUEST_FILE);
+  // Its diagnosis, posted when the background run ends: the text is the bottom line, the details fold away.
+  const isDiagnosis =
+    !isHelpRequest &&
+    (fm.kind === FlowMessageKind.DIAGNOSIS || attachmentItems.some((i) => i.filename === DIAGNOSIS_FILE));
   // The "Download N" button must not re-count what's already surfaced without a
   // download: images shown inline above, and prompt entities (previewed in the
   // prompt row, materialized on Approve & Execute).
@@ -808,6 +814,7 @@ export function FlowMessageBubble({
       {isHelpRequest && (
         <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />
       )}
+      {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p

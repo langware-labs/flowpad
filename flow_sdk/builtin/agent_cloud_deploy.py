@@ -182,6 +182,7 @@ async def _plan(ctx: DeployContext) -> None:
             token_allocation=ctx.token_allocation,
             deployment_id=deployment_id,
             main_agent=ctx.agent,
+            mode_fields=ctx.mode_fields,
         )
 
     if ctx.deployment_id:

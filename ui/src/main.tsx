@@ -10,7 +10,7 @@ import { RouterProvider } from 'react-router';
 import '@src/contexts/view-mode-context';
 import { initLocale } from '@src/contexts/locale-context';
 import { LocaleProviders } from '@src/contexts/LocaleProviders';
-import { DiagnoseErrorModal, ErrorDetailsDialog } from '@src/notifications';
+import { ErrorDetailsDialog } from '@src/notifications';
 import { AskForHelpHost } from '@src/components/help/AskForHelpHost';
 import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
@@ -106,7 +106,6 @@ async function init() {
               inside `<App>` is gone exactly when a route blows up — which is
               when the error screen's stethoscope needs this host. One instance
               here serves both the app and every error boundary. */}
-          <DiagnoseErrorModal />
           <AskForHelpHost />
           <ErrorDetailsDialog />
         </LocaleProviders>

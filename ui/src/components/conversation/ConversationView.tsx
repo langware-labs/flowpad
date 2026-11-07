@@ -956,7 +956,8 @@ export function ConversationView({
   const { canPickup, canSettle } = ticketAffordances({
     helpdesk: isHelpdeskConversation,
     cloudUserId,
-    isOwner: isConversationOwner,
+    // A ticket the hub does not hold yet was written here: I am the one who asked, not desk staff.
+    isOwner: isConversationOwner || conversation?.remote !== true,
     isParticipant,
   });
   useEffect(() => {

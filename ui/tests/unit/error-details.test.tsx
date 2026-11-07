@@ -9,13 +9,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('sonner', () => ({ toast: { custom: vi.fn(), dismiss: vi.fn() }, Toaster: () => null }));
 
+const diagnoseAndFix = vi.fn(async () => {});
+vi.mock('@src/notifications/diagnose/diagnose-and-fix', () => ({ diagnoseAndFix, markDiagnosedAlert: vi.fn() }));
+
 const { notify } = await import('@src/notifications/notify');
 const { useAlertStore } = await import('@src/notifications/alerts-store');
 const { recentFailedCalls, describeFailedCall } = await import('@sdk');
 const { detailSections, detailText, limitFromText } = await import('@src/notifications/error-detail');
 const { ErrorDetailsDialog } = await import('@src/notifications/ErrorDetailsDialog');
 const { useErrorDetailsStore } = await import('@src/notifications/error-details-store');
-const { useDiagnoseErrorStore } = await import('@src/notifications/diagnose/diagnose-error-store');
 
 const latest = () => useAlertStore.getState().alerts[0];
 
@@ -99,7 +101,7 @@ describe('error details', () => {
     act(() => useErrorDetailsStore.getState().open(latest()));
     expect(screen.getByTestId('error-details-dialog').textContent).toContain('/api/v1/graph/data_source');
     fireEvent.click(screen.getByText('Diagnose'));
-    const seeded = useDiagnoseErrorStore.getState().detail ?? '';
+    const seeded = String((diagnoseAndFix.mock.calls.at(-1) as unknown[] | undefined)?.[0] ?? '');
     expect(seeded).toContain('already exists');
     expect(seeded).toContain('/api/v1/graph/data_source');
     expect(useErrorDetailsStore.getState().shown).toBeNull();

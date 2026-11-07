@@ -55,7 +55,12 @@ export enum FlowMessageKind {
   SEALED_NOTE = 'sealed_note',
   /** Ask for help: a person's request, sent like any message; its context rides as ordinary files. */
   HELP_REQUEST = 'help_request',
+  /** A help request's diagnosis: its text is the bottom line, ``diagnosis.value.json`` the details. */
+  DIAGNOSIS = 'diagnosis',
 }
+
+/** The file a diagnosis message carries once shared -- re-derives the kind when the hub drops it. */
+export const DIAGNOSIS_FILE = 'diagnosis.value.json';
 
 /** The file every help request carries -- what marks it as one on every machine (the hub drops ``kind``).
  *  Mirrors flow_sdk.builtin.flow_message.HELP_REQUEST_FILE. Plumbing: never shown as an attachment. */

@@ -39,9 +39,11 @@ vi.mock('@src/navigation', () => ({
   useDockNavigation: () => ({ navigation: { openTab: vi.fn(), openDock: vi.fn() } }),
 }));
 
+const diagnoseAndFix = vi.fn(async () => {});
+vi.mock('@src/notifications/diagnose/diagnose-and-fix', () => ({ diagnoseAndFix, markDiagnosedAlert: vi.fn() }));
+
 const { notify } = await import('@src/notifications/notify');
 const { useAlertStore } = await import('@src/notifications/alerts-store');
-const { useDiagnoseErrorStore } = await import('@src/notifications/diagnose/diagnose-error-store');
 const { WarningsPopover } = await import('@src/components/warnings-popover/warnings-popover');
 
 /** The popover row (alert or derived warning) that displays `text`. */
@@ -55,7 +57,7 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
   beforeEach(() => {
     dataContext.bootstrapInfo = null;
     useAlertStore.setState({ alerts: [] });
-    useDiagnoseErrorStore.setState({ detail: null, kind: 'error' });
+    diagnoseAndFix.mockClear();
   });
 
   afterEach(() => {
@@ -64,7 +66,6 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     cleanup();
     vi.restoreAllMocks();
     useAlertStore.setState({ alerts: [] });
-    useDiagnoseErrorStore.setState({ detail: null, kind: 'error' });
     dataContext.bootstrapInfo = null;
     dataContext.setWarnings([]);
   });
@@ -93,13 +94,9 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     await screen.findAllByTestId('warnings-popover-alert');
     await user.click(within(rowFor('Slow query')).getByTestId('warnings-popover-diagnose-fix'));
 
-    // `kind` is what keeps the modal from calling a warning an error, and what
-    // the seeded prompt (`analyze the <kind>: …`) reads.
-    expect(useDiagnoseErrorStore.getState()).toMatchObject({
-      detail: 'Slow query\ntook 9s',
-      kind: 'warning',
-      alertId: 'w',
-    });
+    // One click, no window: the private Diagnose & fix request, seeded with the warning; the alert id
+    // lets a repair mark this entry fixed.
+    expect(diagnoseAndFix).toHaveBeenCalledWith('Slow query\ntook 9s', 'warning', 'w');
   });
 
   it('a repaired alert shows Fixed with what changed, and Done removes it', async () => {
@@ -131,7 +128,6 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     const row = rowFor('No harness found');
     await user.click(within(row).getByTestId('warnings-popover-warning-diagnose-fix'));
 
-    expect(useDiagnoseErrorStore.getState().kind).toBe('warning');
-    expect(useDiagnoseErrorStore.getState().detail).toContain('No harness found');
+    expect(diagnoseAndFix).toHaveBeenCalledWith(expect.stringContaining('No harness found'), 'warning');
   });
 });

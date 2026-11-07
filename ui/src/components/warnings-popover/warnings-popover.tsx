@@ -8,9 +8,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext, useWarnings } from '@sdk/react/hooks';
 import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-setup-incomplete-warning';
 import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
-import { notificationText, runAction, runCommand, useAlertStore, useDiagnoseErrorStore } from '@src/notifications';
+import { diagnoseAndFix, notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
-import type { DiagnoseKind } from '@src/notifications/diagnose/diagnose-error-store';
+import type { DiagnoseKind } from '@src/notifications/diagnose/diagnose-and-fix';
 import { ErrorDetailsButton } from '@src/notifications/ErrorDetailsDialog';
 import {
   AlertCircle,
@@ -151,7 +151,7 @@ function WarningItem({ warning, onClick, onAction, onDismiss }: WarningItemProps
   const alertTitle = warning.message;
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
-  const openDiagnose = useDiagnoseErrorStore((s) => s.open);
+  const openDiagnose = diagnoseAndFix;
   const detail = warning.description ? `${warning.message}\n${warning.description}` : warning.message;
 
   return (
@@ -183,7 +183,7 @@ function WarningItem({ warning, onClick, onAction, onDismiss }: WarningItemProps
               condition (cloud down, no harness) is diagnosable just like a logged one. */}
           <button
             type="button"
-            onClick={() => openDiagnose(detail, 'warning')}
+            onClick={() => void openDiagnose(detail, 'warning')}
             className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             data-testid="warnings-popover-warning-diagnose-fix"
           >
@@ -219,7 +219,7 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
   const alertTitle = alert.title;
   const colors = colorMap[ALERT_COLOR[alert.level]] || colorMap.yellow;
   const Icon = alert.level === 'error' ? AlertCircle : AlertTriangle;
-  const openDiagnose = useDiagnoseErrorStore((s) => s.open);
+  const openDiagnose = diagnoseAndFix;
   const text = alert.fixed?.summary ?? alert.message;
 
   return (
@@ -267,7 +267,7 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
             {/* The log holds only warnings and errors, both diagnosable. */}
             <button
               type="button"
-              onClick={() => openDiagnose(notificationText(alert), alert.level as DiagnoseKind, alert.id)}
+              onClick={() => void openDiagnose(notificationText(alert), alert.level as DiagnoseKind, alert.id)}
               className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
               data-testid="warnings-popover-diagnose-fix"
             >

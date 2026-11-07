@@ -306,7 +306,12 @@ export function ConversationListRow({
   // the message the desk source delivered still names which desk the row belongs to.
   const deskMsg = [latestMessage, firstMessage].find((m) => m?.origin?.kind === 'helpdesk');
   const attributed = deskMsg ?? latestMessage;
-  const attribution = attributionFor(attributed?.origin, attributed?.origin_local, conv.channel_spec);
+  // A thread the hub writes (a Chat API exchange) carries no per-message origin: the conversation's channel names it.
+  const attribution = attributed?.origin?.kind
+    ? attributionFor(attributed.origin, attributed.origin_local, conv.channel_spec)
+    : conv.channel
+      ? attributionFor({ kind: conv.channel, namespace: '', key: '', url: null }, null, conv.channel_spec)
+      : null;
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
 
