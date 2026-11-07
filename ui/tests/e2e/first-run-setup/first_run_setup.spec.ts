@@ -69,8 +69,11 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
     await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 1_000 });
     // Start resets the owed step to `not_reached` while the source chooser is up; only a step
-    // past both means the wizard itself is running.
-    const started = !['not_started', 'not_reached'].includes((await stepStatuses(page))['claude-code']);
+    // past both means the wizard itself is running. A wizard asks its questions before its
+    // steps run (`ask_needs`), and its steps read `not_reached` while it waits: its question
+    // on screen is the wizard running too.
+    const asking = await page.getByTestId('ask-modal').isVisible();
+    const started = asking || !['not_started', 'not_reached'].includes((await stepStatuses(page))['claude-code']);
     expect(started, 'the wizard has started running').toBe(true);
   }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
 

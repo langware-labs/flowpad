@@ -37,7 +37,7 @@ ALL_WORKERS = [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT, Wor
 FIELDS = ("worker_status", "worker_status_detail", "busy", "ready_for_input")
 
 _RESOLVERS = [
-    (_claude_sessions, "get_claude_session"),
+    (_claude_sessions, "find_claude_session_path"),
     (_codex_driver, "find_codex_resumable_session"),
     (_codex_driver, "find_codex_session_jsonl"),
     (_codex_driver, "find_latest_codex_session_jsonl"),
