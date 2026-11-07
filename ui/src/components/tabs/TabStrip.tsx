@@ -40,7 +40,7 @@ import { animateGlow } from '@src/lib/animate-glow';
 import { chipSizing } from '@src/components/tabs/close-freeze';
 import { useCloseFreeze } from '@src/components/tabs/use-close-freeze';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
-import { ExternalLink, X, type LucideIcon } from 'lucide-react';
+import { ExternalLink, Maximize2, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -151,6 +151,8 @@ export interface TabStripProps {
   onRename?: (key: string, name: string) => void;
   /** Pop the tab out (Part 3 §7/§8). */
   onPopout?: (key: string) => void;
+  /** Show the tab's content over the whole window. */
+  onFullScreen?: (key: string) => void;
   /** Extra "new tab" context-menu entries (owner-specific openers). */
   newTabMenuItems?: TabStripContextMenuItem[];
   /** Shortcut label for the Close entry (e.g. "Ctrl+W"). */
@@ -197,6 +199,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
   onCloseMany,
   onRename,
   onPopout,
+  onFullScreen,
   newTabMenuItems,
   closeShortcutLabel,
   trailing,
@@ -450,33 +453,64 @@ export const TabStrip: React.FC<TabStripProps> = ({
   // color so it reads over truncated text; close is always visible on the
   // active chip, hover-revealed on inactive ones; popout is hover-only, sits
   // just before close, and drops out below normal density.
+  const renderChipAction = (
+    key: string,
+    isActive: boolean,
+    isDisabled: boolean,
+    onAct: (key: string) => void,
+    label: string,
+    testId: string,
+    Icon: LucideIcon,
+  ) => (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onAct(key);
+      }}
+      disabled={isDisabled}
+      className={`rounded p-0.5 hover:bg-muted-foreground/20 ${isActive ? 'opacity-0 group-hover:opacity-100' : ''}`}
+      aria-label={label}
+      title={label}
+      data-testid={testId}
+    >
+      <Icon className="h-3 w-3" />
+    </button>
+  );
+
   const renderButtonOverlay = (
     key: string,
     isActive: boolean,
     isDisabled: boolean,
     closable: boolean,
-    showPopout: boolean,
+    showChipActions: boolean,
   ) => (
     <div
       className={`absolute end-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
         isActive ? 'bg-background opacity-100' : 'bg-muted opacity-0 group-hover:opacity-100'
       }`}
     >
-      {showPopout && onPopout && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onPopout(key);
-          }}
-          disabled={isDisabled}
-          className={`rounded p-0.5 hover:bg-muted-foreground/20 ${isActive ? 'opacity-0 group-hover:opacity-100' : ''}`}
-          aria-label={t`Open in external browser`}
-          title={t`Open in external browser`}
-          data-testid={`tab-open-external-${key}`}
-        >
-          <ExternalLink className="h-3 w-3" />
-        </button>
-      )}
+      {showChipActions &&
+        onPopout &&
+        renderChipAction(
+          key,
+          isActive,
+          isDisabled,
+          onPopout,
+          t`Open in external browser`,
+          `tab-open-external-${key}`,
+          ExternalLink,
+        )}
+      {showChipActions &&
+        onFullScreen &&
+        renderChipAction(
+          key,
+          isActive,
+          isDisabled,
+          onFullScreen,
+          t`Full screen (Esc to exit)`,
+          `tab-full-screen-${key}`,
+          Maximize2,
+        )}
       {closable && (
         <button
           onClick={(e) => {
@@ -505,7 +539,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const displayTitle = item.standsFor?.title ?? item.title;
     const iconOnly = density === 'icon' && !isEditing;
     const closable = item.closable !== false;
-    const showPopout = density === 'normal' && !!onPopout;
+    const showChipActions = density === 'normal';
     // On the active tab only, the bookmark star takes the icon's place on hover.
     const showStar = !!item.favorite && !isEditing && isActive;
     const noteTarget = !isEditing ? item.notes : null;
@@ -624,7 +658,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           </span>
         )}
 
-        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, showPopout)}
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, showChipActions)}
         {item.guestNote && (
           <span
             aria-hidden
