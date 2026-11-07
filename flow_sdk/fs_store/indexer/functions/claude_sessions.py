@@ -360,6 +360,7 @@ def _find_in_listing(projects_dir: Path, fname: str) -> Path | None:
     except OSError:
         return None
     seen = set()
+    settled_before = time.time_ns() - _MTIME_SETTLE_NS
     for folder in folders:
         seen.add(folder.path)
         try:
@@ -368,7 +369,7 @@ def _find_in_listing(projects_dir: Path, fname: str) -> Path | None:
             # File timestamps are coarse (a kernel tick on Linux): a session written in the same
             # tick as the last listing leaves the mtime unchanged. A folder changed that recently
             # is listed again rather than trusted.
-            if known is None or known[0] != mtime or time.time_ns() - mtime < _MTIME_SETTLE_NS:
+            if known is None or known[0] != mtime or mtime > settled_before:
                 known = (mtime, frozenset(e.name for e in os.scandir(folder.path) if e.name.endswith(".jsonl")))
                 _folders[folder.path] = known
         except OSError:
