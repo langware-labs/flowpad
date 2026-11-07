@@ -129,7 +129,7 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     render(<WarningsPopover />);
     await user.click(await screen.findByTestId('warnings-popover-trigger'));
     const row = rowFor('No harness found');
-    await user.click(within(row).getByLabelText('Diagnose this warning'));
+    await user.click(within(row).getByTestId('warnings-popover-warning-diagnose-fix'));
 
     expect(useDiagnoseErrorStore.getState().kind).toBe('warning');
     expect(useDiagnoseErrorStore.getState().detail).toContain('No harness found');

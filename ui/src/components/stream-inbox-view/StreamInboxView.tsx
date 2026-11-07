@@ -52,6 +52,7 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ConversationAttachmentsButton } from './ConversationAttachmentsButton';
 import { DockPointer, STREAM_INBOX_CHANNEL_PARAM } from '@src/navigation/DockPointer';
 import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
@@ -515,6 +516,9 @@ export function ConversationListRow({
         <span className="min-w-0 flex-1 truncate">{senderLabel}</span>
         {!isInvitationRow && count > 1 && (
           <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
+        )}
+        {!isInvitationRow && convId && (
+          <ConversationAttachmentsButton conversationId={convId} count={conv.attachment_count ?? 0} />
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="stream-inbox-row-subject-line">

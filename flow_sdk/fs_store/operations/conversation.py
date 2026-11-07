@@ -144,7 +144,7 @@ def from_jsonl(
 
 
 async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None:
-    """Mirror the conversation's messages into ``message_ids``/``message_count``
+    """Mirror the conversation's messages into ``message_ids``/``message_count``/``attachment_count``
     and set ``conv.updated_date`` to the conversation's recency.
 
     Membership and ORDER now come from the parent→child ``is_child`` edges,
@@ -223,6 +223,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         messages = await _ordered_children()
 
     new_count = len(messages)
+    new_attachments = sum(1 for m in messages for a in (m.attachment or []) if a.is_listed_file)
     new_ids = (
         json.dumps(
             [
@@ -254,13 +255,18 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         # carrying a fabricated timestamp repair itself on its next touch.
         new_updated = Conversation._as_datetime(conv.created_date)
 
-    projection_changed = not (conv.message_ids == new_ids and conv.message_count == new_count)
+    projection_changed = not (
+        conv.message_ids == new_ids
+        and conv.message_count == new_count
+        and conv.attachment_count == new_attachments
+    )
     recency_changed = Conversation._as_datetime(conv.updated_date) != new_updated
     if not projection_changed and not recency_changed:
         return
     if projection_changed:
         conv._set_projection("message_ids", new_ids, _PROJECTION_SENTINEL)
         conv._set_projection("message_count", new_count, _PROJECTION_SENTINEL)
+        conv._set_projection("attachment_count", new_attachments, _PROJECTION_SENTINEL)
     # The projection write IS the "reconciled from hub/disk" moment for a
     # conversation — make it observable on the row the UI renders. Normal
     # field (not in _PROJECTED_FIELDS), so no sentinel needed.

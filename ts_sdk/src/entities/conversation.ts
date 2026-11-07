@@ -135,6 +135,8 @@ export interface IConversation extends IEntity {
   /** Display name of the sender's project (for the mapping dialog copy). */
   remote_project_name?: string | null;
   message_count?: number;
+  /** Files attached across the conversation's messages — the inbox row's paperclip. */
+  attachment_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
   /** The newest message, for a row that keeps no ``message_ids`` log (the hub's). */
   latest_message_id?: string | null;
@@ -213,6 +215,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   remote_project_id?: string | null;
   remote_project_name?: string | null;
   message_count?: number;
+  attachment_count?: number;
   message_ids?: string | null;
   latest_message_id?: string | null;
   latest_message_at?: string | Date | null;
@@ -248,6 +251,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.remote_project_id = entity.remote_project_id;
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
+    this.attachment_count = entity.attachment_count;
     this.message_ids = entity.message_ids;
     this.latest_message_id = entity.latest_message_id ?? null;
     this.latest_message_at = entity.latest_message_at ?? null;

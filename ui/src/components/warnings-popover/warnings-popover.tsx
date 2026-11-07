@@ -10,7 +10,6 @@ import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-
 import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
 import { notificationText, runAction, runCommand, useAlertStore, useDiagnoseErrorStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
-import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
 import type { DiagnoseKind } from '@src/notifications/diagnose/diagnose-error-store';
 import { ErrorDetailsButton } from '@src/notifications/ErrorDetailsDialog';
 import {
@@ -86,11 +85,6 @@ const ALERT_COLOR: Record<NotificationLevel, keyof typeof colorMap> = {
 const ITEM_CLASS = 'group flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-accent';
 const ICON_BTN_CLASS =
   'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100';
-/** Same 24px box as ICON_BTN_CLASS, minus the hover-reveal: the stethoscope is
- *  an offer, so it stays visible. Sharing the box keeps it on the same icon
- *  grid as Copy and Dismiss instead of floating a few pixels off. */
-const DIAGNOSE_BTN_CLASS =
-  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground';
 
 /** Copy-to-clipboard affordance, shared by derived warnings and logged alerts. */
 function CopyButton({ text }: { text: string }) {
@@ -157,6 +151,8 @@ function WarningItem({ warning, onClick, onAction, onDismiss }: WarningItemProps
   const alertTitle = warning.message;
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
+  const openDiagnose = useDiagnoseErrorStore((s) => s.open);
+  const detail = warning.description ? `${warning.message}\n${warning.description}` : warning.message;
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-warning">
@@ -172,25 +168,31 @@ function WarningItem({ warning, onClick, onAction, onDismiss }: WarningItemProps
         </button>
         {/* Beside the row's own click target, not inside it: a button never nests in a button. The
             start margin is the icon's width plus the gap, so it lines up under the text. */}
-        {warning.action && (
+        <div className="ms-10 mt-2 flex flex-wrap gap-2">
+          {warning.action && (
+            <button
+              type="button"
+              onClick={onAction}
+              className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              data-testid="warnings-popover-warning-action"
+            >
+              {warning.action.label}
+            </button>
+          )}
+          {/* Everything in this popover is a warning by construction, so a derived
+              condition (cloud down, no harness) is diagnosable just like a logged one. */}
           <button
             type="button"
-            onClick={onAction}
-            className="ms-10 mt-2 rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-            data-testid="warnings-popover-warning-action"
+            onClick={() => openDiagnose(detail, 'warning')}
+            className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            data-testid="warnings-popover-warning-diagnose-fix"
           >
-            {warning.action.label}
+            <Trans>Diagnose &amp; fix</Trans>
           </button>
-        )}
+        </div>
       </div>
       <div className="flex shrink-0 items-start gap-0.5">
-        <CopyButton text={warning.description ? `${warning.message}\n${warning.description}` : warning.message} />
-        {/* Everything in this popover is a warning by construction, so a derived
-            condition (cloud down, no harness) is diagnosable just like a logged one. */}
-        <DiagnoseIconButton
-          subject={{ level: 'warning', title: warning.message, message: warning.description }}
-          className={DIAGNOSE_BTN_CLASS}
-        />
+        <CopyButton text={detail} />
         <button
           type="button"
           onClick={onDismiss}
