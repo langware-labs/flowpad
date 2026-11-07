@@ -2,6 +2,15 @@ import { FlowData, FlowDataType } from '../../flow_processing/flow-data';
 import { FlowDataEvents } from '../../flow_processing/flow-events';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 
+const emptyStreamState = () => ({
+  isComplete: false,
+  progress: 0,
+  partialContent: '',
+  isStreaming: false,
+  lastUpdate: null as Date | null,
+  error: undefined as Error | undefined,
+});
+
 /**
  * Hook for tracking individual FlowData streaming updates and progress
  * Monitors real-time changes to a specific FlowData instance
@@ -20,14 +29,7 @@ export function useDataStreamText(flowData: FlowData | null | undefined) {
     );
   }
   // Store stream state in a ref to persist across re-renders
-  const streamStateRef = useRef({
-    isComplete: false,
-    progress: 0,
-    partialContent: '',
-    isStreaming: false,
-    lastUpdate: null as Date | null,
-    error: undefined as Error | undefined,
-  });
+  const streamStateRef = useRef(emptyStreamState());
 
   // The FlowData the stream state belongs to. A new one starts from a clean state — reset here,
   // inside getSnapshot, and not in an effect: an effect replaced the cached snapshot AFTER the
@@ -96,14 +98,7 @@ export function useDataStreamText(flowData: FlowData | null | undefined) {
   const getSnapshot = useCallback(() => {
     if (ownerRef.current !== flowData) {
       ownerRef.current = flowData;
-      streamStateRef.current = {
-        isComplete: false,
-        progress: 0,
-        partialContent: '',
-        isStreaming: false,
-        lastUpdate: null,
-        error: undefined,
-      };
+      streamStateRef.current = emptyStreamState();
     }
     // Always sync with rawData (source of truth) - but don't mutate unnecessarily
     if (flowData) {
