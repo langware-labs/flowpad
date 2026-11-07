@@ -26,6 +26,8 @@ describe('role', () => {
   it('takes the strongest role and stays silent when not expanded', () => {
     expect(roleOf({ expand: { roles: ['reader', 'owner'] } })).toBe('owner');
     expect(roleOf({ expand: { roles: ['admin'] } })).toBe('admin');
+    // A permissions expansion names roles upper-case: an owner is still an owner.
+    expect(roleOf({ expand: { roles: ['OWNER'] } })).toBe('owner');
     expect(roleOf({ expand: { roles: ['runner'] } })).toBe('reader');
     expect(roleOf({ expand: { roles: null } })).toBeUndefined();
   });

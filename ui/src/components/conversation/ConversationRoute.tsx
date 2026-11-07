@@ -170,15 +170,12 @@ export function ConversationRoute() {
     let live = true;
     if (!agentId || !conversationId || !scopeKey) return;
     setScopeDecision({ key: scopeKey, allowed: null });
-    let scopedAgent: Agent;
-    try {
-      scopedAgent = new Agent({ id: agentId });
-    } catch {
-      setScopeDecision({ key: scopeKey, allowed: false });
-      return;
-    }
-    void scopedAgent
-      .streamInboxScope()
+    // The agent as it is (cache or fetch) — never `new Agent({ id })`, which would replace the loaded one.
+    void Agent.getById(agentId)
+      .then((scopedAgent) => {
+        if (!scopedAgent) throw new Error('agent not found');
+        return scopedAgent.streamInboxScope();
+      })
       .then((scope) => {
         if (live) setScopeDecision({ key: scopeKey, allowed: scope.conversation_ids.includes(conversationId) });
       })

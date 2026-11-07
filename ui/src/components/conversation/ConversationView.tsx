@@ -181,7 +181,9 @@ export function ConversationView({
       return;
     }
     try {
-      setAgentScope(await new Agent({ id: agentId }).streamInboxScope());
+      const agent = await Agent.getById(agentId);
+      if (!agent) throw new Error('agent not found');
+      setAgentScope(await agent.streamInboxScope());
     } catch {
       setAgentScope({ agent_id: agentId, source_id: null, conversation_ids: [], thread_ids: [], flow_message_ids: [] });
     }
