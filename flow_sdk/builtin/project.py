@@ -2455,6 +2455,7 @@ class Project(SetupSkippable, Entity):
         types: str | None = None,
         limit: int = 1000,
         browsing: BrowsingOptions | None = None,
+        query: str | None = None,
     ):
         """Discoverable assets for this project, pre-process (staging).
 
@@ -2494,18 +2495,25 @@ class Project(SetupSkippable, Entity):
         want_assets = browsing is None or browsing.assets
         sources, _seen = collect_base_source_dirs(self)
 
+        # ``query`` narrows BEFORE the cut: a list truncated at ``limit`` must still find what the person
+        # typed, or anything past the cut can never be picked (a home folder holds thousands of assets).
+        needle = (query or "").strip().lower()
         catalog = (
             await scan_path_asset_descriptors(
                 sources,
                 own_project_id=str(self.id),
                 types=requested,
-                limit=limit,
+                limit=0 if needle else limit,
             )
             if want_assets
             else None
         )
 
         descriptors = catalog.assets if catalog else []
+        if needle:
+            descriptors = [
+                d for d in descriptors if needle in (d.name or "").lower() or needle in (d.posix_path or "").lower()
+            ][:limit]
         descriptors = await hydrate_asset_descriptor_remote(descriptors)
         data = {
             "assets": [d.to_row() for d in descriptors],

@@ -7,13 +7,9 @@ import { GitPushButton } from '@src/components/status-bar/GitPushButton';
 import { GitStatusPill } from '@src/components/status-bar/GitStatusPill';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { WikiTip } from '@src/components/wiki-tip';
 import { useProjects } from '@src/hooks/use-projects';
 import { useProjectLocation } from '@src/hooks/use-project-location';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { tagAttrs } from '@src/tags/tag-attrs';
-import { ExternalLink, ArrowLeftRight } from 'lucide-react';
+import { ExternalLink, ArrowLeftRight, TriangleAlert } from 'lucide-react';
 import { useCallback, useState } from 'react';
 
 function isRootPath(path: string | null | undefined): boolean {
@@ -23,6 +19,8 @@ function isRootPath(path: string | null | undefined): boolean {
   if (/^[a-zA-Z]:[/\\]?$/.test(path)) return true;
   return false;
 }
+
+const ROOT_GLOW: React.CSSProperties = { animation: 'root-glow 2s ease-in-out infinite' };
 
 const ROOT_GLOW_STYLE = /* css */ `
   @keyframes root-glow {
@@ -39,7 +37,6 @@ export function StatusBar({ className = '' }: StatusBarProps) {
   const { t } = useLingui();
   const { project, computeNode, projectPath, gitWorkdir, openProjectFolder } = useProjectLocation();
   const { refetch: refetchProjects } = useProjects();
-  const { navigation } = useDockNavigation();
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
   const isRoot = isRootPath(project?.fs_storage_mount_path);
@@ -49,8 +46,8 @@ export function StatusBar({ className = '' }: StatusBarProps) {
     setIsProjectModalOpen(true);
   }, []);
 
-  // No active project. Render a red "Select Project" pill that pops the same
-  // OpenProjectComponent the Switch Project button uses. Null project is now
+  // No active project. Render a red "Select Project" pill that pops the
+  // OpenProjectComponent (the root-folder warning opens it too). Null project is now
   // a real (transient) state — entities like a freshly-opened cross-machine
   // conversation can leave context.project null until the user picks one.
   if (!project) {
@@ -76,53 +73,26 @@ export function StatusBar({ className = '' }: StatusBarProps) {
     );
   }
 
-  const rootTooltip = t`Current project is on root folder, this is not recommended`;
-  const glowStyle: React.CSSProperties = isRoot ? { animation: 'root-glow 2s ease-in-out infinite' } : {};
-
   return (
     <>
-      {isRoot && <style>{ROOT_GLOW_STYLE}</style>}
       <div className={`flex min-w-0 items-center gap-2 ${className}`}>
         {/* The project switcher and the project's page live in the top bar's
-            project pill. The footer shows them only as the root-folder warning. */}
+            project pill; the footer only warns when the project is a root folder. */}
         {isRoot && (
           <>
+            <style>{ROOT_GLOW_STYLE}</style>
             <button
+              type="button"
               onClick={openProjectModal}
-              className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] transition-colors hover:bg-accent hover:text-foreground"
-              style={isRoot ? { ...glowStyle, color: undefined } : { color: 'var(--muted-foreground)' }}
-              title={isRoot ? rootTooltip : t`Switch project`}
+              className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium hover:bg-accent"
+              style={ROOT_GLOW}
+              title={t`Current project is on root folder, this is not recommended`}
             >
-              <ArrowLeftRight className="h-3 w-3 shrink-0" />
-              <span className="hidden sm:inline" style={glowStyle}>
-                <Trans>Switch Project</Trans>
+              <TriangleAlert className="h-3 w-3 shrink-0" />
+              <span className="hidden sm:inline">
+                <Trans>Project on root folder</Trans>
               </span>
             </button>
-            {/* One-line tip: the project path plus a W-square button that opens the
-                "Flowpad project" wiki page in a modal (like the skill preview). */}
-            <WikiTip
-              wikiword="Flowpad project"
-              label={isRoot ? rootTooltip : (projectPath ?? t`Open project view`)}
-              buttonLabel={t`What is a Flowpad project?`}
-            >
-              <button
-                {...tagAttrs('ProjectPage', 'button')}
-                onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
-                // Flexible, truncating slot: it is the ONE element in the footer
-                // allowed to shrink. min-w-0 defeats the flex min-content floor so
-                // the name ellipsizes (instead of overrunning the bar) under width
-                // pressure; max-w keeps one long name from starving the counters.
-                // Full name stays reachable via title + aria-label.
-                className="block min-w-0 max-w-[34ch] shrink truncate text-start text-xs font-medium transition-colors hover:underline"
-                style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
-                title={project.displayName}
-                aria-label={
-                  isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`
-                }
-              >
-                {project.displayName}
-              </button>
-            </WikiTip>
           </>
         )}
         {projectPath && computeNode && dataContext.caps.osDialogs && (

@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import apiClient from '@sdk/client';
 import { useProcessAssets, type UseProcessAssetsResult } from './useProcessAssets';
 import { additionalDirScope, assetScope, AssetScopeChip, type AssetScope } from './asset-scope';
 import { assetBoardScope, BOARD_SCOPES, loadShownScopes, saveShownScopes, type BoardScope } from './board-scope';
@@ -249,6 +250,23 @@ export const RUNNABLE_ASSETS = (d: AssetDescriptor): boolean =>
  * EMBEDDED and USER_DIR), and selection is keyed by typeid so every row for one
  * asset reads as selected together.
  */
+/** ``picked`` as something a message can carry: its row exists, or its path is indexed now (by the one
+ *  scoped indexer walk) and the id that walk answers is the one handed on. Anything else stays as picked. */
+export async function indexedForSending(picked: AssetDescriptor): Promise<AssetDescriptor> {
+  if (!picked.posix_path || !isTypeId(picked.typeid)) return picked;
+  const typeId = new TypeId(picked.typeid);
+  const row = await dataManager.getByTypeId(typeId).catch(() => null);
+  if (row) return picked;
+  try {
+    const params = new URLSearchParams({ path: picked.posix_path, type: typeId.type });
+    const res = await apiClient.post<{ typeids?: string[] }>(`/graph/compute_node/@local/fs-records/index?${params.toString()}`);
+    const indexed = res?.typeids?.find((t) => t.startsWith(`${typeId.type}-`));
+    return indexed ? { ...picked, typeid: indexed } : picked;
+  } catch {
+    return picked;
+  }
+}
+
 export function AssetManagerPopover({
   trigger,
   open: controlledOpen,
@@ -292,7 +310,14 @@ export function AssetManagerPopover({
   // No host list supplied (a pick surface with no process): fetch the
   // project-wide staging list ourselves. `enabled` is false whenever the host
   // owns the data, so only one fetch is ever in flight.
-  const ownAssets = useProcessAssets(null, { enabled: open && !assets });
+  // A truncated list is narrowed on the server by what the person types (debounced), so an asset past
+  // the cut can still be found -- the client-side filter alone only ever searched the first page.
+  const [serverQuery, setServerQuery] = useState('');
+  useEffect(() => {
+    const handle = setTimeout(() => setServerQuery(listFilter.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [listFilter]);
+  const ownAssets = useProcessAssets(null, { enabled: open && !assets, query: serverQuery });
 
   const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } =
     assets ?? ownAssets;
@@ -491,8 +516,11 @@ export function AssetManagerPopover({
   );
 
   const handlePick = useCallback(
-    async (descriptor: AssetDescriptor) => {
+    async (picked: AssetDescriptor) => {
       if (!onPick) return;
+      // The list is a read-only disk scan: an asset nobody indexed yet has an id but no row, and a
+      // message cannot carry it ("there is no local record of it"). Index it on pick, under its real id.
+      const descriptor = await indexedForSending(picked);
       // A surface with no un-select is one-shot: close on pick. Settle our own
       // open state BEFORE emitting, because such a host routinely unmounts this
       // component from inside `onPick` (the automation rail swaps itself for a

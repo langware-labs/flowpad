@@ -1,6 +1,6 @@
-"""A project deploy names the placement it is for: a first deploy names none (the plan makes one), a redeploy
-names its row, and one an earlier attempt planned but never put on a machine is continued, not doubled. A
-project may otherwise be deployed any number of times. The hub is the in-memory double."""
+"""A project deploy names the placement it is for: a first deploy names none (the plan makes one), and a
+redeploy continues the project's placement on the same provider and environment -- planned or already on a
+machine -- so its stored values and triggers keep their deployment id. The hub is the in-memory double."""
 
 from __future__ import annotations
 
@@ -52,9 +52,15 @@ async def _deployed(project, **kwargs) -> str:
     return answer["deployment_id"]
 
 
-async def test_a_running_placement_is_not_reused(project, hub):
+async def test_a_running_placement_is_redeployed_in_place(project, hub):
     running = await _placement(project, "e2b", on_a_machine=True)
-    assert await _deployed(project) != str(running.id), "deployed again: a second deployment"
+    hub.rows[str(running.id)] = {**running.model_dump(mode="json"), "llm_endpoint_typeid": ""}
+    assert await _deployed(project) == str(running.id), "a redeploy made a second deployment"
+
+
+async def test_a_placement_the_hub_forgot_is_not_continued(project, hub):
+    gone = await _placement(project, "e2b", on_a_machine=True)  # removed on the hub, still a row here
+    assert await _deployed(project) != str(gone.id)
 
 
 async def test_a_planned_placement_without_a_machine_is_continued(project, hub):

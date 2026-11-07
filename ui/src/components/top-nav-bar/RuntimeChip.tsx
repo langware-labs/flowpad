@@ -17,7 +17,7 @@ import {
   useProjectListMenu,
 } from '@src/components/terminal/project-list-menu';
 import { cn } from '@src/lib/utils';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { RUNTIME_APPEARANCE } from './runtime-appearance';
 
@@ -89,6 +89,17 @@ function RuntimeDescription({ kind }: { kind: RuntimeKind }) {
   if (kind === RuntimeKind.BROWSER)
     return <Trans>This UI is served by a local server on your machine, in a browser tab.</Trans>;
   return <Trans>This UI is served by your own desktop.</Trans>;
+}
+
+/** The pill's glyph + word. Narrow windows keep the color and drop the word —
+ *  the color is the signal, the label is the explanation. */
+function PillLabel({ kind, children }: { kind: RuntimeKind; children: ReactNode }) {
+  return (
+    <>
+      <RuntimeIcon kind={kind} className="h-3.5 w-3.5 shrink-0" />
+      <span className="hidden max-w-[10rem] truncate sm:inline">{children}</span>
+    </>
+  );
 }
 
 export interface RuntimeChipProps {
@@ -166,12 +177,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                       aria-label={homeLabel}
                       className={cn(SEGMENT, 'gap-1.5 pl-3 pr-2.5')}
                     >
-                      <RuntimeIcon kind={kind} className="h-3.5 w-3.5 shrink-0" />
-                      {/* Narrow windows keep the color and drop the word — the color
-                          is the signal, the label is the explanation. */}
-                      <span className="hidden max-w-[10rem] truncate sm:inline">
-                        {menu.projectName ?? project.displayName}
-                      </span>
+                      <PillLabel kind={kind}>{menu.projectName ?? project.displayName}</PillLabel>
                       {project.folderNameMismatch ? (
                         <span
                           className="-ms-1 hidden sm:inline"
@@ -209,13 +215,10 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                 >
                   {/* With no project this segment is the whole pill: the runtime's
                       glyph and word, so the pill never goes blank. */}
-                  {project ? null : (
-                    <>
-                      <RuntimeIcon kind={kind} className="h-3.5 w-3.5 shrink-0" />
-                      <span className="hidden max-w-[10rem] truncate sm:inline">
-                        {menu.projectName ?? <RuntimeLabel kind={kind} />}
-                      </span>
-                    </>
+                  {!project && (
+                    <PillLabel kind={kind}>
+                      <RuntimeLabel kind={kind} />
+                    </PillLabel>
                   )}
                   <ChevronDown className="h-3.5 w-3.5 shrink-0" />
                   <ProjectCountBadge menu={menu} />

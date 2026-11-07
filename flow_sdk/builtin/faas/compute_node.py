@@ -105,8 +105,13 @@ def build_dir_zip(local_path: str) -> BytesIO:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in sorted(root.rglob("*"), key=str):
-            if p.is_file() and not p.is_symlink() and not is_under(p, ignored):
+            if p.is_symlink() or is_under(p, ignored):
+                continue
+            if p.is_file():
                 zf.write(p, p.relative_to(root).as_posix())
+            elif p.is_dir() and not any(p.iterdir()):
+                # An empty folder is kept: a git dir without its empty ``refs/`` is not a repository.
+                zf.writestr(p.relative_to(root).as_posix() + "/", "")
     buf.seek(0)
     return buf
 

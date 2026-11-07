@@ -6,6 +6,7 @@ import {
   Conversation,
   ConversationParticipant,
   createProjectConversation,
+  deleteConversation,
 } from './conversation';
 import { FlowpadDiagnosis } from './flowpad-diagnosis';
 
@@ -273,6 +274,8 @@ export async function createAndSendConversation(
     draftRef?: { current: Conversation | null };
   },
 ): Promise<CreateAndSendResult> {
+  // A retry resumes the conversation an earlier attempt created (``draftRef``); only a fresh one is ours to undo.
+  const resumed = !!opts?.draftRef?.current;
   const { conversation_id: conversationId } = await createConversationForShare(params, opts);
 
   // A conversation may start with just a title — send only when there is content.
@@ -282,7 +285,19 @@ export async function createAndSendConversation(
     !!payload.assetReferences?.length ||
     !!payload.sharedContextEntities?.length ||
     !!payload.shareConfig;
-  if (hasContent) await sendToExistingConversation(conversationId, payload);
+  if (hasContent) {
+    try {
+      await sendToExistingConversation(conversationId, payload);
+    } catch (e) {
+      // The first message was refused (e.g. an attachment that cannot ship): a conversation with nothing in it
+      // must not stay behind -- the person gets the error, the recipients get nothing.
+      if (!resumed) {
+        await deleteConversation({ conversation_id: conversationId, mode: 'delete_for_all' }).catch(() => undefined);
+        if (opts?.draftRef) opts.draftRef.current = null;
+      }
+      throw e;
+    }
+  }
 
   if (opts?.draftRef) opts.draftRef.current = null;
   return { conversation_id: conversationId };

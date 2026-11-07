@@ -125,6 +125,10 @@ class HubError(Exception):
         from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
         if self.kind is HubFailureKind.OFFLINE:
+            # Something between us and the hub answered (a proxy's 502 page): say what it was, so neither the
+            # person nor support mistakes it for a dead network.
+            if "(HTTP " in self.reason:
+                return "Can't reach the hub right now: " + self.reason.split("(", 1)[1].rstrip(")") + "."
             return "Can't reach the hub right now."
         if self.kind is HubFailureKind.NOT_CONFIGURED:
             return "This app is not connected to a hub."

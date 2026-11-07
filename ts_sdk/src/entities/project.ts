@@ -757,12 +757,14 @@ export class Project extends APIEntity<Project> {
   /** Static form for callers without a Project instance (projectless staging → `'@local'`). */
   static async getAssetsById(
     projectId: string,
-    options?: { types?: string[]; limit?: number },
+    options?: { types?: string[]; limit?: number; query?: string },
   ): Promise<AssetScanResult> {
     const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
     const queryParameters: Record<string, string | number> = {};
     if (options?.types?.length) queryParameters.types = options.types.join(',');
     if (options?.limit) queryParameters.limit = options.limit;
+    // Narrows on the server, before the list is cut at ``limit``.
+    if (options?.query?.trim()) queryParameters.query = options.query.trim();
     actionInfo.queryParameters = queryParameters;
     const response = await dataManager.callAction<void, AssetScanResult>(actionInfo);
     return response ?? { assets: [] };

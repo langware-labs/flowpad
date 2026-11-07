@@ -1072,7 +1072,7 @@ export function EntityExecutionPanel({
         title={pendingDelete?.kind === 'all' ? t`Clear all past chats?` : t`Delete this chat?`}
         description={
           pendingDelete?.kind === 'all'
-            ? t`Their transcripts stay on disk.`
+            ? t`${pendingDelete.count} chats — their transcripts stay on disk.`
             : pendingDelete?.kind === 'one'
               ? t`"${pendingDelete.title}" — its transcript stays on disk.`
               : ''

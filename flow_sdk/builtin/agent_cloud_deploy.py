@@ -139,8 +139,9 @@ async def _share_dependencies(ctx: DeployContext) -> None:
 
 
 async def _unplaced(ctx: DeployContext) -> Optional[str]:
-    """The placement an earlier attempt planned and never put on a machine: this attempt continues it, so a
-    refused deploy leaves no second row and a value stored on the first is not lost."""
+    """This project's placement on the same provider and environment with the same main agent: a deploy
+    continues it, planned or already on a machine, so its stored values and the triggers that run on it
+    keep their deployment id. The hub brings a placed one's machine to the new commit in place."""
     from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT, DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
@@ -149,7 +150,7 @@ async def _unplaced(ctx: DeployContext) -> Optional[str]:
         ctx.provider or DEFAULT_CLOUD_PROVIDER,
         environment=ctx.environment or DEFAULT_CLOUD_ENVIRONMENT,
     )
-    if row is None or (row.origin and row.origin.external_id):
+    if row is None:
         return None
     return str(row.id) if row.main_agent_id == _main_typeid(ctx) else None
 
@@ -159,14 +160,29 @@ def _main_typeid(ctx: DeployContext) -> Optional[str]:
 
 
 async def _plan(ctx: DeployContext) -> None:
-    # The hub makes a new placement for a plan that names none: a deploy for a planned one names it.
-    ctx.deployment = await ctx.project.plan_deployment(
-        ctx.environment,
-        provider=ctx.provider,
-        token_allocation=ctx.token_allocation,
-        deployment_id=ctx.deployment_id or await _unplaced(ctx),
-        main_agent=ctx.agent,
-    )
+    # The hub makes a new placement for a plan that names none: a redeploy names the one it continues.
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+    async def plan(deployment_id: Optional[str]):
+        return await ctx.project.plan_deployment(
+            ctx.environment,
+            provider=ctx.provider,
+            token_allocation=ctx.token_allocation,
+            deployment_id=deployment_id,
+            main_agent=ctx.agent,
+        )
+
+    if ctx.deployment_id:
+        ctx.deployment = await plan(ctx.deployment_id)
+        return
+    found = await _unplaced(ctx)
+    try:
+        ctx.deployment = await plan(found)
+    except HubError as exc:
+        # A row the hub no longer has (its placement was removed there) is not one to continue.
+        if not found or exc.status_code != 404:
+            raise
+        ctx.deployment = await plan(None)
 
 
 async def _store_values(ctx: DeployContext) -> None:
