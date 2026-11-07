@@ -28,7 +28,14 @@ from flow_sdk.actions.action_registry import action
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.app.actions.share_action import LOCAL_MODE_SHARE_MESSAGE, _local_mode_share_blocked
 from flow_sdk.builtin.conversation import Conversation, ConversationKind
-from flow_sdk.builtin.flow_message import AttachmentType, DeliveryStatus, FlowMessage, delivery_rank
+from flow_sdk.builtin.flow_message import (
+    HELP_REQUEST_FILE,
+    DeliveryStatus,
+    FlowMessage,
+    FlowMessageKind,
+    carrier_attachment,
+    delivery_rank,
+)
 from flow_sdk.builtin.task import Task
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -128,12 +135,7 @@ async def ask_for_help() -> ApiResponse:
 
     for conv, _task, _opening in answers:
         if conv.hub_bound:
-            # One attempt now; the outbox owns every later one. Its outcome never changes the verdict.
-            try:
-                await conv.deliver(bodies=False)
-                conv.kick_delivery()
-            except Exception as e:  # noqa: BLE001
-                logger.warning("[ask-for-help] first delivery attempt failed: %s", e, exc_info=True)
+            await _first_delivery(conv, "ask-for-help")
     conv, task, opening = answers[0]
     opening = await FlowMessage.get_one({"id": opening.id})
     return ApiSuccessResponse(
@@ -194,10 +196,11 @@ async def capture_context(ask: AskForHelpRequest, recorded=None) -> dict[str, by
     files["screen.value.json"] = _value_json(ctx.model_copy(update={"session": None, "other_sessions": []}))
     if ctx.session is not None or ctx.other_sessions:
         files["session.value.json"] = _value_json(ctx)
-    logs = (diagnosis.logs if diagnosis is not None and diagnosis.logs else None) or await asyncio.to_thread(log_tails)
+    logs = diagnosis.logs if diagnosis is not None and diagnosis.logs else await asyncio.to_thread(log_tails)
     if logs:
         files["logs.txt"] = "\n\n".join(f"== {t.file}\n" + "\n".join(t.lines) for t in logs).encode("utf-8")
-    return {name: content for name, content in files.items() if name not in set(ask.left_out)}
+    left_out = set(ask.left_out)
+    return {name: content for name, content in files.items() if name not in left_out}
 
 
 def _held_dir(conv_id: str) -> Path:
@@ -224,33 +227,51 @@ def held_context(conv_id: str) -> dict[str, bytes]:
 
 def _carrier_of(fm: Optional[FlowMessage]) -> HelpRequestCarrier:
     """What a help request message says of itself (its ``help_request.value.json``), from its local copy."""
-    from flow_sdk.builtin.flow_message import HELP_REQUEST_FILE  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
 
-    for a in (fm.attachment if fm else None) or []:
-        if a.attachment_type == AttachmentType.FILE and (a.data or "").rsplit("/", 1)[-1] == HELP_REQUEST_FILE:
-            try:
-                from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
-                from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+    a = carrier_attachment(fm) if fm else None
+    if a is None:
+        return HelpRequestCarrier()
+    try:
+        storage = get_entity_embedded_storage(TypeId(type="flow_message", id=fm.id))
+        raw = json.loads(Path(storage.get_storage_path(a.data)).read_text(encoding="utf-8"))
+        return HelpRequestCarrier.model_validate({k: v for k, v in raw.items() if k != "spec_kind"})
+    except Exception:  # noqa: BLE001 — an unreadable carrier is an unshared one
+        return HelpRequestCarrier()
 
-                storage = get_entity_embedded_storage(TypeId(type="flow_message", id=fm.id))
-                path = Path(storage.get_storage_path(a.data))
-                raw = json.loads(path.read_text(encoding="utf-8"))
-                return HelpRequestCarrier.model_validate({k: v for k, v in raw.items() if k != "spec_kind"})
-            except Exception:  # noqa: BLE001 — an unreadable carrier is an unshared one
-                break
-    return HelpRequestCarrier()
+
+async def _send_help_message(conv, text: str, context: dict[str, bytes], someone, *, extra: Optional[dict] = None):
+    """A ``help_request`` message: its carrier, the shared context as files, plus ``extra`` body fields
+    (the person's own files, chips). The one writer both Ask and Share go through."""
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+
+    carrier = HelpRequestCarrier(title=conv.title or "", context=list(context), context_shared=bool(context))
+    extra = dict(extra or {})
+    files = [_Upload(HELP_REQUEST_FILE, _value_json(carrier)), *(_Upload(n, c) for n, c in context.items())]
+    body = {
+        "conversation_id": conv.id,
+        "text": text,
+        "kind": FlowMessageKind.HELP_REQUEST.value,
+        **extra,
+        "files": [*files, *extra.get("files", [])],
+    }
+    return await handle_add_message(body, someone)
+
+
+async def _first_delivery(conv: Conversation, tag: str) -> None:
+    """One delivery attempt now; the outbox owns every later one. Its outcome never changes the answer."""
+    try:
+        await conv.deliver(bodies=False)
+        conv.kick_delivery()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[%s] first delivery of %s failed: %s", tag, conv.id, e, exc_info=True)
 
 
 async def _write_request(conv, task, ask: AskForHelpRequest, files, context: dict[str, bytes], someone):
     """The request message, through the same send every message takes. Its context goes with it only when
     the person shares it; otherwise it waits here (``help-request-share``)."""
-    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-    from flow_sdk.builtin.flow_message import HELP_REQUEST_FILE, FlowMessageKind  # noqa: PLC0415
-
     shared = ask.share_context and ask.send is HelpSend.WHEN_DIAGNOSED and bool(ask.recipients)
-    carrier = HelpRequestCarrier(title=conv.title or ask.title, context=list(context) if shared else [], context_shared=shared)
-    uploads = [_Upload(HELP_REQUEST_FILE, _value_json(carrier))]
-    uploads += [_Upload(name, content) for name, content in context.items()] if shared else []
     if context and not shared:
         await asyncio.to_thread(_hold, conv.id, context)
     chips = [*ask.context, *([str(task.typeid)] if task else [])]
@@ -260,22 +281,14 @@ async def _write_request(conv, task, ask: AskForHelpRequest, files, context: dic
         # The task took the next free title ("… (2)"): the message names the task it carries.
         text = task.title + text[len(asked_title) :]
     user_files = files if isinstance(files, list) else ([files] if files else [])
-    body = {
-        "conversation_id": conv.id,
-        "text": text,
-        "kind": FlowMessageKind.HELP_REQUEST.value,
-        "files": [*uploads, *user_files],
-        **({"asset_references": chips, "shared_context_entities": chips} if chips else {}),
-    }
-    return await handle_add_message(body, someone)
+    extra = {"files": user_files, **({"asset_references": chips, "shared_context_entities": chips} if chips else {})}
+    return await _send_help_message(conv, text, context if shared else {}, someone, extra=extra)
 
 
 @action.post(action_name="help-request-share", types=["conversation"])
 async def help_request_share() -> ApiResponse:
     """``POST /graph/conversation/<id>/help-request-share`` — the person's Share: a request kept on this
     computer goes to the hub, and its held context follows as a help request message of its own."""
-    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-    from flow_sdk.builtin.flow_message import HELP_REQUEST_FILE, FlowMessageKind  # noqa: PLC0415
 
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid or not request_info.someone_typeid:
@@ -296,25 +309,12 @@ async def help_request_share() -> ApiResponse:
         conv = await conv.save(someone)
     message_id = None
     if context:
-        carrier = HelpRequestCarrier(title=conv.title or "", context=list(context), context_shared=True)
-        sent = await handle_add_message(
-            {
-                "conversation_id": conv.id,
-                "text": "Shared the context: " + ", ".join(context),
-                "kind": FlowMessageKind.HELP_REQUEST.value,
-                "files": [_Upload(HELP_REQUEST_FILE, _value_json(carrier)), *(_Upload(n, c) for n, c in context.items())],
-            },
-            someone,
-        )
+        sent = await _send_help_message(conv, "Shared the context: " + ", ".join(context), context, someone)
         if not isinstance(sent, ApiSuccessResponse):
             return sent
         message_id = sent.data["id"]
         await asyncio.to_thread(shutil.rmtree, _held_dir(conv.id), True)
-    try:
-        await conv.deliver(bodies=False)
-        conv.kick_delivery()
-    except Exception as e:  # noqa: BLE001 — the outbox retries; the share stands
-        logger.warning("[help-request-share] first delivery of %s failed: %s", conv.id, e)
+    await _first_delivery(conv, "help-request-share")
     return ApiSuccessResponse(data={"conversation_id": conv.id, "message_id": message_id, "shared": list(context)})
 
 
@@ -341,10 +341,11 @@ async def help_request_preview() -> ApiResponse:
         ask = _parse_request(body)
     except (ValidationError, ValueError) as e:
         return ApiFailResponse(message=f"Invalid help request: {e}", status_code=400)
-    context = await capture_context(ask.model_copy(update={"left_out": []}))
+    # The title and the context are independent waits (a model, a diagnose): take them together.
+    context, title = await asyncio.gather(capture_context(ask.model_copy(update={"left_out": []})), suggest_title(ask.text))
     return ApiSuccessResponse(
         data={
-            "title": await suggest_title(ask.text),
+            "title": title,
             "items": [{"name": n, "content": c.decode("utf-8", errors="replace")} for n, c in context.items()],
         }
     )

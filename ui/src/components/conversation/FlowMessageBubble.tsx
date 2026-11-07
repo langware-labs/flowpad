@@ -598,7 +598,9 @@ export function FlowMessageBubble({
       !stagedFileNames.has(i.filename) &&
       i.filename !== HELP_REQUEST_FILE,
   );
-  // Ask for help: the message names itself, and -- while its context waits on this computer -- says so.
+  // Ask for help: the message names itself, and -- while its context waits on this computer -- says so. The
+  // carrier counts too: a desk ticket's echo from the hub can come back without ``kind`` on a path that does
+  // not re-derive it.
   const isHelpRequest =
     fm.kind === FlowMessageKind.HELP_REQUEST || attachmentItems.some((i) => i.filename === HELP_REQUEST_FILE);
   // The "Download N" button must not re-count what's already surfaced without a

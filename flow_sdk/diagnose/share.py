@@ -16,7 +16,6 @@ wrote and sends nothing twice.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
 from typing import Any, Optional
@@ -130,11 +129,10 @@ async def _capture(conv_id: str, title: str, people: list[HelpRecipient], desk: 
 
 async def _write_messages(conv, diagnosis: Any, user_report: str, someone: str) -> bool:
     """The person's words, then the diagnosis as its own message with ``diagnosis.value.json``."""
-    from flow_sdk.app.actions.ask_for_help_action import DIAGNOSIS_FILE, _Upload  # noqa: PLC0415
+    from flow_sdk.app.actions.ask_for_help_action import DIAGNOSIS_FILE, _Upload, _value_json  # noqa: PLC0415
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
     from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
 
     desk = conv.kind in (ConversationKind.HELPDESK, ConversationKind.HELPDESK.value)
     opening = opening_text(diagnosis, user_report, desk=desk)
@@ -143,12 +141,11 @@ async def _write_messages(conv, diagnosis: Any, user_report: str, someone: str) 
         if not isinstance(said, ApiSuccessResponse):
             logger.warning("[diagnose-share] request text not written to %s: %s", conv.id, said.message)
             return False
-    content = json.dumps({"spec_kind": spec_tag(diagnosis), **diagnosis.model_dump(mode="json")}, indent=2)
     sent = await handle_add_message(
         {
             "conversation_id": conv.id,
             "text": diagnosis_text(diagnosis, desk=desk),
-            "files": [_Upload(DIAGNOSIS_FILE, content.encode("utf-8"))],
+            "files": [_Upload(DIAGNOSIS_FILE, _value_json(diagnosis))],
         },
         someone,
     )

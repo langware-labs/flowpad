@@ -461,13 +461,12 @@ export function AskForHelpDialog({
                 {t`Back`}
               </Button>
             )}
-            {step === 1 && (
-              <Button onClick={() => setStep(2)} disabled={!text.trim()} data-testid="ask-for-help-next">
-                {t`Next`}
-              </Button>
-            )}
-            {step === 2 && (
-              <Button onClick={toCard3} data-testid="ask-for-help-next">
+            {step < 3 && (
+              <Button
+                onClick={step === 1 ? () => setStep(2) : toCard3}
+                disabled={step === 1 && !text.trim()}
+                data-testid="ask-for-help-next"
+              >
                 {t`Next`}
               </Button>
             )}

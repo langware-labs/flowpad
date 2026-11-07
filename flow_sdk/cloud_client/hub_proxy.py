@@ -665,6 +665,7 @@ def _unwrap(resp: httpx.Response, *, method: str = "", url: Any = "", strict: bo
             raise HubError(
                 0, f"the hub could not be reached (HTTP {resp.status_code} from the way there)",
                 kind=HubFailureKind.OFFLINE,
+                via_status=resp.status_code,
             )
         raise HubError(
             resp.status_code, _extract_reason(resp), code=_extract_error_code(resp), data=_extract_data(resp)

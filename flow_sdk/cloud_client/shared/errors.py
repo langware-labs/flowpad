@@ -70,8 +70,11 @@ class HubError(Exception):
         code: str | None = None,
         kind: "HubFailureKind | None" = None,
         data: object = None,
+        via_status: int | None = None,
     ):
         self.status_code = status_code
+        #: The status something BETWEEN us and the hub answered (a proxy's HTML 502): the hub itself was not reached.
+        self.via_status = via_status
         self.reason = reason
         self.code = code
         #: The refusal's ``data``, when the hub said more than a message (e.g. which dependencies are not ready).
@@ -108,7 +111,7 @@ class HubError(Exception):
         return {
             "error_code": self.kind.value,
             "hub_failure": self.kind.value,
-            "hub_status": self.status_code or None,
+            "hub_status": self.status_code or self.via_status or None,
             "hub_code": self.code,
         }
 
@@ -127,8 +130,8 @@ class HubError(Exception):
         if self.kind is HubFailureKind.OFFLINE:
             # Something between us and the hub answered (a proxy's 502 page): say what it was, so neither the
             # person nor support mistakes it for a dead network.
-            if "(HTTP " in self.reason:
-                return "Can't reach the hub right now: " + self.reason.split("(", 1)[1].rstrip(")") + "."
+            if self.via_status:
+                return f"Can't reach the hub right now: HTTP {self.via_status} from the way there."
             return "Can't reach the hub right now."
         if self.kind is HubFailureKind.NOT_CONFIGURED:
             return "This app is not connected to a hub."

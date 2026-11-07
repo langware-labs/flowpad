@@ -893,7 +893,13 @@ class Conversation(ProjectedFields, Entity):
 
         owed_bodies = []
         async with keyed_loop_lock(_DELIVERY_LOCKS, self.id):
-            if self.awaits_hub and not await self._open_on_hub(force=force):
+            if self.awaits_hub and self.remote:
+                # Already on the hub: stage 0 is done. A copy saved from before it finished (the hub mirror's
+                # read-modify-write) can bring the flag back; opening again would re-share with people who
+                # already joined ("User has already accepted") and hold every later message back.
+                self.awaits_hub = False
+                await self.save()
+            elif self.awaits_hub and not await self._open_on_hub(force=force):
                 return
             for fm in await self._owed_messages(force=force):
                 if delivery_rank(fm.delivery_status) < delivery_rank(DeliveryStatus.SENT):

@@ -27,6 +27,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import apiClient from '@sdk/client';
+import { useDebounced } from '@src/hooks/useDebounced';
 import { useProcessAssets, type UseProcessAssetsResult } from './useProcessAssets';
 import { additionalDirScope, assetScope, AssetScopeChip, type AssetScope } from './asset-scope';
 import { assetBoardScope, BOARD_SCOPES, loadShownScopes, saveShownScopes, type BoardScope } from './board-scope';
@@ -312,11 +313,7 @@ export function AssetManagerPopover({
   // owns the data, so only one fetch is ever in flight.
   // A truncated list is narrowed on the server by what the person types (debounced), so an asset past
   // the cut can still be found -- the client-side filter alone only ever searched the first page.
-  const [serverQuery, setServerQuery] = useState('');
-  useEffect(() => {
-    const handle = setTimeout(() => setServerQuery(listFilter.trim()), 250);
-    return () => clearTimeout(handle);
-  }, [listFilter]);
+  const serverQuery = useDebounced(listFilter.trim(), 250);
   const ownAssets = useProcessAssets(null, { enabled: open && !assets, query: serverQuery });
 
   const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } =

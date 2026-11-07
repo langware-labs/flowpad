@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { t } from '@lingui/core/macro';
-import { Braces, Copy, FileText, HardDrive, MinusCircle, PlusCircle, Share2 } from 'lucide-react';
+import { Braces, FileText, HardDrive, MinusCircle, PlusCircle, Share2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { ReviewShell, ReviewSource } from './ReviewShell';
 
 /** One thing about to be sent: a file name and its text. */
@@ -123,15 +124,7 @@ export function ContentReviewDialog({
     >
       <div className="rounded-md border border-border" data-testid="staged-review">
         <div className="flex items-center justify-end border-b border-border px-2 py-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs"
-            onClick={() => void navigator.clipboard?.writeText(selected.content)}
-          >
-            <Copy className="h-3.5 w-3.5" />
-            {t`Copy`}
-          </Button>
+          <CopyButton value={selected.content} label={t`Copy`} testId="content-review-copy" />
         </div>
         <pre
           className={`max-h-[50vh] overflow-auto whitespace-pre-wrap p-3 font-mono text-xs ${out ? 'opacity-50' : ''}`}

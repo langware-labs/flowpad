@@ -376,14 +376,21 @@ def derive_session_fields(fm: "FlowMessage") -> None:
 HELP_REQUEST_FILE = "help_request.value.json"
 
 
+def carrier_attachment(fm: "FlowMessage") -> "Attachment | None":
+    """A help request's carrier file (``help_request.value.json``) among its attachments, or None."""
+    return next(
+        (
+            a
+            for a in fm.attachment or []
+            if a.attachment_type == AttachmentType.FILE and (a.data or "").rsplit("/", 1)[-1] == HELP_REQUEST_FILE
+        ),
+        None,
+    )
+
+
 def derive_help_request_kind(fm: "FlowMessage") -> None:
     """Refill ``kind=help_request`` the hub may have stripped, from its carrier file. Idempotent."""
-    if fm.kind != FlowMessageKind.USER:
-        return
-    if any(
-        a.attachment_type == AttachmentType.FILE and (a.data or "").rsplit("/", 1)[-1] == HELP_REQUEST_FILE
-        for a in fm.attachment or []
-    ):
+    if fm.kind == FlowMessageKind.USER and carrier_attachment(fm) is not None:
         fm.kind = FlowMessageKind.HELP_REQUEST
 
 
