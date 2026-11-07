@@ -199,9 +199,14 @@ async def test_the_app_does_not_poll_what_a_running_deployment_polls(mail_db, pr
     other_agent = await _agent()
     theirs = await _channel(other_agent)
 
-    assert await polled_by_a_deployment([mine, theirs]) == set(), "no process alive: the app polls both"
+    # Its process is not up yet (a woken machine boots with mail waiting): the app still leaves the channel to it --
+    # the app only records a message, so one it took now would never be answered.
+    assert await polled_by_a_deployment([mine, theirs]) == {str(mine.id)}, "serving, process not up: left to it"
     running[str(deployment.id)] = 1
     assert await polled_by_a_deployment([mine, theirs]) == {str(mine.id)}
+    deployment.serving = False
+    await deployment.save()
+    assert await polled_by_a_deployment([mine, theirs]) == set(), "not serving here: the app polls it"
 
 
 async def test_a_deployment_process_polls_the_channels_the_app_leaves_to_it(mail_db, processes, monkeypatch):

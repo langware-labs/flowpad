@@ -484,8 +484,15 @@ class AgentMailbox(Entity):
             # allocating its mailbox. Adopt that Hub row on retry.
             agent.remote = True
 
+        # An ACTIVE mailbox is adopted as it is. Enabling is a lifecycle change only its human owner may make; a
+        # machine signed in as the agent (a private deployment's person machine) adopts and wires its source, and
+        # asking the hub to enable it there would be refused.
+        if isinstance(existing, dict) and existing.get("status") == "active" and not options:
+            descriptor = existing
+        else:
+            descriptor = None
         try:
-            descriptor = await driver.enable_mailbox(agent.id, **options)
+            descriptor = descriptor or await driver.enable_mailbox(agent.id, **options)
         except AgentMailboxError as exc:
             if exc.status_code == 401:
                 raise LoginRequired("FlowPad cloud login required to allocate a mailbox") from exc

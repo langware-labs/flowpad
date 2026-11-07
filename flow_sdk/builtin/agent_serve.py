@@ -811,12 +811,27 @@ async def running_deployments() -> list:
         return [d for d in rows if d.serving and d.places_agent and d.is_local and deployment_process.alive(d)]
 
 
+async def serving_deployments() -> list:
+    """The local agent deployments set to run here (``serving``) -- their process alive or not yet.
+
+    What the app leaves a deployment's channels for. Not :func:`running_deployments`: the app's poll only
+    RECORDS a message, it never answers one, so a mail it records while the deployment's process is starting
+    (a woken machine boots with mail waiting) or restarting is consumed and never answered. The supervisor
+    starts that process again within ``RESTART_SECONDS``; the channel waits for it.
+    """
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    rows = await Deployment.get_all({"match": {"serving": True}})
+    return [d for d in rows if d.serving and d.places_agent and d.is_local]
+
+
 async def polled_by_a_deployment(sources=None) -> set[str]:
     """The ids of the sources a running deployment's process polls itself — so this app must not.
 
     A deployment's loop polls the channels it answers (:func:`answered_sources`) from its own
     process; the app's heartbeat polling the same source at the same moment would race its cursor
-    (the in-flight guard is per process). A dead deployment's channels are polled here as ever.
+    (the in-flight guard is per process). The app leaves them to every deployment set to serve here,
+    its process up or not yet (:func:`serving_deployments`): recording a message nobody answers loses it.
     *sources* narrows the answer to those.
 
     Held means held by ANOTHER process: asked from inside a deployment's own process
@@ -825,7 +840,7 @@ async def polled_by_a_deployment(sources=None) -> set[str]:
     """
     own = os.environ.get(deployment_process.DEPLOYMENT_ENV, "").strip()
     held: set[str] = set()
-    for deployment in await running_deployments():
+    for deployment in await serving_deployments():
         if str(deployment.id) == own:
             continue
         agent = await deployment.main_agent()
@@ -863,7 +878,12 @@ def bound_at(deployment, source) -> Optional[datetime]:
     stamps = [
         iso_to_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s
     ]
-    return max(stamps, default=None)
+    bound = max(stamps, default=None)
+    # A placement made BY a message (a private deployment's person, placed on their first mail) answers from
+    # that message: it waited before this machine existed and is the reason it does.
+    raw = getattr(deployment, "answers_from", None)
+    since = iso_to_utc(raw) if raw else None
+    return min(bound, since) if bound is not None and since is not None else bound
 
 
 def is_history(message, since: Optional[datetime]) -> bool:

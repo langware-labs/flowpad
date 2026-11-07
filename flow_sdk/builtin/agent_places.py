@@ -357,6 +357,8 @@ async def adopt_deployment(record: dict[str, Any]) -> "Deployment":
         "identity": record.get("identity") or ("agent" if main else "none"),
         "serving": bool(main),
         **{k: record[k] for k in ("source_kind", "source_ref", "source_revision") if record.get(k)},
+        # A placement made by a message answers from that message (``agent_serve.bound_at``).
+        **({"answers_from": record["answers_from"]} if record.get("answers_from") else {}),
         **({"environment": env} if env is not None else {}),
     }
     existing = await Deployment.get_by_id(deployment_id)

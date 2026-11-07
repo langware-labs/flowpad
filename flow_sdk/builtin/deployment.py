@@ -160,6 +160,9 @@ class Deployment(Entity):
     #: The one agent (``agent-<uuid>``) that answers every call on this box; ``None`` = no agent (web only).
     #: Defaults from the project's ``main_agent`` recommendation (flow.json); stored here, never in git.
     main_agent_id: str | None = APIField(default=None, description="The agent that answers every call here")
+    #: When this placement answers from (ISO), set by the hub for a person's placement made by a message: that
+    #: message is an arrival here, not history (``agent_serve.bound_at``). None: from when it was bound.
+    answers_from: Optional[str] = APIField(default=None)
     #: The main agent's launch overrides on this box (keys: ``PLACE_OVERRIDABLE_FIELDS``).
     main_agent_overrides: dict[str, Any] = APIField(
         default_factory=dict, description="Launch overrides for the main agent on this deployment"
