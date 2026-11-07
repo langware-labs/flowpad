@@ -2870,6 +2870,10 @@ msgstr ""
 msgid "A vault where this project's shared values live. Teammates fetch from it; values never go into Git or a message."
 msgstr ""
 
+#: src/notifications/diagnose/diagnose-and-fix.ts
+msgid "A warning"
+msgstr ""
+
 #: src/components/search-index/IndexRecommendedBanner.tsx
 msgid "a while ago"
 msgstr "منذ مدة"
@@ -4310,6 +4314,10 @@ msgstr "مرسل مسموح له"
 msgid "An email address"
 msgstr "عنوان بريد إلكتروني"
 
+#: src/notifications/diagnose/diagnose-and-fix.ts
+msgid "An error"
+msgstr ""
+
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
 msgid "An error occurred"
@@ -4411,8 +4419,8 @@ msgid "Anchor time range"
 msgstr "نطاق وقت التثبيت"
 
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "and"
-msgstr "و"
+#~ msgid "and"
+#~ msgstr "و"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
@@ -4635,8 +4643,8 @@ msgid "Anything that needs a person today becomes a task for you."
 msgstr "يصبح كل ما يحتاج إلى شخص اليوم مهمة لكم."
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Anything to add? (optional)"
-msgstr "هل هناك ما تضيفه؟ (اختياري)"
+#~ msgid "Anything to add? (optional)"
+#~ msgstr "هل هناك ما تضيفه؟ (اختياري)"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
 #~ msgid "API"
@@ -5005,11 +5013,9 @@ msgstr "تطلب استرداد مبلغ أو تعترض على رسوم"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
-#: src/components/diagnose/diagnose-run-store.ts
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskAsk.tsx
-#: src/components/version-popover/diagnose-modal.tsx
 msgid "Ask for help"
 msgstr "طلب المساعدة"
 
@@ -5296,8 +5302,8 @@ msgid "Attach files or a screenshot"
 msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Attach files or a screenshot (or paste one into the description)"
-msgstr "إرفاق ملفات أو لقطة شاشة (أو لصقها في الوصف)"
+#~ msgid "Attach files or a screenshot (or paste one into the description)"
+#~ msgstr "إرفاق ملفات أو لقطة شاشة (أو لصقها في الوصف)"
 
 #: src/components/help/AskForHelpDialog.tsx
 #~ msgid "Attach files or a screenshot (or paste one into the details)"
@@ -6365,7 +6371,6 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
-#: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/components/wizard/WizardHost.tsx
@@ -6506,6 +6511,10 @@ msgstr "التقاط"
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Caught by"
 msgstr "اعتُرضت بواسطة"
+
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "Cause"
+msgstr ""
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "chain"
@@ -7515,7 +7524,6 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/ui/media-lightbox.tsx
 #: src/components/ui/media-lightbox.tsx
 #: src/components/ui/sheet.tsx
-#: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -8410,6 +8418,10 @@ msgstr "مسافة الرسم البياني السياقي"
 msgid "Context list actions"
 msgstr "إجراءات قائمة السياق"
 
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Context not shared"
+msgstr ""
+
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Context to share — review before sending."
 msgstr ""
@@ -8419,8 +8431,8 @@ msgid "context tokens"
 msgstr "رموز السياق"
 
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Context:"
-msgstr ""
+#~ msgid "Context:"
+#~ msgstr ""
 
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
@@ -9546,6 +9558,10 @@ msgstr "تعذر إعادة تشغيل {0}."
 #~ msgid "Could not report diagnosis"
 #~ msgstr "تعذر الإبلاغ عن التشخيص"
 
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "Could not report it"
+msgstr ""
+
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Could not request access"
 msgstr ""
@@ -9729,8 +9745,8 @@ msgstr "تعذّر إرساله"
 #~ msgstr "تعذر إرسال التقرير إلى فريق Flowpad"
 
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "Could not send the diagnosis"
-msgstr "تعذّر إرسال التشخيص"
+#~ msgid "Could not send the diagnosis"
+#~ msgstr "تعذّر إرسال التشخيص"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #~ msgid "Could not send the files"
@@ -9843,6 +9859,10 @@ msgstr "تعذر بدء تسجيل الدخول"
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Could not start the {0} sign-in."
 msgstr "تعذّر بدء تسجيل الدخول إلى {0}."
+
+#: src/notifications/diagnose/diagnose-and-fix.ts
+msgid "Could not start the diagnosis"
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
@@ -11535,8 +11555,8 @@ msgid "Deriving with Claude…"
 msgstr "جارٍ الاستخراج مع Claude…"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
-msgstr "يمكن وصف المشكلة أو لصق رسالة الخطأ، ثم تشغيل التشخيص. للفحص الشامل، يُترك الحقل فارغاً. يفحص المساعد Flowpad، ويُصلح ما هو آمن، ويسجل النتيجة."
+#~ msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
+#~ msgstr "يمكن وصف المشكلة أو لصق رسالة الخطأ، ثم تشغيل التشخيص. للفحص الشامل، يُترك الحقل فارغاً. يفحص المساعد Flowpad، ويُصلح ما هو آمن، ويسجل النتيجة."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Describe the issue to analyze and improve…"
@@ -11619,6 +11639,7 @@ msgstr "التفاصيل"
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/conversation/ContactPermissionsDialog.tsx
+#: src/components/conversation/DiagnosisMessageActions.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -11677,6 +11698,7 @@ msgid "Diagnose"
 msgstr "تشخيص"
 
 #: src/components/warnings-popover/warnings-popover.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Diagnose & fix"
 msgstr ""
 
@@ -11684,28 +11706,29 @@ msgstr ""
 #~ msgid "Diagnose a Flowpad issue"
 #~ msgstr "تشخيص مشكلة في Flowpad"
 
-#. placeholder {0}: e instanceof Error ? e.message : String(e)
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "Diagnose failed: {0}"
-msgstr "فشل التشخيص: {0}"
+#~ msgid "Diagnose failed: {0}"
+#~ msgstr "فشل التشخيص: {0}"
 
 #: src/notifications/diagnose/DiagnoseErrorModal.tsx
 #~ msgid "Diagnose failed: {text}"
 #~ msgstr "فشل التشخيص: {text}"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Diagnose Flowpad"
-msgstr "تشخيص Flowpad"
+#~ msgid "Diagnose Flowpad"
+#~ msgstr "تشخيص Flowpad"
 
-#: src/components/version-popover/diagnose-modal.tsx
 #: src/notifications/diagnose/DiagnoseIconButton.tsx
 msgid "Diagnose this error"
 msgstr "تشخيص هذا الخطأ"
 
-#: src/components/version-popover/diagnose-modal.tsx
 #: src/notifications/diagnose/DiagnoseIconButton.tsx
 msgid "Diagnose this warning"
 msgstr "تشخيص هذا التحذير"
+
+#: src/components/conversation/HelpRequestLine.tsx
+msgid "Diagnosing privately… you can leave, the answer lands here."
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosing…"
@@ -11744,12 +11767,12 @@ msgid "Diagnosis not found."
 msgstr "التشخيص غير موجود."
 
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "Diagnosis recorded — not sent"
-msgstr "تم تسجيل التشخيص — لم يُرسَل"
+#~ msgid "Diagnosis recorded — not sent"
+#~ msgstr "تم تسجيل التشخيص — لم يُرسَل"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Diagnosis recorded."
-msgstr "تم تسجيل التشخيص."
+#~ msgid "Diagnosis recorded."
+#~ msgstr "تم تسجيل التشخيص."
 
 #: src/components/account/system-diagnoses.tsx
 #~ msgid "Diagnosis reported to the Flowpad team"
@@ -11770,23 +11793,21 @@ msgstr "طلب تشخيص"
 msgid "Diagnosis request created"
 msgstr "تم إنشاء طلب التشخيص"
 
-#. placeholder {0}: sent.map((s) => s.to).join(', ')
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "Diagnosis sent to {0}"
-msgstr "تم إرسال التشخيص إلى {0}"
-
-#. placeholder {0}: done.shared.map((s) => s.to).join(', ')
-#: src/components/version-popover/diagnose-modal.tsx
-msgid "Diagnosis sent to {0}."
-msgstr "تم إرسال التشخيص إلى {0}."
+#~ msgid "Diagnosis sent to {0}"
+#~ msgstr "تم إرسال التشخيص إلى {0}"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Diagnosis was not recorded — try again."
-msgstr "لم يتم تسجيل التشخيص — يُرجى المحاولة مرة أخرى."
+#~ msgid "Diagnosis sent to {0}."
+#~ msgstr "تم إرسال التشخيص إلى {0}."
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Diagnostic complete — no issue found."
-msgstr "اكتمل التشخيص — لم يُعثر على أي مشكلة."
+#~ msgid "Diagnosis was not recorded — try again."
+#~ msgstr "لم يتم تسجيل التشخيص — يُرجى المحاولة مرة أخرى."
+
+#: src/components/version-popover/diagnose-modal.tsx
+#~ msgid "Diagnostic complete — no issue found."
+#~ msgstr "اكتمل التشخيص — لم يُعثر على أي مشكلة."
 
 #: src/components/assets/editor/chart/chartControls.tsx
 msgid "Diagram"
@@ -12138,12 +12159,12 @@ msgid "Don't have FlowPad yet?"
 msgstr "ليس لديكم FlowPad بعد؟"
 
 #: src/components/diagnose/SendOnceDoneDialog.tsx
-msgid "Don't send"
-msgstr "لا ترسل"
+#~ msgid "Don't send"
+#~ msgstr "لا ترسل"
 
 #: src/components/diagnose/SendOnceDoneDialog.tsx
-msgid "Don't show again"
-msgstr "لا تعرض مرة أخرى"
+#~ msgid "Don't show again"
+#~ msgstr "لا تعرض مرة أخرى"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Don’t show again"
@@ -13052,7 +13073,6 @@ msgstr "خطأ"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/llm-sources/LlmKeysSection.tsx
 #: src/components/machine-overview/node-secrets.tsx
-#: src/components/version-popover/diagnose-modal.tsx
 msgid "Error"
 msgstr "خطأ"
 
@@ -13548,6 +13568,7 @@ msgstr "خروج {0} · {1}"
 #: src/components/conversation/asset-review/ReviewShell.tsx
 #: src/components/conversation/asset-review/ReviewShell.tsx
 #: src/components/ui/full-screen.tsx
+#: src/tabs/tab-full-screen.tsx
 msgid "Exit full screen"
 msgstr "الخروج من ملء الشاشة"
 
@@ -15296,6 +15317,7 @@ msgstr "المسار الكامل لملف الخطة .md الذي أنشأه ا
 msgid "Full screen"
 msgstr "ملء الشاشة"
 
+#: src/components/tabs/TabStrip.tsx
 #: src/components/ui/full-screen.tsx
 msgid "Full screen (Esc to exit)"
 msgstr "ملء الشاشة (Esc للخروج)"
@@ -16015,7 +16037,6 @@ msgid "Held by"
 msgstr "بحوزة"
 
 #: src/components/conversation/conversation-category.ts
-#: src/components/diagnose/ShareWithRow.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
@@ -20858,6 +20879,10 @@ msgstr "لا توجد طلبات مساعدة حتى الآن"
 msgid "No assistant is installed on this machine."
 msgstr "لا يوجد مساعد مثبّت على هذا الجهاز."
 
+#: src/components/stream-inbox-view/ConversationAttachmentsButton.tsx
+msgid "No attachments"
+msgstr ""
+
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "No backlinks yet."
 msgstr "لا توجد روابط خلفية بعد."
@@ -22663,8 +22688,8 @@ msgid "Not set up yet. Add your own provider key to start spending."
 msgstr ""
 
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Not shared"
-msgstr ""
+#~ msgid "Not shared"
+#~ msgstr ""
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "not signed in"
@@ -22986,8 +23011,8 @@ msgid "Nothing was launched. You can close this tab."
 msgstr "لم يتم تشغيل أي شيء. يمكن إغلاق هذه التبويبة."
 
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "Nothing was sent."
-msgstr "لم يُرسَل أي شيء."
+#~ msgid "Nothing was sent."
+#~ msgstr "لم يُرسَل أي شيء."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Nothing would arrive for this, so it was not sent:"
@@ -23103,8 +23128,8 @@ msgid "Off"
 msgstr "متوقف"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Off — Flowpad asks before it sends anything to {goesTo}. Your choice is remembered."
-msgstr "متوقف — يسأل Flowpad قبل أن يرسل أي شيء إلى {goesTo}. يتم تذكّر اختيارك."
+#~ msgid "Off — Flowpad asks before it sends anything to {goesTo}. Your choice is remembered."
+#~ msgstr "متوقف — يسأل Flowpad قبل أن يرسل أي شيء إلى {goesTo}. يتم تذكّر اختيارك."
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Off · turn on to run it here, free, while this computer is awake"
@@ -23428,7 +23453,6 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
-#: src/components/diagnose/diagnose-run-store.ts
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
@@ -23648,8 +23672,8 @@ msgid "Open Context"
 msgstr "فتح السياق"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Open conversation"
-msgstr "افتح المحادثة"
+#~ msgid "Open conversation"
+#~ msgstr "افتح المحادثة"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Open credential"
@@ -23727,7 +23751,6 @@ msgstr "فتح المجلد"
 msgid "Open folder: {path}"
 msgstr "فتح المجلد: {path}"
 
-#: src/components/status-bar.tsx
 #: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
 msgid "Open folder: {projectPath}"
 msgstr "فتح المجلد: {projectPath}"
@@ -23805,7 +23828,6 @@ msgstr "فتح في المحرر"
 msgid "Open in Editor"
 msgstr "فتح في المحرر"
 
-#: src/components/tabs/TabStrip.tsx
 #: src/components/tabs/TabStrip.tsx
 msgid "Open in external browser"
 msgstr "فتح في متصفح خارجي"
@@ -24493,8 +24515,8 @@ msgid "or open the link on your phone"
 msgstr "أو افتحوا الرابط على الهاتف"
 
 #: src/components/diagnose/ShareWithRow.tsx
-msgid "Or pick a person, or type an email"
-msgstr "أو اختيار شخص، أو كتابة بريد إلكتروني"
+#~ msgid "Or pick a person, or type an email"
+#~ msgstr "أو اختيار شخص، أو كتابة بريد إلكتروني"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
 #~ msgid "Or recover it, if the page throws an error."
@@ -25214,8 +25236,8 @@ msgid "Pick a group in any conversation to add all its members at once."
 msgstr "يمكن اختيار مجموعة في أي محادثة لإضافة جميع أعضائها دفعة واحدة."
 
 #: src/components/diagnose/ShareWithRow.tsx
-msgid "Pick a person or type an email"
-msgstr "اختيار شخص أو كتابة بريد إلكتروني"
+#~ msgid "Pick a person or type an email"
+#~ msgstr "اختيار شخص أو كتابة بريد إلكتروني"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
@@ -26109,13 +26131,12 @@ msgid "Prompt from {otherName}"
 msgstr "موجّه من {otherName}"
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
-#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Prompt Library"
 msgstr "مكتبة الأوامر النصية"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Prompt Library — click a prompt to add it to the queue"
-msgstr "مكتبة الأوامر — انقروا على أمر لإضافته إلى قائمة الانتظار"
+#~ msgid "Prompt Library — click a prompt to add it to the queue"
+#~ msgstr "مكتبة الأوامر — انقروا على أمر لإضافته إلى قائمة الانتظار"
 
 #~ msgid "Prompt mode: this text opens a live session on {hostName}'s machine"
 #~ msgstr ""
@@ -27206,8 +27227,8 @@ msgid "Reload the MarkdownIndex list."
 msgstr "إعادة تحميل قائمة MarkdownIndex."
 
 #: src/components/diagnose/SendOnceDoneDialog.tsx
-msgid "Remember this decision"
-msgstr "تذكّر هذا القرار"
+#~ msgid "Remember this decision"
+#~ msgstr "تذكّر هذا القرار"
 
 #: src/components/git/GitSetupWizard.tsx
 msgid "Remote repository"
@@ -27759,6 +27780,19 @@ msgstr "التقرير"
 #~ msgid "Report issue"
 #~ msgstr "الإبلاغ عن مشكلة"
 
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "Report it"
+msgstr ""
+
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "Report it for me"
+msgstr ""
+
+#. placeholder {0}: state.desk
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "Report it to {0}"
+msgstr ""
+
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Report page errors"
 msgstr ""
@@ -28153,8 +28187,8 @@ msgid "Results"
 msgstr "النتائج"
 
 #: src/components/diagnose/ShareWithRow.tsx
-msgid "Results include your screen and your session's last turns."
-msgstr "تتضمن النتائج شاشتك وآخر أدوار جلستك."
+#~ msgid "Results include your screen and your session's last turns."
+#~ msgstr "تتضمن النتائج شاشتك وآخر أدوار جلستك."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/automations/BusStream.tsx
@@ -28455,6 +28489,7 @@ msgid "Root"
 msgstr "جذر"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/conversation/DiagnosisMessageActions.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Root cause"
 msgstr "السبب الجذري"
@@ -28579,10 +28614,9 @@ msgstr "تشغيل أمر"
 #~ msgid "Run a diagnosis first and read it. Nothing is sent until you choose to."
 #~ msgstr "شغّل التشخيص أولًا واقرأه. لن يُرسل شيء حتى تختار ذلك."
 
-#. placeholder {0}: seed.kind
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Run a diagnosis on the {0} below? The assistant inspects Flowpad, repairs what's safe, and records the result."
-msgstr "هل تريد تشغيل تشخيص لـ {0} أدناه؟ يفحص المساعد Flowpad ويصلح ما هو آمن ويسجل النتيجة."
+#~ msgid "Run a diagnosis on the {0} below? The assistant inspects Flowpad, repairs what's safe, and records the result."
+#~ msgstr "هل تريد تشغيل تشخيص لـ {0} أدناه؟ يفحص المساعد Flowpad ويصلح ما هو آمن ويسجل النتيجة."
 
 #: src/notifications/diagnose/DiagnoseErrorModal.tsx
 #~ msgid "Run a diagnosis on the error below? The assistant inspects Flowpad, repairs what's safe, and records the result."
@@ -28651,7 +28685,6 @@ msgid "Run detail"
 msgstr "تفاصيل التشغيل"
 
 #: src/components/help/AskForHelpDialog.tsx
-#: src/components/version-popover/diagnose-modal.tsx
 msgid "Run diagnosis"
 msgstr "تشغيل التشخيص"
 
@@ -30135,12 +30168,12 @@ msgid "Send one minimal call through this endpoint"
 msgstr "إرسال استدعاء بسيط واحد عبر نقطة النهاية هذه"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Send report once done"
-msgstr "أرسل التقرير عند الانتهاء"
+#~ msgid "Send report once done"
+#~ msgstr "أرسل التقرير عند الانتهاء"
 
 #: src/components/diagnose/SendOnceDoneDialog.tsx
-msgid "Send report once done?"
-msgstr "هل ترسل التقرير عند الانتهاء؟"
+#~ msgid "Send report once done?"
+#~ msgstr "هل ترسل التقرير عند الانتهاء؟"
 
 #: src/components/inbound/InboundView.tsx
 msgid "Send this code from your phone to link it:"
@@ -30159,16 +30192,16 @@ msgid "Send this to the person you support — they run it in their terminal:"
 msgstr "أرسلوا هذا إلى الشخص الذي تدعمونه — سيشغّله في الطرفية لديه:"
 
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "Send to {to}"
-msgstr "أرسل إلى {to}"
+#~ msgid "Send to {to}"
+#~ msgstr "أرسل إلى {to}"
 
 #: src/components/conversation/MessageFormCard.tsx
 msgid "Send updated answers"
 msgstr ""
 
 #: src/components/diagnose/SendOnceDoneDialog.tsx
-msgid "Send when done"
-msgstr "أرسل عند الانتهاء"
+#~ msgid "Send when done"
+#~ msgstr "أرسل عند الانتهاء"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Send without it"
@@ -30222,8 +30255,8 @@ msgstr "يرسل الردود"
 #~ msgstr "يرسل التشخيص الذي فحصته، مع ما كان على شاشتك وآخر أدوار جلستك."
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Sends the results to {goesTo} when the diagnosis finishes — even if you close this window."
-msgstr "يرسل النتائج إلى {goesTo} عند انتهاء التشخيص — حتى إذا أغلقت هذه النافذة."
+#~ msgid "Sends the results to {goesTo} when the diagnosis finishes — even if you close this window."
+#~ msgstr "يرسل النتائج إلى {goesTo} عند انتهاء التشخيص — حتى إذا أغلقت هذه النافذة."
 
 #: src/components/conversation/MessageFormCard.tsx
 msgid "Sends your answers to {otherName} as a reply."
@@ -30414,6 +30447,10 @@ msgstr "تحليل الجلسة"
 #: src/components/lens-viewer/shared/transcript-features/CallStackView.tsx
 msgid "Session call stack"
 msgstr "مكدس استدعاءات الجلسة"
+
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+msgid "Session context"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Session data will appear after using Claude Code"
@@ -30915,8 +30952,8 @@ msgid "Share the recording or save it to the project."
 msgstr ""
 
 #: src/components/diagnose/ShareWithRow.tsx
-msgid "Share the results with"
-msgstr "شارك النتائج مع"
+#~ msgid "Share the results with"
+#~ msgstr "شارك النتائج مع"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Share this agent with specific people"
@@ -33677,8 +33714,8 @@ msgid "The check did not run."
 msgstr "لم يتم تنفيذ الفحص."
 
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "The check is done"
-msgstr "اكتمل الفحص"
+#~ msgid "The check is done"
+#~ msgstr "اكتمل الفحص"
 
 #: src/notifications/ingest.ts
 msgid "The cloud service returned an error. Please try again in a moment."
@@ -33848,8 +33885,8 @@ msgid "The health check did not answer"
 msgstr "لم يستجب فحص الحالة"
 
 #: src/components/diagnose/diagnose-run-store.ts
-msgid "the help desk"
-msgstr "مكتب المساعدة"
+#~ msgid "the help desk"
+#~ msgstr "مكتب المساعدة"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "the help desk could not load"
@@ -34518,6 +34555,10 @@ msgstr "هذا الوكيل"
 #~ msgid "This agent has no email address yet."
 #~ msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "This agent is gone"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #~ msgid "This agent is in no project, so the cloud has nowhere to put it — choose one"
 #~ msgstr ""
@@ -35184,8 +35225,8 @@ msgstr "لم يكتب هذا التشغيل أي ملفات. التشغيلات 
 #~ msgstr "تعمل هذه العملية في الخلفية، ويمكن الاستمرار في العمل بكل حرية. عند الانتهاء، ستكون النتيجة (وأي إجراءات) متاحة في الصفحة الرئيسية."
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "This runs in the background — when it's done, the result (and any actions) waits on your Home feed."
-msgstr "يعمل هذا في الخلفية، وعند الانتهاء ستجد النتيجة (وأي إجراءات) في موجز الصفحة الرئيسية."
+#~ msgid "This runs in the background — when it's done, the result (and any actions) waits on your Home feed."
+#~ msgstr "يعمل هذا في الخلفية، وعند الانتهاء ستجد النتيجة (وأي إجراءات) في موجز الصفحة الرئيسية."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "this sandbox"
@@ -37107,7 +37148,6 @@ msgid "View current file"
 msgstr "عرض الملف الحالي"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/version-popover/diagnose-modal.tsx
 msgid "View diagnosis"
 msgstr "عرض التشخيص"
 
@@ -37389,8 +37429,8 @@ msgid "wants to run prompts on your machine"
 msgstr "يريد تشغيل موجّهات على جهازكم"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "Warning"
-msgstr "تحذير"
+#~ msgid "Warning"
+#~ msgstr "تحذير"
 
 #: src/components/hooks/event-utils.tsx
 msgid "Warning: {warning}"
@@ -37538,6 +37578,10 @@ msgstr "ما الذي يمكنكم العمل عليه؟"
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "What Flowpad found when it checked this project's Git setup."
 msgstr "ما الذي عثرت عليه Flowpad عند التحقق من إعداد Git لهذا المشروع."
+
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "What happened"
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 #~ msgid "What happened, what you expected, what you already tried (optional)"
@@ -37726,13 +37770,17 @@ msgstr "ما يضعه هذا المصدر في المشروع يُضاف إلى 
 msgid "What to look at"
 msgstr "ما ينبغي الانتباه إليه"
 
+#: src/components/conversation/DiagnosisMessageActions.tsx
+msgid "What was done"
+msgstr ""
+
 #: src/components/automations/RunDetail.tsx
 msgid "What went wrong"
 msgstr "ما الذي حدث من خطأ"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "What went wrong? (leave empty for a full sweep)"
-msgstr "ما المشكلة؟ (يُترك الحقل فارغاً لإجراء فحص شامل)"
+#~ msgid "What went wrong? (leave empty for a full sweep)"
+#~ msgstr "ما المشكلة؟ (يُترك الحقل فارغاً لإجراء فحص شامل)"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "What went wrong? What did you expect, and what did you already try?"
@@ -37817,12 +37865,12 @@ msgid "When an agent reports {events}"
 msgstr "عندما يُبلغ وكيل عن {events}"
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "When it finishes, send the results to the people above. Flowpad remembers this choice."
-msgstr "عند الانتهاء، أرسل النتائج إلى الأشخاص أعلاه. يتذكّر Flowpad هذا الاختيار."
+#~ msgid "When it finishes, send the results to the people above. Flowpad remembers this choice."
+#~ msgstr "عند الانتهاء، أرسل النتائج إلى الأشخاص أعلاه. يتذكّر Flowpad هذا الاختيار."
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "When it is done, the results go to {goesTo} in a new conversation titled with the diagnosis."
-msgstr "عند الانتهاء، تُرسَل النتائج إلى {goesTo} في محادثة جديدة بعنوان التشخيص."
+#~ msgid "When it is done, the results go to {goesTo} in a new conversation titled with the diagnosis."
+#~ msgstr "عند الانتهاء، تُرسَل النتائج إلى {goesTo} في محادثة جديدة بعنوان التشخيص."
 
 #: src/i18n/pref-labels.ts
 msgid "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
@@ -37838,8 +37886,8 @@ msgid "When something happens in Flowpad"
 msgstr "عند حدوث شيء ما في Flowpad"
 
 #: src/components/diagnose/SendOnceDoneDialog.tsx
-msgid "When the diagnosis finishes, Flowpad sends the results to <0>{to}</0> in a new conversation — even if you close this window."
-msgstr "عند انتهاء التشخيص، يرسل Flowpad النتائج إلى <0>{to}</0> في محادثة جديدة — حتى إذا أغلقت هذه النافذة."
+#~ msgid "When the diagnosis finishes, Flowpad sends the results to <0>{to}</0> in a new conversation — even if you close this window."
+#~ msgstr "عند انتهاء التشخيص، يرسل Flowpad النتائج إلى <0>{to}</0> في محادثة جديدة — حتى إذا أغلقت هذه النافذة."
 
 #: src/components/inbound/InboundView.tsx
 msgid "When the message is from"
@@ -38173,7 +38221,6 @@ msgstr "يعمل…"
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
-#: src/components/version-popover/diagnose-modal.tsx
 msgid "Working…"
 msgstr "قيد المعالجة…"
 
@@ -38403,8 +38450,8 @@ msgstr "يمكنكم أيضاً إضافة مفتاح LLM في LLM Sources."
 #~ msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
-msgid "You can close this window."
-msgstr "يمكن الآن إغلاق هذه النافذة."
+#~ msgid "You can close this window."
+#~ msgstr "يمكن الآن إغلاق هذه النافذة."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You can see {name}, but its project isn't shared with you, so it can't be launched."
