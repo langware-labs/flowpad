@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { markdownToPlain } from '@src/components/conversation/message-markdown';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import {
@@ -44,7 +44,7 @@ import {
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
-import { EntityBatchHydrator, useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { EntityBatchHydrator, useEntityBatchState } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useConversationAutomationMarks } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
@@ -223,14 +223,19 @@ interface ConversationListRowProps {
     originLocal?: FlowMessage['origin_local'],
     channelSpec?: Conversation['channel_spec'],
   ) => ChannelAttribution | null;
-  refSetter: (el: HTMLDivElement | null) => void;
+  refSetter: (convId: string, el: HTMLDivElement | null) => void;
   agentId?: string;
   /** A host that shows the conversation itself (a source's page): where a row opens. Still URL-first — the host
    *  navigates. Omitted: the conversation view, scoped to `agentId`. */
   onOpenConversation?: (conversationId: string) => void;
 }
 
-export function ConversationListRow({
+/**
+ * Memoized, so a list re-render (a filter keystroke, a row reporting its visibility, a message
+ * batch landing) repaints only the rows whose own props moved: the inbox re-rendered ~12 times
+ * while opening and every row rendered with it (500 row renders for 100 rows).
+ */
+export const ConversationListRow = memo(function ConversationListRow({
   conv,
   isFocused,
   onArchive,
@@ -250,6 +255,13 @@ export function ConversationListRow({
   onOpenConversation,
   automationMark,
 }: ConversationListRowProps) {
+  const rowId = conv.id;
+  const rowRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (rowId) refSetter(rowId, el);
+    },
+    [rowId, refSetter],
+  );
   const { navigation } = useDockNavigation();
   const desktopStreamInbox = !isHubOnly();
 
@@ -482,7 +494,7 @@ export function ConversationListRow({
 
   return (
     <div
-      ref={refSetter}
+      ref={rowRef}
       data-testid="stream-inbox-conversation-row"
       data-conversation-id={conv.id ?? ''}
       data-focused={isFocused ? 'true' : 'false'}
@@ -595,7 +607,7 @@ export function ConversationListRow({
       />
     </div>
   );
-}
+});
 
 const columnInputClass =
   'h-7 shrink-0 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring';
@@ -887,7 +899,15 @@ export function StreamInboxView({
   // The same batch also yields the messages here, to discover which first-messages
   // carry an invitation context — those ids drive a SECOND batch ``$IN`` so the
   // per-row ``useEntity<Invitation>`` also resolves from cache instead of one GET each.
-  const batchedMessages = useEntityBatch<FlowMessage>(FlowMessage.type, flowMessageIds);
+  const { data: batchedMessages, settled: messagesSettled } = useEntityBatchState<FlowMessage>(
+    FlowMessage.type,
+    flowMessageIds,
+  );
+  // The rows mount once their messages are in the cache: a row stays hidden until its latest
+  // message resolves anyway, and mounting before the batch rendered every row twice more as its
+  // first and latest messages arrived. Latched, so a later batch (a new message) never unmounts them.
+  const rowsReady = useRef(false);
+  if (messagesSettled && !initialLoading) rowsReady.current = true;
   // The sessions automations started on the visible conversations' messages — one query, the newest per row.
   const conversationIds = useMemo(() => sorted.map((c) => c.id ?? '').filter(Boolean), [sorted]);
   const automationMarks = useConversationAutomationMarks(conversationIds);
@@ -965,6 +985,20 @@ export function StreamInboxView({
     },
     [agentId, refetch],
   );
+
+  // The rows get callbacks that never change, reading the current handlers through a ref: an
+  // inline arrow per render was a new prop on every row, so the memoized row re-rendered anyway.
+  const rowHandlers = useRef({ handleArchive, handleUnarchive, handleToggleRead });
+  rowHandlers.current = { handleArchive, handleUnarchive, handleToggleRead };
+  const rowArchive = useCallback((convId: string) => void rowHandlers.current.handleArchive(convId), []);
+  const rowUnarchive = useCallback((convId: string) => void rowHandlers.current.handleUnarchive(convId), []);
+  const rowToggleRead = useCallback(
+    (messageId: string, isRead: boolean) => void rowHandlers.current.handleToggleRead(messageId, isRead),
+    [],
+  );
+  const setRowRef = useCallback((convId: string, el: HTMLDivElement | null) => {
+    rowRefs.current.set(convId, el);
+  }, []);
 
   const handleMarkAllRead = useCallback(async () => {
     // No optimistic zero: the backend reconciles StreamInboxManager.unread after the
@@ -1660,14 +1694,15 @@ export function StreamInboxView({
             for them instead of each firing a GET (see EntityBatchHydrator). */}
         <EntityBatchHydrator type={Invitation.type} ids={invitationIds} />
         {!initialLoading &&
+          rowsReady.current &&
           sorted.map((conv) => (
             <ConversationListRow
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
-              onArchive={(convId) => void handleArchive(convId)}
-              onUnarchive={(convId) => void handleUnarchive(convId)}
-              onToggleRead={(messageId, isRead) => void handleToggleRead(messageId, isRead)}
+              onArchive={rowArchive}
+              onUnarchive={rowUnarchive}
+              onToggleRead={rowToggleRead}
               selected={!!conv.id && selectedIds.has(conv.id)}
               onToggleSelect={toggleSelect}
               selectMode={selectedCount > 0}
@@ -1677,9 +1712,7 @@ export function StreamInboxView({
               channelMatch={channelMatch}
               columnFilter={columnFilterActive ? columnFilter : undefined}
               attributionFor={attributionFor}
-              refSetter={(el) => {
-                if (conv.id) rowRefs.current.set(conv.id, el);
-              }}
+              refSetter={setRowRef}
               agentId={agentId}
               onOpenConversation={onOpenConversation}
               automationMark={conv.id ? automationMarks.get(conv.id) : undefined}
