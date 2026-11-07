@@ -339,7 +339,7 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
   if (gitConnectionRequired(hubReflect, transport, typeIdEntity, errorStatus(recordErrorDetail)) && typeIdEntity) {
     return (
       <GitConnectionRequiredCard
-        name={typeIdEntity.displayName || typeId.toString()}
+        name={typeIdEntity.displayName || (typeId?.toString() ?? "")}
         onRetry={() => {
           void refetchEntity();
           void refetchRecord();

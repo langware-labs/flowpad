@@ -1,4 +1,3 @@
-import { dataContext } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitStatusProvider } from '@src/components/status-bar/GitStatusContext';
 import { GitPullButton } from '@src/components/status-bar/GitPullButton';
@@ -6,10 +5,9 @@ import { GitResolveButton } from '@src/components/status-bar/GitResolveButton';
 import { GitPushButton } from '@src/components/status-bar/GitPushButton';
 import { GitStatusPill } from '@src/components/status-bar/GitStatusPill';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useProjects } from '@src/hooks/use-projects';
 import { useProjectLocation } from '@src/hooks/use-project-location';
-import { ExternalLink, ArrowLeftRight, TriangleAlert } from 'lucide-react';
+import { ArrowLeftRight, TriangleAlert } from 'lucide-react';
 import { useCallback, useState } from 'react';
 
 function isRootPath(path: string | null | undefined): boolean {
@@ -35,12 +33,11 @@ interface StatusBarProps {
 
 export function StatusBar({ className = '' }: StatusBarProps) {
   const { t } = useLingui();
-  const { project, computeNode, projectPath, gitWorkdir, openProjectFolder } = useProjectLocation();
+  const { project, computeNode, gitWorkdir } = useProjectLocation();
   const { refetch: refetchProjects } = useProjects();
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
   const isRoot = isRootPath(project?.fs_storage_mount_path);
-  const openFolderLabel = t`Open folder: ${projectPath}`;
 
   const openProjectModal = useCallback(() => {
     setIsProjectModalOpen(true);
@@ -94,20 +91,6 @@ export function StatusBar({ className = '' }: StatusBarProps) {
               </span>
             </button>
           </>
-        )}
-        {projectPath && computeNode && dataContext.caps.osDialogs && (
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => void openProjectFolder()}
-                className="flex items-center text-[10px] text-muted-foreground/70 transition-colors hover:text-primary"
-                aria-label={openFolderLabel}
-              >
-                <ExternalLink className="h-3 w-3 shrink-0" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{openFolderLabel}</TooltipContent>
-          </Tooltip>
         )}
         <GitStatusProvider computeNodeId={computeNode?.id ?? null} workdir={gitWorkdir}>
           <GitStatusPill />
