@@ -17,12 +17,13 @@ function PersonRow({ person }: { person: AgentPerson }) {
   const { data: deployment } = useEntity<Deployment>(typeId);
   const { threads } = useDeploymentThreads(deployment ?? null);
   const messages = (threads ?? []).reduce((sum, th) => sum + (th.messages ?? 0), 0);
-  const running = person.state === 'ready' || person.state === 'running';
+  const machine = person.state.toLowerCase();
+  const running = machine === 'ready' || machine === 'running';
   const state = running
     ? { text: t`Running`, tone: 'bg-green-500' }
-    : person.state === 'paused'
+    : machine === 'paused'
       ? { text: t`Paused · wakes on next message`, tone: 'bg-amber-500' }
-      : person.state === 'not_started'
+      : machine === 'not_started'
         ? { text: t`Not started · starts on first message`, tone: 'bg-muted-foreground' }
         : { text: person.state, tone: 'bg-muted-foreground' };
   const open = () => {
