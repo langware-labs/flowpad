@@ -504,6 +504,15 @@ class Attachment(BaseModel):
         return self.attachment_type == AttachmentType.PROMPT and str(self.data or "").startswith("prompt/")
 
 
+class ListedFileSpec(DataSpec):
+    """One file a conversation lists (``Attachment.is_listed_file``): the message it rides and the
+    attachment, ``local_path`` set only when its bytes are on this machine."""
+
+    message_id: str
+    ts: Optional[str] = None
+    attachment: Attachment
+
+
 class MessageEnvelope(DataSpec):
     """A cached message's header, as the projection read it from the item's payload."""
 
@@ -851,6 +860,23 @@ class FlowMessage(Entity):
             return data
         data.update(self._body_download_state(data.get("attachment") or []))
         return data
+
+    def listed_files(self) -> list[ListedFileSpec]:
+        """This message's listed files, each with ``local_path`` resolved — one storage lookup, no
+        whole-message serialize (``_body_download_state`` resolves the same path for the API dump)."""
+        listed = [a for a in self.attachment or [] if a.is_listed_file]
+        if not listed:
+            return []
+        from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+
+        storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
+        ts = self.occurred_at.isoformat() if self.occurred_at is not None else None
+        out = []
+        for a in listed:
+            resolved = storage.get_storage_path(a.data) if a.data else None
+            local = resolved if resolved and Path(resolved).is_file() else None
+            out.append(ListedFileSpec(message_id=self.id, ts=ts, attachment=a.model_copy(update={"local_path": local})))
+        return out
 
     def _body_download_state(self, atts: list[dict[str, Any]]) -> dict[str, Any]:
         """One local availability probe for API serialization and catch-up.

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+
+from flow_sdk._compat import UTC
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
 from pydantic import PrivateAttr, computed_field, field_validator, model_validator
@@ -438,6 +440,41 @@ class Conversation(ProjectedFields, Entity):
         if getattr(response, "status", "") != "SUCCESS":
             raise ValueError(getattr(response, "message", None) or "send refused")
         return await FlowMessage.get_one({"id": response.data["flow_message_id"]})
+
+    async def messages_by_edge(self) -> list:
+        """This conversation's messages by its ``is_child`` edges, in EVENT order — the membership and
+        order its projection (``message_ids`` / ``message_count`` / ``attachment_count``) is built from."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+        kids = await self.get_children(
+            child_filter=QueryFilter(type=FlowMessage.get_type(), order_by={"created_date": "asc"})
+        )
+        out = [c.value for c in kids if getattr(c, "value", None) is not None]
+        # Conversation order is EVENT time (the DB can only order by the bookkeeping clock): a
+        # backfilled year-old message belongs before today's replies. Stable sort over the
+        # created_date pre-order keeps ties deterministic; dateless rows sort last.
+        _min = datetime.min.replace(tzinfo=UTC)
+
+        def _event_key(m):
+            ts = Conversation._as_datetime(m.occurred_at)
+            return (ts is None, ts or _min)
+
+        out.sort(key=_event_key)
+        return out
+
+    @staticmethod
+    def count_listed_files(messages: list) -> int:
+        """How many files these messages list (``Attachment.is_listed_file``) — ``attachment_count``."""
+        return sum(1 for m in messages for a in (m.attachment or []) if a.is_listed_file)
+
+    async def attachments(self) -> list:
+        """The files across this conversation, newest first — what the inbox paperclip lists: the
+        same messages and the same rule ``attachment_count`` is counted from."""
+        out = []
+        for m in reversed(await self.messages_by_edge()):
+            out += m.listed_files()
+        return out
 
     async def messages(self, *, thread=None) -> list:
         """This conversation's messages, oldest first — only one thread's with ``thread`` (a

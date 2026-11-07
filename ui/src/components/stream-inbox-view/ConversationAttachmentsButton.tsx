@@ -7,8 +7,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockPointerForLocalFile } from '@src/components/conversation/attachment-url';
+import { attachmentFileName } from '@src/components/conversation/ChannelMessageExtras';
 
-/** One file in a conversation, as the backend's `attachments` action lists it. */
+/** One file in a conversation — the backend's ``ListedFileSpec`` (``Conversation.attachments``). */
 export interface ConversationAttachment {
   message_id: string;
   ts: string | null;
@@ -21,19 +22,14 @@ export async function fetchConversationAttachments(conversationId: string): Prom
   return (await dataManager.callAction<null, ConversationAttachment[]>(action)) ?? [];
 }
 
-const fileName = (a: Attachment) => a.data.split('/').pop() || a.data;
-
-/** The inbox row's paperclip: hidden at 0, else the count; opening it lists the files.
+/** The inbox row's paperclip (mounted only when the count is above 0); opening it lists the files.
  *  Clicking a file does what clicking its chip in the message does — open it when it is
  *  on this machine — otherwise opens the conversation at that message, where it downloads. */
 export function ConversationAttachmentsButton({ conversationId, count }: { conversationId: string; count: number }) {
   const { navigation } = useDockNavigation();
   const [items, setItems] = useState<ConversationAttachment[] | null>(null);
-  if (count <= 0) return null;
-
   const onOpenChange = (open: boolean) => {
-    if (open) void fetchConversationAttachments(conversationId).then(setItems);
-    else setItems(null);
+    if (open) fetchConversationAttachments(conversationId).then(setItems, () => setItems([]));
   };
   const openItem = (item: ConversationAttachment) => {
     const local = item.attachment.local_path;
@@ -74,7 +70,7 @@ export function ConversationAttachmentsButton({ conversationId, count }: { conve
               className="flex w-full items-center gap-2 rounded px-2 py-1 text-start text-xs hover:bg-accent"
             >
               <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{fileName(item.attachment)}</span>
+              <span className="min-w-0 flex-1 truncate">{attachmentFileName(item.attachment)}</span>
               {item.ts && (
                 <span className="shrink-0 text-muted-foreground">{new Date(item.ts).toLocaleDateString()}</span>
               )}

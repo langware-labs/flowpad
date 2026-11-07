@@ -185,8 +185,6 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
 
     from flow_sdk._compat import UTC
     from flow_sdk.builtin.conversation import _PROJECTION_SENTINEL, Conversation
-    from flow_sdk.builtin.flow_message import FlowMessage
-    from flow_sdk.db.drivers.query import QueryFilter
     from flow_sdk.fs_store.pointer import Pointer
     from flow_sdk.fs_store.type_id import TypeId
 
@@ -194,36 +192,16 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
     if not conv:
         return
 
-    async def _ordered_children() -> list[FlowMessage]:
-        kids = await conv.get_children(
-            child_filter=QueryFilter(type=FlowMessage.get_type(), order_by={"created_date": "asc"})
-        )
-        out = [c.value for c in kids if getattr(c, "value", None) is not None]
-
-        # Conversation order is EVENT time (the DB can only order by the
-        # bookkeeping clock): a backfilled year-old message belongs before
-        # today's replies, wherever ingestion happened to place its row.
-        # Stable sort + the created_date pre-order keeps ties deterministic;
-        # dateless rows sort last.
-        _min = datetime.min.replace(tzinfo=UTC)
-
-        def _event_key(m: FlowMessage):
-            ts = Conversation._as_datetime(m.occurred_at)
-            return (ts is None, ts or _min)
-
-        out.sort(key=_event_key)
-        return out
-
-    messages = await _ordered_children()
+    messages = await conv.messages_by_edge()
     # Legacy data (or a lost edge) — heal from the pointer index / conversation_id
     # before deriving anything, then re-read. Skipped entirely once converged.
     pointer_ids = {p.id for p in message_pointers(rec)}
     if pointer_ids - {m.id for m in messages}:
         await conv.ensure_message_edges()
-        messages = await _ordered_children()
+        messages = await conv.messages_by_edge()
 
     new_count = len(messages)
-    new_attachments = sum(1 for m in messages for a in (m.attachment or []) if a.is_listed_file)
+    new_attachments = Conversation.count_listed_files(messages)
     new_ids = (
         json.dumps(
             [
@@ -255,18 +233,18 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         # carrying a fabricated timestamp repair itself on its next touch.
         new_updated = Conversation._as_datetime(conv.created_date)
 
-    projection_changed = not (
-        conv.message_ids == new_ids
-        and conv.message_count == new_count
-        and conv.attachment_count == new_attachments
+    projection = {"message_ids": new_ids, "message_count": new_count, "attachment_count": new_attachments}
+    # A row saved before ``attachment_count`` existed reads its default without the key; writing it once
+    # is what lets the boot lift (migration_2026_11_attachment_count) find no such row next time.
+    projection_changed = "attachment_count" not in conv.model_fields_set or any(
+        getattr(conv, k) != v for k, v in projection.items()
     )
     recency_changed = Conversation._as_datetime(conv.updated_date) != new_updated
     if not projection_changed and not recency_changed:
         return
     if projection_changed:
-        conv._set_projection("message_ids", new_ids, _PROJECTION_SENTINEL)
-        conv._set_projection("message_count", new_count, _PROJECTION_SENTINEL)
-        conv._set_projection("attachment_count", new_attachments, _PROJECTION_SENTINEL)
+        for field, value in projection.items():
+            conv._set_projection(field, value, _PROJECTION_SENTINEL)
     # The projection write IS the "reconciled from hub/disk" moment for a
     # conversation — make it observable on the row the UI renders. Normal
     # field (not in _PROJECTED_FIELDS), so no sentinel needed.

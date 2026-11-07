@@ -52,7 +52,6 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ConversationAttachmentsButton } from './ConversationAttachmentsButton';
 import { DockPointer, STREAM_INBOX_CHANNEL_PARAM } from '@src/navigation/DockPointer';
 import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
@@ -95,6 +94,7 @@ import { InviteStateChip } from '@src/components/conversation/InviteCard';
 import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
+import { ConversationAttachmentsButton } from './ConversationAttachmentsButton';
 
 /** Row actions on this machine's own state (read marks, archive): the hub page offers none. */
 const PER_MACHINE_ROW_ACTIONS = new Set(['toggle-read', 'archive', 'unarchive']);
@@ -517,8 +517,8 @@ export function ConversationListRow({
         {!isInvitationRow && count > 1 && (
           <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
         )}
-        {!isInvitationRow && convId && (
-          <ConversationAttachmentsButton conversationId={convId} count={conv.attachment_count ?? 0} />
+        {!isInvitationRow && convId && (conv.attachment_count ?? 0) > 0 && (
+          <ConversationAttachmentsButton conversationId={convId} count={conv.attachment_count!} />
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="stream-inbox-row-subject-line">

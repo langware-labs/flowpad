@@ -50,7 +50,6 @@ from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
-from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.stream_inbox.agent_scope import (
     AgentStreamInboxScope,
@@ -4205,20 +4204,10 @@ async def conversation_transcript() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
-class ConversationAttachmentSpec(DataSpec):
-    """One file attached in a conversation: the message it rides and the attachment as the
-    message API serves it (``local_path`` set only when the bytes are on this machine)."""
-
-    message_id: str
-    ts: Optional[str] = None
-    attachment: dict
-
-
 @action.get(action_name="attachments", types=["conversation"])
 async def conversation_attachments() -> ApiResponse:
-    """The files attached across one conversation, newest first — what the inbox row's
-    paperclip lists. One read of the conversation's messages; the count on the row is
-    ``Conversation.attachment_count``, counted by the same ``Attachment.is_listed_file``."""
+    """The files across one conversation, newest first (``Conversation.attachments``) — what the
+    inbox row's paperclip lists; the row's number is ``Conversation.attachment_count``."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.target_entity_typeid:
@@ -4226,27 +4215,7 @@ async def conversation_attachments() -> ApiResponse:
         conv = await Conversation.get_one({"id": str(request_info.target_entity_typeid.id)})
         if conv is None:
             return ApiFailResponse(message="conversation not found", status_code=404)
-        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-
-        kids = await conv.get_children(
-            child_filter=QueryFilter(type=FlowMessage.get_type(), order_by={"created_date": "desc"})
-        )
-        out: list[dict] = []
-        for kid in kids:
-            fm = getattr(kid, "value", None)
-            if fm is None or not fm.id:
-                continue
-            listed = [i for i, a in enumerate(fm.attachment or []) if a.is_listed_file]
-            if not listed:
-                continue
-            served = fm.model_dump(mode="json").get("attachment") or []  # stamps local_path
-            ts = fm.occurred_at.isoformat() if fm.occurred_at is not None else None
-            out += [
-                ConversationAttachmentSpec(message_id=fm.id, ts=ts, attachment=served[i]).model_dump(mode="json")
-                for i in listed
-                if i < len(served)
-            ]
-        return ApiSuccessResponse(data=out)
+        return ApiSuccessResponse(data=[f.model_dump(mode="json") for f in await conv.attachments()])
     except Exception as e:
         logger.error("[flow_message_action] attachments error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
