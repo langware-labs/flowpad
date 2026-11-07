@@ -1455,28 +1455,24 @@ class AgenticProcess(Entity):
         return pending.get("code") if pending.get("kind") == "launch_blocked" else None
 
     async def _watch_launch_screen(self, shell: "Shell", screen) -> None:
-        """For the PTY's life, no deadline: launch prompts until the composer, then refused credentials (new text only)."""
-        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-            latch_credential_failure,
-            strip_pty_controls,
-        )
+        """Launch prompts until the composer, then done. Screen text after that is the transcript,
+        which a TUI repaints on resume and resize, so nothing after the composer is read: a quoted
+        "401" in the history is not a refusal. Detection only reports; it never stops the worker."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import strip_pty_controls
 
         async with shell._output_feed() as feed:
-            text, shown, booted = strip_pty_controls(feed.initial[-16384:]) if feed else "", None, False
+            text, shown = strip_pty_controls(feed.initial[-16384:]) if feed else "", None
             while feed is not None:
-                if not booted and (verdict := screen.classify(text)) != shown:
+                if (verdict := screen.classify(text)) != shown:
                     if verdict in BLOCKING_CODES or shown in BLOCKING_CODES:
                         await self._apply_launch_screen(verdict, text, screen)
-                    shown, booted = verdict, verdict == "ready"
-                    text = "" if booted else text
-                elif booted and (failure := screen.classify_auth(text)):  # stop now, latch like a headless turn
-                    await self.exit()
-                    proc = await AgenticProcess.get_by_id(self.id) or self
-                    return await latch_credential_failure(proc, LaunchError.of(*failure), text)
+                    if verdict == "ready":
+                        return
+                    shown = verdict
                 chunk = await feed.next()
                 if feed.closed:
                     return
-                text = (text + strip_pty_controls(chunk))[-(200 + len(chunk) if booted else 16384):]
+                text = (text + strip_pty_controls(chunk))[-16384:]
 
     async def _apply_launch_screen(self, verdict: str | None, text: str, screen) -> None:
         proc = await AgenticProcess.get_by_id(self.id) or self

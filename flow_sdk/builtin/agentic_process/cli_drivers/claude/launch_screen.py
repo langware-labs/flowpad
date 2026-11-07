@@ -8,10 +8,8 @@ import re
 _PROMPT = re.compile(r"(Yes, I trust this folder|Is this a project you created or one you trust)|(running in Bypass Permissions mode)"
                      r'|(Choose the text style that looks best|Select login method|Press Enter to continue)|(❯ (?:Try "|─{3,}))')
 _CODES = ("folder_not_trusted", "bypass_warning", "first_run_setup", "ready")
-# stderr "API error (attempt 1/11): 401 401 {..."message":"X"}", screen "✻ 401 X · Retrying in", "API Error: 401", "Not logged in".
-# The screen form needs its "· Retrying in": the spinner glyph next to a token counter strips to "✻ 401"
-# too, and that false refusal stopped a live worker mid-session (2026-11-07).
-_AUTH = re.compile(r'(?:API error \(attempt \d+/\d+\): |✻ (?=40[13]\b[^\n]*· Retrying in)|API Error: )(40[13])\b(?:.*?"message":"([^"]*)"|([^·\n{]*))|(Not logged in)')
+# Headless only: a stderr line or an error result's text. Never TUI screen text — that is the transcript.
+_AUTH = re.compile(r'(?:API error \(attempt \d+/\d+\): |API Error: )(40[13])\b(?:.*?"message":"([^"]*)"|([^·\n{]*))|(Not logged in)')
 
 
 def classify(text: str) -> str | None:  # the latest prompt on screen, ``ready`` for the composer
@@ -21,7 +19,7 @@ def classify(text: str) -> str | None:  # the latest prompt on screen, ``ready``
     return last and _CODES[last.lastindex - 1]
 
 
-def classify_auth(item: str | dict) -> tuple[str, str] | None:  # stream event, stderr line or screen text
+def classify_auth(item: str | dict) -> tuple[str, str] | None:  # headless stream event or stderr line
     if isinstance(item, dict):
         status = item.get("error_status") or item.get("status")
         if item.get("subtype") in ("api_retry", "api_error") and status in (401, 403):

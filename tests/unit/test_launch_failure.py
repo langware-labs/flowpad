@@ -67,18 +67,14 @@ def test_contract_tables():
 
 
 def test_screens():
-    for text, verdict, auth in (
-        (TRUST, "folder_not_trusted", None),
-        (" Choose the text style that looks best", "first_run_setup", None),
-        ("Claude Code running in Bypass Permissions mode", "bypass_warning", None),
-        (TRUST + '│ ❯ Try "fix lint" │', "ready", None),
-        ("Welcome to Claude Code", None, None),
-        ("✻ 401 User not found. · Retrying in 10s · attempt 5/10", None, "401 User not found."),
-        ("✻ 529 Overloaded · Retrying in 3s", None, None),
-        ("we discussed HTTP 401", None, None),
-        ("10s · ↓ 396 tokens) ◎ /goal active (9m) 8 9 ◎ /goal active (9m)✻ 401", None, None),  # spinner + token count
+    for text, verdict in (
+        (TRUST, "folder_not_trusted"),
+        (" Choose the text style that looks best", "first_run_setup"),
+        ("Claude Code running in Bypass Permissions mode", "bypass_warning"),
+        (TRUST + '│ ❯ Try "fix lint" │', "ready"),
+        ("Welcome to Claude Code", None),
     ):
-        assert (screen.classify(text), (screen.classify_auth(text) or [None, None])[1]) == (verdict, auth)
+        assert screen.classify(text) == verdict
 
 
 def test_headless_turn_failure():
