@@ -135,7 +135,7 @@ export interface IConversation extends IEntity {
   /** Display name of the sender's project (for the mapping dialog copy). */
   remote_project_name?: string | null;
   message_count?: number;
-  /** Files attached across the conversation's messages — the inbox row's paperclip. */
+  /** Files attached across the conversation's messages — the StreamInbox row's paperclip. */
   attachment_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
   /** The newest message, for a row that keeps no ``message_ids`` log (the hub's). */
@@ -448,7 +448,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * hub-reflect. Returns the per-attachment outcome buckets.
    */
   /** The files across a conversation, newest first — one request (the `attachments` action);
-   *  the inbox row's paperclip lists these, and counts them as ``attachment_count``. */
+   *  the StreamInbox row's paperclip lists these, and counts them as ``attachment_count``. */
   static async attachments(conversationId: string): Promise<ListedFile[]> {
     const action = new ActionInfo('attachments', 'conversation', conversationId, 'GET');
     return (await dataManager.callAction<null, ListedFile[]>(action)) ?? [];

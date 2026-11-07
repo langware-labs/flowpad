@@ -501,7 +501,7 @@ class Attachment(BaseModel):
     @property
     def is_listed_file(self) -> bool:
         """A file the conversation lists as an attachment: a FILE, or a ``prompt/`` file.
-        The same rule as the UI's ``buildAttachmentEntries``, so the inbox count matches the list."""
+        The same rule as the UI's ``buildAttachmentEntries``, so the StreamInbox count matches the list."""
         if self.attachment_type == AttachmentType.FILE:
             return True
         return self.attachment_type == AttachmentType.PROMPT and str(self.data or "").startswith(PROMPT_FILE_VFS_PREFIX)

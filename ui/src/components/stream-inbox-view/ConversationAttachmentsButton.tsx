@@ -9,7 +9,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockPointerForLocalFile } from '@src/components/conversation/attachment-url';
 import { attachmentFileName } from '@src/components/conversation/ChannelMessageExtras';
 
-/** The inbox row's paperclip (mounted only when the count is above 0); opening it lists the files.
+/** The StreamInbox row's paperclip (mounted only when the count is above 0); opening it lists the files.
  *  Clicking a file does what clicking its chip in the message does — open it when it is
  *  on this machine — otherwise opens the conversation at that message, where it downloads. */
 export function ConversationAttachmentsButton({ conversationId, count }: { conversationId: string; count: number }) {

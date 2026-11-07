@@ -1,5 +1,5 @@
 /**
- * The inbox row's paperclip: one request when opened, and a file click does what clicking it in
+ * The StreamInbox row's paperclip: one request when opened, and a file click does what clicking it in
  * the message does — open the local file — else opens the conversation at that message.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';

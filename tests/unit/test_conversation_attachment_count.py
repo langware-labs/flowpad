@@ -1,4 +1,4 @@
-"""``Conversation.attachment_count`` — the inbox row's paperclip — counts the files across a
+"""``Conversation.attachment_count`` — the StreamInbox row's paperclip — counts the files across a
 conversation, moves when a file arrives later, and is filled for rows that predate it.
 
 Only the hub's HTTP response is stubbed; the sync, the projection and the saves are real.

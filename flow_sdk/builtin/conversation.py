@@ -221,7 +221,7 @@ class Conversation(ProjectedFields, Entity):
     awaits_hub: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     origin_project_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
-    # Files attached across the conversation's messages — the inbox row's paperclip. Projected
+    # Files attached across the conversation's messages — the StreamInbox row's paperclip. Projected
     # with ``message_count``, so the row shows it without loading a single message.
     attachment_count: int = APIField(0, sharing=Sharing.PRIVATE)
     # Who is in the conversation: the hub's ``members``, copied as is.
@@ -467,7 +467,7 @@ class Conversation(ProjectedFields, Entity):
         return sum(1 for m in messages for a in (m.attachment or []) if a.is_listed_file)
 
     async def attachments(self) -> list:
-        """The files across this conversation, newest first — what the inbox paperclip lists: the
+        """The files across this conversation, newest first — what the StreamInbox paperclip lists: the
         same messages and the same rule ``attachment_count`` is counted from."""
         return [f for m in reversed(await self.messages_by_edge()) for f in m.listed_files()]
 
@@ -881,8 +881,11 @@ class Conversation(ProjectedFields, Entity):
 
         if self.origin_project_id:
             return True
+        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
         for mine in ({"outbound": True}, {"delivery_status": DeliveryStatus.PENDING_SEND.value}):
-            if await FlowMessage.get_one({"match": {"conversation_id": str(self.id), **mine}}) is not None:
+            # Any one is enough -- a conversation I wrote in usually holds several of mine.
+            if await FlowMessage.get_all(QueryFilter(match={"conversation_id": str(self.id), **mine}, limit=1)):
                 return True
         return False
 

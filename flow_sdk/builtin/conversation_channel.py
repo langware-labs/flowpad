@@ -25,8 +25,8 @@ FLOWPAD = ChannelSpec(
     hosts_sessions=True,
 )
 
-#: A person's Chat API exchange with an agent, which the hub keeps in their inbox: it is read there, wearing the
-#: channel's chip, and answered through the Chat API itself -- no reply goes out from the inbox.
+#: A person's Chat API exchange with an agent, which the hub keeps in their StreamInbox: it is read there, wearing the
+#: channel's chip, and answered through the Chat API itself -- no reply goes out from the StreamInbox.
 CHAT_API = ChannelSpec(
     name="chat_api",
     title="Chat API",

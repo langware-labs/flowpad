@@ -137,6 +137,8 @@ interface WarningItemProps {
   onClick: () => void;
   /** The warning's own button (`warning.action`), already wired to close the popover. */
   onAction: () => void;
+  /** Diagnose & fix — closes the popover: the conversation it opens is what comes next. */
+  onDiagnose: (detail: string, kind: DiagnoseKind, alertId?: string) => void;
   onDismiss: () => void;
 }
 
@@ -145,13 +147,12 @@ interface WarningItemProps {
  * (cloud down, no harness, sniffer on), and goes away when the condition does.
  * Dismissing it hides it for this session, until it says something else.
  */
-function WarningItem({ warning, onClick, onAction, onDismiss }: WarningItemProps) {
+function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: WarningItemProps) {
   const { t } = useLingui();
   // Named like AlertItem's placeholder, so both rows share one translated "Dismiss …".
   const alertTitle = warning.message;
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
-  const openDiagnose = diagnoseAndFix;
   const detail = warning.description ? `${warning.message}\n${warning.description}` : warning.message;
 
   return (
@@ -183,7 +184,7 @@ function WarningItem({ warning, onClick, onAction, onDismiss }: WarningItemProps
               condition (cloud down, no harness) is diagnosable just like a logged one. */}
           <button
             type="button"
-            onClick={() => void openDiagnose(detail, 'warning')}
+            onClick={() => onDiagnose(detail, 'warning')}
             className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             data-testid="warnings-popover-warning-diagnose-fix"
           >
@@ -214,12 +215,19 @@ function WarningItem({ warning, onClick, onAction, onDismiss }: WarningItemProps
  * happened, so unlike a derived warning it IS dismissible; its CTAs are carried
  * over so the user can still act on it from here.
  */
-function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: () => void }) {
+function AlertItem({
+  alert,
+  onDiagnose,
+  onDismiss,
+}: {
+  alert: NotificationData;
+  onDiagnose: WarningItemProps['onDiagnose'];
+  onDismiss: () => void;
+}) {
   const { t } = useLingui();
   const alertTitle = alert.title;
   const colors = colorMap[ALERT_COLOR[alert.level]] || colorMap.yellow;
   const Icon = alert.level === 'error' ? AlertCircle : AlertTriangle;
-  const openDiagnose = diagnoseAndFix;
   const text = alert.fixed?.summary ?? alert.message;
 
   return (
@@ -267,7 +275,7 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
             {/* The log holds only warnings and errors, both diagnosable. */}
             <button
               type="button"
-              onClick={() => void openDiagnose(notificationText(alert), alert.level as DiagnoseKind, alert.id)}
+              onClick={() => onDiagnose(notificationText(alert), alert.level as DiagnoseKind, alert.id)}
               className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
               data-testid="warnings-popover-diagnose-fix"
             >
@@ -315,6 +323,10 @@ export function WarningsPopover() {
   const { navigation } = useDockNavigation();
   const { project } = useContext();
   const [open, setOpen] = useState(false);
+  const diagnose = useCallback((detail: string, kind: DiagnoseKind, alertId?: string) => {
+    setOpen(false);
+    void diagnoseAndFix(detail, kind, alertId);
+  }, []);
 
   const handleOpenChange = useCallback((isOpen: boolean) => {
     setOpen(isOpen);
@@ -404,11 +416,12 @@ export function WarningsPopover() {
                 warning.action?.onClick();
                 setOpen(false);
               }}
+              onDiagnose={diagnose}
               onDismiss={() => dismissWarnings([warning])}
             />
           ))}
           {alerts.map((alert) => (
-            <AlertItem key={alert.id} alert={alert} onDismiss={() => dismissAlert(alert.id)} />
+            <AlertItem key={alert.id} alert={alert} onDiagnose={diagnose} onDismiss={() => dismissAlert(alert.id)} />
           ))}
         </div>
       </PopoverContent>

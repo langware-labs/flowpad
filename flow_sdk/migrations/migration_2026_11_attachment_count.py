@@ -1,6 +1,6 @@
 """Boot lift: give every Conversation its ``attachment_count``.
 
-``attachment_count`` (the inbox row's paperclip) is projected with ``message_count`` by
+``attachment_count`` (the StreamInbox row's paperclip) is projected with ``message_count`` by
 ``project_pointers_to_entity``, so a conversation counts its files the next time a message
 lands. A quiet conversation may never be projected again, so this pass fills the rows that
 predate the field — those whose stored data has no ``attachment_count`` key at all.

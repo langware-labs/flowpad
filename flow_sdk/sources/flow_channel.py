@@ -112,6 +112,8 @@ class FlowChannelConfig(SourceConfig):
     #: message it was delivered. The hub enforces both (``webhook_chain.reply``); no sender is linked here.
     answers_delivered: bool = False
 
+    derived: ClassVar[tuple[str, ...]] = ("answers_delivered",)
+
 
 class FlowChannel(MessageSource):
     """The base every Flow channel driver subclasses: set ``channel`` (the hub's provider name), ``title`` and

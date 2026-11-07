@@ -232,7 +232,7 @@ interface ConversationListRowProps {
 
 /**
  * Memoized, so a list re-render (a filter keystroke, a row reporting its visibility, a message
- * batch landing) repaints only the rows whose own props moved: the inbox re-rendered ~12 times
+ * batch landing) repaints only the rows whose own props moved: the StreamInbox re-rendered ~12 times
  * while opening and every row rendered with it (500 row renders for 100 rows).
  */
 export const ConversationListRow = memo(function ConversationListRow({

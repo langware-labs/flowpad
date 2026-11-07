@@ -4017,7 +4017,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
             # On the UI path the HTTP response is followed by one local query
             # refetch, so per-entity broadcasts are suppressed while reconciling
             # the batch: emitting every historical invitation one by one
-            # continuously reorders stream inbox rows and can make an otherwise enabled
+            # continuously reorders stream StreamInbox rows and can make an otherwise enabled
             # action physically unclickable until the catch-up finishes. A
             # backend-initiated sweep has no refetch behind it — see
             # ``announce_invitations``.
@@ -4207,7 +4207,7 @@ async def conversation_transcript() -> ApiResponse:
 @action.get(action_name="attachments", types=["conversation"])
 async def conversation_attachments() -> ApiResponse:
     """The files across one conversation, newest first (``Conversation.attachments``) — what the
-    inbox row's paperclip lists; the row's number is ``Conversation.attachment_count``."""
+    StreamInbox row's paperclip lists; the row's number is ``Conversation.attachment_count``."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.target_entity_typeid:

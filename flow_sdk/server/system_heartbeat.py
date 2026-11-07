@@ -74,8 +74,11 @@ async def _dispatch_heartbeat(_trigger: Any, _changes: Any) -> None:
     # Snapshot the task list — a task registering or unregistering mid-tick
     # (e.g. hot-reload during dev) must not affect this tick's iteration.
     for name, task in list(_tasks.items()):
+        import time as _t  # TEMP-PERF
+        _w0, _c0 = _t.perf_counter(), _t.thread_time()
         try:
             await asyncio.wait_for(task(), timeout=TASK_TIMEOUT_SECONDS)
+            _log.warning("TEMP-PERF heartbeat %s wall=%.2fs loop-cpu=%.2fs", name, _t.perf_counter() - _w0, _t.thread_time() - _c0)
         except asyncio.TimeoutError:
             _log.warning(
                 "heartbeat task %r exceeded %.1fs budget", name, TASK_TIMEOUT_SECONDS,

@@ -128,6 +128,6 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     const row = rowFor('No harness found');
     await user.click(within(row).getByTestId('warnings-popover-warning-diagnose-fix'));
 
-    expect(diagnoseAndFix).toHaveBeenCalledWith(expect.stringContaining('No harness found'), 'warning');
+    expect(diagnoseAndFix).toHaveBeenCalledWith(expect.stringContaining('No harness found'), 'warning', undefined);
   });
 });
