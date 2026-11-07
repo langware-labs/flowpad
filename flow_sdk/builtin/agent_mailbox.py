@@ -92,7 +92,17 @@ async def channels_block(agent_id: str) -> str:
     """What the agent is told about its built-in email — its address, how replies work, how to send, who it
     hears from. ``""`` when it has none. Read from the local source alone (no Hub call): a launch must not
     wait on the network, and the Hub enforces the Sending list on every send whatever this says."""
-    source = await email_source_for_agent(agent_id)
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    # Nothing to tell where the built-in email channel is not even loaded — and a launch must never
+    # fail for a channel it does not have.
+    if DataDriver.loaded("cloud_email") is None:
+        return ""
+    try:
+        source = await email_source_for_agent(agent_id)
+    except Exception:  # noqa: BLE001 — what the agent is told about email never blocks its launch
+        logging.getLogger(__name__).warning("agent %s: could not read its built-in email", agent_id, exc_info=True)
+        return ""
     if source is None:
         return ""
     address = str((source.config or {}).get("address") or getattr(source, "account_key", "") or "")
