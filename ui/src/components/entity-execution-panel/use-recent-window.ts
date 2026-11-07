@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /** Rows mounted at a time, and how many more each approach to the top adds. */
 export const RECENT_WINDOW = 40;
@@ -37,7 +37,7 @@ export function useRecentWindow(count: number, keep: number) {
     if (scroller) scroller.scrollTop += p.el.getBoundingClientRect().top - p.top;
   }, [start]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const el = sentinel.current;
     if (!el || start === 0) return;
     const observer = new IntersectionObserver(
