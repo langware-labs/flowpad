@@ -290,3 +290,12 @@ async def test_the_descriptor_carries_both_directions_and_an_old_hub_reads_open_
     assert wire["blocked_senders"] == ["@spam.io"]
     assert AgentMailbox.from_hub_descriptor(_descriptor(agent), agent_typeid=agent.typeid).open_recipients is True
 
+
+
+async def test_an_html_only_send_gets_its_plain_text_from_the_html():
+    """`flow source send --html-file` alone is a valid email: its plain part is the HTML's text."""
+    from flow_sdk.builtin.data_source import _plain_text_of
+
+    text = _plain_text_of("<style>p{color:red}</style><h2>GTM weekly</h2><p>New visitors 41 &middot; Sign-ups 1</p>")
+    assert text.splitlines()[0].strip() == "GTM weekly"
+    assert "New visitors 41 · Sign-ups 1" in text and "color" not in text
