@@ -182,6 +182,10 @@ async def _plan(ctx: DeployContext) -> None:
         # A row the hub no longer has (its placement was removed there) is not one to continue.
         if not found or exc.status_code != 404:
             raise
+        # Dropped here too, or every later deploy would find it first and plan yet another placement.
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+        await Deployment.mirror_hub_row({"id": found}, "delete")
         ctx.deployment = await plan(None)
 
 

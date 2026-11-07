@@ -3,7 +3,7 @@ import { Agent, AgenticProcess, Deployment, TypeId, isTypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 
 /** What a process says about who launched it. */
-type LaunchedProcess = { deployment_id?: string | null; target_typeid_str?: string | null };
+type LaunchedProcess = Pick<AgenticProcess, 'deployment_id' | 'target_typeid_str'>;
 
 /**
  * The Agent a process was launched through, or null.

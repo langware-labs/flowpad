@@ -205,12 +205,24 @@ def graph_url(port: int, path: str) -> str:
 
 
 def _graph_json(
-    method: str, url: str, *, timeout: int, on_error: "Callable[[int, dict], NoReturn]", **kwargs: Any
+    method: str,
+    url: str,
+    *,
+    timeout: int,
+    on_error: "Callable[[int, dict], NoReturn]",
+    answer_may_lag: bool = False,
+    **kwargs: Any,
 ) -> Any:
     import requests
 
     try:
         resp = local_request(method, url, timeout=timeout, **kwargs)
+    except requests.exceptions.ReadTimeout:
+        # The request reached the server and is still running there: a caller that follows its outcome elsewhere
+        # (an activity on the socket) goes on following it instead of calling the server unreachable.
+        if answer_may_lag:
+            return None
+        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Flowpad server at {url} did not answer in {timeout}s")
     except requests.exceptions.RequestException as e:
         fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
     try:
@@ -229,8 +241,12 @@ def post_graph_json(
     *,
     timeout: int = 15,
     on_error: "Callable[[int, dict], NoReturn]",
+    answer_may_lag: bool = False,
 ) -> dict:
     """POST JSON to a graph endpoint and return the SUCCESS envelope's ``data``.
+
+    ``answer_may_lag``: the caller follows the outcome another way, so an answer slower than ``timeout`` is ``{}``,
+    not a failure.
 
     Owns the transport layer every graph-action command shares: request errors
     and non-JSON bodies fail as CONNECTION_ERROR; any other non-success response
@@ -238,7 +254,10 @@ def post_graph_json(
     command keeps its own documented exit-code contract without re-implementing
     the POST/parse/envelope boilerplate.
     """
-    return _graph_json("POST", url, json=payload or {}, timeout=timeout, on_error=on_error) or {}
+    return (
+        _graph_json("POST", url, json=payload or {}, timeout=timeout, on_error=on_error, answer_may_lag=answer_may_lag)
+        or {}
+    )
 
 
 def get_graph_json(

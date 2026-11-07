@@ -60,7 +60,10 @@ async def test_a_running_placement_is_redeployed_in_place(project, hub):
 
 async def test_a_placement_the_hub_forgot_is_not_continued(project, hub):
     gone = await _placement(project, "e2b", on_a_machine=True)  # removed on the hub, still a row here
-    assert await _deployed(project) != str(gone.id)
+    fresh = await _deployed(project)
+    assert fresh != str(gone.id)
+    assert await Deployment.get_by_id(gone.id) is None, "the forgotten row is dropped here too"
+    assert await _deployed(project) == fresh, "the next deploy continues the new one, not another"
 
 
 async def test_a_planned_placement_without_a_machine_is_continued(project, hub):

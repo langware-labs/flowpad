@@ -949,8 +949,14 @@ class Deployment(Entity):
         and not the one it answered.
         """
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
-        data = await HubProxy.try_call("GET", self.get_type(), self.id, verb, params=params)
+        # Quiet: the page that asked shows this read's failure itself, in the hub's words (a machine still being
+        # set up, paused, gone); the app-wide "Cloud Request Failed" warning for the same call only alarms.
+        try:
+            data = await HubProxy.call("GET", self.get_type(), self.id, verb, params=params, quiet=True)
+        except HubError as e:
+            raise DeploymentActionError(e.reason or "the hub did not answer", status_code=e.status_code or 502) from e
         if not isinstance(data, dict):
             raise DeploymentActionError("the hub did not answer for this cloud machine", status_code=502)
         return data

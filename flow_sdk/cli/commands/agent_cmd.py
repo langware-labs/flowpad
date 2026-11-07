@@ -89,7 +89,9 @@ async def _deploy_and_follow(port: int, agent_id: str, project_id: str, url: str
 
     async def start() -> None:
         post_graph_json(graph_url(port, f"project/{project_id}/watch"), {"connection_id": connection_id}, on_error=_refused)
-        post_graph_json(url, body, on_error=_refused)
+        # The deploy publishes and plans before it answers, which can take minutes; its activity on this socket says
+        # how it ends, so a slow answer is followed, not reported as an unreachable server.
+        post_graph_json(url, body, on_error=_refused, answer_may_lag=True)
 
     async for frame in backend_frames(port, {"flow_data_msg"}, on_connected=start, connection_id=connection_id):
         data = frame.get("flow_data") or {}
