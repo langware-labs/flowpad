@@ -9,6 +9,7 @@ counts how many folders each lookup lists.
 from __future__ import annotations
 
 import os
+import time
 import uuid
 
 import flow_sdk.fs_store.indexer.functions.claude_sessions as claude_sessions
@@ -28,6 +29,8 @@ def test_missing_sessions_list_each_folder_once_and_a_new_one_is_still_found(mon
     projects = get_instance_settings().claude_projects_dir
     for i in range(FOLDERS):
         _session(projects / f"-repo-{i}", str(uuid.uuid4()))
+        # An hour old: a folder changed in the last second is re-listed, not trusted.
+        os.utime(projects / f"-repo-{i}", (time.time() - 3600,) * 2)
 
     listed: list[str] = []
     real = os.scandir

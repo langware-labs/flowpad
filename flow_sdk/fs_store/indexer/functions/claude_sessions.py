@@ -347,6 +347,7 @@ def find_claude_session_path(uid: str, project: str | Path | None = None) -> Pat
 # and only a folder that changed (a session created or removed in it) is listed again.
 _folders: dict[str, tuple[int, frozenset[str]]] = {}
 _folders_root: Path | None = None
+_MTIME_SETTLE_NS = 1_000_000_000
 
 
 def _find_in_listing(projects_dir: Path, fname: str) -> Path | None:
@@ -364,7 +365,10 @@ def _find_in_listing(projects_dir: Path, fname: str) -> Path | None:
         try:
             mtime = folder.stat().st_mtime_ns
             known = _folders.get(folder.path)
-            if known is None or known[0] != mtime:
+            # File timestamps are coarse (a kernel tick on Linux): a session written in the same
+            # tick as the last listing leaves the mtime unchanged. A folder changed that recently
+            # is listed again rather than trusted.
+            if known is None or known[0] != mtime or time.time_ns() - mtime < _MTIME_SETTLE_NS:
                 known = (mtime, frozenset(e.name for e in os.scandir(folder.path) if e.name.endswith(".jsonl")))
                 _folders[folder.path] = known
         except OSError:
