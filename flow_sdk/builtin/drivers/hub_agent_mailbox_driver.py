@@ -78,6 +78,11 @@ class HubAgentMailboxDriver:
         data = await self._get(agent_id, None)
         return (data or {}).get("mailbox") or None
 
+    async def offered(self, agent_id: str) -> bool:
+        """Whether the hub can give an agent a mailbox at all. A hub too old to say is taken at its word later."""
+        data = await self._get(agent_id, None)
+        return bool((data or {}).get("offered", True))
+
     async def delete_mailbox(self, agent_id: str) -> bool:
         """Release the address.
 

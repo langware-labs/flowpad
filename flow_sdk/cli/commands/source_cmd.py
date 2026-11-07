@@ -10,7 +10,7 @@ A thin HTTP caller over the SAME local-server actions the TS SDK and the UI call
     flow source choices <provider> <field> [--config k=v ...]
     flow source sync <id>                              — one sync cycle now, reported
     flow source items <id> [--limit N]                 — recent records with body previews
-    flow source send <id> --to T --text X [--thread K] [--subject S]
+    flow source send <id> --to T --text X [--thread K] [--subject S] [--cc C] [--html H | --html-file F]
     flow source reply <id> <item-id> --text X
     flow source enable|disable <id>
     flow source delete <id>
@@ -20,6 +20,7 @@ Every command prints the standard envelope: ``{"ok": true, ...}`` on stdout, or
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, NoReturn, Optional
 
 import typer
@@ -179,12 +180,20 @@ def items(source_id: str, limit: Annotated[int, typer.Option("--limit")] = 20) -
 @source_app.command("send", help="Send one message into the source's channel.")
 def send(
     source_id: str,
-    to: Annotated[str, typer.Option("--to", help="What the channel addresses: a chat, channel id or address.")],
-    text: Annotated[str, typer.Option("--text")],
+    to: Annotated[str, typer.Option("--to", help="What the channel addresses: a chat, channel id or address (email: several, comma-separated).")],
+    text: Annotated[str, typer.Option("--text", help="The message; for an email with --html, the plain-text version.")] = "",
     thread: Annotated[str, typer.Option("--thread", help="The thread to post into.")] = "",
     subject: Annotated[str, typer.Option("--subject")] = "",
+    cc: Annotated[str, typer.Option("--cc", help="Email: who else it goes to, comma-separated.")] = "",
+    html: Annotated[str, typer.Option("--html", help="Email: the HTML body.")] = "",
+    html_file: Annotated[Optional[Path], typer.Option("--html-file", help="Email: a file holding the HTML body.")] = None,
 ) -> None:
-    ok({"sent": _source_action(source_id, "send", {"to": to, "text": text, "thread_key": thread, "subject": subject}, timeout=300)})
+    if html_file is not None:
+        html = html_file.read_text(encoding="utf-8")
+    if not text.strip() and not html.strip():
+        fail("give --text, or --html / --html-file")
+    payload = {"to": to, "text": text, "thread_key": thread, "subject": subject, "cc": cc, "html": html}
+    ok({"sent": _source_action(source_id, "send", payload, timeout=300)})
 
 
 @source_app.command("reply", help="Reply to one of this source's records.")

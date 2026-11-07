@@ -3,6 +3,7 @@ import {
   ComputeNodeSize,
   QueryRequest,
   ComputeProviderType,
+  TypeId,
   Deployment,
   type AgentReadiness,
   type AgentRequirement,
@@ -15,7 +16,8 @@ import {
 import { Trans, useLingui } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { ChevronLeft, ChevronRight, Loader2, Rocket } from 'lucide-react';
 
 import { describeApiError, errorMessage } from '@src/lib/error-message';
@@ -133,10 +135,27 @@ export function NewDeploymentDialog({
   // `null`: unchecked — the deployed agent spends its owner's capped default.
   const [tokenAllocation, setTokenAllocation] = useState<AgentTokenAllocation | null>(null);
   const [agentMode, setAgentMode] = useState<AgentModeValue>(DEFAULT_AGENT_MODE);
+  // The Setup step by topic. Every section stays mounted — the checklist reports readiness for Launch
+  // from whichever tab is showing — only the one in view is drawn.
+  const [setupTab, setSetupTab] = useState<SetupTab>('agent');
+  // An agent with its built-in email starts Shared (one machine writes to everyone it may); Private would
+  // refuse a scheduled send to anyone but the machine's own person. Only until the person picks a mode.
+  const mainAgentTypeId = useMemo(() => (mainAgent ? new TypeId(Agent.type, mainAgent.id) : null), [mainAgent]);
+  const { rows: mainAgentChannels, specFor: channelSpecFor } = useAttachedChannels(mainAgentTypeId);
+  // A provisioned channel is the agent's own address (its built-in email) — asked of the driver, never by name.
+  const sendsEmail = mainAgentChannels.some((s) => channelSpecFor(s.provider)?.provisioned);
+  const modeChosen = useRef(false);
+  useEffect(() => {
+    if (sendsEmail && !modeChosen.current) setAgentMode((m) => ({ ...m, mode: 'shared' }));
+  }, [sendsEmail]);
   const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
   // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
   // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
   const [refused, setRefused] = useState<{ readiness: AgentReadiness; deployment: Deployment } | null>(null);
+  // A refusal is about values: show the tab that can fix it.
+  useEffect(() => {
+    if (refused) setSetupTab('values');
+  }, [refused]);
   // The hub publishes which providers a deployment may use; only their billings are offered.
   const { providers, isLoading: providersLoading } = useDeployProviders();
   const billings = BILLINGS.filter((b) => providers.includes(BILLING_PROVIDER[b]));
@@ -353,174 +372,200 @@ export function NewDeploymentDialog({
         ) : (
           machine && (
             <div className="flex flex-col gap-3" data-testid="new-deployment-details">
-              <div className="flex flex-wrap items-center gap-2">
-                <Label htmlFor="new-deployment-main-agent" className="text-xs">
-                  <Trans>Main agent</Trans>
-                </Label>
-                <Select
-                  value={mainAgentId ?? NO_AGENT}
-                  disabled={launching}
-                  onValueChange={(next) => {
-                    setMainChoice(next);
-                    setRefused(null);
-                  }}
-                >
-                  <SelectTrigger
-                    id="new-deployment-main-agent"
-                    className="h-8 w-56 text-xs"
-                    data-testid="new-deployment-main-agent"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_AGENT} className="text-xs">
-                      <Trans>No agent</Trans>
-                    </SelectItem>
-                    {agents.map((a) => (
-                      <SelectItem key={a.id} value={`${Agent.type}-${a.id}`} className="text-xs">
-                        {a.name}
-                        {`${Agent.type}-${a.id}` === recommended ? ` · ${t`recommended`}` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span className="basis-full text-xs text-muted-foreground">
-                  <Trans>The agent that answers every call on this machine.</Trans>
-                </span>
-              </div>
-              {mainAgentId && <AgentModeFields value={agentMode} onChange={setAgentMode} disabled={launching} />}
-              <div className="flex flex-wrap items-center gap-2" data-testid="new-deployment-source">
-                <Label htmlFor="new-deployment-source-kind" className="text-xs">
-                  <Trans>Source</Trans>
-                </Label>
-                <Select
-                  value={sourceKind}
-                  disabled={launching}
-                  onValueChange={(next) => setSourceKind(next as DeploymentSourceKind)}
-                >
-                  <SelectTrigger
-                    id="new-deployment-source-kind"
-                    className="h-8 w-28 text-xs"
-                    data-testid="new-deployment-source-kind"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SOURCE_KINDS.map((kind) => (
-                      <SelectItem key={kind} value={kind} className="text-xs">
-                        {kind === 'commit' ? t`Commit` : kind === 'tag' ? t`Tag` : t`Release`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  className="h-8 w-44 font-mono text-xs"
-                  value={sourceRef}
-                  placeholder={sourceKind === 'commit' ? headCommit.slice(0, 12) || 'HEAD' : ''}
-                  aria-label={t`Source`}
-                  disabled={launching}
-                  onChange={(e) => setSourceRef(e.target.value)}
-                  data-testid="new-deployment-source-ref"
-                />
-              </div>
-              <AgentDeployChecklist project={project} agent={mainAgent} onReadinessChange={setReady} />
-              <div className="flex flex-wrap items-center gap-2">
-                <Label htmlFor="new-deployment-environment" className="text-xs">
-                  <Trans>Environment</Trans>
-                </Label>
-                <Select
-                  value={namingEnvironment ? OTHER_ENVIRONMENT : environment}
-                  disabled={launching}
-                  onValueChange={chooseEnvironment}
-                >
-                  <SelectTrigger
-                    id="new-deployment-environment"
-                    className="h-8 w-40 font-mono text-xs"
-                    data-testid="new-deployment-environment"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[...new Set([...environments, environment])].map((name) => (
-                      <SelectItem key={name} value={name} className="font-mono text-xs">
-                        {name}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value={OTHER_ENVIRONMENT} className="text-xs">
-                      <Trans>Another name…</Trans>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                {namingEnvironment && (
-                  <Input
-                    className="h-8 w-32 font-mono text-xs"
-                    value={environment}
+              <SetupTabs value={setupTab} onChange={setSetupTab} ready={ready} />
+              <div
+                className={cn('flex flex-col gap-3', setupTab !== 'agent' && 'hidden')}
+                data-testid="new-deployment-tab-agent"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label htmlFor="new-deployment-main-agent" className="text-xs">
+                    <Trans>Main agent</Trans>
+                  </Label>
+                  <Select
+                    value={mainAgentId ?? NO_AGENT}
                     disabled={launching}
-                    onChange={(e) => {
-                      setEnvironment(e.target.value.trim().toLowerCase());
+                    onValueChange={(next) => {
+                      setMainChoice(next);
                       setRefused(null);
                     }}
-                    aria-invalid={!environmentValid}
-                    data-testid="new-deployment-environment-name"
+                  >
+                    <SelectTrigger
+                      id="new-deployment-main-agent"
+                      className="h-8 w-56 text-xs"
+                      data-testid="new-deployment-main-agent"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_AGENT} className="text-xs">
+                        <Trans>No agent</Trans>
+                      </SelectItem>
+                      {agents.map((a) => (
+                        <SelectItem key={a.id} value={`${Agent.type}-${a.id}`} className="text-xs">
+                          {a.name}
+                          {`${Agent.type}-${a.id}` === recommended ? ` · ${t`recommended`}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="basis-full text-xs text-muted-foreground">
+                    <Trans>The agent that answers every call on this machine.</Trans>
+                  </span>
+                </div>
+                {mainAgentId && (
+                  <AgentModeFields
+                    value={agentMode}
+                    onChange={(next) => {
+                      modeChosen.current = true;
+                      setAgentMode(next);
+                    }}
+                    disabled={launching}
+                    sendsEmail={sendsEmail}
                   />
                 )}
-                <span className="basis-full text-xs text-muted-foreground">
-                  {environmentValid ? (
-                    <Trans>
-                      Which set of values the machine reads. It joins the hub you are signed in to either way.
-                    </Trans>
-                  ) : (
-                    <Trans>Lowercase letters, digits, - and _ (not development).</Trans>
-                  )}
-                </span>
               </div>
-              {needs.length > 0 && !refused && (
-                <div className="flex flex-col gap-1" data-testid="new-deployment-needs">
-                  <p className="text-xs text-muted-foreground">
-                    <Trans>What the machine needs. Leave a field empty to keep the value it already has.</Trans>
-                  </p>
-                  {needs.flatMap((need) =>
-                    need.kind === 'credential' && need.vars.length > 0
-                      ? need.vars.map((name) => (
-                          <Input
-                            key={name}
-                            type="password"
-                            autoComplete="off"
-                            className="h-7 font-mono text-xs"
-                            placeholder={name}
-                            aria-label={name}
-                            value={typed[name] ?? ''}
-                            disabled={launching}
-                            onChange={(e) => setTyped((prev) => ({ ...prev, [name]: e.target.value }))}
-                            data-testid={`new-deployment-value-${name}`}
-                          />
-                        ))
-                      : [
-                          <p key={need.name} className="font-mono text-xs text-muted-foreground">
-                            {need.name}
-                          </p>,
-                        ],
-                  )}
+              <div
+                className={cn('flex flex-col gap-3', setupTab !== 'code' && 'hidden')}
+                data-testid="new-deployment-tab-code"
+              >
+                <div className="flex flex-wrap items-center gap-2" data-testid="new-deployment-source">
+                  <Label htmlFor="new-deployment-source-kind" className="text-xs">
+                    <Trans>Source</Trans>
+                  </Label>
+                  <Select
+                    value={sourceKind}
+                    disabled={launching}
+                    onValueChange={(next) => setSourceKind(next as DeploymentSourceKind)}
+                  >
+                    <SelectTrigger
+                      id="new-deployment-source-kind"
+                      className="h-8 w-28 text-xs"
+                      data-testid="new-deployment-source-kind"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SOURCE_KINDS.map((kind) => (
+                        <SelectItem key={kind} value={kind} className="text-xs">
+                          {kind === 'commit' ? t`Commit` : kind === 'tag' ? t`Tag` : t`Release`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    className="h-8 w-44 font-mono text-xs"
+                    value={sourceRef}
+                    placeholder={sourceKind === 'commit' ? headCommit.slice(0, 12) || 'HEAD' : ''}
+                    aria-label={t`Source`}
+                    disabled={launching}
+                    onChange={(e) => setSourceRef(e.target.value)}
+                    data-testid="new-deployment-source-ref"
+                  />
                 </div>
-              )}
-              <TokenAllocationField
-                project={project}
-                mainAgent={mainAgent}
-                environment={environment}
-                provider={machine.provider}
-                deploymentId={null}
-                value={tokenAllocation}
-                onChange={setTokenAllocation}
-                disabled={launching}
-              />
-              {refused && (
-                <DeploymentSecretsGate
+              </div>
+              <div
+                className={cn('flex flex-col gap-3', setupTab !== 'values' && 'hidden')}
+                data-testid="new-deployment-tab-values"
+              >
+                <AgentDeployChecklist project={project} agent={mainAgent} onReadinessChange={setReady} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label htmlFor="new-deployment-environment" className="text-xs">
+                    <Trans>Environment</Trans>
+                  </Label>
+                  <Select
+                    value={namingEnvironment ? OTHER_ENVIRONMENT : environment}
+                    disabled={launching}
+                    onValueChange={chooseEnvironment}
+                  >
+                    <SelectTrigger
+                      id="new-deployment-environment"
+                      className="h-8 w-40 font-mono text-xs"
+                      data-testid="new-deployment-environment"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[...new Set([...environments, environment])].map((name) => (
+                        <SelectItem key={name} value={name} className="font-mono text-xs">
+                          {name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={OTHER_ENVIRONMENT} className="text-xs">
+                        <Trans>Another name…</Trans>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {namingEnvironment && (
+                    <Input
+                      className="h-8 w-32 font-mono text-xs"
+                      value={environment}
+                      disabled={launching}
+                      onChange={(e) => {
+                        setEnvironment(e.target.value.trim().toLowerCase());
+                        setRefused(null);
+                      }}
+                      aria-invalid={!environmentValid}
+                      data-testid="new-deployment-environment-name"
+                    />
+                  )}
+                  <span className="basis-full text-xs text-muted-foreground">
+                    {environmentValid ? (
+                      <Trans>
+                        Which set of values the machine reads. It joins the hub you are signed in to either way.
+                      </Trans>
+                    ) : (
+                      <Trans>Lowercase letters, digits, - and _ (not development).</Trans>
+                    )}
+                  </span>
+                </div>
+                {needs.length > 0 && !refused && (
+                  <div className="flex flex-col gap-1" data-testid="new-deployment-needs">
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>What the machine needs. Leave a field empty to keep the value it already has.</Trans>
+                    </p>
+                    {needs.flatMap((need) =>
+                      need.kind === 'credential' && need.vars.length > 0
+                        ? need.vars.map((name) => (
+                            <Input
+                              key={name}
+                              type="password"
+                              autoComplete="off"
+                              className="h-7 font-mono text-xs"
+                              placeholder={name}
+                              aria-label={name}
+                              value={typed[name] ?? ''}
+                              disabled={launching}
+                              onChange={(e) => setTyped((prev) => ({ ...prev, [name]: e.target.value }))}
+                              data-testid={`new-deployment-value-${name}`}
+                            />
+                          ))
+                        : [
+                            <p key={need.name} className="font-mono text-xs text-muted-foreground">
+                              {need.name}
+                            </p>,
+                          ],
+                    )}
+                  </div>
+                )}
+                <TokenAllocationField
                   project={project}
-                  deployment={refused.deployment}
-                  readiness={refused.readiness}
-                  onChange={(readiness) => setRefused({ ...refused, readiness })}
+                  mainAgent={mainAgent}
+                  environment={environment}
+                  provider={machine.provider}
+                  deploymentId={null}
+                  value={tokenAllocation}
+                  onChange={setTokenAllocation}
+                  disabled={launching}
                 />
-              )}
+                {refused && (
+                  <DeploymentSecretsGate
+                    project={project}
+                    deployment={refused.deployment}
+                    readiness={refused.readiness}
+                    onChange={(readiness) => setRefused({ ...refused, readiness })}
+                  />
+                )}
+              </div>
             </div>
           )
         )}
@@ -569,5 +614,49 @@ export function NewDeploymentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type SetupTab = 'agent' | 'code' | 'values';
+
+/** The Setup step's topics: who answers (Agent), what runs (Code), what it needs (Values) — the last one
+ *  wears a ✓ once the checklist is ready. */
+function SetupTabs({
+  value,
+  onChange,
+  ready,
+}: {
+  value: SetupTab;
+  onChange: (next: SetupTab) => void;
+  ready: boolean | null;
+}) {
+  const { t } = useLingui();
+  const tabs: [SetupTab, string][] = [
+    ['agent', t`Agent`],
+    ['code', t`Code`],
+    ['values', t`Values`],
+  ];
+  return (
+    <div className="inline-flex gap-0.5 self-start rounded-md border border-border bg-muted/40 p-0.5" role="tablist">
+      {tabs.map(([tab, label]) => (
+        <button
+          key={tab}
+          type="button"
+          role="tab"
+          aria-selected={value === tab}
+          onClick={() => onChange(tab)}
+          className={cn(
+            'flex h-7 items-center gap-1 rounded-sm px-3 text-xs transition-colors',
+            value === tab
+              ? 'bg-accent text-primary ring-1 ring-primary/40'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+          data-testid={`new-deployment-tab-${tab}-button`}
+        >
+          {label}
+          {tab === 'values' && ready === true && <span className="text-green-500">✓</span>}
+        </button>
+      ))}
+    </div>
   );
 }

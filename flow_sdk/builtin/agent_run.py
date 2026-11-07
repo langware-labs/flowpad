@@ -206,6 +206,12 @@ async def create_agentic_process_from_agent(agent, prompt: str = "", *, override
                     and dependency.local_path not in additional_dirs
                 ):
                     additional_dirs.append(dependency.local_path)
+    from flow_sdk.builtin.agent_mailbox import channels_block  # noqa: PLC0415
+
+    if block := await channels_block(str(agent.id)):
+        context_data["instructions"] = "\n\n".join(
+            p for p in (str(context_data.get("instructions") or "").strip(), block) if p
+        )
     home = await _foreign_home(agent, acting_project_id)
     if home:
         if home not in additional_dirs:

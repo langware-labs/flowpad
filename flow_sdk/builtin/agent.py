@@ -1043,6 +1043,14 @@ class Agent(Entity):
         """
         return ApiSuccessResponse(data=await AgentMailbox.state_for_agent(self))
 
+    @action.get(action_name="channels_block")
+    async def channels_block_action(self):
+        """`GET /agent/<id>/channels_block` — ``{"text"}``: what this agent is told about its built-in email,
+        exactly as its launches add it (read-only; Flowpad writes it). ``""`` without one."""
+        from flow_sdk.builtin.agent_mailbox import channels_block  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"text": await channels_block(str(self.id))})
+
     @action.post(action_name="allocate_mailbox")
     @_mailbox_failures("allocate a mailbox")
     async def allocate_mailbox_action(self):
@@ -1084,8 +1092,10 @@ class Agent(Entity):
         """
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
-        unknown = sorted(set(body) - {"allowed_senders", "filters", "poll_interval_seconds"})
-        if unknown:
+        from flow_sdk.builtin.agent_mailbox import POLICY_LISTS, POLICY_SWITCHES  # noqa: PLC0415
+
+        unknown = sorted(set(body) - {*POLICY_LISTS, *POLICY_SWITCHES, "filters", "poll_interval_seconds"})
+        if unknown:  # said here, before any Hub round trip
             return ApiFailResponse(message=f"unknown mailbox setting(s): {', '.join(unknown)}", status_code=400)
         interval = body.get("poll_interval_seconds")
         if interval is not None:
@@ -1100,9 +1110,9 @@ class Agent(Entity):
             return ApiFailResponse(message="this agent has no mailbox", status_code=404)
         return ApiSuccessResponse(
             data=await mailbox.configure(
-                allowed_senders=body.get("allowed_senders"),
                 filters=body.get("filters"),
                 poll_interval_seconds=interval,
+                **{name: body.get(name) for name in (*POLICY_LISTS, *POLICY_SWITCHES)},
             )
         )
 

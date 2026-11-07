@@ -666,6 +666,7 @@ export function StreamInboxView({
     rows: ownerChannels,
     specFor,
     offers: channelOffers,
+    builtInOffered,
     loading: channelsLoading,
   } = useAttachedChannels(channelsOwner);
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
@@ -1582,6 +1583,7 @@ export function StreamInboxView({
                 owner={channelsOwner}
                 rows={ownerChannels}
                 offers={channelOffers}
+                builtInOffered={builtInOffered}
                 specFor={specFor}
                 selected={channelFilter}
                 onSelectedChange={setChannelFilter}

@@ -1617,6 +1617,11 @@ msgstr "{label} — not while the agent is working"
 msgid "{label} docs"
 msgstr "{label} docs"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "{label} is off on this hub"
+msgstr "{label} is off on this hub"
+
 #: src/components/data-sources/source-form.ts
 msgid "{label} is required."
 msgstr "{label} is required."
@@ -2236,8 +2241,9 @@ msgstr "↑ draws from"
 msgid "↻ re-run"
 msgstr "↻ re-run"
 
-#~ msgid "+ Add"
-#~ msgstr "+ Add"
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "+ Add"
+msgstr "+ Add"
 
 #~ msgid "+ Add a cloud machine"
 #~ msgstr "+ Add a cloud machine"
@@ -3720,6 +3726,7 @@ msgstr "agent"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -4162,6 +4169,10 @@ msgstr "Allow Unix Sockets"
 msgid "Allow Unsandboxed Commands"
 msgstr "Allow Unsandboxed Commands"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Allowed"
+msgstr "Allowed"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Allowed Domains"
 msgstr "Allowed Domains"
@@ -4308,6 +4319,10 @@ msgstr "An <0>orphan</0> is a row in the search index whose source file is gone 
 
 #~ msgid "An absent optional value does not park the run"
 #~ msgstr "An absent optional value does not park the run"
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "An address, a name, or @domain"
+msgstr "An address, a name, or @domain"
 
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "An agent is repairing the app"
@@ -5079,8 +5094,8 @@ msgid "Ask to link an unlinked project to cloud before sharing its assets."
 msgstr "Ask to link an unlinked project to cloud before sharing its assets."
 
 #: src/hooks/use-allocate-agent-mailbox.ts
-msgid "Ask whoever runs the hub to turn agent mailboxes on, or use another channel."
-msgstr "Ask whoever runs the hub to turn agent mailboxes on, or use another channel."
+#~ msgid "Ask whoever runs the hub to turn agent mailboxes on, or use another channel."
+#~ msgstr "Ask whoever runs the hub to turn agent mailboxes on, or use another channel."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Ask whoever shared it to start it, or to send a new link."
@@ -5805,6 +5820,10 @@ msgstr "Bless \"{name}\" — create its Tag entity"
 msgid "blocked"
 msgstr "blocked"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Blocked"
+msgstr "Blocked"
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Blocked by: "
 msgstr "Blocked by: "
@@ -6109,6 +6128,10 @@ msgstr "built-in"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Built-in"
 msgstr "Built-in"
+
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Built-in email is off on this hub"
+msgstr "Built-in email is off on this hub"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Bullet list"
@@ -6697,6 +6720,10 @@ msgstr "Channel id (data source id there)"
 #: src/types/ViewType.ts
 msgid "Channels"
 msgstr "Channels"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Channels — added by Flowpad, read-only"
+msgstr "Channels — added by Flowpad, read-only"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
@@ -7725,6 +7752,7 @@ msgid "code"
 msgstr "code"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -8904,8 +8932,8 @@ msgid "Could not allocate"
 msgstr "Could not allocate"
 
 #: src/hooks/use-allocate-agent-mailbox.ts
-msgid "Could not allocate a mailbox"
-msgstr "Could not allocate a mailbox"
+#~ msgid "Could not allocate a mailbox"
+#~ msgstr "Could not allocate a mailbox"
 
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
@@ -9065,6 +9093,10 @@ msgstr "Could not create organization"
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not create the budget"
 msgstr "Could not create the budget"
+
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Could not create the built-in email"
+msgstr "Could not create the built-in email"
 
 #: src/components/quick-create/ChartCreateDialog.tsx
 msgid "Could not create the chart"
@@ -9711,6 +9743,10 @@ msgstr "Could not save the env files"
 msgid "Could not save the key"
 msgstr "Could not save the key"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Could not save the mailbox lists"
+msgstr "Could not save the mailbox lists"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Could not save the override"
 msgstr "Could not save the override"
@@ -10330,8 +10366,12 @@ msgid "Create bookmark on the recipient's desktop"
 msgstr "Create bookmark on the recipient's desktop"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "Create email for agent"
-msgstr "Create email for agent"
+msgid "Create built-in email"
+msgstr "Create built-in email"
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+#~ msgid "Create email for agent"
+#~ msgstr "Create email for agent"
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 msgid "Create File"
@@ -12766,6 +12806,7 @@ msgstr "Emoji"
 msgid "empty"
 msgstr "empty"
 
+#: src/components/agents/MailboxListsEditor.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Empty"
@@ -21014,6 +21055,10 @@ msgstr "No budgets are allocated to you"
 msgid "No build step"
 msgstr "No build step"
 
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "No built-in email yet — create it"
+msgstr "No built-in email yet — create it"
+
 #: src/pages/entry/MessageLanding.tsx
 msgid "No bundle attached."
 msgstr "No bundle attached."
@@ -21061,8 +21106,12 @@ msgid "No channel links to this agent yet"
 msgstr "No channel links to this agent yet"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "No channel reaches this Agent yet. Give it an email address to start."
-msgstr "No channel reaches this Agent yet. Give it an email address to start."
+#~ msgid "No channel reaches this Agent yet. Give it an email address to start."
+#~ msgstr "No channel reaches this Agent yet. Give it an email address to start."
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "No channel reaches this agent yet. Give it its built-in email to start."
+msgstr "No channel reaches this agent yet. Give it its built-in email to start."
 
 #: src/components/items/home-tabs.tsx
 msgid "No channels yet. Add a number, bot or app that sends you messages."
@@ -21286,8 +21335,8 @@ msgid "No editor for: {editorName}"
 msgstr "No editor for: {editorName}"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "No email address — create one"
-msgstr "No email address — create one"
+#~ msgid "No email address — create one"
+#~ msgstr "No email address — create one"
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -22482,6 +22531,10 @@ msgstr "Not a port"
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Not an address"
 msgstr "Not an address"
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Not an address, a domain or a contact"
+msgstr "Not an address, a domain or a contact"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not available"
@@ -24403,6 +24456,7 @@ msgstr "Open this plan from its session to run it"
 msgid "Open this plan from its session to update it"
 msgstr "Open this plan from its session to update it"
 
+#: src/components/agents/MailboxListsEditor.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Open to all"
 msgstr "Open to all"
@@ -25881,6 +25935,10 @@ msgid "Private Context"
 msgstr "Private Context"
 
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Private: each machine writes only to its own person — a scheduled email to others is refused."
+msgstr "Private: each machine writes only to its own person — a scheduled email to others is refused."
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Private: each person who talks to it gets their own machine, started on their first message. Shared: everyone reaches one machine."
 msgstr "Private: each person who talks to it gets their own machine, started on their first message. Shared: everyone reaches one machine."
 
@@ -26970,6 +27028,10 @@ msgstr "Received project"
 msgid "Received project — review before installing."
 msgstr "Received project — review before installing."
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Receiving"
+msgstr "Receiving"
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Receiving secrets requires a secret manager vault on the project."
 msgstr "Receiving secrets requires a secret manager vault on the project."
@@ -27391,6 +27453,10 @@ msgstr "Remove {0} from {1}?"
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
 msgstr "Remove {a}"
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Remove {entry}"
+msgstr "Remove {entry}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
@@ -30338,6 +30404,10 @@ msgstr "Sender"
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 msgid "Sender refused"
 msgstr "Sender refused"
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Sending"
+msgstr "Sending"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #~ msgid "Sending failed."
@@ -33764,6 +33834,10 @@ msgstr "The agent's plan is ready — approve it in the terminal."
 msgid "The agent's: {0}"
 msgstr "The agent's: {0}"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "The Allowed list is switched off; Blocked still applies."
+msgstr "The Allowed list is switched off; Blocked still applies."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."
 msgstr "The analysis completed but did not produce asset-scoped findings."
@@ -34952,8 +35026,8 @@ msgid "This folder-backed asset has no main file metadata."
 msgstr "This folder-backed asset has no main file metadata."
 
 #: src/hooks/use-allocate-agent-mailbox.ts
-msgid "This hub does not offer agent email"
-msgstr "This hub does not offer agent email"
+#~ msgid "This hub does not offer agent email"
+#~ msgstr "This hub does not offer agent email"
 
 #: src/components/help/AskForHelpDialog.tsx
 #~ msgid "This hub has no help desk — pick a person to ask."
@@ -35092,6 +35166,7 @@ msgid "This machine is not connected to the hub, so it cannot be opened from her
 msgstr "This machine is not connected to the hub, so it cannot be opened from here."
 
 #: src/components/agents/AllowedSendersEditor.tsx
+#: src/components/agents/MailboxListsEditor.tsx
 msgid "This mailbox's agent is gone"
 msgstr "This mailbox's agent is gone"
 
@@ -36262,6 +36337,10 @@ msgstr "Type a note..."
 msgid "Type an email or a name"
 msgstr "Type an email or a name"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Type an email, @domain, or the exact name of someone in your contacts."
+msgstr "Type an email, @domain, or the exact name of someone in your contacts."
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Type it manually on the GitHub page."
 msgstr "Type it manually on the GitHub page."
@@ -37068,6 +37147,7 @@ msgstr "Value stays in {envFileName}"
 msgid "Value:"
 msgstr "Value:"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Values"
@@ -38152,6 +38232,14 @@ msgstr "Who pays"
 msgid "Who pays for AI usage in this organization, and how much it may spend."
 msgstr "Who pays for AI usage in this organization, and how much it may spend."
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Who the agent may send to. A send to anyone else is refused."
+msgstr "Who the agent may send to. A send to anyone else is refused."
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Who the agent reads and answers. Anyone else's mail is kept, not answered."
+msgstr "Who the agent reads and answers. Anyone else's mail is kept, not answered."
+
 #~ msgid "Who this agent is — its system prompt."
 #~ msgstr "Who this agent is — its system prompt."
 
@@ -38162,6 +38250,11 @@ msgstr "Who was given how much, and by whom"
 #: src/components/token-plan/MembersTable.tsx
 msgid "Who's spending"
 msgstr "Who's spending"
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Whoever runs the hub can turn it on. Gmail works here meanwhile."
+msgstr "Whoever runs the hub can turn it on. Gmail works here meanwhile."
 
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx

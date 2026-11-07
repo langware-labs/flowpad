@@ -629,11 +629,14 @@ def admits(source, author: str) -> bool:
     non-empty list restricts either way. Explicit source ``open_to_all`` overrides
     the allowlist, but a paused source always admits nobody.
     """
-    from flow_sdk.builtin.agent_mailbox import sender_allowed  # noqa: PLC0415
+    from flow_sdk.builtin.agent_mailbox import on_list, sender_allowed  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
+        return False
+    blocked = getattr(source, "blocked_senders", None) or []
+    if on_list(blocked, author):
         return False
     if getattr(source, "open_to_all", False) or (str(getattr(source, "id", "")), author) in _PROBES:
         return True

@@ -72,11 +72,20 @@ NO_ATTACHMENT_BYTES = "the hub mailbox does not serve attachment bytes yet"
 
 
 def _body(data: MessageData) -> dict[str, Any]:
-    """What a send or a reply hands the hub mailbox: the text, and the subject when the value carries one."""
+    """What a send or a reply hands the hub mailbox: the text, and the subject, Cc and HTML body when the value
+    carries them. Who it may go to is the Hub's call (the mailbox's Sending list) — it refuses, we report."""
     body: dict[str, Any] = {"text": data.text}
     if getattr(data, "subject", None):
         body["subject"] = data.subject
+    if cc := [_address(p) for p in getattr(data, "cc", ()) or () if _address(p)]:
+        body["cc"] = cc
+    if getattr(data, "html", None):
+        body["html"] = data.html
     return body
+
+
+def _address(person) -> str:
+    return str(getattr(person, "address", "") or getattr(getattr(person, "origin", None), "key", "") or "")
 
 
 class MailboxTransport(Protocol):
@@ -322,9 +331,7 @@ class CloudEmailSource(EmailAddressing, MessageSource):
         if data.conversation is not None:
             latest = await self._latest_in(self._key_of(data.conversation))
             return await self.reply_as(latest, data, data.conversation)
-        if len(data.recipients) != 1:
-            raise Unsupported("a hub mailbox send has exactly one recipient")
-        body = {"to": data.recipients[0].address or data.recipients[0].origin.key, **_body(data)}
+        body = {"to": [_address(p) for p in data.recipients], **_body(data)}
         return self._sent(await self.mailbox.send(self.agent_id, body), data, None)
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:

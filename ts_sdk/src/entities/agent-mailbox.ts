@@ -13,7 +13,27 @@ export interface IAgentMailbox extends IEntity {
   status: AgentMailboxStatus;
   agent_typeid: TypeId;
   allowed_senders?: string[];
+  blocked_senders?: string[];
+  allowed_recipients?: string[];
+  blocked_recipients?: string[];
+  open_senders?: boolean;
+  open_recipients?: boolean;
   filters?: Record<string, string>;
+}
+
+/** The mailbox's lists: Receiving (who may write to it) and Sending (who it may write to). */
+export const MAILBOX_LISTS = ['allowed_senders', 'blocked_senders', 'allowed_recipients', 'blocked_recipients'] as const;
+export type MailboxList = (typeof MAILBOX_LISTS)[number];
+
+/** Whether `address` matches an entry: the exact address, or its whole domain written `@domain`. */
+export function onMailboxList(entries: readonly string[] | undefined, address: string): boolean {
+  const candidate = normalizeEmail(address ?? '');
+  if (!candidate) return false;
+  const domain = candidate.includes('@') ? `@${candidate.split('@').pop()}` : '';
+  return (entries ?? []).some((raw) => {
+    const entry = String(raw ?? '').trim().toLowerCase();
+    return entry.startsWith('@') ? !!domain && entry === domain : normalizeEmail(entry) === candidate;
+  });
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -38,6 +58,12 @@ export class AgentMailbox extends APIEntity<AgentMailbox> implements IAgentMailb
   status: AgentMailboxStatus = 'active';
   agent_typeid!: TypeId;
   allowed_senders: string[] = [];
+  blocked_senders: string[] = [];
+  allowed_recipients: string[] = [];
+  blocked_recipients: string[] = [];
+  open_senders = false;
+  /** A hub too old to carry a Sending list has no Sending gate: open. */
+  open_recipients = true;
   /** Standing read defaults, in the Hub's wire vocabulary. Defaults, not constraints. */
   filters: Record<string, string> = {};
 
@@ -49,6 +75,11 @@ export class AgentMailbox extends APIEntity<AgentMailbox> implements IAgentMailb
     this.provider_inbox_id = entity.provider_inbox_id ?? this.provider_inbox_id;
     this.status = entity.status ?? this.status;
     this.allowed_senders = entity.allowed_senders ?? this.allowed_senders;
+    this.blocked_senders = entity.blocked_senders ?? this.blocked_senders;
+    this.allowed_recipients = entity.allowed_recipients ?? this.allowed_recipients;
+    this.blocked_recipients = entity.blocked_recipients ?? this.blocked_recipients;
+    this.open_senders = entity.open_senders ?? this.open_senders;
+    this.open_recipients = entity.open_recipients ?? this.open_recipients;
     this.filters = entity.filters ?? this.filters;
     if (entity.agent_typeid) this.agent_typeid = entity.agent_typeid;
   }
@@ -65,11 +96,13 @@ export class AgentMailbox extends APIEntity<AgentMailbox> implements IAgentMailb
    * regardless of the list, because the switch is a kill switch.
    */
   allowed(address: string): boolean {
-    if (!this.isActive) return false;
-    // Through the same normalizer the backend gate uses. A second casefold here
-    // would be a second answer to "who may drive this agent".
-    const candidate = normalizeEmail(address ?? '');
-    if (!candidate) return false;
-    return this.allowed_senders.some((entry) => normalizeEmail(entry ?? '') === candidate);
+    if (!this.isActive || onMailboxList(this.blocked_senders, address)) return false;
+    return this.open_senders || onMailboxList(this.allowed_senders, address);
+  }
+
+  /** Whether the agent may send to `address` — the Hub enforces it; this is for showing it. */
+  maySendTo(address: string): boolean {
+    if (onMailboxList(this.blocked_recipients, address)) return false;
+    return this.open_recipients || onMailboxList(this.allowed_recipients, address);
   }
 }

@@ -76,6 +76,13 @@ class DataSourceAmbiguous(NameAmbiguous):
     plural = "data sources"
 
 
+def _address_line(value) -> str:
+    """``to`` / ``cc`` as one comma-separated line, from a string or a list."""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v).strip() for v in value if str(v).strip())
+    return str(value or "")
+
+
 def _outcome_dict(outcome: SendOutcome) -> dict:
     """A send outcome on the wire: the id the channel assigned, whether it was only drafted, and
     whether the local copy was recorded (a SENT but unrecorded message must never be re-sent)."""
@@ -241,6 +248,8 @@ class DataSource(SetupSkippable, Entity):
     #: the driver is ``open_inbound`` or ``open_to_all`` is set. Third parties' addresses: PRIVATE, row-only — never in the shareable
     #: ``config`` (a form's field is moved here), and a re-read file leaves it as it is.
     allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+    #: Who may NOT drive it, whatever else says so (an address or ``@domain``); checked before the Allowed list.
+    blocked_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
     #: Explicit public inbound access; private machine policy, never published with the source.
     open_to_all: bool = APIField(default=False, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
@@ -1473,13 +1482,16 @@ class DataSource(SetupSkippable, Entity):
     async def send_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/send — one message into the channel.
 
-        Body: ``{"to", "text", "thread_key"?, "subject"?, "in_reply_to"?}``. ``to`` is what the channel
+        Body: ``{"to", "text", "thread_key"?, "subject"?, "in_reply_to"?, "cc"?, "html"?}`` — ``to`` / ``cc`` an
+        address or a list of them (email). ``to`` is what the channel
         addresses (a chat, a channel id, an address); the source class reads it (``message_for``)."""
         body = await self._body()
         try:
             return ApiSuccessResponse(
                 data=await self.send_text(
-                    to=str(body.get("to") or ""),
+                    to=_address_line(body.get("to")),
+                    cc=_address_line(body.get("cc")),
+                    html=str(body.get("html") or ""),
                     text=str(body.get("text") or ""),
                     thread_key=str(body.get("thread_key") or ""),
                     subject=str(body.get("subject") or ""),
@@ -1490,17 +1502,26 @@ class DataSource(SetupSkippable, Entity):
             return ApiFailResponse(message=str(exc))
 
     async def send_text(
-        self, *, to: str, text: str, thread_key: str = "", subject: str = "", in_reply_to: str = ""
+        self,
+        *,
+        to: str,
+        text: str,
+        thread_key: str = "",
+        subject: str = "",
+        in_reply_to: str = "",
+        cc: str = "",
+        html: str = "",
     ) -> dict:
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
         driver = await DataDriver.find(self.provider or "")
         if driver is None or not driver.sends:
             raise RuntimeError(f"{self.provider} cannot send")
-        if not (text or "").strip():
+        if not (text or "").strip() and not (html or "").strip():
             raise ValueError("text is required")
+        extra = {k: v for k, v in (("cc", cc), ("html", html)) if v}
         outcome = await driver.send(
-            self, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to
+            self, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to, **extra
         )
         return _outcome_dict(outcome)
 

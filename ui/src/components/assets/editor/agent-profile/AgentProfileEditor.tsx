@@ -107,6 +107,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     rows: channelRows,
     specFor: channelSpecFor,
     offers: channelOffers,
+    builtInOffered,
   } = useAttachedChannels(hub ? null : channelsOwner);
   const openChannel = useCallback(
     (key: string) => navigation.openDock(DockPointer.forAgentStreamInbox(agent.id, { channel: key })),
@@ -136,7 +137,12 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const localPlace = places?.find((p) => p.is_local) ?? null;
   const deployPage = agent.deployPagePointer;
   const placesKey = places
-    ? places.map((p) => `${p.deployment.id}:${p.deployment.status?.provider_state ?? ''}:${p.deployment.source_revision ?? ''}`).join(',')
+    ? places
+        .map(
+          (p) =>
+            `${p.deployment.id}:${p.deployment.status?.provider_state ?? ''}:${p.deployment.source_revision ?? ''}`,
+        )
+        .join(',')
     : '';
   useEffect(() => {
     void loadVersion();
@@ -359,6 +365,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 rows={channelRows}
                 specFor={channelSpecFor}
                 offers={channelOffers}
+                builtInOffered={builtInOffered}
                 onMarkPress={openChannel}
               />
             </div>
@@ -381,10 +388,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
       {/* ── body: the definition on the left, where it runs on the right ── */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <section
-          className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
-          aria-label={t`Agent`}
-        >
+        <section className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5" aria-label={t`Agent`}>
           {/* On the hub this is the PUBLISHED definition: read it here, edit it on the author's computer. */}
           <fieldset disabled={hub || !!definitionError} className="contents" data-testid="agent-definition-fields">
             {definitionError && (
@@ -447,6 +451,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 {!promptFull &&
                   promptEditor(<FullScreenButton className="ms-auto" onClick={() => setPromptFull(true)} />)}
               </div>
+              {!hub && <AgentChannelsBlock agent={agent} />}
               <FullScreenView
                 open={promptFull}
                 onExit={() => {
@@ -747,6 +752,34 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
         </section>
       </div>
       {!hub && <AgentRequestLine agent={agent} displayName={title || (agent.name ?? '')} />}
+    </div>
+  );
+}
+
+/** What Flowpad adds to the agent's instructions about its channels — read-only, so a person sees exactly
+ *  what the agent is told (its address, how it sends, who it hears from). Nothing without a built-in email. */
+function AgentChannelsBlock({ agent }: { agent: Agent }) {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    let live = true;
+    void agent
+      .channelsBlock()
+      .then((next) => live && setText(next))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [agent]);
+  if (!text) return null;
+  return (
+    <div
+      className="mt-3 rounded-md border border-border bg-card/50 px-3 py-2 text-xs"
+      data-testid="agent-channels-block"
+    >
+      <div className="mb-1 font-medium text-muted-foreground">
+        <Trans>Channels — added by Flowpad, read-only</Trans>
+      </div>
+      <pre className="whitespace-pre-wrap font-sans">{text.replace(/^## .*\n/, '')}</pre>
     </div>
   );
 }

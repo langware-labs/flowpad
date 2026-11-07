@@ -1,12 +1,11 @@
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { Info } from 'lucide-react';
+import { Info, Mail } from 'lucide-react';
 import { AGENT_CHANNELS, type AgentChannel, type AgentMode } from '@sdk';
 import { Label } from '@src/components/ui/label';
 import { SegmentedControl } from '@src/components/ui/segmented-control';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Switch } from '@src/components/ui/switch';
-import gmailMark from '../../../../../../flow_sdk/server/icons/brands/assets/gmail.svg';
 import slackMark from '../../../../../../flow_sdk/server/icons/brands/assets/slack.svg';
 
 /** The idle windows offered; 15 minutes is the default. */
@@ -26,7 +25,7 @@ export const DEFAULT_AGENT_MODE: AgentModeValue = {
 };
 
 function ChannelMark({ channel }: { channel: AgentChannel }) {
-  if (channel === 'email') return <img src={gmailMark} alt="" className="size-4" />;
+  if (channel === 'email') return <Mail className="size-4" />;
   if (channel === 'slack') return <img src={slackMark} alt="" className="size-4" />;
   return (
     <span className="flex size-4 items-center justify-center rounded-sm bg-orange-500 font-mono text-[9px] font-bold text-black">
@@ -48,10 +47,13 @@ export function AgentModeFields({
   value,
   onChange,
   disabled,
+  sendsEmail = false,
 }: {
   value: AgentModeValue;
   onChange: (next: AgentModeValue) => void;
   disabled?: boolean;
+  /** The agent has its built-in email: Private would let a send reach only the one person it belongs to. */
+  sendsEmail?: boolean;
 }) {
   const toggle = (channel: AgentChannel, on: boolean) =>
     onChange({
@@ -82,16 +84,21 @@ export function AgentModeFields({
           <Info className="size-3.5" />
         </span>
       </div>
+      {sendsEmail && value.mode === 'private' && (
+        <span className="col-start-2 text-[11px] text-amber-500" data-testid="new-deployment-private-email-note">
+          <Trans>Private: each machine writes only to its own person — a scheduled email to others is refused.</Trans>
+        </span>
+      )}
 
       <Label className="self-start pt-2 text-xs text-muted-foreground">
         <Trans>Channels</Trans>
       </Label>
       <div className="flex flex-col gap-1">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {AGENT_CHANNELS.map((channel) => (
             <label
               key={channel}
-              className="flex h-9 flex-1 items-center gap-2 whitespace-nowrap rounded-md border px-2.5 text-xs"
+              className="flex h-9 items-center gap-2 whitespace-nowrap rounded-md border px-2.5 text-xs"
               title={
                 channel === 'chat_api' ? t`OpenAI-style chat endpoint, called with the person's API key` : undefined
               }

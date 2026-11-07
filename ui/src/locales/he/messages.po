@@ -1609,6 +1609,11 @@ msgstr "{label} — לא בזמן שהסוכן עובד"
 msgid "{label} docs"
 msgstr "מסמכים {label}"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "{label} is off on this hub"
+msgstr "{label} כבוי ב-hub הזה"
+
 #: src/components/data-sources/source-form.ts
 msgid "{label} is required."
 msgstr "{label} הוא שדה חובה."
@@ -2222,8 +2227,9 @@ msgstr ""
 msgid "↻ re-run"
 msgstr "↻ הרצה חוזרת"
 
-#~ msgid "+ Add"
-#~ msgstr "+ הוסף"
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "+ Add"
+msgstr "+ הוסף"
 
 #~ msgid "+ Add a cloud machine"
 #~ msgstr ""
@@ -3691,6 +3697,7 @@ msgstr "סוכן"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -4132,6 +4139,10 @@ msgstr "אפשור Unix Sockets"
 msgid "Allow Unsandboxed Commands"
 msgstr "אפשור פקודות ללא ארגז חול"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Allowed"
+msgstr "מותרים"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Allowed Domains"
 msgstr "דומיינים מותרים"
@@ -4278,6 +4289,10 @@ msgstr "רשומה <0>יתומה</0> היא שורה במדד החיפוש שק�
 
 #~ msgid "An absent optional value does not park the run"
 #~ msgstr ""
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "An address, a name, or @domain"
+msgstr "כתובת, שם או ‎@דומיין"
 
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "An agent is repairing the app"
@@ -5047,8 +5062,8 @@ msgid "Ask to link an unlinked project to cloud before sharing its assets."
 msgstr "לשאול לפני שיתוף נכסים אם לקשר פרויקט שאינו מקושר לענן."
 
 #: src/hooks/use-allocate-agent-mailbox.ts
-msgid "Ask whoever runs the hub to turn agent mailboxes on, or use another channel."
-msgstr "בקש ממי שמפעיל את ה-hub להפעיל תיבות מייל לסוכנים, או השתמש בערוץ אחר."
+#~ msgid "Ask whoever runs the hub to turn agent mailboxes on, or use another channel."
+#~ msgstr "בקש ממי שמפעיל את ה-hub להפעיל תיבות מייל לסוכנים, או השתמש בערוץ אחר."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Ask whoever shared it to start it, or to send a new link."
@@ -5767,6 +5782,10 @@ msgstr "אישור \"{name}\" — יצירת ישות Tag"
 msgid "blocked"
 msgstr "חסום"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Blocked"
+msgstr "חסומים"
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Blocked by: "
 msgstr "חסום על ידי: "
@@ -6071,6 +6090,10 @@ msgstr "מובנית"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Built-in"
 msgstr "מובנה"
+
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Built-in email is off on this hub"
+msgstr "האימייל המובנה כבוי ב-hub הזה"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Bullet list"
@@ -6659,6 +6682,10 @@ msgstr "מזהה ערוץ (מזהה מקור נתונים שם)"
 #: src/types/ViewType.ts
 msgid "Channels"
 msgstr "ערוצים"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Channels — added by Flowpad, read-only"
+msgstr "ערוצים — נוסף על ידי Flowpad, לקריאה בלבד"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
@@ -7681,6 +7708,7 @@ msgid "code"
 msgstr "קוד"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -8852,8 +8880,8 @@ msgid "Could not allocate"
 msgstr ""
 
 #: src/hooks/use-allocate-agent-mailbox.ts
-msgid "Could not allocate a mailbox"
-msgstr "לא ניתן היה להקצות תיבת דואר"
+#~ msgid "Could not allocate a mailbox"
+#~ msgstr "לא ניתן היה להקצות תיבת דואר"
 
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
@@ -9009,6 +9037,10 @@ msgstr "לא ניתן ליצור ארגון"
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not create the budget"
 msgstr "לא ניתן ליצור את התקציב"
+
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Could not create the built-in email"
+msgstr "לא ניתן ליצור את האימייל המובנה"
 
 #: src/components/quick-create/ChartCreateDialog.tsx
 msgid "Could not create the chart"
@@ -9652,6 +9684,10 @@ msgstr "לא ניתן לשמור את קבצי ה-env"
 msgid "Could not save the key"
 msgstr "לא ניתן היה לשמור את המפתח"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Could not save the mailbox lists"
+msgstr "לא ניתן לשמור את רשימות תיבת הדואר"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Could not save the override"
 msgstr "לא ניתן לשמור את העקיפה"
@@ -10269,8 +10305,12 @@ msgid "Create bookmark on the recipient's desktop"
 msgstr "ליצור סימניה על שולחן העבודה של המקבל"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "Create email for agent"
-msgstr "צרו כתובת אימייל לסוכן"
+msgid "Create built-in email"
+msgstr "יצירת אימייל מובנה"
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+#~ msgid "Create email for agent"
+#~ msgstr "צרו כתובת אימייל לסוכן"
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 msgid "Create File"
@@ -12690,6 +12730,7 @@ msgstr "אמוג'י"
 msgid "empty"
 msgstr "ריק"
 
+#: src/components/agents/MailboxListsEditor.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Empty"
@@ -20863,6 +20904,10 @@ msgstr "לא הוקצו לכם תקציבים"
 msgid "No build step"
 msgstr ""
 
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "No built-in email yet — create it"
+msgstr "אין עדיין אימייל מובנה — צרו אותו"
+
 #: src/pages/entry/MessageLanding.tsx
 msgid "No bundle attached."
 msgstr ""
@@ -20910,8 +20955,12 @@ msgid "No channel links to this agent yet"
 msgstr ""
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "No channel reaches this Agent yet. Give it an email address to start."
-msgstr "אין עדיין ערוץ שמגיע לסוכן הזה. יש להגדיר לו כתובת דוא״ל כדי להתחיל."
+#~ msgid "No channel reaches this Agent yet. Give it an email address to start."
+#~ msgstr "אין עדיין ערוץ שמגיע לסוכן הזה. יש להגדיר לו כתובת דוא״ל כדי להתחיל."
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "No channel reaches this agent yet. Give it its built-in email to start."
+msgstr "אף ערוץ עדיין לא מגיע לסוכן הזה. תנו לו את האימייל המובנה שלו כדי להתחיל."
 
 #: src/components/items/home-tabs.tsx
 msgid "No channels yet. Add a number, bot or app that sends you messages."
@@ -21135,8 +21184,8 @@ msgid "No editor for: {editorName}"
 msgstr "אין עורך עבור: {editorName}"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "No email address — create one"
-msgstr "אין כתובת דוא״ל — צרו אחת"
+#~ msgid "No email address — create one"
+#~ msgstr "אין כתובת דוא״ל — צרו אחת"
 
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
@@ -22323,6 +22372,10 @@ msgstr ""
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Not an address"
 msgstr ""
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Not an address, a domain or a contact"
+msgstr "זו לא כתובת, דומיין או איש קשר"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not available"
@@ -24228,6 +24281,7 @@ msgstr "פתחו את התוכנית מהסשן שלה כדי להריץ אות�
 msgid "Open this plan from its session to update it"
 msgstr "פתחו את התוכנית מהסשן שלה כדי לעדכן אותה"
 
+#: src/components/agents/MailboxListsEditor.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Open to all"
 msgstr "פתוח לכולם"
@@ -25692,6 +25746,10 @@ msgid "Private Context"
 msgstr "הקשר פרטי"
 
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
+msgid "Private: each machine writes only to its own person — a scheduled email to others is refused."
+msgstr "פרטי: כל מכונה כותבת רק לאדם שלה — אימייל מתוזמן לאחרים נדחה."
+
+#: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Private: each person who talks to it gets their own machine, started on their first message. Shared: everyone reaches one machine."
 msgstr ""
 
@@ -26777,6 +26835,10 @@ msgstr "פרויקט שהתקבל"
 msgid "Received project — review before installing."
 msgstr "פרויקט שהתקבל — בדקו לפני ההתקנה."
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Receiving"
+msgstr "קבלה"
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "Receiving secrets requires a secret manager vault on the project."
 msgstr ""
@@ -27197,6 +27259,10 @@ msgstr "להסיר את {0} מ-{1}?"
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
 msgstr "הסרת {a}"
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Remove {entry}"
+msgstr "הסרת {entry}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
@@ -30120,6 +30186,10 @@ msgstr "שולח"
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 msgid "Sender refused"
 msgstr "השולח נדחה"
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Sending"
+msgstr "שליחה"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #~ msgid "Sending failed."
@@ -33523,6 +33593,10 @@ msgstr "התוכנית של הסוכן מוכנה — יש לאשר אותה ב�
 msgid "The agent's: {0}"
 msgstr "של הסוכן: {0}"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "The Allowed list is switched off; Blocked still applies."
+msgstr "רשימת המותרים כבויה; החסומים עדיין חלים."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."
 msgstr "הניתוח הושלם אך לא הניב ממצאים בהיקף הנכס"
@@ -34700,8 +34774,8 @@ msgid "This folder-backed asset has no main file metadata."
 msgstr "לנכס תיקייה זה אין מטא-נתונים של קובץ ראשי"
 
 #: src/hooks/use-allocate-agent-mailbox.ts
-msgid "This hub does not offer agent email"
-msgstr "ה-hub הזה לא מציע מייל לסוכנים"
+#~ msgid "This hub does not offer agent email"
+#~ msgstr "ה-hub הזה לא מציע מייל לסוכנים"
 
 #: src/components/help/AskForHelpDialog.tsx
 #~ msgid "This hub has no help desk — pick a person to ask."
@@ -34839,6 +34913,7 @@ msgid "This machine is not connected to the hub, so it cannot be opened from her
 msgstr ""
 
 #: src/components/agents/AllowedSendersEditor.tsx
+#: src/components/agents/MailboxListsEditor.tsx
 msgid "This mailbox's agent is gone"
 msgstr "הסוכן של תיבת הדואר הזו כבר לא קיים"
 
@@ -36004,6 +36079,10 @@ msgstr "הקלידו הערה..."
 msgid "Type an email or a name"
 msgstr "הקלידו אימייל או שם"
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Type an email, @domain, or the exact name of someone in your contacts."
+msgstr "הקלידו אימייל, ‎@דומיין, או את השם המדויק של מישהו מאנשי הקשר."
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Type it manually on the GitHub page."
 msgstr "הקלידו אותו באופן ידני בעמוד GitHub."
@@ -36807,10 +36886,11 @@ msgstr "הערך נשאר ב-{envFileName}"
 msgid "Value:"
 msgstr "ערך:"
 
+#: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Values"
-msgstr ""
+msgstr "ערכים"
 
 #~ msgid "Values are kept in .env.local in your home folder"
 #~ msgstr ""
@@ -37883,6 +37963,14 @@ msgstr ""
 msgid "Who pays for AI usage in this organization, and how much it may spend."
 msgstr ""
 
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Who the agent may send to. A send to anyone else is refused."
+msgstr "למי הסוכן רשאי לשלוח. שליחה לכל אחד אחר נדחית."
+
+#: src/components/agents/MailboxListsEditor.tsx
+msgid "Who the agent reads and answers. Anyone else's mail is kept, not answered."
+msgstr "ממי הסוכן קורא ועונה. דואר מכל אחד אחר נשמר ולא נענה."
+
 #~ msgid "Who this agent is — its system prompt."
 #~ msgstr "מי הוא הסוכן הזה — פרומפט המערכת שלו."
 
@@ -37893,6 +37981,11 @@ msgstr "מי קיבל כמה, ועל ידי מי"
 #: src/components/token-plan/MembersTable.tsx
 msgid "Who's spending"
 msgstr "מי מוציא?"
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Whoever runs the hub can turn it on. Gmail works here meanwhile."
+msgstr "מי שמפעיל את ה-hub יכול להדליק אותו. בינתיים Gmail עובד כאן."
 
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx

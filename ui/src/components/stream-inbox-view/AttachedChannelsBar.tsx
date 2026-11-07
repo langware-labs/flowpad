@@ -26,7 +26,7 @@
  * featured ones (`channelOffers`): the greyed glyph with a "+", which opens the add dialog on
  * that channel. It is the absence of a source, not a state of one, so it never filters.
  */
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Agent, DataSource, type DataDriver, TypeId, User } from '@sdk';
 import { Check, Plus, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
@@ -98,8 +98,28 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
     () => (ownerKey ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
     [specs, rows, ownerKey, forAgent],
   );
+  const builtInOffered = useBuiltInEmailOffered(forAgent && offers.some((o) => o.spec.provisioned) ? owner : null);
   // Until both lists land, `rows` is empty for want of data, not for want of channels.
-  return { rows, specFor, offers, loading: specsLoading || sourcesLoading };
+  return { rows, specFor, offers, builtInOffered, loading: specsLoading || sourcesLoading };
+}
+
+/** Whether the hub can give this agent a provisioned channel (its built-in email): asked once, when one is on offer.
+ *  `true` until the hub says otherwise — an unreachable hub is not a "no". */
+function useBuiltInEmailOffered(agent: TypeId | null | undefined): boolean {
+  const [offered, setOffered] = useState(true);
+  const id = agent?.id;
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    new Agent({ id })
+      .mailboxState()
+      .then((state) => live && setOffered(state.offered !== false))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  return offered;
 }
 
 type SpecFor = (provider: string) => DataDriver | undefined;
@@ -143,6 +163,8 @@ interface Props {
   specFor: SpecFor;
   /** Channels still to connect, drawn after the attached ones (`useAttachedChannels().offers`). */
   offers?: ChannelOffer[];
+  /** Whether the hub can give an agent its built-in email (`useAttachedChannels().builtInOffered`). */
+  builtInOffered?: boolean;
   /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. Absent with
    *  `onSelectedChange` where there is no list to narrow (the agent page). */
   selected?: ReadonlySet<string>;
@@ -160,6 +182,7 @@ export function AttachedChannelsBar({
   rows,
   specFor,
   offers = NO_OFFERS,
+  builtInOffered = true,
   selected = NO_SELECTION,
   onSelectedChange,
   onMarkPress,
@@ -203,7 +226,12 @@ export function AttachedChannelsBar({
         />
       ))}
       {offers.map((offer) => (
-        <ChannelOfferMark key={offer.key} offer={offer} onConnect={() => setAdding({ initial: offer.spec })} />
+        <ChannelOfferMark
+          key={offer.key}
+          offer={offer}
+          unavailable={!!offer.spec.provisioned && !builtInOffered}
+          onConnect={() => setAdding({ initial: offer.spec })}
+        />
       ))}
       <CallControls rows={rows} specFor={specFor} />
       {filtering ? (
@@ -415,7 +443,16 @@ function ChannelMark({
 
 /** A channel still to connect: the greyed glyph with a "+" where an attached mark carries its
  *  status dot. Pressing it opens the add dialog on that channel; hovering says what it is for. */
-function ChannelOfferMark({ offer, onConnect }: { offer: ChannelOffer; onConnect: () => void }) {
+function ChannelOfferMark({
+  offer,
+  onConnect,
+  unavailable = false,
+}: {
+  offer: ChannelOffer;
+  onConnect: () => void;
+  /** The hub does not offer this channel: shown, disabled, with why — never a failed click. */
+  unavailable?: boolean;
+}) {
   const { t } = useLingui();
   const Glyph = lucideByName(offer.iconName);
   const { label } = offer;
@@ -424,27 +461,43 @@ function ChannelOfferMark({ offer, onConnect }: { offer: ChannelOffer; onConnect
       <HoverCardTrigger asChild>
         <button
           type="button"
-          onClick={onConnect}
-          aria-label={t`Connect ${label}`}
+          onClick={unavailable ? undefined : onConnect}
+          aria-disabled={unavailable || undefined}
+          aria-label={unavailable ? t`${label} is off on this hub` : t`Connect ${label}`}
           className={cn(
             MARK,
             MARK_GREYED,
-            'border-transparent bg-muted/50 hover:[&>:first-child]:opacity-100 hover:[&>:first-child]:grayscale-0',
+            'border-transparent bg-muted/50',
+            unavailable
+              ? 'cursor-not-allowed opacity-40'
+              : 'hover:[&>:first-child]:opacity-100 hover:[&>:first-child]:grayscale-0',
           )}
           data-testid="channel-offer"
           data-channel={offer.key}
+          data-unavailable={unavailable || undefined}
         >
           <Glyph className="size-[17px]" />
-          <span className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-muted-foreground text-background')}>
-            <Plus className="size-2.5" strokeWidth={3} />
-          </span>
+          {!unavailable && (
+            <span className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-muted-foreground text-background')}>
+              <Plus className="size-2.5" strokeWidth={3} />
+            </span>
+          )}
         </button>
       </HoverCardTrigger>
-      <HoverCardContent align="start" className="w-64 space-y-2 p-3 text-[13px]">
-        <div>{t`Get your ${label} messages here, and answer them from Flowpad.`}</div>
-        <Button size="sm" onClick={onConnect} data-testid="channel-offer-connect">
-          {t`Connect ${label}`}
-        </Button>
+      <HoverCardContent align="start" className="w-64 space-y-2 p-3 text-[13px]" data-testid="channel-offer-card">
+        {unavailable ? (
+          <>
+            <div className="font-medium">{t`${label} is off on this hub`}</div>
+            <div className="text-muted-foreground">{t`Whoever runs the hub can turn it on. Gmail works here meanwhile.`}</div>
+          </>
+        ) : (
+          <>
+            <div>{t`Get your ${label} messages here, and answer them from Flowpad.`}</div>
+            <Button size="sm" onClick={onConnect} data-testid="channel-offer-connect">
+              {t`Connect ${label}`}
+            </Button>
+          </>
+        )}
       </HoverCardContent>
     </HoverCard>
   );

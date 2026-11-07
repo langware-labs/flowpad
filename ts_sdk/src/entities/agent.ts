@@ -656,8 +656,8 @@ export class Agent extends APIEntity<Agent> {
 
   async mailboxState(): Promise<AgentMailboxState> {
     if (this.mailboxOnHub) {
-      const data = await this.hubMailbox<{ mailbox?: HubMailboxDescriptor | null }>('', 'GET');
-      return this.hubMailboxState(data?.mailbox ?? null);
+      const data = await this.hubMailbox<{ mailbox?: HubMailboxDescriptor | null; offered?: boolean }>('', 'GET');
+      return { ...this.hubMailboxState(data?.mailbox ?? null), offered: data?.offered ?? true };
     }
     return normalizeAgentMailboxState(await this.get<AgentMailboxStateWire>('mailbox_state'));
   }
@@ -683,10 +683,8 @@ export class Agent extends APIEntity<Agent> {
 
   async configureMailbox(options: MailboxConfiguration): Promise<AgentMailboxState> {
     if (this.mailboxOnHub) {
-      const { allowed_senders, filters } = options; // poll_interval_seconds is a desktop fact
-      return this.hubMailboxState(
-        await this.hubMailbox<HubMailboxDescriptor>('configure', 'POST', { allowed_senders, filters }),
-      );
+      const { poll_interval_seconds: _local, ...policy } = options; // the poll cadence is a desktop fact
+      return this.hubMailboxState(await this.hubMailbox<HubMailboxDescriptor>('configure', 'POST', policy));
     }
     return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('configure_mailbox', { ...options }));
   }
@@ -717,14 +715,26 @@ export class Agent extends APIEntity<Agent> {
     });
   }
 
+  /** What this agent is told about its built-in email — added to its instructions by Flowpad, read-only. */
+  async channelsBlock(): Promise<string> {
+    return (await this.get<{ text?: string }>('channels_block'))?.text ?? '';
+  }
+
   async streamInboxScope(): Promise<AgentStreamInboxScope> {
     return this.get<AgentStreamInboxScope>('stream_inbox_scope');
   }
 }
 
 export interface MailboxConfiguration {
-  /** Who may drive the agent through this mailbox. Empty admits nobody. Hub-stored. */
+  /** Receiving: who may drive the agent through this mailbox. Empty admits nobody. Hub-stored. */
   allowed_senders?: string[];
+  blocked_senders?: string[];
+  /** Sending: who the agent may write to; the Hub refuses anyone else. Hub-stored. */
+  allowed_recipients?: string[];
+  blocked_recipients?: string[];
+  /** "Open to all", per direction. */
+  open_senders?: boolean;
+  open_recipients?: boolean;
   /** Standing read defaults, in the Hub's wire vocabulary. Hub-stored. */
   filters?: Record<string, string>;
   /** How often THIS machine polls. Local — not a fact about the mailbox. */
@@ -750,6 +760,7 @@ interface AgentMailboxStateWire {
   source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
   /** Every message source the agent owns; the mailbox is one of them. */
   sources?: (Partial<IDataSource> & { id?: string; typeid?: string })[];
+  offered?: boolean;
 }
 
 export interface AgentMailboxState {
@@ -761,6 +772,8 @@ export interface AgentMailboxState {
   source: DataSource | null;
   /** Every message source the agent owns (the mailbox included). */
   sources: DataSource[];
+  /** Whether this hub can give an agent its built-in email at all; absent = not known, assume yes. */
+  offered?: boolean;
 }
 
 export interface AgentStreamInboxScope {
@@ -782,6 +795,7 @@ function normalizeAgentMailboxState(state: AgentMailboxStateWire): AgentMailboxS
   return {
     agent_id: state.agent_id,
     enabled: state.enabled,
+    offered: state.offered ?? true,
     mailbox:
       state.mailbox && mailboxId
         ? new AgentMailbox({
