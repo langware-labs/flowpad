@@ -3,13 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-
-from flow_sdk._compat import UTC
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
 from pydantic import PrivateAttr, computed_field, field_validator, model_validator
 
-from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
+from flow_sdk._compat import UTC, StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
@@ -471,10 +469,7 @@ class Conversation(ProjectedFields, Entity):
     async def attachments(self) -> list:
         """The files across this conversation, newest first — what the inbox paperclip lists: the
         same messages and the same rule ``attachment_count`` is counted from."""
-        out = []
-        for m in reversed(await self.messages_by_edge()):
-            out += m.listed_files()
-        return out
+        return [f for m in reversed(await self.messages_by_edge()) for f in m.listed_files()]
 
     async def messages(self, *, thread=None) -> list:
         """This conversation's messages, oldest first — only one thread's with ``thread`` (a

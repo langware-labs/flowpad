@@ -6,7 +6,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
 import { ViewType } from '../utils/ui/view-types';
-import { ConversationEvents, FlowMessage, type IFlowMessage, type IMessageMark } from './flow-message';
+import { ConversationEvents, FlowMessage, type IFlowMessage, type IMessageMark, type ListedFile } from './flow-message';
 
 export interface ConversationMessage {
   role: string;       // "sender" | "recipient" | "bot"
@@ -447,6 +447,13 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * path, future arrivals) become project assets. Receiver-local — no
    * hub-reflect. Returns the per-attachment outcome buckets.
    */
+  /** The files across a conversation, newest first — one request (the `attachments` action);
+   *  the inbox row's paperclip lists these, and counts them as ``attachment_count``. */
+  static async attachments(conversationId: string): Promise<ListedFile[]> {
+    const action = new ActionInfo('attachments', 'conversation', conversationId, 'GET');
+    return (await dataManager.callAction<null, ListedFile[]>(action)) ?? [];
+  }
+
   async installAttachmentsIntoProject(
     projectId: string,
   ): Promise<{ installed: string[]; skipped: string[]; failed: string[] }> {

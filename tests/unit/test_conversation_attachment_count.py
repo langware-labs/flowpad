@@ -79,6 +79,6 @@ async def test_boot_lift_fills_rows_that_predate_the_field_once():
     finally:
         conn.close()
 
-    assert (await migration_2026_11_attachment_count.lift(dry_run=False, db_path=db_path))["filled"] >= 1
+    assert (await migration_2026_11_attachment_count.lift(dry_run=False, db_path=db_path)).moved
     assert (await Conversation.get_one({"id": conv_id})).attachment_count == 2
-    assert (await migration_2026_11_attachment_count.lift(dry_run=False, db_path=db_path))["filled"] == 0, "a second boot is a no-op"
+    assert (await migration_2026_11_attachment_count.lift(dry_run=False, db_path=db_path)).moved == [], "a second boot is a no-op"

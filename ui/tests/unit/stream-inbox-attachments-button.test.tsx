@@ -5,9 +5,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-const { openDock, callAction } = vi.hoisted(() => ({ openDock: vi.fn(), callAction: vi.fn() }));
+const { openDock, attachments } = vi.hoisted(() => ({ openDock: vi.fn(), attachments: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openDock } }) }));
-vi.mock('@sdk', async (orig) => ({ ...(await orig<typeof import('@sdk')>()), dataManager: { callAction } }));
+vi.mock('@sdk/entities/conversation', () => ({ Conversation: { attachments } }));
 
 import { ConversationAttachmentsButton } from '@src/components/stream-inbox-view/ConversationAttachmentsButton';
 import { dockPointerForLocalFile } from '@src/components/conversation/attachment-url';
@@ -22,12 +22,12 @@ const file = (local_path: string | null) => ({
 });
 
 async function openAndClick(local: string | null) {
-  callAction.mockResolvedValueOnce([file(local)]);
+  attachments.mockResolvedValueOnce([file(local)]);
   render(<ConversationAttachmentsButton conversationId={CONV} count={1} />);
   expect(screen.getByTestId('stream-inbox-row-attachments').textContent).toContain('1');
   fireEvent.click(screen.getByTestId('stream-inbox-row-attachments'));
   fireEvent.click(await screen.findByText('report.pdf'));
-  expect(callAction).toHaveBeenCalledTimes(1);
+  expect(attachments).toHaveBeenCalledTimes(1);
 }
 
 describe('ConversationAttachmentsButton', () => {

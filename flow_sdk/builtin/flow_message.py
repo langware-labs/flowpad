@@ -501,7 +501,13 @@ class Attachment(BaseModel):
         The same rule as the UI's ``buildAttachmentEntries``, so the inbox count matches the list."""
         if self.attachment_type == AttachmentType.FILE:
             return True
-        return self.attachment_type == AttachmentType.PROMPT and str(self.data or "").startswith("prompt/")
+        return self.attachment_type == AttachmentType.PROMPT and str(self.data or "").startswith(PROMPT_FILE_VFS_PREFIX)
+
+
+def _local_file(storage, data: str) -> Optional[str]:
+    """A message file's path on this machine, or None when its bytes are not here."""
+    resolved = storage.get_storage_path(data) if data else None
+    return resolved if resolved and Path(resolved).is_file() else None
 
 
 class ListedFileSpec(DataSpec):
@@ -863,20 +869,23 @@ class FlowMessage(Entity):
 
     def listed_files(self) -> list[ListedFileSpec]:
         """This message's listed files, each with ``local_path`` resolved — one storage lookup, no
-        whole-message serialize (``_body_download_state`` resolves the same path for the API dump)."""
+        whole-message serialize; ``_body_download_state`` resolves the API dump's through the same ``_local_file``."""
         listed = [a for a in self.attachment or [] if a.is_listed_file]
         if not listed:
             return []
+        storage = self._embedded_storage()
+        ts = self.occurred_at.isoformat() if self.occurred_at is not None else None
+        return [
+            ListedFileSpec(
+                message_id=self.id, ts=ts, attachment=a.model_copy(update={"local_path": _local_file(storage, a.data)})
+            )
+            for a in listed
+        ]
+
+    def _embedded_storage(self):
         from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
 
-        storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
-        ts = self.occurred_at.isoformat() if self.occurred_at is not None else None
-        out = []
-        for a in listed:
-            resolved = storage.get_storage_path(a.data) if a.data else None
-            local = resolved if resolved and Path(resolved).is_file() else None
-            out.append(ListedFileSpec(message_id=self.id, ts=ts, attachment=a.model_copy(update={"local_path": local})))
-        return out
+        return get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
 
     def _body_download_state(self, atts: list[dict[str, Any]]) -> dict[str, Any]:
         """One local availability probe for API serialization and catch-up.
@@ -898,11 +907,8 @@ class FlowMessage(Entity):
                 atype == AttachmentType.PROMPT.value and raw.startswith(PROMPT_FILE_VFS_PREFIX)
             ):
                 if storage is None:
-                    from flow_sdk.storage import get_entity_embedded_storage
-
-                    storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
-                resolved = storage.get_storage_path(raw) if raw else None
-                att["local_path"] = resolved if resolved and Path(resolved).is_file() else None
+                    storage = self._embedded_storage()
+                att["local_path"] = _local_file(storage, raw)
                 present = bool(att["local_path"])
             else:
                 continue

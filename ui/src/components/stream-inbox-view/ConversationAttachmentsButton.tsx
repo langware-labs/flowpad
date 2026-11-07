@@ -1,37 +1,24 @@
 import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Loader2, Paperclip } from 'lucide-react';
-import { ActionInfo, dataManager } from '@sdk';
-import type { Attachment } from '@sdk/entities/flow-message';
+import { Conversation } from '@sdk/entities/conversation';
+import type { ListedFile } from '@sdk/entities/flow-message';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockPointerForLocalFile } from '@src/components/conversation/attachment-url';
 import { attachmentFileName } from '@src/components/conversation/ChannelMessageExtras';
 
-/** One file in a conversation — the backend's ``ListedFileSpec`` (``Conversation.attachments``). */
-export interface ConversationAttachment {
-  message_id: string;
-  ts: string | null;
-  attachment: Attachment;
-}
-
-/** The one request the paperclip makes: every file across the conversation, newest first. */
-export async function fetchConversationAttachments(conversationId: string): Promise<ConversationAttachment[]> {
-  const action = new ActionInfo('attachments', 'conversation', conversationId, 'GET');
-  return (await dataManager.callAction<null, ConversationAttachment[]>(action)) ?? [];
-}
-
 /** The inbox row's paperclip (mounted only when the count is above 0); opening it lists the files.
  *  Clicking a file does what clicking its chip in the message does — open it when it is
  *  on this machine — otherwise opens the conversation at that message, where it downloads. */
 export function ConversationAttachmentsButton({ conversationId, count }: { conversationId: string; count: number }) {
   const { navigation } = useDockNavigation();
-  const [items, setItems] = useState<ConversationAttachment[] | null>(null);
+  const [items, setItems] = useState<ListedFile[] | null>(null);
   const onOpenChange = (open: boolean) => {
-    if (open) fetchConversationAttachments(conversationId).then(setItems, () => setItems([]));
+    if (open) Conversation.attachments(conversationId).then(setItems, () => setItems([]));
   };
-  const openItem = (item: ConversationAttachment) => {
+  const openItem = (item: ListedFile) => {
     const local = item.attachment.local_path;
     navigation.openDock(
       local ? dockPointerForLocalFile(local) : DockPointer.forConversation(conversationId, { messageId: item.message_id }),

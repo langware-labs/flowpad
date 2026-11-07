@@ -434,6 +434,7 @@ export function ConversationListRow({
   if (isHidden) return null;
 
   const count = pointers.length || conv.message_count || 0;
+  const fileCount = conv.attachment_count ?? 0;
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = facets.isUnread;
@@ -517,8 +518,8 @@ export function ConversationListRow({
         {!isInvitationRow && count > 1 && (
           <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
         )}
-        {!isInvitationRow && convId && (conv.attachment_count ?? 0) > 0 && (
-          <ConversationAttachmentsButton conversationId={convId} count={conv.attachment_count!} />
+        {!isInvitationRow && convId && fileCount > 0 && (
+          <ConversationAttachmentsButton conversationId={convId} count={fileCount} />
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="stream-inbox-row-subject-line">

@@ -78,6 +78,13 @@ export class BodyNotReadyError extends Error {
   }
 }
 
+/** One file a conversation lists — the backend's ``ListedFileSpec`` (``Conversation.attachments``). */
+export interface ListedFile {
+  message_id: string;
+  ts: string | null;
+  attachment: Attachment;
+}
+
 /** Read an Attachment's ``data`` field as a canonical string.
  *
  * The hub sometimes deserializes TYPE_ID attachments with ``data`` as a

@@ -234,11 +234,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         new_updated = Conversation._as_datetime(conv.created_date)
 
     projection = {"message_ids": new_ids, "message_count": new_count, "attachment_count": new_attachments}
-    # A row saved before ``attachment_count`` existed reads its default without the key; writing it once
-    # is what lets the boot lift (migration_2026_11_attachment_count) find no such row next time.
-    projection_changed = "attachment_count" not in conv.model_fields_set or any(
-        getattr(conv, k) != v for k, v in projection.items()
-    )
+    projection_changed = any(getattr(conv, k) != v for k, v in projection.items())
     recency_changed = Conversation._as_datetime(conv.updated_date) != new_updated
     if not projection_changed and not recency_changed:
         return
