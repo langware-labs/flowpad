@@ -2045,6 +2045,11 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         if _conv_id:
             payload["parent_type_id"] = f"{Conversation.get_type()}-{_conv_id}"
         fm = FlowMessage.model_validate(payload)
+        # The same derived fields materialize_flow_message fills on every other arrival path: this pull is the
+        # one a reply takes when it lands before the live push (an IT machine answering within a second).
+        from flow_sdk.builtin.flow_message import derive_it_reply  # noqa: PLC0415
+
+        derive_it_reply(fm, raw)
         await fm.save()
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
@@ -4017,7 +4022,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
             # On the UI path the HTTP response is followed by one local query
             # refetch, so per-entity broadcasts are suppressed while reconciling
             # the batch: emitting every historical invitation one by one
-            # continuously reorders stream inbox rows and can make an otherwise enabled
+            # continuously reorders stream StreamInbox rows and can make an otherwise enabled
             # action physically unclickable until the catch-up finishes. A
             # backend-initiated sweep has no refetch behind it — see
             # ``announce_invitations``.
@@ -4201,6 +4206,23 @@ async def conversation_transcript() -> ApiResponse:
         return ApiSuccessResponse(data=data)
     except Exception as e:
         logger.error("[flow_message_action] conversation-transcript error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.get(action_name="attachments", types=["conversation"])
+async def conversation_attachments() -> ApiResponse:
+    """The files across one conversation, newest first (``Conversation.attachments``) — what the
+    StreamInbox row's paperclip lists; the row's number is ``Conversation.attachment_count``."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        conv = await Conversation.get_one({"id": str(request_info.target_entity_typeid.id)})
+        if conv is None:
+            return ApiFailResponse(message="conversation not found", status_code=404)
+        return ApiSuccessResponse(data=[f.model_dump(mode="json") for f in await conv.attachments()])
+    except Exception as e:
+        logger.error("[flow_message_action] attachments error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 

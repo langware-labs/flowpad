@@ -24,7 +24,10 @@ export function roleOf(entity: Expandable | null | undefined): ItemRole | undefi
   const roles = entity?.expand?.roles;
   if (!roles?.length) return undefined;
   // The SDK's own role hierarchy; an owner by API key is an owner here, editor and runner read.
-  const held = roleCapabilities(roles.filter((r) => (ROLE_ORDER as readonly string[]).includes(r)));
+  // The backend names roles in either case ("OWNER" from a permissions expansion): compare lower-case,
+  // or an owner reads as a Reader.
+  const known = roles.map((r) => String(r).trim().toLowerCase()).filter((r) => (ROLE_ORDER as readonly string[]).includes(r));
+  const held = roleCapabilities(known as (typeof ROLE_ORDER)[number][]);
   if (held.has('owner') || held.has('owner_by_api')) return 'owner';
   if (held.has('admin')) return 'admin';
   return 'reader';

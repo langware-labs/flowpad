@@ -65,3 +65,18 @@ async def revoke_public_code(self: Entity):
 async def manage_public_deployment(self: Entity):
     """Open, pause, resume or reset one visitor box — hub-only."""
     raise HTTPException(status_code=409, detail=_PUBLIC_OFFLINE_DETAIL)
+
+
+_IT_OFFLINE_DETAIL = "IT messages require Flowpad Cloud and a published agent."
+
+
+@action.post(action_name="it_message", types=["agent"])
+async def it_message(self: Entity):
+    """Send an IT message to this agent's public machines — hub-only (the hub runs it on each box)."""
+    raise HTTPException(status_code=409, detail=_IT_OFFLINE_DETAIL)
+
+
+@action.post(action_name="it_sessions", types=["agent"])
+async def it_sessions(self: Entity):
+    """Turn IT Sessions on or off on this agent's public machines — hub-only."""
+    raise HTTPException(status_code=409, detail=_IT_OFFLINE_DETAIL)

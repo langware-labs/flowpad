@@ -1727,7 +1727,7 @@ class WorkerDriver(Protocol):
     # (QA C09b). None → no grounded marker; delivery keeps the legacy
     # settle-then-type behaviour. Matched via ``pump_composer_ready``.
     pty_composer_ready_pattern: "re.Pattern[str] | None"
-    # Module with classify / classify_auth / trust_prompt_folder / apply_launch_fix (claude), or None.
+    # Module with classify / trust_prompt_folder / apply_launch_fix (claude), or None.
     launch_screen: Any
     # The key that switches this vendor's interactive TUI into its own shell mode (claude's
     # ``!``), or None. ``AgenticProcess.run_shell_command`` types it, then the command: the

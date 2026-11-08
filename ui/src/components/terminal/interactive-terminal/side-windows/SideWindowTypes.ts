@@ -33,6 +33,9 @@ export interface SideTabDescriptor {
   description: MessageDescriptor;
   /** Skin layer: power-user tab — its ribbon button only appears in Advanced/Dev. See docs/viewmodes.md. */
   advancedOnly?: boolean;
+  /** Where its launcher lives: the terminal ribbon, the session menu's
+   *  "Session context" section, or nowhere (URL only). Default: nowhere. */
+  placement?: 'ribbon' | 'session-menu';
 }
 
 export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
@@ -54,6 +57,22 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
     label: msg`Prompts`,
     icon: MessageSquare,
     description: msg`Index of prompts sent in this session`,
+    placement: 'ribbon',
+  },
+  files: {
+    id: 'files',
+    label: msg`Files`,
+    icon: Paperclip,
+    description: msg`Input files attached to this session`,
+    placement: 'ribbon',
+  },
+  dir: {
+    id: 'dir',
+    label: msg`Dir`,
+    icon: FolderTree,
+    description: msg`Browse the working directory`,
+    advancedOnly: true,
+    placement: 'ribbon',
   },
   queue: {
     id: 'queue',
@@ -61,14 +80,7 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
     icon: ListOrdered,
     description: msg`Prompts queued for this agent; the backend injects each when the worker is ready`,
     advancedOnly: true,
-  },
-  files: { id: 'files', label: msg`Files`, icon: Paperclip, description: msg`Input files attached to this session` },
-  dir: {
-    id: 'dir',
-    label: msg`Dir`,
-    icon: FolderTree,
-    description: msg`Browse the working directory`,
-    advancedOnly: true,
+    placement: 'ribbon',
   },
   context: {
     id: 'context',
@@ -76,12 +88,14 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
     icon: Layers,
     description: msg`Context entities attached to this process — plans, skills, project, …`,
     advancedOnly: true,
+    placement: 'session-menu',
   },
   analysis: {
     id: 'analysis',
     label: msg`Analysis`,
     icon: Activity,
     description: msg`Analyses (AgentTrace) of this session — run, list and open`,
+    placement: 'session-menu',
   },
   'skills-agents': {
     id: 'skills-agents',
@@ -89,8 +103,14 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
     icon: Sparkles,
     description: msg`Skills and sub-agents invoked in this session`,
     advancedOnly: true,
+    placement: 'session-menu',
   },
 };
+
+/** The side tabs launched from `placement`, in SIDE_TABS order; advanced-only ones only in Advanced view. */
+export function sideTabsAt(placement: SideTabDescriptor['placement'], isAdvanced: boolean): SideTabDescriptor[] {
+  return Object.values(SIDE_TABS).filter((d) => d.placement === placement && (isAdvanced || !d.advancedOnly));
+}
 
 /** Narrow any string to a valid SideTabId, returning null if it's not one. */
 export function parseSideTabId(value: string | null | undefined): SideTabId | null {

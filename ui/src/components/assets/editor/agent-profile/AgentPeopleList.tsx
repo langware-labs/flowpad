@@ -1,11 +1,9 @@
-import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { Deployment, TypeId, type AgentPerson } from '@sdk';
-import { useEntity } from '@sdk/react/hooks';
+import { Deployment, type AgentPerson } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
-import { useDeploymentThreads } from './deployment/use-deployment-threads';
 
 /** One person's row: who, the machine's state, a 💬 count that opens their threads, and their cap. */
 function PersonRow({ person }: { person: AgentPerson }) {
@@ -13,9 +11,12 @@ function PersonRow({ person }: { person: AgentPerson }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const id = person.deployment_typeid.replace(/^deployment-/, '');
-  const typeId = useMemo(() => new TypeId(Deployment.type, id), [id]);
-  const { data: deployment } = useEntity<Deployment>(typeId);
-  const { threads } = useDeploymentThreads(deployment ?? null);
+  // A person's placement lives on the hub, not on this computer: its threads are read there.
+  const { data: threads } = useQuery({
+    queryKey: ['agent-person-threads', id],
+    queryFn: () => Deployment.hubThreads(id),
+    staleTime: 15_000,
+  });
   const messages = (threads ?? []).reduce((sum, th) => sum + (th.messages ?? 0), 0);
   const machine = person.state.toLowerCase();
   const running = machine === 'ready' || machine === 'running';

@@ -101,9 +101,12 @@ export function useChannelAttribution() {
         (byChannel ? undefined : sourceSpec?.group || sourceSpec?.title) ||
         kindSpec?.group ||
         kindSpec?.title ||
+        // A channel no source delivers (the hub's Chat API thread) is named by the conversation's own spec.
+        (channelSpec?.name === kind ? channelSpec.title : undefined) ||
         channelLabel(kind);
       // The first spec that names a glyph; none: a chat bubble, not the DataSource type's registry glyph.
-      const spec = [sourceSpec, kindSpec].find((x) => sourceIconName(x, kind));
+      const ownSpec = channelSpec?.name === kind ? { icon_name: channelSpec.icon_name } : undefined;
+      const spec = [sourceSpec, kindSpec, ownSpec].find((x) => sourceIconName(x, kind));
       if (!spec) return { icon: MessageSquare, badge: null, label };
       const { Base, Badge } = sourceGlyphs(spec, kind);
       return { icon: Base, badge: Badge, label };

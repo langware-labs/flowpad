@@ -1750,6 +1750,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}),
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
+      // A hub-owned stream (an agent's Chat API) is forwarded by the desktop, as the non-streaming path does.
+      ...(actionInfo.hubReflect && !isHubOnly() ? { 'Hub-Reflect': 'true' } : {}),
     };
     // @ts-ignore
     if (apiClient.testUserToken) {

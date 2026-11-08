@@ -1,6 +1,15 @@
 import { FlowData, FlowDataType } from '../../flow_processing/flow-data';
 import { FlowDataEvents } from '../../flow_processing/flow-events';
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
+
+const emptyStreamState = () => ({
+  isComplete: false,
+  progress: 0,
+  partialContent: '',
+  isStreaming: false,
+  lastUpdate: null as Date | null,
+  error: undefined as Error | undefined,
+});
 
 /**
  * Hook for tracking individual FlowData streaming updates and progress
@@ -20,37 +29,13 @@ export function useDataStreamText(flowData: FlowData | null | undefined) {
     );
   }
   // Store stream state in a ref to persist across re-renders
-  const streamStateRef = useRef({
-    isComplete: false,
-    progress: 0,
-    partialContent: '',
-    isStreaming: false,
-    lastUpdate: null as Date | null,
-    error: undefined as Error | undefined,
-  });
+  const streamStateRef = useRef(emptyStreamState());
 
-  // Reset all refs when flow data changes (onFlowChange)
-  useEffect(() => {
-    streamStateRef.current = {
-      isComplete: false,
-      progress: 0,
-      partialContent: '',
-      isStreaming: false,
-      lastUpdate: null,
-      error: undefined,
-    };
-    snapshotRef.current = {
-      isComplete: false,
-      progress: 0,
-      partialContent: '',
-      isStreaming: false,
-      lastUpdate: null,
-      error: undefined,
-      hasContent: false,
-      progressPercent: 0,
-      isActive: false,
-    };
-  }, [flowData]);
+  // The FlowData the stream state belongs to. A new one starts from a clean state — reset here,
+  // inside getSnapshot, and not in an effect: an effect replaced the cached snapshot AFTER the
+  // first render, so useSyncExternalStore's post-commit check saw a new object and rendered
+  // every message twice on mount (a 378-message chat paid ~1 s of markdown for it).
+  const ownerRef = useRef(flowData);
 
   // Subscribe function using useCallback for stability
   const subscribe = useCallback(
@@ -111,6 +96,10 @@ export function useDataStreamText(flowData: FlowData | null | undefined) {
 
   // Snapshot function to get current stream state
   const getSnapshot = useCallback(() => {
+    if (ownerRef.current !== flowData) {
+      ownerRef.current = flowData;
+      streamStateRef.current = emptyStreamState();
+    }
     // Always sync with rawData (source of truth) - but don't mutate unnecessarily
     if (flowData) {
       // Use rawData as source of truth - it accumulates during streaming

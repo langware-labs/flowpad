@@ -658,11 +658,9 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         except Exception:
             logger.warning("stderr drain error", exc_info=True)
 
-    def _fail_auth(self, failure: tuple[str, str] | None) -> None:  # first wins; kill now, not after ~10 retries
+    def _fail_auth(self, failure: tuple[str, str] | None) -> None:  # first wins; reported at the turn's end, never a kill
         if failure and self._auth_failure is None:
             self._auth_failure = failure
-            if self._proc is not None and self._proc.returncode is None:
-                asyncio.get_running_loop().create_task(self._terminate_process())
 
     def turn_failure(self):
         """Taken once: a refused credential, or exit ≠ 0 before any result (not a user stop, not killed from outside)."""

@@ -6,15 +6,14 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText, Monitor } from 'lucide-react';
+import { ChevronDown, FileText, Monitor } from 'lucide-react';
 import { DisplayHistoryList } from '@src/pages/flow-page/display-history-button';
 import { latestPerTarget } from '@src/pages/flow-page/display-stack';
-import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
 import { QuickPromptsMenu } from '@src/components/notes/QuickPromptsMenu';
 import { SideTabTooltipContent } from './LastPromptTooltip';
-import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
+import { SIDE_TABS, SideTabId, sideTabsAt, type SideTabId as SideTabIdType } from './side-windows';
 
 interface TerminalBottomRibbonProps {
   fileCount: number;
@@ -35,26 +34,13 @@ interface TerminalBottomRibbonProps {
   shown?: readonly DisplayEntry[];
   /** Open a shown target as its own tab. */
   onOpenShown?: (entry: DisplayEntry) => void;
-  /** Enables the Prompt Library button (prompt → queue needs a process). */
+  /** The run this ribbon belongs to. */
   process?: AgenticProcess | null;
   /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
   composer?: React.ReactNode;
   /** Type a quick prompt into the session and submit it — shows the quick prompts button. */
   onSendPrompt?: (text: string) => void;
 }
-
-const RIBBON_TABS: SideTabIdType[] = [
-  SideTabId.Context,
-  SideTabId.Git,
-  SideTabId.Prompts,
-  SideTabId.Analysis,
-  SideTabId.SkillsAgents,
-  SideTabId.Files,
-  SideTabId.Dir,
-  // The prompt QUEUE side-tab (previously URL-only) — paired with the
-  // Prompt Library button below so "add to queue" has a visible destination.
-  SideTabId.Queue,
-];
 
 export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   fileCount,
@@ -76,10 +62,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
 }) => {
   const { t } = useLingui();
   const isAdvanced = useIsAdvanced();
-  // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
-  // their SIDE_TABS descriptor) and the Prompt Library button are hidden,
-  // leaving Prompts + Files. See docs/viewmodes.md.
-  const ribbonTabs = isAdvanced ? RIBBON_TABS : RIBBON_TABS.filter((id) => !SIDE_TABS[id].advancedOnly);
+  // Skin layer: Standard view hides advancedOnly tabs. See docs/viewmodes.md.
+  const ribbonTabs = sideTabsAt('ribbon', isAdvanced).map((d) => d.id);
   return (
     <div className="flex flex-col border-t bg-muted/30">
       {/* Top tier: chat composer (Standard/chat only) — one ribbon, not two rows. */}
@@ -175,27 +159,6 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                 </Tooltip>
               );
             })}
-            {/* Prompt Library — distinct from the transcript "Prompts" tab:
-              browse the foldered prompt library; click a prompt to enqueue
-              it (docs/prompt-library.md). Pure composition; all behavior
-              lives in PromptLibraryMenu / the generic groups layer. */}
-            {process && isAdvanced && (
-              <PromptLibraryMenu
-                process={process}
-                projectId={process.project_id ?? null}
-                trigger={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    aria-label={t`Prompt Library`}
-                    title={t`Prompt Library — click a prompt to add it to the queue`}
-                  >
-                    <BookMarked className="h-4 w-4" />
-                  </Button>
-                }
-              />
-            )}
           </TooltipProvider>
         </div>
       </div>

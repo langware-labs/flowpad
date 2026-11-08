@@ -701,7 +701,14 @@ def _promise_cards(snap: _Snapshot, me: str) -> list[dict]:
 
 
 async def state(conversation_id: str) -> dict:
-    """Both views from ONE read of the hub: ``{incoming, sent}`` — what the conversation's card shows."""
+    """Both views from ONE read of the hub: ``{incoming, sent}`` — what the conversation's card shows. A
+    conversation the hub does not hold yet (a private help request, one never sent) has nothing sealed in it:
+    asking the hub about it only answers "not found"."""
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+    here = await Conversation.get_one({"id": conversation_id})
+    if here is not None and not here.remote:
+        return {"incoming": [], "sent": []}
     snap = await _Snapshot.read(conversation_id)
     sent_here = any(r.get("conversation_id") == conversation_id for r in _read_json("sent.json").values())
     if not snap.keys and not snap.of_kind(PENDING_KIND) and not snap.of_kind(ACK_KIND) and not sent_here:

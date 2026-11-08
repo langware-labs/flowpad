@@ -3,6 +3,7 @@ import { searchRecords, type SearchResult } from '@sdk/services/search-service';
 import { basename, normalizePath } from '@src/components/asset-manager/asset-row-helpers';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resultTypeId } from '@src/navigation/record-type-nav';
+import { parseDockUrl } from '@src/navigation/url-builder';
 
 /** Where a relative markdown link leads: a place to open, or files to suggest. */
 export type SmartLinkAnswer =
@@ -13,6 +14,11 @@ export type SmartLinkAnswer =
 export function pointerForResult(r: SearchResult): DockPointer | null {
   const typeId = resultTypeId(r);
   return typeId ? DockPointer.forAssetEditorByTypeId('markdown', typeId) : null;
+}
+
+/** An in-app link (`/dock/…`, `/dev/…`) opens that route; null for a file path. */
+export function pointerForAppLink(href: string): DockPointer | null {
+  return parseDockUrl(new URL(href, 'http://flowpad.local').pathname) ? DockPointer.fromUrl(href) : null;
 }
 
 /**

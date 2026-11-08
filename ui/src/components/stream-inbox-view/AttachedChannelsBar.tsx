@@ -111,9 +111,9 @@ function useBuiltInEmailOffered(agent: TypeId | null | undefined): boolean {
   useEffect(() => {
     if (!id) return;
     let live = true;
-    new Agent({ id })
-      .mailboxState()
-      .then((state) => live && setOffered(state.offered !== false))
+    Agent.getById(id)
+      .then((found) => found?.mailboxState())
+      .then((state) => live && state && setOffered(state.offered !== false))
       .catch(() => undefined);
     return () => {
       live = false;

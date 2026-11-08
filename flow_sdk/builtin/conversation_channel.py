@@ -25,6 +25,15 @@ FLOWPAD = ChannelSpec(
     hosts_sessions=True,
 )
 
+#: A person's Chat API exchange with an agent, which the hub keeps in their StreamInbox: it is read there, wearing the
+#: channel's chip, and answered through the Chat API itself -- no reply goes out from the StreamInbox.
+CHAT_API = ChannelSpec(
+    name="chat_api",
+    title="Chat API",
+    icon_name="Braces",
+    transport=ChannelTransport.FLOWPAD,
+)
+
 #: The channel every conversation is born with.
 HOME_CHANNEL = FLOWPAD.name
 
@@ -37,6 +46,8 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
     key = (name or "").strip() or HOME_CHANNEL
     if key == HOME_CHANNEL:
         return FLOWPAD
+    if key == CHAT_API.name:
+        return CHAT_API
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415 — builtin must not import drivers at load
     from flow_sdk.sources.protocols import Reacting, actions_of  # noqa: PLC0415
 
@@ -57,4 +68,4 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
     )
 
 
-__all__ = ["HOME_CHANNEL", "channel_spec"]
+__all__ = ["CHAT_API", "HOME_CHANNEL", "channel_spec"]

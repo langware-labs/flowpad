@@ -113,3 +113,28 @@ async def test_parent_survives_a_hub_refresh_that_omits_it(records_root):
     fresh = await FlowMessage.get_one({"id": fm_id})
     assert fresh.text == "v2 from the hub", "precondition: the refresh should have applied"
     assert fresh.parent_type_id == str(conv.typeid), "the hub refresh wiped local parentage"
+
+
+@pytest.mark.asyncio
+async def test_an_it_reply_pulled_by_catch_up_keeps_its_it_fields(records_root):
+    """An IT machine can answer within a second of the conversation opening, before the live push: its row then
+    arrives by the catch-up pull, which must fill ``it_reply`` from the hub's ``metadata.it`` like every other path
+    -- or the reply shows as bare text, with no state and no "Turn on and run"."""
+    from flow_sdk.app.actions.flow_message_action import _process_single_hub_message
+
+    conv = await _conversation()
+    fm_id = str(uuid.uuid4())
+    it = {"node_typeid": "compute_node-1", "code_last4": "JRZG", "state": "off", "woke": False, "call_id": "c1"}
+    await _process_single_hub_message(
+        {
+            "id": fm_id,
+            "text": "IT Sessions is off on this machine",
+            "sender_name": "••••JRZG",
+            "metadata": {"it": it},
+            "conversation_id": conv.id,
+            "updated_date": "2030-01-01T00:00:00+00:00",
+        }
+    )
+
+    fresh = await FlowMessage.get_one({"id": fm_id})
+    assert fresh is not None and fresh.it_reply == it

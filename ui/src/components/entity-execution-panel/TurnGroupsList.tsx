@@ -9,6 +9,7 @@ import ExecutionMessage from './execution-message/execution-message';
 import { MetaMessageChip } from './MetaMessageChip';
 import { TurnFilesChips } from './TurnFilesChips';
 import { WorkerUnavailableNotice } from './WorkerUnavailableNotice';
+import { useRecentWindow } from './use-recent-window';
 import { ProcessLaunchFailureCard, readLaunchFailure } from '@src/components/launch-failure/LaunchFailureCard';
 import type { WorkerType } from '@src/components/workers/worker-types';
 
@@ -111,6 +112,8 @@ export function TurnGroupsList({
   const rendered = useMemo(() => groups.map((g) => isRenderedGroup(g, showTools)), [groups, showTools]);
   const lastPrompt = lastUserPrompt(groups);
   const visibleGroups = useMemo(() => groups.filter((_, i) => rendered[i]), [groups, rendered]);
+  const anchored = anchorIndex === null ? -1 : visibleGroups.indexOf(groups[anchorIndex]);
+  const { start, sentinel } = useRecentWindow(visibleGroups.length, anchored);
 
   // Skin-layer rule (docs/viewmodes.md): the data is built unconditionally and
   // only the VIEW is gated, so toggling view mode never changes what the chat
@@ -131,7 +134,9 @@ export function TurnGroupsList({
     <>
       {/* A turn whose every group was filtered out still touched files. */}
       {chipsForRow(-1)}
-      {visibleGroups.map((g, i) => {
+      {start > 0 && <div ref={sentinel} aria-hidden data-testid="chat-older-sentinel" />}
+      {visibleGroups.slice(start).map((g, j) => {
+        const i = start + j;
         // Partition index `i` is the tiebreaker: two messages can share a
         // timestamp (and lack an id), which collided on `id ?? timestamp` and
         // tripped React's duplicate-key warning (children duplicated/omitted)

@@ -10,7 +10,7 @@ import { ActionInfo } from '../models/ActionInfo';
  */
 
 export type HelpRecipientKind = 'person' | 'desk';
-export type HelpOrigin = 'vibe' | 'footer' | 'top_bar' | 'portal' | 'portal_agent_chat' | 'load_failure' | 'assistant' | 'credential';
+export type HelpOrigin = 'vibe' | 'footer' | 'top_bar' | 'portal' | 'portal_agent_chat' | 'load_failure' | 'assistant' | 'credential' | 'warning';
 
 export type HelpRecipient = {
   kind: HelpRecipientKind;
@@ -50,6 +50,8 @@ export type AskForHelpRequest = {
   process?: string | null;
   /** The window asked from (its socket's id): what the context says was on screen. */
   connection_id?: string | null;
+  /** `repair` fixes what it safely can (Diagnose & fix); `report` only describes (the default). */
+  purpose?: 'report' | 'repair';
 };
 
 /** Why the hub does not have something — mirrors ``HubFailure``. Match ``kind``, never ``message``. */
@@ -77,6 +79,8 @@ export interface AskForHelpResult {
   shared: boolean;
   /** Its context went with it. */
   context_shared: boolean;
+  /** A diagnosis runs in the background and lands as its own message. */
+  diagnosing?: boolean;
 }
 
 /** A context file: its name and text, as the review shows it. */
@@ -97,10 +101,15 @@ export async function helpRequestPreview(
 
 /** The context captured for a request and not shared yet. */
 export async function helpRequestContext(conversationId: string): Promise<HelpContextItem[]> {
+  return (await helpRequestHeld(conversationId)).items;
+}
+
+/** The held context, and whether the request is still private (nobody to share it with yet). */
+export async function helpRequestHeld(conversationId: string): Promise<{ items: HelpContextItem[]; private: boolean }> {
   const action = new ActionInfo('help-request-context', 'conversation', conversationId, 'POST');
   action.bodyParameters = {};
-  const res = await dataManager.callAction<unknown, { items: HelpContextItem[] }>(action);
-  return res?.items ?? [];
+  const res = await dataManager.callAction<unknown, { items: HelpContextItem[]; private?: boolean }>(action);
+  return { items: res?.items ?? [], private: !!res?.private };
 }
 
 /** The person's Share: the request goes to the hub, its held context follows (minus what they left out). */
@@ -109,6 +118,35 @@ export async function helpRequestShare(conversationId: string, leftOut: string[]
   action.bodyParameters = { left_out: leftOut };
   const res = await dataManager.callAction<unknown, { shared: string[] }>(action);
   return res?.shared ?? [];
+}
+
+/** Report it: a private request becomes a ticket in the desk its diagnosis points at, with everything held here. */
+export async function helpRequestReport(
+  conversationId: string,
+): Promise<{ conversation_id: string; desk: string; pass_on: string }> {
+  const action = new ActionInfo('help-request-report', 'conversation', conversationId, 'POST');
+  action.bodyParameters = {};
+  const res = await dataManager.callAction<unknown, { conversation_id: string; desk: string; pass_on: string }>(action);
+  return res!;
+}
+
+/** What a request's diagnosis message offers: its verdict, and whether (and to whom) a report is offered. */
+export interface HelpRequestDiagnosis {
+  diagnosing: boolean;
+  diagnosis: import('../diagnose/types').DiagnosisSpec | null;
+  reportable: boolean;
+  reported: boolean;
+  /** Who Report it goes to ("Flowpad support", "acme-planner's help desk"). */
+  desk: string;
+  /** A dependency with no desk: Flowpad support passes it on to this. */
+  pass_on: string;
+}
+
+export async function helpRequestDiagnosis(conversationId: string): Promise<HelpRequestDiagnosis> {
+  const action = new ActionInfo('help-request-diagnosis', 'conversation', conversationId, 'POST');
+  action.bodyParameters = {};
+  const res = await dataManager.callAction<unknown, HelpRequestDiagnosis>(action);
+  return res ?? { diagnosing: false, diagnosis: null, reportable: false, reported: false, desk: '', pass_on: '' };
 }
 
 /** An action body: the request itself, or — with files — a multipart form carrying it in ``request``. */

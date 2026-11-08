@@ -417,10 +417,15 @@ def _own_identities(root: Path, project_id: Optional[str] = None) -> set[str]:
         out.add(f"ref:project-{project_id}")
     try:
         from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.utils.git import find_project_root, git_remote_url  # noqa: PLC0415
 
-        own = GitOrigin.for_asset_path(str(root))
+        # The key is the repo's origin alone: one ``git remote`` read, not ``for_asset_path``'s
+        # branch, HEAD and per-asset commit reads (27-40 ms -> 8-11 ms a call, same key).
+        repo = find_project_root(str(root))
+        url = git_remote_url(repo) if repo else None
+        own = GitOrigin.from_url(url, rel_path=".") if url else None
         if own is not None:
-            out.add(f"git:{GitOrigin.from_url(own.clone_url(), rel_path='.').key()}")
+            out.add(f"git:{own.key()}")
     except Exception:  # noqa: BLE001
         pass
     return out
@@ -749,13 +754,14 @@ async def _resolve(
 
     states: list[DependencyState] = []
     desired: dict[str, tuple["Folder", dict]] = {}
-    seen = {f"ref:{asset}"} if asset else _own_identities(root, pid)
+    # Both read git and the project's files: off the loop, which every other request waits on.
+    seen = {f"ref:{asset}"} if asset else await asyncio.to_thread(_own_identities, root, pid)
     declared_by: dict[str, str] = {}
     rows: dict = {}   # dataset rows, read once for every value id this walk resolves
     # (entry, base, own, via_path): ``own`` = declared by this project — its root file or one of its
     # own assets — so its optional entries count; a dependency's own optionals never do.
     queue: deque[tuple[FlowDependency, Path, bool, list[str]]] = deque((d, root, True, []) for d in [*spec.entries(), *locals_])
-    own = own_entries if own_entries is not None else ([] if asset else _own_asset_entries(root))
+    own = own_entries if own_entries is not None else ([] if asset else await asyncio.to_thread(_own_asset_entries, root))
     for label, entries, problem, _folder in own:
         if problem:
             states.append(DependencyState(name=label, source="", state="invalid", reason=problem, via=label, via_path=[label]))

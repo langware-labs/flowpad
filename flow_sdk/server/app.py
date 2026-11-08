@@ -120,6 +120,14 @@ async def _on_server_startup():
 
     await _ensure_local_entities()
 
+    # An IT session a dead backend left mid-run leaves its throwaway folder behind; nothing of it may stay.
+    try:
+        from flow_sdk.core.compute.it_session import sweep_leftovers  # noqa: PLC0415
+
+        sweep_leftovers()
+    except Exception:
+        logging.getLogger(__name__).exception("IT session leftovers could not be swept")
+
     # A previously enabled direct callback keeps its port across restarts.
     from flow_sdk.server import webhook_listener
 
@@ -289,6 +297,7 @@ async def _on_server_startup():
 
     await _lift_this_computer_placement()
     await _boot_lift("migration_2026_11_project_deployments", "Project deployments")
+    await _boot_lift("migration_2026_11_attachment_count", "Conversation attachment counts")
     await _lift_credential_stores()
     await _lift_place_settings()
     await _lift_credential_guides()
@@ -1026,6 +1035,9 @@ server.add_router(agents_router)
 server.add_router(journeys_router)
 server.add_router(git_router)
 server.add_router(worldview_router)
+from flow_sdk.server.routes.it_session import router as it_session_router  # noqa: E402
+
+server.add_router(it_session_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)
