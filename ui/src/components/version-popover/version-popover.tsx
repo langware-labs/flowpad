@@ -5,7 +5,11 @@ import { Button } from '@src/components/ui/button';
 import { useCopied } from '@src/components/ui/copy-button';
 import { VersionChip } from '@src/components/version-popover/version-chip';
 import { upgradeOfferVersion } from '@src/components/version-popover/upgrade-offer';
-import { desktopUpdateAction, type DesktopUpdateInfo } from '@src/components/version-popover/desktop-update-action';
+import {
+  desktopUpdateAction,
+  isNewerVersion,
+  type DesktopUpdateInfo,
+} from '@src/components/version-popover/desktop-update-action';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
@@ -510,9 +514,8 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
       pypiCurrentPublished: findPypiRelease(pypi?.releases, runningVersion),
       pypiLatestPublished: findPypiRelease(pypi?.releases, pypi?.latest),
       electronCurrentRelease: findReleaseByTag(githubReleases, electronVersion),
-      githubUpdateAvailable: Boolean(
-        electronVersion && githubLatest && electronVersion.replace(/^v/i, '') !== githubLatest.tag,
-      ),
+      // Newer, not just different: a test-channel desktop runs ahead of GitHub's latest.
+      githubUpdateAvailable: isNewerVersion(electronVersion, githubLatest?.tag),
     };
   }, [data?.releases, pypi?.releases, runningVersion, pypi?.latest, electronVersion, githubLatest]);
   const desktopAction = desktopUpdateAction(desktopUpdate, githubUpdateAvailable);

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { desktopUpdateAction, type DesktopUpdateInfo } from '@src/components/version-popover/desktop-update-action';
+import {
+  desktopUpdateAction,
+  isNewerVersion,
+  type DesktopUpdateInfo,
+} from '@src/components/version-popover/desktop-update-action';
 
 const info = (o: Partial<DesktopUpdateInfo> = {}): DesktopUpdateInfo => ({
   supported: true,
@@ -36,5 +40,16 @@ describe('desktopUpdateAction', () => {
     expect(desktopUpdateAction(info(), false)).toBeNull();
     expect(desktopUpdateAction(info({ supported: false, version: '0.2.81' }), true)).toBeNull();
     expect(desktopUpdateAction(null, true)).toBeNull();
+  });
+});
+
+describe('isNewerVersion', () => {
+  it('newer, not just different', () => {
+    expect(isNewerVersion('0.2.80', '0.2.81')).toBe(true);
+    expect(isNewerVersion('v0.2.9', '0.2.10')).toBe(true);
+    expect(isNewerVersion('0.2.81', '0.2.64')).toBe(false);
+    expect(isNewerVersion('0.2.81', '0.2.81')).toBe(false);
+    expect(isNewerVersion(null, '0.2.81')).toBe(false);
+    expect(isNewerVersion('0.2.81', 'nightly')).toBe(false);
   });
 });

@@ -8,6 +8,20 @@ export interface DesktopUpdateInfo {
   busy: boolean;
 }
 
+/** Is `candidate` a newer `x.y.z` than `installed`? (A leading `v` is ignored; garbage is never newer.) */
+export function isNewerVersion(installed: string | null | undefined, candidate: string | null | undefined): boolean {
+  const parse = (v: string | null | undefined) =>
+    /^v?(\d+)\.(\d+)\.(\d+)$/i
+      .exec((v ?? '').trim())
+      ?.slice(1)
+      .map(Number);
+  const a = parse(installed);
+  const b = parse(candidate);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return b[i] > a[i];
+  return false;
+}
+
 export type DesktopUpdateAction =
   | { kind: 'download'; version: string | null }
   | { kind: 'downloading'; percent: number }
