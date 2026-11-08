@@ -233,7 +233,7 @@ def test_run_refused_when_off_or_signed_in(client, box):
 def test_run_from_the_hub_answers(client, box, monkeypatch):
     receipt = {"status": "done", "summary": "s", "data": {it_session.OUTCOME_KEY: "Fine."}}
     monkeypatch.setattr("flow_sdk.core.compute.process_step.launch_step_process", _launch(box, receipt, []))
-    monkeypatch.setattr(it_session, "project_workdir", lambda: _async(box.settings.instance_dir))
+    monkeypatch.setattr(it_session, "project_workdir", lambda project=None: _async(box.settings.instance_dir))
     client.post("/api/v1/it-session/setting", json={"on": True}, headers=HUB)
     res = client.post("/api/v1/it-session/run", json={"call_id": "c5", "text": "How is it going?"}, headers=HUB)
     assert res.status_code == 200 and res.json()["data"] == {"answer": "Fine.", "value": None}
@@ -258,3 +258,26 @@ def test_it_reply_rides_the_hub_metadata():
     derive_it_reply(fm, {"text": "no metadata"})  # a refresh without it keeps what arrived
     assert fm.it_reply == it
     assert ConversationKind.IT == "it"
+
+
+async def test_runs_in_the_project_the_hub_names_not_the_first_project(tmp_path):
+    """A public box holds a starter project and the course; it has no opening project. The hub names the agent's
+    project (by id, else by folder name) and the IT session runs there -- never in the starter project."""
+    from flow_sdk.builtin.project import Project
+    from tests.unit._project_names import unique_project_name
+
+    starter_dir, course_dir = tmp_path / "my_first_project", tmp_path / "ai-course-lesson-3"
+    starter_dir.mkdir()
+    course_dir.mkdir()
+    starter = Project(name=unique_project_name("starter"), fs_storage_mount_path=str(starter_dir))
+    await starter.save(notify=False)
+    course = Project(name=unique_project_name("course"), fs_storage_mount_path=str(course_dir))
+    await course.save(notify=False)
+
+    assert await it_session.project_workdir({"id": course.id, "name": "x"}) == course_dir
+    assert await it_session.project_workdir({"id": "not-on-this-box", "name": "ai-course-lesson-3"}) == course_dir
+
+
+def test_run_route_refuses_a_project_that_is_not_an_object(client):
+    r = client.post("/api/v1/it-session/run", json={"call_id": "c", "text": "t", "project": "ai-course"}, headers=HUB)
+    assert r.status_code == 400

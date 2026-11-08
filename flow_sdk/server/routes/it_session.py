@@ -2,7 +2,7 @@
 
 - ``GET  status``  -> ``{on, signed_in}``
 - ``POST setting {on}`` -> ``{on}`` (writes the IT Sessions preference)
-- ``POST run {call_id, text, attachments, answer_shape, timeout_s}`` -> ``{answer, value}``; 409 ``{reason}``
+- ``POST run {call_id, text, attachments, answer_shape, timeout_s, project?: {id, name}}`` -> ``{answer, value}``; 409 ``{reason}``
   when IT Sessions is off or a person is signed in.
 
 Only the hub's hop may call these: the request must carry the box's gate SECRET as the machine header, exactly
@@ -77,6 +77,9 @@ async def run(request: Request):
     attachments = body.get("attachments") or []
     if not isinstance(attachments, list):
         return _fail(400, "attachments: a list of {name, content_b64}")
+    project = body.get("project")
+    if project is not None and not isinstance(project, dict):
+        return _fail(400, "project: {id, name} or null")
     reason = it_session.refusal()
     if reason is not None:
         return _fail(409, f"IT session refused: {reason}", {"reason": reason})
@@ -85,6 +88,6 @@ async def run(request: Request):
     except (TypeError, ValueError):
         return _fail(400, "timeout_s: a number of seconds")
     answer = await it_session.run_it_session(
-        call_id=call_id, text=text, attachments=attachments, answer_shape=shape, timeout_s=timeout_s
+        call_id=call_id, text=text, attachments=attachments, answer_shape=shape, timeout_s=timeout_s, project=project
     )
     return _ok(answer.as_data())

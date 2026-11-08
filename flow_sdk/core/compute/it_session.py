@@ -230,15 +230,25 @@ async def forget_process(executor: str) -> None:
 _RUNNING: dict[str, asyncio.Task] = {}
 
 
-async def project_workdir() -> Path:
-    """The box's project — the deployed course project the hub opened here — else the scratch folder."""
+async def project_workdir(project: Optional[dict] = None) -> Path:
+    """The project the IT session runs in: the one the hub names (the agent's own project, by id, else by folder
+    name), else the project the hub opened here, else the scratch folder. A public box has no opening project and
+    holds a starter project too, so guessing "the first project" lands in the wrong folder."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.remote_worker_session import scratch_workdir  # noqa: PLC0415
     from flow_sdk.config import is_system_project_path  # noqa: PLC0415
     from flow_sdk.server.state import _read_opening_project  # noqa: PLC0415
 
-    project_id = _read_opening_project().get("project_id")
-    candidates = [await Project.get_one({"id": project_id})] if project_id else []
+    named = project or {}
+    candidates = [await Project.get_one({"id": named["id"]})] if named.get("id") else []
+    if not any(candidates) and named.get("name"):
+        candidates = [
+            p
+            for p in await Project.get_all()
+            if p.fs_storage_mount_path and Path(p.fs_storage_mount_path).name == named["name"]
+        ]
+    if not any(candidates) and _read_opening_project().get("project_id"):
+        candidates = [await Project.get_one({"id": _read_opening_project()["project_id"]})]
     if not any(candidates):
         candidates = [
             p
@@ -268,6 +278,7 @@ async def run_it_session(
     answer_shape: Optional[dict] = None,
     timeout_s: Optional[float] = None,
     workdir: Optional[Path] = None,
+    project: Optional[dict] = None,
 ) -> ItAnswer:
     """Run one IT message headless and answer it. Never raises; always leaves nothing behind."""
     from flow_sdk.core.compute.process_step import ProcessProgress, launch_step_process  # noqa: PLC0415
@@ -285,7 +296,7 @@ async def run_it_session(
     try:
         files = write_attachments(tmp / "attachments", attachments or [])
         result_path = tmp / "result.json"
-        where = workdir or await project_workdir()
+        where = workdir or await project_workdir(project)
         run = asyncio.ensure_future(
             launch_step_process(
                 agent=IT_AGENT,
