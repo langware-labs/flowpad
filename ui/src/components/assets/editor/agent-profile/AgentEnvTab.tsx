@@ -58,7 +58,7 @@ export function AgentEnvTab({ agent }: AgentEnvTabProps) {
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<AgentEnvKind>('secret');
 
-  const load = useCallback(async () => setEnvState(await agent.env()), [agent]);
+  const load = useCallback(async () => setEnvState(await agent.envState()), [agent]);
 
   useEffect(() => {
     load().catch((e) =>

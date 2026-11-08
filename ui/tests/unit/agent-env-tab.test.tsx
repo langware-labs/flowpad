@@ -77,7 +77,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const agent = () => new Agent({ id: AGENT_ID, name: 'envy', project_id: PROJECT_ID, remote: true } as never);
+// Like the real row, the agent carries its agent.json `env` entries as a FIELD named `env` -- the tab must not
+// depend on a method of that name (it was shadowed in the browser).
+const agent = () =>
+  new Agent({
+    id: AGENT_ID,
+    name: 'envy',
+    project_id: PROJECT_ID,
+    remote: true,
+    env: [{ name: 'REGION', kind: 'plain', inject: true, value: 'eu' }],
+  } as never);
 const last = (suffix: string) => [...calls].reverse().find((c) => c.fullActionUrl.endsWith(suffix));
 
 describe('the Env tab', () => {

@@ -752,7 +752,8 @@ export class Agent extends APIEntity<Agent> {
    * The agent's Env (`GET agent/<id>/env`): its entries from agent.json, whether each secret is written and
    * where it was placed (asked of the hub when the agent is there), and what Flowpad provides. Never a secret value.
    */
-  async env(): Promise<AgentEnv> {
+  // Not `env()`: the agent row carries its agent.json `env` entries as a field named `env`, which would shadow it.
+  async envState(): Promise<AgentEnv> {
     return agentEnvOf(await this.get<Partial<AgentEnv> | null>('env'));
   }
 
