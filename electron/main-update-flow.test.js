@@ -531,13 +531,13 @@ const HOUR = 60 * 60 * 1000;
     eq(env.readSchedule().lastResult, { state: 'current', version: null }, 'the answer is persisted');
     await schedulerTick(env).fn(); await tick();
     eq([env.autoUpdater.checks, env.uv.checks], [1, 1], 'the next tick is not due: NEITHER channel is checked');
-    // An hour later the desktop feed is looked at again — only the desktop: the engine keeps its day.
-    env.writeSchedule({ ...env.readSchedule(), lastAttemptAt: agoIso(HOUR + 60000) });
+    // 20 minutes later the desktop feed is looked at again — only the desktop: the engine keeps its day.
+    env.writeSchedule({ ...env.readSchedule(), lastAttemptAt: agoIso(20 * 60000 + 60000) });
     await schedulerTick(env).fn(); await tick();
-    eq([env.autoUpdater.checks, env.uv.checks], [2, 1], 'hourly: the desktop feed is checked, the engine is not');
+    eq([env.autoUpdater.checks, env.uv.checks], [2, 1], 'every 20 minutes: the desktop feed is checked, the engine is not');
     ok(env.readSchedule().lastDesktopCheckAt && env.readSchedule().lastSuccessAt === env.readSchedule().lastSuccessAt, 'the desktop-only check is paced on its own field');
     await schedulerTick(env).fn(); await tick();
-    eq(env.autoUpdater.checks, 2, 'and not again until the next hour');
+    eq(env.autoUpdater.checks, 2, 'and not again for another 20 minutes');
   }
   {
     // @langware.ai checks hourly; everyone else daily — same two-hour-old state, different verdicts.
@@ -551,7 +551,7 @@ const HOUR = 60 * 60 * 1000;
     regular.writeSchedule(staleByTwoHours);
     regular.t.setupElectronAutoUpdater();
     await schedulerTick(regular).fn(); await tick();
-    eq(regular.autoUpdater.checks, 1, 'regular account, same state: the desktop feed is checked anyway (hourly, every account)');
+    eq(regular.autoUpdater.checks, 1, 'regular account, same state: the desktop feed is checked anyway (every 20 minutes, every account)');
     eq(regular.uv.checks, 0, 'but the engine keeps the daily cadence');
     // An account switch re-reads the email on the next pass: the overdue check fires at once.
     writeAccountEmail('dev@langware.ai');
@@ -576,7 +576,7 @@ const HOUR = 60 * 60 * 1000;
   }
   {
     // A launch inside the interval never waits for the feed: the start goes on from the persisted answer at
-    // once, and a newer desktop the background look finds goes down the hourly look's road (the offer).
+    // once, and a newer desktop the background look finds goes down the periodic look's road (the offer).
     const userDataDir = fs.mkdtempSync(path.join(HOME, 'userdata-'));
     const first = load({ userDataDir });
     await first.t.startLaunchDesktopCheck();
@@ -744,6 +744,46 @@ const HOUR = 60 * 60 * 1000;
     eq(await ask({ compatibleRelease: { version: '0.2.168' } }), false, 'the installed one is the newest this desktop runs: nothing offered');
     eq(await ask({ compatThrows: 'no flowpad release on PyPI is compatible with desktop 0.2.47' }), false, 'nothing compatible: nothing offered');
     eq(await ask({ compatibleRelease: null }), null, 'undecided (PyPI silent): the popover falls back, and the click is checked');
+  }
+
+  // ── the version popover's desktop button: the updater's own download, prompt and restart ──
+  {
+    const env = load({ desktopFeed: '0.2.48', dialogResponses: [1 /* Later at the ready prompt */] });
+    env.t.setupElectronAutoUpdater();
+    const pushed = () => env.sent.filter(([ch]) => ch === 'desktop-update-state').map(([, d]) => d);
+    eq(await env.ipc['desktop-update-info'](), { supported: true, version: null, state: 'idle', percent: null, error: null, busy: false }, 'nothing checked yet: nothing to offer');
+    eq(await env.ipc['desktop-update-install'](), { started: false, reason: 'not-downloaded' }, 'nothing downloaded: nothing to install');
+    eq(await env.ipc['desktop-update-download'](), { started: true, version: '0.2.48' }, '"Update desktop": the feed is asked and the download starts');
+    eq([env.autoUpdater.checks, env.autoUpdater.downloads.length], [1, 1], 'one look at the feed, one download');
+    eq(await env.ipc['desktop-update-download'](), { started: true, version: '0.2.48' }, 'a second click joins the running download');
+    eq(env.autoUpdater.downloads.length, 1, 'and does not start another');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'desktop first: the engine waits for it');
+    env.autoUpdater.emit('download-progress', { percent: 44.6, transferred: 1, total: 2 });
+    eq([pushed().at(-1).state, pushed().at(-1).percent], ['downloading', 45], 'its progress is pushed to the popover');
+    env.autoUpdater.finishDownload();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.dialogCalls.map((d) => d.buttons), [['Restart now', 'Later']], 'when it lands, the usual "update ready" prompt asks');
+    eq(pushed().at(-1).state, 'ready', 'the popover is told it is ready');
+    eq(env.autoUpdater.quits, [], '"Later": nothing restarts');
+    eq(env.readSchedule().lastOfferedDesktopVersion, '0.2.48', 'the version counts as offered (no second announcement)');
+    eq(await env.ipc['desktop-update-install'](), { started: true }, 'the postponed update: "Restart to update" installs it now');
+    eq(env.autoUpdater.quits, [[true, true]], 'quitAndInstall(silent, relaunch), the backend stopped first');
+    eq(env.uv.stopped, 1, 'the backend was stopped first');
+  }
+  {
+    const current = load({ desktopFeed: '0.2.47' });
+    eq(await current.ipc['desktop-update-download'](), { started: false, reason: 'no-update' }, 'the newest desktop already: said so');
+    const offline = load({ desktopCheckThrows: 'net::ERR_INTERNET_DISCONNECTED' });
+    eq(await offline.ipc['desktop-update-download'](), { started: false, reason: 'check-failed' }, 'the feed does not answer: said so');
+    const failing = load({ desktopFeed: '0.2.48' });
+    await failing.ipc['desktop-update-download']();
+    failing.autoUpdater.failDownload(new Error('sha512 checksum mismatch')); await tick(); await tick();
+    eq([(await failing.ipc['desktop-update-info']()).state, (await failing.ipc['desktop-update-info']()).error], ['idle', 'sha512 checksum mismatch'], 'a failed download: the button is back, with the reason');
+    const busy = load({ desktopFeed: '0.2.48', holdDialog: true });
+    void busy.t.offerDesktopUpdate('0.2.48'); await tick(); await tick();
+    eq((await busy.ipc['desktop-update-info']()).busy, true, 'the "Updates available" screen is up: busy');
+    eq(await busy.ipc['desktop-update-install'](), { started: false, reason: 'not-downloaded' }, 'and nothing to install yet');
+    busy.releaseDialog();
   }
   {
     // A log the backend prunes between the listing and its stat (launch.py cleans old logs as it starts, while

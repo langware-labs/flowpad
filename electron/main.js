@@ -254,6 +254,8 @@ function setupElectronAutoUpdater() {
     });
     autoUpdater.on('download-progress', (p) => {
       log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
+      desktopDownloadPercent = Math.round(p.percent);
+      pushDesktopUpdateState();
     });
     autoUpdater.on('error', (err) => {
       log.error('[electron-updater] error:', err);
@@ -266,6 +268,7 @@ function setupElectronAutoUpdater() {
     autoUpdater.on('update-downloaded', async (info) => {
       log.info(`[electron-updater] update downloaded: ${info.version}`);
       desktopDownloadedVersion = info.version;
+      pushDesktopUpdateState();
       if (suppressDesktopRestartPrompt) {
         // The user said "Later" at launch: no prompt now. The reminder offers it every 90 minutes
         // (shown right away only if a reminder already came due while the download was running), and
@@ -342,7 +345,7 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
   let pass = 'scheduled';
   let feedBackoffOnly = false; // due only to retry the failing FEED: the engine keeps its own cadence
   if (launchDesktop) {
-    pass = 'desktop'; // already answered by the launch's background look: handled like the hourly one
+    pass = 'desktop'; // already answered by the launch's background look: handled like the periodic one
   } else if (!bypassSchedule) {
     const check = updateSchedule.shouldAutoCheck({ state, intervalMs: currentIntervalMs(), now: Date.now() });
     if (check.due) {
@@ -354,11 +357,11 @@ async function runScheduledUpdateCheck({ bypassSchedule = false, launchDesktop =
       // "due" tick after tick, and the blocked DESKTOP work is exactly what unblocks it.
       pass = 'follow-up';
     } else if (updateSchedule.engineRetryDue({ state, now: Date.now() })) {
-      pass = 'engine-retry'; // paced by its backoff, so it never starves the hourly desktop look below
+      pass = 'engine-retry'; // paced by its backoff, so it never starves the 20-minute desktop look below
       log.info('[update] engine check retry due (engine backoff)');
     } else if (updateSchedule.desktopCheckDue({ state, now: Date.now() })) {
-      pass = 'desktop'; // the hourly look at the desktop feed, for every account (the engine half does not run)
-      log.info('[update] desktop check due (hourly)');
+      pass = 'desktop'; // the 20-minute look at the desktop feed, for every account (the engine half does not run)
+      log.info('[update] desktop check due (every 20 minutes)');
     } else {
       return;
     }
@@ -913,7 +916,7 @@ async function offerDesktopUpdate(desktopLatest) {
  * decide whether to fold the desktop update into the pre-start prompt.
  */
 async function getDesktopUpdateVersion({ desktopOnly = false } = {}) {
-  // desktopOnly: the extra launch/hourly look at the desktop feed (DESKTOP_INTERVAL_MS). It neither anchors the
+  // desktopOnly: the extra launch/20-minute look at the desktop feed (DESKTOP_INTERVAL_MS). It neither anchors the
   // shared cadence nor starts the backoff, and a failure keeps the last answer instead of 'unknown' (which
   // would hold the engine on a hiccup of a check the schedule did not even ask for).
   const record = desktopOnly ? recordDesktopOnlyCheck : recordCheck;
@@ -990,6 +993,8 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
   desktopDownloadInFlight = true;
   desktopDownloadVersion = version;
   desktopDownloadToken = new CancellationToken();
+  desktopDownloadPercent = 0;
+  desktopDownloadError = null;
   suppressDesktopRestartPrompt = !promptOnReady;
   desktopDownloadDone = autoUpdater
     .downloadUpdate(desktopDownloadToken)
@@ -999,14 +1004,41 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
         log.info(`[electron-updater] download of ${version || 'update'} cancelled (superseded)`);
       } else {
         log.error('[electron-updater] download failed:', err);
+        desktopDownloadError = (err && err.message) || String(err);
       }
     })
     .finally(() => {
       desktopDownloadInFlight = false;
       desktopDownloadVersion = null;
       desktopDownloadToken = null;
+      pushDesktopUpdateState();
     });
+  pushDesktopUpdateState();
   prepareEngineForDesktop(version);
+}
+
+// The version popover's desktop row (desktop-update-* IPC): what it can offer, and its progress, pushed on
+// every change. The popover only STARTS what the updater already does — the same download, the same
+// "update ready" prompt, the same restart — so an update taken from there behaves exactly like one offered.
+let desktopDownloadPercent = null;
+let desktopDownloadError = null;
+function desktopUpdateBusy() {
+  return restartApplier.busy || packageUpdateInFlight || desktopRestartPromptOpen || !!(uvManager && uvManager.isInstalling());
+}
+function desktopUpdateInfo() {
+  const known = desktopStatus.state === 'available' ? desktopStatus.version : null;
+  const version = desktopDownloadedVersion || desktopDownloadVersion || pendingDesktopVersion || known;
+  return {
+    supported: app.isPackaged && !process.windowsStore,
+    version: version && isNewer(app.getVersion(), version) ? version : null,
+    state: desktopDownloadedVersion ? 'ready' : desktopDownloadInFlight ? 'downloading' : 'idle',
+    percent: desktopDownloadInFlight ? desktopDownloadPercent : null,
+    error: desktopDownloadError,
+    busy: desktopUpdateBusy(),
+  };
+}
+function pushDesktopUpdateState() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop-update-state', desktopUpdateInfo());
 }
 
 /**
@@ -1273,7 +1305,7 @@ function startLaunchDesktopCheck() {
   if (plan.run) return boundedDesktopCheck();
   // Not due for the shared cadence: the start goes on from the persisted answer at once (an offline or
   // slow feed must not hold the launch), and the desktop feed is still looked at, every launch — in the
-  // background. A newer desktop it finds goes down the same road as the hourly look's.
+  // background. A newer desktop it finds goes down the same road as the periodic look's.
   log.info(`[update] launch check not due (${plan.reason})${plan.seed ? '; reusing the last answer' : ''} — the desktop feed is checked in the background`);
   if (plan.seed) setDesktopStatus(plan.seed);
   const look = getDesktopUpdateVersion({ desktopOnly: true });
@@ -3425,6 +3457,39 @@ ipcMain.handle('engine-upgrade-target', async () => {
     log.info(`[update] no engine release for the version popover: ${String((err && err.message) || err).split('\n')[0]}`);
     return false; // PyPI answered and nothing is compatible with this desktop
   }
+});
+
+ipcMain.handle('desktop-update-info', () => desktopUpdateInfo());
+
+// "Update desktop" in the version popover: the download the offer's "Update now" starts — it opens the
+// "update ready" prompt when done (Restart now / Later), and the engine follows the new desktop after the restart.
+ipcMain.handle('desktop-update-download', async () => {
+  if (!app.isPackaged || process.windowsStore) return { started: false, reason: 'unsupported' };
+  if (desktopDownloadedVersion) return { started: true, ready: true, version: desktopDownloadedVersion };
+  if (desktopDownloadInFlight) return { started: true, version: desktopDownloadVersion };
+  if (desktopUpdateBusy()) return { started: false, reason: 'busy' };
+  // electron-updater downloads what its last check found: look at the feed now (the popover's GitHub row may be
+  // ahead of the last check).
+  const version = await getDesktopUpdateVersion({ desktopOnly: true });
+  if (!version) return { started: false, reason: desktopStatus.state === 'unknown' ? 'check-failed' : 'no-update' };
+  if (desktopDownloadInFlight) return { started: true, version: desktopDownloadVersion };
+  if (desktopUpdateBusy()) return { started: false, reason: 'busy' };
+  log.info(`[electron-updater] ${version}: download started from the version popover`);
+  offeredDesktopVersion = version;
+  pendingDesktopVersion = version;
+  downloadDesktopUpdateInBackground({ version, onDownloaded: recordOfferedWhenDownloaded(version) });
+  return { started: true, version };
+});
+
+// "Restart to update" in the version popover: the "Restart now" of the update-ready prompt — also for an update
+// postponed there with "Later", so it never has to wait for the next quit or reminder.
+ipcMain.handle('desktop-update-install', async () => {
+  if (!desktopDownloadedVersion) return { started: false, reason: 'not-downloaded' };
+  if (desktopUpdateBusy()) return { started: false, reason: 'busy' };
+  log.info(`[electron-updater] ${desktopDownloadedVersion}: installing from the version popover`);
+  readyReminder.stop();
+  markPendingEngineConsented(pendingEngineStore); // agreeing to restart = agreeing to the saved engine version
+  return { started: (await restartApplier.apply()) !== false };
 });
 
 ipcMain.handle('upgrade-flowpad', async (_event, version) => {

@@ -5,6 +5,7 @@ import { Button } from '@src/components/ui/button';
 import { useCopied } from '@src/components/ui/copy-button';
 import { VersionChip } from '@src/components/version-popover/version-chip';
 import { upgradeOfferVersion } from '@src/components/version-popover/upgrade-offer';
+import { desktopUpdateAction, type DesktopUpdateInfo } from '@src/components/version-popover/desktop-update-action';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
@@ -76,6 +77,12 @@ interface ElectronAPI {
   /** The newest release THIS desktop runs: a version newer than the installed one, false (none), null (unknown). */
   getEngineUpgradeTarget?: () => Promise<string | false | null>;
   openExternal?: (url: string) => Promise<boolean>;
+  getDesktopUpdateInfo?: () => Promise<DesktopUpdateInfo>;
+  /** Starts the updater's own download; when it lands, the usual "update ready" prompt asks to restart. */
+  downloadDesktopUpdate?: () => Promise<{ started: boolean; ready?: boolean; version?: string; reason?: string }>;
+  /** Restarts into the downloaded update — also one postponed with "Later". */
+  installDesktopUpdate?: () => Promise<{ started: boolean; reason?: string }>;
+  onDesktopUpdateState?: (callback: (info: DesktopUpdateInfo) => void) => () => void;
 }
 
 interface InstallVersionResponse {
@@ -378,6 +385,45 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
       cancelled = true;
     };
   }, [open, electronApi]);
+  // Desktop: the updater's own state, refreshed on every open and pushed while a download runs.
+  const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateInfo | null>(null);
+  const [desktopUpdateError, setDesktopUpdateError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !electronApi?.getDesktopUpdateInfo) return;
+    let cancelled = false;
+    setDesktopUpdateError(null);
+    electronApi
+      .getDesktopUpdateInfo()
+      .then((info) => {
+        if (!cancelled) setDesktopUpdate(info);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    const dispose = electronApi.onDesktopUpdateState?.((info) => {
+      if (!cancelled) setDesktopUpdate(info);
+    });
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+  }, [open, electronApi]);
+
+  const handleDesktopUpdate = useCallback(async () => {
+    if (!electronApi?.downloadDesktopUpdate || !electronApi.installDesktopUpdate) return;
+    setDesktopUpdateError(null);
+    const r =
+      desktopUpdate?.state === 'ready'
+        ? await electronApi.installDesktopUpdate()
+        : await electronApi.downloadDesktopUpdate();
+    if (r.started) return;
+    if (r.reason === 'no-update') setDesktopUpdateError(t`This desktop is already the newest version.`);
+    else if (r.reason === 'check-failed')
+      setDesktopUpdateError(t`The update server did not answer. Try again in a few minutes.`);
+    else if (r.reason === 'busy') setDesktopUpdateError(t`Another update is in progress. Try again when it is done.`);
+    else setDesktopUpdateError(t`The desktop update could not be started.`);
+  }, [electronApi, desktopUpdate?.state, t]);
+
   const upgradeVersion = upgradeOfferVersion({
     desktop: Boolean(electronApi?.upgradeFlowpad),
     desktopTarget,
@@ -469,6 +515,7 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
       ),
     };
   }, [data?.releases, pypi?.releases, runningVersion, pypi?.latest, electronVersion, githubLatest]);
+  const desktopAction = desktopUpdateAction(desktopUpdate, githubUpdateAvailable);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -767,9 +814,41 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
               <ReleaseNotes title={`Notes for v${electronVersion}`} release={electronCurrentRelease} />
             )}
             {githubLatest && <ReleaseNotes title={`Notes for v${githubLatest.tag}`} release={githubLatest} />}
-            {mode === 'Desktop' && !githubUpdateAvailable && !data?.github_error && (
+            {desktopAction && (
+              <div className="pt-1">
+                {/* The updater's own download and restart: the same "update ready" prompt follows, and the
+                    engine is updated by the new desktop after the restart. */}
+                <button
+                  type="button"
+                  onClick={() => void handleDesktopUpdate()}
+                  disabled={desktopAction.kind === 'downloading' || desktopUpdate?.busy}
+                  data-testid="desktop-update-button"
+                  className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {desktopAction.kind === 'downloading' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {desktopAction.kind === 'downloading'
+                    ? t`Downloading… ${String(desktopAction.percent)}%`
+                    : desktopAction.kind === 'install'
+                      ? t`Restart to update to v${String(desktopAction.version)}`
+                      : desktopAction.version
+                        ? t`Update desktop to v${String(desktopAction.version)}`
+                        : t`Update desktop`}
+                </button>
+                {desktopUpdate?.busy && desktopAction.kind !== 'downloading' && (
+                  <p className="pt-1 text-[10px] text-muted-foreground">
+                    <Trans>Another update is in progress.</Trans>
+                  </p>
+                )}
+                {(desktopUpdateError || desktopUpdate?.error) && (
+                  <p className="pt-1 text-[10px] text-destructive">
+                    {desktopUpdateError ?? t`The download failed: ${String(desktopUpdate?.error)}`}
+                  </p>
+                )}
+              </div>
+            )}
+            {mode === 'Desktop' && !desktopAction && !githubUpdateAvailable && !data?.github_error && (
               <p className="text-[10px] text-muted-foreground">
-                <Trans>Auto-updates check hourly.</Trans>
+                <Trans>Desktop updates are checked every 20 minutes.</Trans>
               </p>
             )}
             {githubLatest?.html_url && (

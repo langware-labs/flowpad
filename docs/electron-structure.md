@@ -46,7 +46,7 @@ Electron (main.js)
 | `flow-rs-keychain.js` | Reading keys from the keychain. |
 | `progress-watchdog.js` | Progress guard: 30 s windows, 3 quiet windows in a row = stalled. Gated by `canStall`, async sampling, overlap-safe. |
 | `update-restart.js` | `createRestartApplier` — "Restart now": the window stays up on "Installing the update" (never hidden before the quit begins), stops the backend, installs, and brings the app back if the restart fails. |
-| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise) plus a desktop-only look at the feed every launch and every hour for every account (`desktopCheckDue`), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
+| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise) plus a desktop-only look at the feed every launch and every 20 minutes for every account (`desktopCheckDue`), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
 | `support-bundle.js` | "Send Report" zip: `collectLogs`, `buildSupportZip`, `redact`. |
@@ -194,12 +194,17 @@ On macOS, an app running from a transient location is offered, once per version,
 
 ## 5. IPC channels
 
-- `handle`: capture-region, close-auth-window, copy-to-clipboard, get-app-version, get-backend-url,
+- `handle`: capture-region, close-auth-window, copy-to-clipboard, desktop-update-download, desktop-update-info,
+  desktop-update-install, get-app-version, get-backend-url,
   engine-upgrade-target, get-startup-logs, notify-attention, notify-os, open-auth-window, open-external,
   open-logs-folder, restart-backend, set-badge, share-logs, upgrade-flowpad.
   The version popover's "Upgrade to vX": `engine-upgrade-target` names the newest release THIS desktop runs
   (PyPI's newest may need a newer desktop); `upgrade-flowpad(version)` installs exactly it — checked against the
   desktop before the server is stopped, and a failed install brings the running version back (or the error panel).
+  The popover's desktop button: `desktop-update-info` (what the updater can offer, pushed on every change as
+  `desktop-update-state`), `desktop-update-download` (looks at the feed and starts the offer's "Update now"
+  download — the usual "update ready" prompt follows), `desktop-update-install` (that prompt's "Restart now",
+  also for an update postponed with "Later"). Nothing else changes: the engine follows the new desktop after the restart.
 - `on`: quit-app, set-menu-visible, unwatch-startup-logs, watch-startup-logs.
 - `once`: retry-startup.
 - `app` events: activate, before-quit, open-url, second-instance, window-all-closed.

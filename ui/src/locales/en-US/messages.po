@@ -4009,6 +4009,14 @@ msgstr "another project"
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "Another step already uses this id — their results will overwrite each other."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress."
+msgstr "Another update is in progress."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress. Try again when it is done."
+msgstr "Another update is in progress. Try again when it is done."
+
 #: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr "Answer"
@@ -4906,8 +4914,8 @@ msgid "Auto-send"
 msgstr "Auto-send"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check hourly."
-msgstr "Auto-updates check hourly."
+#~ msgid "Auto-updates check hourly."
+#~ msgstr "Auto-updates check hourly."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -10601,6 +10609,10 @@ msgid "Desktop instance"
 msgstr "Desktop instance"
 
 #: src/components/version-popover/version-popover.tsx
+msgid "Desktop updates are checked every 20 minutes."
+msgstr "Desktop updates are checked every 20 minutes."
+
+#: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
 msgstr "Desktop version"
 
@@ -11224,6 +11236,11 @@ msgstr "Downloaded"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloading…"
 msgstr "Downloading…"
+
+#. placeholder {0}: String(desktopAction.percent)
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading… {0}%"
+msgstr "Downloading… {0}%"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Draft"
@@ -25653,6 +25670,11 @@ msgstr "Restart to apply what changed since this session started"
 msgid "Restart to apply: {names}"
 msgstr "Restart to apply: {names}"
 
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Restart to update to v{0}"
+msgstr "Restart to update to v{0}"
+
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restarting…"
@@ -30815,6 +30837,10 @@ msgstr "The default workspace. Every project outside another workspace's folder 
 msgid "The deployment failed."
 msgstr "The deployment failed."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The desktop update could not be started."
+msgstr "The desktop update could not be started."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -30830,6 +30856,11 @@ msgstr "The document could not be put on the hub the last time it was published.
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be read."
 msgstr "The document could not be read."
+
+#. placeholder {0}: String(desktopUpdate?.error)
+#: src/components/version-popover/version-popover.tsx
+msgid "The download failed: {0}"
+msgstr "The download failed: {0}"
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
@@ -31280,6 +31311,10 @@ msgstr "the token acts as {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The update server did not answer. Try again in a few minutes."
+msgstr "The update server did not answer. Try again in a few minutes."
+
 #: src/components/account/secrets-section.tsx
 msgid "The value is stored in your operating system keychain and never readable from this UI."
 msgstr "The value is stored in your operating system keychain and never readable from this UI."
@@ -31665,6 +31700,10 @@ msgstr "This credential no longer exists."
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "This deployment"
 msgstr "This deployment"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "This desktop is already the newest version."
+msgstr "This desktop is already the newest version."
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "This destroys the cloud machine. Its runs and chats on that machine are lost."
@@ -33235,6 +33274,15 @@ msgstr "Update channel for auto-updates"
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
 msgstr "Update CHART.md"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop"
+msgstr "Update desktop"
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop to v{0}"
+msgstr "Update desktop to v{0}"
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx

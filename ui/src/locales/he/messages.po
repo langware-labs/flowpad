@@ -4009,6 +4009,14 @@ msgstr "פרויקט אחר"
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "שלב אחר כבר משתמש במזהה הזה — התוצאות שלהם ידרסו זו את זו."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress."
+msgstr "עדכון אחר מתבצע כעת."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress. Try again when it is done."
+msgstr "עדכון אחר מתבצע כעת. נסו שוב כשיסתיים."
+
 #: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr ""
@@ -4906,8 +4914,8 @@ msgid "Auto-send"
 msgstr "שליחה אוטומטית"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check hourly."
-msgstr "בדיקת עדכונים אוטומטית כל שעה."
+#~ msgid "Auto-updates check hourly."
+#~ msgstr "בדיקת עדכונים אוטומטית כל שעה."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -10601,6 +10609,10 @@ msgid "Desktop instance"
 msgstr "מופע Desktop"
 
 #: src/components/version-popover/version-popover.tsx
+msgid "Desktop updates are checked every 20 minutes."
+msgstr "עדכוני האפליקציה נבדקים כל 20 דקות."
+
+#: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
 msgstr "גרסת שולחן עבודה"
 
@@ -11224,6 +11236,11 @@ msgstr "הורדה הושלמה"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloading…"
 msgstr "הורדה..."
+
+#. placeholder {0}: String(desktopAction.percent)
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading… {0}%"
+msgstr "מוריד… {0}%"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Draft"
@@ -25653,6 +25670,11 @@ msgstr ""
 msgid "Restart to apply: {names}"
 msgstr ""
 
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Restart to update to v{0}"
+msgstr "הפעלה מחדש לעדכון לגרסה v{0}"
+
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restarting…"
@@ -30815,6 +30837,10 @@ msgstr "סביבת העבודה ברירת המחדל. כל פרויקט שאי�
 msgid "The deployment failed."
 msgstr "הפריסה נכשלה."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The desktop update could not be started."
+msgstr "לא ניתן היה להתחיל את עדכון האפליקציה."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "האבחון חזר. פתחו אותו ב-FlowPad כדי לקרוא כל הרצה, או לבקש מסוכן להסביר אותו."
@@ -30830,6 +30856,11 @@ msgstr "בפרסום האחרון לא ניתן היה להעלות את המס�
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be read."
 msgstr "לא ניתן היה לקרוא את המסמך."
+
+#. placeholder {0}: String(desktopUpdate?.error)
+#: src/components/version-popover/version-popover.tsx
+msgid "The download failed: {0}"
+msgstr "ההורדה נכשלה: {0}"
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
@@ -31280,6 +31311,10 @@ msgstr "האסימון פועל בשם {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "התמליל בדיסק הופעל תחת פרויקט אחר — הקישור כאן מוקפא כדי למנוע סטייה שקטה. טענו מחדש כדי לפתור שוב, או פתחו את הסשן תחת הפרויקט האמיתי שלו."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The update server did not answer. Try again in a few minutes."
+msgstr "שרת העדכונים לא הגיב. נסו שוב בעוד כמה דקות."
+
 #: src/components/account/secrets-section.tsx
 msgid "The value is stored in your operating system keychain and never readable from this UI."
 msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפעלה שלכם ולעולם לא ניתן לקרוא אותו מהממשק זה."
@@ -31665,6 +31700,10 @@ msgstr "פרטי הגישה האלה כבר לא קיימים."
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "This deployment"
 msgstr "הפריסה הזו"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "This desktop is already the newest version."
+msgstr "האפליקציה כבר בגרסה העדכנית ביותר."
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "This destroys the cloud machine. Its runs and chats on that machine are lost."
@@ -33235,6 +33274,15 @@ msgstr "ערוץ עדכון לעדכונים אוטומטיים"
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
 msgstr "עדכון CHART.md"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop"
+msgstr "עדכון האפליקציה"
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop to v{0}"
+msgstr "עדכון האפליקציה לגרסה v{0}"
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx

@@ -46,6 +46,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   upgradeFlowpad: (version) => ipcRenderer.invoke('upgrade-flowpad', version),
   // The release the popover offers: the newest THIS desktop runs (a version), false (none newer), null (unknown).
   getEngineUpgradeTarget: () => ipcRenderer.invoke('engine-upgrade-target'),
+  // The version popover's desktop row: what the updater can offer ({supported, version, state: 'idle' | 'downloading'
+  // | 'ready', percent, error, busy}), start that download, or restart into the downloaded update. The state is
+  // pushed on every change; the subscription returns a disposer.
+  getDesktopUpdateInfo: () => ipcRenderer.invoke('desktop-update-info'),
+  downloadDesktopUpdate: () => ipcRenderer.invoke('desktop-update-download'),
+  installDesktopUpdate: () => ipcRenderer.invoke('desktop-update-install'),
+  onDesktopUpdateState: (callback) => {
+    const handler = (_event, info) => callback(info);
+    ipcRenderer.on('desktop-update-state', handler);
+    return () => ipcRenderer.removeListener('desktop-update-state', handler);
+  },
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.

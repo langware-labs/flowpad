@@ -4009,6 +4009,14 @@ msgstr "مشروع آخر"
 msgid "Another step already uses this id — their results will overwrite each other."
 msgstr "خطوة أخرى تستخدم هذا المعرّف بالفعل — ستستبدل نتائجهما بعضها بعضًا."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress."
+msgstr "يجري تحديث آخر حاليًا."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Another update is in progress. Try again when it is done."
+msgstr "يجري تحديث آخر حاليًا. حاول مرة أخرى عند انتهائه."
+
 #: src/notifications/error-detail.ts
 msgid "Answer"
 msgstr ""
@@ -4906,8 +4914,8 @@ msgid "Auto-send"
 msgstr "إرسال تلقائي"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Auto-updates check hourly."
-msgstr "يتم التحقق من التحديثات تلقائياً كل ساعة."
+#~ msgid "Auto-updates check hourly."
+#~ msgstr "يتم التحقق من التحديثات تلقائياً كل ساعة."
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
@@ -10601,6 +10609,10 @@ msgid "Desktop instance"
 msgstr "مثيل سطح المكتب"
 
 #: src/components/version-popover/version-popover.tsx
+msgid "Desktop updates are checked every 20 minutes."
+msgstr "يتم التحقق من تحديثات التطبيق كل 20 دقيقة."
+
+#: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
 msgstr "إصدار سطح المكتب"
 
@@ -11224,6 +11236,11 @@ msgstr "تم التحميل"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloading…"
 msgstr "جاري التنزيل…"
+
+#. placeholder {0}: String(desktopAction.percent)
+#: src/components/version-popover/version-popover.tsx
+msgid "Downloading… {0}%"
+msgstr "جارٍ التنزيل… {0}%"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Draft"
@@ -25653,6 +25670,11 @@ msgstr ""
 msgid "Restart to apply: {names}"
 msgstr ""
 
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Restart to update to v{0}"
+msgstr "أعد التشغيل للتحديث إلى الإصدار v{0}"
+
 #: src/components/terminal/interactive-terminal/RestartButton.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Restarting…"
@@ -30815,6 +30837,10 @@ msgstr "مساحة العمل الافتراضية. تنتمي إليها كل �
 msgid "The deployment failed."
 msgstr "فشل النشر."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The desktop update could not be started."
+msgstr "تعذّر بدء تحديث التطبيق."
+
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "عاد التشخيص. افتحوه في FlowPad لقراءة كل تشغيل، أو اطلبوا من وكيل أن يشرحه."
@@ -30830,6 +30856,11 @@ msgstr "تعذّر نقل المستند إلى المركز في آخر مرة 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be read."
 msgstr "تعذّرت قراءة المستند."
+
+#. placeholder {0}: String(desktopUpdate?.error)
+#: src/components/version-popover/version-popover.tsx
+msgid "The download failed: {0}"
+msgstr "فشل التنزيل: {0}"
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
@@ -31280,6 +31311,10 @@ msgstr "يعمل الرمز بصفة {0}"
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
 msgstr "بدأ النص المحفوظ على القرص ضمن مشروع آخر — الارتباط هنا مجمَّد لتفادي الانحراف الصامت. أعيدوا التحميل لإعادة التحديد، أو افتحوا الجلسة ضمن مشروعها الحقيقي."
 
+#: src/components/version-popover/version-popover.tsx
+msgid "The update server did not answer. Try again in a few minutes."
+msgstr "لم يستجب خادم التحديثات. حاول مرة أخرى بعد بضع دقائق."
+
 #: src/components/account/secrets-section.tsx
 msgid "The value is stored in your operating system keychain and never readable from this UI."
 msgstr "تُخزَّن القيمة في نظام Keychain الخاص بنظام التشغيل، ولا يمكن قراءتها إطلاقًا من هذه الواجهة."
@@ -31665,6 +31700,10 @@ msgstr "لم تعد بيانات الاعتماد هذه موجودة."
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "This deployment"
 msgstr "هذا النشر"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "This desktop is already the newest version."
+msgstr "التطبيق محدّث بالفعل إلى أحدث إصدار."
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "This destroys the cloud machine. Its runs and chats on that machine are lost."
@@ -33235,6 +33274,15 @@ msgstr "قناة التحديث للتحديثات التلقائية"
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Update CHART.md"
 msgstr "تحديث CHART.md"
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop"
+msgstr "تحديث التطبيق"
+
+#. placeholder {0}: String(desktopAction.version)
+#: src/components/version-popover/version-popover.tsx
+msgid "Update desktop to v{0}"
+msgstr "تحديث التطبيق إلى الإصدار v{0}"
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx
