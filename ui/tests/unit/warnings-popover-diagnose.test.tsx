@@ -44,7 +44,7 @@ const diagnoseAndFix = vi.fn(async () => {});
 vi.mock('@src/notifications/diagnose/diagnose-and-fix', () => ({ diagnoseAndFix }));
 
 // The diagnosis conversation's state, as `help-request-diagnosis` answers it.
-const helpRequestDiagnosis = vi.fn();
+const helpRequestDiagnosis = vi.hoisted(() => vi.fn());
 vi.mock('@sdk', async (orig) => ({ ...(await orig<object>()), helpRequestDiagnosis }));
 
 const { notify } = await import('@src/notifications/notify');
