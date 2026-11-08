@@ -277,7 +277,6 @@ async def test_live_arrival_updates_the_conversation_before_thread_and_child_edg
             "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
             new=_rec("project_pointers"),
         ),
-        patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
     ):
         await materialize_flow_message(
             {"id": _FM_ID, "text": "hi"},
