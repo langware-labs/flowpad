@@ -144,11 +144,13 @@ class Placement:
         """``deployment``'s placement; ``None`` is this computer's. This computer's environment is the
         instance default however its row was loaded: the stored one is whatever it was when the row was
         first saved (a cloud box's template still says ``development``)."""
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
 
-        if deployment is None:
-            from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
-
+        if deployment is None or _runs_on_this_machine(deployment):
+            # A cloud machine's OWN placement reads where the hub placed its values: this machine's
+            # store (``credential_service.place_values``), never the write-only hub store a desktop
+            # binds that same row to -- seen: an invite box's agent got none of its approved Env.
             deployment = await Deployment.this_computer()
         environment = get_default_environment() if deployment.is_this_computer else deployment.environment
         return cls(await deployment.secrets_binding(), environment or DEFAULT_ENVIRONMENT, str(deployment.id))
@@ -158,6 +160,17 @@ class Placement:
         deployment additionally requires."""
         extra = set(self.secrets.require)
         return [name for name, var in (spec.vars or {}).items() if var.is_must or name in extra]
+
+
+def _runs_on_this_machine(deployment: "Deployment") -> bool:
+    """Whether ``deployment`` is placed on THIS machine: a cloud box running its own deployment.
+    A desktop has no assigned node, so a cloud deployment it looks at never matches."""
+    from flow_sdk.instance_settings.runtime import get_assigned_compute_node  # noqa: PLC0415
+
+    if deployment.is_this_computer:
+        return False
+    mine = (get_assigned_compute_node() or "").removeprefix("compute_node-")
+    return bool(mine) and (deployment.compute_node_id or "") == mine
 
 
 def secret_store_ref(spec: "Credential", scope: CredentialScope, env_var: str, placement: Placement) -> SecretStoreRef:
