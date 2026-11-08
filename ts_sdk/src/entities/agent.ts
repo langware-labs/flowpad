@@ -128,8 +128,8 @@ export interface PublicDeployment {
   code_last4: string | null;
   created_date: string | null;
   last_used_at: string | null;
-  /** IT Sessions on that machine, when the hub reports it (null/absent = not known yet). */
-  it_sessions?: boolean | null;
+  /** IT Enabled on that machine: live for a running box, the last seen for a paused one, null when never seen. */
+  it_enabled?: boolean | null;
 }
 
 export interface PublicDeploymentsState {

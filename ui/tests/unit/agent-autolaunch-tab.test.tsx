@@ -46,6 +46,7 @@ const PAYLOAD = {
       code_last4: 'MJHT',
       created_date: null,
       last_used_at: null,
+      it_enabled: true,
     },
     {
       node_typeid: 'compute_node-2',
@@ -70,7 +71,8 @@ beforeEach(() => {
     bodies.push((info.bodyParameters ?? {}) as Record<string, unknown>);
     if (info.fullActionUrl.endsWith('/public_deployments')) return Promise.resolve(PAYLOAD);
     if (info.fullActionUrl.endsWith('/it_sessions')) {
-      return Promise.resolve({ boxes: [{ node_typeid: 'compute_node-1', on: true }] });
+      const body = (info.bodyParameters ?? {}) as { targets: string[]; on: boolean };
+      return Promise.resolve({ boxes: [{ node_typeid: body.targets[0], on: body.on }] });
     }
     return Promise.resolve({ audience: 'visitor', roles: ['reader'] });
   });
@@ -111,18 +113,24 @@ describe('AgentAutoLaunchTab', () => {
     expect(rows[1]).toHaveTextContent('Pause');
   });
 
-  it('offers Send IT message above the machines, and switches IT Sessions per machine', async () => {
+  it('shows each machine IT Enabled / IT Disabled as the hub reports it, and one click flips it', async () => {
     render(tab(PUBLISHED));
 
     const rows = await screen.findAllByTestId('agent-autolaunch-deployment');
     expect(screen.getByTestId('it-message-send-open')).toHaveTextContent('Send IT message');
-    const state = rows[0].querySelector('[data-testid="it-sessions-state"]') as HTMLElement;
-    expect(state).toHaveTextContent('IT —'); // the hub has not said yet
-    fireEvent.click(state);
+    const enabled = rows[0].querySelector('[data-testid="it-sessions-state"]') as HTMLElement;
+    const unknown = rows[1].querySelector('[data-testid="it-sessions-state"]') as HTMLElement;
+    expect(enabled).toHaveTextContent('IT Enabled'); // reported by the hub on first load
+    expect(unknown).toHaveTextContent('IT —'); // the hub never saw it
+    expect(enabled).toHaveAttribute('aria-label', expect.stringContaining('Click to disable'));
 
-    await waitFor(() => expect(state).toHaveTextContent('IT on'));
+    fireEvent.click(enabled); // ONE click disables a machine that is enabled
+    await waitFor(() => expect(enabled).toHaveTextContent('IT Disabled'));
     const at = urls.findIndex((u) => u.endsWith(`/agent/${AGENT_ID}/it_sessions`));
-    expect(at).toBeGreaterThanOrEqual(0);
-    expect(bodies[at]).toEqual({ targets: ['compute_node-1'], on: true });
+    expect(bodies[at]).toEqual({ targets: ['compute_node-1'], on: false });
+
+    fireEvent.click(unknown); // unknown: a click enables it
+    await waitFor(() => expect(unknown).toHaveTextContent('IT Enabled'));
+    expect(bodies[urls.lastIndexOf(urls[at])]).toEqual({ targets: ['compute_node-2'], on: true });
   });
 });

@@ -30,7 +30,7 @@ import { useEffect, useRef, useState } from 'react';
 export interface ConversationDestination {
   /** The one participant chip, e.g. "IT · Game Builder deployments (5 machines)". */
   label: string;
-  /** A muted note beside it, e.g. "1 has IT Sessions off". */
+  /** A muted note beside it, e.g. "1 is IT Disabled". */
   note?: string | null;
   /** The title to offer instead of the participant-derived one. */
   title: string;

@@ -7,6 +7,7 @@ import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { itReplyView, itValueChips } from './it-reply';
+import { WikiTip } from '@src/components/wiki-tip';
 
 const TONE: Record<string, string> = {
   ok: 'text-emerald-600 dark:text-emerald-400',
@@ -17,7 +18,7 @@ const TONE: Record<string, string> = {
 
 /**
  * Under a machine's reply in an IT conversation: the returned value's fields as chips, the reply's state, and what
- * to do about it -- "Open machine", or "Turn on and run" when IT Sessions was off there (turns it on for that one
+ * to do about it -- "Open machine", or "Enable and run" when the machine was IT Disabled (enables it for that one
  * machine, then asks it the conversation's own request again -- text, files and answer shape -- into this thread).
  */
 export function ItReplyLine({
@@ -78,12 +79,14 @@ export function ItReplyLine({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span
-          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 ${TONE[view.tone]}`}
-          data-testid="it-reply-state"
-        >
-          {view.label}
-        </span>
+        <WikiTip wikiword="IT Enabled" label={view.label} learnMore openDelay={400}>
+          <span
+            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 ${TONE[view.tone]}`}
+            data-testid="it-reply-state"
+          >
+            {view.label}
+          </span>
+        </WikiTip>
         {view.openMachine && (
           <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => void openMachine()}>
             <Trans>Open machine</Trans>
@@ -99,7 +102,7 @@ export function ItReplyLine({
             data-testid="it-turn-on-and-run"
           >
             {busy && <Loader2 className="h-3 w-3 animate-spin" />}
-            <Trans>Turn on and run</Trans>
+            <Trans>Enable and run</Trans>
           </Button>
         )}
       </div>

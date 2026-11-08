@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro';
 import type { ItReplyMeta } from '@sdk/entities/agent';
 
-/** How a machine's IT reply reads: its state pill, and whether it offers "Turn on and run" / "Open machine". */
+/** How a machine's IT reply reads: its state pill, and whether it offers "Enable and run" / "Open machine". */
 export interface ItReplyView {
   label: string;
   tone: 'ok' | 'warn' | 'bad' | 'muted';
@@ -19,7 +19,7 @@ export function itReplyView(reply: ItReplyMeta): ItReplyView {
         openMachine: true,
       };
     case 'off':
-      return { label: t`IT Sessions is off on this machine`, tone: 'warn', turnOnAndRun: true, openMachine: false };
+      return { label: t`IT is disabled on this machine`, tone: 'warn', turnOnAndRun: true, openMachine: false };
     case 'signed_in':
       return {
         label: t`Not run — someone is signed in on this machine`,

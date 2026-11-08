@@ -22,6 +22,7 @@ import { CopyButton } from '@src/components/ui/copy-button';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
+import { WikiTip } from '@src/components/wiki-tip';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
@@ -65,6 +66,9 @@ const sameDraft = (a: Draft, b: Draft) =>
  * a sandbox of their own. Enabling also stamps the agent's `visitor` audience public (what lets a visitor
  * reach it at all), the same stamp "Set public" writes; turning off leaves the stamp.
  */
+/** The wiki page every IT Enabled tip opens. */
+const IT_ENABLED_WIKI = 'IT Enabled';
+
 export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: AgentVersionState | null }) {
   const { t } = useLingui();
   const published = version?.published === true;
@@ -76,7 +80,7 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
   const [resetting, setResetting] = useState<PublicDeployment | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [itOpen, setItOpen] = useState(false);
-  // IT Sessions per machine as this screen last set it, over what the hub reported.
+  // IT Enabled per machine as this screen last set it, over what the hub reported.
   const [itOn, setItOn] = useState<Record<string, boolean>>({});
 
   const { status } = useLlmSources();
@@ -210,7 +214,14 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
     }
   };
 
-  const itStateOf = (d: PublicDeployment): boolean | null => itOn[d.node_typeid] ?? d.it_sessions ?? null;
+  const itStateOf = (d: PublicDeployment): boolean | null => itOn[d.node_typeid] ?? d.it_enabled ?? null;
+  // The tooltip of a machine's IT Enabled chip: what it is, and what a click does.
+  const itTip = (on: boolean | null) =>
+    on === null
+      ? t`IT Enabled not known yet for this machine. Click to enable it.`
+      : on
+        ? t`IT Enabled: you can send this machine IT messages. Never while someone is signed in. Click to disable.`
+        : t`IT Disabled: this machine refuses IT messages. Click to enable.`;
 
   const toggleIt = async (row: PublicDeployment) => {
     const next = !(itStateOf(row) ?? false);
@@ -222,7 +233,7 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
       setItOn((prev) => ({ ...prev, [row.node_typeid]: box ? box.on : next }));
     } catch (e) {
       notify.error({
-        title: t`Could not change IT Sessions`,
+        title: t`Could not change IT Enabled`,
         message: errorMessage(e, t`The machine did not answer.`),
       });
     } finally {
@@ -397,16 +408,22 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
             <p className="flex-1 text-xs font-medium">
               <Trans>Current deployments</Trans>
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              disabled={state.deployments.length === 0}
-              onClick={() => setItOpen(true)}
-              data-testid="it-message-send-open"
+            <WikiTip
+              wikiword={IT_ENABLED_WIKI}
+              label={t`Ask every IT Enabled machine one thing; the answers come back as one IT conversation in your inbox.`}
+              learnMore
             >
-              <Trans>Send IT message</Trans>
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                disabled={state.deployments.length === 0}
+                onClick={() => setItOpen(true)}
+                data-testid="it-message-send-open"
+              >
+                <Trans>Send IT message</Trans>
+              </Button>
+            </WikiTip>
           </div>
           {state.deployments.length === 0 ? (
             <p className="text-xs text-muted-foreground" data-testid="agent-autolaunch-no-deployments">
@@ -425,20 +442,20 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
                   >
                     <span className="w-24 font-mono">{d.code_last4 ? `••••${d.code_last4}` : t`link visitor`}</span>
                     <span className="w-16">{statusLabel(d.status)}</span>
-                    <button
-                      type="button"
-                      className={`w-20 text-start ${
-                        itStateOf(d) ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
-                      }`}
-                      disabled={rowLocked}
-                      onClick={() => void toggleIt(d)}
-                      title={
-                        itStateOf(d) ? t`Turn IT Sessions off on this machine` : t`Turn IT Sessions on on this machine`
-                      }
-                      data-testid="it-sessions-state"
-                    >
-                      {itStateOf(d) === null ? t`IT —` : itStateOf(d) ? t`IT on` : t`IT off`}
-                    </button>
+                    <WikiTip wikiword={IT_ENABLED_WIKI} label={itTip(itStateOf(d))} learnMore openDelay={400}>
+                      <button
+                        type="button"
+                        className={`w-24 text-start ${
+                          itStateOf(d) ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+                        }`}
+                        disabled={rowLocked}
+                        onClick={() => void toggleIt(d)}
+                        aria-label={itTip(itStateOf(d))}
+                        data-testid="it-sessions-state"
+                      >
+                        {itStateOf(d) === null ? t`IT —` : itStateOf(d) ? t`IT Enabled` : t`IT Disabled`}
+                      </button>
+                    </WikiTip>
                     <span className="flex-1 text-muted-foreground">{formatTimeAgo(d.last_used_at) ?? '—'}</span>
                     <Button
                       variant="outline"
