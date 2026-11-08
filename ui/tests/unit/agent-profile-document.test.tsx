@@ -25,6 +25,18 @@ vi.mock('@src/components/milkdown-editor/MilkdownEditor', () => ({
     </>
   ),
 }));
+// The editor's open tab lives in the URL (`?tab=`): a dock whose option a tab press sets.
+vi.mock('@src/navigation/useDockNavigation', async () => {
+  const { useState } = await import('react');
+  type Dock = { options: Record<string, string | null>; withOption: (k: string, v: string | null) => Dock };
+  const dock = (options: Dock['options']): Dock => ({ options, withOption: (k, v) => dock({ ...options, [k]: v }) });
+  return {
+    useDockNavigation: () => {
+      const [currentDock, openDock] = useState(() => dock({}));
+      return { navigation: { openDock }, currentDock };
+    },
+  };
+});
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
