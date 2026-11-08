@@ -113,26 +113,48 @@ export default defineConfig(({ mode }) => {
       // this dev server has none of those and serves neither path itself. Unproxied, `/login.html` fell through to
       // the SPA and looped exactly as above; so they go to the hub too.
       proxy: (() => {
-        const target = env.VITE_API_URL || `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`;
-        return {
-          // Derived from the same value so the two can never skew: http -> ws,
-          // https -> wss.
-          '/api/v1/connect/ws': {
-            target: target.replace(/^http/, 'ws'),
-            ws: true,
-            changeOrigin: true,
-          },
-          // changeOrigin rewrites Host, which a remote hub behind a vhost
-          // requires and a localhost one does not mind.
-          '/api': {
-            target,
-            changeOrigin: true,
-          },
-          '/login.html': { target, changeOrigin: true },
-          '/signup.html': { target, changeOrigin: true },
-          '/assets': { target, changeOrigin: true },
-          '/sdk': { target, changeOrigin: true },
-        };
+        // PROXY_TARGET: where /api goes when it is not __API_URL__ itself -- set VITE_API_URL to this dev server
+        // and PROXY_TARGET to a desktop (e.g. the signed-in prod desktop on 9007) so the browser stays same-origin.
+        const target = env.PROXY_TARGET || env.VITE_API_URL || `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`;
+        // FLOWPAD_GATE_TOKEN: the target desktop's cookie-gate token, presented on every proxied call.
+        const gate = env.FLOWPAD_GATE_TOKEN ? { 'X-Cookie-Gate': env.FLOWPAD_GATE_TOKEN } : undefined;
+        // PROD_READ_ONLY=1: refuse every write, so a dev UI pointed at real data can only look.
+        const readOnly = env.PROD_READ_ONLY === '1';
+        const guard = (o: Record<string, unknown>) => ({
+          ...o,
+          ...(gate ? { headers: gate } : {}),
+          ...(readOnly
+            ? {
+                bypass: (req: { method?: string }, res: import('http').ServerResponse | undefined) => {
+                  if (['GET', 'HEAD', 'OPTIONS'].includes((req.method || 'GET').toUpperCase())) return undefined;
+                  res?.writeHead(403, { 'content-type': 'application/json' });
+                  res?.end(JSON.stringify({ status: 'FAIL', message: 'read-only dev proxy (PROD_READ_ONLY=1)' }));
+                  return false;
+                },
+              }
+            : {}),
+        });
+        return Object.fromEntries(
+          Object.entries({
+            // Derived from the same value so the two can never skew: http -> ws,
+            // https -> wss.
+            '/api/v1/connect/ws': {
+              target: target.replace(/^http/, 'ws'),
+              ws: true,
+              changeOrigin: true,
+            },
+            // changeOrigin rewrites Host, which a remote hub behind a vhost
+            // requires and a localhost one does not mind.
+            '/api': {
+              target,
+              changeOrigin: true,
+            },
+            '/login.html': { target, changeOrigin: true },
+            '/signup.html': { target, changeOrigin: true },
+            '/assets': { target, changeOrigin: true },
+            '/sdk': { target, changeOrigin: true },
+          }).map(([k, v]) => [k, guard(v as Record<string, unknown>)]),
+        );
       })(),
     },
     optimizeDeps: {
