@@ -385,13 +385,18 @@ class TurnEngine:
                 if stream:
                     async for event in _follow(ap, start):
                         yield event
-                    text = _last_turn_assistant_text(
-                        transcript_entries(ap)[start:], last_only=True
-                    ) or await _capture_assistant_reply(ap)
+                    entries = transcript_entries(ap)[start:]
+                    # A transcript that exists is the truth, even when the turn left no final message.
+                    text = (
+                        _last_turn_assistant_text(entries, last_only=True)
+                        if entries
+                        else await _capture_assistant_reply(ap)
+                    )
                 else:
                     # The wait is the capture's; the reply is the turn's FINAL message, not its progress lines.
                     text = await _capture_assistant_reply(ap)
-                    text = _last_turn_assistant_text(transcript_entries(ap), last_only=True) or text
+                    entries = transcript_entries(ap)
+                    text = _last_turn_assistant_text(entries, last_only=True) if entries else text
             except TimeoutError:
                 # The wait ended, not necessarily the turn. The STARTED stamp stays:
                 # a redelivery reads the transcript to learn whether it finished.
