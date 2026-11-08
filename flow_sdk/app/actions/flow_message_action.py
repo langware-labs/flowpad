@@ -1972,19 +1972,6 @@ async def _fetch_raw_messages_from_hub(since: str | None) -> list[dict] | None:
     return result if isinstance(result, list) else []
 
 
-def _hub_adds_attachments(existing: FlowMessage, raw: dict) -> bool:
-    """The hub's message carries attachments the local row lacks.
-
-    A message first synced before its viewer could see its attachments (a help-desk ticket's files are
-    the hub's to give once its staff member has picked the ticket up) is stored without them. Any local
-    save after that (the unread flag, the body healing) stamps the row newer than the hub's own clock, so
-    ``is_stale`` calls it current for good and the attachments the hub now sends are never merged: the
-    files sit unpacked on disk and the message shows none. What the hub carries and the row lacks is a
-    change whatever the clocks say.
-    """
-    return bool(raw.get("attachment")) and not (existing.attachment or [])
-
-
 async def _process_single_hub_message(raw: dict) -> str | None:
     """Download and unpack the .flowmsg bundle for one hub FlowMessage.
 
