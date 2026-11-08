@@ -285,3 +285,23 @@ def test_an_unparsed_error_body_is_kept_whole():
 
 def test_other_lines_are_no_retry():
     assert _api_retry_notice({"type": "assistant", "timestamp": "2026-10-18T16:54:50.163Z"}, since="") == ""
+
+
+def test_a_turn_that_ends_on_an_action_has_no_final_message():
+    """The agent wrote a progress line, then ran a command and stopped: nothing is the reply."""
+    from flow_sdk.transcript_analyzer.entries import ToolUseEntry
+
+    entries = [
+        _user("u1", "question"),
+        _assistant("a1", "I am adding the diagnosis to the private conversation"),
+        _entry(
+            ToolUseEntry,
+            id="t1",
+            tool_use_id="tu1",
+            tool_name="Bash",
+            tool_input={"command": "flow conversation send x"},
+        ),
+    ]
+
+    assert _last_turn_assistant_text(entries, last_only=True) == ""
+    assert "adding the diagnosis" in _last_turn_assistant_text(entries)

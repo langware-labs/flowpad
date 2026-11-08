@@ -396,12 +396,33 @@ async def _emit_prompt_completion(
     }
 
 
+#: Entries that are the agent DOING something rather than saying something.
+_ACTIVITY_KINDS = frozenset(
+    {
+        EntryKind.TOOL_USE,
+        EntryKind.TOOL_RESULT,
+        EntryKind.FILE_WRITE,
+        EntryKind.FILE_EDIT,
+        EntryKind.FILE_READ,
+        EntryKind.SHELL_COMMAND,
+        EntryKind.FLOW_COMMAND,
+        EntryKind.SKILL_CALL,
+        EntryKind.SEARCH,
+        EntryKind.WEB_FETCH,
+        EntryKind.TODO_UPDATE,
+        EntryKind.AGENT_SPAWN,
+    }
+)
+
+
 def _last_turn_assistant_text(entries, *, last_only: bool = False) -> str:
     """The assistant text of the LAST turn, from typed transcript entries.
 
     All of the turn's assistant text, joined; with *last_only* just its final
     assistant message -- for a reply that reaches a third party, where the
-    progress lines written on the way must not.
+    progress lines written on the way must not. A turn that ENDS on an action (a tool
+    call, its result) has no final message: its last text was a progress line, so
+    ``last_only`` answers ``""``.
 
     Pure and vendor-agnostic: it reads the analyzer's normalized
     ``TranscriptEntry`` model (``kind`` / ``text`` / ``is_meta`` / ``id``), which
@@ -424,6 +445,8 @@ def _last_turn_assistant_text(entries, *, last_only: bool = False) -> str:
         kind = getattr(entry, "kind", None)
         if kind is EntryKind.USER_MESSAGE and not getattr(entry, "is_meta", False):
             break  # the prompt that opened this turn — everything older is a prior turn
+        if last_only and kind in _ACTIVITY_KINDS:
+            return ""  # the turn ended on an action: any text before it was written on the way
         if kind is not EntryKind.ASSISTANT_MESSAGE or getattr(entry, "is_api_error", False):
             continue  # an API failure the vendor wrote as a line is not the reply
         text = (getattr(entry, "text", "") or "").strip()
