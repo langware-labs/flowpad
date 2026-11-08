@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Annotation } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Briefcase, Plus, Trash2, User } from 'lucide-react';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useAuth } from '@src/hooks/useAuth';
 import {
@@ -126,19 +127,40 @@ export function QuickPromptsMenu({
             />
           </div>
           {offerLast && (
-            <button
-              type="button"
-              onClick={() => saveMine(last)}
-              data-testid="quick-prompt-last"
-              title={t`Save as a quick prompt (does not run it)`}
-              className="mt-1 flex w-full items-center gap-1.5 rounded px-1.5 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted"
-            >
-              <Plus className="h-3 w-3 shrink-0" />
-              <span className="shrink-0">
-                <Trans>Last in this session:</Trans>
-              </span>
-              <span className="min-w-0 flex-1 truncate text-foreground">{last}</span>
-            </button>
+            <HoverCard openDelay={300} closeDelay={0}>
+              <HoverCardTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => saveMine(last)}
+                  data-testid="quick-prompt-last"
+                  className="mt-1 flex w-full items-center gap-1.5 rounded px-1.5 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted"
+                >
+                  <Plus className="h-3 w-3 shrink-0" />
+                  <span className="shrink-0">
+                    <Trans>Last in this session:</Trans>
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-foreground">{last}</span>
+                </button>
+              </HoverCardTrigger>
+              <HoverCardContent
+                side="right"
+                align="end"
+                className="w-[28rem] max-w-[90vw] p-0"
+                data-testid="quick-prompt-last-card"
+              >
+                <div className="border-b border-border px-3 py-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    <Trans>Save as a quick prompt</Trans>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    <Trans>Click to keep this session&apos;s last prompt. It is saved, not run.</Trans>
+                  </p>
+                </div>
+                <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words px-3 py-2 text-sm leading-relaxed text-foreground">
+                  {last}
+                </p>
+              </HoverCardContent>
+            </HoverCard>
           )}
         </div>
       </PopoverContent>
