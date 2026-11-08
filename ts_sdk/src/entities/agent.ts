@@ -628,7 +628,7 @@ export class Agent extends APIEntity<Agent> {
 
   /**
    * IT message: run `text` once on each targeted public machine, in a throwaway session; the answers come back as
-   * one IT conversation in the inbox. Hub-only and owner-only.
+   * one IT conversation in the StreamInbox. Hub-only and owner-only.
    */
   async itMessage(request: ItMessageRequest): Promise<ItMessageResult> {
     const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {

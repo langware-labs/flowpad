@@ -139,9 +139,9 @@ async def refresh_policy_for(source) -> bool:
 
     The allowlist is a private, runtime-only field of the source: the machine where the person saved
     it holds it, every other machine starts empty. A cloud placement's source comes with its deploy
-    and was never configured there, so its gate refused everyone. The serve loop calls this when the
-    gate refuses a sender — the one moment a stale copy matters — at most once per
-    ``POLICY_REFRESH_SECONDS`` per source, so a stranger writing in costs no more than that.
+    and was never configured there, so its gate refused everyone; and a sender blocked after the
+    copy was taken stayed admitted. The serve loop calls this before the gate on every message, at
+    most once per ``POLICY_REFRESH_SECONDS`` per source, so mail costs no more than one Hub read a window.
     """
     import logging  # noqa: PLC0415
     import time  # noqa: PLC0415

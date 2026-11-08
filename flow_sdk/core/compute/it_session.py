@@ -6,7 +6,7 @@ answer_shape, timeout_s}``. The run is a THROWAWAY session:
 - a private temp folder holds the attachments and the result file, never the project;
 - the agent runs headless in the box's project (it reads the student's work there);
 - afterwards the temp folder, the AgenticProcess row, its records folder and its transcript are deleted —
-  the box keeps no trace, and nothing lands in its inbox, conversations or flow_message rows;
+  the box keeps no trace, and nothing lands in its StreamInbox, conversations or flow_message rows;
 - it never runs while a person is signed in, and a sign-in mid-run cancels it (``_watch_sign_in``);
 - a backend that died mid-run leaves a temp folder behind: ``sweep_leftovers`` clears it at startup.
 
@@ -239,12 +239,14 @@ async def project_workdir(project: Optional[dict] = None) -> Path:
     from flow_sdk.config import is_system_project_path  # noqa: PLC0415
     from flow_sdk.server.state import _read_opening_project  # noqa: PLC0415
 
+    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+
     named = project or {}
     candidates = [await Project.get_one({"id": named["id"]})] if named.get("id") else []
     if not any(candidates) and named.get("name"):
         candidates = [
             p
-            for p in await Project.get_all()
+            for p in await get_cached_projects()
             if p.fs_storage_mount_path and Path(p.fs_storage_mount_path).name == named["name"]
         ]
     if not any(candidates) and _read_opening_project().get("project_id"):
@@ -252,7 +254,7 @@ async def project_workdir(project: Optional[dict] = None) -> Path:
     if not any(candidates):
         candidates = [
             p
-            for p in await Project.get_all()
+            for p in await get_cached_projects()
             if p.fs_storage_mount_path and not is_system_project_path(p.fs_storage_mount_path)
         ]
     for project in candidates:

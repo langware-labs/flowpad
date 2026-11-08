@@ -1820,6 +1820,10 @@ msgstr "{notInstalled, plural, one {# تبعية اختيارية غير مثب�
 msgid "{numSlides} slides"
 msgstr "{numSlides} شرائح"
 
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "{off} have IT Sessions off"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {grouped open error in the last 24 hours} other {grouped open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {خطأ مفتوح مجمَّع خلال آخر 24 ساعة} two {خطآن مفتوحان مجمَّعان خلال آخر 24 ساعة} few {أخطاء مفتوحة مجمَّعة خلال آخر 24 ساعة} other {خطأ مفتوح مجمَّع خلال آخر 24 ساعة}}"
@@ -2480,6 +2484,10 @@ msgstr "commit واحد لم يُدفع — نفّذ push ثم انشر"
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "1 file needs merging — let the assistant merge it"
 msgstr "ملف واحد يحتاج إلى دمج — يمكن للمساعد دمجه"
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "1 has IT Sessions off"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -3688,6 +3696,7 @@ msgstr "متقدم: حدود كل نافذة زمنية وسقوف المعدل 
 msgid "After {0} min idle"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/graph-workflows/panels/RunsPanel.tsx
@@ -8950,6 +8959,10 @@ msgstr "تعذّر تغيير حالة التفعيل"
 msgid "Could not change it"
 msgstr "تعذّر التغيير"
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Could not change IT Sessions"
+msgstr ""
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Could not change privacy mode"
 msgstr "تعذر تغيير وضع الخصوصية"
@@ -9368,6 +9381,10 @@ msgstr "تعذّر فتح المجلد"
 msgid "Could not open the link"
 msgstr ""
 
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Could not open the machine"
+msgstr ""
+
 #: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not open the shared version"
@@ -9616,6 +9633,10 @@ msgstr "تعذّر تشغيل {0}"
 msgid "Could not run it"
 msgstr "تعذّر التشغيل"
 
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Could not run it there"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not run schedule"
 msgstr "تعذّر تشغيل الجدول الزمني"
@@ -9758,6 +9779,10 @@ msgstr "تعذّر إرسال طلب التثبيت"
 
 #: src/components/conversation/MessageFormCard.tsx
 msgid "Could not send your answers"
+msgstr ""
+
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
+msgid "Could not send."
 msgstr ""
 
 #. placeholder {0}: v.envVar
@@ -17453,6 +17478,26 @@ msgstr "تشخيصات المشاكل التي سجلها المساعد. انق
 msgid "Issues"
 msgstr ""
 
+#: src/components/conversation/conversation-category.ts
+msgid "IT"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT —"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "IT · {name} - {stamp}"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "IT · {name} deployments ({machines} machines)"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "IT · {name} deployments (1 machine)"
+msgstr ""
+
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "It also changes:"
 msgstr "ما يتغيّر أيضًا:"
@@ -17527,6 +17572,14 @@ msgstr "قد تُحذف جزئيًا فقط."
 msgid "It may have been deleted, or it wasn't shared with this account."
 msgstr "ربما تم حذفه، أو لم تتم مشاركته مع هذا الحساب."
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT off"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT on"
+msgstr ""
+
 #: src/components/webapp-display/PageCheckPanel.tsx
 #~ msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
 #~ msgstr ""
@@ -17534,6 +17587,14 @@ msgstr "ربما تم حذفه، أو لم تتم مشاركته مع هذا ا�
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "It runs again the next time the project opens."
 msgstr "سيُشغَّل مجدداً في المرة القادمة التي يُفتح فيها المشروع."
+
+#: src/components/conversation/it-reply.ts
+msgid "IT session · done"
+msgstr ""
+
+#: src/components/conversation/it-reply.ts
+msgid "IT Sessions is off on this machine"
+msgstr ""
 
 #: src/components/automations/AutomationsList.tsx
 msgid "It shows up in Runs as a test."
@@ -19178,6 +19239,10 @@ msgstr "جاري البحث عن المشروع…"
 msgid "Lowercase letters, digits, - and _ (not development)."
 msgstr "أحرف إنجليزية صغيرة وأرقام و- و_ (لا يُقبل development)"
 
+#: src/components/conversation/it-reply.ts
+msgid "machine"
+msgstr ""
+
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
@@ -20709,6 +20774,7 @@ msgstr "الأحدث أولاً"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/media-viewer/MediaPager.tsx
 #: src/components/ui/pagination.tsx
 #: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -22617,6 +22683,10 @@ msgstr "لم يُبلَّغ"
 #~ msgid "not respected"
 #~ msgstr "غير محترمة"
 
+#: src/components/conversation/it-reply.ts
+msgid "Not run — someone is signed in on this machine"
+msgstr ""
+
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 msgid "Not run on this machine yet"
 msgstr ""
@@ -23939,6 +24009,10 @@ msgstr "فتح ملف السجل"
 #: src/components/account/database-section.tsx
 msgid "Open Logs Folder"
 msgstr "فتح مجلد السجلات"
+
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Open machine"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Open message"
@@ -25727,6 +25801,7 @@ msgstr "معاينة الصوت"
 #~ msgid "Preview truncated."
 #~ msgstr "تم اختصار المعاينة."
 
+#: src/components/media-viewer/MediaPager.tsx
 #: src/components/ui/pagination.tsx
 msgid "Previous"
 msgstr "السابق"
@@ -30078,6 +30153,7 @@ msgstr "الملخص الذاتي"
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/conversation/ConversationActions.tsx
@@ -30150,6 +30226,10 @@ msgstr "إرسال الدعوة"
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Send invites to everyone"
 #~ msgstr "إرسال الدعوات إلى الجميع"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Send IT message"
+msgstr ""
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
@@ -30242,6 +30322,7 @@ msgstr "يُرسَل…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/SendProgressNotice.tsx
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
 msgstr "جارٍ الإرسال…"
@@ -34008,6 +34089,10 @@ msgstr "لم يكتمل تسجيل الدخول."
 msgid "The logout did not complete."
 msgstr "لم يكتمل تسجيل الخروج."
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "The machine did not answer."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #~ msgid "The machine reads this environment's credentials."
 #~ msgstr "يقرأ الجهاز بيانات اعتماد هذه البيئة."
@@ -36071,6 +36156,14 @@ msgstr "مدة الدور"
 msgid "Turn failed"
 msgstr "فشل الدور"
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Turn IT Sessions off on this machine"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Turn IT Sessions on on this machine"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn off"
@@ -36084,6 +36177,10 @@ msgstr "تفعيل"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Turn on a scope above to see its assets."
 msgstr "فعّلوا نطاقاً من الأعلى لعرض أصوله."
+
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Turn on and run"
+msgstr ""
 
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "Turns a feature or an integration on"
@@ -36356,6 +36453,7 @@ msgstr "تغييرات لم يتم دفعها"
 msgid "unreachable"
 msgstr "يتعذّر الوصول إليها"
 
+#: src/components/conversation/it-reply.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Unreachable"
 msgstr "غير قابل للوصول"
@@ -38114,6 +38212,10 @@ msgstr "معالج"
 #: src/components/wizard/WizardHost.tsx
 msgid "Wizard close failed"
 msgstr "فشل إغلاق المعالج"
+
+#: src/components/conversation/it-reply.ts
+msgid "Woke the paused machine · done"
+msgstr ""
 
 #: src/pages/entry/EntityLanding.tsx
 msgid "Work on it in the FlowPad desktop app with your coding agents."

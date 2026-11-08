@@ -5,7 +5,7 @@ import { itMessageRequest } from './it-message';
 
 /**
  * "Send IT message": the standard New conversation dialog, its one participant all of this agent's deployments.
- * Send runs the message once on each machine; the answers come back as one IT conversation in the inbox.
+ * Send runs the message once on each machine; the answers come back as one IT conversation in the StreamInbox.
  */
 export function ItMessageDialog({
   agent,

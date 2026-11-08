@@ -322,6 +322,8 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "mark",
                 "outbound",
                 "delivery_failure",
+                # `it_reply`: re-derived from the hub-written metadata on every arrival, never sent back.
+                "it_reply",
             ],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [

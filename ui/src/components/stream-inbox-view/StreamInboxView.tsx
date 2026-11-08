@@ -576,11 +576,17 @@ export const ConversationListRow = memo(function ConversationListRow({
         {latestMessage?.invite && (
           <InviteStateChip state={latestMessage.invite.state} resolvedAt={latestMessage.invite.resolved_at} className="me-1" />
         )}
-        <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
+        {/* dir="auto" isolates each part: an RTL subject + RTL snippet would otherwise
+            merge into one RTL run that pushes the subject past the truncated edge. */}
+        <span dir="auto" className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>
+          {subject}
+        </span>
         {snippet && (
           <>
             <span className="mx-1 text-muted-foreground">—</span>
-            <span className="text-muted-foreground">{snippet}</span>
+            <span dir="auto" className="text-muted-foreground">
+              {snippet}
+            </span>
           </>
         )}
       </span>

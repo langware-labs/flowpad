@@ -1829,6 +1829,10 @@ msgstr "{notInstalled, plural, one {# optional dependency not installed} other {
 msgid "{numSlides} slides"
 msgstr "{numSlides} slides"
 
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "{off} have IT Sessions off"
+msgstr "{off} have IT Sessions off"
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {grouped open error in the last 24 hours} other {grouped open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {grouped open error in the last 24 hours} other {grouped open errors in the last 24 hours}}"
@@ -2494,6 +2498,10 @@ msgstr "1 commit not pushed — push, then deploy"
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "1 file needs merging — let the assistant merge it"
 msgstr "1 file needs merging — let the assistant merge it"
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "1 has IT Sessions off"
+msgstr "1 has IT Sessions off"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -3717,6 +3725,7 @@ msgstr "Advanced: per-window limits, rate caps and filters (view only)"
 msgid "After {0} min idle"
 msgstr "After {0} min idle"
 
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/graph-workflows/panels/RunsPanel.tsx
@@ -9005,6 +9014,10 @@ msgstr "Could not change enabled state"
 msgid "Could not change it"
 msgstr "Could not change it"
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Could not change IT Sessions"
+msgstr "Could not change IT Sessions"
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Could not change privacy mode"
 msgstr "Could not change privacy mode"
@@ -9425,6 +9438,10 @@ msgstr "Could not open the folder"
 msgid "Could not open the link"
 msgstr "Could not open the link"
 
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Could not open the machine"
+msgstr "Could not open the machine"
+
 #: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not open the shared version"
@@ -9675,6 +9692,10 @@ msgstr "Could not run {0}"
 msgid "Could not run it"
 msgstr "Could not run it"
 
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Could not run it there"
+msgstr "Could not run it there"
+
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not run schedule"
 msgstr "Could not run schedule"
@@ -9818,6 +9839,10 @@ msgstr "Could not send the install"
 #: src/components/conversation/MessageFormCard.tsx
 msgid "Could not send your answers"
 msgstr "Could not send your answers"
+
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
+msgid "Could not send."
+msgstr "Could not send."
 
 #. placeholder {0}: v.envVar
 #: src/components/credentials/CredentialEditDialog.tsx
@@ -17566,6 +17591,26 @@ msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full 
 msgid "Issues"
 msgstr "Issues"
 
+#: src/components/conversation/conversation-category.ts
+msgid "IT"
+msgstr "IT"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT —"
+msgstr "IT —"
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "IT · {name} - {stamp}"
+msgstr "IT · {name} - {stamp}"
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "IT · {name} deployments ({machines} machines)"
+msgstr "IT · {name} deployments ({machines} machines)"
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "IT · {name} deployments (1 machine)"
+msgstr "IT · {name} deployments (1 machine)"
+
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "It also changes:"
 msgstr "It also changes:"
@@ -17640,6 +17685,14 @@ msgstr "It may be only partly removed."
 msgid "It may have been deleted, or it wasn't shared with this account."
 msgstr "It may have been deleted, or it wasn't shared with this account."
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT off"
+msgstr "IT off"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT on"
+msgstr "IT on"
+
 #: src/components/webapp-display/PageCheckPanel.tsx
 #~ msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
 #~ msgstr "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
@@ -17647,6 +17700,14 @@ msgstr "It may have been deleted, or it wasn't shared with this account."
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "It runs again the next time the project opens."
 msgstr "It runs again the next time the project opens."
+
+#: src/components/conversation/it-reply.ts
+msgid "IT session · done"
+msgstr "IT session · done"
+
+#: src/components/conversation/it-reply.ts
+msgid "IT Sessions is off on this machine"
+msgstr "IT Sessions is off on this machine"
 
 #: src/components/automations/AutomationsList.tsx
 msgid "It shows up in Runs as a test."
@@ -19317,6 +19378,10 @@ msgstr "Looking up project…"
 msgid "Lowercase letters, digits, - and _ (not development)."
 msgstr "Lowercase letters, digits, - and _ (not development)."
 
+#: src/components/conversation/it-reply.ts
+msgid "machine"
+msgstr "machine"
+
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
@@ -20858,6 +20923,7 @@ msgstr "Newest first"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
+#: src/components/media-viewer/MediaPager.tsx
 #: src/components/ui/pagination.tsx
 #: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -22782,6 +22848,10 @@ msgstr "Not reported"
 #~ msgid "not respected"
 #~ msgstr "not respected"
 
+#: src/components/conversation/it-reply.ts
+msgid "Not run — someone is signed in on this machine"
+msgstr "Not run — someone is signed in on this machine"
+
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 msgid "Not run on this machine yet"
 msgstr "Not run on this machine yet"
@@ -24113,6 +24183,10 @@ msgstr "Open Log File"
 #: src/components/account/database-section.tsx
 msgid "Open Logs Folder"
 msgstr "Open Logs Folder"
+
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Open machine"
+msgstr "Open machine"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Open message"
@@ -25912,6 +25986,7 @@ msgstr "Preview sound"
 #~ msgid "Preview truncated."
 #~ msgstr "Preview truncated."
 
+#: src/components/media-viewer/MediaPager.tsx
 #: src/components/ui/pagination.tsx
 msgid "Previous"
 msgstr "Previous"
@@ -30291,6 +30366,7 @@ msgstr "Self-Summary"
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/conversation/ConversationActions.tsx
@@ -30364,6 +30440,10 @@ msgstr "Send invite"
 #: src/components/organization/budgets/BudgetSection.tsx
 #~ msgid "Send invites to everyone"
 #~ msgstr "Send invites to everyone"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Send IT message"
+msgstr "Send IT message"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
@@ -30456,6 +30536,7 @@ msgstr "sending…"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/conversation/SendProgressNotice.tsx
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
 msgstr "Sending…"
@@ -34248,6 +34329,10 @@ msgstr "The login did not complete."
 msgid "The logout did not complete."
 msgstr "The logout did not complete."
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "The machine did not answer."
+msgstr "The machine did not answer."
+
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #~ msgid "The machine reads this environment's credentials."
 #~ msgstr "The machine reads this environment's credentials."
@@ -36325,6 +36410,14 @@ msgstr "turn duration"
 msgid "Turn failed"
 msgstr "Turn failed"
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Turn IT Sessions off on this machine"
+msgstr "Turn IT Sessions off on this machine"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Turn IT Sessions on on this machine"
+msgstr "Turn IT Sessions on on this machine"
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn off"
@@ -36338,6 +36431,10 @@ msgstr "Turn on"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Turn on a scope above to see its assets."
 msgstr "Turn on a scope above to see its assets."
+
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Turn on and run"
+msgstr "Turn on and run"
 
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "Turns a feature or an integration on"
@@ -36610,6 +36707,7 @@ msgstr "Unpushed changes"
 msgid "unreachable"
 msgstr "unreachable"
 
+#: src/components/conversation/it-reply.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Unreachable"
 msgstr "Unreachable"
@@ -38379,6 +38477,10 @@ msgstr "Wizard"
 #: src/components/wizard/WizardHost.tsx
 msgid "Wizard close failed"
 msgstr "Wizard close failed"
+
+#: src/components/conversation/it-reply.ts
+msgid "Woke the paused machine · done"
+msgstr "Woke the paused machine · done"
 
 #: src/pages/entry/EntityLanding.tsx
 msgid "Work on it in the FlowPad desktop app with your coding agents."
