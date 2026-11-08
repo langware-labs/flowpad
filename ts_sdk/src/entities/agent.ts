@@ -32,6 +32,68 @@ export interface AssistantSkillChoice {
   description: string;
 }
 
+/** Whether an agent Env variable is a secret (value write-only, held by the hub) or plain (value in agent.json). */
+export type AgentEnvKind = 'secret' | 'plain';
+
+/** One entry of the agent's Env (`agent.json` → `env`) as `agent/<id>/env` answers it. Never a secret value. */
+export interface AgentEnvEntry {
+  name: string;
+  kind: AgentEnvKind;
+  description: string;
+  /** The owner's approval: only an approved entry is injected into the agent's deployments. */
+  inject: boolean;
+  /** A secret: the hub holds a value. A plain entry: it has a value. */
+  written: boolean;
+  /** A plain entry's value; absent for a secret. */
+  value?: string | null;
+}
+
+/** What `save_env` takes for one entry: a plain entry's value rides along, a secret is its name. */
+export interface AgentEnvEntryInput {
+  name: string;
+  kind: AgentEnvKind;
+  description?: string;
+  inject: boolean;
+  value?: string | null;
+}
+
+/** A variable Flowpad itself gives every deployment — shown read-only, never stored on the agent. */
+export interface AgentEnvSystemRow {
+  name: string;
+  provided_by: 'llm_endpoint' | 'sealed_credential' | 'connection' | 'flowpad';
+  description: string;
+}
+
+/** Where the agent's Env was placed: a deployment, a private placement, or an invite box. */
+export interface AgentEnvPlacement {
+  target: string;
+  kind: 'deployment' | 'private' | 'invite';
+  placed: string[];
+  at: string;
+}
+
+/** `GET /agent/<id>/env`. */
+export interface AgentEnv {
+  entries: AgentEnvEntry[];
+  system: AgentEnvSystemRow[];
+  placements: AgentEnvPlacement[];
+}
+
+/** What "Use mine" on the agent's Env copied into the agent's hub store. Names only. */
+export interface AgentEnvUseMineResult {
+  copied: string[];
+  not_here: string[];
+  hub_funded: string[];
+}
+
+function agentEnvOf(data: Partial<AgentEnv> | null | undefined): AgentEnv {
+  return {
+    entries: Array.isArray(data?.entries) ? data.entries : [],
+    system: Array.isArray(data?.system) ? data.system : [],
+    placements: Array.isArray(data?.placements) ? data.placements : [],
+  };
+}
+
 /** `GET /agent/<id>/auto_launch_state`. */
 export interface AgentAutoLaunchState {
   /** Already auto-launched in the agent's own project; `null` when it has no project. */
@@ -683,6 +745,48 @@ export class Agent extends APIEntity<Agent> {
       webhooks: list(data.webhooks),
       connections: list(data.connections),
     };
+  }
+
+  /**
+   * The agent's Env (`GET agent/<id>/env`): its entries from agent.json, whether each secret is written and
+   * where it was placed (asked of the hub when the agent is there), and what Flowpad provides. Never a secret value.
+   */
+  async env(): Promise<AgentEnv> {
+    return agentEnvOf(await this.get<Partial<AgentEnv> | null>('env'));
+  }
+
+  /** Write the Env into agent.json and sync it to the hub (`PUT agent/<id>/env`). Secret values go to `setEnvSecret`. */
+  async setEnv(entries: AgentEnvEntryInput[]): Promise<AgentEnv> {
+    const body = entries.map(({ name, kind, description, inject, value }) => ({
+      name,
+      kind,
+      description: description ?? '',
+      inject,
+      ...(kind === 'plain' && value != null ? { value } : {}),
+    }));
+    return agentEnvOf(await this.post<Partial<AgentEnv> | null>('save_env', { entries: body }));
+  }
+
+  /** Store a secret's value in the agent's hub store (`POST agent/<id>/env-var`) — write-only, never read back. */
+  async setEnvSecret(name: string, value: string): Promise<void> {
+    const info = new ActionInfo('env-var', this.getType(), this.id, 'POST');
+    info.hubReflect = true;
+    info.bodyParameters = { name, value, var_type: 'api_key' };
+    await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /** Forget a secret's value on the hub (`DELETE agent/<id>/env-var/<NAME>`). The entry itself stays. */
+  async forgetEnv(name: string): Promise<void> {
+    const info = new ActionInfo('env-var', this.getType(), this.id, 'DELETE');
+    info.hubReflect = true;
+    info.subpath = [name];
+    await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /** Copy this computer's values for these secret entries into the agent's hub store. Names come back, never a value. */
+  async envUseMine(names: string[]): Promise<AgentEnvUseMineResult> {
+    const res = await this.post<Partial<AgentEnvUseMineResult> | null>('env_use_mine', { names });
+    return { copied: res?.copied ?? [], not_here: res?.not_here ?? [], hub_funded: res?.hub_funded ?? [] };
   }
 
   /** The Flowpad Assistant's skills this agent may pick from for `assistant_skills`. */
