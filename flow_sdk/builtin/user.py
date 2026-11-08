@@ -34,6 +34,23 @@ def normalize_email(email: str | None) -> str | None:
     return normalized or None
 
 
+NAME_FROM_EMAIL_MAX = 20
+
+
+def person_name(name: str | None, email: str | None = None, user_id: str | None = None) -> str:
+    """The one name for a person — never empty, never "unknown", never an email: a real
+    name, else ``john.doe@x`` -> ``John Doe`` (capped), else ``User <id[:6]>``. Same
+    rule as the hub's ``name_from_email`` and the UI's ``personName``."""
+    if name and name.strip() and "@" not in name:
+        return name.strip()
+    local = (email or name or "").strip().split("@")[0]
+    words = [w for w in local.replace("_", ".").replace("+", ".").replace("-", ".").split(".") if w]
+    derived = " ".join(w.capitalize() for w in words)[:NAME_FROM_EMAIL_MAX].strip()
+    if derived:
+        return derived
+    return f"User {(user_id or '').strip()[:6]}" if (user_id or "").strip() else "Guest"
+
+
 def _roster_value(member: dict, *keys: str) -> str | None:
     for key in keys:
         value = member.get(key)

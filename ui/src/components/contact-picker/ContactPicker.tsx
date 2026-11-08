@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react';
 import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
 import { filterTeams, useMessageableTeams, type MessageableTeam } from './use-team-suggestions';
-import { personName } from '@src/components/conversation/participant-display';
+import { participantSubtitle, personName } from '@src/components/conversation/participant-display';
 
 interface ContactPickerProps {
   /** Currently selected contacts as ConversationParticipant entries. */
@@ -237,7 +237,7 @@ export function ContactPicker({
               disabled={alreadyAdded(participantFromContact(u)) || disabled}
             >
               <span className="truncate">{personName(u)}</span>
-              {u.name && u.email && <span className="truncate text-xs text-muted-foreground">{u.email}</span>}
+              {participantSubtitle(u) && <span className="truncate text-xs text-muted-foreground">{participantSubtitle(u)}</span>}
             </button>
           ))}
         </div>

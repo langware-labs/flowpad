@@ -52,9 +52,7 @@ export function personName(
   return id ? `User ${id.slice(0, 6)}` : 'Guest';
 }
 
-export function participantLabel(participant: ConversationParticipant | null | undefined): string {
-  return personName(participant);
-}
+export const participantLabel = personName;
 
 /** The second line under a person's name in a list: their email, when known.
  *  The hub never discloses another member's email, so a hub-only contact has none. */
@@ -64,11 +62,8 @@ export function participantSubtitle(
   return participant?.email?.trim() || null;
 }
 
-/** Name-only display — never the full email. Falls back to the email's local
- *  part (before @) so compact surfaces show a name-ish token, not an address. */
-export function participantName(participant: ConversationParticipant | null | undefined): string {
-  return personName(participant);
-}
+/** Name-only display — the same name {@link personName} builds (never an email). */
+export const participantName = personName;
 
 /** True when a participant row is the given user — matched by hub ``user_id``
  *  or (case-insensitive) email. Either identifier may be absent on one side; an

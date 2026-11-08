@@ -408,7 +408,8 @@ export const ConversationListRow = memo(function ConversationListRow({
     if (names.length > 0) return names;
     // A conversation only the viewer is in (a private Diagnosis, a note to self) is theirs: name them, as the
     // conversation itself does, rather than "Unknown".
-    const self = (currentUser?.name || cloudUser?.name || myEmail.split('@')[0] || '').trim();
+    const selfName = currentUser?.name || cloudUser?.name;
+    const self = selfName || myEmail ? personName({ name: selfName, email: myEmail }) : '';
     return [self || t`No members`];
   }, [
     currentUser?.name,

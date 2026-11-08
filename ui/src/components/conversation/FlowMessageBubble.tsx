@@ -472,7 +472,8 @@ export function FlowMessageBubble({
     cloudUserId: viewerCloudUserId,
     localUserId: localUser?.id ?? null,
   });
-  const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() ? personName(creator) : null;
+  const hasCreator = !!(creator?.name?.trim() || creator?.email?.trim());
+  const creatorLabel = !creatorIsLocalArtifact && hasCreator ? personName(creator) : null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
