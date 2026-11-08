@@ -134,10 +134,12 @@ Electron (main.js)
 - **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine
   dialog appears — no silent install.
 - **A newer desktop** refreshes X. Engine dialogs are **held back** while a desktop update is pending — and while
-  the desktop check has not answered (`unknown`: a failed or unfinished check is not "no newer desktop"). The
-  version popover's "Upgrade" then looks at the feed again (bounded like the launch check) before refusing, and a
-  refusal says which it is: a newer desktop to install first (`desktopUpdatePending`), or a feed that still does
-  not answer (`desktopCheckFailed`, "try again in a few minutes").
+  the desktop check has not answered (`unknown`: a failed or unfinished check is not "no newer desktop"). Such a
+  hold looks at the feed again before it holds (`engineChangeAllowedAfterRecheck`, the desktop-only check, bounded
+  like the launch check): the popover's "Upgrade", the post-boot and engine-retry checks, the postponed prepare and
+  the gate after a prepare — a scheduled pass that has just looked does not look twice. The popover's refusal says
+  which it is: a newer desktop to install first (`desktopUpdatePending`), or a feed that still does not answer
+  (`desktopCheckFailed`, "try again in a few minutes").
 - **A yanked X** is replaced by the latest release (`_resolveEngineTarget`).
 - Engine-only update: the regular dialog. Desktop-only update: background download and the "ready" prompt.
 - electron-updater: `autoDownload=false`, `autoInstallOnAppQuit=true`, NSIS with `oneClick:false`

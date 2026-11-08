@@ -741,6 +741,44 @@ const HOUR = 60 * 60 * 1000;
     } finally { global.fetch = realFetch; }
   }
   {
+    // The automatic engine paths do the same: a hold that rests only on an old failed desktop check looks at the
+    // feed again (seen: one ERR_NETWORK_CHANGED held the engine for over an hour, the backoff stretching it).
+    const failingThenOk = (env) => {
+      const answer = env.autoUpdater.checkForUpdates;
+      env.failing = true;
+      env.autoUpdater.checkForUpdates = async () => { if (env.failing) { env.autoUpdater.checks++; throw new Error('net::ERR_NETWORK_CHANGED'); } return answer(); };
+    };
+    // post-boot / periodic engine check: the feed answers now → the engine check runs
+    const up = load({ appVersion: '0.2.59', desktopFeed: '0.2.59' });
+    failingThenOk(up);
+    await up.t.getDesktopUpdateVersion();
+    up.failing = false;
+    const before = up.autoUpdater.checks;
+    eq(await up.t.checkPackageUpdateInBackground({ label: 'post-boot' }), 'ran', 'post-boot: the feed answers current now — the engine check runs');
+    eq([up.autoUpdater.checks - before, up.uv.checks], [1, 1], 'after one more look at the feed');
+    // still failing → held, after exactly one more look
+    const down = load({ appVersion: '0.2.59', desktopFeed: '0.2.59' });
+    failingThenOk(down);
+    await down.t.getDesktopUpdateVersion();
+    const b2 = down.autoUpdater.checks;
+    eq(await down.t.checkPackageUpdateInBackground({ label: 'post-boot' }), 'held', 'still no answer: held');
+    eq([down.autoUpdater.checks - b2, down.uv.checks], [1, 0], 'one more look, no engine check');
+    // a scheduled pass that has just looked at the feed (and failed) does not look twice
+    const pass = load({ appVersion: '0.2.59', desktopFeed: '0.2.59' });
+    pass.t.setupElectronAutoUpdater();
+    failingThenOk(pass);
+    const b3 = pass.autoUpdater.checks;
+    await pass.t.runScheduledUpdateCheck({ bypassSchedule: true });
+    eq([pass.autoUpdater.checks - b3, pass.uv.checks], [1, 0], 'scheduled pass: one look at the feed, no second one for the engine half');
+    // the postponed prepare ("Later" at launch) looks again too
+    const later = load({ appVersion: '0.2.59', desktopFeed: '0.2.59', deferredEngine: '0.2.180' });
+    failingThenOk(later);
+    await later.t.getDesktopUpdateVersion();
+    later.failing = false;
+    await later.t.prepareDeferredEngineUpdate();
+    eq(later.uv.prepares.length, 1, 'the postponed update is prepared once the feed answers');
+  }
+  {
     // A newer desktop IS known: refused as before, without asking the feed again.
     const env = load({ appVersion: '0.2.59', desktopFeed: '0.2.60' });
     await env.t.getDesktopUpdateVersion();

@@ -3063,7 +3063,7 @@ class UvManager {
         const now = this.getInstalledVersionSync() || null;
         if (now && !isNewer(now, latest)) return false; // upgraded meanwhile (the version panel)
         // The prepare can take minutes: a newer desktop found meanwhile goes first (the engine follows it).
-        if (!engineChangeAllowed()) {
+        if (!(await engineChangeAllowed())) { // may look at the desktop feed again first (main.js)
           this.log.info(`[uv] not offering engine ${latest} now: a desktop update came first while it was prepared`);
           return false;
         }
