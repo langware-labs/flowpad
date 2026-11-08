@@ -47,7 +47,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AssetCollisionBadge, useAssetCollisionSideTab } from '../AssetCollisionUI';
 import { useNestedHost } from '../nested-host';
-import { pointerForResult, resolveSmartLink, type SmartLinkAnswer } from './smart-link';
+import { pointerForResult, pointerForAppLink, resolveSmartLink, type SmartLinkAnswer } from './smart-link';
 import { LinkSuggestDialog } from './LinkSuggestDialog';
 
 export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
@@ -587,6 +587,12 @@ function MarkdownEditorContent({
         const frag = wikiMatch[2] ? decodeURIComponent(wikiMatch[2]) : undefined;
         const pointer = DockPointer.forWiki(name, undefined, wikiLinkTarget?.space, frag);
         navigation.openDock(wikiLinkTarget ? pointer.withPage(wikiLinkTarget.page) : pointer);
+        return;
+      }
+
+      const appPointer = pointerForAppLink(href);
+      if (appPointer) {
+        navigation.openDock(appPointer);
         return;
       }
 
