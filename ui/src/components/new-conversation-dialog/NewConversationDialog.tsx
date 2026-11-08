@@ -13,12 +13,14 @@ import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conversation/FileAttachmentPicker';
 import { AttachMenu, AssetRefChips } from '@src/components/conversation/AttachMenu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@src/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import { errorMessage } from '@src/lib/error-message';
-import { Loader2, MessageSquarePlus, Pencil } from 'lucide-react';
+import { Check, ChevronDown, Loader2, MessageSquarePlus, Pencil } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 /**
@@ -56,6 +58,8 @@ export function NewConversationDialog({ open, onClose, destination = null }: New
   const error = destination ? destError : sendError;
 
   const [projectId, setProjectId] = useState<string>('');
+  const [projectOpen, setProjectOpen] = useState(false);
+  const selectedProject = projects.find((p) => p.id === projectId);
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [initialMessage, setInitialMessage] = useState('');
   const [title, setTitle] = useState('');
@@ -221,18 +225,46 @@ export function NewConversationDialog({ open, onClose, destination = null }: New
               <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
                 {isRemote ? <Trans>Project (optional)</Trans> : <Trans>Project</Trans>}
               </label>
-              <Select value={projectId} onValueChange={setProjectId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={isRemote ? t`No project` : t`Select a project`} />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id ?? ''}>
-                      {p.displayName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={projectOpen} onOpenChange={setProjectOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={projectOpen}
+                    className="justify-between font-normal"
+                    data-testid="new-conversation-project"
+                  >
+                    <span className={cn('truncate', !selectedProject && 'text-muted-foreground')}>
+                      {selectedProject?.displayName ?? (isRemote ? t`No project` : t`Select a project`)}
+                    </span>
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder={t`Search projects…`} />
+                    <CommandList>
+                      <CommandEmpty>
+                        <Trans>No projects found.</Trans>
+                      </CommandEmpty>
+                      {projects.map((p) => (
+                        <CommandItem
+                          key={p.id}
+                          value={`${p.displayName} ${p.id}`}
+                          onSelect={() => {
+                            setProjectId(p.id ?? '');
+                            setProjectOpen(false);
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <span className="truncate">{p.displayName}</span>
+                          <Check className={cn('ms-auto h-4 w-4', p.id === projectId ? 'opacity-100' : 'opacity-0')} />
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
 
