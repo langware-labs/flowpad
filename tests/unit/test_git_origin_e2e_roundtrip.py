@@ -662,3 +662,58 @@ async def test_git_transfer_packs_folder_chip_metadata_only_and_install_never_cl
     assert received is not None, "install never minted the receiver Folder"
     assert not received.path, "install must not clone or set a local path"
     assert received.origin is not None and received.origin.key() == folder.origin.key()
+
+
+CRED_CONV_ID = "c1c1c1c1-0000-4000-8000-000000003222"
+CRED_FM_ID = "f1f1f1f1-0000-4000-8000-000000003333"
+CRED_REL = "agentic-assets/credential/bright_data"
+
+
+async def test_git_shared_credential_opens_as_the_id_the_receivers_checkout_carries(tmp_path):
+    """A credential's id lives in ``.flow/`` — never committed — so the receiver's checkout indexes it under an
+    id of its own. The share opens THAT one: the sender's id names nothing here (it showed "Missing asset")."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+    sender_repo = tmp_path / "sender_repo"
+    _git(tmp_path, "clone", "-q", origin.resolve().as_uri(), str(sender_repo))
+    _git(sender_repo, "checkout", "-q", "-b", "main")
+    _git(sender_repo, "config", "user.email", "t@t.co")
+    _git(sender_repo, "config", "user.name", "t")
+    folder = sender_repo / CRED_REL
+    folder.mkdir(parents=True)
+    (folder / "credential.json").write_text(json.dumps({
+        "manifest_schema": 2, "name": "bright_data", "title": "Bright Data", "setup": "From the team vault.",
+        "vars": {"BRIGHT_DATA_API": {"required": "OPTIONAL", "secret_ref": {"vault": "team", "key": "BRIGHT_DATA_API"}}},
+    }))
+    (sender_repo / ".gitignore").write_text(".flow/\n")
+    _git(sender_repo, "add", "-A")
+    _git(sender_repo, "commit", "-qm", "credential")
+    _git(sender_repo, "push", "-q", "-u", "origin", "main")
+    recv_repo = tmp_path / "recv_repo"
+    _git(tmp_path, "clone", "-q", "--branch", "main", origin.resolve().as_uri(), str(recv_repo))
+
+    from flow_sdk.builtin.flow_message_bundle import _reindex_root
+    from flow_sdk.fs_store.record_types import RecordType
+
+    sender_project = Project(name="gtm-studio-sender", fs_storage_mount_path=str(sender_repo))
+    await sender_project.save(notify=False)
+    await _reindex_root(sender_repo, RecordType.REAL_PROJECT_CWD, types=(RecordType.CREDENTIAL,), project_id=sender_project.id)
+    sender = await Entity.get_by_asset_ref(folder)
+    assert sender is not None and (folder / ".flow").is_dir(), "the sender's id lives in its uncommitted .flow/"
+    key = f"{EntityType.CREDENTIAL.value}-{sender.id}"
+    fm = FlowMessage(text="", sender_name="eran", conversation_id=CRED_CONV_ID,
+                     attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=key)])
+    fm.id = CRED_FM_ID
+    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
+
+    project = Project(name="gtm-studio", fs_storage_mount_path=str(recv_repo))
+    await project.save(notify=False)
+    await Conversation(id=CRED_CONV_ID, title="shared bright_data", project_id=project.id).save(notify=False)
+    await sender.delete()
+    await unpack_bundle(zip_path, local_user_id="ami")
+    await _install_staged(CRED_FM_ID, key, scope="project", project_id=project.id)
+
+    here = await Entity.get_by_asset_ref(recv_repo / CRED_REL)
+    assert here is not None and str(here.id) != str(sender.id), "the receiver's checkout carries an id of its own"
+    ma = await MessageAttachment.get_one({"id": MessageAttachment.allocate_deterministic_id(CRED_FM_ID, key)})
+    assert ma.asset_id == str(here.id), "the share must open the credential that exists here, not the sender's id"

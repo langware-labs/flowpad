@@ -1615,6 +1615,14 @@ class Entity(DBEntity):
         await entity._fts_upsert(type_name, record)
         return record
 
+    def _apply_template(self, info) -> None:
+        """Fill the fields a new thing was created without from its type's ``template``."""
+        template = getattr(info, "template", None) or {}
+        name = getattr(self, "title", None) or getattr(self, "name", None) or ""
+        for field_name, text in template.items():
+            if not getattr(self, field_name, None):
+                setattr(self, field_name, text.replace("{name}", name))
+
     def _storage_origin(self, record) -> "Any":
         """The ``LocalOrigin`` this entity's asset is stored at — its asset ROOT
         (the folder for a folder type, even when ``asset_ref`` names the inner
@@ -2241,7 +2249,7 @@ class Entity(DBEntity):
         await blob_index_entity.save(self.embedded_storage)
         # logging.info(f"Saved blob index for {self.typeid} with fields: {blob_index_entity._blob_index.fields.keys()} on \n {self.storage.vfs_root_path}")
 
-    async def share(self: EntityType, *, recursive: bool = False) -> EntityType:
+    async def share(self: EntityType, *, recursive: bool = False, with_create: Optional[dict] = None) -> EntityType:
         """Create this entity on the hub (POST /api/v1/graph/<type>).
 
         Generic, type-agnostic: the body is this entity's serialized dump,
@@ -2262,6 +2270,9 @@ class Entity(DBEntity):
         transient instance reconstructed from a request body and not
         bound to a DB row, so we deliberately do not call ``self.save()``
         from inside ``share()``.
+
+        ``with_create`` adds keys the type's hub create takes beyond its fields (a
+        conversation's ``members`` / ``first_message``); the answer reaches ``_adopt_hub_created``.
 
         Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
         """
@@ -2299,17 +2310,18 @@ class Entity(DBEntity):
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
             self.add_shared_context_entities(parent_tid)
-        body = self._hub_body()
+        body = {**self._hub_body(), **(with_create or {})}
 
         try:
-            await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
+            created = await HubProxy.call("POST", self.get_type(), payload=body, strict=True)
+            self._adopt_hub_created(created if isinstance(created, dict) else {})
         except HubError as e:
-            # Idempotent: a 409 ("already exist") means this entity is already on
-            # the hub — e.g. ``Conversation.share`` re-runs ``super().share()`` on
-            # every invite. The create's post-condition is already satisfied, so
-            # treat it as a no-op success rather than a 500.
+            # A 409 says only that SOME row holds this id — the hub answers it whoever owns
+            # that row. Ours (``Conversation.share`` re-runs ``super().share()`` on every
+            # invite) is a no-op success; anyone else's must not become ``remote=True``.
             if e.status_code != 409:
                 raise
+            await self.confirm_hub_row_is_ours()
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.
@@ -2325,6 +2337,37 @@ class Entity(DBEntity):
         if recursive:
             await self._share_children()
         return self
+
+    def _adopt_hub_created(self, created: dict) -> None:
+        """Take what the hub stamped on the row it just created (its create answer). No-op here."""
+
+    async def confirm_hub_row_is_ours(self, *, remedy: str = "") -> None:
+        """After a create answered 409: check the row at this id is one this account can reach.
+
+        A GET settles it without leaking anything — the hub answers it only for a caller holding
+        a role on the row, and says ``target_not_found`` alike for "no such row" and "not yours".
+        So a refusal proves only what matters here: this entity cannot be on the hub from this
+        account. Raises ``HubError`` (``REJECTED``, ``id_taken``); any other failure (offline,
+        signed out, a 5xx) propagates as itself — answering an outage with "not yours" would be
+        a fabricated diagnosis.
+        """
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
+        try:
+            await HubProxy.call("GET", self.get_type(), self.id, strict=True)
+        except HubError as e:
+            if not e.is_target_missing:
+                raise
+            raise HubError(
+                409,
+                " ".join(
+                    filter(None, (f"A {self.get_type()} already exists in the cloud at id {self.id}, and this account cannot reach it.", remedy))
+                ),
+                code=HubErrorCode.ID_TAKEN.value,
+                kind=HubFailureKind.REJECTED,
+            ) from e
 
     def _local_fields(self) -> frozenset[str]:
         """The fields that never travel in ``to_common_json`` — every ``PRIVATE``
@@ -2466,14 +2509,19 @@ class Entity(DBEntity):
                     await child.unshare(recursive=True)
 
         if getattr(self, "remote", False):
+            from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
+
             creds = load_credentials()
             if not creds or not creds.api_key:
-                raise RuntimeError("Cloud login required before unshare()")
+                raise HubError(0, "signed out", kind=HubFailureKind.SIGNED_OUT)
             response = await HubProxy.send("DELETE", hub_public_url(build_hub_url(self)))
             if response.status_code >= 400 and response.status_code != 404:  # 404: already gone
-                from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-
-                raise HubError(response.status_code, f"the hub did not delete {self.typeid}")
+                raise HubError(
+                    response.status_code,
+                    f"the hub did not delete {self.typeid}",
+                    code=_extract_error_code(response),
+                )
             if "remote" in type(self).model_fields:
                 self.remote = False
         return self
@@ -2926,6 +2974,8 @@ class Entity(DBEntity):
         suppress_store = _SUPPRESS_STORE.get()
 
         type_info = SchemaRegistry.get(self.get_type())
+        if create_target is not None:
+            self._apply_template(type_info)
 
         async def persist_prepared_entity() -> None:
             await self._save_blobs()
@@ -4248,6 +4298,16 @@ async def _definition_travels_by_repo(entity) -> bool:
     return await asyncio.to_thread(published_origin, entity) is not None
 
 
+def _git_tracks(path: str) -> bool:
+    """Is ``path`` a file its enclosing git checkout tracks?"""
+    from flow_sdk.utils.git import _run_git  # noqa: PLC0415
+
+    p = Path(path)
+    if not p.parent.is_dir():  # a file in a folder that does not exist yet is nobody's
+        return False
+    return _run_git(["git", "ls-files", "--error-unmatch", "--", p.name], str(p.parent)).returncode == 0
+
+
 async def _asset_ref_is_borrowed(record) -> bool:
     """Does this record's ``asset_ref`` live inside somebody else's checkout?
 
@@ -4266,10 +4326,14 @@ async def _asset_ref_is_borrowed(record) -> bool:
     ar = getattr(record, "asset_ref", None)
     if ar is None or ar.read_only:
         return False
+    import asyncio  # noqa: PLC0415
+
     try:
         from flow_sdk.builtin.folder import Folder  # noqa: PLC0415 — circular at module level
 
-        return await Folder.is_borrowed_path(ar.path)
+        # Only the vendor's own files are off limits: a file their git does not track (a thing
+        # created here) never dirties their tree, so it is written like any other.
+        return await Folder.is_borrowed_path(ar.path) and await asyncio.to_thread(_git_tracks, ar.path)
     except Exception:
         # Fail OPEN deliberately: a Folder-table hiccup must not turn every save
         # of a file-backed entity into a failure. Logged at warning, not debug,

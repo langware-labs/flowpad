@@ -250,12 +250,18 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     return last
 
 
-async def _sweep(message: str, project_id: str | None, *, origin: str, emit):
+async def _sweep(message: str, project_id: str | None, *, origin: str, emit, connection_id: str | None = None):
     """Step 1: the Flowpad Assistant's diagnose — ALWAYS, whatever project is open (only Ask for
     help takes a project's own) — its progress narrated on ``emit``."""
-    from flow_sdk.diagnose import DiagnosePurpose, FlowContextSpec, resolve_shipped, run_diagnose  # noqa: PLC0415
+    from flow_sdk.diagnose import DiagnosePurpose, build_flow_context, resolve_shipped, run_diagnose  # noqa: PLC0415
 
-    ctx = FlowContextSpec(purpose=DiagnosePurpose.REPAIR, project_id=project_id, user_report=message, origin=origin)
+    ctx = await build_flow_context(
+        purpose=DiagnosePurpose.REPAIR,
+        project_id=project_id,
+        user_report=message,
+        origin=origin,
+        connection_id=connection_id,
+    )
     emit({"type": "status", "text": "  Checking this machine…"})
     sweep = await run_diagnose(
         ctx,
@@ -280,16 +286,20 @@ def _sweep_for_prompt(sweep) -> str:
     return json.dumps(value, indent=1)
 
 
-def _merge_agent_into(sweep, diag, status: str | None = None):
+def _merge_agent_into(sweep, diag, status: str | None = None, cause: str | None = None, cause_asset: str = ""):
     """The recorded diagnosis: the sweep's findings, machine and logs, under the agent's verdict
-    (its record's headline, and the ``--status`` its report.py printed)."""
+    (its record's headline, and the ``--status`` / ``--cause`` its report.py printed)."""
     from flow_sdk.diagnose import DiagnosisStatus  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisCause  # noqa: PLC0415
 
     update: dict = {}
     if diag is not None:
         update = {k: v for k in ("title", "summary", "symptoms", "rca", "fix") if (v := getattr(diag, k, None))}
     if status in {s.value for s in DiagnosisStatus}:
         update["status"] = DiagnosisStatus(status)
+    if cause in {c.value for c in DiagnosisCause}:
+        update["cause"] = DiagnosisCause(cause)
+        update["cause_asset"] = (cause_asset or "")[:200]
     return sweep.model_copy(update=update)
 
 
@@ -413,8 +423,7 @@ async def _run_diagnose(
     step_context: str = "",
     prompt_extra: str = "",
     report_only: bool = False,
-    share=None,
-    someone: str | None = None,
+    connection_id: str | None = None,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -438,11 +447,6 @@ async def _run_diagnose(
     report.py is identical for both surfaces: it always records the diagnosis and (for
     an issue) its support Conversation/FlowMessage; posting the Feed card is this
     runner's job, so the behavior is fully deterministic and never relies on the worker.
-
-    ``share`` (a ``flow_sdk.diagnose.share.DiagnoseShare``) is who the person picked in the
-    Diagnose window. With ``send_when_done`` the diagnosis is sent to them HERE, when the run
-    finishes -- not by the window, which is usually closed by then. Otherwise ``done`` says
-    ``share_pending`` and the window (or its toast) sends it on a click (``diagnose-send``).
     """
     if emit is None:
         emit = _TerminalSink()
@@ -468,7 +472,8 @@ async def _run_diagnose(
     await _bootstrap_local()
 
     # Step 1 — the diagnose spec. Never raises; a failing or hanging diagnose answers its baseline.
-    sweep = await _sweep(message, project_id, origin="cli" if isinstance(emit, _TerminalSink) else "footer", emit=emit)
+    origin = "cli" if isinstance(emit, _TerminalSink) else "footer"
+    sweep = await _sweep(message, project_id, origin=origin, emit=emit, connection_id=connection_id)
 
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "
@@ -621,19 +626,6 @@ async def _run_diagnose(
             return False
         return True
 
-    async def _shared(diagnosis) -> dict:
-        """Send to who was picked, when the person chose to send once done; else say a send waits."""
-        if share is None or not share.recipients:
-            return {"shared": [], "share_pending": False}
-        if not share.send_when_done or not someone:
-            return {"shared": [], "share_pending": True}
-        from flow_sdk.diagnose.share import send_diagnosis_to  # noqa: PLC0415
-
-        sent = await send_diagnosis_to(share, diagnosis, message, someone)
-        if sent:
-            emit({"type": "status", "text": "  ✓ Sent to " + ", ".join(s.to for s in sent) + "."})
-        return {"shared": [s.model_dump() for s in sent], "share_pending": not sent}
-
     def done(ok: bool, diagnosis, **ids) -> None:
         """The run's last event: what was recorded (ids) and the diagnosis — the sweep's, when
         the agent recorded nothing."""
@@ -647,8 +639,6 @@ async def _run_diagnose(
                 "feed_posted": bool(ids.get("feed_entry_id")),
                 "feed_entry_id": ids.get("feed_entry_id"),
                 "diagnosis": diagnosis.model_dump(mode="json"),
-                "shared": ids.get("shared") or [],
-                "share_pending": bool(ids.get("share_pending")),
             }
         )
 
@@ -668,7 +658,7 @@ async def _run_diagnose(
             return 1
         feed_entry_id = await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did)
         emit({"type": "status", "text": "  ! The agent could not finish. Recorded what the checks found instead."})
-        done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id, **await _shared(sweep))
+        done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id)
         return 0
 
     try:
@@ -709,9 +699,11 @@ async def _run_diagnose(
             # on Windows, where its uv-run subprocess doesn't inherit
             # FLOWPAD_EXECUTION_SCOPE).
             diag = await _load_recorded_diagnosis(_diag_cls, did)
-            merged = _merge_agent_into(sweep, diag, recorded.get("status"))
+            merged = _merge_agent_into(
+                sweep, diag, recorded.get("status"), recorded.get("cause"), recorded.get("cause_asset") or ""
+            )
             # What only this runner knows, set on the ONE copy that is saved: the person's own words
-            # (report.py sees only the agent's ``symptoms``, and the "Report issue" email reads them),
+            # (report.py sees only the agent's ``symptoms``),
             # the project they were in (named, so a helper on another machine sees where it
             # happened), and the merged diagnosis. A second writer beside this copy is how the
             # record once lost all three: the cross-link saved the copy loaded before them.
@@ -749,7 +741,6 @@ async def _run_diagnose(
                 conversation_id=conv_id,
                 flow_message_id=msg_id,
                 feed_entry_id=feed_entry_id,
-                **await _shared(merged),
             )
             return 0
         return await _answer_with_sweep()

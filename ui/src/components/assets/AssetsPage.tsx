@@ -15,9 +15,8 @@ import { ProjectNameTitle } from '@src/components/project-home/ProjectNameTitle'
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
 import { useDependencyForRel } from '@src/hooks/use-dependency-for-rel';
 import { useIsAdvanced } from '@src/components/view-mode';
-import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
-import { getDescriptor } from '@src/components/quick-create';
+import { getDescriptor, NewOfTypeDialog } from '@src/components/quick-create';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { assetTargetLookup, opensThroughLookup } from '@src/navigation/record-type-nav';
@@ -692,6 +691,7 @@ export function AssetsPage() {
             <ProjectHome
               spawnProjectId={scopeProjectId}
               setupPage={effectivePointer === (AssetMode.PROJECT_SETUP as string)}
+              deploymentsPage={effectivePointer === (AssetMode.PROJECT_DEPLOYMENTS as string)}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -701,14 +701,12 @@ export function AssetsPage() {
         </div>
       </div>
 
-      <InputDialog
+      <NewOfTypeDialog
+        type={newTypeTarget}
         open={newTypeDialogOpen}
         onOpenChange={setNewTypeDialogOpen}
-        title={`New ${newTypeTarget ?? ''}`}
-        description={`Enter a name for the new ${newTypeTarget ?? 'item'}.`}
-        placeholder={t`Name`}
-        confirmLabel={t`Create`}
-        onConfirm={(name) => void handleNewConfirm(name)}
+        projectId={scopeProjectId ?? null}
+        onConfirmName={(name) => void handleNewConfirm(name)}
       />
     </div>
   );

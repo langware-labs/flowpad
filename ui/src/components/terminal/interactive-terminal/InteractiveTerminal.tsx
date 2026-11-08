@@ -1,4 +1,4 @@
-import { registerTerminalLinks } from './terminal-links';
+import { registerJoinedCopy, registerTerminalLinks, selectionText } from './terminal-links';
 import { useLinks } from '@src/components/links/LinkMenu';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
@@ -663,6 +663,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [],
   );
 
+  // A quick prompt: pasted as ONE bracketed paste (a multi-line prompt stays one prompt), then Enter as
+  // its own write so the CLI reads it as a submit, not as part of the paste.
+  const handleSendQuickPrompt = useCallback(
+    (text: string) => {
+      const shell = shellRef.current;
+      if (!shell || !text.trim()) return;
+      void shell.sendInput(bracketedPaste(text)).then(() => shell.sendInput('\r'));
+      scheduleEnterRefetch();
+    },
+    [scheduleEnterRefetch],
+  );
+
   // Build a {timestamp → absRow} index from prompt annotations so we can
   // attach click-to-scroll behavior to transcript prompts whose annotation
   // exists. Missing annotations are graceful — the prompt still renders.
@@ -926,7 +938,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
         if (event.type === 'keydown' && (event.ctrlKey || event.metaKey)) {
           if (event.key === 'c' && term.hasSelection()) {
-            navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+            // Written here, so the browser's own copy (and the copy listener) must not run again.
+            event.preventDefault();
+            navigator.clipboard.writeText(selectionText(term)).catch(() => {});
             term.clearSelection();
             return false;
           }
@@ -946,6 +960,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       try {
         term.open(container);
         registerTerminalLinks(term, terminalLinks.handlers);
+        registerJoinedCopy(term);
         // Stamp the RTL/bidi contract on THIS container. The vendor-keyed
         // effect below re-decides when worker_type resolves, but it cannot be
         // the only writer: the container is conditionally mounted
@@ -1929,6 +1944,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               onOpenArtifact={handleOpenArtifact}
               shown={shownStack}
               onOpenShown={handleOpenShown}
+              onSendPrompt={handleSendQuickPrompt}
               composer={
                 showSimpleChat && process ? (
                   <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} composerRef={composerRef} />

@@ -345,8 +345,11 @@ class FlowJsonSpec(AssetFlowJsonSpec):
 
     autolaunch_journey: Optional[str] = Field(default=None, alias="autolaunchJourney")
     always_use_skills: list[str] = Field(default_factory=list, alias="alwaysUseSkills")
+    #: The agent (by NAME, as authored) a new deployment of this project answers with — a recommendation:
+    #: the deployment copies it as its default ``main_agent_id`` and may name another.
+    main_agent: Optional[str] = Field(default=None, alias="mainAgent")
 
-    @field_validator("autolaunch_journey", mode="before")
+    @field_validator("autolaunch_journey", "main_agent", mode="before")
     @classmethod
     def _journey(cls, value: object) -> Optional[str]:
         return value.strip() if isinstance(value, str) and value.strip() else None
@@ -373,6 +376,8 @@ class FlowJsonSpec(AssetFlowJsonSpec):
             document["autolaunchJourney"] = self.autolaunch_journey
         if self.always_use_skills:
             document["alwaysUseSkills"] = list(self.always_use_skills)
+        if self.main_agent:
+            document["mainAgent"] = self.main_agent
         return document
 
 
@@ -408,6 +413,11 @@ class DependencyState(DataSpec):
     lifecycle: Optional[LoadResult] = None
     #: A required, not-ready dependency whose warning was dismissed until the next restart.
     dismissed: bool = False
+    #: A git checkout Flowpad cloned: how many commits its branch is behind its remote, as of
+    #: the last fetch (cached refs; ``check-dependency-updates`` refreshes them in the background).
+    behind: int = 0
+    #: Why the last "pull to latest" left this checkout where it was (local changes, no remote…).
+    pull_error: Optional[str] = None
 
 
 class DeclaredDependency(DataSpec):

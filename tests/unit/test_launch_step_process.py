@@ -290,7 +290,7 @@ class _Deployment:
             raise self.error
         return self.process
 
-    async def agent(self):
+    async def main_agent(self):
         return None  # declares no output: the answer is the turn's own
 
 

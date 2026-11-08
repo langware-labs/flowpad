@@ -84,9 +84,12 @@ export function useDependencySources(kind: DependencyKind): DependencySourceInfo
 export function DependencyKindChips({
   kind,
   onChange,
+  allowLocal = true,
 }: {
   kind: DependencyKind;
   onChange: (next: DependencyKind) => void;
+  /** Off when editing a declared entry: a flow.json entry can't become local. */
+  allowLocal?: boolean;
 }) {
   const { t } = useLingui();
   // A real tooltip, not the WikiTip hover card the tiles use: these two chips
@@ -127,7 +130,7 @@ export function DependencyKindChips({
 
   return (
     <div className="flex items-center gap-1" role="radiogroup">
-      {options.map((opt) => (
+      {options.filter((opt) => allowLocal || opt.value !== 'local').map((opt) => (
         <Tooltip key={opt.value} delayDuration={150}>
           <TooltipTrigger asChild>
             <button

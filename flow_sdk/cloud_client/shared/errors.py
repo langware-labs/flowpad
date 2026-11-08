@@ -24,6 +24,9 @@ class HubErrorCode(str, Enum):
     # The credential itself is dead (missing, unverifiable, revoked, expired). The one
     # signal to sign out on: a bare 401 also means "this key may not do that".
     UNAUTHENTICATED = "unauthenticated"
+    # Local, never sent by the hub: a create answered 409 and the row at that id is not one
+    # this account can reach (``Entity.confirm_hub_row_is_ours``).
+    ID_TAKEN = "id_taken"
 
 
 #: Statuses an older hub answers for a dead JWT, before it carried ``unauthenticated``.
@@ -60,10 +63,22 @@ class HubError(Exception):
     envelope carried one (see ``HubErrorCode``) — None otherwise.
     """
 
-    def __init__(self, status_code: int, reason: str, code: str | None = None, kind: "HubFailureKind | None" = None):
+    def __init__(
+        self,
+        status_code: int,
+        reason: str,
+        code: str | None = None,
+        kind: "HubFailureKind | None" = None,
+        data: object = None,
+        via_status: int | None = None,
+    ):
         self.status_code = status_code
+        #: The status something BETWEEN us and the hub answered (a proxy's HTML 502): the hub itself was not reached.
+        self.via_status = via_status
         self.reason = reason
         self.code = code
+        #: The refusal's ``data``, when the hub said more than a message (e.g. which dependencies are not ready).
+        self.data = data
         # Given when the status alone cannot say it: no hub configured, no credential to send.
         self.kind = kind or classify_hub_failure(status_code, code)
         super().__init__(f"hub error {status_code}: {reason}")
@@ -96,7 +111,7 @@ class HubError(Exception):
         return {
             "error_code": self.kind.value,
             "hub_failure": self.kind.value,
-            "hub_status": self.status_code or None,
+            "hub_status": self.status_code or self.via_status or None,
             "hub_code": self.code,
         }
 
@@ -113,6 +128,10 @@ class HubError(Exception):
         from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
 
         if self.kind is HubFailureKind.OFFLINE:
+            # Something between us and the hub answered (a proxy's 502 page): say what it was, so neither the
+            # person nor support mistakes it for a dead network.
+            if self.via_status:
+                return f"Can't reach the hub right now: HTTP {self.via_status} from the way there."
             return "Can't reach the hub right now."
         if self.kind is HubFailureKind.NOT_CONFIGURED:
             return "This app is not connected to a hub."

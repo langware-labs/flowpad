@@ -305,6 +305,17 @@ export interface MarkdownDoc {
 /**
  * Interface for AgenticProcess entity data
  */
+/** Wire value of `agent.launch_failure` (LaunchFailureSpec). */
+export interface LaunchFailureValue {
+  code: string;
+  phase?: string;
+  fix?: string;
+  worker_type?: string | null;
+  detail?: string;
+  evidence?: string;
+  facts?: { folder?: string; provider?: string; key_hint?: string; source_name?: string };
+}
+
 export interface IAgenticProcess extends IEntity {
   instruction_content?: string;
   asset_ref?: string;
@@ -420,6 +431,8 @@ export interface IAgenticProcess extends IEntity {
    * (`start({ retry: true })`) or a launch that survives the window.
    */
   start_failure?: string | null;
+  /** Typed form of `start_failure` (set/cleared with it); also set while blocked on a launch prompt. */
+  launch_failure?: LaunchFailureValue | null;
   /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
    * Compared against the current snapshot on every save() to detect drift.
@@ -1205,6 +1218,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * explicit user retry — `start({ retry: true })` — never automatically.
    */
   start_failure: string | null = null;
+
+  launch_failure: LaunchFailureValue | null = null;
 
   /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
@@ -2847,6 +2862,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * forget — observe output on the stream. `options` is reserved for per-turn
    * flags (e.g. permission mode); accepted now so the signature is stable.
    */
+  /** Server-side launch fix, then relaunch — not for headless (`relaunched: false`). */
+  async resolveLaunchFailure(fix: string): Promise<{ relaunched?: boolean } | null> {
+    const actionInfo = new ActionInfo('resolve_launch_failure', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { fix };
+    return dataManager.callAction<{ fix: string }, { relaunched?: boolean } | null>(actionInfo);
+  }
+
   async submit(instruction?: string, options?: { permissionMode?: PermissionMode }): Promise<void> {
     const actionInfo = new ActionInfo('submit', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = {
@@ -3190,6 +3212,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // guard, so removing the short-circuit here costs nothing on tab-switch
     // performance and removes the empty-shell-after-refresh failure mode
     // (the cached ``status === RUNNING`` could outlive the actual worker).
+    // restart() can leave this object evicted (a stopped, hidden row is retired);
+    // re-register before the request so the launch broadcast still reaches it.
+    if (!dataManager.getByTypeIdFromCache(this.typeId)) dataManager.register_new_entity(this.typeId, this);
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     // Sampled per launch, not per caller: the CLI reads the theme at startup, so
     // a mid-session toggle recolors the next worker, never the running one.

@@ -32,17 +32,20 @@ def test_the_model_has_neither_kind_nor_slot():
 
     assert "kind" not in Deployment.model_fields
     assert "slot" not in Deployment.model_fields
-    assert Deployment.model_fields["identity"].default == "user"
+    assert Deployment(name="x", target={"provider": "e2b", "scope": "s"}).identity == "none"
+    with_agent = Deployment(name="x", main_agent_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d", target={"provider": "e2b", "scope": "s"})
+    assert with_agent.identity == "agent", "a box with a main agent logs in as it; user only when asked"
 
 
-def test_what_a_deployment_places_is_its_parent():
+def test_what_a_deployment_places_is_its_parent_and_its_agent_is_main():
     from flow_sdk.builtin.deployment import Deployment
 
-    def placed(parent):
-        return Deployment(name="x", parent_type_id=parent, target={"provider": "e2b", "scope": "s"})
+    def placed(parent, **fields):
+        return Deployment(name="x", parent_type_id=parent, target={"provider": "e2b", "scope": "s"}, **fields)
 
-    assert placed("agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d").element_type == "agent"
-    assert placed("agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d").places_agent
-    assert placed("project-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d").element_type == "project"
+    project = "project-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d"
+    assert placed(project).element_type == "project"
+    assert not placed(project).places_agent
+    assert placed(project, main_agent_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d").places_agent
     assert placed("compute_node-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d").element_type == "compute_node"
     assert placed(None).element_type is None

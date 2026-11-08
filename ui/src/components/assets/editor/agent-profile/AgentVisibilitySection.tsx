@@ -18,7 +18,6 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
 import { AgentPublishButton } from './AgentPublishButton';
-import { AgentVisitorDeploymentSection } from './AgentVisitorDeploymentSection';
 import { ShareAgentDialog } from './ShareAgentDialog';
 
 /**
@@ -34,12 +33,12 @@ export function agentLaunchLink(agent: Agent): string | null {
 }
 
 /**
- * The role the `visitor` audience holds on the agent, read once for the whole section: "Set public" and
- * "Visitor trials" write the same one stamp, so each must see what the other set. null until the hub
+ * The role the `visitor` audience holds on the agent: "Set public" and public deployments (the Auto-launch
+ * tab) write the same one stamp. null until the hub
  * reports one — an unread or unreadable grant (not the owner, or a hub without the API) shows as private.
  * Not read until `published`: the stamp lives on the hub row, which an unpublished agent does not have.
  */
-function useVisitorRole(agent: Agent, published: boolean): [string | null, (role: string | null) => void] {
+export function useVisitorRole(agent: Agent, published: boolean): [string | null, (role: string | null) => void] {
   const [role, setRole] = useState<string | null>(null);
 
   // Keyed on the id, not the entity: a re-render may hand over a fresh `Agent` for the same row.
@@ -145,8 +144,6 @@ export function AgentVisibilitySection({
   const launchLink = published ? agentLaunchLink(agent) : null;
   const [shareOpen, setShareOpen] = useState(false);
   const [visitorRole, setVisitorRole] = useVisitorRole(agent, published);
-  // Known only once set here: the flag lives on the hub row, which this page does not read.
-  const [visitorTrials, setVisitorTrials] = useState<boolean | null>(null);
 
   return (
     <section className="mt-4 border-t pt-4" data-testid="agent-visibility">
@@ -185,25 +182,12 @@ export function AgentVisibilitySection({
             />
           </div>
           <p className="mt-1 text-xs text-muted-foreground" data-testid="agent-launch-link-hint">
-            {visitorRole === PUBLIC_VIEWER_ROLE && visitorTrials ? (
-              <Trans>Anyone with the link can try this agent in a sandbox of their own — no sign-in needed.</Trans>
-            ) : (
-              <Trans>
-                Anyone its project is shared with can launch it from this link. Making the agent public lets everyone
-                see it; launching still needs the project shared with them.
-              </Trans>
-            )}
+            <Trans>
+              Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see
+              it; launching still needs the project shared with them.
+            </Trans>
           </p>
         </div>
-      )}
-      {published && (
-        <AgentVisitorDeploymentSection
-          agent={agent}
-          role={visitorRole}
-          setRole={setVisitorRole}
-          allowed={visitorTrials}
-          setAllowed={setVisitorTrials}
-        />
       )}
       <ShareAgentDialog open={shareOpen} onOpenChange={setShareOpen} agent={agent} />
     </section>

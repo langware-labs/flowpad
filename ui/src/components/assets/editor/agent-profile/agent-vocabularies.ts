@@ -68,19 +68,33 @@ export const AGENT_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object
   AGENT_MACHINE_SIZES.map((size) => [size, `${ComputeNodeSizeLabels[size]} · ${MACHINE_SIZE_HOURLY_PRICE[size]}`]),
 ) as Record<ComputeNodeSize, string>;
 
-/**
- * The monthly-billed machines (the hub's `gcp_vm` provider): the machine's strength and a MONTHLY
- * price — these run, and bill, all month. Owned here for the same reason as the hourly prices.
- *
- * The specs mirror what the hub creates per size — change both together. Prices are for the
- * machine alone, rounded to the dollar.
- */
-const MACHINE_SIZE_MONTHLY: Record<ComputeNodeSize, string> = {
-  [ComputeNodeSize.SMALL]: '2 CPU · 2 GB · $21/mo',
-  [ComputeNodeSize.MEDIUM]: '2 CPU · 4 GB · $42/mo',
-  [ComputeNodeSize.LARGE]: '8 CPU · 32 GB · $336/mo',
+/** How a cloud machine bills: by the hour while it runs, or by the month, always on. */
+export type MachineBilling = 'hourly' | 'monthly';
+
+/** The price of one size, on its own, for the New deployment wizard. Same sources as the labels above. */
+export const MACHINE_SIZE_PRICE: Record<MachineBilling, Record<ComputeNodeSize, string>> = {
+  hourly: {
+    [ComputeNodeSize.SMALL]: '$0.23 / hour',
+    [ComputeNodeSize.MEDIUM]: '$0.28 / hour',
+    [ComputeNodeSize.LARGE]: '$0.56 / hour',
+  },
+  monthly: {
+    [ComputeNodeSize.SMALL]: '$21 / month',
+    [ComputeNodeSize.MEDIUM]: '$42 / month',
+    [ComputeNodeSize.LARGE]: '$336 / month',
+  },
 };
 
-export const AGENT_MONTHLY_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object.fromEntries(
-  AGENT_MACHINE_SIZES.map((size) => [size, `${ComputeNodeSizeLabels[size]} · ${MACHINE_SIZE_MONTHLY[size]}`]),
-) as Record<ComputeNodeSize, string>;
+/** A size's strength, for its tooltip: what the hub creates per billing (change with the hub). */
+export const MACHINE_SIZE_SPECS: Record<MachineBilling, Record<ComputeNodeSize, string>> = {
+  hourly: {
+    [ComputeNodeSize.SMALL]: '2 CPU · 2 GB',
+    [ComputeNodeSize.MEDIUM]: '2 CPU · 4 GB',
+    [ComputeNodeSize.LARGE]: '4 CPU · 8 GB',
+  },
+  monthly: {
+    [ComputeNodeSize.SMALL]: '2 CPU · 2 GB',
+    [ComputeNodeSize.MEDIUM]: '2 CPU · 4 GB',
+    [ComputeNodeSize.LARGE]: '8 CPU · 32 GB',
+  },
+};

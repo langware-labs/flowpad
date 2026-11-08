@@ -19,6 +19,7 @@ from flow_sdk.builtin.process_lifecycle import (
     request_backend_restart,
 )
 from flow_sdk.builtin.shell import Shell
+from flow_sdk.instance_settings import get_instance_settings
 
 # NOTE: ``test_driver_preassign_interactive_session_id_flags`` was removed
 # when CodexDriver migrated to the TranscriptDescriptor-based session
@@ -120,6 +121,7 @@ def test_session_sweep_skips_a_process_that_exits_mid_read():
     vanishing.cmdline.side_effect = SystemError("<built-in function proc_cmdline> returned a result with an exception set")
     worker = _fake_psutil_proc(102)
     worker.cmdline.return_value = ["claude", "--session-id", session_id]
+    worker.environ.return_value = {"FLOW_INSTANCE": get_instance_settings().instance_name}
     stranger = _fake_psutil_proc(103)
     stranger.cmdline.return_value = ["bash"]
 

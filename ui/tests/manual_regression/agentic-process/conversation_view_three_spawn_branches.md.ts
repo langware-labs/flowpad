@@ -55,6 +55,15 @@ async function processIds(rq: APIRequestContext): Promise<string[]> {
   return (Array.isArray(d) ? d : []).map((p: { id: string }) => p.id).filter(Boolean);
 }
 
+/** Visible tab-strip rows that point at this process (`Tab` is the strip's membership). */
+async function visibleTabsFor(rq: APIRequestContext, id: string): Promise<unknown[]> {
+  const d = (await (await rq.get('/api/v1/graph/tab')).json()).data ?? [];
+  return (Array.isArray(d) ? d : []).filter(
+    (t: { target_type?: string; target_id?: string; visible?: boolean }) =>
+      t.target_type === 'agentic_process' && t.target_id === id && t.visible === true,
+  );
+}
+
 /** GET one agentic_process row. */
 async function getProcess(rq: APIRequestContext, id: string) {
   return (await (await rq.get(`/api/v1/graph/agentic_process/${id}`)).json()).data ?? {};
@@ -178,9 +187,9 @@ test.describe.serial('conversation session lifecycle', () => {
       const created = (await processIds(rq)).filter((id) => !baseline.has(id));
       expect(created, 'exactly one new agentic_process').toEqual([pid]);
 
-      // It is a visible conversation-process filed under the conversation's project.
+      // Filed under the conversation's project and shown in the tab strip (a `Tab` row).
       const proc = await getProcess(rq, pid);
-      expect(proc.visible).toBe(true);
+      expect(await visibleTabsFor(rq, pid), 'one visible tab for the session').toHaveLength(1);
       expect(proc.process_type).toBe('conversation');
       expect(proc.project_id).toBe(projectId);
       expect(proc.workdir).toBe(workdir);

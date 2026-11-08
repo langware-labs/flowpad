@@ -12,6 +12,7 @@ negations, so every answer here is git's own. Three questions, one per caller:
 Outside a work tree there is no history to leak into: the status says so, nothing is written, and
 nothing is excluded.
 """
+
 from __future__ import annotations
 
 import logging
@@ -106,6 +107,26 @@ def ensure_ignored(path: Path | str) -> str:
     return ignore_status(p)
 
 
+def exclude_in_clone(path: Path | str) -> str:
+    """Exclude ``path`` from git in this clone alone and return the VERIFIED code: the rule goes to the
+    clone's own ``info/exclude``, never a ``.gitignore`` — a new or changed ``.gitignore`` is a change of
+    its own, which dirties the checkout (a deploy refuses it, a pull stops on it)."""
+    p = Path(path)
+    cwd = str(p.parent)
+    try:
+        top = _git._run_git(["git", "rev-parse", "--show-toplevel"], cwd, timeout=10).stdout.strip()
+        found = _git._run_git(["git", "rev-parse", "--git-path", "info/exclude"], cwd, timeout=10).stdout.strip()
+        if not top or not found:
+            return GIT_FAILURE
+        exclude = p.parent / found
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        append_line(exclude, f"/{p.resolve().relative_to(Path(top).resolve()).as_posix()}")
+    except (OSError, ValueError) as e:
+        logger.warning("[git-ignore] could not write info/exclude for %s: %s", p, e)
+        return GIT_FAILURE
+    return ignore_status(p)
+
+
 def protect_env_local(root: Path | str) -> None:
     """Keep a checkout's ``.env.local`` out of commits, or refuse: a tracked one is already in
     history's path, and a rule git will not honour protects nothing. Outside a work tree there is
@@ -117,15 +138,7 @@ def protect_env_local(root: Path | str) -> None:
     env_local = Path(root) / ".env.local"
     status = ignore_status(env_local)
     if status == NOT_IGNORED:
-        try:
-            found = _git._run_git(["git", "rev-parse", "--git-path", "info/exclude"], str(root), timeout=10)
-            exclude = Path(root) / found.stdout.strip() if found.returncode == 0 and found.stdout.strip() else None
-            if exclude is not None:
-                exclude.parent.mkdir(parents=True, exist_ok=True)
-                append_line(exclude, "/.env.local")
-        except OSError as e:
-            logger.warning("[git-ignore] could not write info/exclude in %s: %s", root, e)
-        status = ignore_status(env_local)
+        status = exclude_in_clone(env_local)
     if status == TRACKED:
         raise RuntimeError(".env.local is already tracked; remove it from the Git index first")
     if status in (NOT_IGNORED, GIT_FAILURE):
@@ -170,6 +183,16 @@ def is_under(path: Path, ignored: set[Path]) -> bool:
 
 
 __all__ = [
-    "GITIGNORE_FILENAME", "GIT_FAILURE", "IGNORED", "NOT_A_REPO", "NOT_IGNORED", "NO_DIR", "TRACKED",
-    "append_line", "ensure_ignored", "ignore_status", "ignored_under", "is_under",
+    "GITIGNORE_FILENAME",
+    "GIT_FAILURE",
+    "IGNORED",
+    "NOT_A_REPO",
+    "NOT_IGNORED",
+    "NO_DIR",
+    "TRACKED",
+    "append_line",
+    "ensure_ignored",
+    "ignore_status",
+    "ignored_under",
+    "is_under",
 ]

@@ -53,6 +53,17 @@ export function setProjectReadiness(readiness: ProjectReadiness): void {
   }
 }
 
+const checkedForUpdates = new Set<string>();
+
+/** Once per project per session: fetch its dependencies' remotes in the background, then read the
+ *  readiness again so the setup button can say updates are waiting. Never awaited by a view. */
+export async function checkProjectUpdatesOnce(projectId: string | null | undefined): Promise<void> {
+  if (!projectId || checkedForUpdates.has(projectId)) return;
+  checkedForUpdates.add(projectId);
+  await Project.checkDependencyUpdates(projectId);
+  if (currentProjectId === projectId) await refreshProjectReadiness(projectId);
+}
+
 /** Re-check the project last checked — after a setup run or a credential save. */
 export function recheckProjectReadiness(): Promise<void> {
   return refreshProjectReadiness(currentProjectId);

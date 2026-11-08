@@ -184,10 +184,27 @@ export function useAssetsModel() {
     reload: reloadStats,
   } = useAssetStats(effectiveFilter.scope);
 
-  // The scoped project's server-computed menu: per-type counts for the project
-  // AND, nested under it, for every dependency (recursively). Backs both the
-  // type-row counts below and the nested rows under each dependency row.
-  const { menu: assetMenu, nodesByPath: menuNodesByPath } = useProjectAssetMenu(scopeProject);
+  // The scoped project's server-computed menu: per-folder counts for the project and,
+  // nested under it, every dependency (recursively). Backs the Packages rows only —
+  // each folder's badge counts what that folder's row lists.
+  const { nodesByPath: menuNodesByPath, refresh: reloadAssetMenu } = useProjectAssetMenu(scopeProject);
+  // The dependency folders that hold documents — the menu nodes below the project's own
+  // mount with markdown of their own. Under the Dependencies scope the Documents tree
+  // lists exactly these folders' vaults: one with no documents would only read "Empty".
+  // Keyed on CONTENT, so a menu refetch with the same folders keeps the Set's identity
+  // (and the tree roots built from it) stable.
+  const scopeMount = scopeProject?.fs_storage_mount_path ?? '';
+  const dependencyRootsKey = Array.from(menuNodesByPath.entries())
+    .filter(
+      ([path, node]) =>
+        path && path !== scopeMount && (node.groups ?? []).some((g) => g.type_name === 'markdown' && g.own_count > 0),
+    )
+    .map(([path]) => path)
+    .join('|');
+  const dependencyRoots = useMemo(
+    () => new Set(dependencyRootsKey ? dependencyRootsKey.split('|') : []),
+    [dependencyRootsKey],
+  );
 
   // The budgets this person may spend — read once here for the count badge; the tree
   // adapter and the body read the same cached answer.
@@ -207,20 +224,13 @@ export function useAssetsModel() {
     };
   }, [assetStats.per_type]);
 
+  // ONE count source, the same scope as the list: asset-stats counts exactly the rows
+  // `/search?top_level=true` returns for `effectiveFilter.scope` (nested rows are
+  // subtracted server-side). Dependency assets are counted only when the scope asks for
+  // them (the Dependencies mode); the per-folder menu counts belong to the Packages rows,
+  // never to a type row whose list cannot show them.
   const typeCounts = useMemo(() => {
     const counts = new Map(Object.entries(assetStats.per_type));
-    // Fold in the menu's accumulated counts, which INCLUDE the project's context
-    // folders — assets that are scope-invisible to `asset-stats` (they index as
-    // user-scope with no project id) and so never reached the menu before.
-    //
-    // Max, not replace: the two count different things and neither is a superset.
-    // The path-attributed menu can't see a non-file-backed type (`spec` has no
-    // `asset_ref`), while `asset-stats` can't see dependencies. Taking the
-    // larger keeps every row that shows today and adds the ones that were
-    // missing — a count only ever gates a row IN.
-    for (const group of assetMenu?.root?.groups ?? []) {
-      counts.set(group.type_name, Math.max(counts.get(group.type_name) ?? 0, group.count));
-    }
     // A section counts what it lists: Documents = markdown + its .docx / .txt files.
     for (const [type, n] of Array.from(counts)) {
       const extra = sectionRecordTypes(type).slice(1).reduce((sum, other) => sum + (counts.get(other) ?? 0), 0);
@@ -235,7 +245,7 @@ export function useAssetsModel() {
     counts.set(DiagnosisRequest.type, requestsInScope(myDiagnosisRequests, effectiveFilter.scope).length);
     counts.set('tag', tagCount);
     return counts;
-  }, [assetStats.per_type, assetMenu, myEndpoints.length, myDiagnosisRequests, effectiveFilter.scope, tagCount]);
+  }, [assetStats.per_type, myEndpoints.length, myDiagnosisRequests, effectiveFilter.scope, tagCount]);
 
   // An LLM endpoint belongs to a PERSON, never to a project — it is exactly the kind of
   // user-scoped asset the User chip exists for. Under a project-only scope the row would
@@ -274,8 +284,15 @@ export function useAssetsModel() {
   // cache don't re-flash it).
   const menuLoading = typesLoading || statsLoading;
   const menuError = typesError ?? statsError;
+  // Reload everything the tree reads — types, counts, the dependency menu — then
+  // re-list every root in place, so counts and rows refresh together.
   const reloadMenu = () => {
-    void Promise.all([reloadTypes(), reloadStats()]).catch(() => {});
+    void Promise.all([reloadTypes(), reloadStats(), reloadAssetMenu()])
+      .then(() => {
+        for (const t of visibleTypes) refreshNode(`asset-type:${t.type_name}`);
+        refreshNode(ASSET_CONTEXT_FOLDERS_ROOT_ID);
+      })
+      .catch(() => {});
   };
 
   // Reactivity only: keep each type's tree root live. A created / indexed /
@@ -292,9 +309,11 @@ export function useAssetsModel() {
   const markdownVaultsKey = (visibleTypes.find((t) => t.type_name === 'markdown')?.vaults ?? [])
     .map((v) => v.absPath)
     .join('|');
+  // The dependency closure arrives with the (async) asset menu; under the
+  // Dependencies scope it decides which vaults the root lists.
   useEffect(() => {
     refreshNode('asset-type:markdown');
-  }, [markdownVaultsKey]);
+  }, [markdownVaultsKey, dependencyRootsKey]);
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
     [allTypes],
@@ -303,7 +322,7 @@ export function useAssetsModel() {
   const openScoped = useCallback(
     (scope: ScopeFilter) => {
       const base =
-        effectivePointer === (AssetMode.PROJECT_HOME as string) && scope.mode !== 'project'
+        effectivePointer === (AssetMode.PROJECT_HOME as string) && !pinnedProjectId(scope)
           ? DockPointer.forAssetList('all')
           : (currentDock ?? DockPointer.forAssetList('all'));
       navigation.openDock(base.withScopeFilter(scope));
@@ -653,6 +672,7 @@ export function useAssetsModel() {
           onNew: handleNew,
           fileOps: fileOpsHost,
           filter: effectiveFilter,
+          dependencyRoots,
           onOpenKnowledgeBrowser: (absPath) => navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
       }
@@ -735,6 +755,7 @@ export function useAssetsModel() {
     handleDropIntoContextDir,
     handleExternalDropIntoContextDir,
     menuNodesByPath,
+    dependencyRoots,
     visibleTypeNameSet,
   ]);
   return {

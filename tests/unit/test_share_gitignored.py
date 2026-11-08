@@ -184,6 +184,18 @@ def test_the_folder_zip_for_a_compute_node_leaves_excluded_files(tmp_path):
         assert sorted(zf.namelist()) == [".gitignore", "main.md"]
 
 
+def test_the_folder_zip_keeps_a_git_checkout_a_repository(tmp_path):
+    """A detached checkout's ``.git/refs`` holds only empty folders; dropped, the copy is no repository."""
+    from flow_sdk.builtin.faas.compute_node import build_dir_zip
+
+    root = tmp_path / "checkout"
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    out = tmp_path / "copy"
+    with zipfile.ZipFile(build_dir_zip(str(root))) as zf:
+        zf.extractall(out)
+    assert subprocess.run(["git", "-C", str(out), "rev-parse", "--git-dir"], capture_output=True).returncode == 0
+
+
 def test_the_publish_mirror_leaves_excluded_files(tmp_path):
     from flow_sdk.assets.hub_repo_sync import _replace
 
@@ -192,3 +204,26 @@ def test_the_publish_mirror_leaves_excluded_files(tmp_path):
     _replace(root, target, is_file=False)
 
     assert sorted(p.relative_to(target).as_posix() for p in target.rglob("*")) == [".gitignore", "main.md"]
+
+
+def test_pulling_the_hub_version_home_keeps_excluded_files_and_never_removes_the_folder(tmp_path, monkeypatch):
+    """The hub's edit lands in the person's folder in place: their excluded files stay, a file the
+    hub dropped goes, and the asset folder itself never disappears on the way (no rmtree)."""
+    from flow_sdk.assets import hub_repo_sync
+    from flow_sdk.assets.hub_repo_sync import _update_in_place
+
+    root = _asset_folder(tmp_path)
+    (root / "gone.md").write_text("dropped on the hub\n")
+    hub = tmp_path / "hub" / "asset"
+    hub.mkdir(parents=True)
+    (hub / ".gitignore").write_text((root / ".gitignore").read_text())
+    (hub / "main.md").write_text("Edited on the hub.\n")
+
+    removed: list[Path] = []
+    monkeypatch.setattr(hub_repo_sync.shutil, "rmtree", lambda p, *a, **k: removed.append(Path(p)))
+    _update_in_place(hub, root, is_file=False)
+
+    assert removed == []
+    assert (root / "main.md").read_text() == "Edited on the hub.\n"
+    assert not (root / "gone.md").exists()
+    assert (root / "private" / "row.json").read_text() == "{}", "a git-excluded file must survive the pull"

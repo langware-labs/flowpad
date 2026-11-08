@@ -28,6 +28,8 @@ const EMPTY_ENTITIES_QUERY = {
 
 vi.mock('@sdk/react/hooks', () => ({
   useAuth: () => ({ user: { name: 'Ada Lovelace' } }),
+  // The quick-create pick asks whether cloud login is needed: a desktop with it available.
+  useContext: () => ({ cloudLoginAvailable: true, isDesktop: true }),
   // ProjectActionsRow (rendered by VibeNewChat) reads `useProjects()`, which is
   // built on `useEntitiesQuery`. This surface only branches on whether the list
   // is non-empty, and the assertions below are about the submitted model tier —

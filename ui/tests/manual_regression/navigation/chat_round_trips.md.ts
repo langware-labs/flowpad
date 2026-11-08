@@ -83,9 +83,10 @@ test('a long chat keeps its place across a tab switch and a layout change', asyn
   await expect
     .poll(async () => (await readScroll(page, chat.processId))?.max ?? 0, {
       timeout: adjusted(30_000),
-      message: 'the long chat never rendered its history',
+      message: 'the long chat never rendered its recent window',
     })
-    .toBeGreaterThan(50_000);
+    // Only the recent turns mount (useRecentWindow), still well past a screenful.
+    .toBeGreaterThan(20_000);
 
   // Read somewhere in the middle, the way a person does: with the wheel.
   await page.evaluate((sel) => {

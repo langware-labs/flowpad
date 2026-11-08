@@ -426,10 +426,21 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * `op` mirrors the hub's command names verbatim (`compute_node_tools.py` and
    * the `ops` dispatch table), so the pair greps as a pair.
    */
+  /** A machine someone shared with you, read from the hub when this box holds no copy of it yet
+   *  (a share granted on the hub at invite time never passed through this box). */
+  static async fetchShared(id: string): Promise<ComputeNode | null> {
+    const action = new ActionInfo('', ComputeNode.type, id, 'GET');
+    action.hubReflect = true;
+    const data = await dataManager.callAction<undefined, Partial<IComputeNode>>(action).catch(() => null);
+    return data?.id ? new ComputeNode({ ...data, remote: true }) : null;
+  }
+
   private async ops<T>(op: string, body?: Record<string, unknown>): Promise<T> {
     const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST');
     action.subpath = [op];
     if (body) action.bodyParameters = body;
+    // A machine someone shared with you lives on the hub: its ops are the hub's to answer.
+    action.hubReflect = this.remote === true;
     return dataManager.callAction<Record<string, unknown> | undefined, T>(action);
   }
 

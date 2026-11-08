@@ -179,10 +179,9 @@ async def _ensure_principal_channel(principal: str, *, name: str, owner=None, ac
 async def _adopt_unindexed(provider: str, key: str, principal: str, *, name: str, owner=None):
     """A new principal channel row — or, when its file is already on disk but not in the index (a
     lost row), that file indexed and found again. Creating over it would collide on every start."""
-    from flow_sdk.assets.creation import AssetPathCollisionError  # noqa: PLC0415
+    from flow_sdk.assets.creation import AssetPathCollisionError, adopt_unindexed  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 
     driver = DataDriver.loaded(provider)
     fresh = driver.create_source(driver.create_config(**{key: principal}), name=name)
@@ -191,13 +190,7 @@ async def _adopt_unindexed(provider: str, key: str, principal: str, *, name: str
     try:
         return await fresh.save()
     except AssetPathCollisionError as collision:
-        if collision.path is None:
-            raise
-        await reindex_paths([str(collision.path)])
-        found = await DataSource.find_for_account(provider, key, principal)
-        if found is None:
-            raise
-        return found
+        return await adopt_unindexed(collision, lambda: DataSource.find_for_account(provider, key, principal))
 
 
 async def open_tasks_block(process) -> str:

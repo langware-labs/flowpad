@@ -168,6 +168,8 @@ class Connection:
     identity: Optional[str] = None
     #: The scopes this provider's grant is configured to request — what a connect consents to.
     scopes: tuple[str, ...] = ()
+    #: What the provider granted the held token; empty when it was never recorded.
+    granted_scopes: tuple[str, ...] = ()
     icon: Optional[str] = None
     _spec: Optional[ConnectionSpec] = field(repr=False, compare=False, hash=False, default=None)
 
@@ -185,8 +187,11 @@ class Connection:
         return row
 
     async def validate_scopes(self, scopes: Iterable[str]) -> None:
-        """Nothing when the grant's scopes cover ``scopes``; :class:`MissingScopes` naming the rest."""
-        missing = [scope for scope in dict.fromkeys(scopes) if scope not in self.scopes]
+        """Nothing when the grant's scopes cover ``scopes``; :class:`MissingScopes` naming the rest.
+
+        Checked against what the provider GRANTED when that is known, else against what the connect asks."""
+        held = self.granted_scopes or self.scopes
+        missing = [scope for scope in dict.fromkeys(scopes) if scope not in held]
         if missing:
             raise MissingScopes(self.provider, missing)
 
@@ -237,6 +242,7 @@ def _from_spec(
         detail=spec.detail,
         identity=(spec.identity or None) if identity is None else identity,
         scopes=spec.scopes,
+        granted_scopes=spec.granted_scopes,
         icon=spec.icon or None,
         _spec=spec,
     )

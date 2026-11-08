@@ -20,7 +20,8 @@ import '@src/i18n-init';
 import { i18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 
-vi.mock('@sdk/react/hooks', () => ({
+vi.mock('@sdk/react/hooks', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   useAuth: () => ({
     cloudUser: { id: 'me-id', email: 'me@example.com' },
     currentUser: null,
@@ -51,6 +52,7 @@ vi.mock('@src/components/stream-inbox-view/stream-inbox-api', () => ({
 
 vi.mock('@src/components/stream-inbox-view/MembershipInvitations', () => ({
   MembershipInvitations: () => null,
+  InvitesChannelChip: () => null,
 }));
 
 vi.mock('@src/components/new-conversation-dialog/NewConversationDialog', () => ({

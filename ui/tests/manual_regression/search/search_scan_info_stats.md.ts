@@ -61,18 +61,24 @@ test.describe('Search Scan Info Stats', () => {
     expect(Number(match![1])).toBeGreaterThanOrEqual(0);
   });
 
-  // ── Test 4: Home inline search stats shows "indexed" ──────────────────────
-  test('home search popover lists results for a query', async ({ page }) => {
+  // ── Test 4: Search view stats line shows "indexed" after a search ────────
+  // The home's inline search panel is gone: since 2026-10-11 the home is always
+  // the tabless Vibe hero (docs/viewmodes.md). A search runs in the search view,
+  // whose header carries the stats line (latency once a search ran, N indexed).
+  test('search view stats line shows indexed after a search', async ({ page }) => {
     await dismissSetupModal(page);
-    // Home is Vibe-only: its search is the address bar's pill (top-nav-search-*), whose popover
-    // replaced the standard home's inline "N results" stats line.
-    await page.goto('/');
+    await page.goto('/dock/search');
     await page.waitForLoadState('networkidle', { timeout: adjusted(20_000) }).catch(() => {});
-    await page.locator('[data-testid="top-nav-search-open"]').click();
-    const input = page.locator('[data-testid="top-nav-search-input"]');
+
+    const input = page.locator('[data-testid="search-input"]:visible').first();
     await expect(input).toBeVisible({ timeout: adjusted(10_000) });
+    await input.click();
     await input.fill('test');
-    await expect(page.locator('[data-testid="top-nav-search-results"]')).toBeVisible({ timeout: adjusted(10_000) });
+
+    const view = page.locator('[data-testid="search-view"]');
+    // The latency readout renders only after a search completed.
+    await expect(view.locator('text=/\\d+ ms/').first()).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(view.locator('text=/\\d[\\d,]* indexed/').first()).toBeVisible({ timeout: adjusted(8_000) });
   });
 
   // ── Test 5: index-status endpoint returns expected shape ───────────────────

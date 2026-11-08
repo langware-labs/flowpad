@@ -129,3 +129,32 @@ def test_a_cache_hit_before_the_hub_assigns_sandbox_outlives_the_assignment(monk
     finally:
         own_sandbox_id.cache_clear()
         reset_instance_settings()
+
+
+def test_an_agent_box_resolves_its_sandbox_id(monkeypatch, tmp_path):
+    """An agent box (``RuntimeKind.AGENT``) is an E2B box too.
+
+    ``own_sandbox_id`` used to ask the metadata service only for ``SANDBOX``,
+    so an agent box got ``None``, was taken for a desktop, and handed out
+    ``http://localhost:<port>`` app links no browser can reach.
+    """
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "agent-box-own-sandbox-id")
+    reset_instance_settings()
+    own_sandbox_id.cache_clear()
+
+    def fake_urlopen(req, timeout=None):
+        if req.get_method() == "PUT":
+            return _FakeMmdsResponse(b"fake-mmds-token")
+        return _FakeMmdsResponse(b"agent-sandbox-id-456")
+
+    monkeypatch.setattr("flow_sdk.instance_settings.runtime.urlopen", fake_urlopen)
+
+    try:
+        set_assigned_runtime(RuntimeKind.AGENT)
+        assert own_sandbox_id() == "agent-sandbox-id-456", (
+            "an agent box answered None and would be treated as a desktop, handing out localhost app links"
+        )
+    finally:
+        own_sandbox_id.cache_clear()
+        reset_instance_settings()

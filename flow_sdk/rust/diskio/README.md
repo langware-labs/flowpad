@@ -15,7 +15,7 @@ that crate's signing identity is bound to a keychain ACL.
 
 ```bash
 cargo build --release          # target/release/flowpad-diskio-scan
-cargo test                     # the decision order of the walk, the envelope, the .gitignore port
+cargo test                     # the decision order of the walk, the envelope, the port of git's ignore matching
 ```
 
 ## Command line
@@ -28,7 +28,7 @@ cargo test                     # the decision order of the walk, the envelope, t
 | any other argument | nothing | 2 |
 | stdout cannot be written | a partial stream with no terminal line | 1 |
 
-stderr carries logs only (a dropped `.gitignore` line, a refused request).
+stderr carries logs only (a refused request).
 The binary writes no progress lines.
 
 ## The request
@@ -45,7 +45,7 @@ ignored; any other unknown key is ignored too.
 | | `threads` | int, optional (1) | accepted and ignored: the walk is single-threaded |
 | `ScanRoot` | `path` | string | walked as given, after `PurePosixPath` normalisation (`//`, `/./`, trailing `/`); the parent sends it RESOLVED |
 | | `kind` | string | the root type handed to the declared scan (`real_project_cwd`, `user_home_folder`, `cwd_root`, `system_root`) |
-| `WalkPolicy` | `gitignore` | bool | read the `.gitignore` stack |
+| `WalkPolicy` | `gitignore` | bool | read the ignore files: `.gitignore` and `.flowignore` (also every `.flowignore` above the root), matched as git matches |
 | | `file_exts` | list of strings, or `null` | `null` = every file, `[]` = no files, else the files whose `PurePath.suffix`, lowercased, is in the list |
 | | `deny_basenames` | list of strings | an entry with one of these names is dropped, file or directory |
 | | `skip_segments` | list of `[a, b]` | a path holding `a` then `b` as consecutive segments is dropped |
@@ -130,15 +130,9 @@ The oracle is today's Python: `gitignore_walk` for the walk, `scan_declared` for
 the scan, and the Python `Scanner` (`flow_sdk/diskio/python/scanner.py`) for the
 stream. The parity rig is `bench/rust_scan/` (untracked).
 
-* **`.gitignore` matching is a port of `pathspec.GitIgnoreSpec` 1.1**, not a
-  general gitignore library, because the walk's answers are pathspec's:
-  `build/**` drops the directory `build` itself, and `*` then `!keep/` does not
-  re-include `keep`. `src/gitignore.rs` follows `GitIgnoreSpecPattern` and
-  `SimpleGiBackend` line for line. If the SDK moves to another pathspec major
-  version, re-run the parity rig.
-* **An unparseable `.gitignore` line is dropped** and the rest of the file
-  applies (§1 step 0). A reversed range such as `[z-a]` is dropped too. Today's
-  Python raises on such a line and aborts the root.
+* **`.gitignore` / `.flowignore` matching is a port of git's own matcher**
+  (`wildmatch.c` + `dir.c`), the same port as `flow_sdk/fs_store/ignore_rules.py`;
+  `tests/unit/diskio/test_ignore_files.py` checks both backends against `git ls-files`.
 * **A stat that fails** anywhere but on a mount's own path reads as "not a file"
   / "not a directory" and the scan goes on.
 * **`threads` is ignored.** One thread, in contract order.

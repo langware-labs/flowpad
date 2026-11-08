@@ -335,6 +335,9 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
         async def save(self) -> None:
             pass
 
+        def latch_launch_failure(self, error, **_) -> None:  # AgenticProcess's latch: legacy text + FAILED
+            self.status, self.start_failure = ProcessStatus.FAILED.value, error.detail
+
         async def notify_updated(self) -> None:
             pass
 

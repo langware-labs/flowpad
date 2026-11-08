@@ -56,10 +56,32 @@ describe('AttachedChannelsBar', () => {
     expect(screen.queryByTestId('attached-channels-clear')).toBeNull();
   });
 
+  it('with onMarkPress a mark press goes to the caller and never touches the filter', () => {
+    const onMarkPress = vi.fn();
+    const onSelectedChange = vi.fn();
+    render(
+      <AttachedChannelsBar
+        owner={new TypeId(LOCAL)}
+        rows={[fake('a')]}
+        specFor={specFor}
+        selected={new Set()}
+        onSelectedChange={onSelectedChange}
+        onMarkPress={onMarkPress}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('attached-channel'));
+    expect(onMarkPress).toHaveBeenCalledWith('slack|slack');
+    expect(onSelectedChange).not.toHaveBeenCalled();
+  });
+
   it('a lit mark still wears "!" when one of its sources needs a person', () => {
     mount([fake('a', 'setup'), fake('b')]);
     const mark = screen.getByTestId('attached-channel');
-    expect([mark.dataset.state, mark.dataset.attention, mark.getAttribute('aria-label')]).toEqual(['on', '1', 'slack × 2 · needs attention']);
+    expect([mark.dataset.state, mark.dataset.attention, mark.getAttribute('aria-label')]).toEqual([
+      'on',
+      '1',
+      'slack × 2 · needs attention',
+    ]);
     expect(screen.getByTestId('attached-channel-attention').textContent).toBe('!');
   });
 
@@ -122,7 +144,9 @@ describe('AttachedChannelsBar', () => {
   it('pressing the reason runs what recovers that kind: Setup for a source in setup, Pull for a held file', () => {
     const owed = fake('s', 'setup', 'telegram', { setup_detail: 'Pair the phone.' });
     const held = fake('h', 'active', 'gmail', { health: 'ok', error_code: 'write_back_held', error_detail: 'a.md' });
-    const verify = vi.spyOn(owed, 'verify').mockResolvedValue({ status: 'setup', ready: false, layer: 'setup', detail: '' });
+    const verify = vi
+      .spyOn(owed, 'verify')
+      .mockResolvedValue({ status: 'setup', ready: false, layer: 'setup', detail: '' });
     const syncNow = vi
       .spyOn(held, 'syncNow')
       .mockResolvedValue({ ran: true, created: 0, updated: 0, unchanged: 1, health: 'ok', status: 'active' });
@@ -175,6 +199,25 @@ describe('channel offers', () => {
     expect(channelOffers(specs, [fake('a', 'disabled', 'own_chat')], false)).toEqual([]);
     // A channel that is not featured (the tasks channel) does not count as connected.
     expect(channelOffers(specs, [fake('a', 'active', 'plain')], false)).toHaveLength(2);
+  });
+
+  it('a provisioned channel the hub does not offer is drawn disabled and says why — never a failed click', () => {
+    const offers = channelOffers(specs, [], true).filter((o) => o.spec.provisioned);
+    render(
+      <AttachedChannelsBar
+        owner={new TypeId(LOCAL)}
+        rows={[]}
+        specFor={specFor}
+        offers={offers}
+        builtInOffered={false}
+        onSelectedChange={vi.fn()}
+      />,
+    );
+    const mark = screen.getByTestId('channel-offer');
+    expect(mark.dataset.unavailable).toBe('true');
+    expect(mark.getAttribute('aria-label')).toMatch(/is off on this hub/);
+    fireEvent.click(mark);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   const mountOffers = (selected = new Set<string>()) =>

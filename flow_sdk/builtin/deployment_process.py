@@ -17,9 +17,12 @@ what ran, and ↑ Enter runs it again.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import shlex
 import sys
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import IO, Optional
 
@@ -148,14 +151,40 @@ def _starting(deployment) -> Optional[int]:
     """The process typed for *deployment* (``… <file> <id>``), still importing. Exactly that tail:
     anything else naming the id — a ``grep``, a script driving the deployment — is not it, and taking
     it for the loop left the deployment dead with nobody starting it."""
+    table = _table.get()
+    return (table if table is not None else _scan()).get((str(file_of(deployment)), str(deployment.id)))
+
+
+# Reading the process list asks the kernel for every process's command line: ~20ms for 750 processes
+# on a calm Mac, seconds under swap. Done once per deployment on the loop, a reconcile over 124
+# deployments held prod's loop 2.9s every 10s and every terminal froze with it.
+_table: ContextVar[Optional[dict[tuple[str, str], int]]] = ContextVar("deployment_process_table", default=None)
+
+
+def _scan() -> dict[tuple[str, str], int]:
+    """Every process's last two argv words → its pid (the first one wins), this process excluded."""
     import psutil  # noqa: PLC0415
 
-    tail = [str(file_of(deployment)), str(deployment.id)]
+    me, table = os.getpid(), {}
     for proc in psutil.process_iter(["pid", "cmdline"]):
         cmdline = proc.info.get("cmdline") or []
-        if cmdline[-2:] == tail and proc.info["pid"] != os.getpid():
-            return proc.info["pid"]
-    return None
+        if len(cmdline) >= 2 and proc.info["pid"] != me:
+            table.setdefault((cmdline[-2], cmdline[-1]), proc.info["pid"])
+    return table
+
+
+@asynccontextmanager
+async def process_table():
+    """One read of the process list, off the loop, for every ``alive``/``pid_of`` inside the block —
+    a pass over many deployments. Nested blocks share the outer read."""
+    if _table.get() is not None:
+        yield
+        return
+    token = _table.set(await asyncio.to_thread(_scan))
+    try:
+        yield
+    finally:
+        _table.reset(token)
 
 
 def loop_state(deployment) -> tuple[str, str]:
@@ -256,17 +285,20 @@ def _pin(shell) -> None:
 async def start(deployment) -> dict[str, str]:
     """Type the deployment's command into its terminal; the labels that record the terminal. A copy
     that finds the loop already running leaves at once (the lock), so a start is never a twin."""
-    import asyncio  # noqa: PLC0415
-
     shell = await _shell(deployment)
     await shell.write(command_of(deployment))
     # The command is typed, not yet a process: until the shell has forked it, the next reconcile
     # would see nothing running and type it again — into the loop's stdin, to run the moment the loop
     # ends. So this start is over only once the process exists (or plainly never came up).
-    for _ in range(100):
-        if await asyncio.to_thread(pid_of, deployment) is not None:
-            break
-        await asyncio.sleep(0.05)
+    # A pass's process table predates this process: read the live list instead.
+    token = _table.set(None)
+    try:
+        for _ in range(100):
+            if await asyncio.to_thread(pid_of, deployment) is not None:
+                break
+            await asyncio.sleep(0.05)
+    finally:
+        _table.reset(token)
     return {SHELL_LABEL: str(shell.id)}
 
 
@@ -284,7 +316,9 @@ def stop(deployment) -> bool:
         proc = psutil.Process(pid)
     except psutil.NoSuchProcess:
         return True
-    return not terminate_tree([proc])[1]
+    _killed, survivors, refused = terminate_tree([proc])
+    # A refused (guard-protected) process is still running — not a successful stop.
+    return not survivors and not refused
 
 
 async def close_shell(deployment) -> None:
@@ -299,6 +333,6 @@ async def close_shell(deployment) -> None:
 
 
 __all__ = [
-    "DEPLOYMENT_ENV", "SHELL_LABEL", "alive", "close_shell", "command_of", "file_of", "hold", "pid_of",
+    "DEPLOYMENT_ENV", "SHELL_LABEL", "alive", "close_shell", "command_of", "file_of", "hold", "pid_of", "process_table",
     "shell_id_of", "start", "stop",
 ]

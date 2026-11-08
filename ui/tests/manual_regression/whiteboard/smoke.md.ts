@@ -7,7 +7,7 @@ import { adjusted } from '../../adjustableTimeout';
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string, description = '') {
-  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, description, format: 'excalidraw' } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, description } });
   expect(res.status(), 'whiteboard create POST').toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -51,7 +51,7 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
     );
     // AssetDocPointer grammar requires an explicit typeid/ method segment.
     await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-    await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
     await page.waitForTimeout(1_500);
 
     // Excalidraw container healthy height (CSS-missing regression inflates to 33,554,432).

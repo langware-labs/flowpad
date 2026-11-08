@@ -7,7 +7,7 @@ import { adjusted } from '../../adjustableTimeout';
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, format: 'excalidraw' } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -15,7 +15,7 @@ async function createWhiteboard(request: APIRequestContext, name: string) {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: adjusted(15_000),
   });

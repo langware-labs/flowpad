@@ -1001,6 +1001,17 @@ def _is_auto(ref: str) -> bool:
     return ref.strip().lower() == "auto"
 
 
+def _resolve(project_id: str = "") -> Row | None:
+    """The source that funds LLM calls here, or None -- never opening anything."""
+    status = _status(project_id)
+    row = _auto_source(status)
+    if row is None:
+        # Nothing has EVIDENCE yet -- but on a box with no backend nothing has ever been asked,
+        # so ask before sending the user to a browser.
+        row = _auto_source(_check_unchecked_logins(status, project_id))
+    return row
+
+
 def _resolve_or_choose(*, no_browser: bool = False, project_id: str | None = None) -> Row:
     """The source that funds LLM calls — obtaining one, via the chooser, if the box has none.
 
@@ -1015,12 +1026,7 @@ def _resolve_or_choose(*, no_browser: bool = False, project_id: str | None = Non
     # the box, so the box-wide question would report a source a spawn here would not get.
     if project_id is None:
         project_id = _project_for_cwd(required=False)
-    status = _status(project_id)
-    row = _auto_source(status)
-    if row is None:
-        # Nothing has EVIDENCE yet -- but on a box with no backend nothing has ever been asked,
-        # so ask before sending the user to a browser.
-        row = _auto_source(_check_unchecked_logins(status, project_id))
+    row = _resolve(project_id)
     if row is not None:
         return row
 

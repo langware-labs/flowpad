@@ -30,6 +30,22 @@ def person_is_watching() -> bool:
     return get_active_connection() is not None
 
 
+async def llm_source_funded(project_id: str = "") -> bool:
+    """Whether something already funds LLM calls here -- asked WITHOUT opening anything.
+
+    The resolve half of `settle_llm_source` (`flow llm set auto`): the same resolver, minus the
+    chooser. A box or desktop that is funded must never be shown a setup screen, so a caller that
+    would otherwise put one in front of a person asks this first.
+    """
+    from flow_sdk.cli.commands import llm_cmd  # noqa: PLC0415
+
+    try:
+        return await asyncio.to_thread(llm_cmd._resolve, project_id) is not None
+    except Exception:  # noqa: BLE001 -- unknown is "not funded": the setup that follows asks
+        _log.warning("llm setup: checking for an LLM source failed", exc_info=True)
+        return False
+
+
 async def settle_llm_source(*, only_if_watched: bool = False) -> "CliResult":
     """`flow llm set auto`, run IN this process. Idempotent: it returns at once
     when the box is already funded, without opening anything.

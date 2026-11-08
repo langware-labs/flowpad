@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { CalendarClock, Plus } from 'lucide-react';
-import { Agent, Trigger, placeOf, type AgentPlace, type TypeId } from '@sdk';
+import { Agent, Trigger, placeOf, type TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { describeSchedule } from '@src/components/cron-view/describe-schedule';
@@ -11,7 +11,7 @@ import {
   useAgentSchedules,
   useScheduleLabels,
 } from '@src/components/assets/editor/agent-profile/AgentScheduleSection';
-import { useAgentPlaces } from '@src/components/assets/editor/agent-profile/use-agent-places';
+import { useAgentPlaces, type AgentPlace } from '@src/components/assets/editor/agent-profile/use-agent-places';
 import { usePlaceBadge, usePlaceDisplay } from '@src/components/assets/editor/agent-profile/use-place-display';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';

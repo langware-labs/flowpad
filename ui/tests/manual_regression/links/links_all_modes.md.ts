@@ -496,8 +496,15 @@ async function newPage(
   return { context, page: await context.newPage() };
 }
 
-const displayRe = () =>
-  new RegExp(`/process/agentic_process-${processId}/display/|host=agentic_process-${processId}.*viewMode=vibe`);
+/**
+ * The active Display's address (`activeDisplayDock`): the target's own dock, hosted by the
+ * process in vibe — project-placed (`/process/<id>/display/…`) or, for a dock with no
+ * project form such as a web page, `?host=<process>&viewMode=vibe`.
+ */
+/** The click reached this session's Display: its /display/ route, or a page hosted by it in Vibe. */
+const displayRe = () => (raw: URL) =>
+  raw.pathname.includes(`/process/agentic_process-${processId}/display/`) ||
+  (raw.searchParams.get('host') === `agentic_process-${processId}` && raw.searchParams.get('viewMode') === 'vibe');
 
 /**
  * The newest Display history entry's stamp, as the server keeps it. A show always moves
@@ -572,7 +579,7 @@ for (const surface of SURFACES) {
         await surface.click(page, kind);
         await kind.landed(page);
         if (surface.vibe && !kind.media) {
-          // The active Display, in either address form (project-placed, or hosted in the vibe workspace: `host=` + `viewMode=vibe`).
+          // The active Display, in either address form (project-placed, or hosted by the process).
           await expect(page).toHaveURL(displayRe());
           await expect.poll(lastShownAt).not.toBe(before);
         }

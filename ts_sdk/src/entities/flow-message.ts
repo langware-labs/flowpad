@@ -1,9 +1,11 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import type { InvitationState } from './invitation';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { IMessageEnvelope } from '../models/MessageEnvelope';
 import { IMessageSender } from '../models/MessageSender';
+import type { ItReplyMeta } from './agent';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -52,7 +54,18 @@ export enum FlowMessageKind {
   SESSION_EVENT = 'session_event',
   /** Secured transfer: the quiet, automatic line of a key exchange in the share's thread (a slim line). */
   SEALED_NOTE = 'sealed_note',
+  /** Ask for help: a person's request, sent like any message; its context rides as ordinary files. */
+  HELP_REQUEST = 'help_request',
+  /** A help request's diagnosis: its text is the bottom line, ``diagnosis.value.json`` the details. */
+  DIAGNOSIS = 'diagnosis',
 }
+
+/** The file a diagnosis message carries once shared -- re-derives the kind when the hub drops it. */
+export const DIAGNOSIS_FILE = 'diagnosis.value.json';
+
+/** The file every help request carries -- what marks it as one on every machine (the hub drops ``kind``).
+ *  Mirrors flow_sdk.builtin.flow_message.HELP_REQUEST_FILE. Plumbing: never shown as an attachment. */
+export const HELP_REQUEST_FILE = 'help_request.value.json';
 
 /** Single source of truth for the body filename on the hub blob store.
  *  Must match flow_sdk.builtin.flow_message.BODY_FILENAME exactly — the
@@ -69,6 +82,13 @@ export class BodyNotReadyError extends Error {
     super(`download_body refused: body_status=${status} (must be READY)`);
     this.name = 'BodyNotReadyError';
   }
+}
+
+/** One file a conversation lists — the backend's ``ListedFileSpec`` (``Conversation.attachments``). */
+export interface ListedFile {
+  message_id: string;
+  ts: string | null;
+  attachment: Attachment;
 }
 
 /** Read an Attachment's ``data`` field as a canonical string.
@@ -167,6 +187,17 @@ export enum ConversationEvents {
   ACK = 'ack',
 }
 
+/** What an invite message carries (``flow_sdk/schema/data_spec/message_invite_spec.py``). */
+export interface IMessageInvite {
+  invitation_id: string;
+  state: InvitationState;
+  target_type: string;
+  target_id: string;
+  target_name?: string | null;
+  roles?: string[];
+  resolved_at?: string | null;
+}
+
 export interface IFlowMessage extends IEntity {
   text?: string;
   instruction?: string | null;
@@ -205,6 +236,9 @@ export interface IFlowMessage extends IEntity {
    *  Invitation as the first row of a conversation. The invitation TypeId
    *  lives in ``context_entities``. */
   kind?: FlowMessageKind;
+  /** On an invite message (``kind=invitation``): the share it carries and what became of it. The hub
+   *  updates ``state`` in place, so the card always reads the current answer. */
+  invite?: IMessageInvite | null;
   /** This machine wrote it to send (the outbox's "mine"). Local only. */
   outbound?: boolean;
   /** Why the hub does not have it yet — set on a failed attempt, cleared when it lands. Local only. */
@@ -242,6 +276,10 @@ export interface IFlowMessage extends IEntity {
    *  exactly the badge rule: no origin, no channel mark. */
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
+  /** A machine's reply in an IT conversation: the hub's `metadata.it` (kept locally as `it_reply`). */
+  it_reply?: ItReplyMeta | null;
+  /** Hub-relayed opaque metadata (a hub-page read carries it raw). */
+  metadata?: Record<string, unknown> | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
@@ -286,6 +324,13 @@ export interface IMessageReaction {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface FlowMessage extends EntityMerge<IFlowMessage> {}
 
+/** The IT reply a hub message's `metadata.it` carries, else null. */
+export function itReplyOf(metadata: Record<string, unknown> | null | undefined): ItReplyMeta | null {
+  const it = metadata?.it;
+  // Only a machine's reply names its node; the owner's IT message carries `metadata.it` too (its attachment names).
+  return it && typeof it === 'object' && (it as ItReplyMeta).node_typeid ? (it as ItReplyMeta) : null;
+}
+
 @registerEntity
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
   text?: string;
@@ -306,6 +351,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   sent_at?: string | null;
   is_draft?: boolean;
   kind?: FlowMessageKind;
+  invite?: IMessageInvite | null;
   body_status?: BodyStatus;
   body_error?: string | null;
   outbound?: boolean;
@@ -318,6 +364,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   remote_worker_session_id?: string | null;
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
+  it_reply?: ItReplyMeta | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
@@ -356,6 +403,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.sent_at = entity.sent_at ?? null;
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
+    this.invite = entity.invite ?? null;
     this.body_status = entity.body_status ?? BodyStatus.NA;
     this.body_error = entity.body_error ?? null;
     this.outbound = entity.outbound ?? false;
@@ -368,6 +416,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
     this.origin = entity.origin ?? null;
     this.origin_local = entity.origin_local ?? null;
+    this.it_reply = entity.it_reply ?? itReplyOf(entity.metadata);
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;

@@ -1,0 +1,223 @@
+import { useQuery } from '@tanstack/react-query';
+import { RoleChip, StatePill } from '@src/components/items/ItemCard';
+import { deploymentRowState } from '@src/components/items/item-state';
+import { roleOf } from '@src/components/items/role';
+import { useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { ArrowUpRight, Settings2 } from 'lucide-react';
+import { Agent, cloudManager, Deployment, TypeId, type DeploymentThread, type Project } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
+import { Button } from '@src/components/ui/button';
+import { TRANSCRIPT_TIME_PARAM } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { sandboxShareLandingPath } from '@src/pages/hub-home/share-sandbox';
+import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { IssueBanners } from '@src/components/asset-counters/issue-counters';
+import { usePlaceDisplay } from '@src/components/assets/editor/agent-profile/use-place-display';
+import {
+  DeploymentFundingCard,
+  useDeploymentFunding,
+} from '@src/components/assets/editor/agent-profile/deployment/DeploymentFunding';
+import { DeploymentHealth } from '@src/components/assets/editor/agent-profile/deployment/DeploymentHealth';
+import { DeploymentProcessPanel } from '@src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel';
+import { DeploymentThreads } from '@src/components/assets/editor/agent-profile/deployment/DeploymentThreads';
+import { ThreadPane, type ThreadView } from '@src/components/assets/editor/agent-profile/deployment/ThreadPane';
+import { useDeploymentThreads } from '@src/components/assets/editor/agent-profile/deployment/use-deployment-threads';
+import { ProjectDeploymentCard } from './ProjectDeploymentCard';
+import { DeploymentResources, DeploymentSource } from './DeploymentContext';
+
+/** Which thread is open, and how (`agent` = its process's chat, opened at `t`), are the URL's. */
+const THREAD_OPTION = 'conversation';
+const VIEW_OPTION = 'pane';
+
+/**
+ * A deployment's own page, in its project's Deployments page
+ * (`/dock/project/<projectId>/project-deployments?deployment=<id>`): its status, source, main agent and mapped
+ * resources, its controls, funding and health, then on the left its threads — one per conversation, a whole phone call included, the active ones first
+ * with what is happening in them now — and on the right the selected thread's events as they happen,
+ * or the agent's side of it (its process's chat). Nothing selected → the first thread.
+ */
+export function ProjectDeploymentPage({ project, deploymentId }: { project: Project; deploymentId: string }) {
+  const { t } = useLingui();
+  const { navigation, currentDock } = useDockNavigation();
+  const deploymentTypeId = useMemo(() => new TypeId(Deployment.type, deploymentId), [deploymentId]);
+  const { data: held, notFound } = useEntity<Deployment>(deploymentTypeId);
+  // A person's placement of a private deployment lives on the hub, not here: read it there (its actions follow).
+  const { data: onHub = null } = useQuery({
+    queryKey: ['hub-deployment', deploymentId],
+    queryFn: () => Deployment.fromHub(deploymentId),
+    enabled: !!notFound,
+  });
+  const deployment = held ?? onHub;
+  const { data: agent = null } = useEntity<Agent>(deployment?.mainAgentTypeId ?? null);
+  const display = usePlaceDisplay();
+  // Open with its controls when the URL already names its open chat (a chat link lands on it).
+  const [settings, setSettings] = useState(() => !!currentDock?.options?.chat);
+  const { threads, error } = useDeploymentThreads(deployment);
+  // The model is what the deployment's funding runs (its size → that size's model), not the agent's own size.
+  const { data: funding } = useDeploymentFunding(deployment);
+  const fundedModel = funding?.model ? (funding.size ? `${funding.size} → ${funding.model}` : funding.model) : null;
+  const worker = deployment?.main_agent_overrides?.worker_type ?? agent?.worker_type;
+  const failed =
+    deployment?.status.sync_state === 'error' ? deployment.status.message || t`The deployment failed.` : null;
+  // "On" is a wish; a local deployment's process is the fact.
+  const [notRunning, setNotRunning] = useState(false);
+  const local = deployment?.target.provider === 'local';
+  // Asked again when it is another deployment -- not on every update of the same row.
+  const deploymentKey = deployment?.id;
+  useEffect(() => {
+    if (!deployment || !local) return;
+    let alive = true;
+    void deployment
+      .process()
+      .then((process) => alive && setNotRunning(!process?.pid))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the row's identity, see above
+  }, [deploymentKey, local]);
+
+  const options = currentDock?.options ?? {};
+  const selectedId = options[THREAD_OPTION] ?? threads?.[0]?.conversation_id ?? null;
+  const selected = threads?.find((th) => th.conversation_id === selectedId) ?? null;
+  const view: ThreadView = options[VIEW_OPTION] === 'agent' ? 'agent' : 'events';
+  const focusAt = view === 'agent' ? (options[TRANSCRIPT_TIME_PARAM] ?? null) : null;
+
+  const open = (thread: DeploymentThread) =>
+    currentDock &&
+    navigation.openDock(
+      currentDock
+        .withOption(THREAD_OPTION, thread.conversation_id)
+        .withOption(VIEW_OPTION, null)
+        .withOption(TRANSCRIPT_TIME_PARAM, null),
+    );
+  const setView = (next: ThreadView, at: string | null = null) =>
+    currentDock &&
+    selected &&
+    navigation.openDock(
+      currentDock
+        .withOption(THREAD_OPTION, selected.conversation_id)
+        .withOption(VIEW_OPTION, next === 'agent' ? 'agent' : null)
+        .withOption(TRANSCRIPT_TIME_PARAM, next === 'agent' ? at : null),
+    );
+
+  const label = deployment ? display({ is_local: deployment.isLocal, deployment }).label : '';
+  const active = (threads ?? []).filter((th) => th.status === 'live' || th.status === 'working').length;
+  // The hub's `/compute_node/<id>` page: it resumes or launches the machine, then lands in its workspace.
+  const nodeId = deployment?.computeNodeId;
+  const hubUrl = cloudManager.cloudAppUrl;
+  const workspaceUrl =
+    nodeId && hubUrl && deployment?.target.provider !== 'local'
+      ? `${hubUrl.replace(/\/+$/, '')}${sandboxShareLandingPath(nodeId)}`
+      : null;
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="project-deployment-page">
+      <IssueBanners typeid={deploymentTypeId.toString()} />
+      <header className="flex flex-wrap items-center gap-3 border-b px-6 py-3.5">
+        <h1 className="text-lg font-semibold">{label}</h1>
+        {workspaceUrl && (
+          <a
+            href={workspaceUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={t`Open this deployment's workspace in a new tab`}
+            aria-label={t`Open this deployment's workspace in a new tab`}
+            className="-ms-2 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            data-testid="deployment-open-workspace"
+          >
+            <ArrowUpRight className="h-4 w-4" />
+          </a>
+        )}
+        {/* The same state words as its card: failed or stopped-while-on ask for you; else the provider's state. */}
+        {deployment && (
+          <span data-testid="deployment-state">
+            <StatePill
+              state={
+                failed || notRunning ? 'attention' : deploymentRowState(deployment)
+              }
+            />
+          </span>
+        )}
+        <RoleChip role={roleOf(deployment)} />
+        <span className="text-xs text-muted-foreground">
+          {[
+            agent?.name ?? t`No agent`,
+            worker && workerLabel(worker),
+            fundedModel ?? deployment?.main_agent_overrides?.model ?? agent?.model,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ms-auto h-8 gap-1.5"
+          onClick={() => setSettings((v) => !v)}
+          aria-expanded={settings}
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          {t`Settings`}
+        </Button>
+      </header>
+      {failed && (
+        <p className="border-b px-6 py-2 text-sm text-destructive" role="alert" data-testid="deployment-failed">
+          {failed}
+        </p>
+      )}
+      {deployment && (
+        <div className="px-4">
+          <DeploymentSource deployment={deployment} />
+          <DeploymentResources deployment={deployment} />
+          <DeploymentHealth deployment={deployment} />
+          <DeploymentFundingCard project={project} agent={agent} deployment={deployment} />
+        </div>
+      )}
+      {settings && deployment && (
+        <div className="border-b px-6 py-4">
+          <ProjectDeploymentCard project={project} deployment={deployment} mainAgent={agent} />
+        </div>
+      )}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
+        <section className="flex min-h-0 flex-col" aria-labelledby="deployment-threads-title">
+          <header className="flex h-11 items-center gap-2 border-b px-5">
+            <h2 id="deployment-threads-title" className="text-[13px] font-semibold">
+              <Trans>Threads</Trans>
+            </h2>
+            {active > 0 && (
+              <span className="text-[11.5px] text-muted-foreground">
+                <Trans>{active} active</Trans>
+              </span>
+            )}
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {error ? (
+              <p className="px-5 py-6 text-sm text-destructive">{error}</p>
+            ) : threads === null ? (
+              // A cloud deployment's threads are read from its machine, which takes seconds: a blank
+              // list there read as "no threads yet".
+              <p className="px-5 py-6 text-sm text-muted-foreground" data-testid="deployment-threads-loading">
+                <Trans>Reading the threads…</Trans>
+              </p>
+            ) : (
+              <DeploymentThreads threads={threads} selected={selected?.conversation_id ?? null} onSelect={open} />
+            )}
+          </div>
+        </section>
+        <section className="flex min-h-0 flex-col border-t lg:border-s lg:border-t-0" aria-label={t`Thread`}>
+          <div className="flex min-h-0 flex-1 flex-col">
+            {deployment && selected ? (
+              <ThreadPane deployment={deployment} thread={selected} view={view} focusAt={focusAt} onView={setView} />
+            ) : (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                <Trans>Select a thread to see what happened in it.</Trans>
+              </div>
+            )}
+          </div>
+          {/* A local deployment IS a process here: its terminal and its file, under the thread. */}
+          {deployment?.target.provider === 'local' && <DeploymentProcessPanel deployment={deployment} />}
+        </section>
+      </div>
+    </div>
+  );
+}

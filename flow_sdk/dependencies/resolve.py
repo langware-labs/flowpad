@@ -158,8 +158,9 @@ HUB_REASONS = {
 }
 
 
-def hub_reason(status: int) -> str:
-    return HUB_REASONS.get(status, f"the hub answered {status}")
+def hub_reason(status: int, said: str = "") -> str:
+    """The table's sentence for ``status``; otherwise what the hub itself said (its 409's reason)."""
+    return HUB_REASONS.get(status) or said or f"the hub answered {status}"
 
 
 async def resolve_ref(
@@ -187,7 +188,7 @@ async def resolve_ref(
         location = (source.ref_id, ".") if asset_type_of(source) == EntityType.PROJECT.value else await hub_lookup(typeid)
     except HubError as exc:
         status = getattr(exc, "status_code", 0)
-        raise NotResolved("not_found" if status == 404 else "unreachable", hub_reason(status)) from exc
+        raise NotResolved("not_found" if status == 404 else "unreachable", hub_reason(status, exc.reason)) from exc
     if not location:
         raise NotResolved("not_found", hub_reason(404))
     project_id, path = location

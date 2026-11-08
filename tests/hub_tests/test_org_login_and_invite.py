@@ -18,7 +18,7 @@ import time
 import httpx
 import pytest
 
-from tests.hub_tests._assignment import ROLE_SETS, assert_auto_assigned
+from tests.hub_tests._assignment import assert_auto_assigned
 from tests.hub_tests.conftest import _delete_entity
 from tests.hub_tests.test_members_basic_operations import _alice_and_bob
 
@@ -45,11 +45,11 @@ async def _create_membership_entity(hub_base_url: str, token: str, etype: str, n
     return ent_id
 
 
-async def _invite(hub_base_url: str, token: str, etype: str, ent_id: str, email: str, role: str = "member"):
+async def _invite(hub_base_url: str, token: str, etype: str, ent_id: str, email: str, roles: tuple[str, ...] = ("reader",)):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     body = {
         "recipient_email": email,
-        "invitation_targets": [{"typeid": f"{etype}-{ent_id}", "roles": ROLE_SETS.get(role, [role])}],
+        "invitation_targets": [{"typeid": f"{etype}-{ent_id}", "roles": list(roles)}],
     }
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.post(
@@ -118,7 +118,7 @@ async def test_org_invitation_auto_assigns_member(hub_base_url, hub_login_payloa
     org_id = await _create_membership_entity(
         hub_base_url, alice_token, "organization", f"invite-org-{int(time.time())}"
     )
-    await _invite(hub_base_url, alice_token, "organization", org_id, bob_email, role="member")
+    await _invite(hub_base_url, alice_token, "organization", org_id, bob_email)
 
     await assert_auto_assigned(
         hub_base_url,
@@ -159,7 +159,7 @@ async def test_team_invitation_auto_assigns_member(hub_base_url, hub_login_paylo
 
 
 async def _assert_team_invite_assigns(hub_base_url, alice_token, bob_token, bob_id, bob_email, team_id):
-    await _invite(hub_base_url, alice_token, "team", team_id, bob_email, role="member")
+    await _invite(hub_base_url, alice_token, "team", team_id, bob_email)
 
     await assert_auto_assigned(
         hub_base_url,

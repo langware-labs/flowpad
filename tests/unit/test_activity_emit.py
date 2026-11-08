@@ -389,3 +389,38 @@ async def test_a_tab_that_saw_a_scoped_root_hears_its_end_after_it_stops_watchin
 
     assert len(a.frames) > shown and '"completed"' in a.frames[-1], "the tab never heard the root end"
     assert not b.frames, "a tab that never saw the root must not get it"
+
+
+async def test_a_tab_shown_a_scoped_root_by_the_replay_list_hears_its_end(emitter, two_clients):
+    """The llm-setup ghost: a tab reconnected mid-run and learned of the wizard's check from
+    ``GET /api/v1/activity?all=true``, not from a frame. It never watched the wizard, so the run's
+    end went to nobody it could reach and the popup spun "Install Claude Code?" forever."""
+    from starlette.requests import Request
+
+    from flow_sdk.request_context.execution_context import ExecutionContext, set_execution_context
+    from flow_sdk.server.routes.activity import list_activities
+
+    a, b = two_clients
+    act = Activity.get("wizard_llm-setup", subject_entity="wizard-6714b616-b774-4858-83be-95d5136496fa")
+    act.resume()
+    await asyncio.sleep(INTERVAL * 3)
+    assert not a.frames, "precondition: the tab does not watch the wizard, so no frame reached it"
+
+    request = Request({
+        "type": "http", "method": "GET", "path": "/api/v1/activity", "query_string": b"all=true",
+        "headers": [(b"x-flow-connection-id", b"conn-a")],
+    })
+    context = ExecutionContext()
+    await context.setup(request=request)
+    set_execution_context(context)
+    try:
+        listed = await list_activities(subject_entity=None, all_subjects=True)
+    finally:
+        set_execution_context(None)
+    assert any(row["path"] == "wizard_llm-setup" for row in listed.data)
+
+    act.done()
+    await asyncio.sleep(INTERVAL * 3)
+
+    assert a.frames and '"completed"' in a.frames[-1], "the tab that was listed the root never heard it end"
+    assert not b.frames, "a tab that was never shown the root must not get it"

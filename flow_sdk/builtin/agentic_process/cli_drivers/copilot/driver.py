@@ -133,12 +133,14 @@ class CopilotDriver:
     # status only on the main composer screen, never on folder trust. It is a
     # stronger readiness signal than the generic prompt glyph (the trust
     # choice list has its own glyph).
-    # CLI 1.0.103 draws no ``Session:`` text on a fresh composer, only its status line
-    # (``… · / commands · ? help · …``; an 80-column PTY cuts it after ``/ commands``), which the trust screen
-    # does not have.
+    # Copilot CLI 1.0.105 no longer shows that status on an idle composer (it
+    # appears only once a turn runs); its composer footer reads
+    # "Interactive \u00b7 Allow All \u00b7 / commands \u00b7 ? help" instead (cut after
+    # "/ commands" at 80 columns), and the trust dialog's footer
+    # ("\u2191/\u2193 to navigate \u00b7 enter to select") matches neither.
+    launch_screen = None
     pty_composer_ready_pattern = re.compile(
-        r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used"
-        r"|·[ \t\u00a0]*/[ \t\u00a0]+commands"
+        r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used|\u00b7[ \t\u00a0]*/ commands"
     )
     # A PTY launch drops the prompt (copilot reads it from stdin); prompt() types it.
     pty_launch_drops_prompt = True
@@ -459,10 +461,10 @@ class CopilotDriver:
         """
         return assets_dir / ".github" / "skills"
 
-    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str], own: Sequence[str] = ()) -> bool:
         from flow_sdk.assets.process_projection import link_mounted_skills
 
-        return link_mounted_skills(assets_dir, add_dirs, native_mount=".github/skills")
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".github/skills", own=own)
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path = copilot_transcript_path_for_process(process.id)

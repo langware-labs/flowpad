@@ -25,6 +25,7 @@ function processIdFromCreateResponse(payload: unknown): string {
 test('Quick Create Claude session commits its final browser URL after dock loading', async ({ page }) => {
   await dismissSetupModal(page);
 
+  // Quick create lives on the desktop; Home's "New" is project-scoped.
   await page.goto(withViewMode('/dock/desktop', 'advanced'));
   await expect(page.getByRole('button', { name: 'Quick create' })).toBeVisible();
 

@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from flow_sdk import toplog
-from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, last_line  # noqa: F401 -- last_line is re-exported
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 logger = logging.getLogger(__name__)
@@ -81,14 +81,6 @@ def flow_env() -> dict[str, str]:
     if script.exists():
         env["FLOWPAD_FLOW"] = str(script)
     return env
-
-
-def last_line(text: str) -> str:
-    """The last non-empty line of a chunk of output — what a command is doing right now."""
-    for line in reversed(text.replace("\r", "\n").splitlines()):
-        if line.strip():
-            return line.strip()
-    return ""
 
 
 async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[str], None]], name: str = "") -> bytes:

@@ -17,7 +17,7 @@ import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal'
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import {
-  isKnowledgeSource,
+  isListedChannel,
   isMessageDriverSpec,
   sourcesQuery,
   useSourceSpecs,
@@ -180,7 +180,7 @@ export function AgentResourcesBody() {
     const channels: typeof sourceRows = [];
     const data: typeof sourceRows = [];
     for (const row of sourceRows)
-      (isKnowledgeSource(row.source, specFor(row.source.provider)) ? data : channels).push(row);
+      (isListedChannel(row.source, specFor(row.source.provider)) ? channels : data).push(row);
     return { channelRows: channels, dataSourceRows: data };
   }, [sourceRows, specFor]);
   const renderSourceRows = (rows: typeof sourceRows, section: ChildSection) =>

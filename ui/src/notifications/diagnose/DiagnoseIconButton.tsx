@@ -1,7 +1,7 @@
 import { Stethoscope } from 'lucide-react';
 import type { NotificationLevel } from '../types';
 import { useLingui } from '@lingui/react/macro';
-import { useDiagnoseErrorStore } from './diagnose-error-store';
+import { diagnoseAndFix } from './diagnose-and-fix';
 
 /**
  * What the button needs to seed a diagnosis. `NotificationData` satisfies it
@@ -24,7 +24,7 @@ function subjectDetail(subject: DiagnoseSubject): string {
 
 /**
  * Small tooltipped stethoscope shown on error and warning notifications.
- * Clicking it opens the confirmation modal (`DiagnoseErrorModal`) seeded with
+ * Clicking it starts "Diagnose & fix" (`diagnoseAndFix`) seeded with
  * the subject's detail. Rendered only for the levels in `DIAGNOSABLE` —
  * info/success have nothing to diagnose.
  */
@@ -39,7 +39,7 @@ export function DiagnoseIconButton({
       error screen) sizes it up to sit next to a regular button. */
   iconClassName?: string;
 }) {
-  const open = useDiagnoseErrorStore((s) => s.open);
+  const open = diagnoseAndFix;
   const { t } = useLingui();
   if (!DIAGNOSABLE.includes(subject.level)) return null;
 
@@ -51,7 +51,7 @@ export function DiagnoseIconButton({
       type="button"
       onClick={(e) => {
         e.stopPropagation();
-        open(subjectDetail(subject), isWarning ? 'warning' : 'error');
+        void open(subjectDetail(subject), isWarning ? 'warning' : 'error');
       }}
       title={diagnoseLabel}
       aria-label={diagnoseLabel}

@@ -11,6 +11,8 @@
  */
 
 import { AgenticProcess } from '@sdk';
+import { BrowserProfileMenu } from '@src/components/links/BrowserProfileMenu';
+import { useBrowserProfiles } from '@src/lib/browser-profiles';
 import { isProcessRunning } from '@sdk/process/agentic-types.js';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import {
@@ -32,6 +34,7 @@ import {
   Download,
   FolderGit2,
   GitMerge,
+  Link2,
   Info,
   Loader2,
   Menu,
@@ -44,9 +47,13 @@ import {
 import { useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useSideWindows } from '@src/navigation';
+import { useIsAdvanced } from '@src/components/view-mode';
+import { sideTabsAt } from './side-windows';
 import { CommandStatusViewer } from './command-status-viewer';
 import { EntityShareDialog } from './EntityShareDialog';
 import { SessionInfoPopover } from './SessionInfoPopover';
+import { useChainSession } from './useChainSession';
 import { useCommitMerge, useOpenInWorktree } from './use-worktree-actions';
 import { useRestartRequiredHint } from './useRestartRequiredHint';
 
@@ -76,8 +83,11 @@ export function SessionActionsMenu({
 }: SessionActionsMenuProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  const sideWindows = useSideWindows();
+  const contextTabs = sideTabsAt('session-menu', useIsAdvanced());
   const [menuOpen, setMenuOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const browsers = useBrowserProfiles(menuOpen);
   // The session info card opens once the menu has finished closing — on the
   // menu's own close event — not from the item's select: opened while the menu
   // is still dismissing, the card reads that dismissal as an interaction
@@ -96,6 +106,7 @@ export function SessionActionsMenu({
   const restartHint = useRestartRequiredHint(process);
   const commitMerge = useCommitMerge(process, onInjectPrompt);
   const worktree = useOpenInWorktree(process, { enabled: menuOpen && !embedded });
+  const chain = useChainSession(process);
 
   const handleRestart = async () => {
     if (isRestarting) return;
@@ -201,6 +212,25 @@ export function SessionActionsMenu({
               onSelect={() => void handleRestart()}
             />
 
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              <Trans>Session context</Trans>
+            </DropdownMenuLabel>
+            {contextTabs.map((tab) => (
+              <ActionItem
+                key={tab.id}
+                testId={`session-action-side-tab-${tab.id}`}
+                icon={tab.icon}
+                label={t(tab.label)}
+                hint={t(tab.description)}
+                onSelect={() => sideWindows.open(tab.id)}
+              />
+            ))}
+
+            {browsers.length > 0 && (
+              <BrowserProfileMenu browsers={browsers} testIdPrefix="session-action-browser-profile" />
+            )}
+
             {!embedded && (
               <>
                 <DropdownMenuSeparator />
@@ -240,6 +270,14 @@ export function SessionActionsMenu({
                     onSelect={commitMerge.run}
                   />
                 )}
+                <ActionItem
+                  testId="session-action-chain"
+                  icon={Link2}
+                  label={t`Chain session`}
+                  hint={t`Open a session on another project that reviews this one`}
+                  disabledReason={hasSession ? null : t`Session is not running`}
+                  onSelect={chain.start}
+                />
                 {/* Share + Bookmark are NOT here: the top navigation bar carries
                     them for whatever it is addressing, this session included.
                     Export stays — the bar has no equivalent for it. */}
@@ -265,6 +303,8 @@ export function SessionActionsMenu({
           onOpenChange={(open) => setAssets(open ? 'open' : 'closed')}
         />
       )}
+
+      {chain.picker}
 
       <CommandStatusViewer
         open={commandStatusOpen}

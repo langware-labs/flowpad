@@ -30,21 +30,43 @@ const h = vi.hoisted(() => ({
   connect: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-vi.mock('@src/lib/github-oauth-status', () => ({ fetchGithubStatus: h.githubStatus }));
-// The real picker is a react-query consumer with its own coverage; here it only
-// has to prove the dialog turns a picked repo into the source.
+// The git panel is the shared GitRepoPicker → GitRemoteField. Its connection
+// probe is `useGithubConnected`; stood in for by one that asks `githubStatus`.
+vi.mock('@src/lib/github-oauth-status', async () => {
+  const React = await import('react');
+  return {
+    fetchGithubStatus: h.githubStatus,
+    useGithubConnected: () => {
+      const [connected, setConnected] = React.useState(false);
+      React.useEffect(() => {
+        void h.githubStatus().then((r) => setConnected(!!r));
+      }, []);
+      return connected;
+    },
+  };
+});
+vi.mock('@src/components/git/InvitationsStrip', () => ({ InvitationsStrip: () => null }));
+vi.mock('@src/journey/SetupJourneyButton', () => ({ SETUP_GITHUB_JOURNEY: 'x', SetupJourneyButton: () => null }));
+// The real pickers are react-query consumers with their own coverage; here they
+// only have to prove the dialog turns a picked repo (and branch) into the source.
 vi.mock('@src/components/git/RepoPicker', () => ({
   RepoPicker: ({ onSelect }: { onSelect: (r: unknown) => void }) => (
     <button
       onClick={() =>
         onSelect({
           name: 'Hello-World',
+          html_url: 'https://github.com/octocat/Hello-World',
           git_origin: { provider: 'github', owner: 'octocat', name: 'Hello-World', branch: 'main', rel_path: '.' },
         })
       }
     >
       pick octocat/Hello-World
     </button>
+  ),
+}));
+vi.mock('@src/components/git/BranchPicker', () => ({
+  BranchPicker: ({ onSelect }: { onSelect: (b: { name: string }) => void }) => (
+    <button onClick={() => onSelect({ name: 'develop' })}>pick develop</button>
   ),
 }));
 vi.mock('@sdk/react/hooks', () => ({ useOAuthFlowComplete: () => undefined }));
@@ -138,12 +160,12 @@ describe('new desktop: project + asset packages', () => {
     expect(within(list).getByText('acme-support')).toBeInTheDocument();
   });
 
-  it('offers all three ways in, even with no projects to choose between', async () => {
+  it('offers both ways in, even with no projects to choose between', async () => {
     // A fresh hub account has no projects at all — the moment a missing chip
     // would read as "git is the only way to name a source".
     renderDialog({ currentProject: null, projects: [] });
 
-    for (const way of ['project', 'github', 'url']) {
+    for (const way of ['project', 'git']) {
       expect(screen.getByTestId(`loaded-project-chip-${way}`)).toBeInTheDocument();
     }
 
@@ -155,13 +177,13 @@ describe('new desktop: project + asset packages', () => {
   it('opens each chip panel under its own field, one at a time', async () => {
     renderDialog();
 
-    await userEvent.click(screen.getByTestId('loaded-project-chip-url'));
-    expect(screen.getByTestId('loaded-project-url-input')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('loaded-project-chip-git'));
+    expect(screen.getByTestId('loaded-project-git-url')).toBeInTheDocument();
     // The other field is untouched — the panels are per-field.
-    expect(screen.queryByTestId('assets-url-input')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('assets-git-url')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId('loaded-project-chip-project'));
-    expect(screen.queryByTestId('loaded-project-url-input')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('loaded-project-git-url')).not.toBeInTheDocument();
     expect(screen.getByTestId('loaded-project-projects')).toBeInTheDocument();
   });
 
@@ -181,9 +203,9 @@ describe('new desktop: project + asset packages', () => {
   it('accepts a repo URL for the project it loads', async () => {
     renderDialog({ currentProject: null, projects: [] });
 
-    await userEvent.click(screen.getByTestId('loaded-project-chip-url'));
-    await userEvent.type(screen.getByTestId('loaded-project-url-input'), 'https://github.com/octocat/Hello-World');
-    await userEvent.click(screen.getByRole('button', { name: 'Use' }));
+    await userEvent.click(screen.getByTestId('loaded-project-chip-git'));
+    await userEvent.type(screen.getByTestId('loaded-project-git-url'), 'https://github.com/octocat/Hello-World');
+    await userEvent.click(screen.getByTestId('loaded-project-git-use'));
     await userEvent.click(screen.getByTestId('create-sandbox'));
 
     expect(launched().sandboxProject).toMatchObject({
@@ -239,30 +261,28 @@ describe('new desktop: project + asset packages', () => {
     expect(launched().size).toBe('sm');
   });
 
-  it('offers the connection from the GitHub chip, once for the whole dialog', async () => {
+  it('offers the connection inside the git panel, once for the whole dialog', async () => {
     h.githubStatus.mockResolvedValue(false);
     renderDialog();
 
-    // Unconnected, the chip says what it will do first.
-    await userEvent.click(screen.getByTestId('loaded-project-chip-github'));
-    const connect = await screen.findByTestId('connect-github');
+    await userEvent.click(screen.getByTestId('loaded-project-chip-git'));
+    const connect = await screen.findByTestId('loaded-project-git-connect-github');
     await userEvent.click(connect);
 
-    expect(h.connect).toHaveBeenCalledWith('github');
+    expect(h.connect.mock.calls[0]?.[0]).toBe('github');
     // Only one panel is open across the dialog, so only one Connect exists.
-    expect(screen.queryAllByTestId('connect-github')).toHaveLength(1);
+    expect(screen.queryAllByTestId(/connect-github$/)).toHaveLength(1);
   });
 
   it('closes after a connect that never came back', async () => {
-    // The hang: `connecting` clears only on OAUTH_FLOW_COMPLETE, and that event
-    // may never arrive (popup shut, or a message with no matching flow id —
-    // oauth-service returns without emitting). Dismissal must not depend on it.
+    // The hang: a pending connect clears only on OAUTH_FLOW_COMPLETE, and that
+    // event may never arrive. Dismissal must not depend on it.
     h.githubStatus.mockResolvedValue(false);
     const onOpenChange = vi.fn();
     renderDialog({ onOpenChange });
 
-    await userEvent.click(screen.getByTestId('loaded-project-chip-github'));
-    await userEvent.click(await screen.findByTestId('connect-github'));
+    await userEvent.click(screen.getByTestId('loaded-project-chip-git'));
+    await userEvent.click(await screen.findByTestId('loaded-project-git-connect-github'));
     expect(h.connect).toHaveBeenCalled(); // still pending — no completion event
 
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -270,52 +290,41 @@ describe('new desktop: project + asset packages', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('goes straight to the repo list when GitHub is already connected', async () => {
+  it('shows the repo list, not a Connect ask, when GitHub is already connected', async () => {
     renderDialog();
 
-    // Let the status poll settle before opening the panel.
-    await screen.findByTestId('loaded-project-chip-github');
-    await userEvent.click(screen.getByTestId('loaded-project-chip-github'));
+    await userEvent.click(screen.getByTestId('loaded-project-chip-git'));
 
-    expect(screen.getByTestId('loaded-project-github')).toBeInTheDocument();
-    expect(screen.queryByTestId('connect-github')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /pick octocat/ })).toBeInTheDocument();
+    expect(screen.queryByTestId('loaded-project-git-connect-github')).not.toBeInTheDocument();
   });
 
-  it('turns a repo picked from GitHub into the loaded project', async () => {
+  it('turns a repo + branch picked from GitHub into the loaded project', async () => {
     renderDialog({ currentProject: null, projects: [] });
 
-    await userEvent.click(screen.getByTestId('loaded-project-chip-github'));
+    await userEvent.click(screen.getByTestId('loaded-project-chip-git'));
     await userEvent.click(await screen.findByRole('button', { name: /pick octocat/ }));
+    await userEvent.click(screen.getByRole('button', { name: /pick develop/ }));
+    await userEvent.click(screen.getByTestId('loaded-project-git-use'));
     await userEvent.click(screen.getByTestId('create-sandbox'));
 
     expect(launched().sandboxProject).toMatchObject({
       name: 'Hello-World',
-      gitOrigin: expect.objectContaining({ owner: 'octocat', name: 'Hello-World' }),
+      gitOrigin: expect.objectContaining({ owner: 'octocat', name: 'Hello-World', branch: 'develop' }),
     });
-  });
-
-  it('keeps asking while the status is unknown, rather than reporting "not connected"', async () => {
-    // `null` is the bootstrap race, not an answer — reporting it as "no
-    // connection" is what the clone dialog learned to avoid.
-    h.githubStatus.mockResolvedValueOnce(null).mockResolvedValue(true);
-    renderDialog();
-
-    await userEvent.click(screen.getByTestId('loaded-project-chip-github'));
-    // Once the retry lands as `true`, the panel is the picker, not a Connect ask.
-    await vi.waitFor(() => expect(screen.queryByTestId('connect-github')).not.toBeInTheDocument());
   });
 
   it('opens one panel at a time across both fields', async () => {
     renderDialog();
 
-    await userEvent.click(screen.getByTestId('loaded-project-chip-url'));
-    expect(screen.getByTestId('loaded-project-url-input')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('loaded-project-chip-git'));
+    expect(screen.getByTestId('loaded-project-git-url')).toBeInTheDocument();
 
-    // The GitHub panel carries the repo table — two of them stacked would bury
+    // The git panel carries the repo table — two of them stacked would bury
     // the footer, so opening one closes the other.
-    await userEvent.click(screen.getByTestId('assets-chip-github'));
-    expect(screen.queryByTestId('loaded-project-url-input')).not.toBeInTheDocument();
-    expect(screen.getByTestId('assets-github')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('assets-chip-git'));
+    expect(screen.queryByTestId('loaded-project-git-url')).not.toBeInTheDocument();
+    expect(screen.getByTestId('assets-git')).toBeInTheDocument();
   });
 });
 

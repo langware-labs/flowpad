@@ -189,6 +189,12 @@ const stateLabel = (inp: CategoryInputs) => {
 };
 
 describe('ticketState', () => {
+  it('is picked for a requester told only that someone took it, no names', () => {
+    expect(ticketState({ status: 'open', initiatedBy: REQUESTER, members: [], pickedUpBy: [], staffed: true })).toBe(
+      'picked',
+    );
+  });
+
   it('waiting: only the requester is in it', () => {
     expect(ticketState({ status: 'open', initiatedBy: REQUESTER, members: [requesterMember] })).toBe('waiting');
   });
@@ -235,9 +241,9 @@ describe('ticket chip labels', () => {
   it('staffView forces the desk side (a source-delivered row)', () => {
     expect(stateLabel(ticketInputs({ viewerId: REQUESTER, staffView: true }))).toBe('Not picked up');
   });
-  it('chipsFor: Support + state for the requester; closed stays listed with its chip (D7)', () => {
+  it('chipsFor: the requester sees a conversation (Support, no queue state); the desk sees the state', () => {
     const f = conversationFacets(ticketInputs({ viewerId: REQUESTER, status: ConversationStatus.CLOSED }));
-    expect(chipsFor(f).map((c) => c.key)).toEqual(['helpdesk', 'ticket-closed']);
+    expect(chipsFor(f).map((c) => c.key)).toEqual(['helpdesk']);
     // A source-backed staff row drops the kind chip but keeps the state chip.
     const s = conversationFacets(ticketInputs({ viewerId: STAFF, staffView: true }));
     expect(chipsFor({ ...s, kind: 'direct' }).map((c) => c.key)).toEqual(['ticket-waiting']);

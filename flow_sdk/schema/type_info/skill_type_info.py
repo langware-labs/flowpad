@@ -15,6 +15,7 @@ from flow_sdk.schema.view_mode import ViewMode
 
 SKILL = TypeInfo(
     type_name=EntityType.SKILL,
+    template={"description": "Use when <the situation this skill is for>.", "body": "# {name}\n\n1. <first step>\n2. <next step>\n"},
     process_projection=project_process_asset,
     icon="FileBadge",
     display_name="Skills",
@@ -37,6 +38,8 @@ SKILL = TypeInfo(
     ),
     editor="skill",
     hub_main_file="SKILL.md",
+    # The folder IS the skill: a delete takes it, or the next index brings the skill back.
+    deletes_files=True,
     fts_content=("name", "description", "body"),
     identity_carrier=frontmatter_identity(),
     asset_hash_fn=skill_asset_hash,

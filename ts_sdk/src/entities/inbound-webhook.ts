@@ -64,7 +64,14 @@ export interface InboundChainBody {
   /** `@<provider>` for the vendor's root, or the id of a claim (a number) to chain a rule under. */
   parent: string;
   claim: { kind: 'account' | 'user' | 'group'; key?: string };
-  proof?: { credential: string; app_secret?: string; verify_token?: string; graph_url?: string };
+  proof?: {
+    credential: string;
+    app_secret?: string;
+    verify_token?: string;
+    graph_url?: string;
+    /** The vendor's business account (Meta's WhatsApp account id): the hub subscribes it to the app when given. */
+    business_account?: string;
+  };
   target?: ChannelRouteTarget;
 }
 
@@ -134,12 +141,14 @@ export function accountChainBody(input: {
   appSecret?: string;
   verifyToken?: string;
   graphUrl?: string;
+  businessAccount?: string;
   target?: ChannelRouteTarget;
 }): InboundChainBody {
   const proof: InboundChainBody['proof'] = { credential: input.credential.trim() };
   if (input.appSecret?.trim()) proof.app_secret = input.appSecret.trim();
   if (input.verifyToken?.trim()) proof.verify_token = input.verifyToken.trim();
   if (input.graphUrl?.trim()) proof.graph_url = input.graphUrl.trim();
+  if (input.businessAccount?.trim()) proof.business_account = input.businessAccount.trim();
   const body: InboundChainBody = {
     parent: `@${input.provider}`,
     claim: { kind: 'account', key: input.phoneNumberId.trim() },

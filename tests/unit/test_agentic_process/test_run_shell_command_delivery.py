@@ -71,6 +71,7 @@ def _process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drops: int):
     monkeypatch.setattr(ap_mod, "SHELL_COMMAND_QUIET_S", 0.2)
     monkeypatch.setattr(ap_mod, "SHELL_COMMAND_IDLE_TIMEOUT_S", 2.0)
     monkeypatch.setattr(ap_mod, "is_turn_busy", lambda _process: False)
+    monkeypatch.setattr(ap_mod, "_last_shell_command", {})
     path = tmp_path / "s.jsonl"
     _append(path, {"type": "assistant", "timestamp": _iso(datetime.now(timezone.utc)), "message": {"role": "assistant"}})
     _quiet(path)
@@ -100,6 +101,7 @@ def _process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drops: int):
     fake._is_live_pty = is_live
     fake._type_shell_command = type_command
     fake._enqueue = enqueue
+    fake._deliver_shell_command = types.MethodType(AgenticProcess._deliver_shell_command, fake)
     fake._shell_settled = types.MethodType(AgenticProcess._shell_settled, fake)
     fake._shell_command_arrived = types.MethodType(AgenticProcess._shell_command_arrived, fake)
     return fake, path

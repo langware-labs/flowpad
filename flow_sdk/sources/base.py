@@ -153,6 +153,12 @@ class Source:
         return cls.origin_kind or cls.provider
 
     @classmethod
+    def connection_probe_url(cls, config: Mapping[str, Any]) -> Optional[str]:
+        """Where this configuration's connection is verified, when it reads a host other than the
+        provider's own (a configured API base); ``None`` keeps the provider's probe URL."""
+        return None
+
+    @classmethod
     def account_part(cls, config: Mapping[str, Any]) -> str:
         """What narrows a source to PART of its account (one group of a number), or ``""`` for a source
         that is its whole account. Two sources on one account are twins only when this agrees."""
@@ -196,6 +202,8 @@ class Source:
         return self
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
+        if isinstance(exc, SourceError) and not exc.provider:
+            exc.provider = self.provider    # whatever a session raised says which data source said it
         self._session = None
         self._handler = None
         await self._close()

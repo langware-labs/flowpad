@@ -161,7 +161,7 @@ async def test_history_projection_preserves_legacy_names_without_writing_or_heal
     await process._db.update_existing_data_field(tab.id, tab.type, "name", "Stale tab")
     entry = WorkerHistoryEntry(worker_type=WorkerType.CLAUDE, worker_id=process.session_id,
                                agentic_process_id=process.id, last_active_time=datetime.now(timezone.utc))
-    await _project_history_names([entry], [process])
+    await _project_history_names([entry])
     assert entry.name == "  Exact legacy title  "
     durable = await AgenticProcess.get_by_id(process.id)
     assert durable.naming_state is None and durable.updated_date == process.updated_date

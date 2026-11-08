@@ -71,6 +71,11 @@ class AskRequest(BaseModel):
     detail: str = ""
     submit_label: str = ""
     cancel_label: str = ""
+    #: What each field of a record answer is called, where the question stands in a sequence, and a check the
+    #: person can run on the typed value before sending (``AskOp.labels`` / ``stage`` / ``verify``).
+    labels: dict[str, str] = {}
+    stage: Optional[dict] = None
+    verify: Optional[dict] = None
     #: The answer is a secret: the window masks it.
     secret: bool = False
     #: The answer is a file's content: the window offers a file picker and a paste box.
@@ -106,6 +111,9 @@ async def ask_for_another_process(body: AskRequest):
         detail=body.detail,
         submit_label=body.submit_label,
         cancel_label=body.cancel_label,
+        labels=body.labels,
+        stage=body.stage,
+        verify=body.verify,
         secret=body.secret,
         file=body.file,
         auto=body.auto,

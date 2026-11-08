@@ -23,9 +23,7 @@ def _advance_directory_mtime(path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_fresh_project_record_check_is_read_only(
-    sync_db, tmp_records_root, monkeypatch
-) -> None:
+async def test_fresh_project_record_check_is_read_only(sync_db, tmp_records_root, monkeypatch) -> None:
     project_root = tmp_records_root / "fresh-project"
     project_root.mkdir()
     project = Project(
@@ -77,9 +75,7 @@ async def test_fresh_project_record_check_is_read_only(
 
 
 @pytest.mark.asyncio
-async def test_stale_refresh_cannot_interleave_normal_save(
-    sync_db, tmp_records_root, monkeypatch
-) -> None:
+async def test_stale_refresh_cannot_interleave_normal_save(sync_db, tmp_records_root, monkeypatch) -> None:
     """A stale disk->DB adoption and DB->disk save serialize by record id."""
     import flow_sdk.fs_store.fs_record as fs_record_mod
 
@@ -142,9 +138,7 @@ async def test_stale_refresh_cannot_interleave_normal_save(
 
 
 @pytest.mark.asyncio
-async def test_activate_partially_mirrors_shell_recency_without_stale_clobber(
-    sync_db, tmp_records_root
-) -> None:
+async def test_activate_partially_mirrors_shell_recency_without_stale_clobber(sync_db, tmp_records_root) -> None:
     from flow_sdk.builtin.shell import Shell, ShellStatus
     from flow_sdk.core.entity.entity_model import _http_activate
 
@@ -231,3 +225,15 @@ async def test_a_launch_uses_the_definition_as_it_is_on_disk_now(sync_db, tmp_re
 
     assert "copilot" in str(process.worker_type)
     assert "NEW PROMPT" in ((process.context_data or {}).get("instructions") or "")
+
+
+async def test_a_record_its_type_declines_syncs_to_nothing(monkeypatch, tmp_path):
+    """`Project.from_record` answers None for a path no project may have: nothing to index, no crash."""
+    from flow_sdk.core.entity.entity_model import Entity
+    from flow_sdk.fs_store import FSRecord
+
+    async def declined(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(Entity, "from_record", declined)
+    await FSRecord(type="project", id="11111111-1111-4111-8111-111111111111").sync_to_db()

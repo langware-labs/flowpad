@@ -66,6 +66,7 @@ export * from './user-note';
 export * from './flow-message';
 export * from './message-attachment';
 export * from './invitation';
+export * from './invitation-answer';
 export * from './spec';
 export * from './group';
 export * from './prompt';

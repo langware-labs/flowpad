@@ -246,5 +246,7 @@ async def test_members_action_returns_role_per_participant(hub_base_url, hub_log
         # → ``email``/``name`` on the client side.
         for key in ("user_id", "user_email", "user_name", "roles"):
             assert key in m, f"members entry missing {key!r}: {m}"
-        # Roles must be a non-empty list of strings — every member has a hub-side role set.
-        assert isinstance(m["roles"], list) and m["roles"], f"empty/non-list roles on member: {m}"
+        # Roles must be a non-empty list of names — every member has a hub-side role set.
+        assert isinstance(m["roles"], list) and m["roles"] and all(isinstance(r, str) for r in m["roles"]), (
+            f"empty/non-list roles on member: {m}"
+        )

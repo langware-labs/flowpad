@@ -666,7 +666,7 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
     missing = [n for n in names if n not in declared]
     if not missing:
         return declared
-    agent = await deployment.element()
+    agent = await deployment.main_agent()
     owner = {v: r.name for r in (getattr(agent, "requirements", None) or []) if r.kind == "credential" for v in r.vars}
     groups: dict[str, list[str]] = {}
     for name in missing:
@@ -678,7 +678,7 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
 
 async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deployment", Placement]:
     """Where a deployment's machine reads its values: the row this machine keeps for ``deployment_id``
-    (``adopt_placement`` re-keys the agent's; ``expose-endpoints`` keys a serving one), else this
+    (``deployment/<id>/adopt`` re-keys it; ``expose-endpoints`` keys a serving one), else this
     machine's own — the machine IS that deployment, and the hub places before, or without, a successful
     adopt. The environment is the one the hub sends, never the row's (a serving row carries the
     instance default); it becomes this instance's default, so the agent and every terminal read it."""
@@ -789,12 +789,13 @@ async def use_mine(deployment_id: str, names: Optional[list[str]] = None) -> dic
     placement = await Placement.of(deployment)
     if placement.secrets.protected:
         raise CredentialError("a protected deployment's values are entered directly, never copied in", code="protected")
-    agent = await deployment.element()
-    project = await project_of(agent) if agent is not None else None
+    agent = await deployment.main_agent()
+    element = await deployment.element()
+    project = element if getattr(element, "type", None) == "project" else (await project_of(agent) if agent else None)
     if names is None:
-        if agent is None:
-            raise CredentialError("name the values to copy: this deployment runs no agent")
-        ready = await readiness(agent, deployment)
+        if agent is None and project is None:
+            raise CredentialError("name the values to copy: this deployment runs no project")
+        ready = await readiness(agent, deployment, project=project)
         names = ready.value_names(missing_only=True)
     declared = await declared_vars(project)
     funded = sorted(n for n in names if n in declared and declared[n].spec.lm_provider)
@@ -829,6 +830,10 @@ def _store_refusal(e: Exception) -> Optional[CredentialError]:
         return CredentialError(str(e), code="unknown_vault")
     if isinstance(e, UnknownSecretManager):
         return CredentialError(str(e), code="unknown_secret_manager")
+    from flow_sdk.secrets.errors import StoreToolMissing  # noqa: PLC0415
+
+    if isinstance(e, StoreToolMissing):
+        return CredentialError(f"the secret manager is not installed here: {e}", code="manager_missing")
     if isinstance(e, StoreNeedsConnection):
         return CredentialError(f"the secret manager needs a sign-in: {e}", code="needs_connection")
     if isinstance(e, StoreAccessDenied):
@@ -973,6 +978,15 @@ async def vault_check(project_id: str, vault: str) -> dict[str, Any]:
     return {"vault": vault, "ready": ready, "reason": reason}
 
 
+async def vault_setup(project_id: str, vault: str) -> dict[str, Any]:
+    """Run ``vault``'s secret-manager setup wizard on this computer (install the CLI, sign in, check the vault —
+    each skipped when it holds): ``{vault, ready, reason, steps: [{id, label, state, detail}]}``."""
+    from flow_sdk.secrets.setup_wizard import run_vault_setup  # noqa: PLC0415
+
+    project = await _project_of(project_id)
+    return await run_vault_setup(project, vault, _vault_spec(_vault_specs(project), vault))
+
+
 async def grant(project_id: str, vault: str, email: str) -> dict[str, Any]:
     """Give ``email`` read access to ``vault`` through its manager's own sharing: ``{vault, email}``."""
     from flow_sdk.secrets import managers  # noqa: PLC0415
@@ -1034,6 +1048,16 @@ async def test_credential(name: str, project_id: str = "") -> dict[str, Any]:
     return await test_credential_spec(spec, project)
 
 
+def _vault_why(spec: "Credential", project: Optional["Project"]) -> str:
+    """Why the first vault this credential points into cannot be read here, ending in the setup command; "" when
+    none is known. Asks no manager (no unlock prompt): only whether its CLI is on this machine."""
+    from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
+    from flow_sdk.secrets.setup_wizard import manager_missing_why  # noqa: PLC0415
+
+    vaults = vaults_of(project)
+    return next((why for name in spec.vault_names() if name in vaults and (why := manager_missing_why(name, vaults[name]))), "")
+
+
 async def test_credential_spec(spec: "Credential", project: Optional["Project"]) -> dict[str, Any]:
     """:func:`test_credential` for a credential already in hand — what a secured transfer or a vault fetch runs
     right after the values land, so the sender learns they work there."""
@@ -1049,8 +1073,15 @@ async def test_credential_spec(spec: "Credential", project: Optional["Project"])
     stored = set(spec.stored_var_names())
     values = await resolve_project_secrets(project, only=stored, placement=await Placement.of(None))
     plain = {k: v.get_secret_value() for k, v in values.items()}
-    if missing := [v for v in spec.required_var_names() if v in stored - plain.keys()]:
-        state, detail = "error", f"no value here for {', '.join(missing)}"
+    absent = stored - plain.keys()
+    missing = [v for v in spec.required_var_names() if v in absent]
+    if not missing and stored and not plain:
+        # Not one stored value here (an optional key the vault could not hand over): the provider would only
+        # answer "unauthorized" — say what is missing, and the vault fix when there is one.
+        missing = sorted(absent)
+    if missing:
+        why = _vault_why(spec, project)
+        state, detail = "error", f"no value here for {', '.join(missing)}" + (f" — {why}" if why else "")
     else:
         outcome, reason = await run_check(test, workdir=spec.folder or Path.home(), extra_env=plain)
         state, detail = {

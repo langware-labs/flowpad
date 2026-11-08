@@ -156,7 +156,6 @@ function SessionOnLatestMessage({ conversationId, messageId }: { conversationId:
       conversation={conversation ?? null}
       task={task}
       buildPrompt={buildPrompt}
-      launchOnly
       testIdPrefix="live-session"
     />
   );

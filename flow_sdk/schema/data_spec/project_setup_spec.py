@@ -17,7 +17,7 @@ from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement, CredentialVarKind, Requirement, is_valid_env_var
-from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, group_held
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialTestResultSpec, CredentialWaySpec, group_held
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 REQUIREMENT_PACK = "pack"
@@ -29,6 +29,9 @@ REQUIREMENT_DEPENDENCY = "dependency"
 REQUIREMENT_SOURCE = "source"
 #: A web app of the project whose dev server does not answer. Readiness only, like ``source``.
 REQUIREMENT_WEBAPP = "webapp"
+#: An automation the project recommends that nobody here has turned on or off yet (docs/automations.md
+#: "On, off and recommended"). Readiness only — the person decides; there is nothing for the tree to run.
+REQUIREMENT_AUTOMATION = "automation"
 
 
 def input_name(credential: str, env_var: str) -> str:
@@ -117,7 +120,7 @@ class SetupRequirementSpec(DataSpec):
     spec_kind: ClassVar[str] = "project.setup.requirement"
     model_config = ConfigDict(frozen=True)
 
-    #: ``pack`` / ``gap`` / ``dependency`` / ``source`` / ``webapp``.
+    #: ``pack`` / ``gap`` / ``dependency`` / ``source`` / ``webapp`` / ``automation``.
     kind: str
     #: The credential's name (pack), the dependency's, the source's or the web app's.
     name: str
@@ -164,6 +167,9 @@ class SetupRequirementSpec(DataSpec):
     why_not_always: str = ""
     #: Its node in the project's setup tree (``derive.requirement_node_id``) — the ``root`` that runs it alone.
     node: str = ""
+    #: pack: the credential declares a ``test`` (a ``test.json`` beside it), and its last result on this machine.
+    has_test: bool = False
+    test_result: Optional[CredentialTestResultSpec] = None
 
     @property
     def missing(self) -> list[SetupVarSpec]:
@@ -195,3 +201,5 @@ class ProjectReadinessSpec(DataSpec):
     gaps: list[SetupRequirementSpec] = []
     #: What is set up already (not skipped) — what the Project setup page lists as Ready.
     set_up: list[SetupRequirementSpec] = []
+    #: Dependencies Flowpad cloned that are behind their remote. Never part of ``ready``: updates wait.
+    updates: int = 0

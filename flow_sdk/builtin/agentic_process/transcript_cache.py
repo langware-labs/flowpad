@@ -15,7 +15,7 @@ Module-level, not on the entity: each request re-hydrates processes from the DB.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticProcessContextKey
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
@@ -28,6 +28,8 @@ _TERMINAL = frozenset({ProcessStatus.STOPPED.value, ProcessStatus.FAILED.value})
 _MAX_ENTRIES = 4096
 
 _entries: dict[str, tuple[tuple[str, ...], Path | None]] = {}
+# A finished process's worker status: no worker is left to append to its transcript, so the tail never changes.
+_terminal_status: dict[str, tuple[tuple[str, ...], object]] = {}
 
 
 def _key(process: "AgenticProcess") -> tuple[str, ...]:
@@ -42,6 +44,13 @@ def _key(process: "AgenticProcess") -> tuple[str, ...]:
     )
 
 
+def _store(cache: dict, process_id: str, key: tuple[str, ...], value: object) -> None:
+    """Remember ``value`` under ``key``; full, the oldest entry goes (never the whole cache at once)."""
+    if len(cache) >= _MAX_ENTRIES:
+        cache.pop(next(iter(cache)))
+    cache[process_id] = (key, value)
+
+
 def transcript_path(process: "AgenticProcess") -> Path | None:
     """The process's transcript file, resolving through its driver only when needed."""
     key = _key(process)
@@ -51,20 +60,33 @@ def transcript_path(process: "AgenticProcess") -> Path | None:
     path = process.driver.transcript_path(process)
     is_final = getattr(process.driver, "transcript_is_final", None)
     if process.status in _TERMINAL or (path is not None and is_final is not None and is_final(process, path)):
-        if len(_entries) >= _MAX_ENTRIES:
-            _entries.clear()
-        _entries[str(process.id)] = (key, path)
+        _store(_entries, str(process.id), key, path)
     else:
         _entries.pop(str(process.id), None)
     return path
 
 
+def terminal_status(process: "AgenticProcess", discover: "Callable[[], object]") -> object:
+    """A finished process's status from its transcript, discovered once per key; a live one, every time."""
+    if process.status not in _TERMINAL:
+        return discover()
+    key = _key(process)
+    entry = _terminal_status.get(str(process.id))
+    if entry is not None and entry[0] == key:
+        return entry[1]
+    value = discover()
+    _store(_terminal_status, str(process.id), key, value)
+    return value
+
+
 def invalidate(process_id: str | None) -> None:
-    """Forget one process's remembered transcript location."""
+    """Forget one process's remembered transcript location and status."""
     if process_id is not None:
         _entries.pop(str(process_id), None)
+        _terminal_status.pop(str(process_id), None)
 
 
 def clear() -> None:
-    """Forget every remembered transcript location."""
+    """Forget every remembered transcript location and status."""
     _entries.clear()
+    _terminal_status.clear()

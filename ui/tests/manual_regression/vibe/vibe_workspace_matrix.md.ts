@@ -9,12 +9,14 @@
  */
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import path from 'node:path';
 
 import {
   API,
+  displayChildren,
+  listTabs,
+  serveFolderApp,
   createVibeFixture,
   destroyVibeFixture,
   displayUrlRe,
@@ -137,8 +139,8 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       // on the newest show (the HTML), not on the bare process.
       await page.getByTestId('workspace-display-tab').click();
       await expect(page).toHaveURL(displayUrlRe(fixture.projectId, fixture.processId, 'editor/html/'));
-      // The shown page is a parked frame: coming back to it does not reload it (FLOWPAD-2305), so the
-      // click made before the round trip is still there.
+      // The shown page SURVIVED the switch (FLOWPAD-2305): same live document, so the
+      // click from above still holds. Only a hard reload (below) starts it fresh.
       await expect(htmlFrame.locator('#activate')).toHaveText('VW03_HTML_CLICKED');
 
       // A hard reload is a new session, so restore fires again and returns the
@@ -271,13 +273,14 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
     }
   });
-      // A project's document outside its project (the bare `/dock/assets/…` form). Since 983df222b the
-      // viewer's own Chat toggle replaced the top-bar Discuss icon, and it needs no project: a chat runs in
-      // the doc's project, else the active one, else a per-instance scratch folder. So it is offered here.
+      // A project's document outside its project (the bare `/dock/assets/…` form)
+      // is the GLOBAL assets scope. Discuss is the viewer's one Chat toggle
+      // (983df222b) and needs no tab project: the chat runs in the doc's project,
+      // else the active one, else a chat-scratch folder — so it is offered, enabled.
       await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`);
-      const globalChat = page.getByTestId('viewer-chat-toggle');
-      await expect(globalChat).toBeEnabled();
-      await expect(globalChat).toHaveAccessibleName('Chat about this file');
+      const globalDiscuss = page.getByTestId('viewer-chat-toggle');
+      await expect(globalDiscuss).toHaveCount(1);
+      await expect(globalDiscuss).toBeEnabled();
 
       // Opened inside its project — the address the app itself places a project's
       // document at (`rebaseAssetsOntoProject`: /dock/project/<P>/<editor tail>).
@@ -287,16 +290,15 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       // under more than one root, so a bare text match is ambiguous.
       const crumb = page.getByTestId('top-nav-crumb-details-trigger');
       await expect(crumb).toHaveAttribute('title', 'vibe-origin-source.md');
-      // The viewer's Chat toggle is the one in/out control for "chat with this doc" (983df222b).
+      // Discuss is the viewer's Chat toggle; the top bar carries no Discuss action.
       await expect(page.getByTestId('viewer-chat-toggle')).toBeVisible();
-      await expect(page.getByTestId('viewer-chat-toggle')).toHaveAttribute('data-active', 'false');
+      await expect(page.getByTestId('asset-discuss-in-vibe')).toHaveCount(0);
       expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('0.0');
       expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('100.0');
       const before = new URL(page.url());
       await page.getByTestId('viewer-chat-toggle').click();
 
-      // Entering the chat opens a Vibe HOST tab with the document as its child (bd2e5b0d1,
-      // `navigation.discussAsset`): the document keeps its own editor tail, now
+      // Chat opens a Vibe HOST tab with the document as its child (`enterChat`): the document keeps its own editor tail, now
       // addressed under the session that discusses it.
       const tail = before.pathname.slice(`/dock/project/${fixture.projectId}/`.length);
       await expect(page).toHaveURL(
@@ -351,10 +353,9 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
 
       // A `flow show` steers only the workspace of the process that shows, and it
       // does so by NAVIGATING: the URL becomes the target's own display address,
-      // named by the host (`.../process/<typeid>/display/...`). Since 5f383111f there
-      // is no `activeDisplay` marker: each shown target is its own workspace child
-      // tab (keyed `|@<host>`), and a prior target reopened from the history popover
-      // returns to that same address.
+      // named by the host (`.../process/<typeid>/display/...`). Each shown target is
+      // an ordinary child tab of the process; a prior one reopens from the history
+      // popover at the same address.
       const hosted = (id: string) =>
         new RegExp(
           `/dock/project/${fixture.projectId}/process/agentic_process-${fixture.processId}/display/editor/markdown/typeid/markdown-${id}`,
@@ -376,10 +377,14 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await expect(history.nth(0)).toContainText(related.id.slice(0, 8));
       await expect(history.nth(1)).toContainText(source.id.slice(0, 8));
       await history.nth(1).click();
-      // Reopened at its own hosted address.
       await expect(page).toHaveURL(hosted(source.id));
       await expect(page.getByText('VW17_ORIGINAL')).toBeVisible();
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
+      // Both shown documents are children of the process tab.
+      const children = displayChildren(await listTabs(request), fixture.processId);
+      for (const id of [source.id, related.id]) {
+        expect(children.some((t) => (t.pointer ?? '').includes(id))).toBe(true);
+      }
       await page.reload();
       await expect(page.getByText('VW17_ORIGINAL')).toBeVisible();
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
@@ -392,7 +397,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await destroyVibeFixture(request, fixture);
     }
   });
-  test('VW-21/VW-23/VW-24: the display is an address — one re-pointing row, Back-safe, promotable', async ({
+  test('VW-21/VW-23/VW-24: the display is an address — each show a child, Back-safe, nothing to promote', async ({
     page,
     request,
   }) => {
@@ -408,9 +413,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await openVibe(page, fixture.processId);
       await expect(page).toHaveURL(processUrlRe(fixture.processId));
 
-      // VW-21: a show NAVIGATES. The URL names the deliverable. Since 5f383111f there is no
-      // `activeDisplay` marker and no single re-pointing row: each shown target is its own child tab
-      // of the workspace (keyed `|@<host>`), under the session's one top-level tab.
+      // VW-21: a show NAVIGATES. The URL names the deliverable, hosted by the process.
       await showPath(request, fixture.processId, first);
       await expect(page).toHaveURL(displayUrlRe(fixture.projectId, fixture.processId));
       await expect(page.getByText('VW21_FIRST')).toBeVisible();
@@ -424,21 +427,15 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       const secondUrl = page.url();
       expect(secondUrl).not.toBe(firstUrl);
       await expect(page).toHaveURL(displayUrlRe(fixture.projectId, fixture.processId));
+      const secondLeaf = new URL(secondUrl).pathname.split('/display/')[1].split('/').pop()!;
 
-      const workspaceRows = async () => {
-        const tabs = (await (await request.get(`${API}/api/v1/graph/tab/list_all`)).json()).data?.tabs ?? [];
-        const processTabs = tabs.filter((t: { target_id?: string }) => t.target_id === fixture.processId);
-        const host = processTabs[0];
-        const children = host ? tabs.filter((t: { parent_tab_id?: string }) => t.parent_tab_id === host.id) : [];
-        return { processTabs, children };
-      };
-      // ONE top-level tab for the session, and each show a child of it; the newest show is a child.
-      const secondTail = new URL(secondUrl).pathname.split('/display/')[1].split('/').pop()!;
-      const { processTabs, children } = await workspaceRows();
+      // ONE process row; each shown target is an ordinary child of it, and no
+      // retired re-pointing row (`workspaceActive|<host>`) survives.
+      const tabs = await listTabs(request);
+      const processTabs = tabs.filter((t) => t.target_id === fixture.processId && !t.parent_tab_id);
       expect(processTabs).toHaveLength(1);
-      expect(processTabs[0].parent_tab_id ?? null).toBeNull();
-      expect(children).toHaveLength(2);
-      expect(children.some((t: { pointer?: string }) => (t.pointer ?? '').includes(secondTail))).toBe(true);
+      expect(displayChildren(tabs, fixture.processId).some((t) => (t.pointer ?? '').includes(secondLeaf))).toBe(true);
+      expect(tabs.filter((t) => (t.pointer ?? '').includes('workspaceActive|'))).toHaveLength(0);
 
       // VW-23: Back returns to the first show and Forward to the second (Back-safe).
       await page.goBack();
@@ -446,14 +443,10 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await page.goForward();
       await expect(page).toHaveURL(secondUrl);
 
-      // VW-24: a shown target is already a durable tab of its own — nothing to promote (the display's
-      // "Open in a new tab" is not offered on a workspace child) — and it survives a reload as one.
+      // VW-24: there is nothing to promote — a shown document is ALREADY its own child
+      // tab of the workspace, so the display chrome offers no "open in tab".
       await expect(page.getByTestId('display-open-in-tab')).toHaveCount(0);
-      await page.reload();
-      await expect(page.getByText('VW21_SECOND')).toBeVisible();
-      const afterReload = await workspaceRows();
-      expect(afterReload.processTabs).toHaveLength(1);
-      expect(afterReload.children).toHaveLength(2);
+      expect(displayChildren(await listTabs(request), fixture.processId).some((t) => (t.pointer ?? '').includes(secondLeaf))).toBe(true);
     } finally {
       await destroyVibeFixture(request, fixture);
     }
@@ -463,30 +456,15 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
     request,
   }) => {
     const fixture = await createVibeFixture(request, 'vibe-app-address');
-    // The artifact's port must be held by a program serving FROM the artifact's folder (a stranger on the port is
-    // refused), so the fixture app is its own process with the fixture root as its cwd.
-    const server = spawn(
-      process.execPath,
-      [
-        '-e',
-        "require('http').createServer((q,r)=>{r.setHeader('Content-Type','text/html');r.end('<!doctype html><p id=\"marker\">VW25_APP_READY</p>')}).listen(0,'127.0.0.1',function(){process.stdout.write(this.address().port+'\\n')})",
-      ],
-      { cwd: fixture.root, stdio: ['ignore', 'pipe', 'inherit'] },
-    );
+    let server: { port: number; close: () => Promise<void> } | null = null;
     try {
-      const port = await new Promise<number>((resolve, reject) => {
-        server.once('error', reject);
-        // The port as plain digits: the worker's FORCE_COLOR made a console.log'd number arrive as
-        // '\u001b[33m37385\u001b[39m', which Number() reads as NaN (an artifact registered with no port).
-        server.stdout.once('data', (chunk) => resolve(Number(/\d+/.exec(String(chunk))?.[0])));
-      });
-      const address = { port };
+      server = await serveFolderApp(fixture.root, '<!doctype html><p id="marker">VW25_APP_READY</p>');
 
       const artifactId = await registerWebappArtifact(
         request,
         fixture.processId,
         fixture.root,
-        address.port,
+        server.port,
         'vw25-app',
       );
       await openVibe(page, fixture.processId);
@@ -502,33 +480,26 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       // Re-showing the same app is idempotent, and still one row.
       await showApp(request, fixture.processId, artifactId);
       await expect(app.locator('#marker')).toHaveText('VW25_APP_READY');
-      // One row for the app: a child of the session's tab (5f383111f: each shown target is its own
-      // workspace child; there is no host-keyed active-display row any more).
-      const tabs = (await (await request.get(`${API}/api/v1/graph/tab/list_all`)).json()).data?.tabs ?? [];
-      const host = tabs.find((t: { target_id?: string }) => t.target_id === fixture.processId);
-      const appRows = tabs.filter((t: { pointer?: string }) => (t.pointer ?? '').includes(`artifact-${artifactId}`));
-      expect(appRows).toHaveLength(1);
-      expect(appRows[0].parent_tab_id).toBe(host?.id);
+      const displays = displayChildren(await listTabs(request), fixture.processId).filter((t) =>
+        (t.pointer ?? '').includes(`artifact-${artifactId}`),
+      );
+      expect(displays).toHaveLength(1);
 
-      // VW-26: leaving vibe strips the host — it only means something while a display pane is on
-      // screen to be one — and the app keeps its artifact address. The session's own switch
-      // (5a67651f9 retired the footer toggle) re-points the SESSION tab to Chat, so the page shows the
-      // session; the app's row is carried out as a top-level tab (docs/tab-management.md "Leaving
-      // Vibe carries children out"), still addressed by its artifact.
+      // VW-26: switching the SESSION to Chat re-points its one tab to the chat
+      // surface (`switchSessionSurface`): no host survives, and the shown app is
+      // carried out of the workspace as a top-level tab of its own.
       await page.getByTestId('session-surface-chat').click();
       await expect(page).not.toHaveURL(/[?&]host=/);
-      await expect(page).toHaveURL(new RegExp(`/dock/shell/[^?]*${fixture.processId}[^?]*\\?(.*&)?viewMode=standard`));
-      const appRowAfter = async () => {
-        const all = (await (await request.get(`${API}/api/v1/graph/tab/list_all`)).json()).data?.tabs ?? [];
-        const rows = all.filter((t: { pointer?: string }) => (t.pointer ?? '').includes(`artifact-${artifactId}`));
-        return rows.map((t: { parent_tab_id?: string | null; pointer?: string }) => ({
-          top: !t.parent_tab_id,
-          hosted: /[?&]host=/.test(t.pointer ?? ''),
-        }));
-      };
-      await expect.poll(appRowAfter).toEqual([{ top: true, hosted: false }]);
+      await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${fixture.processId}`));
+      await expect
+        .poll(async () =>
+          (await listTabs(request))
+            .filter((t) => (t.pointer ?? '').includes(`artifact-${artifactId}`))
+            .map((t) => t.parent_tab_id ?? null),
+        )
+        .toEqual([null]);
     } finally {
-      server.kill();
+      await server?.close();
       await destroyVibeFixture(request, fixture);
     }
   });

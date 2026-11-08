@@ -111,6 +111,8 @@ class _FakeSlack:
     else wrote. Files go up in Slack's three steps and come down through ``files.info``; reactions
     live on the history's messages, the bot reacting as ``UBOT``."""
 
+    #: ``auth.test`` refuses every token with this error (``invalid_auth``); empty: every token is accepted.
+    refuse = ""
     #: Who the token is — ``auth.test``'s ``user_id``, and the reactor of every ``reactions.add``.
     me = "UBOT"
 
@@ -118,6 +120,8 @@ class _FakeSlack:
         self.clock = 300.0
         self.channels = {"C1": [_message("100.000100", "root"), _message("150.000150", "in thread", thread_ts="100.000100"), _message("200.000200", "later")]}
         self.posts: list[dict] = []
+        #: ``users.info``'s handle per member id; a member not here has no profile.
+        self.people: dict[str, str] = {"U1": "dana", self.me: "flowpad"}
         #: file id → {name, length, bytes}: every file that exists here, uploaded or arrived.
         self.files: dict[str, dict] = {}
         #: The Authorization header of every download.
@@ -159,6 +163,12 @@ class _FakeSlack:
     def message(self, channel: str, ts: str) -> dict:
         return next(m for m in self.channels[channel] if m["ts"] == ts)
 
+    def _conversation(self, channel: str) -> dict:
+        """``users.conversations``'s entry: the kind by the id's letter, ``updated`` its newest message."""
+        kind = {"D": {"is_im": True}, "G": {"is_mpim": True, "is_private": True}}.get(channel[0], {"is_channel": True})
+        newest = max((float(m["ts"]) for m in self.channels[channel]), default=0.0)
+        return {"id": channel, "name": channel.lower(), "updated": int(newest * 1000), **kind}
+
     def __call__(self, path, headers):
         route, _, query = path.partition("?")
         params = {k: v[0] for k, v in parse_qs(query).items()}
@@ -170,7 +180,17 @@ class _FakeSlack:
         body = json.loads(headers["_body"]) if headers.get("_body") else {}
         self.calls.append((method, params or body))
         if method == "auth.test":
+            if self.refuse:
+                return self._ok(ok=False, error=self.refuse)
             return self._ok(user_id=self.me, bot_id="B1", user="flowpad", team_id="T1")
+        if method == "users.conversations":
+            rows = [self._conversation(c) for c in sorted(self.channels)]
+            start, limit = int(params.get("cursor") or 0), int(params.get("limit") or 100)
+            more = start + limit < len(rows)
+            return self._ok(channels=rows[start:start + limit], response_metadata={"next_cursor": str(start + limit) if more else ""})
+        if method == "users.info":
+            name = self.people.get(params.get("user") or "")
+            return self._ok(user={"id": params.get("user"), "name": name}) if name else self._ok(ok=False, error="user_not_found")
         if method.startswith("download/"):
             self.downloads.append(str(headers.get("Authorization") or ""))
             f = self.files.get(method.split("/", 1)[1])
@@ -505,11 +525,29 @@ async def test_verify_separates_a_missing_scope_from_a_missing_invite(serve):
     assert verdict.ready is False and verdict.pending == () and "channels:history" in verdict.detail
 
 
-async def test_verify_refuses_a_source_with_no_channel():
+async def test_verify_of_everything_needs_a_persons_token_not_a_bots(serve):
+    """No channel is EVERYTHING the person is in — which a bot token cannot read: ``auth.test`` names no user."""
+    serve([{"ok": True, "bot_id": "B1", "team_id": "T1"}])
     source = _source()
-    source.config = {}
+    source.config = {"base_url": BASE}
     verdict = await DataDriver.loaded("slack").verify(source)
-    assert verdict.ready is False and "channel" in verdict.detail.lower()
+    assert verdict.ready is False and "xoxp-" in verdict.detail and "bot" in verdict.detail.lower()
+
+
+async def test_verify_of_everything_names_the_missing_scopes_and_the_person_it_reads_as(serve):
+    slack = serve([
+        {"ok": True, "user_id": "U1", "user": "eran", "team_id": "T1"},
+        {"ok": False, "error": "missing_scope"},
+        {"ok": True, "user_id": "U1", "user": "eran", "team_id": "T1"},
+        {"ok": True, "channels": [{"id": "D1", "is_im": True}]},
+    ])
+    source = _source()
+    source.config = {"base_url": BASE}
+    refused = await DataDriver.loaded("slack").verify(source)
+    ready = await DataDriver.loaded("slack").verify(source)
+    assert refused.ready is False and "im:history" in refused.detail and "reinstall" in refused.detail
+    assert ready.ready is True and "@eran" in ready.detail and "DMs" in ready.detail
+    assert [r.split("?")[0] for r in slack.requests] == ["/auth.test", "/users.conversations"] * 2
 
 
 # ── send ─────────────────────────────────────────────────────────────────────
@@ -799,3 +837,387 @@ def test_the_emoji_table_round_trips():
         assert emojis.name_of(emojis.unicode_of(name)) == name
     assert emojis.name_of("👍🏽") == "+1::skin-tone-4" and emojis.unicode_of("+1::skin-tone-4") == "👍🏽"
     assert emojis.unicode_of("thumbsup") == "👍" and emojis.name_of("🦄") is None
+
+
+# ── everything the person is in (no channel: their own app) ──────────────────
+
+
+def _everything(base: str, **config) -> SourceBinding:
+    return SourceBinding(
+        account_key="T1",
+        config={"base_url": base, "team_id": "T1", "user_id": "UBOT", **config},
+        credentials=ResolvedSecrets(shape=AuthShape.SECRETS, choice="app",
+                                    values={"SLACK_USER_TOKEN": SecretStr("xoxp-mine")}),
+    )
+
+
+def test_no_channel_is_everything_and_a_channel_row_is_not_its_twin():
+    everything = SlackSource(SourceBinding(account_key="T1", config={}))
+    one = SlackSource(SourceBinding(account_key="T1", config={"channel": CHANNEL}))
+    assert everything.everything and everything.query().conversation is None
+    assert not one.everything
+    assert SlackSource.account_part({}) == SlackSource.EVERYTHING and SlackSource.account_part({"channel": CHANNEL}) == ""
+    assert SlackSource.account_part({"channel": {"id": CHANNEL, "name": "eng"}}) == ""
+
+
+async def test_an_everything_row_is_never_found_by_a_channel_lookup_and_may_share_the_workspace():
+    everything = DataSource(provider="slack", name=f"Slack all {uuid.uuid4().hex[:8]}", account_key="@eran", config={"base_url": BASE})
+    mine = _saved_channel()
+    one = _source(channel=mine)
+    one.account_key = "@eran"
+    await everything.save()
+    await one.save()
+    try:
+        found = await DataSource.find_for_account("slack", "channel", mine)
+        assert found is not None and found.id == one.id
+        whole = await DataSource.find_for_account("slack", "", "@eran", part=SlackSource.EVERYTHING)
+        assert whole is not None and whole.id == everything.id
+        found_as_account = await DataSource.find_for_account("slack", "", "@eran")
+        assert found_as_account is not None and found_as_account.id == one.id, "the default part is the channel row's, as every channel lookup expects"
+    finally:
+        await everything.delete()
+        await one.delete()
+
+
+def test_the_everything_cursor_round_trips_refuses_garbage_and_stays_under_budget():
+    state = slack_source._AllCursor()
+    state.swept = 1700000000.0
+    state.newest = {"C1": "100.000100", "D1": ""}
+    state.pending = {"G1": ["200.000200", "abc"]}
+    again = slack_source._AllCursor.decode(state.encode())
+    assert (again.swept, again.newest, again.pending) == (1700000000.0, state.newest, state.pending)
+    assert slack_source._AllCursor.decode(None).newest == {}
+    for bad in ("resume:1.0", "all:[", "all:{}", 'all:{"c": 3}'):
+        with pytest.raises(slack_source.InvalidCursor):
+            slack_source._AllCursor.decode(bad)
+    with pytest.raises(TypeError):
+        slack_source._AllCursor.decode(5)
+    crowd = slack_source._AllCursor()
+    crowd.newest = {f"C{i:09d}": f"{1000 + i}.000000" for i in range(400)}
+    crowd.pending = {"C000000399": ["1399.000000", "pg"]}
+    text = crowd.encode()
+    assert len(text) <= slack_source.CURSOR_BUDGET < 4096
+    kept = slack_source._AllCursor.decode(text)
+    assert "C000000399" in kept.newest and "C000000398" in kept.newest, "the busiest conversations stay"
+    assert "C000000000" not in kept.newest, "the quietest are forgotten first (re-floored at the window next time)"
+    rest = sorted(c for c in kept.newest if c != "C000000399")
+    assert kept.due(3) == ["C000000399", *rest[:2]], "mid-page first, then the rotation from where it stands"
+    assert slack_source._AllCursor.decode(kept.encode()).offset == kept.offset == 2, "the rotation survives the cursor"
+
+
+def test_a_pass_reads_changed_conversations_first_and_rotates_through_the_rest():
+    """A conversation the sweep says moved since it was read is read first; never-read ones next; the rest in
+    turn, so every one is reached — a self-DM cannot be starved by a set of busier channels."""
+    state = slack_source._AllCursor()
+    state.newest = {"C1": "100.0", "C2": "100.0", "C3": "100.0", "D1": "100.0", "N1": ""}
+    state.pending = {"P1": ["150.0", "pg"]}
+    state.updated = {"D1": 120.0, "N1": 110.0, "C1": 50.0, "C2": 50.0, "C3": 50.0}  # D1 moved since it was read
+    assert state.due(3) == ["P1", "D1", "N1"], "mid-page, changed, never read"
+    assert state.due(5) == ["P1", "D1", "N1", "C1", "C2"]
+    state.updated["D1"] = state.updated["N1"] = 50.0  # both quiet now
+    state.newest["N1"] = "100.0"  # N1 read: it joins the rotation
+    assert state.due(2) == ["P1", "C3"], "the rotation goes on from where it stood"
+    assert state.due(3) == ["P1", "D1", "N1"]
+    assert state.due(3) == ["P1", "C1", "C2"], "and wraps around"
+
+
+async def test_everything_reads_every_conversation_from_the_window_then_only_what_is_new(fake_slack):
+    slack = fake_slack.slack
+    slack.channels["D1"] = [_message("120.000120", "a dm")]
+    slack.channels["G1"] = [_message("130.000130", "a group dm", user="U7")]
+    source = SlackSource(_everything(fake_slack.base))
+    async with source:
+        first = await source.fetch(None, narrow={"since": datetime.fromtimestamp(110, tz=timezone.utc)})
+        texts = sorted(i.data.text for i in first.items if isinstance(i, slack_source.MessageItem))
+        assert texts == ["a dm", "a group dm", "in thread", "later"], "every conversation, floored at the window (root at 100 is older)"
+        dm = next(i for i in first.items if i.data.text == "a dm")
+        assert dm.origin.namespace == "T1/D1" and dm.data.sender.name == "@dana", "named through users.info"
+        unknown = next(i for i in first.items if i.data.text == "a group dm")
+        assert unknown.data.sender.name is None, "a member with no profile keeps no name"
+        assert first.next_cursor is None and first.resume_cursor.startswith("all:")
+        state = slack_source._AllCursor.decode(first.resume_cursor)
+        assert state.newest == {"C1": "200.000200", "D1": "120.000120", "G1": "130.000130"} and not state.pending
+
+        second = await source.fetch(first.resume_cursor)
+        assert second.items == () and slack_source._AllCursor.decode(second.resume_cursor).newest == state.newest
+
+        slack.arrive("D1", "hello again", user="U1")
+        slack.arrive("D2", "a brand new dm", user="U9")  # a conversation that did not exist at the sweep
+        third = await source.fetch(second.resume_cursor)
+        assert [i.data.text for i in third.items] == ["hello again"], "the new conversation waits for the next sweep"
+        stale = slack_source._AllCursor.decode(third.resume_cursor)
+        stale.swept = 0
+        fourth = await source.fetch(stale.encode())
+        assert [i.data.text for i in fourth.items] == ["a brand new dm"]
+    assert slack.calls.count(("users.conversations", {"types": slack_source.CONVERSATION_TYPES, "exclude_archived": "true", "limit": "200"})) == 2
+
+
+async def test_a_busy_conversation_is_paged_across_passes_without_skipping(fake_slack, monkeypatch):
+    monkeypatch.setattr(slack_source, "EVERYTHING_PAGE", 2)
+    slack = fake_slack.slack
+    slack.channels = {"D1": [_message(f"{100 + i}.000000", f"m{i}") for i in range(5)]}
+    source = SlackSource(_everything(fake_slack.base))
+    seen: list[str] = []
+    async with source:
+        cursor = None
+        for _ in range(4):
+            page = await source.fetch(cursor)
+            seen.extend(i.data.text for i in page.items if isinstance(i, slack_source.MessageItem))
+            cursor = page.resume_cursor
+        state = slack_source._AllCursor.decode(cursor)
+        assert sorted(seen) == ["m0", "m1", "m2", "m3", "m4"] and not state.pending and state.newest == {"D1": "104.000000"}
+        slack.arrive("D1", "m5", user="U1")
+        assert [i.data.text for i in (await source.fetch(cursor)).items] == ["m5"]
+
+
+async def test_a_conversation_the_person_left_is_forgotten_and_a_step_back_in_time_reads_nothing(fake_slack):
+    slack = fake_slack.slack
+    slack.channels["D1"] = [_message("120.000120", "a dm")]
+    source = SlackSource(_everything(fake_slack.base))
+    async with source:
+        first = await source.fetch(None)
+        del slack.channels["D1"]  # left (channel_not_found from now on)
+        state = slack_source._AllCursor.decode(first.resume_cursor)
+        state.swept = 0
+        second = await source.fetch(state.encode())
+        assert "D1" not in slack_source._AllCursor.decode(second.resume_cursor).newest
+        assert (await source.fetch(None, narrow={"before": datetime.fromtimestamp(150, tz=timezone.utc)})).items == ()
+
+
+def test_the_credential_way_picks_the_token():
+    def source(choice, **values):
+        return SlackSource(SourceBinding(account_key="T1", config={}, credentials=ResolvedSecrets(
+            shape=AuthShape.SECRETS, choice=choice, token=SecretStr("xoxp-signin") if "signin" in values else None,
+            values={k: SecretStr(v) for k, v in values.items() if k != "signin"})))
+    both = {"SLACK_BOT_TOKEN": "xoxb-bot", "SLACK_USER_TOKEN": "xoxp-me"}
+    assert source("app", **both)._token() == "xoxp-me"
+    assert source("bot", **both)._token() == "xoxb-bot"
+    assert source("", **both)._token() == "xoxb-bot"
+    assert source("", SLACK_USER_TOKEN="xoxp-me")._token() == "xoxp-me"
+    assert source("signin", signin=True, **both)._token() == "xoxp-signin"
+    assert source("app", signin=True)._token() == "xoxp-signin", "an app way with no token yet falls back to the sign-in"
+
+
+def test_a_room_is_the_conversations_address_and_a_dm_is_with_its_other_side():
+    everything = SlackSource(_everything(""))
+    assert SlackSource.room_of(everything._item("C1", _message("1.0", "x"))) == "C1"
+    assert SlackSource.room_of(everything._item("G1", _message("1.0", "x"))) == "G1"
+    assert SlackSource.room_of(everything._item("D1", _message("1.0", "x"))) == ""
+
+
+# ── live: the person's app's events land as the poll would have read them ────
+
+
+def test_an_event_lands_as_the_same_record_the_poll_reads():
+    source = SlackSource(_everything(""))
+    message = {**_message("200.000200", "hello", thread_ts="100.000100"), "channel": "C1", "channel_type": "channel"}
+    polled = source._item("C1", message)
+    for payload in (
+        {"team_id": "T1", "event": {"type": "message", **message}},
+        {"type": "event_callback", "team_id": "T1", "api_app_id": "A1", "event": {"type": "message", **message}},
+    ):
+        (event,) = source.events_from_webhook(payload)
+        assert event.kind is slack_source.EventKind.UPSERT and event.origin == polled.origin and event.item.data.text == "hello"
+        assert event.item.data.conversation == polled.data.conversation and event.id == "C1:200.000200"
+    assert event.item.data.sender.name is None, "nobody looked U1 up yet"
+    slack_source._NAMES[(source.base_url, "T1", "U1")] = "@dana"
+    try:
+        (named,) = source.events_from_webhook({"team_id": "T1", "event": {"type": "message", **message}})
+        assert named.item.data.sender.name == "@dana", "a sender a pass already named is named on a pushed event too"
+    finally:
+        slack_source._NAMES.pop((source.base_url, "T1", "U1"), None)
+    assert source.events_from_webhook({"team_id": "T9", "event": {"type": "message", **message}}) == [], "another workspace"
+    assert source.events_from_webhook({"team_id": "T1", "event": {"type": "message", "subtype": "channel_join", "channel": "C1", "ts": "1.0", "user": "U2"}}) == []
+    assert source.events_from_webhook({"team_id": "T1", "event": {"type": "pin_added", "channel": "C1"}}) == []
+    assert source.events_from_webhook("garbage") == [] and source.events_from_webhook({"team_id": "T1"}) == []
+
+
+def test_an_edit_a_deletion_a_file_and_reactions_each_do_their_thing():
+    source = SlackSource(_everything(""))
+    edited = {"type": "message", "subtype": "message_changed", "channel": "C1", "ts": "201.000000", "event_ts": "201.000000",
+              "message": _message("200.000200", "hello!", edited={"ts": "201.000000"})}
+    (event,) = source.events_from_webhook({"team_id": "T1", "event": edited})
+    assert event.kind is slack_source.EventKind.UPSERT and event.origin.key == "200.000200" and event.item.data.text == "hello!"
+
+    (gone,) = source.events_from_webhook({"team_id": "T1", "event": {"type": "message", "subtype": "message_deleted", "channel": "C1", "deleted_ts": "200.000200", "ts": "202.0"}})
+    assert gone.kind is slack_source.EventKind.DELETE and gone.origin == source._message_origin("200.000200", "C1") and gone.item is None
+
+    shared = {"type": "message", "subtype": "file_share", "channel": "D1", "user": "U1", "ts": "300.000300", "text": "see",
+              "files": [{"id": "F1", "name": "a.png", "mimetype": "image/png", "size": 3}]}
+    (with_file,) = source.events_from_webhook({"team_id": "T1", "event": shared})
+    assert [f.data.name for f in with_file.item.data.attachments] == ["a.png"] and with_file.item.origin.namespace == "T1/D1"
+
+    liked = {"type": "reaction_added", "user": "U2", "reaction": "thumbsup", "event_ts": "400.0", "item": {"type": "message", "channel": "C1", "ts": "200.000200"}}
+    (thumb,) = source.events_from_webhook({"team_id": "T1", "event": liked})
+    assert isinstance(thumb.item, slack_source.ReactionItem) and thumb.item.data.mode is ReactionMode.ADD
+    assert thumb.item.data.emojis == ("👍",) and thumb.item.data.target == source.origin("200.000200", "C1")
+    assert thumb.item.origin == source.origin("200.000200#reaction:U2", "C1"), "the same report key the poll uses"
+    (unthumb,) = source.events_from_webhook({"team_id": "T1", "event": {**liked, "type": "reaction_removed", "event_ts": "401.0"}})
+    assert unthumb.item.data.mode is ReactionMode.REMOVE and unthumb.id != thumb.id
+    assert source.events_from_webhook({"team_id": "T1", "event": {**liked, "item": {"type": "file", "file": "F1"}}}) == []
+
+
+async def test_a_pushed_event_is_ingested_through_the_runtime_like_a_polled_one(monkeypatch):
+    double = asset_module("slack", "tests.matrix").Double(everything=True)
+    with double:
+        monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", double.credentials)
+        source = DataSource(provider="slack", name=f"Slack all {uuid.uuid4().hex[:8]}", account_key="@me", config=double.config)
+        await source.save()
+        try:
+            arrived = double.deliver("pushed to you", sender="U42", channel="D7")
+            result = await DataDriver.loaded("slack").ingest_pushed(source, double.push(arrived["external_id"], channel="D7"), verified_by_hub=True)
+            assert result["ingested"] == 1
+            (row,) = await SourceItem.get_all({"data_source_id": str(source.id)})
+            assert (row.body, row.author_external_id, row.external_id) == ("pushed to you", "U42", arrived["external_id"])
+            again = await DataDriver.loaded("slack").ingest_pushed(source, double.push(arrived["external_id"], channel="D7"), verified_by_hub=True)
+            assert again["ingested"] == 1 and len(await SourceItem.get_all({"data_source_id": str(source.id)})) == 1, "a redelivery upserts in place"
+        finally:
+            await source.delete()
+
+
+# ── the slack-connect wizard: the claim, the manifest, the app ───────────────
+
+
+def test_the_hub_claim_is_pending_until_the_app_is_known_then_proven_with_it():
+    secrets = {"SLACK_USER_TOKEN": "xoxp-me"}
+    assert SlackSource.hub_claim({}, {}) == {"provider": "slack", "key": ""}, "the URL first"
+    assert SlackSource.hub_claim({"team_id": "T1"}, {"SLACK_USER_TOKEN": "xoxp-me"}) == {"provider": "slack", "key": "T1", "proof": {"credential": "xoxp-me"}}, (
+        "the token proves the workspace"
+    )
+    assert SlackSource.hub_claim({"team_id": "T1"}, secrets) == {"provider": "slack", "key": "T1", "proof": {"credential": "xoxp-me"}}
+    assert SlackSource.hub_claim({"channel": CHANNEL, "team_id": "T1"}, secrets) is None, "one channel as a bot is polled"
+
+
+def test_the_manifest_link_creates_the_app_with_its_request_url_scopes_and_events():
+    from urllib.parse import parse_qs, urlparse
+
+    link = slack_source.manifest_link("https://hub.example/api/v1/webhook/abc")
+    parsed = urlparse(link)
+    assert parsed.netloc == "api.slack.com" and parsed.path == "/apps"
+    query = parse_qs(parsed.query)
+    assert query["new_app"] == ["1"]
+    manifest = json.loads(query["manifest_json"][0])
+    assert manifest["settings"]["event_subscriptions"]["request_url"] == "https://hub.example/api/v1/webhook/abc"
+    assert set(manifest["settings"]["event_subscriptions"]["user_events"]) == set(slack_source.USER_EVENTS)
+    assert set(manifest["oauth_config"]["scopes"]["user"]) == set(slack_source.USER_SCOPES) and "bot" not in manifest["oauth_config"]["scopes"]
+    assert manifest["settings"]["socket_mode_enabled"] is False and len(link) < 2000
+
+
+def test_the_app_is_named_after_the_signed_in_person(monkeypatch):
+    from flow_sdk.cloud_client import auth_state
+
+    for user, expected in (
+        ({"display_name": "Eran Shlomo", "email": "eran@langware.ai"}, "Eran's inbox"),
+        ({"first_name": "dana"}, "Dana's inbox"),
+        ({"name": "myslack-7", "email": "myslack-7@local.test"}, "Myslack-7's inbox"),
+        ({"email": "bob@example.com"}, "Bob's inbox"),
+        ({}, "Flowpad inbox"),
+    ):
+        monkeypatch.setattr(auth_state, "login_block", lambda user=user: {"status": "logged_in", "user": user})
+        assert slack_source.app_name() == expected, user
+    link = slack_source.manifest_link("https://hub.example/api/v1/webhook/abc", "Eran's inbox")
+    assert "Eran%27s%20inbox" in link
+
+
+async def test_the_manifest_step_waits_for_the_url_and_a_channel_row_has_no_app():
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    waiting = SlackSource(SourceBinding(account_key="T1", config={}, credentials=ResolvedSecrets()))
+    assert (await waiting._manifest_step(check=False, values={})).exit_code is ExitCode.NOT_YET
+    held = SlackSource(SourceBinding(account_key="T1", config={}, credentials=ResolvedSecrets(
+        shape=AuthShape.SECRETS, values={"webhook_url": SecretStr("https://hub.example/api/v1/webhook/abc")})))
+    shown = await held._manifest_step(check=False, values={})
+    assert shown.ok and shown.value.shown.link.startswith("https://api.slack.com/apps?new_app=1&manifest_json=")
+    one = SlackSource(SourceBinding(account_key="T1", config={"channel": CHANNEL}))
+    assert (await one._manifest_step(check=False, values={})).exit_code is ExitCode.NOT_APPLICABLE
+    assert (await one._app_step(check=False, values={})).exit_code is ExitCode.NOT_APPLICABLE
+
+
+async def test_the_app_step_asks_slack_who_the_token_is_and_keeps_it(fake_slack):
+    source = SlackSource(SourceBinding(account_key="", config={"base_url": fake_slack.base}, credentials=ResolvedSecrets()))
+    missing = await source._app_step(check=False, values={})
+    bot = await source._app_step(check=False, values={"user_token": "xoxb-a-bot"})
+    kept = await source._app_step(check=False, values={"user_token": "xoxp-mine"})
+    assert not missing.ok and "User OAuth Token" in missing.detail
+    assert not bot.ok and "xoxp-" in bot.detail
+    assert kept.ok and kept.detail == "Connected as @flowpad in T1"
+    update = kept.value
+    assert update.secrets == {"SLACK_USER_TOKEN": "xoxp-mine"}, "the token, nothing else, in this phase"
+    assert update.config == {"team_id": "T1", "user_id": "UBOT"}
+    assert update.allowed_senders == ["UBOT"] and update.shown.connected and update.shown.name == "@flowpad"
+    assert fake_slack.slack.calls[-1][0] == "auth.test"
+    held = SlackSource(SourceBinding(account_key="T1", config={"base_url": fake_slack.base, "team_id": "T1"}, credentials=ResolvedSecrets(
+        shape=AuthShape.SECRETS, values={"SLACK_USER_TOKEN": SecretStr("xoxp-mine")})))
+    checked = await held._app_step(check=True, values={})
+    assert checked.ok and not checked.ran
+
+
+async def test_a_probe_judges_the_typed_token_and_keeps_nothing(fake_slack):
+    """The question's Verify button: ``probe`` judges the typed token by Slack (``auth.test``), names the
+    verdict, keeps nothing — and a refused token is refused in words."""
+    source = SlackSource(SourceBinding(account_key="", config={"base_url": fake_slack.base}, credentials=ResolvedSecrets()))
+    probe = await source._app_step(check=True, values={"user_token": "xoxp-mine"}, probe=True)
+    assert probe.ok and not probe.ran and probe.detail == "Connected as @flowpad in T1" and probe.value is None
+    fake_slack.slack.refuse = "invalid_auth"
+    bad = await source._app_step(check=True, values={"value": "xoxp-stale"}, probe=True)
+    assert not bad.ok and "invalid_auth" in bad.detail
+
+
+async def test_a_check_ignores_a_typed_token_so_the_wizard_still_runs_the_step(fake_slack):
+    """The wizard's completion check runs with the run's env — the typed token included. A check judges only
+    what is KEPT: with nothing kept it is not satisfied, so the step runs and keeps the token."""
+    source = SlackSource(SourceBinding(account_key="", config={"base_url": fake_slack.base}, credentials=ResolvedSecrets()))
+    before = await source._app_step(check=True, values={"user_token": "xoxp-mine"})
+    assert not before.ok, "typed is not kept"
+    kept = await source._app_step(check=False, values={"user_token": "xoxp-mine"})
+    assert kept.ok and kept.value.secrets == {"SLACK_USER_TOKEN": "xoxp-mine"}
+
+
+async def test_the_card_names_a_new_source_the_way_the_app_is_named(monkeypatch):
+    from flow_sdk.cloud_client import auth_state
+
+    monkeypatch.setattr(auth_state, "login_block", lambda: {"status": "logged_in", "user": {"first_name": "Eran"}})
+    profile = await SlackSource.profile()
+    assert profile == {"available": True, "default_name": "Eran's inbox"}
+    assert profile["default_name"] == slack_source.app_name(), "one name, defined once"
+
+
+def test_the_connect_wizard_is_declared_and_every_step_it_names_exists():
+    import pathlib
+
+    folder = pathlib.Path(slack_source.__file__).parent / "agentic-assets"
+    spec = json.loads((pathlib.Path(slack_source.__file__).parent / "data_driver.json").read_text())
+    assert spec["setup_wizards"] == [{"stage": "connect", "label": "Connect", "wizard": "slack-connect", "provides": ["credential"]}], (
+        "the wizard writes the credential: the setup tree must not ask for it before the wizard"
+    )
+    assert spec["webhook"]["url_var"] == "webhook_url" and spec["auth"]["vars"]["webhook_url"] == "SLACK_WEBHOOK_URL"
+    assert "SLACK_USER_TOKEN" in spec["auth"]["vars"] and "SLACK_SIGNING_SECRET" not in spec["auth"]["vars"], "the token alone, in this phase"
+    wizard = json.loads((folder / "wizard" / "slack-connect" / "wizard.json").read_text())
+    ops = {}
+    for step in wizard["steps"]:
+        op_file = folder / "compute_op" / step["ref"] / "compute_op.json"
+        assert op_file.exists(), step["ref"]
+        ops[step["id"]] = json.loads(op_file.read_text())
+    assert [s["id"] for s in wizard["steps"]] == ["public-url", "manifest", "ask-create-app", "ask-user-token", "app", "prove", "verify"]
+    asks = [i for i, op in ops.items() if op["subkind"] == "ask"]
+    assert asks == ["ask-create-app", "ask-user-token"], "two things the person does; the first message is proven by the poll"
+    # Two sub-steps the person walks: set up on Slack (a Continue, nothing typed), then the token, verified in place.
+    assert ops["ask-create-app"]["output_spec_kind"] == "confirm" and ops["ask-create-app"]["exe_data"]["submit_label"] == "Continue"
+    assert ops["ask-create-app"]["exe_data"]["stage"] == {"label": "Set up on Slack", "index": 1, "total": 2}
+    assert "{{manifest.link}}" in ops["ask-create-app"]["exe_data"]["detail"], "the link the person taps, shown at its place in the run"
+    keys = ops["ask-user-token"]
+    assert keys["output_spec_kind"] == "string" and keys["exe_data"]["secret"], "one value, masked"
+    assert keys["exe_data"]["stage"] == {"label": "Your token", "index": 2, "total": 2}
+    assert keys["exe_data"]["verify"] == {"label": "Verify", "source_step": "app"}, "the token is checked in place, by the app step as a probe"
+    assert "{{manifest.name}}" in keys["exe_data"]["detail"], "names the app the person just made: asked after it exists"
+    assert next(s for s in wizard["steps"] if s["id"] == "ask-user-token")["bind"] == "user_token", "what the app step reads"
+    assert ops["public-url"]["exe_data"]["source_step"] == "public-webhook" and ops["prove"]["exe_data"]["source_step"] == "public-webhook"
+    for bound in ("public-url", "manifest"):
+        assert ops[bound]["output_spec_kind"] == "source.setup_shown", "what the step shows is its value: bound for the next question"
+        assert "--value" in ops[bound]["exe_data"]["commands"]["darwin"]
+        assert "--check --value" in ops[bound]["completion_check"]["commands"]["darwin"], (
+            "a step whose check already holds is skipped: what the check prints is what the next question shows"
+        )
+    credential = json.loads((folder / "credential" / "slack_channel" / "credential.json").read_text())
+    assert credential["vars"]["SLACK_USER_TOKEN"]["way"] == "app" and "SLACK_SIGNING_SECRET" not in credential["vars"]
+    assert credential["vars"]["SLACK_WEBHOOK_URL"]["secret"] is False and "app" in credential["ways"]

@@ -1,9 +1,19 @@
 import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
-import { Archive, ArchiveRestore, CheckSquare, CircleCheck, Clock, LifeBuoy, Trash2, UserCheck } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  CheckSquare,
+  CircleCheck,
+  Clock,
+  LifeBuoy,
+  Trash2,
+  UserCheck,
+  Wrench,
+} from 'lucide-react';
 import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
 import type { EntityMember } from '@sdk/APIEntity';
-import { isClosedConversation } from '@sdk/entities/conversation';
+import { isClosedConversation, isItKind } from '@sdk/entities/conversation';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 
 // ── Conversation category — the single source of truth ──────────────────────
@@ -57,6 +67,8 @@ export interface TicketStateInputs {
   members?: EntityMember[] | null;
   /** Staff ids from the desk pool row, when the caller has one. */
   pickedUpBy?: string[] | null;
+  /** The hub's word that someone picked it up — all a requester gets: their roster is masked. */
+  staffed?: boolean | null;
 }
 
 /** The staff members of a ticket: everyone on the roster who is not the requester. */
@@ -74,7 +86,7 @@ export function ticketStaff(inp: TicketStateInputs): EntityMember[] {
 /** Pure: the state chip a help desk ticket wears. */
 export function ticketState(inp: TicketStateInputs): TicketState {
   if (isClosedConversation(inp.status)) return 'closed';
-  return ticketStaff(inp).length > 0 ? 'picked' : 'waiting';
+  return inp.staffed || ticketStaff(inp).length > 0 ? 'picked' : 'waiting';
 }
 
 export interface TicketFacet {
@@ -96,7 +108,7 @@ export function deskChipLabel(deskName: string): string {
 }
 
 export interface ConversationFacets {
-  kind: 'direct' | 'helpdesk';
+  kind: 'direct' | 'helpdesk' | 'it';
   /** Viewer is the pending recipient of an unaccepted invitation. */
   isInvitation: boolean;
   /** `archived_at` is set and not yet revived by newer activity. */
@@ -113,7 +125,7 @@ export interface ConversationFacets {
 export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const { conv, firstMessage, latestMessage, latestPtrTs, invitation, viewer } = inp;
 
-  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : 'direct';
+  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : isItKind(conv.kind) ? 'it' : 'direct';
 
   // Invitation — viewer-relative. The first message stays `kind === invitation`
   // forever, so the sender (and everyone post-accept) must see a normal row;
@@ -150,9 +162,10 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
       status: conv.status,
       initiatedBy: conv.initiated_by ?? null,
       members: inp.members ?? conv.members ?? [],
-      // The hub computes `picked_up_by` on the ticket itself (the requester's roster is masked,
-      // so it is the only way their side learns a staffer joined); a pool row may supplement it.
+      // The hub computes these on the ticket itself. A requester's `picked_up_by` is masked empty,
+      // so `staffed` is how their side learns a staffer joined; a pool row may supplement the ids.
       pickedUpBy: inp.pickedUpBy ?? (conv as { picked_up_by?: string[] | null }).picked_up_by ?? null,
+      staffed: (conv as { staffed?: boolean | null }).staffed ?? null,
     };
     const state = ticketState(tin);
     const staffView = inp.staffView ?? (!!conv.initiated_by && !isViewer(conv.initiated_by, viewer));
@@ -197,6 +210,7 @@ export interface ChipSpec {
 
 const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
 const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+const SKY_CHIP = 'border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-300';
 
 /** Whether `senderId` is the viewer. BOTH ids count: a locally written row is
  *  stamped with the desktop user id, a hub-mirrored row with the cloud user id,
@@ -232,7 +246,11 @@ export function chipsFor(f: ConversationFacets): ChipSpec[] {
   if (f.kind === 'helpdesk') {
     chips.push({ key: 'helpdesk', icon: LifeBuoy, label: t`Support`, className: VIOLET_CHIP });
   }
-  if (f.ticket) chips.push(ticketChip(f.ticket));
+  if (f.kind === 'it') {
+    chips.push({ key: 'it', icon: Wrench, label: t`IT`, className: SKY_CHIP });
+  }
+  // The asker's side is just a conversation: the queue state is the desk's to show, not theirs.
+  if (f.ticket && f.ticket.perspective === 'staff') chips.push(ticketChip(f.ticket));
   if (f.isArchived) {
     chips.push({ key: 'archived', icon: Archive, label: t`Archived`, className: MUTED_CHIP });
   }

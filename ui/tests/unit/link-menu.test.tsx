@@ -9,6 +9,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.hoisted(() => vi.resetModules());
+
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -21,9 +23,17 @@ vi.mock('@sdk/client', () => ({ __esModule: true, default: { get: mocks.get, pos
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   dataContext: {
+    on: vi.fn(),
     get runtimeKind() {
       return mocks.runtimeKind;
     },
+  },
+}));
+vi.mock('@sdk/FlowSync/context', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  dataContext: {
+    on: vi.fn(),
+    get runtimeKind() { return mocks.runtimeKind; },
   },
 }));
 vi.mock('@src/navigation', () => ({

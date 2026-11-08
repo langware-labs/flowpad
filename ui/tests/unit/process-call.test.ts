@@ -26,6 +26,13 @@ describe('process call on a message', () => {
     expect(index.unanswered).toBe(false);
   });
 
+  it('a returned value whose call is not in the conversation stays a message of its own', () => {
+    // An IT machine's reply carries a returned value, but no process_call precedes it: it must not vanish.
+    const index = indexCalls([answerFm({ exit_code: 0, detail: 'Snake: built' })]);
+    expect(index.answerByCall.get('c1')?.detail).toBe('Snake: built');
+    expect([...index.answerMessageIds]).toEqual([]);
+  });
+
   it('a malformed preview is no call', () => {
     expect(
       processCallOf(

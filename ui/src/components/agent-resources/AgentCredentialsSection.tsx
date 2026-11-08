@@ -45,12 +45,12 @@ export function AgentCredentialsSection() {
   // The project the pane rides, as the MCP / Skills / Docs sections beside this one read it.
   const projectId = dataContext.project?.typeId?.id ?? null;
   const { status, templates, ready, refresh } = useCredentials(projectId);
-  const rows = useMemo(() => buildCredentialRows(status), [status]);
+  const scope = projectId ? 'project' : 'user';
+  // The agent lists its own scope's credentials only — the user's personal ones are not its assets.
+  const rows = useMemo(() => buildCredentialRows(status).filter((r) => r.scope === scope), [status, scope]);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<CredentialDraft | null>(null);
   const [deleting, setDeleting] = useState<CredentialRow | null>(null);
-
-  const scope = projectId ? 'project' : 'user';
   const addable = useMemo(() => {
     const declared = new Set(rows.map((r) => r.name));
     return templates.filter((spec) => !declared.has(String(spec.name ?? '')));

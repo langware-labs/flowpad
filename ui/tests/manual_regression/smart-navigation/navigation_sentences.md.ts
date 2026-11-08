@@ -100,15 +100,17 @@ function score(r: Row, url: URL, asked: boolean, log: LogRow | null): { verdict:
   return { verdict: 2, reason: `${sameView ? 'right screen, other tab — ' : ''}${did}${needsContext}` };
 }
 
+/** The SmartNavigationLog dataset's id — '' until the first logged decision creates it. */
 async function logDataset(): Promise<string> {
   const api = await apiContext();
   const res = await api.get(`/api/v1/graph/dataset?filter=${encodeURIComponent('{"name":"SmartNavigationLog"}')}`);
   const [row] = ((await res.json()).data ?? []) as { id: string }[];
-  if (!row) throw new Error('no SmartNavigationLog — turn on Preferences > Advanced > Smart navigation log');
-  return row.id;
+  return row?.id ?? '';
 }
 
-async function logRows(datasetId: string): Promise<LogRow[]> {
+async function logRows(): Promise<LogRow[]> {
+  const datasetId = await logDataset();
+  if (!datasetId) return [];
   const api = await apiContext();
   return ((await (await api.get(`/api/v1/graph/dataset/${datasetId}/rows`)).json()).data.rows ?? []) as LogRow[];
 }
@@ -116,7 +118,6 @@ async function logRows(datasetId: string): Promise<LogRow[]> {
 const api = () => apiContext();
 const ROWS = sentences();
 let page: Page;
-let logId = '';
 
 test.describe.serial('navigation sentences', () => {
   test.beforeAll(async ({ browser }) => {
@@ -124,13 +125,12 @@ test.describe.serial('navigation sentences', () => {
     mkdirSync(OUT, { recursive: true });
     // NAV_RESUME=1 keeps the rows already run (rerun the rest with -g); otherwise start clean.
     if (!process.env.NAV_RESUME) writeFileSync(JSONL, '');
-    logId = await logDataset();
     page = await browser.newPage();
   });
 
   for (const r of ROWS) {
     test(`${r.n}. ${r.sentence}`, async () => {
-      const seen = new Set((await logRows(logId)).map((x) => x.id));
+      const seen = new Set((await logRows()).map((x) => x.id));
       await page.goto('/dock/home');
       await expect(page.getByTestId('top-nav-address')).toBeVisible();
       await page.getByTestId('top-nav-address').click();
@@ -141,7 +141,7 @@ test.describe.serial('navigation sentences', () => {
       let log: LogRow | null = null;
       await expect
         .poll(async () => {
-          log = (await logRows(logId)).find((x) => !seen.has(x.id) && x.input?.utterance === r.sentence) ?? null;
+          log = (await logRows()).find((x) => !seen.has(x.id) && x.input?.utterance === r.sentence) ?? null;
           return !!log;
         }, { message: 'a SmartNavigationLog row for this sentence' })
         .toBe(true)

@@ -1,8 +1,8 @@
-"""``Project.share`` invites people and grants teams, and writes every invite conversation itself.
+"""``Project.share`` invites people and grants teams.
 
-A PERSON gets one project invite whose second target is a fresh 1:1 invite
-conversation the sharer's client opened, then the invite message in it (KTD3,
-R6). A TEAM is granted on the hub as ONE group principal — never expanded into
+A PERSON gets one project invite; the hub posts it into the 1:1 conversation
+between sharer and person, as it does for every share, so the client opens no
+conversation of its own. A TEAM is granted on the hub as ONE group principal — never expanded into
 its people — and gets one invite conversation granted to the whole team (KTD1,
 R1, R7). The sharer, anyone already on the roster and any team already granted
 are skipped (KTD6, R3), and each recipient's outcome is collected rather than one
@@ -132,7 +132,7 @@ def hub(monkeypatch):
 
     async def fake_send(method, url, **kwargs):
         fake = await fake_request(None, method, str(url), **kwargs)
-        return httpx.Response(fake.status_code, text=fake.text, request=httpx.Request(method, str(url)))
+        return httpx.Response(fake.status_code, text=fake.text, headers={"content-type": "application/json"}, request=httpx.Request(method, str(url)))
 
     monkeypatch.setattr(HubProxy, "send", staticmethod(fake_send))
     monkeypatch.setattr(HubProxy, "upload", staticmethod(fake_hub_upload))
@@ -187,10 +187,10 @@ def _message_headers(hub: _Hub) -> list[dict]:
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_grant(hub):
-    """R1/R6/R7: a person gets two single-target invitations — the project one
-    (emailed, so its link lands on the project) and a conversation one sent with
-    ``notify_by_email: false``; no hub ``notify_by_message``. A team is ONE group
-    grant plus a conversation granted to it; nobody reads the team's member list."""
+    """A person gets ONE project invitation (emailed, so its link lands on the
+    project) and no conversation from this client — the hub threads it. A team is
+    ONE group grant plus a conversation granted to it; nobody reads the team's
+    member list."""
     proj = _project(hub, "share-person-and-team")
 
     await proj.share(invitees=[ShareInvitee(user_id=IVAN)], teams=[f"team-{INITECH}"], note="Welcome aboard")
@@ -201,13 +201,7 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     assert person["message"] == "Welcome aboard"
     assert person["invitation_targets"] == [{"typeid": f"project-{proj.id}", "roles": ["reader"]}]
     assert "notify_by_email" not in person
-
-    grants = dict(_conversation_grants(hub))
-    ((person_conv_path, person_conv),) = [(p, b) for p, b in grants.items() if b.get("recipient_user_id") == IVAN]
-    (conversation_target,) = person_conv["invitation_targets"]
-    assert conversation_target["typeid"].startswith("conversation-") and conversation_target["roles"] == ["reader", "runner"]
-    assert person_conv["notify_by_email"] is False
-    assert person_conv_path == f"/graph/conversation/{conversation_target['typeid'][len('conversation-') :]}/members"
+    assert not [b for _, b in _conversation_grants(hub) if b.get("recipient_user_id") == IVAN]
 
     # The team's project grant is the one the hub emails to each of its people, so it
     # carries the note and the project landing exactly like the person invite.
@@ -226,12 +220,11 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     )
 
     assert not [p for m, p, _ in hub if m == "GET" and p.startswith("/graph/team/")]
-    assert len(_conversation_creates(hub)) == 2
-    assert len(_message_headers(hub)) == 2
+    assert len(_conversation_creates(hub)) == 1
+    assert len(_message_headers(hub)) == 1
 
     result = proj.last_share_result
-    assert [r.user_id for r in result.invited] == [IVAN]
-    assert result.invited[0].conversation_id == conversation_target["typeid"][len("conversation-") :]
+    assert [(r.user_id, r.conversation_id) for r in result.invited] == [(IVAN, None)]
     assert [(t.team, t.conversation_id is not None) for t in result.granted_teams] == [(f"team-{INITECH}", True)]
     assert result.skipped_teams == [] and result.failed_teams == [] and result.failed == []
 
@@ -242,7 +235,7 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
 async def test_the_invite_message_carries_the_project_reference_and_the_note(hub):
     proj = _project(hub, "Course Project")
 
-    await proj.share(invitees=[ShareInvitee(user_id=IVAN)], note="See you there")
+    await proj.share(teams=[f"team-{INITECH}"], note="See you there")
     await _body_uploads_settled()
 
     (header,) = _message_headers(hub)
@@ -323,40 +316,6 @@ async def test_a_refused_person_invite_is_failed_and_opens_no_conversation(hub):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_a_refused_conversation_invite_keeps_the_person_invited_without_a_conversation(hub):
-    """The project invite landed, so the person is invited; the conversation the
-    message would go into is discarded and no message is sent."""
-    proj = _project(hub, "share-person-conversation-refused")
-    hub.conversation_answers[IVAN] = 403
-
-    await proj.share(invitees=[ShareInvitee(user_id=IVAN)])
-
-    result = proj.last_share_result
-    assert [(r.user_id, r.conversation_id) for r in result.invited] == [(IVAN, None)]
-    assert result.failed == []
-    deletes = [p for m, p, _ in hub if m == "DELETE"]
-    assert len(deletes) == 1 and deletes[0].startswith("/graph/conversation/")
-    assert _message_headers(hub) == []
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_a_person_whose_message_fails_is_still_invited_with_the_conversation(hub):
-    proj = _project(hub, "share-person-message-fails")
-    hub.refuse["/add_message"] = 500
-
-    await proj.share(invitees=[ShareInvitee(user_id=IVAN)])
-
-    result = proj.last_share_result
-    assert [r.user_id for r in result.invited] == [IVAN]
-    assert result.invited[0].conversation_id
-    assert result.failed == []
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
 async def test_sharer_member_pending_and_team_covered_people_are_skipped(hub):
     """The sharer, a direct member, a pending invitee and a person who reaches
     the project through a granted team (listed as an ordinary user row) are all
@@ -426,8 +385,7 @@ async def test_share_without_note_sends_no_message_field(hub):
 
     (body,) = _person_invites(hub, proj)
     assert "message" not in body and "notify_by_message" not in body
-    (header,) = _message_headers(hub)
-    assert header["text"] == 'I invited you to project "share-no-note".'
+    assert _message_headers(hub) == []
 
 
 # do not increase timeout without approval

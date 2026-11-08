@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { adjusted } from '../../adjustableTimeout';
 
+// Since 2026-10-11 the home is always the tabless Vibe hero (docs/viewmodes.md):
+// the "current activity" strip and its 3-hour recency filter are gone from the app
+// (RecentConversationsStrip renders only in HomeLanding's never-shown Standard
+// branch; use-event-driven-sessions was removed). Recent sessions now live in the
+// Chats list, whose recency contract is covered by tests/react/chats-open-recency.test.ts.
+
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -9,39 +15,30 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 
 async function gotoHome(page: import('@playwright/test').Page) {
   await dismissSetupModal(page);
-  // The home has no view mode of its own: the loader canonicalizes any `viewMode`
-  // address to the plain home, which shows the Vibe landing. The old Standard
-  // landing (with the `recent-conversations-strip`) is still mounted but hidden
-  // behind the Vibe branch, so it can never be the surface a person sees.
   await page.goto('/dock/home');
-  // Wait for the React app root to mount (handles HMR settling)
   await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(90_000) });
 }
 
-// What a person sees on Home is the Vibe landing: the greeting and the prompt box.
-const landing = (page: import('@playwright/test').Page) => page.locator('h1:visible').first();
-const prompt = (page: import('@playwright/test').Page) => page.locator('textarea:visible').first();
-
-test.describe('Home landing — what is on screen after load', () => {
-  test('home page shows the landing greeting and the prompt box', async ({ page }) => {
+test.describe('Home — no current-activity strip', () => {
+  // ── Test 1: The home is the Vibe hero, without the activity strip ─────────
+  test('home is the Vibe hero and shows no current-activity strip', async ({ page }) => {
     await gotoHome(page);
-    await expect(landing(page)).toBeVisible({ timeout: adjusted(10_000) });
-    await expect(prompt(page)).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe', { timeout: adjusted(15_000) });
+    await expect(page.getByPlaceholder(/would you like to work on/)).toBeVisible({ timeout: adjusted(10_000) });
+    await expect(page.locator('[data-testid="recent-conversations-strip"]:visible')).toHaveCount(0);
   });
 
-  test('home landing renders without console errors on fresh load', async ({ page }) => {
+  // ── Test 2: The home renders without console errors on a fresh load ──────
+  test('home renders without console errors on fresh load', async ({ page }) => {
     const errors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
     await gotoHome(page);
-    await expect(landing(page)).toBeVisible({ timeout: adjusted(10_000) });
-
-    // Wait for the page to settle
+    await expect(page.getByPlaceholder(/would you like to work on/)).toBeVisible({ timeout: adjusted(10_000) });
     await page.waitForTimeout(2_000);
 
-    // Filter out known non-actionable noise
     const actionableErrors = errors.filter(
       (e) =>
         !e.includes('favicon') &&
@@ -50,14 +47,5 @@ test.describe('Home landing — what is on screen after load', () => {
         !e.includes('ERR_CONNECTION_REFUSED'),
     );
     expect(actionableErrors, `Console errors: ${actionableErrors.join('\n')}`).toHaveLength(0);
-  });
-
-  test('home landing is still there after a reload', async ({ page }) => {
-    await gotoHome(page);
-    await expect(landing(page)).toBeVisible({ timeout: adjusted(10_000) });
-    await page.reload();
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(90_000) });
-    await expect(landing(page)).toBeVisible({ timeout: adjusted(10_000) });
-    await expect(prompt(page)).toBeVisible({ timeout: adjusted(10_000) });
   });
 });

@@ -1357,7 +1357,7 @@ the hand-written residue. Each is a table row, never an `if` — a missing row f
 
 ### Model tiers
 - **Need:** `sm`/`md`/`lg` must resolve to a valid selection for this vendor, so prompts/tests stay portable.
-- **Device login (no endpoint):** `CLAUDE_MODEL_TIERS` is the claude CLI's own size words (haiku/sonnet/opus); every other harness gets `VENDOR_DEFAULT_TIERS` (`None`, omitting `--model`), so the vendor picks. No model ids live in code: all maps are in `agentic_process/model_tiers.py`, preserve the raw persisted tier, and resolve only when the command is emitted. **Funded by an LLM endpoint:** the worker runs the model the endpoint declares for the size (its `tiers`, inherited down the hub chain; see §11), and a size the endpoint does not declare is refused.
+- **Device login (no endpoint):** `CLAUDE_MODEL_TIERS` is the claude CLI's own size words (haiku/sonnet/opus); other harnesses resolve sizes through `Capability.model_map['device']`. An unmapped explicit size is refused; only an omitted model delegates to the vendor default. No model ids live in code: all maps are in `agentic_process/model_tiers.py`, preserve the raw persisted tier, and resolve only when the command is emitted. **Funded by an LLM endpoint:** the worker runs the model the endpoint declares for the size (its `tiers`, inherited down the hub chain; see §11), and a size the endpoint does not declare is refused.
 - **Required:** Yes
 - **Vendor must expose:** three valid tier outcomes: concrete model names or an explicit vendor-auto/no-flag outcome. An empty map means pass-through only, and every tier-valued config breaks.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A

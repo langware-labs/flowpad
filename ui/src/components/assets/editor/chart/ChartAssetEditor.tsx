@@ -15,10 +15,12 @@ const ExcalidrawChartView = lazy(() => import('./ExcalidrawChartView'));
 const SequenceChartView = lazy(() => import('./SequenceChartView'));
 const MermaidChartView = lazy(() => import('./MermaidChartView'));
 const C4ChartView = lazy(() => import('./C4ChartView'));
+const ArchitectureChartView = lazy(() => import('./ArchitectureChartView'));
 
 /**
  * The chart editor: one asset type, one view per format. CHART.md's `format` picks the
- * view — `excalidraw` (board.json), `sequence` (chart.json), `c4` (c4.json) or `mermaid`
+ * view — `excalidraw` (board.json), `sequence` (chart.json), `c4` (c4.json), `architecture`
+ * (architecture.json) or `mermaid`
  * (the block in CHART.md). Sequence and mermaid charts can be converted to an Excalidraw board. A format this build does not know says so instead of opening as a board.
  *
  * Every chart has a Changes side tab, the same one a doc has: pick an element (or the whole chart),
@@ -114,6 +116,8 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
           <SequenceChartView fsRef={fsRef} chart={chart} projectId={projectId} actions={convertButton} changes={changes} />
         ) : format === 'c4' ? (
           <C4ChartView fsRef={fsRef} chart={chart} projectId={projectId} changes={changes} />
+        ) : format === 'architecture' ? (
+          <ArchitectureChartView fsRef={fsRef} chart={chart} projectId={projectId} changes={changes} />
         ) : format === 'mermaid' ? (
           <MermaidChartView
             fsRef={fsRef}

@@ -91,7 +91,9 @@ def invitation_is_pending(inv, viewer_email: Optional[str], now: datetime) -> bo
     this viewer. No cloud account → nothing is pending for us."""
     if not viewer_email:
         return False
-    if getattr(inv, "accepted", None) is True:
+    from flow_sdk.builtin.invitation import invitation_answered  # noqa: PLC0415
+
+    if invitation_answered(inv):
         return False
     expiration = getattr(inv, "expiration_at", None)
     if expiration is not None:
@@ -138,6 +140,17 @@ def conversation_unread_count(conv, fm_by_id: dict, *, pending_conv_ids: set, se
     return max(count, 1) if conv.id in pending_conv_ids else count
 
 
+def _viewer_joined(conv, self_ids: set, viewer_email: Optional[str]) -> bool:
+    """Whether the viewer is an approved member of ``conv`` (by user id or email)."""
+    for m in getattr(conv, "members", None) or []:
+        if not isinstance(m, dict) or m.get("status") != "approved":
+            continue
+        email = (m.get("email") or "").strip().lower()
+        if m.get("user_id") in self_ids or m.get("id") in self_ids or (viewer_email and email == viewer_email):
+            return True
+    return False
+
+
 def in_stream_inbox_of(conv, owner) -> bool:
     """Whether ``conv`` is listed in ``owner``'s stream inbox. A row written before
     ``owner`` existed is the local user's (``owner_of``'s rule), so it counts for the
@@ -172,7 +185,14 @@ def project_unread(
     computed for every conversation regardless. ``None`` (an instance that has not
     bootstrapped its local user) counts the unowned rows only, never another owner's.
     """
-    pending = [inv for inv in invitations if invitation_is_pending(inv, viewer_email, now)]
+    # An invite to a conversation the viewer already joined was used, even if the hub never
+    # flipped ``accepted`` — it carries no action, so it must not hold the row unread.
+    joined = {conv.id for conv in conversations if _viewer_joined(conv, self_ids, viewer_email)}
+    pending = [
+        inv for inv in invitations
+        if invitation_is_pending(inv, viewer_email, now)
+        and (getattr(inv, "target_url_path", None) or "").removeprefix("/conversation/") not in joined
+    ]
     # Every pending invitation is one actionable unread item, counted DIRECTLY —
     # never through its conversation row. A conversation invite's placeholder
     # conversation may not be materialized (or has no pointer projection yet),
@@ -199,9 +219,61 @@ def count_unread(**rows) -> int:
     return project_unread(**rows).total
 
 
-#: A message the unread walk can count: ``is_read`` false, or never stored (its default).
-_UNREAD_MATCH = {"op": "$OR", "operands": [{"op": "$EQ", "operands": ["is_read", False]},
-                                          {"op": "$IS_NULL", "operands": ["is_read"]}]}
+#: Ids per message read: well under SQLite's bound-parameter limit.
+_MESSAGE_READ_CHUNK = 500
+
+
+class _ReadProbe(dict):
+    """The messages read so far, as the formula's ``fm_by_id``. A lookup of an id not read yet
+    is a miss: the formula stops there (as at a message that is not materialized), so it says
+    only "this conversation needs more of its messages" — never a wrong count."""
+
+    def __init__(self, read: dict, fetched: set):
+        super().__init__(read)
+        self.fetched = fetched
+        self.missed = False
+
+    def get(self, key, default=None):
+        if key not in self.fetched:
+            self.missed = True
+        return super().get(key, default)
+
+
+async def _messages_the_formula_reads(conversations: list, self_ids: set, fetch) -> dict:
+    """The messages :func:`conversation_unread_count` reads — not every message in the database.
+
+    The rule walks each conversation newest first and stops at its first read, sent-by-us, draft
+    or missing message, so it reads one message of a quiet conversation and a few of an unread
+    one. Read them window by window: the next 1, 2, 4… refs of every conversation whose walk is
+    still going (``_ReadProbe`` tells), one ``IN`` query per window. The rule itself decides when
+    a walk ends, so this holds whatever the rule becomes. ``fetch(ids)`` reads messages by id."""
+    read: dict = {}
+    fetched: set = set()
+    refs = {conv.id: [ref.id for ref in conv.message_refs_newest_first()] for conv in conversations}
+    ahead = {conv.id: 0 for conv in conversations}
+    walking = [conv for conv in conversations if refs[conv.id]]
+    window = 1
+    while walking:
+        wanted: list = []
+        for conv in walking:
+            ids = refs[conv.id][ahead[conv.id] : ahead[conv.id] + window]
+            ahead[conv.id] += window
+            wanted.extend(i for i in ids if i and i not in fetched)
+        wanted = list(dict.fromkeys(wanted))
+        for start in range(0, len(wanted), _MESSAGE_READ_CHUNK):
+            for message in await fetch(wanted[start : start + _MESSAGE_READ_CHUNK]):
+                read[message.id] = message
+        fetched.update(wanted)
+        probe = _ReadProbe(read, fetched)
+        still: list = []
+        for conv in walking:
+            probe.missed = False
+            conversation_unread_count(conv, probe, pending_conv_ids=set(), self_ids=self_ids)
+            if probe.missed and ahead[conv.id] < len(refs[conv.id]):
+                still.append(conv)
+        walking = still
+        window *= 2
+    return read
 
 
 async def _load_rows() -> tuple[list, dict]:
@@ -213,28 +285,33 @@ async def _load_rows() -> tuple[list, dict]:
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.invitation import Invitation  # noqa: PLC0415
     from flow_sdk.builtin.user import User  # noqa: PLC0415
-    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import default_owner  # noqa: PLC0415
 
     email = viewer_email()
     conversations = await Conversation.get_all(QueryFilter(type=EntityType.CONVERSATION.value))
+    self_ids = await User.self_ids()
+
+    async def fetch(ids: list[str]) -> list:
+        # hydrate=False: the formula reads is_read/sender/is_draft, never text —
+        # joining every reference row's SourceItem here would put a mailbox join
+        # on every mutation's recompute.
+        return await FlowMessage.get_all(
+            QueryFilter(
+                type=EntityType.FLOW_MESSAGE.value,
+                match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]),
+            ),
+            hydrate=False,
+        )
+
     return conversations, dict(
         conversations=conversations,
-        # Only the UNREAD messages: the walk (``conversation_unread_count``) stops at the first
-        # message that is read OR absent, so leaving the read ones out answers the same — and
-        # every recompute (each read-state touch, on the main loop) no longer builds an entity
-        # for every message ever kept. A row stored without ``is_read`` reads as its default,
-        # unread. hydrate=False: the formula reads is_read/sender/is_draft, never text —
-        # joining every reference row's SourceItem here would put a whole-mailbox join on
-        # every mutation's recompute.
-        fm_by_id={m.id: m for m in await FlowMessage.get_all(
-            QueryFilter(type=EntityType.FLOW_MESSAGE.value, match=_UNREAD_MATCH), hydrate=False
-        )},
+        fm_by_id=await _messages_the_formula_reads(conversations, self_ids, fetch),
         invitations=(
             await Invitation.get_all(QueryFilter(type=EntityType.INVITATION.value)) if email else []
         ),
-        self_ids=await User.self_ids(),
+        self_ids=self_ids,
         viewer_email=email,
         now=datetime.now(timezone.utc),
         stream_inbox_owner=await default_owner(),
@@ -407,8 +484,6 @@ async def accept_mark_preview_read(
             invitation.id, linked_fm_id, conversation_id,
         )
 
-    if invitation.accepted is not True:
-        invitation.accepted = True
-        await invitation.save(owner, notify=True)
+    await invitation.resolve("accepted", owner)
 
     await recompute_unread(f"invitation-accept:{invitation.id}", owner)

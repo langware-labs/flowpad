@@ -24,6 +24,8 @@ interface AlertState {
   alerts: NotificationData[];
   push: (alert: NotificationData) => void;
   dismiss: (id: string) => void;
+  /** A diagnosis repaired this alert's cause: mark it, with what changed. */
+  markFixed: (id: string, summary: string) => void;
   dismissAll: () => void;
 }
 
@@ -38,5 +40,7 @@ export const useAlertStore = create<AlertState>((set) => ({
       const next = s.alerts.filter((a) => a.id !== id);
       return next.length === s.alerts.length ? s : { alerts: next };
     }),
+  markFixed: (id, summary) =>
+    set((s) => ({ alerts: s.alerts.map((a) => (a.id === id ? { ...a, fixed: { summary } } : a)) })),
   dismissAll: () => set({ alerts: [] }),
 }));

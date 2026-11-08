@@ -111,6 +111,10 @@ async def served(provider: str, double, monkeypatch, syncs: "list | None" = None
     if syncs is not None:
         syncs.clear()
     deployment = await agent.run_locally()  # holds its position on each channel before the loop starts
+    # This test IS the deployment's process: its channels are polled here, not left to another one.
+    from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+
+    monkeypatch.setenv(deployment_process.DEPLOYMENT_ENV, str(deployment.id))
     assert str(source.id) in {str(s.id) for s in await answered_sources(agent, deployment)}
     server = _Serving(asyncio.get_running_loop().create_task(serve(agent, deployment, poll_every=0.05)))
     return agent, source, server

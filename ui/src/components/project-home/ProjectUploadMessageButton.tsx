@@ -4,7 +4,7 @@ import { Loader2, Upload } from 'lucide-react';
 import { uploadFlowMessage } from '@sdk';
 import { AssetReviewDialog } from '@src/components/conversation/asset-review/AssetReviewDialog';
 import { useFlowMessageAttachments } from '@src/components/conversation/useMessageAttachments';
-import { Button } from '@src/components/ui/button';
+import { Button, type ButtonProps } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
@@ -42,7 +42,10 @@ export function UploadedMessageReview({
  * dialog's install is the consent step, exactly as for a message received in a
  * conversation.
  */
-export function ProjectUploadMessageButton() {
+export function ProjectUploadMessageButton({
+  variant = 'ghost',
+  size = 'sm',
+}: Pick<ButtonProps, 'variant' | 'size'> = {}) {
   const { t } = useLingui();
   const inputRef = useRef<HTMLInputElement>(null);
   // "upload a message" (smart navigation): the same file picker the button opens.
@@ -84,9 +87,9 @@ export function ProjectUploadMessageButton() {
         }}
       />
       <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 text-xs"
+        variant={variant}
+        size={size}
+        className={size === 'sm' ? 'h-7 text-xs' : undefined}
         onClick={() => inputRef.current?.click()}
         disabled={busy}
         title={t`Open a .flowmsg and install what it carries`}

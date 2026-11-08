@@ -11,7 +11,7 @@ const API = apiBase();
 const created: Array<{ id: string; assetRef: string }> = [];
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, format: 'excalidraw' } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   const board = { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -29,7 +29,7 @@ function frontmatterId(md: string): string | null {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   // Wait for the excalidraw dev hooks to populate.
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: adjusted(15_000),
@@ -91,7 +91,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     // a whiteboard quick-create toolbar entry). Create then open the editor.
     const { id } = await createWhiteboard(request, `c1-board-${Math.floor(1000 + Math.random() * 9000)}`);
     await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-    await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(15_000) });
+    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(15_000) });
     expect(page.url()).toContain('/dock/assets/editor/chart/');
   });
 

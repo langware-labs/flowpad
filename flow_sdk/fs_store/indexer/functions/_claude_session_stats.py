@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from flow_sdk.assets.types.claude_titles import title_from_record
 from flow_sdk.instance_settings import get_instance_settings
 
 if TYPE_CHECKING:
@@ -65,11 +66,13 @@ def _estimate_cost(
 # JSONL batch parser
 # ---------------------------------------------------------------------------
 
-def _parse_jsonl_stats(path: Path) -> dict:
+def _parse_jsonl_stats(path: Path, *, with_title: bool = False) -> dict:
     """Parse *path* as a Claude transcript JSONL and return aggregated stats dict.
 
     Reads the entire file once and returns a dict with all session metrics:
     counts, token usage, cost, tools, model, and envelope fields (cwd, slug, …).
+    ``with_title`` adds ``title`` (custom beats AI, last of each wins) and
+    ``last_timestamp`` from the same pass, so a caller needing both reads once.
     """
     session_id = path.stem
     cwd = ""
@@ -78,6 +81,8 @@ def _parse_jsonl_stats(path: Path) -> dict:
     slug = ""
     model: str | None = None
     first_timestamp: str | None = None
+    last_timestamp: str | None = None
+    titles: dict[bool, str] = {}  # explicit -> title
 
     message_count = 0
     user_count = 0
@@ -98,6 +103,7 @@ def _parse_jsonl_stats(path: Path) -> dict:
     try:
         with open(path, encoding="utf-8") as fh:
             for line in fh:
+                complete = line.endswith("\n")
                 line = line.strip()
                 if not line:
                     continue
@@ -105,6 +111,12 @@ def _parse_jsonl_stats(path: Path) -> dict:
                     raw = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if with_title and isinstance(raw, dict):
+                    if raw.get("timestamp"):
+                        last_timestamp = raw["timestamp"]
+                    found = title_from_record(raw) if complete else None
+                    if found is not None:
+                        titles[found[1]] = found[0]
 
                 if not first_timestamp and raw.get("timestamp"):
                     first_timestamp = raw["timestamp"]
@@ -200,7 +212,7 @@ def _parse_jsonl_stats(path: Path) -> dict:
     if tasks_dir.exists() and any(tasks_dir.glob("*.json")):
         task_path = str(tasks_dir)
 
-    return {
+    out = {
         "session_id": session_id,
         "cwd": cwd,
         "version": version,
@@ -227,6 +239,10 @@ def _parse_jsonl_stats(path: Path) -> dict:
         "created_at": first_timestamp,
         "search_content": search_content,
     }
+    if with_title:
+        out["title"] = titles.get(True) or titles.get(False)
+        out["last_timestamp"] = last_timestamp
+    return out
 
 
 # ---------------------------------------------------------------------------

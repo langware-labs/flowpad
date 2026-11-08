@@ -237,6 +237,8 @@ describe('C4ChartView — chips, links, calls, changes, zoom', () => {
   it('zoom in, zoom out and Fit move the canvas', async () => {
     renderView();
     const svg = await screen.findByTestId('chart-c4-svg');
+    // The layout is async: the first paint is a 1×1 placeholder, not the fitted view.
+    await waitFor(() => expect(svg.getAttribute('viewBox')).not.toBe('0 0 1 1'));
     const fit = svg.getAttribute('viewBox');
     fireEvent.click(screen.getByTestId('chart-zoom-in'));
     expect(svg.getAttribute('viewBox')).not.toBe(fit);

@@ -5,7 +5,7 @@ import { MessagesSquare } from 'lucide-react';
 import { DataDriver, DataSource } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import {
-  isMessageChannel,
+  isListedChannel,
   projectSourcesQuery,
   sourcesQuery,
   useSourceSpecs,
@@ -22,7 +22,7 @@ const DATA_ROOT_ID = 'configured-data-sources';
 const CHANNELS_ROOT_ID = 'message-channels';
 const EMPTY: DataSource[] = [];
 
-/** The sources in scope, split by the same rule the agent view uses (`isMessageChannel`).
+/** The sources in scope, split by the same rule the agent view uses (`isListedChannel`).
  *  With a project, the server-scoped project query: a source an agent creates is placed in
  *  its agent's project, so the project holds its agents' sources (agent → project). The
  *  reverse never holds — an agent sees only what it owns. */
@@ -35,7 +35,7 @@ export function useSplitSources(projectId: string | null) {
     const channels: DataSource[] = [];
     // Until the drivers load the split is unknown: show neither group rather than
     // flash channels under Data sources.
-    if (!loading) for (const s of sources) (isMessageChannel(s, specFor(s.provider)) ? channels : data).push(s);
+    if (!loading) for (const s of sources) (isListedChannel(s, specFor(s.provider)) ? channels : data).push(s);
     return { data, channels, specFor };
   }, [sources, specFor, loading]);
 }

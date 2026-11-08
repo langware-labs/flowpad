@@ -1,0 +1,33 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id; links name it."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The part's name."
+    },
+    "sublabel": {
+      "shape": "?string",
+      "description": "What it is: the stack, the host (Node · Cloud Run)."
+    },
+    "role": {
+      "shape": "enum:client|service|db|files|worker|external",
+      "description": "Picks the icon and colour."
+    },
+    "step": {
+      "shape": "?int",
+      "description": "The number of the step that happens here."
+    },
+    "ref": {
+      "shape": "?string",
+      "description": "Another chart's name: the part opens it (Open ↗)."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Shown on hover."
+    }
+  }
+}

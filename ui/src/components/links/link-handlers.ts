@@ -3,7 +3,7 @@
  * Navigation goes through `NavigationActions`; preview and copy are the two actions
  * that stay on the page.
  */
-import apiClient from '@sdk/client';
+import { browserProfileManager, type ProfileChoice } from '@src/lib/browser-profiles';
 import { dataContext, fsStore, openTerminalFromComputeNode, Shell, type AgenticProcess } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { errorMessage } from '@src/lib/error-message';
@@ -20,11 +20,11 @@ export interface LinkMedia {
 }
 
 /** The browser profile a command's pages open in; null is the system default. */
-export type CommandBrowser = { browser: string; profile: string } | null;
+export type CommandBrowser = ProfileChoice | null;
 
 export type LinkAction =
   | { id: Exclude<LinkActionId, 'browser-profile' | 'command-browser'> }
-  | { id: 'browser-profile'; browser: string; profile: string };
+  | ({ id: 'browser-profile' } & ProfileChoice);
 
 export interface LinkHandlerDeps {
   navigation: NavigationActions;
@@ -40,17 +40,6 @@ export function plainShell(source: LinkSource | null): Shell | null {
   return source instanceof Shell && !source.agentic_process_id ? source : null;
 }
 
-/** `command` with `BROWSER` set to `browser`, written for the shell that reads it (`target`). */
-async function withBrowser(command: string, browser: CommandBrowser, target: 'session' | 'terminal'): Promise<string> {
-  if (!browser) return command;
-  const data = await apiClient.post<{ command: string }>('/api/v1/browser-profiles/command', {
-    ...browser,
-    command,
-    target,
-  });
-  return data.command;
-}
-
 /** Run a command link's command where `mode` says. */
 async function runCommand(mode: CommandMode, link: string, deps: LinkHandlerDeps): Promise<void> {
   const { source, host, navigation } = deps;
@@ -60,17 +49,17 @@ async function runCommand(mode: CommandMode, link: string, deps: LinkHandlerDeps
   if (mode === 'run-here') {
     const shell = plainShell(source);
     if (shell) {
-      await shell.sendInput(`${await withBrowser(command, browser, 'terminal')}\r`);
+      await shell.sendInput(`${await browserProfileManager.command(command, browser, 'terminal')}\r`);
       return;
     }
     if (host?.supports_shell_command) {
-      await host.runShellCommand(await withBrowser(command, browser, 'session'));
+      await host.runShellCommand(await browserProfileManager.command(command, browser, 'session'));
       return;
     }
     mode = 'run-flowpad';
   }
   if (mode === 'run-flowpad') {
-    await navigation.openNewShell({ startCommand: await withBrowser(command, browser, 'terminal'), cwd });
+    await navigation.openNewShell({ startCommand: await browserProfileManager.command(command, browser, 'terminal'), cwd });
     return;
   }
   const nodeId = dataContext.computeNode?.id;

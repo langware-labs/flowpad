@@ -9,12 +9,13 @@ import { ViewType } from '@src/types/ViewType';
 import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Input } from '@src/components/ui/input';
-import { Textarea } from '@src/components/ui/textarea';
+import { MailboxListsEditor } from '@src/components/agents/MailboxListsEditor';
 import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
+import { channelKeyOf } from './channel-owner';
 import { StreamInboxView } from './StreamInboxView';
 
 const MIN_REFRESH_SECONDS = 60;
@@ -40,12 +41,18 @@ export function AgentStreamInboxView() {
   const [state, setState] = useState<AgentMailboxState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [senders, setSenders] = useState('');
   const [refresh, setRefresh] = useState(String(MIN_REFRESH_SECONDS));
   const activeState = state?.agent_id === parsed.agentId ? state : null;
   // The agent's channels — the stream inbox header's own rows, so "has a
   // channel at all" and what that header shows can never disagree.
-  const { rows: channels, specFor, offers } = useAttachedChannels(agentTypeId);
+  const { rows: channels, specFor, offers, builtInOffered } = useAttachedChannels(agentTypeId);
+  // The channel the list opens on: the URL's (`?channel=`, a mark pressed on the agent page), else the
+  // agent's email — what a person coming here is after. A standard stream inbox, filtered, not a special list.
+  const urlChannel = currentDock?.options?.channel;
+  // The mailbox state names its source by id only (no provider/channel), so the key comes from that
+  // source's full row among the agent's channels.
+  const mailboxSource = activeState?.source ? channels.find((s) => s.id === activeState.source?.id) : undefined;
+  const initialChannel = urlChannel || (mailboxSource ? channelKeyOf(mailboxSource) : undefined);
 
   const loadState = useCallback(async () => {
     const currentAgent = agentRef.current;
@@ -54,7 +61,6 @@ export function AgentStreamInboxView() {
     try {
       const next = await currentAgent.mailboxState();
       setState(next);
-      setSenders((next.mailbox?.allowed_senders ?? []).join('\n'));
       setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
     } catch {
       setState(null);
@@ -76,7 +82,6 @@ export function AgentStreamInboxView() {
       const next = await allocateMailbox(agent);
       if (!next) return;
       setState(next);
-      setSenders((next.mailbox?.allowed_senders ?? []).join('\n'));
       setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
     } finally {
       setSaving(false);
@@ -90,13 +95,9 @@ export function AgentStreamInboxView() {
       notify.error({ title: t`Refresh interval must be at least 60 seconds`, forceToast: true });
       return;
     }
-    const allowed_senders = senders
-      .split(/[\n,]/)
-      .map((value) => value.trim())
-      .filter(Boolean);
     setSaving(true);
     try {
-      setState(await agent.configureMailbox({ allowed_senders, poll_interval_seconds: seconds }));
+      setState(await agent.configureMailbox({ poll_interval_seconds: seconds }));
       notify.success({ title: t`Mailbox settings saved` });
     } catch (error) {
       notify.error({
@@ -107,7 +108,7 @@ export function AgentStreamInboxView() {
     } finally {
       setSaving(false);
     }
-  }, [activeState?.mailbox, agent, refresh, saving, senders, t]);
+  }, [activeState?.mailbox, agent, refresh, saving, t]);
 
   if (!parsed.agentId || parsed.view !== 'stream_inbox') return null;
   if (loading || !agent) {
@@ -147,38 +148,31 @@ export function AgentStreamInboxView() {
                   onClick={() => void createEmail()}
                   data-testid="agent-email-create"
                 >
-                  <Trans>No email address — create one</Trans>
+                  <Trans>No built-in email yet — create it</Trans>
                 </button>
               )}
             </div>
           </div>
         </div>
         {activeState?.mailbox && (
-          <div className="mt-3 grid gap-3 md:grid-cols-[minmax(12rem,1fr)_10rem_auto]">
-            <label className="text-xs font-medium">
-              <Trans>Allowed senders</Trans>
-              <Textarea
-                className="mt-1 min-h-16 font-mono text-xs"
-                value={senders}
-                onChange={(event) => setSenders(event.target.value)}
-                placeholder={t`one@example.com`}
-                data-testid="agent-email-allowed-senders"
-              />
-            </label>
-            <label className="text-xs font-medium">
-              <Trans>Refresh every (seconds)</Trans>
-              <Input
-                className="mt-1"
-                type="number"
-                min={MIN_REFRESH_SECONDS}
-                value={refresh}
-                onChange={(event) => setRefresh(event.target.value)}
-                data-testid="agent-email-refresh-seconds"
-              />
-            </label>
-            <Button className="self-end" variant="outline" disabled={saving} onClick={() => void saveConfiguration()}>
-              <Trans>Save</Trans>
-            </Button>
+          <div className="mt-3 flex flex-col gap-3">
+            <MailboxListsEditor agent={agent} mailbox={activeState.mailbox} onSaved={setState} />
+            <div className="flex items-end gap-3">
+              <label className="text-xs font-medium">
+                <Trans>Refresh every (seconds)</Trans>
+                <Input
+                  className="mt-1"
+                  type="number"
+                  min={MIN_REFRESH_SECONDS}
+                  value={refresh}
+                  onChange={(event) => setRefresh(event.target.value)}
+                  data-testid="agent-email-refresh-seconds"
+                />
+              </label>
+              <Button variant="outline" disabled={saving} onClick={() => void saveConfiguration()}>
+                <Trans>Save</Trans>
+              </Button>
+            </div>
           </div>
         )}
         {activeState?.source && (
@@ -192,17 +186,40 @@ export function AgentStreamInboxView() {
       </section>
       {activeState?.mailbox || channels.length > 0 ? (
         <div className="min-h-0 flex-1">
-          <StreamInboxView agentId={parsed.agentId} />
+          {/* Keyed on the opening channel: the mailbox source lands after the first render, and the
+              list must open on it, not remember the empty filter it was first built with. */}
+          <StreamInboxView
+            key={initialChannel ?? ''}
+            agentId={parsed.agentId}
+            initialChannel={initialChannel}
+            emptyHint={
+              activeState?.mailbox &&
+              !activeState.mailbox.open_senders &&
+              (activeState.mailbox.allowed_senders ?? []).length === 0 ? (
+                <span data-testid="agent-stream-inbox-no-senders">
+                  <Trans>Nobody may write to this agent yet — add their address under Allowed senders.</Trans>
+                </span>
+              ) : undefined
+            }
+          />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
           {/* The header line's + is how an agent gets a non-email channel, so the
               empty state keeps it rather than leaving email as the only way in. */}
           {agentTypeId && (
-            <AttachedChannelsBar owner={agentTypeId} rows={channels} specFor={specFor} offers={offers} selected={NO_FILTER} onSelectedChange={() => undefined} />
+            <AttachedChannelsBar
+              owner={agentTypeId}
+              rows={channels}
+              specFor={specFor}
+              offers={offers}
+              builtInOffered={builtInOffered}
+              selected={NO_FILTER}
+              onSelectedChange={() => undefined}
+            />
           )}
           <p>
-            <Trans>No channel reaches this Agent yet. Give it an email address to start.</Trans>
+            <Trans>No channel reaches this agent yet. Give it its built-in email to start.</Trans>
           </p>
           <Button
             type="button"
@@ -211,7 +228,7 @@ export function AgentStreamInboxView() {
             data-testid="agent-email-create-cta"
           >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            <Trans>Create email for agent</Trans>
+            <Trans>Create built-in email</Trans>
           </Button>
         </div>
       )}

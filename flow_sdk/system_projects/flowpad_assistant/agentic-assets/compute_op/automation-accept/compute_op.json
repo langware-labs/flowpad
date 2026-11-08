@@ -1,0 +1,8 @@
+{
+  "name": "automation-accept",
+  "subkind": "python",
+  "exe_data": {},
+  "input": "automation.prepared",
+  "output": "automation.prepared",
+  "id": "9bb068ad-797a-41f1-b4aa-0db6ffe38445"
+}

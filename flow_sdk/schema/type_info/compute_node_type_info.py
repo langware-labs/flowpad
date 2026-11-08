@@ -17,5 +17,8 @@ from flow_sdk.schema.types import EntityType
 
 COMPUTE_NODE = TypeInfo(
     type_name=EntityType.COMPUTE_NODE,
+    icon="Server",
+    # The product says "machine" (the Machines page, "share a machine"), never "compute node".
+    display_name="Machine",
     api_visible=True,
 )

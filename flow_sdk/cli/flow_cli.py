@@ -33,6 +33,7 @@ cli_init()
 _EXTRA = {"context_settings": {"allow_extra_args": True, "ignore_unknown_options": True}}
 LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "compat": ("flow_sdk.cli.commands.compat_cmd", "compat_check", None),
+    "proc": ("flow_sdk.cli.commands.proc_cmd", "proc_app", None),
     "connect": ("flow_sdk.cli.commands.connect_cmd", "connect", {}),
     "navigate": ("flow_sdk.cli.commands.navigate_cmd", "navigate_app", None),
     "artifact": ("flow_sdk.cli.commands.artifact_cmd", "artifact_app", None),
@@ -135,6 +136,10 @@ def main(ctx: typer.Context):
     """
     # Ensure config defaults are set
     setup_defaults()
+
+    from flow_sdk.cli.cli_use import record_cli_use  # noqa: PLC0415
+
+    record_cli_use(ctx.invoked_subcommand)
 
     # If no subcommand was invoked, show version
     if ctx.invoked_subcommand is None:
@@ -335,6 +340,7 @@ def _start_service_guarded(port: int) -> None:
     from flow_sdk.server.launch import (
         EXIT_FATAL_FAILURE,
         check_server_health,
+        latest_server_log_tail,
         refuse_start_reason,
         start_monitor_detached,
         wait_for_server_health,
@@ -371,6 +377,11 @@ def _start_service_guarded(port: int) -> None:
                 typer.echo("Server is ready")
             else:
                 typer.echo("Server may still be starting...")
+                # The backend logs only to its own file; on a cloud box this output is the only
+                # log that reaches the serial console and the hub, so name the file and its tail.
+                log_path, tail = latest_server_log_tail()
+                if log_path is not None:
+                    typer.echo(f"Server log: {log_path}\n{tail}", err=True)
     finally:
         boot_progress.stop()
 

@@ -12,17 +12,29 @@ import {
   type SetupNodeResult,
   type SetupTreeResult,
 } from '@sdk';
-import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Square, Undo2, type LucideIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Info,
+  Loader2,
+  Package,
+  Square,
+  Undo2,
+  type LucideIcon,
+} from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AskForm } from '@src/components/ask/AskForm';
 import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
+import { DependencyUpdatesStrip } from './DependencyUpdatesStrip';
 import { useProjectSetupStore } from './project-setup-store';
 import { ROOT_KIND, rowId as rowIdOf, rowKey } from './setup-labels';
 import { countDrawn, SetupTreeView } from './SetupTreeView';
@@ -60,18 +72,22 @@ export function pointerForRequirement(req: ProjectSetupRequirement, projectId: s
   }
   if (req.kind === 'webapp' && req.typeid) return DockPointer.forAppEntity(new TypeId(req.typeid));
   if (req.kind === 'dependency') return DockPointer.forProject(projectId);
+  if (req.kind === 'automation' && req.typeid) {
+    return DockPointer.forAutomations({ place: 'list', trigger: new TypeId(req.typeid).id });
+  }
   return null;
 }
 
 /** A dependency, source or web app goes by its own name (its title is where it comes from); a credential by its title. */
 export const namesItself = (req: ProjectSetupRequirement) =>
-  req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp';
+  req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp' || req.kind === 'automation';
 
 /**
  * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
  * missing — an either-or group of values as "A or B".
  */
 export function detailOf(req: ProjectSetupRequirement, or: string): string {
+  if (req.kind === 'automation') return req.note || req.needed_for || '';
   if (namesItself(req)) return req.note || req.title;
   if (req.credential_kind === 'oauth') return req.note || req.needed_for || `connect ${req.title || req.name}`;
   return (
@@ -141,7 +157,17 @@ export function ProjectSetupDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t, i18n } = useLingui();
-  const { readiness, busy, load, skip: skipRows, unskip: unskipRow } = useSetupReadiness(projectId, { enabled: open });
+  const {
+    readiness,
+    busy,
+    load,
+    skip: skipRows,
+    unskip: unskipRow,
+    decide,
+    checking,
+  } = useSetupReadiness(projectId, {
+    enabled: open,
+  });
   const [selected, setSelected] = useState(NONE);
   /** The one row whose own Skip is open inline (Locally | Always | Cancel). */
   const [skipping, setSkipping] = useState<string | null>(null);
@@ -149,7 +175,8 @@ export function ProjectSetupDialog({
   const assistant = useOptionalFloatingChat();
 
   // When the run ends, re-read the project — the answer goes here and to the footer.
-  const setup = useSetupRun(projectId, '', load);
+  // The last run is read only while the dialog is open: a closed dialog asks nothing.
+  const setup = useSetupRun(open ? projectId : '', '', load);
 
   const start = () => withNotify(() => setup.start(), t`Could not start the setup`);
   const stop = () => withNotify(async () => setup.stop?.(), t`Could not stop the setup`);
@@ -216,6 +243,10 @@ export function ProjectSetupDialog({
   const questionId = setup.questionId;
 
   // What can be selected is what can be skipped: a row still to do — a run going too (the run skips it live).
+  // An automation is a choice, not setup work: it has its own section and nothing for Start to run.
+  const isChoice = (req: ProjectSetupRequirement) => req.kind === 'automation';
+  const toRun = (readiness?.to_do ?? []).filter((req) => !isChoice(req));
+  const toDecide = (readiness?.to_do ?? []).filter(isChoice);
   const selectedReqs = [...(readiness?.to_do ?? []), ...(readiness?.optional ?? [])].filter((req) =>
     selected.has(rowKey(req)),
   );
@@ -233,8 +264,9 @@ export function ProjectSetupDialog({
         running={running}
         busy={busy.has(k)}
         selected={selected.has(k)}
-        onSelect={skipped ? undefined : (on) => select(req, on)}
-        onSkip={selecting ? undefined : () => setSkipping(k)}
+        onSelect={skipped || isChoice(req) ? undefined : (on) => select(req, on)}
+        onSkip={selecting || isChoice(req) ? undefined : () => setSkipping(k)}
+        onDecide={isChoice(req) ? (on) => void decide(req, on) : undefined}
         skipChoice={
           skipping === k ? (
             <SkipChoice
@@ -263,8 +295,17 @@ export function ProjectSetupDialog({
           </DialogTitle>
           <DialogDescription>
             <Trans>Needed to run {projectName} on this computer.</Trans>
+            {checking && readiness && (
+              <Loader2
+                className="ms-2 inline size-3 animate-spin align-middle"
+                data-testid="project-setup-rechecking"
+                aria-label={t`Checking again`}
+              />
+            )}
           </DialogDescription>
         </DialogHeader>
+
+        <DependencyUpdatesStrip projectId={projectId} />
 
         {selecting && (
           <div
@@ -287,15 +328,29 @@ export function ProjectSetupDialog({
           </div>
         )}
 
-        {readiness?.ready ? (
+        {!readiness ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="project-setup-loading">
+            <Loader2 className="size-4 animate-spin" />
+            <Trans>Checking…</Trans>
+          </p>
+        ) : readiness.ready ? (
           <p className="flex items-center gap-2 text-sm text-emerald-600" data-testid="project-setup-ready">
             <CheckCircle2 className="size-4" />
             <Trans>Everything required is set up.</Trans>
           </p>
         ) : (
-          <Section title={t`Required`} testId="project-setup-requirements">
-            {(readiness?.to_do ?? []).map((req) => row(req))}
-          </Section>
+          <>
+            {!!toRun.length && (
+              <Section title={t`Required`} testId="project-setup-requirements">
+                {toRun.map((req) => row(req))}
+              </Section>
+            )}
+            {!!toDecide.length && (
+              <Section title={t`Recommended automations`} testId="project-setup-automations">
+                {toDecide.map((req) => row(req))}
+              </Section>
+            )}
+          </>
         )}
 
         {!!readiness?.optional?.length && (
@@ -305,9 +360,9 @@ export function ProjectSetupDialog({
         )}
 
         {!!readiness?.skipped?.length && (
-          <Section title={t`Skipped on this machine`} testId="project-setup-skipped">
+          <SkippedSection title={t`Skipped on this machine (${readiness.skipped.length})`}>
             {readiness.skipped.map((req) => row(req, true))}
-          </Section>
+          </SkippedSection>
         )}
 
         {!!readiness?.gaps?.length && (
@@ -325,13 +380,15 @@ export function ProjectSetupDialog({
           </ul>
         )}
 
-        <SetupStatusLine
-          tree={setup.tree}
-          running={running}
-          canStart={!!readiness && !readiness.ready}
-          onStart={() => void start()}
-          onStop={setup.stop && (() => void stop())}
-        />
+        {readiness && (
+          <SetupStatusLine
+            tree={setup.tree}
+            running={running}
+            canStart={toRun.length > 0}
+            onStart={() => void start()}
+            onStop={setup.stop && (() => void stop())}
+          />
+        )}
 
         {running && (
           <div className="border-t pt-3" data-testid="project-setup-running">
@@ -347,7 +404,7 @@ export function ProjectSetupDialog({
         )}
 
         {/* The steps are for watching a run; while a question is open the question is the screen. */}
-        {setup.tree && !questionId && (
+        {readiness && setup.tree && !questionId && (running || setup.tree.state !== 'done' || readiness.ready) && (
           <div className="border-t pt-3" data-testid="project-setup-steps">
             <SetupTreeView tree={setup.tree} hideRoot />
           </div>
@@ -447,6 +504,28 @@ function Section({ title, testId, children }: { title: string; testId: string; c
         {children}
       </ul>
     </section>
+  );
+}
+
+/** The skipped rows, folded by default; the header names how many. */
+function SkippedSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Collapsible asChild>
+      <section className="group flex flex-col gap-1">
+        <CollapsibleTrigger
+          className="flex items-center gap-1 text-start text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          data-testid="project-setup-skipped-toggle"
+        >
+          <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90 rtl:rotate-180 rtl:group-data-[state=open]:rotate-90" />
+          {title}
+        </CollapsibleTrigger>
+        <CollapsibleContent asChild>
+          <ul className="flex flex-col gap-1" data-testid="project-setup-skipped">
+            {children}
+          </ul>
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }
 
@@ -571,6 +650,7 @@ function RequirementRow({
   onUndo,
   onOpen,
   onExplain,
+  onDecide,
 }: {
   req: ProjectSetupRequirement;
   skipped?: boolean;
@@ -584,6 +664,8 @@ function RequirementRow({
   onUndo?: () => void;
   onOpen: () => void;
   onExplain?: (button: HTMLElement) => void;
+  /** An automation the project recommends: Enable / Disable it on this machine, in place of Skip. */
+  onDecide?: (on: boolean) => void;
 }) {
   const { t } = useLingui();
   const Icon = iconOf(req);
@@ -629,7 +711,7 @@ function RequirementRow({
             className="rounded-full border px-2 text-xs text-muted-foreground"
             data-testid={`project-setup-chip-${rowId}`}
           >
-            {req.required ? t`Required` : t`Optional`}
+            {req.kind === 'automation' ? t`Recommended` : req.required ? t`Required` : t`Optional`}
           </span>
         )}
         <div className="flex-1" />
@@ -660,6 +742,27 @@ function RequirementRow({
             <Undo2 className="size-3" />
             <Trans>Undo</Trans>
           </Button>
+        )}
+        {!running && !busy && onDecide && (
+          <>
+            <Button
+              size="sm"
+              className="h-6 px-2 text-xs"
+              data-testid={`project-setup-enable-${rowId}`}
+              onClick={own(() => onDecide(true))}
+            >
+              <Trans>Enable</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              data-testid={`project-setup-disable-${rowId}`}
+              onClick={own(() => onDecide(false))}
+            >
+              <Trans>Disable</Trans>
+            </Button>
+          </>
         )}
         {!busy && !skipped && !skipChoice && onSkip && (
           <Button

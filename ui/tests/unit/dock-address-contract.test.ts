@@ -10,7 +10,7 @@
 // chiefly the tabHash STRINGS, which Python deliberately never mirrors (it
 // pins their null-ness only; see the dock_address.py docstring).
 import { AIConfigSubview, CredentialsSubview, Layout, MachineSubview, PageId, TokenPlanKind, ViewType, WebappSubview, isValidPage } from '@sdk';
-import { RETIRED_DOCK_VIEWS, normalizeRetiredDockPointer } from '@sdk/utils/ui/retired-views';
+import { RETIRED_DOCK_POINTERS, RETIRED_DOCK_VIEWS, normalizeRetiredDockPointer } from '@sdk/utils/ui/retired-views';
 import { describe, expect, it } from 'vitest';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { buildDockUrl, parseDockUrl } from '@src/navigation/url-builder';
@@ -77,7 +77,7 @@ describe('dock-address contract (shared fixture)', () => {
     const actual = Object.fromEntries(
       Object.entries(RETIRED_DOCK_VIEWS).map(([view, target]) => [
         view,
-        { view_type: target!.viewType as string, pointer: target!.pointer },
+        { view_type: target.viewType as string, pointer: target.pointer },
       ]),
     );
     expect(actual).toEqual(contract.retired_views);
@@ -89,6 +89,34 @@ describe('dock-address contract (shared fixture)', () => {
       viewType: retired as ViewType,
       pointer: 'ignored-by-the-replacement',
     });
+    expect(resolved.viewType).toBe(expected.view_type);
+    expect(resolved.pointer).toBe(expected.pointer);
+  });
+
+  it('declares the same retired sections', () => {
+    const actual = Object.fromEntries(
+      Object.entries(RETIRED_DOCK_POINTERS).map(([view, sections]) => [
+        view,
+        Object.fromEntries(
+          Object.entries(sections).map(([pointer, target]) => [
+            pointer,
+            { view_type: target.viewType as string, pointer: target.pointer },
+          ]),
+        ),
+      ]),
+    );
+    expect(actual).toEqual(contract.retired_pointers);
+  });
+
+  it.each(
+    Object.entries(contract.retired_pointers).flatMap(([view, sections]) =>
+      Object.keys(sections).map((pointer) => [view, pointer] as const),
+    ),
+  )('resolves the retired section %s/%s forward', (view, pointer) => {
+    const expected = (contract.retired_pointers as Record<string, Record<string, { view_type: string; pointer: string }>>)[
+      view
+    ][pointer];
+    const resolved = normalizeRetiredDockPointer({ viewType: view as ViewType, pointer });
     expect(resolved.viewType).toBe(expected.view_type);
     expect(resolved.pointer).toBe(expected.pointer);
   });

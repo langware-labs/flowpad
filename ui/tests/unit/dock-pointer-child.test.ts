@@ -22,16 +22,10 @@ describe('a nested child view', () => {
     expect(back.targetTypeId?.toString()).toBe(AGENT);
   });
 
-  it('a deployment opens nested in its agent, with the selected event in the URL', () => {
-    const agent = DockPointer.fromUrl(`/dock/assets/editor/agent/typeid/${AGENT}`);
-    const DEP = 'deployment-44444444-4444-4444-8444-444444444444';
-    const page = agent.withChild('deployment', DEP).withOption('run', 'p-1').withOption('t', '2026-09-23T20:20:44Z');
-    const back = DockPointer.fromUrl(page.toUrl());
-    expect(page.toUrl()).toContain(`/typeid/${AGENT}/child/deployment/${DEP}`);
-    expect(back.child).toEqual({ section: 'deployment', typeId: DEP });
-    expect(back.options?.run).toBe('p-1');
-    expect(back.options?.t).toBe('2026-09-23T20:20:44Z');
-    expect(page.tabHash).toBe(agent.tabHash);
+  it('a deployment no longer nests in its agent: it opens on its project', () => {
+    const page = DockPointer.forProjectDeployments('p-1', { deploymentId: 'd-1' });
+    expect(page.toUrl()).toBe('/dock/project/p-1/project-deployments?deployment=d-1');
+    expect(DockPointer.fromUrl(`/dock/assets/editor/agent/typeid/${AGENT}/child/deployment/deployment-1`).child).toBeNull();
   });
 
   it('a credential opens nested in its agent', () => {

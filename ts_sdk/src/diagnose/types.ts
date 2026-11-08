@@ -8,6 +8,21 @@
 
 export type DiagnosisStatus = 'ok' | 'informational' | 'needs_action' | 'fixed' | 'unrecognized' | 'partial';
 export type DiagnosePurpose = 'report' | 'repair';
+/** Whose problem it is — a report is offered only for `flowpad`, `dependency` and `unknown`. */
+export type DiagnosisCause = 'flowpad' | 'dependency' | 'project' | 'machine' | 'unknown';
+
+export interface SessionTurn {
+  role: string;
+  text: string;
+}
+
+export interface SessionState {
+  process: string;
+  title: string;
+  status: string;
+  worker: string;
+  turns: SessionTurn[];
+}
 
 export interface FlowContextSpec {
   purpose: DiagnosePurpose;
@@ -17,6 +32,12 @@ export interface FlowContextSpec {
   user_report: string;
   origin: string;
   instance: string;
+  view: string;
+  address: string;
+  entity: string;
+  session: SessionState | null;
+  hub_login: string;
+  other_sessions: SessionState[];
 }
 
 export interface DiagnosisFinding {
@@ -45,6 +66,9 @@ export interface LogTail {
 
 export interface DiagnosisSpec {
   status: DiagnosisStatus;
+  cause: DiagnosisCause;
+  /** The dependency's name when `cause` is `dependency`. */
+  cause_asset: string;
   title: string;
   summary: string;
   symptoms: string;
@@ -60,4 +84,10 @@ export interface DiagnosisSpec {
   errors: string[];
   started_at: string;
   elapsed_ms: number;
+}
+
+/** Something is wrong and someone else owns the fix — mirrors `DiagnosisSpec.reportable`. */
+export function isReportable(d: Pick<DiagnosisSpec, 'status' | 'cause'>): boolean {
+  if (d.status === 'ok' || d.status === 'informational') return false;
+  return d.cause === 'flowpad' || d.cause === 'dependency' || d.cause === 'unknown';
 }

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, get_args
 
 from pydantic import BaseModel, field_validator
 
@@ -11,6 +11,7 @@ from flow_sdk.config import default_service_config
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.message_invite_spec import InviteState
 
 
 class InvitationTarget(BaseModel):
@@ -38,6 +39,15 @@ def conversation_target_path(conversation_id: str) -> str:
     return f"/conversation/{conversation_id}"
 
 
+INVITATION_STATES: tuple[str, ...] = get_args(InviteState)
+
+
+def invitation_answered(inv) -> bool:
+    """Accepted, declined or revoked — anything but waiting. Reads plain objects too (the stream inbox's
+    formula and the prune are tested with them)."""
+    return getattr(inv, "accepted", None) is True or getattr(inv, "status", None) in ("accepted", "declined", "revoked")
+
+
 class Invitation(Entity):
     type: str = APIField(default=BuiltinEntityType.INVITATION.value)
     recipient_email: str = APIField()
@@ -58,6 +68,38 @@ class Invitation(Entity):
     # can say WHO invited ("<name> invited you to …"), not just what.
     sender_name: Optional[str] = APIField(None)
     sender_user_id: Optional[str] = APIField(None)
+    # What became of it, from the recipient's side. The row is kept for every state
+    # so the stream inbox can always show what was shared and what the user did with it.
+    # None on rows written before this field: read through ``state``.
+    status: Optional[str] = APIField(None)
+    resolved_at: Optional[datetime] = APIField(None)
+
+    @property
+    def state(self) -> str:
+        """``pending`` | ``accepted`` | ``declined`` | ``revoked``."""
+        if self.status in INVITATION_STATES:
+            return self.status
+        return "accepted" if self.accepted else "pending"
+
+    async def resolve(self, state: str, owner=None, *, notify: bool = True) -> "Invitation":
+        """Record the outcome on the row, never delete it. Idempotent."""
+        if state not in INVITATION_STATES:
+            raise ValueError(f"unknown invitation state {state!r}")
+        if self.status == state:
+            return self
+        self.status = state
+        self.resolved_at = datetime.now(UTC)
+        if state == "accepted":
+            self.accepted = True
+        return await self.save(owner, notify=notify)
+
+    async def retire(self, state: str, owner=None) -> None:
+        """A share (it names its ``target``) is kept with its answer — the record of what was shared;
+        a bare conversation invite has nothing to keep and goes."""
+        if self.target_type:
+            await self.resolve(state, owner)
+        else:
+            await self.delete()
 
     @field_validator("recipient_email", mode="before")
     @classmethod

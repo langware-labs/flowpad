@@ -209,7 +209,9 @@ const SURFACES: Surface[] = [
     forms: FORMS,
     open: async (page, processId) => {
       await page.goto(`/dock/shell/agentic_process-${processId}?viewMode=advanced`);
-      await expect(page.locator('.xterm-rows:visible').first()).toContainText('mark.sh line');
+      // The session is on screen: its first command on the first visit, a later one once the reply
+      // has scrolled it up (the commands themselves are found through scrollback).
+      await expect(page.locator('.xterm-rows:visible').first()).toContainText(/! +sh mark\.sh (line|quoted|inline)/);
     },
     click: async (page, form) => {
       const point = await xtermPoint(page, form);

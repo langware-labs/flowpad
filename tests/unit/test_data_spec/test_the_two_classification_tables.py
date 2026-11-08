@@ -44,6 +44,7 @@ ENTRY_POINTS = frozenset({"flow_sdk.server.run"})
 
 #: Kept honest by `test_no_package_outside_this_list_declares_a_shape`.
 SHAPE_PACKAGES = (
+    "flow_sdk.app",
     "flow_sdk.assets",
     "flow_sdk.blocks",
     "flow_sdk.builtin",

@@ -348,3 +348,20 @@ async def test_a_forwarded_small_json_error_reports_the_hubs_answer_and_still_re
     assert d["request"]["url"] == "https://hub.test/api/v1/graph/issue?filter=open&api_key=[redacted]"
     assert r["path"] == "/api/v1/graph/issue?filter=open&api_key=[redacted]"
     assert b"not a valid value" in relayed.body, "the caller still gets the hub's full answer"
+
+
+@pytest.mark.asyncio
+async def test_a_401_to_a_call_that_carried_no_login_keeps_ours(memory_keyring, capture_broadcast):
+    """A call that reached the hub bare (``unwatch`` / ``mailbox`` of a deleted agent, 2026-11-02) got
+    ``unauthenticated`` back, and the box wiped a login that never went out with it."""
+    from flow_sdk.cloud_client.client_hooks import _on_response
+
+    save_credentials(UserHubCredentials(api_key="live-token", expires_at=time.time() + 3600, user={"id": "u1"}))
+    set_user({"id": "u1"})
+    bare = httpx.Request("POST", "https://hub.test/api/v1/graph/agent/a1/unwatch")
+    await _on_response(httpx.Response(401, json={"status": "FAIL", "data": {"error_code": "unauthenticated"}}, request=bare))
+    assert load_credentials().api_key == "live-token" and is_logged_in()
+
+    sent = httpx.Request("GET", "https://hub.test/api/v1/me", headers={"Authorization": "Bearer live-token"})
+    await _on_response(httpx.Response(401, json={"status": "FAIL", "data": {"error_code": "unauthenticated"}}, request=sent))
+    assert load_credentials() is None, "the login that went out and was refused is dead"

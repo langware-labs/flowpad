@@ -81,6 +81,27 @@ def _read_env_file(name: str) -> dict[str, str]:
 
 
 # ── kill ────────────────────────────────────────────────────────────────────
+def _worker_reaping_own_backend(server: dict, monitor_pid: int | None = None) -> bool:
+    """Whether a WORKER is about to reap the backend it runs inside — the one case reset/
+    restart-backend must refuse (it would stop the FlowPad the worker lives in).
+
+    "Its own backend" is decided by process ancestry (``port_guard.runs_under``): the named
+    instance's recorded ``server_pid`` — or its recorded ``monitor_pid`` — is this process or an
+    ancestor. Ancestry, not a name or ``FLOW_INSTANCE`` match, so a worker resetting a DIFFERENT
+    instance (``qa``/``dev``, whose backend is not its ancestor) stays allowed even under a
+    ``FLOW_INSTANCE`` override, and a human in the desktop terminal (not a worker) is never blocked.
+
+    The monitor is checked too because it is an ancestor of the backend (hence of the worker) and
+    the sweep reaps it as well: in the ~15s window after a restart, ``server_pid`` is absent/stale
+    so the server check alone would fail open, but the monitor pid is already recorded.
+    """
+    from flow_sdk.core import port_guard  # noqa: PLC0415
+
+    if not port_guard.caller_is_worker():
+        return False
+    return port_guard.runs_under(_as_int(server.get("server_pid"))) or port_guard.runs_under(monitor_pid)
+
+
 def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
     """Kill ONLY this instance's processes. Returns the PIDs we terminated.
 
@@ -106,6 +127,19 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
     server = _read_json(idir / "server.json")
     env = _read_env_file(name)
 
+    # FLOWPAD-2112: reset/restart-backend reap the named instance's backend by design, so the
+    # sweep below passes allow_protected=True. Refuse ONLY the one dangerous case: a worker
+    # reaping the backend it runs inside (that would stop the FlowPad it lives in — the incident).
+    # A human in the desktop terminal, or a worker managing a DIFFERENT instance (qa/dev, on
+    # another port), is still allowed. A worker that bypasses this with a raw kill is contained at
+    # the OS boundary (L1).
+    if _worker_reaping_own_backend(server, _as_int(launcher.get("monitor_pid") or server.get("monitor_pid"))):
+        raise RuntimeError(
+            f"'{name}': a worker may not reset or restart the backend of the instance it runs "
+            f"inside (self-protection: it would stop the FlowPad it lives in). Run this from "
+            f"your own terminal, or target a different instance."
+        )
+
     table = liveness.scan()
     # Let this instance's own records vouch for PIDs whose environ we cannot
     # read (a backend that took FLOW_INSTANCE from dotenv rather than the env).
@@ -116,13 +150,15 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
             table.adopt_recorded(name, pid, _proc_create_time(pid))
 
     roles = frozenset({Role.BACKEND}) if backend_only else None
-    result = procs.kill_owned(name, table, roles=roles)
+    # A human reset/restart (worker refused above) legitimately reaps this instance's own
+    # backend, so the port guard is told to allow it.
+    result = procs.kill_owned(name, table, roles=roles, allow_protected=True)
 
     port_keys = ("LOCAL_SERVER_PORT",) if backend_only else ("LOCAL_SERVER_PORT", "VITE_PORT")
     for key in port_keys:
         raw = env.get(key, "")
         if raw.isdigit():
-            extra = procs.kill_port_if_owned(int(raw), name, table, roles=roles)
+            extra = procs.kill_port_if_owned(int(raw), name, table, roles=roles, allow_protected=True)
             result.killed.extend(extra.killed)
             result.survivors.extend(extra.survivors)
 
@@ -165,6 +201,12 @@ def _proc_create_time(pid: int) -> float | None:
 # it on every category reset makes the fresh backend replay every historical
 # JSONL under ~/.claude and ~/.codex (11K+ on a developer machine), contending
 # with the first desktop-db/clear and re-emitting already-consumed deltas.
+#
+# The worker-history cache is the same kind of file: per-transcript stats keyed
+# and validated by (path, mtime_ns, size) of the user's own ~/.claude / ~/.codex
+# files, so it can never serve a stale row and holds no entity or test data.
+# Wiping it made the first worker-history call after every reset re-parse ~300
+# transcripts (~13s), timing out the first Chats mount.
 _KEEP = {
     "sodot",
     ".secrets_enabled",
@@ -178,6 +220,9 @@ _KEEP = {
     "toplog.json",
     "skill_rules",
     "transcript_cursors.json",
+    "worker_history_cache.sqlite",
+    "worker_history_cache.sqlite-wal",
+    "worker_history_cache.sqlite-shm",
 }
 
 

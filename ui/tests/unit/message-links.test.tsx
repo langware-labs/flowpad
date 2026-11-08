@@ -17,7 +17,11 @@ vi.mock('@src/navigation', async (importOriginal) => ({
     navigation: { openLink: mocks.openLink, openLinkInBrowser: vi.fn(), openLinkInVibe: mocks.openLinkInVibe, openLinkInBrowserProfile: vi.fn() },
   }),
 }));
-vi.mock('@src/lib/browser-profiles', () => ({ fetchBrowserProfiles: () => Promise.resolve([]), useBrowserProfiles: () => [] }));
+vi.mock('@src/lib/browser-profiles', () => ({
+  fetchBrowserProfiles: () => Promise.resolve([]),
+  useBrowserProfiles: () => [],
+  browserProfileManager: { selected: null, select: () => {}, command: (c: string) => Promise.resolve(c) },
+}));
 
 const { MessageBubble } = await import('@src/components/conversation/MessageBubble');
 

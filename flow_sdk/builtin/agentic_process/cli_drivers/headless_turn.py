@@ -39,6 +39,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     AgenticWorker,
     WorkerSpawnError,
     latch_spawn_failure,
+    latch_turn_failure,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import error_frame
 from flow_sdk.builtin.agentic_process.worker_turns import WorkerTurns
@@ -162,6 +163,7 @@ async def run_headless_turn(
                     fd = await turns.route(fd)
                     if fd is None:
                         continue
+                    await latch_turn_failure(process, worker, fd)
                     try:
                         await process.emit_flow_data(fd.model_dump())
                     except Exception:

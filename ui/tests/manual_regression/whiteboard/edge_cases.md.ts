@@ -7,7 +7,7 @@ import { adjusted } from '../../adjustableTimeout';
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name, format: 'excalidraw' } });
+  const res = await request.post(`${API}/api/v1/graph/chart`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -15,7 +15,7 @@ async function createWhiteboard(request: APIRequestContext, name: string) {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: adjusted(15_000),
   });
@@ -54,38 +54,20 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     const { id, assetRef } = await createWhiteboard(request, `e1-${Date.now() % 10000}`);
     await openEditor(page, id);
 
-    // The save goes through axios/XHR (not window.fetch), and board.json
-    // materializes lazily. Excalidraw fires one onChange on initial mount, which
-    // legitimately persists an (empty) board.json — that is framework behavior,
-    // not a debounce regression. The property E1 guards is that the debounce
-    // does NOT keep firing on continued idle: once the mount write settles, no
-    // FURTHER writes occur without a new onChange (no timer loop / re-arming).
+    // The save goes through axios/XHR (not window.fetch), so the board.json mtime is
+    // the signal. Opening a chart never writes (ExcalidrawChartView: the mount onChange
+    // carries the loaded scene, and saving it is suppressed), so a fresh, untouched
+    // chart has no board.json at all. The property E1 guards: idle never loops the
+    // debounced save — through mount settling and continued idle, nothing is written.
     const boardPath = `${assetRef}/board.json`;
-
-    // Excalidraw fires onChange a couple of times during initialization (scene +
-    // appState settling), so board.json sees a small, finite burst of mount
-    // writes. Wait for the mtime to go QUIESCENT — unchanged across a 2s quiet
-    // window — to establish the steady-state baseline.
     const readMtime = () => (fs.existsSync(boardPath) ? fs.statSync(boardPath).mtimeMs : 0);
-    let baseMtime = 0;
-    let stableFor = 0;
-    for (let i = 0; i < 50 && stableFor < 2_000; i++) {
-      await page.waitForTimeout(250);
-      const m = readMtime();
-      if (m !== 0 && m === baseMtime) {
-        stableFor += 250;
-      } else {
-        baseMtime = m;
-        stableFor = 0;
-      }
-    }
-    // The Chart view writes nothing on mount (no board.json yet): baseline 0 is a valid quiescent state.
-    expect(baseMtime, 'board.json mtime is a number').toBeGreaterThanOrEqual(0);
+    await page.waitForTimeout(2_000); // mount settling (Excalidraw's init onChange burst)
+    const baseMtime = readMtime();
+    expect(baseMtime, 'opening a fresh chart writes no board.json').toBe(0);
 
-    // Idle — inject nothing. After quiescence the debounce must not re-fire: no
-    // further write (the mtime stays put). A timer loop / re-arming would bump it.
+    // Idle — inject nothing. A timer loop / re-arming debounce would write now.
     await page.waitForTimeout(3_000);
-    expect(readMtime(), 'no further board.json write on continued idle').toBe(baseMtime);
+    expect(readMtime(), 'no board.json write on continued idle').toBe(baseMtime);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
     await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
@@ -156,7 +138,7 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
     // Hard reload (full page reload, simulating a crash + reopen).
     await page.reload();
-    await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+    await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
     await page.waitForFunction(() => (window as any).__chartApi, null, { timeout: adjusted(15_000) });
     await page.waitForTimeout(2_000);
 

@@ -2,6 +2,12 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import type { AssetDocument, DocumentPatch, DocumentRef } from '@sdk/fs/AssetDocument';
+import { TypeId } from '@sdk/models/TypeId';
+
+const watchers = vi.hoisted(() => new Map<string, () => void>());
+vi.mock('@sdk/services/fsService', () => ({ fsManager: {
+  watchFile: (_id: unknown, path: string, onChange: () => void) => { watchers.set(path, onChange); return () => watchers.delete(path); },
+} }));
 
 const initial = (): AssetDocument => ({ body_ref: { path: '/a/SKILL.md', type_id: 'compute_node-@local', read_only: false, ref_type: 'file' },
   body: 'Body\n', fields: { name: 'sample', metadata: { owner: 'team' } }, raw_text: '', body_start_line: 5, revision: 'first' });
@@ -55,5 +61,15 @@ describe('document editor', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false)); act(() => result.current.setBody('My draft'));
     file.externalEdit(); rerender({ key: 2 }); await act(() => result.current.save());
     expect(result.current.conflict).toBe(true); expect(result.current.body).toBe('My draft');
+  });
+  it('watches the file only while shown and refreshes a clean buffer when it changes on disk', async () => {
+    const file = memoryDocument(); const ref = { ...file.ref, watchId: new TypeId('compute_node-@local') };
+    const { result, unmount } = renderHook(() => useMarkdownContent(ref, { autoSave: false }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    file.externalEdit(); act(() => watchers.get('/a/SKILL.md')?.());
+    await waitFor(() => expect(result.current.body).toBe('External'));
+    act(() => result.current.setBody('My draft')); act(() => watchers.get('/a/SKILL.md')?.());
+    await act(() => Promise.resolve()); expect(result.current.body).toBe('My draft');
+    unmount(); expect(watchers.has('/a/SKILL.md')).toBe(false);
   });
 });

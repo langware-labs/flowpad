@@ -1419,3 +1419,19 @@ def test_api_json_serializer_skip_context_suppresses_injection(monkeypatch):
     assert "worker_status" not in payload
     assert "busy" not in payload
     assert "ready_for_input" not in payload
+
+
+def test_tail_status_a_compaction_summary_is_not_a_prompt_the_agent_owes_an_answer(tmp_path: Path):
+    """A compacted session (here resumed after a restart) ends on Claude's summary row — type ``user``,
+    ``isCompactSummary`` — and ``last-prompt``, with no reply. Read as a prompt it pinned the worker at
+    ``working``, so queued shell commands (a clicked terminal link) never drained."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            *_answered_turn(),
+            {"type": "user", "isCompactSummary": True, "message": {"role": "user", "content": "summary"}},
+            {"type": "last-prompt"},
+        ],
+    )
+    assert _tail_status(f) == WorkerStatus.COMPLETE

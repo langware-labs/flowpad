@@ -469,16 +469,42 @@ async def test_a_choice_stored_by_a_member_name_still_names_its_way(project, tem
     assert stored.way_of(GOOGLE) == "google" and stored.is_way("google") and not stored.is_way("nope")
 
 
-async def test_a_connect_wants_every_declared_sign_in_ways_scopes(project, templates, monkeypatch):
-    from flow_sdk.core.oauth.wanted_scopes import _credential_way_scopes
+async def test_a_google_grant_without_the_ways_scope_does_not_take_the_way(project, templates, monkeypatch):
+    """A Drive grant cannot read mail: the sign-in way is present only when the held grant carries its scope."""
+    from types import SimpleNamespace
 
-    _granted(monkeypatch)
+    from flow_sdk.core.oauth import provider_registry
+    from flow_sdk.ingest import credentials as resolver
+    from flow_sdk.schema.data_spec.data_driver_spec import AuthSpec
+
+    granted: list[str] = ["https://www.googleapis.com/auth/drive.readonly"]
+
+    async def token_for(provider, **_kw):
+        return "ya29.token" if provider == "google" else None
+
+    async def held_scopes(provider, _user, **_kw):
+        return tuple(granted) if provider == "google" else ()
+
+    async def owner(_row):
+        return project
+
+    async def identity(_provider, _token):
+        return "me@gmail.com"
+
+    monkeypatch.setattr(provider_registry, "token_for", token_for)
+    monkeypatch.setattr(provider_registry, "granted_scopes", held_scopes)
+    monkeypatch.setattr(resolver, "owner_project", owner)
+    monkeypatch.setattr(resolver, "_identity", identity)
     await save_credential(manifest=mail(), scope="project", project_id=project.id)
-    assert await _credential_way_scopes({"google"}) == {MAIL}, "unchosen: the sign-in way is open to choose"
-    assert await _credential_way_scopes({"slack"}) == set()
+    auth = AuthSpec(credential="mailbox", vars={ADDRESS: ADDRESS, APP_PASSWORD: APP_PASSWORD})
+    row = SimpleNamespace(secret_store=None, deployment_id="")
 
-    await credential_service.set_credential_by_name("mailbox", {}, project_id=str(project.id), choice=APP_PASSWORD)
-    assert await _credential_way_scopes({"google"}) == {MAIL}, "another way chosen: connecting is how a person switches"
+    drive_only = await resolver.resolve_credentials(auth, row)
+    assert drive_only.token is None, "a grant without the mail scope never hands IMAP a Drive token"
+
+    granted.append(MAIL)
+    with_mail = await resolver.resolve_credentials(auth, row)
+    assert with_mail.choice == GOOGLE and with_mail.token.get_secret_value() == "ya29.token"
 
 
 async def test_setting_the_credential_rechecks_the_sources_waiting_on_it(project, templates):

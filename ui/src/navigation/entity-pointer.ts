@@ -1,9 +1,10 @@
 /** Where an entity opens: the dock pointer for a `{type, id}` (plus what a few types need from the
  *  row). Navigation owns this mapping; chips, breadcrumbs, viewers and dialogs all ask it. */
-import { AgenticProcess, DataSource, TypeId, workerFromSessionType } from '@sdk';
+import { AgenticProcess, DataSource, PageId, TypeId, ViewType, workerFromSessionType } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { llmEndpointsPointer } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import type { SessionWorker } from '@src/hooks/use-transcript';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 
@@ -43,6 +44,16 @@ export function buildDockPointer(
       return DockPointer.forDataSources({ section: 'source', id: resolved.id, tab: null });
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
+    // People & teams lives on the hub page (`org-route.ts`): a team as its pointer, an org as an option.
+    case 'team':
+      return new DockPointer(ViewType.ORGANIZATION, `team/${resolved.id}`, { tab: 'teams' }, undefined, PageId.HUB);
+    case 'organization':
+      return new DockPointer(ViewType.ORGANIZATION, undefined, { org: resolved.id, tab: 'members' }, undefined, PageId.HUB);
+    case 'llm_endpoint':
+      return new DockPointer(ViewType.LLM_ENDPOINTS, llmEndpointsPointer(resolved.id), undefined, undefined, PageId.HUB);
+    case 'compute_node':
+      // `/dock/compute_node/<id>` has no view (it lands on Start); a machine opens on its Machine page.
+      return DockPointer.forMachine(resolved.id);
     case AgenticProcess.type:
       // A session opens in its own tab (the shell dock). `/dock/agentic_process/<id>` has no view.
       return DockPointer.forSession(resolved.id);

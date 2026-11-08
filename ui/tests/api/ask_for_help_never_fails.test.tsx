@@ -129,9 +129,12 @@ function AskHost({ onAssigned }: { onAssigned: (id: string) => void }) {
 function fillAndAssign(title: string) {
   const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
   const by = (id: string) => dialog.querySelector(`[data-testid="${id}"]`) as HTMLElement;
+  // The three cards: what is wrong → diagnosis & context → who gets it.
+  fireEvent.change(by('vibe-assign-notes'), { target: { value: title } });
+  fireEvent.click(by('ask-for-help-next'));
+  fireEvent.click(by('ask-for-help-next'));
   fireEvent.change(by('vibe-assign-person'), { target: { value: HELPER_EMAIL } });
   fireEvent.blur(by('vibe-assign-person'));
-  fireEvent.change(by('vibe-assign-title'), { target: { value: title } });
   fireEvent.click(by('vibe-assign-submit'));
   return { dialog, submit: () => fireEvent.click(by('vibe-assign-submit')) };
 }
@@ -338,9 +341,11 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
         <AskForHelpDialog open onOpenChange={() => {}} projectId={null} origin="footer" desk={{ kind: 'desk' }} />
       </MemoryRouter>,
     );
-    fireEvent.change(document.querySelector('[data-testid="vibe-assign-title"]')!, {
+    fireEvent.change(document.querySelector('[data-testid="vibe-assign-notes"]')!, {
       target: { value: 'my agent will not start' },
     });
+    fireEvent.click(document.querySelector('[data-testid="ask-for-help-next"]')!);
+    fireEvent.click(document.querySelector('[data-testid="ask-for-help-next"]')!);
     await waitFor(() => expect(document.querySelector('[data-testid="vibe-assign-submit"]')).toBeEnabled());
     fireEvent.click(document.querySelector('[data-testid="vibe-assign-submit"]')!);
     await waitFor(() => expect(oauthService.connect).toHaveBeenCalled());

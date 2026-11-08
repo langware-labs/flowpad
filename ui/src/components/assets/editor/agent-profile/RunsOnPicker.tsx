@@ -1,4 +1,4 @@
-import type { AgentPlace } from '@sdk';
+import type { AgentPlace } from './use-agent-places';
 import { Trans } from '@lingui/react/macro';
 import { useId } from 'react';
 

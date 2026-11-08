@@ -345,7 +345,7 @@ function ContentPanelBody({
       case ViewType.INBOUND:
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
-            <InboundView />
+            <InboundView pointer={currentDock?.pointer} />
           </Suspense>
         );
       case ViewType.MACHINES:
@@ -456,11 +456,14 @@ function ContentPanelBody({
             <LlmSetupView />
           </Suspense>
         );
+      // The same single-item page as the hub's (an issue opens here on both surfaces).
+      case ViewType.HUB_ENTITY:
+        return <HubEntityView pointer={currentDock?.pointer} />;
       // The same screen as the hub page's: every claim is the hub's, "This computer" is one more place.
       case ViewType.INBOUND:
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
-            <InboundView />
+            <InboundView pointer={currentDock?.pointer} />
           </Suspense>
         );
       case ViewType.AI_CONFIG:

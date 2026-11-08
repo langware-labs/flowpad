@@ -567,8 +567,12 @@ def _openrouter_key() -> str:
 
 
 @pytest.fixture(autouse=True)
-async def _fund_opencode_rows(request):
+async def _fund_opencode_rows(request, _real_home_for_cli_subprocess_tests):
     """Every row parametrized with ``opencode`` runs funded by key.
+
+    Depends on ``_real_home_for_cli_subprocess_tests`` so the key is written into the
+    store of the HOME the test then runs under. Without it pytest may fund first, into the
+    sandbox HOME's sodot, and a real-HOME module reads the other store ("no credential").
 
     opencode's device login is always signed out under the test HOME, and since the
     LLM-source gate (b866ddfee) an unfunded opencode is refused ("no usable LLM

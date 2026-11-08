@@ -8,7 +8,7 @@ from flow_sdk.automations.describe import describe_then, describe_when
 from flow_sdk.automations.overview import group_of, overview
 from flow_sdk.automations.run_once import run_once
 from flow_sdk.builtin import trigger_callbacks
-from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.builtin.trigger import Trigger, set_trigger_on
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from tests.pytest_plugin import async_context
@@ -88,8 +88,7 @@ async def test_editing_the_rule_untests_it_and_switching_off_does_not():
     await run_once(trigger)
     await settle()
 
-    trigger.enabled = False
-    await trigger.update()
+    await set_trigger_on(trigger, False)
     assert (await _summary(trigger)).tested is True
 
     trigger.tag_pattern = "drill.other.*"

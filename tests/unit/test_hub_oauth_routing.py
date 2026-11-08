@@ -62,7 +62,7 @@ def _routing_probe(monkeypatch, *, hub_available: bool):
 
     calls = []
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         calls.append(("desktop", provider))
         return ApiSuccessResponse(data={"kind": "device"})
 
@@ -121,7 +121,7 @@ async def test_hub_providers_delegate(monkeypatch):
 
     calls = []
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         calls.append(("desktop", provider))
         from flow_sdk.responses.response import ApiFailResponse
 
@@ -148,7 +148,7 @@ async def test_hub_providers_delegate(monkeypatch):
 async def test_a_provider_neither_side_knows_keeps_the_desktop_refusal(monkeypatch):
     from flow_sdk.app.actions import oauth_action
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         from flow_sdk.responses.response import ApiFailResponse
 
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
@@ -177,7 +177,7 @@ async def test_a_dead_callback_host_falls_back_instead_of_refusing(monkeypatch):
 
     calls = []
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         calls.append(("desktop", provider))
         return ApiSuccessResponse(data={"kind": "device"})
 
@@ -209,7 +209,7 @@ async def test_a_dead_callback_host_with_no_local_grant_says_why(monkeypatch):
     from flow_sdk.app.actions import oauth_action
     from flow_sdk.responses.response import ApiFailResponse
 
-    async def desktop(provider, user_id, *_args):
+    async def desktop(provider, user_id, *_args, **_kwargs):
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
 
     async def hub(provider, **_kwargs):
@@ -275,7 +275,7 @@ def _hub_table(monkeypatch, values):
     emitted.
     """
 
-    async def _data(user_id, *, action, sub_path, on_error, level=None):
+    async def _data(user_id, *, action, sub_path, on_error, level=None, unreachable_raises=False):
         assert (action, sub_path) == ("env-var", "table")
         return {"values": values}
 

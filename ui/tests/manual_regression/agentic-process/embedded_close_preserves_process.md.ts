@@ -44,13 +44,13 @@ test('embedded Close is a pure host callback and destructive controls stay hidde
     expect(navOut?.[0]).toContain(id);
     expect(menu.split(id).length, `${id} appears once, inside the block`).toBe(2);
   }
-  // Fork is non-embedded-only (it lives in the SessionAnchor now, ProcessToolbar only passes `embedded` down).
+  // Fork is non-embedded-only (it lives in the session anchor the toolbar renders).
   const anchor = readFileSync(
     join(repo, 'ui/src/components/terminal/interactive-terminal/SessionAnchor.tsx'),
     'utf8',
   );
-  expect(toolbar).toContain('embedded={embedded}');
-  expect(anchor).toMatch(/\{!embedded && \(\s*<>\s*<CompactIconAction\s+icon=\{GitFork\}/);
+  expect(toolbar).toMatch(/<SessionAnchor[\s\S]*?embedded=\{embedded\}/);
+  expect(anchor).toMatch(/\{!embedded && \(\s*(?:<>\s*)?<CompactIconAction\s+icon=\{GitFork\}/);
   expect(terminal).toContain('embedded={embedded}');
 
   const callers = readFileSync(

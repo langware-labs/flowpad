@@ -63,9 +63,10 @@ uv build
 # 2. Install the wheel as the uv-tool (REPLACES the whole flow_sdk copy — no stale files)
 (cd ~ && uv tool install --force --python 3.13 "$OLDPWD"/dist/flowpad-*.whl)
 
-# 3. Restart from a NEUTRAL dir (repo cwd's .env.local hijacks FLOW_INSTANCE/port)
-FLOW=~/.local/share/uv/tools/flowpad/bin/flow
-(cd ~ && "$FLOW" stop; FLOWPAD_NO_BROWSER=1 "$FLOW" start)
+# 3. Restart in a session of its own, from a neutral dir. A shell an agent or a Flowpad terminal
+#    opened is a child of the server it restarts: a plain `flow stop; flow start` dies with the
+#    server before the start runs, and the UI is left reconnecting to nothing.
+scripts/restart_detached.sh
 
 # 4. Discard the +local marker from the tree
 git checkout flow_sdk/_version.py

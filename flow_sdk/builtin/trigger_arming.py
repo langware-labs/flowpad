@@ -120,6 +120,22 @@ async def arm_after_index(record: Any) -> None:
     if entity is None:
         _log.debug("trigger %s indexed but not resolvable; nothing to arm", record.id)
         return
+    from flow_sdk.builtin.trigger import _project_setup_changed, set_trigger_on  # noqa: PLC0415
+
+    # Flowpad's own follow their file, as they always did; on a machine the hub runs ONLY for a deployed agent,
+    # the deploy was its owner's choice, so recommended rules are on (nobody is at that box to answer setup).
+    # Every other rule's switch is the person's here, and an index never moves it.
+    if entity.is_builtin:
+        target = entity.recommended
+    elif not entity.decided and entity.recommended and _deployed_agent_machine():
+        target = True
+    else:
+        target = None
+    if target is not None and (not entity.decided or entity.enabled != target):
+        await set_trigger_on(entity, target)
+        return
+    if not entity.decided:  # a rule that came with a project: its setup now has something to ask
+        _project_setup_changed(entity)
     await arm_trigger(entity)
 
 
@@ -155,3 +171,13 @@ async def disarm_trigger(trigger_id: str) -> None:
         await fsop_watcher.on_trigger_deleted(trigger_id)
     except Exception:
         _log.exception("Disarming (watch) failed for trigger %s", trigger_id)
+
+
+def _deployed_agent_machine() -> bool:
+    """This Flowpad runs only to serve a deployed agent (the hub assigned it the ``agent`` runtime)."""
+    from flow_sdk.instance_settings.runtime import RuntimeKind, get_assigned_runtime  # noqa: PLC0415
+
+    try:
+        return get_assigned_runtime() == RuntimeKind.AGENT
+    except Exception:  # noqa: BLE001 — unknown is "a person's machine": the safe answer
+        return False

@@ -60,7 +60,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover — wrong-interpreter pat
         f"report.py needs Flowpad's own interpreter; this one has no flow_sdk:\n"
         f"  ran under:      {sys.executable}\n"
         f"  should run as:  {os.environ.get('FLOWPAD_PYTHON') or '$FLOWPAD_PYTHON (unset!)'}\n"
-        f"Re-run the exact same command with \"$FLOWPAD_PYTHON\" as the interpreter. "
+        f'Re-run the exact same command with "$FLOWPAD_PYTHON" as the interpreter. '
         f"Do not use `uv run` (it resolves an environment from the working directory, "
         f"not PATH) or `python3` (a Windows venv ships no python3.exe)."
     ) from exc
@@ -72,6 +72,11 @@ logger = logging.getLogger(__name__)
 # ``informational``) records the diagnosis for history but creates no support
 # artifact — nothing to act on.
 _ISSUE_STATUSES = frozenset({"fixed", "needs_action", "unrecognized"})
+
+# Whose problem it is. A report is offered only when someone else owns the fix -- Flowpad, a
+# dependency, or nobody could tell; a cause in the person's own project or machine is theirs.
+_CAUSES = ("flowpad", "dependency", "project", "machine", "unknown")
+_REPORTABLE_CAUSES = frozenset({"flowpad", "dependency", "unknown"})
 
 
 def _format_message(*, summary: str, status: str, details: str, platform: str) -> str:
@@ -95,8 +100,8 @@ def _environment_snapshot() -> dict:
     """Who / when / where, as of the machine that is recording the diagnosis.
 
     Persisted ONTO the record rather than computed when it is read, because both
-    read surfaces are potentially on someone else's machine: the "Report issue"
-    email can be sent by a helper the diagnosis was forwarded to, and the details
+    read surfaces are potentially on someone else's machine: Ask for help can be
+    sent by a helper the diagnosis was forwarded to, and the details
     the receiver sees must still describe the reporter's Windows box, not theirs.
     """
     # The same snapshot every diagnosis carries (``flow_sdk.diagnose.baseline``), so the record and
@@ -152,7 +157,7 @@ async def create_support_conversation(
     flow_message_id}``. Creates the @local user/project if missing, so it always
     records.
 
-    This is what the report buttons (Report issue / Forward) in the Feed card and
+    This is what the action buttons (Ask for help / Forward) in the Feed card and
     the UI diagnose modal act on. It does NOT create a Feed ``FeedEntry``: posting
     the Home-Feed card is the CLI runner's job (CLI surface only).
 
@@ -218,7 +223,7 @@ async def create_support_conversation(
     append_message_pointer(rec, msg.id, datetime.now(UTC).isoformat())
     await project_pointers_to_entity(rec, notify=False)
 
-    # 3) Hide from the strip until "Report issue". Stamp dismissed_at AFTER the
+    # 3) Hide from the strip until it is sent. Stamp dismissed_at AFTER the
     #    message so it is newer than the latest message ts (no auto-revive).
     conv = await Conversation.get_one({"id": conv.id})
     conv.dismissed_at = datetime.now(UTC)
@@ -245,6 +250,8 @@ async def record_diagnosis(
     status: str = "informational",
     details: str = "",
     platform: str = "",
+    cause: str = "unknown",
+    cause_asset: str = "",
 ) -> dict:
     """Record a flow-diagnose result.
 
@@ -274,8 +281,10 @@ async def record_diagnosis(
         "has_issue": False,
         # The verdict, for the runner's merged ``diagnosis`` (the record keeps no status field).
         "status": status,
+        "cause": cause if cause in _CAUSES else "unknown",
+        "cause_asset": cause_asset,
     }
-    if status in _ISSUE_STATUSES:
+    if status in _ISSUE_STATUSES and result["cause"] in _REPORTABLE_CAUSES:
         support = await create_support_conversation(
             summary=summary or title,
             status=status,
@@ -306,6 +315,13 @@ def _parse_args(argv: list[str] | None = None):
     )
     p.add_argument("--details", default="", help="Full diagnostic report block.")
     p.add_argument("--platform", default="", help="macOS | Windows | Linux.")
+    p.add_argument(
+        "--cause",
+        default="unknown",
+        choices=_CAUSES,
+        help="Whose problem it is: flowpad | dependency | project | machine | unknown.",
+    )
+    p.add_argument("--cause-asset", default="", help="With --cause dependency: the dependency's name.")
     return p.parse_args(argv)
 
 
@@ -322,6 +338,8 @@ async def _amain(argv: list[str] | None = None) -> int:
         status=args.status,
         details=args.details,
         platform=args.platform,
+        cause=args.cause,
+        cause_asset=args.cause_asset,
     )
     # The JSON line IS the completion signal: it flows through the agent's
     # transcript, and the `flow diagnose` runner detects the run is done (and reads

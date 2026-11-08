@@ -197,6 +197,18 @@ class TestFiles:
                 await source.send(MessageData(text="hi", recipients=(to,), attachments=(local_file(path),)))
         assert not [c for c in mailbox.calls if c[0] in ("send", "reply")]
 
+    async def test_one_send_goes_to_several_with_cc_and_an_html_body(self, mailbox):
+        """The Sunday report: To Eran, Cc Ami, the scoreboard as HTML — one Hub send, the Hub checks who."""
+        await DataDriver.loaded("cloud_email").send(
+            _row(), thread_key="", to="eran@langware.ai, joe@example.com", text="the week", subject="GTM weekly",
+            cc="ami@langware.ai", html="<h1>the week</h1>",
+        )
+        (call,) = [c for c in mailbox.calls if c[0] == "send"]
+        body = call[2]
+        assert body["to"] == ["eran@langware.ai", "joe@example.com"]
+        assert body["cc"] == ["ami@langware.ai"] and body["html"] == "<h1>the week</h1>"
+        assert body["subject"] == "GTM weekly" and body["text"] == "the week"
+
 
 class TestHydration:
     async def test_it_does_not_filter_to_received(self, mailbox):

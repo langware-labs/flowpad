@@ -4,12 +4,13 @@ name: chartit
 description: 'Builds and edits Flowpad Charts — one entity for every kind of chart,
   opened in Flowpad''s own chart editor: a sequence (network / message flow between
   participants, with sub-flow blocks that open other charts), a C4 architecture diagram
-  (context to deployment views; a box opens the chart that zooms into it), an Excalidraw whiteboard (boxes, arrows, freehand), or a
+  (context to deployment views; a box opens the chart that zooms into it), an architecture
+  chart (services, stores and clients in grouped boxes), an Excalidraw whiteboard (boxes, arrows, freehand), or a
   Mermaid diagram. Picks the format, writes the chart''s
   files, indexes it, and shows it. To collect review comments on charts, show them in a
   mockify mock — the charts themselves carry no comment bar.
   Use for "chart this flow", "draw the network flow", "sequence diagram of X", "C4 diagram",
-  "software architecture of X",  "make
+  "software architecture of X", "services / db diagram", "make
   a whiteboard / board / diagram", "mermaid diagram", or converting a chart between formats. NOT for
   a clickable UX journey (mockify), a data dashboard or report with numbers (html-builder
   + dataviz), or slides (decker).'
@@ -24,18 +25,26 @@ shareable, and opens in Flowpad's chart editor, which draws it by its **`format`
 |---|---|---|---|
 | `sequence` | who calls whom, in order: protocols, auth flows, request paths, integrations | `chart.json` (kind `chartit.sequence`) | the JSON |
 | `c4` | software architecture: people, systems, containers, stores, components, and how they talk — at one C4 level per chart | `c4.json` (kind `chartit.c4`) | the JSON |
+| `architecture` | the real deployment in one picture: services, databases, clients and where each runs, with numbered steps of one request | `architecture.json` (kind `chartit.architecture`) | the JSON |
 | `excalidraw` | a free sketch: architecture boxes, a layout, a rough idea | `board.json` (Excalidraw scene) | the JSON |
 | `mermaid` | a flowchart, state machine, ER or class diagram, gantt — anything Mermaid draws well | the ```` ```mermaid ```` block in `CHART.md` | the block |
 
 Every chart folder has `CHART.md`: frontmatter `name`, `description`, `format`, `session` (your agentic
-process id — `flow context`) and a short prose note. For `sequence`, `c4` and
-`excalidraw` the editor keeps a Mermaid copy in `CHART.md` in sync — that is how any chart reads as text.
+process id — `flow context`) and a short prose note. For `sequence`, `c4`,
+`architecture` and `excalidraw` the editor keeps a Mermaid copy in `CHART.md` in sync — that is how any chart reads as text.
 Never write `thumbnail.svg`; the editor makes it.
 
 ## 1. Pick the format, then cut the flows
 
+**One request → ONE chart.** Pick the single format that answers it and put everything in that chart
+(a sequence can carry state changes as self-calls, an architecture chart its steps). Never add a
+second chart "to complement" the first. More than one only when the person asks for several, or a
+sequence set's repeated sub-flow (below) is real.
+
 - Several actors exchanging messages over time → `sequence`. What a system is made of and what it
-  talks to → `c4` (a request walking through it, numbered → `c4` with `level: dynamic`). Free layout → `excalidraw`. A graph of
+  talks to → `c4` (a request walking through it, numbered → `c4` with `level: dynamic`). The real
+  deployment in one picture — which services, stores and clients run where, and the steps of one request through
+  them → `architecture`. Free layout → `excalidraw`. A graph of
   states / steps / entities → `mermaid`.
 - **Sequence sets: never draw a repeated flow twice.** List every flow first; a run of steps that
   recurs (token refresh, a proxy hop, "select sources") is its own chart, and each place it happens is
@@ -151,6 +160,45 @@ fixed by the editor (`templates/c4/style.md`) — the file holds facts only, nev
   ```
   The schema check needs chartit's kinds in the project, once:
   `python3 -I <this skill>/scripts/install_data.py <project root>` and the `flow schema apply` it prints.
+
+**architecture** — `architecture.json`, checked against `chartit.architecture`. Start from
+`templates/architecture/example.architecture.json`; the look is fixed by the editor
+(`templates/architecture/style.md`) — the file holds facts only.
+
+```json
+{"title": "Spora — services and databases",
+ "groups": [
+   {"id": "tenant", "label": "PER TENANT", "sublabel": "prod · cloudtest · local", "tiers": [
+     {"id": "svc", "label": "Services", "parts": [
+       {"id": "tapi", "label": "tenant-api", "sublabel": "Node · Cloud Run", "role": "service", "step": 1},
+       {"id": "chat", "label": "chat-service", "sublabel": "Python · Agent SDK", "role": "service", "ref": "chat-service-inside"}]},
+     {"id": "db", "label": "Firestore · tenant database", "parts": [
+       {"id": "t3", "label": "Chat", "sublabel": "chats · messages", "role": "db", "step": 2}]}]},
+   {"id": "outside", "label": "OUTSIDE", "parts": [
+     {"id": "llm", "label": "Claude / OpenRouter", "role": "external"}]}],
+ "links": [
+   {"from": "tapi", "to": "chat", "label": "compose"},
+   {"from": "svc", "to": "db", "label": "read / write", "both": true},
+   {"from": "chat", "to": "llm", "label": "LLM", "style": "dashed"}],
+ "steps": [{"n": 1, "text": "The app calls tenant-api."}, {"n": 2, "text": "The chat is stored."}]}
+```
+
+- **Groups are where things run**, left to right: a machine, a cloud, a tenant, the outside world. **Tiers**
+  are the dashed boxes inside (clients, services, stores, workers); a group with one tier may list `parts`
+  directly (one column, or the group's `cols`). `cols` sets a tier's columns (default: one row, up to 4).
+- `role` picks the icon: `client`, `service`, `db`, `files`, `worker`, `external`. Draw the real system's
+  parts with their real names — no vendor logos; the stack goes in `sublabel` (`Node · Cloud Run`).
+- **Links** join parts, tiers or groups — link two tiers ("read / write") instead of every part pair, so the
+  picture stays readable. `style: "dashed"` for async / optional, `both: true` for two-way.
+- **Steps:** a part's `step: N` puts a numbered badge on it; `steps` lists every number with one sentence.
+  Clicking a badge opens the list. Number one request end to end, not everything.
+- A part with more inside gets `ref: "<that chart>"` (**Open ↗**) and its `flow dep add` link (§2b).
+- At most ~30 parts — past that, zoom with `ref`.
+- Check before you finish:
+  ```bash
+  python3 -I <this skill>/templates/architecture/check_architecture.py "$D"
+  DM check --<ns>--.chartit.architecture "$(cat "$D/architecture.json")"
+  ```
 
 **excalidraw** — `board.json` `{"kind": "excalidraw", "version": 1, "data": {"elements": [...], "appState": {}}}`;
 elements `rectangle` / `ellipse` / `diamond` / `arrow` / `text` with `id`, `type`, `x`, `y`, `width`,

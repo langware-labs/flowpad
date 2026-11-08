@@ -10,6 +10,7 @@ process, a conversation that is its caller's own, and a request nobody answers y
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 
 import pytest
@@ -36,9 +37,17 @@ def worker(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-async def deployed(worker, user):
-    """An agent launched here: a running local deployment and its chat channel — its loop a task."""
-    agent = Agent(name=f"chat-agent-{time.monotonic_ns()}", worker_type="claude", system_prompt="Answer briefly.")
+async def deployed(worker, user, tmp_path):
+    """An agent launched here: its project's running local deployment and its chat channel — its loop a task."""
+    from tests.unit.agent._seed import seed_project
+
+    project = await seed_project(tmp_path / "chat-project")
+    agent = Agent(
+        name=f"chat-agent-{time.monotonic_ns()}",
+        worker_type="claude",
+        system_prompt="Answer briefly.",
+        project_id=str(project.id),
+    )
     await agent.save()
     deployment = await agent.run_locally()
     chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")
@@ -242,16 +251,12 @@ async def test_a_deployment_starts_when_another_placement_of_its_agent_holds_a_c
         await agent.delete()
 
 
-async def test_a_box_reports_an_agent_placements_chat(deployed, bootstrapped_client, tmp_path):
-    """The hub names the agent's placement; the box answers with its chat — the project's web placement is untouched."""
-    from flow_sdk.builtin.project import Project
-
-    _agent, _deployment, chat = deployed
-    project = Project(name=f"agent-proj-{time.monotonic_ns()}", fs_storage_mount_path=str(tmp_path))
-    await project.save()
+async def test_a_box_reports_an_agent_placements_chat(deployed, bootstrapped_client):
+    """The hub names the project deployment whose main agent this is; the box answers with its chat."""
+    agent, _deployment, chat = deployed
 
     resp = await bootstrapped_client.post(
-        f"/api/v1/graph/project/{project.id}/expose-endpoints", json={"deployment_typeid": chat.parent_type_id}
+        f"/api/v1/graph/project/{agent.project_id}/expose-endpoints", json={"deployment_typeid": chat.parent_type_id}
     )
 
     assert resp.status_code == 200, resp.text
@@ -303,3 +308,97 @@ async def test_ask_refuses_no_text_and_a_disabled_agent(deployed, bootstrapped_c
     await agent.save()
     off = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "hi"})
     assert off.status_code == 409 and "disabled" in off.text
+
+
+async def _asgi_stream(path: str, body: dict, on_body):
+    """POST *body* to the real app over raw ASGI — each body chunk handed to *on_body* as it is SENT,
+    which an httpx ``ASGITransport`` cannot show (it buffers the whole response)."""
+    import json
+
+    from flow_sdk.server.app import app
+
+    raw = json.dumps(body).encode()
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http",
+             "path": path, "raw_path": path.encode(), "query_string": b"", "root_path": "",
+             "headers": [(b"host", b"testserver"), (b"content-type", b"application/json"),
+                         (b"content-length", str(len(raw)).encode())],
+             "client": ("127.0.0.1", 1), "server": ("testserver", 80)}
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if not sent:
+            sent = True
+            return {"type": "http.request", "body": raw, "more_body": False}
+        await asyncio.Event().wait()  # the client never disconnects mid-turn
+
+    async def send(message):
+        if message["type"] == "http.response.body" and message.get("body"):
+            on_body(message["body"].decode())
+
+    await app(scope, receive, send)
+
+
+async def test_a_streamed_completion_answers_before_the_reply_is_recorded(worker, user, bootstrapped_client):
+    """A turn outlasts any idle-read timeout between caller and box (the desktop's hub proxy gives up
+    after 30s of silence → ``offline``). So a stream opens at once — its first chunk is on the wire
+    before the agent has replied — and the reply follows in the same stream once recorded."""
+    import json
+
+    agent = Agent(name=f"slow-agent-{time.monotonic_ns()}", worker_type="claude", system_prompt="Answer briefly.")
+    await agent.save()
+    deployment = await agent.run_locally()
+    chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")
+    chunks: list[tuple[float, str]] = []
+    loop_started: list[float] = []
+
+    async def answer_later():  # the deployment's loop gets to the message only after the caller is listening
+        while not chunks:
+            await asyncio.sleep(0.05)
+        loop_started.append(time.monotonic())
+        return asyncio.create_task(serve(agent, deployment, poll_every=0.05))
+
+    later = asyncio.create_task(answer_later())
+    try:
+        with contextlib.suppress(TimeoutError):  # a silent stream never ends: nobody answers what never asked
+            await asyncio.wait_for(_asgi_stream(_url(chat, "v1/chat/completions"), _ask("take your time", stream=True),
+                                                lambda b: chunks.append((time.monotonic(), b))), timeout=15)
+    finally:
+        if later.done():
+            await stop_serving(later.result())
+        else:
+            later.cancel()
+        await agent.delete()
+
+    assert loop_started, "the stream sent nothing until the reply was recorded"
+    first_at, first = chunks[0]
+    assert first_at <= loop_started[0] and '"role": "assistant"' in first
+    text = "".join(b for _, b in chunks)
+    events = [line[len("data: "):] for line in text.splitlines() if line.startswith("data: ")]
+    assert events[-1] == "[DONE]"
+    content = "".join(json.loads(e)["choices"][0]["delta"].get("content", "") for e in events[:-1])
+    assert content.startswith("Mock reply")
+
+
+async def test_a_finished_chat_turn_leaves_its_run_stopped_not_running(deployed, bootstrapped_client, worker):
+    """A headless turn's worker is gone once it answers: the run ends ``stopped`` (headless-idle), and the
+    next message still continues the same process. It used to stay ``running`` forever on the deployment."""
+    _agent, deployment, chat = deployed
+    first = (await bootstrapped_client.post(_url(chat, "v1/chat/completions"), json=_ask("one"))).json()
+    conversation = first["flowpad"]["conversation_id"]
+
+    async def settled() -> list[str]:
+        for _ in range(100):
+            statuses = [p.status for p in await deployment.runs()]
+            if statuses and "running" not in statuses:
+                return statuses
+            await asyncio.sleep(0.05)
+        return statuses
+
+    assert await settled() == ["stopped"]
+    second = await bootstrapped_client.post(
+        _url(chat, "v1/chat/completions"), json=_ask("two", metadata={"conversation_id": conversation})
+    )
+    assert second.status_code == 200 and second.json()["choices"][0]["message"]["content"].startswith("Mock reply")
+    assert worker.received_prompts == ["one", "two"]
+    assert await settled() == ["stopped"], "one process, settled again after its second turn"

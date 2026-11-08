@@ -44,8 +44,17 @@ def timeline_tags():
 
 
 @pytest.fixture
-async def deployed(worker, user):
-    agent = Agent(name=f"timeline-agent-{time.monotonic_ns()}", worker_type="claude", system_prompt="Answer briefly.")
+async def deployed(worker, user, tmp_path):
+    from tests.unit.agent._seed import seed_project
+
+    # Its own project: a project-less agent would share this computer's deployment with every other test's.
+    project = await seed_project(tmp_path / "timeline")
+    agent = Agent(
+        name=f"timeline-agent-{time.monotonic_ns()}",
+        worker_type="claude",
+        system_prompt="Answer briefly.",
+        project_id=project.id,
+    )
     await agent.save()
     deployment = await agent.run_locally()
     chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")

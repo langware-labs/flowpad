@@ -1,10 +1,12 @@
 import { Trans } from '@lingui/react/macro';
+import { EntityCard } from '@src/components/entity-card/EntityCard';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
-import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useState } from 'react';
-import { CounterTable, NoRows, QuickSearchInput, useQuickSearch } from './AssetItems';
+import { NoRows, QuickSearchInput, useQuickSearch } from './AssetItems';
+import { counterAt, counterKey, selectionOf } from './axes';
 import { findCounterGroup } from './registry';
+import { CounterAxes } from './StatChips';
 import type { AssetCounterGroup } from './types';
 
 /**
@@ -23,13 +25,14 @@ export function AssetListView() {
     );
   }
   // Keyed: a different group runs a different `useCounters`.
-  return <AssetListBody key={group.id} group={group} counterKey={currentDock?.options?.counter} />;
+  return <AssetListBody key={group.id} group={group} selectedKey={currentDock?.options?.counter} />;
 }
 
-function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; counterKey?: string }) {
+function AssetListBody<T>({ group, selectedKey }: { group: AssetCounterGroup<T>; selectedKey?: string }) {
   const { navigation } = useDockNavigation();
   const counters = group.useCounters();
-  const active = counters.find((counter) => counter.key === counterKey) ?? counters[0];
+  const selection = selectionOf(counters, selectedKey);
+  const active = counterAt(counters, selection);
   // A transient filter over the rows on screen, not a new list — so it stays
   // local and survives switching tabs rather than living in the URL.
   const [query, setQuery] = useState('');
@@ -42,40 +45,36 @@ function AssetListBody<T>({ group, counterKey }: { group: AssetCounterGroup<T>; 
           <h1 className="text-lg font-semibold">{labelForType(group.type)}</h1>
           {active && <p className="text-sm text-muted-foreground">{active.description}</p>}
         </div>
-        <Tabs value={active?.key} onValueChange={(key) => navigation.openAssetList(group.id, key)}>
-          <TabsList>
-            {counters.map((counter) => (
-              <TabsTrigger
-                key={counter.key}
-                value={counter.key}
-                className="gap-2"
-                data-testid="asset-list-tab"
-                data-counter={counter.key}
-              >
-                <span className="max-w-40 truncate">{counter.label}</span>
-                <span className="rounded bg-muted px-1.5 text-xs tabular-nums">
-                  {counter.isLoading ? '…' : counter.items.length}
-                </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <CounterAxes
+          counters={counters}
+          selection={selection}
+          onSelect={(next) => navigation.openAssetList(group.id, counterKey(next.scope, next.status))}
+        />
       </header>
 
       <QuickSearchInput value={query} onChange={setQuery} className="mb-3 max-w-sm" testId="asset-list-search" />
 
-      <div className="rounded-lg border border-border">
-        <CounterTable
-          group={group}
-          rows={rows}
-          onOpen={(item) => {
-            const pointer = group.itemPointer(item);
-            if (pointer) navigation.openDockOnThisPage(pointer);
-          }}
-          empty={active && !active.isLoading && <NoRows hasItems={active.items.length > 0} query={query} />}
-          rowTestId="asset-list-row"
-        />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {rows.map((item) => {
+          const id = group.itemKey(item);
+          return (
+            <div key={id} className="rounded-lg border border-border bg-card" data-testid="asset-list-row">
+              <EntityCard type={group.type} id={id} fallbackName={(item as { name?: string }).name ?? id} />
+              <button
+                type="button"
+                className="m-2 rounded-md border border-border px-3 py-1 text-sm hover:bg-muted"
+                onClick={() => {
+                  const pointer = group.itemPointer(item);
+                  if (pointer) navigation.openDockOnThisPage(pointer);
+                }}
+              >
+                <Trans>Open</Trans>
+              </button>
+            </div>
+          );
+        })}
       </div>
+      {rows.length === 0 && active && !active.isLoading && <NoRows hasItems={active.items.length > 0} query={query} />}
     </div>
   );
 }

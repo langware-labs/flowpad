@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Capture a viewport-relative rectangle from the active BrowserWindow.
   captureRegion: (region) => ipcRenderer.invoke('capture-region', region),
 
+  // Screen recording: the macOS Screen Recording grant ('granted' | 'denied' | 'not-determined' |
+  // 'restricted'; 'granted' on every other OS) and the System Settings pane that holds it.
+  screenCaptureStatus: () => ipcRenderer.invoke('screen-capture-status'),
+  openScreenRecordingSettings: () => ipcRenderer.invoke('open-screen-recording-settings'),
+
   // Platform info
   platform: process.platform,
 
@@ -38,7 +43,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Update management
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
-  upgradeFlowpad: () => ipcRenderer.invoke('upgrade-flowpad'),
+  upgradeFlowpad: (version) => ipcRenderer.invoke('upgrade-flowpad', version),
+  // The release the popover offers: the newest THIS desktop runs (a version), false (none newer), null (unknown).
+  getEngineUpgradeTarget: () => ipcRenderer.invoke('engine-upgrade-target'),
 
   // Startup-timeout recovery panel (loading.html): show the panel, copy the
   // recovery commands to the clipboard, and quit from the panel.

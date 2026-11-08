@@ -33,6 +33,8 @@ export type TurnGroup =
       skillName?: string;
     }
   | { kind: 'worker-unavailable'; flowData: FlowData; index: number }
+  /** STATUS `exit-error`: its own visible row (the launch-failure card), never a hidden dense chip. */
+  | { kind: 'launch-failure'; flowData: FlowData; index: number }
   | { kind: 'dense'; events: FlowData[]; index: number }
   /** Every REASONING frame between two messages, collected into its own collapsible row (`ThinkingSummary`), separate from `dense` and its "show tool calls" gate. */
   | { kind: 'thinking'; events: FlowData[]; index: number };
@@ -200,6 +202,10 @@ export function createTurnGrouper(): TurnGrouper {
       flushThinkingTail();
       flushTail();
       committed.push({ kind: 'worker-unavailable', flowData: item, index: committed.length });
+    } else if (t === FlowElementTypes.STATUS && item.attributes['subtype'] === 'exit-error') {
+      flushThinkingTail();
+      flushTail();
+      committed.push({ kind: 'launch-failure', flowData: item, index: committed.length });
     } else if (t === FlowElementTypes.REASONING) {
       // Collected separately from DENSE_TYPES so a thinking summary never
       // merges into the generic tool/status chip — see the `thinking` TurnGroup.

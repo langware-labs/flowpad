@@ -1,14 +1,16 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FSRef, isHiddenProject, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
+import { canSetUpProjects, dataContext, FSRef, isHiddenProject, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { canonicalPath } from '@src/components/project-selector';
+import { sharedProjectSetUpOf } from '@src/components/task-receive/use-shared-project-set-up';
+import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForGlobalEntry, dockForProjectEntry, globalHomeDock, leaveProjectScope } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry, globalHomeDock, leaveProjectScope, resumeDock } from '@src/tabs/project-entry';
 import {
   useAncestorActiveTab,
   useCurrentTabs,
@@ -162,7 +164,7 @@ function CloseRowButton({
       title={label}
       aria-label={label}
       data-testid={testId}
-      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
+      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
     >
       {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
     </button>
@@ -469,8 +471,8 @@ export function useProjectListMenu({
       await handleRecover(bucket);
       return;
     }
-    // The project already in front is a no-op: re-entering it re-addressed the page (a top-level resume
-    // dock, without the mode the address stated), so "pick the current project" changed the URL.
+    // The project already shown: a no-op. Resuming it would re-open its last tab's
+    // stored pointer and drop the current URL's own state (viewMode, scope).
     if (bucket.projectId === currentProjectId) {
       setOpen(false);
       return;
@@ -536,9 +538,10 @@ export function useProjectListMenu({
   // dock; its loader re-scopes the project, so a tab in another project is a
   // project switch too.
   const handleSelectTab = (tab: Tab) => {
-    if (!tab.dockPointer) return;
+    const dock = resumeDock(tab, tabManager.getSnapshot());
+    if (!dock) return;
     closeForNavigation();
-    navigation.openDock(tab.dockPointer as DockPointer);
+    navigation.openDock(dock);
   };
 
   // The list only switches between projects that already own tabs; opening
@@ -626,15 +629,14 @@ export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
  */
 export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
   if (menu.projectTotal === 0) return null;
-  const ProjectIcon = iconForType(Project.type);
+  // An outlined ring after the chevron: a count of open projects, not a
+  // notification dot, and light enough not to compete with the chevron.
   return (
     <span
-      className="inline-flex items-center gap-1 tabular-nums"
+      className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-[1.5px] border-current px-1 text-[10.5px] leading-none tabular-nums"
       data-testid="project-count-badge"
       aria-label={menu.projectsLabel}
     >
-      <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-white/40" />
-      <ProjectIcon className="h-3 w-3 shrink-0 opacity-80" />
       {menu.projectTotal}
     </span>
   );
@@ -651,6 +653,44 @@ export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
  * trigger, which opens on focus, so auto-focusing the first row pops its tab
  * submenu unhovered and leaves it stuck behind the row the pointer visits next.
  */
+/**
+ * Projects shared with you that have no files here yet, listed under the open
+ * ones with a "new" chip. A click opens their set-up — the only way it opens;
+ * nothing pops up on its own.
+ */
+function SharedProjectRows() {
+  const { t } = useLingui();
+  const { projects } = useProjects();
+  const setPendingProject = useIncomingProjectStore((s) => s.setPendingProject);
+  const ProjectIcon = iconForType(Project.type);
+  if (!canSetUpProjects(dataContext.caps)) return null;
+  const rows = (projects ?? []).flatMap((project) => {
+    const setUp = sharedProjectSetUpOf(project, t`Shared`);
+    return setUp ? [{ project, setUp }] : [];
+  });
+  if (!rows.length) return null;
+  return (
+    <ul>
+      {rows.map(({ project, setUp }) => (
+        <li key={project.id}>
+          <button
+            type="button"
+            onClick={() => setPendingProject(setUp)}
+            className="flex w-full items-center gap-2 rounded py-1.5 pe-1 ps-2 text-left text-sm hover:bg-muted"
+            data-testid={`project-shared-new-${project.id}`}
+          >
+            <ProjectIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{project.name}</span>
+            <span className="shrink-0 rounded border border-sky-500/40 px-1 py-0.5 text-[10px] text-sky-600 dark:text-sky-400">
+              <Trans>new</Trans>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
   const {
     buckets,
@@ -690,6 +730,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
         <div className="px-2 py-1.5 text-xs text-muted-foreground">
           <Trans>No project has open tabs yet.</Trans>
         </div>
+        <SharedProjectRows />
         {openProjectRow}
       </div>
     );
@@ -864,6 +905,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
           );
         })}
       </ul>
+      <SharedProjectRows />
       {openProjectRow}
     </div>
   );

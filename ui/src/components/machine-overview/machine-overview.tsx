@@ -1,10 +1,12 @@
 import { useAgentContext } from '@src/contexts/agent-context';
 import {
   ActionInfo,
+  ComputeNode,
   ComputeProviderType,
   ExecutionEnvironmentStatus,
   MachineStatus,
   MachineSubview,
+  TypeId,
   ViewType,
   dataManager,
 } from '@sdk';
@@ -15,8 +17,10 @@ import { Input } from '@src/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, NODE_PARAM } from '@src/navigation/DockPointer';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { NodeSecrets } from '@src/components/machine-overview/node-secrets';
+import { SharedMachine } from '@src/components/machine-overview/shared-machine';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -75,8 +79,24 @@ function SortableHeader<T extends string>({
 }
 
 export const MachineOverview: React.FC = () => {
-  const { computeNode, project } = useAgentContext();
+  const { computeNode: contextNode, project } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
+  // `?node=<id>` opens a named machine (e.g. one shared with you); without it, the machine you are on.
+  const nodeId = currentDock?.options?.[NODE_PARAM] ?? null;
+  const nodeTypeId = useMemo(() => (nodeId ? new TypeId(ComputeNode.type, nodeId) : null), [nodeId]);
+  const { data: localNamed, notFound } = useEntity<ComputeNode>(nodeTypeId);
+  // A machine shared with you that this box has no copy of: the hub's row.
+  const [hubNamed, setHubNamed] = useState<ComputeNode | null>(null);
+  useEffect(() => {
+    if (!nodeId || !notFound) return;
+    let alive = true;
+    void ComputeNode.fetchShared(nodeId).then((node) => alive && setHubNamed(node));
+    return () => {
+      alive = false;
+    };
+  }, [nodeId, notFound]);
+  const namedNode = localNamed ?? hubNamed;
+  const computeNode = nodeId ? namedNode : contextNode;
   const { t } = useLingui();
   const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -174,9 +194,9 @@ export const MachineOverview: React.FC = () => {
   // Handle tab change via navigation
   const handleTabChange = useCallback(
     (tab: string) => {
-      navigation.openDock(new DockPointer(ViewType.MACHINE, tab as MachineSubview));
+      navigation.openDock(DockPointer.forMachine(nodeId, tab as MachineSubview));
     },
-    [navigation],
+    [navigation, nodeId],
   );
 
   const handleProcessSort = useCallback((key: ProcessSortKey) => {
@@ -243,7 +263,8 @@ export const MachineOverview: React.FC = () => {
     : `${sortedNetwork.length}`;
 
   const fetchMachineStatus = useCallback(async () => {
-    if (!computeNode?.id) return;
+    // A shared (remote) machine is read on the hub — `SharedMachine` — never through this machine.
+    if (!computeNode?.id || computeNode.remote) return;
 
     setIsLoading(true);
     setError(null);
@@ -309,6 +330,8 @@ export const MachineOverview: React.FC = () => {
       setIsRefreshing(false);
     }
   }, [activeTab, fetchMachineStatus]);
+
+  if (nodeId && computeNode?.remote) return <SharedMachine node={computeNode} />;
 
   return (
     <div className="relative h-full w-full">

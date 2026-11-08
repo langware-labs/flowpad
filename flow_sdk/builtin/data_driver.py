@@ -14,6 +14,7 @@ read) carries the manifest's fields; a LOADED driver also holds its class, manif
     source = driver.create_source({"feed_url": url}, name="news")  # unsaved
     await source.save()                                               # writes data_source.json
 """
+
 from __future__ import annotations
 
 from functools import cache
@@ -87,6 +88,7 @@ class DataDriver(DriverRuntime, Entity):
     auth: Optional[AuthSpec] = APIField(default=None)
     permissions: dict[str, PermissionMappingSpec] = APIField(default_factory=dict)
     webhook: Optional[DriverWebhookSpec] = APIField(default=None)
+    hub_desk: Optional[str] = APIField(default=None)
     setup_wizards: list[SetupStageSpec] = APIField(default_factory=list)
     group: str = APIField(default="")
     group_order: int = APIField(default=0)
@@ -137,7 +139,9 @@ class DataDriver(DriverRuntime, Entity):
         registered — ``DataDriver.register`` does that."""
         header = manifest.model_dump(exclude={"name"}, exclude_unset=True) if manifest is not None else {}
         header = {k: v for k, v in header.items() if k in cls.model_fields}
-        kind = kind or (manifest.kind if manifest is not None and manifest.kind else f"datasource.{source_cls.provider}")
+        kind = kind or (
+            manifest.kind if manifest is not None and manifest.kind else f"datasource.{source_cls.provider}"
+        )
         driver = cls(**{**header, **fields, "name": source_cls.provider, "kind": kind})
         driver._cls, driver._manifest, driver._folder = source_cls, manifest, folder
         driver._content_hash, driver._shipped = content_hash, shipped
@@ -225,7 +229,9 @@ class DataDriver(DriverRuntime, Entity):
         cls = driver.cls if driver is not None else None
         if cls is None:
             return False
-        return callable(getattr(cls, "rows_folder", None)) or (callable(getattr(cls, "rows_within", None)) and issubclass(cls, RowFiles))
+        return callable(getattr(cls, "rows_folder", None)) or (
+            callable(getattr(cls, "rows_within", None)) and issubclass(cls, RowFiles)
+        )
 
     @computed_field
     @property
@@ -304,9 +310,7 @@ class DataDriver(DriverRuntime, Entity):
 
 
 #: The run-time verbs a single driver instance may have replaced (a test's stub); computed once.
-_VERBS = frozenset(
-    name for name, value in vars(DriverRuntime).items() if callable(value) and not name.startswith("__")
-)
+_VERBS = frozenset(name for name, value in vars(DriverRuntime).items() if callable(value) and not name.startswith("__"))
 
 
 @cache

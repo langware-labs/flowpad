@@ -7,16 +7,13 @@ import { consumeInboundParams, DeepLinkAction, inboundParams } from '@src/naviga
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { withHomePage } from '@src/project-home-page/home-page-state';
-import {
-  type IncomingProjectParams,
-  isSetupDeclined,
-  useIncomingProjectStore,
-} from '@src/store/use-incoming-project-store';
+import { isSetupDeclined, useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
 import { IncomingTaskDialog } from './IncomingTaskDialog';
 import { LaunchDialog } from './LaunchDialog';
+import { useOfferSharedProjectSetUpOnOpen } from './use-shared-project-set-up';
 import { LAUNCH_ACTION, LAUNCH_PARAMS, launchPlanFromParams } from '@src/pages/entry/launch-plan';
 import { closeLaunch, openLaunch, useLaunchStore } from './launch-store';
 
@@ -80,74 +77,37 @@ async function checkedOutHere(projectId: string | undefined): Promise<boolean> {
 
 /**
  * A project shared while this desktop had no FlowPad (or was signed out) reaches
- * no push and no deep link — installing FlowPad from the invite opens it on its
- * home. So once a session is signed in, ask the backend for the hub projects it
- * has never seen (in the background: nothing at startup waits on the hub) and
- * offer each one's set-up, one dialog at a time. A project already offered this
- * session — by a deep link too — is not offered again, and none is offered while `held`.
+ * no push and no deep link. So once a session is signed in, ask the backend for
+ * the hub projects it has never seen (in the background: nothing at startup waits
+ * on the hub) and say so in a toast — never a dialog out of the blue. The project
+ * itself shows in the project list with a "new" chip; its set-up opens from there.
  */
-function useOfferNewCloudProjects(held: boolean) {
+function useAnnounceNewCloudProjects() {
   const { cloudUser } = useAuth();
   // Never on the hub (no disk) or an agent box (nobody there).
   const canSetUp = canSetUpProjects(dataContext.caps);
-  const { pendingProject, setPendingProject } = useIncomingProjectStore();
-  const [queue, setQueue] = useState<IncomingProjectParams[]>([]);
   const sweptFor = useRef<string | null>(null);
-  const offered = useRef(new Set<string>());
 
   const userId = cloudUser?.id ?? null;
   useEffect(() => {
     if (!userId || !canSetUp || sweptFor.current === userId) return;
     sweptFor.current = userId;
     void Project.newFromHub()
-      .then((links) => {
-        const found: IncomingProjectParams[] = [];
+      .then(async (links) => {
         for (const link of links) {
-          let gitOrigin: ProjectOrigin | null = null;
-          try {
-            gitOrigin = projectOriginOf({ git_origin: JSON.parse(link.git_origin) });
-          } catch {
-            gitOrigin = null;
-          }
-          if (!gitOrigin || isSetupDeclined(link.project_id)) continue;
-          found.push({
-            gitOrigin,
-            projectName: link.title || 'Shared',
-            senderName: link.sender_name,
-            projectId: link.project_id,
-            nameTaken: link.existing_project_id
-              ? { existingProjectId: link.existing_project_id, suggestedName: link.suggested_name || '' }
-              : undefined,
+          if (isSetupDeclined(link.project_id) || (await checkedOutHere(link.project_id))) continue;
+          const name = link.title || t`a project`;
+          notify.info({
+            id: `shared-project-arrived:${link.project_id}`,
+            title: link.sender_name ? t`${link.sender_name} shared ${name} with you` : t`${name} was shared with you`,
+            message: t`It's in your projects list, marked new.`,
           });
         }
-        if (found.length) setQueue((q) => [...q, ...found]);
       })
       .catch(() => {
         /* the hub is unreachable — the next sign-in or start asks again */
       });
   }, [userId, canSetUp]);
-
-  // One offer is looked at a time: the next one waits for this one's check.
-  const [checking, setChecking] = useState(false);
-  useEffect(() => {
-    if (pendingProject) {
-      if (pendingProject.projectId) offered.current.add(pendingProject.projectId);
-      return;
-    }
-    if (held || checking || !queue.length) return;
-    const rest = queue.filter((p) => !p.projectId || !offered.current.has(p.projectId));
-    setQueue(rest.slice(1));
-    const next = rest[0];
-    if (!next) return;
-    if (next.projectId) offered.current.add(next.projectId);
-    // The list was read at sign-in; by now something else — a launch link — may have set the
-    // project up here. Offer only what is still missing.
-    setChecking(true);
-    void checkedOutHere(next.projectId).then((here) => {
-      if (!here) setPendingProject(next);
-      setChecking(false);
-    });
-  }, [pendingProject, queue, checking, held, setPendingProject]);
 }
 
 export function IncomingDeepLink() {
@@ -155,9 +115,8 @@ export function IncomingDeepLink() {
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
   const launchPlan = useLaunchStore((state) => state.payload);
-  // A launch is fetching its own projects: nothing is offered until it is done, so what it
-  // set up is already here when the offers are looked at.
-  useOfferNewCloudProjects(launchPlan !== null);
+  useAnnounceNewCloudProjects();
+  useOfferSharedProjectSetUpOnOpen();
 
   useEffect(() => {
     const params = inboundParams();

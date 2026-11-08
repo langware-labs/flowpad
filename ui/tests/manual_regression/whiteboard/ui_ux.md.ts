@@ -2,14 +2,13 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
-import { withViewMode } from '../_shared/view-mode';
 import { adjusted } from '../../adjustableTimeout';
 
 const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string, projectId?: string) {
   const scopePath = projectId ? `/project/${projectId}` : '';
-  const res = await request.post(`${API}/api/v1/graph${scopePath}/chart`, { data: { name, format: 'excalidraw' } });
+  const res = await request.post(`${API}/api/v1/graph${scopePath}/chart`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
@@ -29,7 +28,7 @@ async function pickProjectId(request: APIRequestContext): Promise<string> {
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: adjusted(15_000),
   });
@@ -38,25 +37,21 @@ async function openEditor(page: Page, id: string) {
 // Open the whiteboard asset list with the sidebar tree showing whiteboard rows.
 // Two setup facts the .md's "find a whiteboard row" step depends on:
 //   1. Whiteboard is `browseable_by=advanced` (TypeInfo) — it only appears in
-//      the Assets tree in Advanced view mode. The URL carries that mode so the
-//      route loader remains the single writer of view state.
+//      the Assets tree once the developer switch is on (`useTierMode()`). The
+//      assets page carries no view mode (since 2026-10-11 only a session dock
+//      does, docs/viewmodes.md) and always shows Vibe; `setDev` below turns it on.
 //   2. Navigating to `/dock/assets/list/<type>` deliberately does NOT auto-expand
 //      the sidebar root (it avoids a duplicate /search of the right-panel list),
 //      so the whiteboard rows only materialize after its chevron is expanded —
 //      the same expand-if-collapsed pattern the agent asset-picker test uses.
 async function openWhiteboardListExpanded(page: Page, projectId: string, whiteboardId: string) {
-  const scopedList = withViewMode(
+  await page.goto(
     `/dock/assets/list/chart?scope-mode=project&scope-activeProjectId=${encodeURIComponent(projectId)}`,
-    'advanced',
   );
-  await page.goto(scopedList);
   await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: adjusted(30_000) });
-  // (No global view mode any more: the developer switch below is what shows the advanced-only types.)
-  await page.waitForFunction(() => typeof (window as any).setDev === 'function', undefined, { timeout: adjusted(20_000) });
-  // Since host tabs (71e9272c6) "Advanced" is a surface, not a tier: the types
-  // that are `browseable_by=advanced` follow the developer switch
-  // (`useTierMode()`), which the URL's `viewMode` no longer turns on. Flip it
-  // through the app's own `window.setDev`, the call the avatar double-click makes.
+  await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe', { timeout: adjusted(10_000) });
+  // Advanced-browseable types follow the developer switch; flip it through the
+  // app's own `window.setDev`, the call the avatar double-click makes.
   await page.evaluate(() => (window as any).setDev(true));
   const chevron = page.getByTestId('browseable-chevron-asset-type:chart');
   await expect(chevron).toBeVisible({ timeout: adjusted(15_000) });
@@ -72,7 +67,7 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
 }
 
 test.describe('Whiteboard — UI / UX (U1–U4)', () => {
-  test('U1: tree row carries a Palette icon', async ({ page, request }) => {
+  test('U1: tree row carries the ChartNetwork icon', async ({ page, request }) => {
     test.setTimeout(adjusted(60_000));
     await page.addInitScript(() => {
     try {
@@ -89,9 +84,8 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     );
     const createdRow = await openWhiteboardListExpanded(page, projectId, id);
 
-    // The created whiteboard row's leading icon is the Chart TypeInfo icon — a
-    // whiteboard is a chart of format excalidraw (icon 'ChartNetwork', rendered as
-    // lucide-chart-network; it was 'Palette' while whiteboard was its own type). Walk from its delete
+    // The created whiteboard row's leading icon is a lucide ChartNetwork glyph (the
+    // whiteboard chart TypeInfo icon = 'ChartNetwork'). Walk from its delete
     // button up to the treeitem and inspect its non-trash svg.
     const hasPalette = await createdRow.evaluate((delBtn) => {
       let row: Element | null = delBtn ? delBtn.parentElement : null;
@@ -102,7 +96,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
       }
       return false;
     });
-    expect(hasPalette, 'whiteboard row has the chart (lucide-chart-network) icon').toBe(true);
+    expect(hasPalette, 'whiteboard row has a lucide-chart-network icon').toBe(true);
 
     fs.rmSync(assetRef, { recursive: true, force: true });
     await request.delete(`${API}/api/v1/graph/chart/${id}`).catch(() => {});
@@ -133,7 +127,6 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
       const all = Array.from(document.querySelectorAll('[data-testid^="browseable-toolbar-delete:"]')).map((e) =>
         (e.getAttribute('data-testid') || '').split(':')[1],
       );
-      // A whiteboard is a chart (format excalidraw): its rows are `chart` rows.
       const wb = all.filter((t) => t === 'chart').length;
       const other = all.filter((t) => t !== 'chart');
       return { total: all.length, wb, otherTypes: Array.from(new Set(other)) };

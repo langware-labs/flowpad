@@ -10,6 +10,7 @@ The page opens from disk as built (it carries its journey; feedback is off). Per
   - no red tweak banner (a states.js selector that missed);
   - every planned control with `next` is on it as data-next, and clicking it shows that step;
   - every data-next on it names a step of the journey; a main-path screen that is not the last has a way on.
+A test mock (test_md): every step captured, the first has a url, some step has an expect.
 Whole page: no console errors, no missing file, nothing fetched from outside the file but /sdk/ and Google Fonts.
 """
 
@@ -48,7 +49,8 @@ def main() -> None:
     ap.add_argument("--shots", help="write one screenshot per step here")
     a = ap.parse_args()
 
-    journey = load_row(a.row).get("journey", [])
+    row = load_row(a.row)
+    journey = row.get("journey", [])
     if not journey:
         sys.exit("validate_mock: the row has no journey")
     if not pathlib.Path(a.page).is_file():
@@ -60,6 +62,14 @@ def main() -> None:
         shots.mkdir(parents=True, exist_ok=True)
 
     problems: dict[str, list[str]] = {i: [] for i in ids}
+    if row.get("test_md"):   # mockify test: the current UI only, and something to check
+        for s in journey:
+            if str(s.get("source", "")).startswith("built"):
+                problems[s["id"]].append("test mock: drawn, not captured -- the current UI does not have it")
+        if not journey[0].get("url"):
+            problems[ids[0]].append("test mock: the first step has no url")
+        if not any(s.get("expect") for s in journey):
+            problems[ids[0]].append("test mock: no step has an expect")
     errors: list[str] = []
     broken: set[str] = set()    # a file the page names that is not there
     outside: set[str] = set()   # anything fetched from beyond the file

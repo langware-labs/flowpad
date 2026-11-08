@@ -22,6 +22,7 @@ import WrongAccountPage from '@src/pages/entry/WrongAccountPage';
 import MessageLanding from '@src/pages/entry/MessageLanding';
 import LaunchLanding from '@src/pages/entry/LaunchLanding';
 import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
+import OpenPcLanding from '@src/pages/entry/OpenPcLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import EntityLanding from '@src/pages/entry/EntityLanding';
 import ProjectShareLanding from '@src/pages/entry/ProjectShareLanding';
@@ -199,6 +200,8 @@ export const router = createBrowserRouter(
           post-accept landing, so nothing has to steer the invitation here. */}
       <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
       <Route path="launch" element={<LaunchLanding />} />
+      {/* An agent's public deployment: a visitor's invite code opens that code's own sandbox. */}
+      <Route path="open-pc/:agentId" element={<OpenPcLanding />} />
       <Route path="install" element={<InstallLanding />} />
       {/* Project share landing: `Project.share` sets it as the invitation's `callback_override`. */}
       <Route

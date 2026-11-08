@@ -8,11 +8,11 @@ Uses real watchfiles (no mocks per `feedback_no_mocks_in_integration_tests`).
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
@@ -74,7 +74,7 @@ def _make_callback_trigger(
         watch_glob=watch_glob,
         actions=[TriggerAction(action_type=ActionType.CALLBACK, callback_name=callback_name)],
     )
-    t.id = f"id_{callback_name}"
+    t.id = str(mint_uuid())
     return t
 
 

@@ -5,8 +5,7 @@ import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { openNewChat } from '@src/navigation/open-new-chat';
-import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
+import { openNewChatOrExplain } from '@src/navigation/open-new-chat';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useOpenTabTargetIds } from '@src/tabs/use-tab-manager';
 import { useProject } from '@src/hooks/useProject';
@@ -153,10 +152,7 @@ export function ChatsNavigator() {
       // Opens in the user's chat mode (their last pick), like every other
       // front-face open-chat action. This used to key on the View mode alone,
       // so a Standard user who had chosen `terminal` still got a chat pane.
-      void openNewChat(navigation, { workerType }).catch((err) => {
-        console.error('[ChatsNavigator] new chat failed', err);
-        openCapabilitiesForWorker(navigation, workerType);
-      });
+      void openNewChatOrExplain(navigation, { workerType });
     },
     [navigation],
   );

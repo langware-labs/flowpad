@@ -152,28 +152,26 @@ def _dump(entries) -> list[dict]:
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_claude_warm_run_parses_nothing_and_matches_cold(wh_env, monkeypatch):
-    from flow_sdk.assets.types import claude_sessions as claude_reader
-    from flow_sdk.fs_store.indexer.functions import claude_sessions as cs
+    from flow_sdk.fs_store.indexer.functions import _claude_session_stats as claude_reader
 
     for sid in _SIDS:
         write_claude_transcript(wh_env.proj, sid, n_lines=3)
-    extract_calls = _spy(monkeypatch, claude_reader, "extract_claude_session_from_path")
-    stats_calls = _spy(monkeypatch, cs, "ensure_claude_session_stats")
+    # One read per transcript: the stats pass also yields the title.
+    extract_calls = _spy(monkeypatch, claude_reader, "_parse_jsonl_stats")
 
     cold = wh._collect_claude_entries_sync(10, {})
     assert len(cold) == len(_SIDS)
     assert len(extract_calls) == len(_SIDS)
 
     extract_calls.clear()
-    stats_calls.clear()
     warm = wh._collect_claude_entries_sync(10, {})
-    assert extract_calls == [] and stats_calls == [], "warm run must not touch transcripts"
+    assert extract_calls == [], "warm run must not touch transcripts"
     assert _dump(warm) == _dump(cold), "cached entries must be identical to parsed ones"
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_claude_append_reparses_only_the_changed_file(wh_env, monkeypatch):
-    from flow_sdk.assets.types import claude_sessions as claude_reader
+    from flow_sdk.fs_store.indexer.functions import _claude_session_stats as claude_reader
 
     paths = {sid: write_claude_transcript(wh_env.proj, sid, n_lines=2) for sid in _SIDS}
     wh._collect_claude_entries_sync(10, {})  # warm the cache
@@ -193,7 +191,7 @@ def test_claude_append_reparses_only_the_changed_file(wh_env, monkeypatch):
             + "\n"
         )
 
-    extract_calls = _spy(monkeypatch, claude_reader, "extract_claude_session_from_path")
+    extract_calls = _spy(monkeypatch, claude_reader, "_parse_jsonl_stats")
     rows = wh._collect_claude_entries_sync(10, {})
     assert [a[0] for a in extract_calls] == [paths[changed_sid]], (
         "exactly the appended file must re-parse"
@@ -326,3 +324,23 @@ async def test_one_failing_provider_does_not_drop_the_others(monkeypatch):
 
     result = await wh.get_worker_history(limit=10)
     assert [e.worker_id for e in result] == ["ok-1"]
+
+
+def test_stats_pass_with_title_reports_title_and_last_timestamp(tmp_path):
+    """``with_title`` adds the read_claude_title rule's title and the last timestamp."""
+    from flow_sdk.fs_store.indexer.functions._claude_session_stats import _parse_jsonl_stats
+
+    path = tmp_path / "s.jsonl"
+    lines = [
+        {"type": "ai-title", "aiTitle": "first ai", "timestamp": "2026-01-01T00:00:00Z"},
+        {"type": "custom-title", "customTitle": "mine"},
+        {"type": "custom-title", "customTitle": "   ", "timestamp": "2026-01-02T00:00:00Z"},
+    ]
+    body = "".join(json.dumps(x) + "\n" for x in lines)
+    body += json.dumps({"type": "custom-title", "customTitle": "unfinished"})  # no newline
+    path.write_text(body, encoding="utf-8")
+
+    stats = _parse_jsonl_stats(path, with_title=True)
+    assert stats["title"] == "mine"
+    assert stats["last_timestamp"] == "2026-01-02T00:00:00Z"
+    assert "title" not in _parse_jsonl_stats(path)

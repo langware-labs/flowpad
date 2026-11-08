@@ -38,9 +38,6 @@ const mocks = vi.hoisted(() => ({
   publishButton: vi.fn(),
 }));
 
-vi.mock('@sdk/react/hooks', () => ({
-  useProject: () => ({ project: mocks.project }),
-}));
 
 vi.mock('@src/hooks/use-cloud-authed', () => ({ useCloudAuthed: () => mocks.cloudAuthed }));
 vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => mocks.requireCloudLogin }));
@@ -59,6 +56,7 @@ import { AgentDeployChecklist } from '@src/components/assets/editor/agent-profil
 
 const agent = {
   typeId: { type: 'agent', id: 'a1', toString: () => 'agent-a1' },
+  project_id: '11111111-1111-4111-8111-111111111111',
   updated_date: undefined,
   versionState: mocks.versionState,
   publish: mocks.publish,
@@ -69,8 +67,10 @@ const status = (id: string) => screen.getByTestId(`agent-deploy-step-${id}`).get
 /** Every action button currently on screen, by test id. */
 const actionIds = () => screen.queryAllByTestId(/^agent-deploy-action-/).map((el) => el.getAttribute('data-testid'));
 
-async function renderChecklist(onReadiness = vi.fn()) {
-  const result = render(<AgentDeployChecklist agent={agent} onReadinessChange={onReadiness} />);
+async function renderChecklist(onReadiness = vi.fn(), subject: never = agent) {
+  const result = render(
+    <AgentDeployChecklist project={mocks.project as never} agent={subject} onReadinessChange={onReadiness} />,
+  );
   // The version read is async; let it settle before asserting a row's status.
   await screen.findByTestId('agent-deploy-checklist');
   await vi.waitFor(() => expect(status('version')).not.toBe('loading'));
@@ -200,21 +200,43 @@ describe('AgentDeployChecklist', () => {
     expect(screen.getByTestId('agent-deploy-step-version')).toHaveTextContent('Published when you deploy');
   });
 
-  it('stays undecided while the project has not loaded, so the host keeps Deploy enabled', async () => {
-    mocks.project = null;
+  it('a deployment with no main agent has no version to read: it never blocks the host', async () => {
     const onReadiness = vi.fn();
-    render(<AgentDeployChecklist agent={agent} onReadinessChange={onReadiness} />);
+    render(<AgentDeployChecklist project={mocks.project as never} agent={null} onReadinessChange={onReadiness} />);
     await screen.findByTestId('agent-deploy-checklist');
-
     await vi.waitFor(() => expect(onReadiness).toHaveBeenCalled());
     expect(onReadiness.mock.calls.every(([ready]) => ready !== false)).toBe(true);
-    expect(status('project')).toBe('loading');
+    expect(mocks.versionState).not.toHaveBeenCalled();
   });
 
   it('renders nothing on the hub, which has no local project to check', () => {
     mocks.hubOnly = true;
-    render(<AgentDeployChecklist agent={agent} />);
+    render(<AgentDeployChecklist project={mocks.project as never} agent={agent} />);
 
     expect(screen.queryByTestId('agent-deploy-checklist')).not.toBeInTheDocument();
+  });
+
+  it('a git checkout with uncommitted work commits and pushes from the row, and blocks Launch until then', async () => {
+    const push = vi.fn(() => Promise.resolve({ ok: true }));
+    const getStatus = () => Promise.resolve({ files: [{ path: 'agents/a.json' }, { path: 'notes.md' }] });
+    mocks.project = { ...mocks.project, getGitWorkdir: () => Promise.resolve({ push, getStatus }) };
+    mocks.versionState.mockResolvedValue({
+      published: true,
+      published_commit: 'abc1234',
+      has_repo: true,
+      pending_changes: 2,
+      git_native: true,
+      has_remote: true,
+      uncommitted: 2,
+      unpushed: 0,
+    } as never);
+    const { onReadiness } = await renderChecklist();
+    await vi.waitFor(() => expect(onReadiness).toHaveBeenLastCalledWith(false));
+    await userEvent.click(screen.getByTestId('agent-deploy-action-commit'));
+    expect(await screen.findByTestId('agent-deploy-commit-review')).toHaveTextContent('notes.md');
+    expect(push).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId('agent-deploy-commit-confirm'));
+    await vi.waitFor(() => expect(push).toHaveBeenCalledOnce());
+    expect(mocks.versionState.mock.calls.length).toBeGreaterThan(1);
   });
 });

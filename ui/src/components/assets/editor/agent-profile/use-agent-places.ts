@@ -1,60 +1,34 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Agent, AgentPlace } from '@sdk';
-import { isHubOnly } from '@sdk/utils/hub-runtime';
+import { useMemo } from 'react';
+import { Deployment, type Agent } from '@sdk';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
-/** Every mounted reader of an agent's places, so one reload (a launch, a switch) refreshes them all. */
-const readers = new Map<string, Set<() => void>>();
+/** One place an agent answers on: a deployment whose main agent it is. */
+export interface AgentPlace {
+  deployment: Deployment;
+  /** This computer's own deployment. */
+  is_local: boolean;
+}
 
 /**
- * The agent's deployments (`GET /agent/<id>/places`), for every view that shows them — the
- * Deployments list, the Schedules section, a deployment's page. Re-read when the agent's place
- * settings change, and whenever any of them calls `reload`.
+ * The deployments an agent is the main agent of — this computer first — for every view that shows where it
+ * runs (the Deployments links, the Schedules section, a schedule's "Runs on"). A live query on
+ * `main_agent_id`, so a deploy, pause or delete anywhere lands here without a reload.
  */
 export function useAgentPlaces(agent: Agent | null | undefined): {
   places: AgentPlace[] | null;
   reload: () => Promise<void>;
 } {
-  const [places, setPlaces] = useState<AgentPlace[] | null>(null);
-  const agentRef = useRef(agent);
-  agentRef.current = agent;
   const agentId = agent?.id ?? null;
-
-  const read = useCallback(async () => {
-    const current = agentRef.current;
-    if (!current) return;
-    // Places are this computer's deployments; the hub has no `places` call.
-    if (isHubOnly()) return setPlaces([]);
-    try {
-      setPlaces(await current.listPlaces());
-    } catch {
-      setPlaces([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!agentId) return;
-    const set = readers.get(agentId) ?? new Set();
-    readers.set(agentId, set);
-    const refresh = () => void read();
-    set.add(refresh);
-    return () => {
-      set.delete(refresh);
-      if (set.size === 0) readers.delete(agentId);
-    };
-  }, [agentId, read]);
-
-  // Not on every save of the definition, which also rewrites agent.json — only its place settings.
-  const placesKey = agent
-    ? JSON.stringify([agent.id, agent.enabled ?? null, agent.places ?? null, agent.email_place ?? null])
-    : null;
-  useEffect(() => {
-    void read();
-  }, [read, placesKey]);
-
-  const reload = useCallback(async () => {
-    await read();
-    for (const refresh of (agentId && readers.get(agentId)) || []) refresh();
-  }, [agentId, read]);
-
-  return { places, reload };
+  const request = useMemo(() => Deployment.forMainAgentQuery(agentId ?? ''), [agentId]);
+  const { data, refetch } = useEntitiesQuery<Deployment>(request, { enabled: !!agentId });
+  const places = useMemo(
+    () =>
+      data
+        ? data
+            .map((deployment) => ({ deployment, is_local: deployment.isLocal }))
+            .sort((a, b) => Number(b.is_local) - Number(a.is_local))
+        : null,
+    [data],
+  );
+  return { places, reload: refetch };
 }

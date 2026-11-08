@@ -182,6 +182,11 @@ async def test_process_hook_acceptance_uses_real_claude_plugin(
             plugin = process.asset_workspace._process_assets_path() / _HOOK_CONTRACT["plugin_relative_path"]
             assert all((plugin / relative).is_file() for relative in _HOOK_CONTRACT["plugin_files"])
             hooks = json.loads((plugin / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+            # Every Claude plugin also carries the built-in frontmatter check (1de666a5c),
+            # projected alongside the configured events: it is exactly that entry, nothing more.
+            from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import _BUILTIN_HOOKS  # noqa: PLC0415
+
+            assert hooks["hooks"].pop("PostToolUse") == [entry for _, entry in _BUILTIN_HOOKS]
             assert sorted(hooks["hooks"]) == _HOOK_CONTRACT["expected_persisted_session_events"]
             handler = hooks["hooks"][_HOOK_CONTRACT["event"]][0]["hooks"][0]
             # UserPromptSubmit is a response event: claude reads the hook's stdout,

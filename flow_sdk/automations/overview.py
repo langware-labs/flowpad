@@ -125,6 +125,7 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
     elif last_joined is not None:
         last = last_joined
     group = group_of(trigger)
+    parent = str(getattr(trigger, "parent_type_id", "") or "") or None
     next_run = trigger.next_run.isoformat() if getattr(trigger, "next_run", None) and trigger.enabled else None
     return AutomationSummary(
         id=str(trigger.id),
@@ -148,7 +149,8 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
         asset_ref=trigger.asset_ref or None,
         place=place,
         agent_type_id=agent_of(trigger),
-        parent_type_id=str(trigger.parent_type_id) if getattr(trigger, "parent_type_id", None) else None,
+        parent_type_id=parent,
+        parent_name=await names.name(parent) if parent and names is not None else None,
     )
 
 
@@ -167,7 +169,7 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
     names = _Names()
     # Every agent a `then` names, resolved together once: the per-rule sentences below then read the
     # names from memory instead of one lookup after another.
-    agents = {agent_of(t) for t in triggers}
+    agents = {agent_of(t) for t in triggers} | {str(t.parent_type_id) for t in triggers if getattr(t, "parent_type_id", None)}
     _, flows, deployments = await asyncio.gather(
         asyncio.gather(*(names.name(agent) for agent in agents if agent)),
         workflows_by_trigger(),

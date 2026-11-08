@@ -141,6 +141,12 @@ class TeamsSource(MessageSource):
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
+    def connection_probe_url(cls, config):
+        """A configured Graph base is verified there (its ``/me``), not on Microsoft's own host."""
+        base = str((config or {}).get("base_url") or "").rstrip("/")
+        return f"{base}/me" if base else None
+
+    @classmethod
     def outbound_spec(cls) -> type:
         return TeamsMessageSpec
 

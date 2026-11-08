@@ -117,8 +117,13 @@ async def _get_or_create_flow(name: str) -> tuple[GraphWorkflow | None, bool]:
     existing = await _find_flow(name)
     if existing is not None:
         return existing, False
+    from flow_sdk.assets.creation import AssetPathCollisionError, adopt_unindexed  # noqa: PLC0415
+
     flow = GraphWorkflow(name=name, scope="system")
-    await flow.save()  # scaffolds folder + capsule id
+    try:
+        await flow.save()  # scaffolds folder + capsule id
+    except AssetPathCollisionError as collision:
+        return await adopt_unindexed(collision, lambda: _find_flow(name)), False
     return flow, True
 
 
@@ -172,8 +177,9 @@ async def _mini_trigger():
         for legacy_name in ("Mini analyzer (manual)", MINI_TRIGGER_SPEC["name"]):
             existing = await Trigger.get_one({"name": legacy_name})
             if existing is not None and not existing.uname:
-                # Seeded on before anyone could choose; it starts off like a new one.
-                existing.uname, existing.enabled = uname, False
+                # Seeded on before anyone could choose; it starts off like a new one — the upsert
+                # below applies the spec's ``enabled: False`` through the sanctioned setter.
+                existing.uname = uname
                 break
             existing = None
     await _upsert_one(MINI_TRIGGER_SPEC, existing=existing)

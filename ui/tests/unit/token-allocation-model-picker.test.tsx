@@ -7,7 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Agent, type AgentTokenAllocation } from '@sdk';
+import { Agent, Project, type AgentTokenAllocation } from '@sdk';
 
 const SOURCE_ID = 'a8473a10-74e5-4ce1-9fda-2babd551a399';
 const SOURCE = `llm_endpoint-${SOURCE_ID}`;
@@ -55,11 +55,12 @@ afterEach(() => {
   h.chain.mockReturnValue({ data: undefined });
 });
 
+const project = new Project({ id: '66666666-6666-4666-8666-666666666666', name: 'proj' } as never);
 const agent = new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
 
 function renderField(value: AgentTokenAllocation) {
   const onChange = vi.fn();
-  render(<TokenAllocationField agent={agent} environment="production" value={value} onChange={onChange} />);
+  render(<TokenAllocationField project={project} mainAgent={agent} environment="production" value={value} onChange={onChange} />);
   return onChange;
 }
 
@@ -126,6 +127,43 @@ describe('Token allocation model', () => {
     const field = screen.getByTestId('token-allocation-model');
     expect(field.tagName).toBe('INPUT');
     expect(field).toHaveAttribute('placeholder', 'Loading models…');
+  });
+});
+
+describe('Configure', () => {
+  async function configure(deploymentId: string | null) {
+    h.models.mockReturnValue(offered('openai/gpt-5'));
+    const post = vi.spyOn(project as unknown as { post: () => Promise<unknown> }, 'post').mockResolvedValue({});
+    try {
+      render(
+        <TokenAllocationField
+          project={project}
+          mainAgent={agent}
+          environment="production"
+          provider="e2b"
+          deploymentId={deploymentId}
+          value={allocation('openai/gpt-5')}
+          onChange={vi.fn()}
+        />,
+      );
+      await userEvent.click(screen.getByTestId('token-allocation-configure'));
+      await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+      return post.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    } finally {
+      post.mockRestore();
+    }
+  }
+
+  it("an existing deployment's Configure names it", async () => {
+    const [action, body] = await configure('44444444-4444-4444-8444-444444444444');
+    expect(action).toBe('plan_deployment');
+    expect(body.deployment_id).toBe('44444444-4444-4444-8444-444444444444');
+  });
+
+  it("a new deployment's Configure names none: the hub plans a new one", async () => {
+    const [action, body] = await configure(null);
+    expect(action).toBe('plan_deployment');
+    expect(body).not.toHaveProperty('deployment_id');
   });
 });
 

@@ -11,6 +11,7 @@ The project names its secret manager once, in its project manifest: **GCP Secret
 
 - **Sharing a credential** when the project has no secret manager asks you to set one up first. Your local value is copied into it.
 - **Opening a shared credential** shows where its values come from. **Fetch** copies them into your own `.env.local` (kept out of Git). Project setup fetches them too, before asking you for anything.
+- **Secret manager not set up on this computer?** **Set up** runs its setup wizard: installs the manager's command line, signs you in, and checks the vault — then fetches. From a terminal: `flow secrets setup <vault>`.
 - **No access yet?** **Request access** asks the owner. Access is given to the project's secrets as a whole, in the secret manager itself.
 - **No secret manager on the project?** **Report** sends it to the project's people through the usual help channel.
 

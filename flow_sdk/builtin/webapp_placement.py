@@ -173,7 +173,8 @@ async def upsert_artifact(
 
 
 async def local_web_deployment(project, *, artifact=None) -> Optional[Any]:
-    """The local web placement of *project* — or of this machine, for what has no project.
+    """The ONE local deployment of *project* (the same row its main agent runs on) — or this machine's,
+    for what has no project.
 
     Parented to the PROJECT, not the Artifact: an Artifact records how an app was
     generated and lives under its own parent, while the placement belongs to the
@@ -844,7 +845,7 @@ async def adopt_project_placement(project, deployment_typeid: str):
     The hub placed the project here and names its placement; the box already has
     (or now mints) its own local one. One placement, one id everywhere — so the
     row is re-keyed rather than translated at every read, the way
-    ``agent_places.adopt_placement`` re-keys an agent's. Everything the box
+    ``agent_places.adopt_deployment`` does. Everything the box
     registers afterwards (a dev server shown by port, an app registration, an
     indexed webapp) lands on the hub's placement by the ordinary
     :func:`local_web_deployment` lookup.
@@ -863,23 +864,19 @@ async def adopt_project_placement(project, deployment_typeid: str):
 
 
 async def _agent_placement(deployment_typeid: str):
-    """The agent placement *deployment_typeid* names on this machine (running, with its ``chat``), or None.
-
-    An agent deploy places the agent (re-keyed at ``adopt_placement``), not the
-    project's web runtime — so its apps and its chat are endpoints of the AGENT's
-    placement, and the project's web placement is left alone. On this machine it RUNS:
-    ``serving``, so this machine's supervisor keeps its loop process up.
+    """The project deployment *deployment_typeid* names on this machine when it has a main agent (running,
+    with the agent's ``chat``), or None. Its apps and the main agent's chat are endpoints of the same
+    deployment; on this machine it RUNS: ``serving``, so the supervisor keeps the agent's loop up.
     """
-    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.agent_serve import ensure_chat_channel  # noqa: PLC0415
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     deployment = await Deployment.get_by_id(deployment_typeid.partition("-")[2])
     if deployment is None or not deployment.places_agent:
         return None
-    agent = await Agent.get_by_id(str(deployment.parent_type_id or "").partition("-")[2])
+    agent = await deployment.main_agent()
     if agent is None or not deployment.is_local:
-        raise ValueError(f"{deployment_typeid} is not an agent placement on this machine")
+        raise ValueError(f"{deployment_typeid} is not a deployment with an agent on this machine")
     if not deployment.serving:
         deployment.serving = True
         await deployment.save()
@@ -888,33 +885,57 @@ async def _agent_placement(deployment_typeid: str):
 
 
 async def expose_project_endpoints(project, deployment_typeid: str) -> list:
-    """Bring up every webapp asset of *project* on the hub's placement, and report ALL it serves.
+    """Bring up every webapp asset of *project* — and of its required dependency projects — on the hub's
+    placement, and report ALL it serves.
 
     Run on the machine a placement landed on (a cloud box, asked by the hub).
     The project's local placement is first re-keyed to the hub's id
     (:func:`adopt_project_placement`). Each app's ``webapp.json`` then says how
     it is served (``mounts``) — an app that says nothing is its ``build`` folder,
     to the ``app`` audience — and each mount becomes a route of the placement's
-    ``admin`` or ``app`` proxy. A ``proxy`` mount is started on a loopback port
-    here — found running when re-exposed, so a second call does not start a
-    second server. A service the app brings along (``services``) is an
-    endpoint of its own. The answer is every endpoint of the placement — the two
-    proxies, the services, an agent's chat — and the ids are the box's, which
-    the hub adopts.
+    ``admin`` or ``app`` proxy. A ``proxy`` mount is routed to the loopback port
+    its process runs on (or will), and the app is brought up the one way an app
+    comes up here (``core/webapp/coordinator.bring_up``): what it stands on first —
+    its declared ``asset_setup``, a dependency's install — then install → build →
+    start, with recovery. A bare start of the command missed all of that (a WAHA
+    bridge's start command ran before its runtime was installed, died, and stayed
+    dead). Not waited for: the hub reads the endpoints' health afterwards, and a
+    run already going is joined, so a second call does not start a second server.
+    A service the app brings along (``services``) is an endpoint of its own. The
+    answer is every endpoint of the placement — the two proxies, the services, an
+    agent's chat — and the ids are the box's, which the hub adopts.
     """
+    from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+    from flow_sdk.core.webapp import coordinator  # noqa: PLC0415
 
     deployment = await _agent_placement(deployment_typeid) or await adopt_project_placement(project, deployment_typeid)
-    apps = await WebApp.get_all({"match": {"project_id": project.id}})
-    for app in apps:
+    for app in await _placed_apps(project, WebApp):
         if not app.asset_ref:
             continue
         for mount in app_mounts(app):
             await set_app_route(deployment, app, mount, await _placed_backend(app, mount))
         for service in app.services or []:
-            await set_service_endpoint(deployment, app, service, await _started(app, service.serving))
+            await set_service_endpoint(deployment, app, service, await _process_backend(app, service.serving))
+        if webapp_setup._processes(app):
+            await coordinator.bring_up(app, reason="open")
     return await ServiceEndpoint.of_deployment(deployment_typeid)
+
+
+async def _placed_apps(project, webapp_type) -> list:
+    """The webapps a placement of *project* serves: its own, then each resolved required dependency's.
+
+    A dependency project is part of what the deployed project runs (a WhatsApp bridge it
+    depends on is its WhatsApp), so its apps come up on the same placement. The project's
+    own apps are placed first, so a declared root path stays theirs.
+    """
+    from flow_sdk.builtin.project_dependencies import required_projects  # noqa: PLC0415
+
+    apps = list(await webapp_type.get_all({"match": {"project_id": project.id}}))
+    for provider in await required_projects(project):
+        apps.extend(await webapp_type.get_all({"match": {"project_id": provider.id}}))
+    return apps
 
 
 def service_endpoint_name(app, service) -> str:
@@ -930,13 +951,14 @@ async def service_endpoint_ports(app) -> dict[str, Any]:
     return {row.name: getattr(row.backend, "port", None) for row in rows}
 
 
-async def set_service_endpoint(deployment, app, service, backend: dict) -> None:
-    """A service the app brings along is an endpoint of its own on ``deployment``, named ``<app>-<name>``."""
+async def set_service_endpoint(deployment, app, service, backend: dict) -> bool:
+    """A service the app brings along is an endpoint of its own on ``deployment``, named ``<app>-<name>``.
+    True when the row changed."""
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
     name = service_endpoint_name(app, service)
     existing = next((row for row in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if row.name == name), None)
-    await upsert_endpoint(
+    _row, changed = await upsert_endpoint(
         deployment,
         name=name,
         backend=backend,
@@ -945,29 +967,26 @@ async def set_service_endpoint(deployment, app, service, backend: dict) -> None:
         project_id=app.project_id,
         existing=existing,
     )
+    return changed
 
 
 async def _placed_backend(app, mount) -> dict:
     """A mount's serving template, made concrete on this machine."""
     if mount.serving.type == "static":
         return _static_backend(app, mount)
-    return await _started(app, mount.serving)
+    return await _process_backend(app, mount.serving)
 
 
-async def _started(app, serving) -> dict:
-    """The process *serving* describes, running on a loopback port here. Which port, and whether what
-    holds it is this app, is ``app_ports``' one rule (``webapp_setup.where``).
-
-    Not waited for: the hub asks for a placement's endpoints and reads their health afterwards."""
+async def _process_backend(app, serving) -> dict:
+    """Where the process *serving* describes runs here, or will: a loopback port. Which port, and whether
+    what holds it is this app, is ``app_ports``' one rule (``webapp_setup.where``). Starts nothing: the
+    app's start (``coordinator.bring_up``) rewrites the route if the process lands elsewhere."""
     from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
-    from flow_sdk.core import dev_server  # noqa: PLC0415
 
     found = await webapp_setup.where(app, serving)
+    if found.state not in ("start", "running"):
+        _log.warning("%s cannot be started here: %s", app.name, found.note)
     command = serving.start_cmd.replace("{port}", str(found.port))
-    if found.state == "start":
-        await asyncio.to_thread(dev_server.start_detached, command, cwd=Path(app.asset_ref), port=found.port, name=app.name)
-    elif found.state != "running":
-        _log.warning("%s is not started here: %s", app.name, found.note)
     return {"type": "proxy", "port": found.port, "start_cmd": command, "health": serving.health}
 
 

@@ -45,7 +45,7 @@ test.beforeAll(async ({ browser, request }) => {
   // launch, and a launch reopens the last place (`last-tab-restore.ts`) — here
   // the Vibe chat just seeded. Landing on Home forgets that place, so from here
   // on a bare `/` is Home, which is what every test below starts from.
-  await page.goto('/?viewMode=vibe');
+  await page.goto('/dock/home');
   await page.locator('[data-tag]').first().waitFor();
 });
 test.beforeEach(() => {
@@ -148,25 +148,17 @@ test.describe('vibe exit — the end-to-end proof', () => {
    * journey's `open_build` step does, or the exit proves nothing.
    */
   /**
-   * Setup enters Vibe by URL, not by clicking the footer. The footer toggle is
-   * the control UNDER TEST in the exit proof — driving setup with it makes a
-   * slow preference write look like an exit failure, and that is what it did.
-   * `?viewMode=` is a real address (pinned below), so setup can just say where
-   * it wants to be and wait for the app to be there.
+   * Setup opens the build by its address (a mode belongs to a session tab since
+   * 2026-10-11, docs/viewmodes.md; the top-bar control that reopened the last one
+   * is gone). The control under test is the build's own mode switch.
    */
-  async function enterVibeWorkspace(start = '/'): Promise<void> {
-    const url = new URL(start, 'http://x');
-    url.searchParams.set('viewMode', 'vibe');
-    await page.goto(`${url.pathname}${url.search}`);
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
-    // In Vibe the rail's Chats resumes the last real chat (the build) — the journey's `open_build` step.
-    // (The top bar's "Back to tabs" button it used to press is gone.)
-    await page.locator('[data-tag="RailChats"]').click();
+  async function enterVibeWorkspace(query = ''): Promise<void> {
+    await page.goto(`/dock/vibe/agentic_process-${fixture.processId}${query}`);
     await expect(page.locator('[data-tag="VibeDisplay"]')).toBeVisible();
   }
 
   test('the mode switch actually leaves Vibe, with a journey running', async () => {
-    await enterVibeWorkspace('/?journeyId=@vibe-exit-mode-switch');
+    await enterVibeWorkspace('?journeyId=@vibe-exit-mode-switch');
 
     await selectViewMode(page, 'standard');
     // The exact assertion that failed before: the workspace must really go.
@@ -191,19 +183,18 @@ test.describe('vibe exit — the end-to-end proof', () => {
   });
 });
 
-test.describe('the root carries view mode', () => {
+test.describe('the root has one look', () => {
   /**
-   * The one place the collapse changes MEANING rather than spelling, flagged in
-   * the plan's risk register: before, `/` could not carry options, so view mode
-   * at the root came only from the stored preference. Now `/?viewMode=` is a
-   * real address and is authoritative — which is what makes a mode switch at
-   * home shareable and reloadable at all.
+   * Since 2026-10-11 a mode belongs to a session tab (docs/viewmodes.md): every
+   * page other than a session dock drops `?viewMode` (`DockPointer.carriesViewMode`)
+   * and the home is always the tabless Vibe hero. A mode stated on the root
+   * address, or one a session was last switched to, does not change the home.
    */
-  test('`/?viewMode=` survives a reload and beats the stored preference', async () => {
-    await page.goto('/');
+  test('the root ignores `?viewMode` and a session\'s mode, and stays Vibe across a reload', async () => {
+    await openVibe(page, fixture.processId);
     await selectViewMode(page, 'standard');
 
-    await page.goto('/?viewMode=vibe');
+    await page.goto('/?viewMode=standard');
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
     // The home has no view mode of its own (home-loader canonicalizes `/?viewMode=…` to the plain
     // home, so no history entry can show a second home): the address settles on `/` while the mode

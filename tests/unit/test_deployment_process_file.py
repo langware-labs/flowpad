@@ -105,3 +105,34 @@ def test_a_loop_still_importing_is_found_by_its_command_line(deployment):
         assert deployment_process.pid_of(deployment) == starting.pid
     finally:
         starting.kill()
+
+
+@pytest.mark.asyncio
+async def test_a_pass_over_many_deployments_reads_the_process_list_once_and_off_the_loop(deployment, monkeypatch):
+    """Prod held its loop 2.9s every 10s: ``reconcile`` read every process's command line once per deployment."""
+    import threading
+
+    import psutil
+
+    running = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)", str(deployment_process.file_of(deployment)), deployment.id]
+    )
+    others = [types.SimpleNamespace(id=str(uuid.uuid4())) for _ in range(20)]
+    reads: list[int] = []
+    real = psutil.process_iter
+
+    def counted(*a, **k):
+        reads.append(threading.get_ident())
+        return real(*a, **k)
+
+    monkeypatch.setattr(psutil, "process_iter", counted)
+    try:
+        async with deployment_process.process_table():
+            assert deployment_process.pid_of(deployment) == running.pid
+            assert not any(deployment_process.alive(d) for d in others)
+            async with deployment_process.process_table():  # a nested pass shares the read
+                assert deployment_process.alive(deployment)
+    finally:
+        running.kill()
+    assert len(reads) == 1, "one read for the whole pass, not one per deployment"
+    assert reads[0] != threading.get_ident(), "the read ran on the event loop's thread"

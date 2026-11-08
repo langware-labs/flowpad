@@ -1,7 +1,7 @@
 import { JourneyGraph, registerMemoryJourney, type JourneyStep, type JourneyWaitCondition } from '@sdk';
 
 /**
- * VIBE EXIT #1 — the footer mode switch.
+ * VIBE EXIT #1 — the session's mode switch.
  *
  * A probe journey: it exists to make one way OUT of the Vibe workspace visible
  * by having you take it. We are reviewing every exit case by case and deciding
@@ -13,11 +13,11 @@ import { JourneyGraph, registerMemoryJourney, type JourneyStep, type JourneyWait
  * journey opens a live build (chat pane, display, its own tab strip), makes you
  * look at it, and only then takes the exit.
  *
- * The exit under review: `ViewToggle` (`components/view-toggle/view-toggle.tsx`)
- * renders Vibe / Chat / Terminal side by side and always offers all three — its
- * own comment says "this is the mode selector, not a power-user ladder". So a
- * non-technical user is one unlabelled click from losing the workspace, with no
- * confirmation and nothing naming what went.
+ * The exit under review: the session's own switch (`SessionSurfaceSwitch`)
+ * renders Vibe / Chat / Terminal side by side and always offers all three. A mode
+ * belongs to a session tab (docs/viewmodes.md) and the home is always Vibe, so the
+ * exit lives inside the build itself. A non-technical user is still one unlabelled click from losing
+ * the workspace, with no confirmation and nothing naming what went.
  *
  * Written in code rather than as a `graph.json` folder because a probe is
  * rewritten as fast as we can look at it — see `MemoryJourney`.
@@ -128,6 +128,6 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
 
 registerMemoryJourney({
   name: 'vibe-exit-mode-switch',
-  title: 'Vibe exit — the footer mode switch',
+  title: "Vibe exit — the session's mode switch",
   graph: VIBE_EXIT_MODE_SWITCH,
 });

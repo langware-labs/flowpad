@@ -17,8 +17,14 @@ from ..entry import EntryKind, TranscriptEntry
 class UserMessageEntry(TranscriptEntry):
     kind = EntryKind.USER_MESSAGE
 
-    def __init__(self, *, text: str, role: str = "user", is_meta: bool = False, **base: Any) -> None:
+    def __init__(
+        self, *, text: str, role: str = "user", is_meta: bool = False,
+        source_tool_use_id: str | None = None, **base: Any,
+    ) -> None:
         super().__init__(**base)
+        # The tool call this injected line answers (a loaded skill body names
+        # its Skill call here) — the only link from the body to that call.
+        self.source_tool_use_id = source_tool_use_id
         self.text = text
         # Always ``"user"`` for user-typed messages. Developer / system
         # role messages are routed to ``SystemEntry`` upstream — they do

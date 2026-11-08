@@ -79,6 +79,7 @@ describe('hub: assigned conversation is visible immediately (SDK + hook)', () =>
     });
     expect(inviteeRow).toBeTruthy();
     expect(inviteeRow?.status).toBe('approved');
+    // Role sets (965962b14): a conversation "member" is the canonical ['reader', 'runner'].
     expect([...(inviteeRow?.roles ?? [])].sort()).toEqual(['reader', 'runner']);
 
     // 3. The conversation is *seen*: useEntity — the hook the conversation UI

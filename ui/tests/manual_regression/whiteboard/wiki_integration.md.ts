@@ -17,7 +17,7 @@ const DB = path.join(os.homedir(), '.flow/instances', FLOW_INSTANCE, 'flowpad.db
 
 async function materialize(page: Page, id: string, assetRef: string) {
   await page.goto(`/dock/assets/editor/chart/typeid/chart-${id}`);
-  await page.locator('[data-testid="chart-excalidraw"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
+  await page.locator('[data-testid="chart-editor"]').waitFor({ state: 'visible', timeout: adjusted(20_000) });
   await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: adjusted(15_000),
   });
@@ -65,7 +65,7 @@ test.describe('Whiteboard participates in the wiki graph', () => {
     const mdId = (await mdRes.json()).data.id;
 
     // Create the source whiteboard + materialize its CHART.md.
-    const wbRes = await request.post(`${API}/api/v1/graph/chart`, { data: { name: srcName, format: 'excalidraw' } });
+    const wbRes = await request.post(`${API}/api/v1/graph/chart`, { data: { name: srcName } });
     expect(wbRes.status()).toBe(200);
     const wb = (await wbRes.json()).data;
     await materialize(page, wb.id, wb.asset_ref);

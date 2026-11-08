@@ -7,6 +7,7 @@ import {
   type ProjectSetupRequirement,
   type ProjectSetupSkipScope,
 } from '@sdk';
+import { useProjectStatus } from '@sdk/react/hooks/use-project-status';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { rowKey } from './setup-labels';
@@ -58,6 +59,14 @@ export function useSetupReadiness(
     if (enabled) void load();
   }, [enabled, load]);
 
+  // Every answer the backend pushes afterwards (a skip, a credential, an app coming up, a run ending) — on the
+  // project row's ``local_status``, so nothing here asks again.
+  const setup = useProjectStatus(enabled ? projectId : null).part<ProjectReadiness>('setup');
+  const pushed = setup?.value;
+  useEffect(() => {
+    if (pushed) take(pushed);
+  }, [pushed, take]);
+
   /** Applies one change per row, one after the other (a skip may stage a git deletion: never two at once);
    *  the last answer is the readiness that follows — except on the page, whose answer needs the Ready list
    *  and nodes, so it reads once after. */
@@ -93,5 +102,19 @@ export function useSetupReadiness(
     [projectId, change],
   );
 
-  return { readiness, busy, load, skip, unskip };
+  /** Enable / Disable one of the project's automations here (an `automation` row). */
+  const decide = useCallback(
+    (req: ProjectSetupRequirement, on: boolean) =>
+      change(
+        [req],
+        (r) => Project.decideAutomation(projectId, r.typeid, on),
+        (name) => t`Could not change ${name}`,
+      ),
+    [projectId, change, t],
+  );
+
+  /** The stored answer is being checked again right now (it is shown meanwhile). */
+  const checking = !!setup?.checking;
+
+  return { readiness, busy, load, skip, unskip, decide, checking };
 }

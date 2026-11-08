@@ -220,6 +220,26 @@ def test_build_spawn_uses_absolute_discovered_copilot_path(tmp_path: Path, monke
 
 
 @pytest.mark.asyncio
+async def test_a_stop_while_the_process_is_spawning_still_ends_the_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Stop before the CLI process exists (it is still being spawned): the turn must still end, not run on."""
+    transcript = tmp_path / "copilot.jsonl"
+    worker = CopilotCLIStreamWorker(transcript_path=transcript)
+    patch_build_spawn(monkeypatch, CopilotCLIStreamWorker, ["bash", "-c", "sleep 60"], stdin="")
+    ctx = AgenticContext(workdir=str(tmp_path))
+
+    async def _run():
+        async for _ in worker.execute(prompt="hi", context=ctx):
+            pass
+
+    task = asyncio.create_task(_run())
+    await asyncio.sleep(0)  # the turn has started; its process has not been spawned yet
+    assert worker._proc is None
+    await worker.close_session()
+    await asyncio.wait_for(task, timeout=CANCEL_GRACE_SECONDS + 2)
+    assert '"type":"flowpad.interrupted"' in transcript.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
 async def test_close_session_terminates_and_writes_interrupted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     transcript = tmp_path / "copilot.jsonl"
     worker = CopilotCLIStreamWorker(transcript_path=transcript)

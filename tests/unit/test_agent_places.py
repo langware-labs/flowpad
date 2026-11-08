@@ -1,9 +1,9 @@
-"""An agent runs on places; each place may override how it runs and own its email.
+"""An agent runs on places: deployments of its project whose main agent it is.
 
-A place is a Deployment of the agent. Its choices live in agent.json keyed by the
-Deployment id (``places``, ``email_place``), so they travel with the definition
-and each machine applies only the ones naming a placement that runs there.
+A place's launch overrides live on the deployment row (``main_agent_overrides``), never in
+agent.json, so they never dirty the checkout a deployment runs.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,15 +18,12 @@ from flow_sdk.builtin.agent_places import (
     PlaceError,
     email_answers_here,
     list_places,
-    set_email_place,
-    set_place_enabled,
     set_place_override,
     version_state,
 )
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.trigger_arming import runs_here
-from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec, AgentSpec
 from tests.unit.agent._seed import seed_agent, seed_project
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -43,7 +40,9 @@ def _document(agent: Agent) -> dict:
 
 async def _cloud_place(agent: Agent, node: str = "compute_node-11111111-2222-4333-8444-555555555555") -> Deployment:
     deployment = Deployment(
-        name=f"{agent.name} (e2b)", parent_type_id=str(agent.typeid),
+        name=f"{agent.name} (e2b)",
+        parent_type_id=f"project-{agent.project_id}",
+        main_agent_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": node},
     )
@@ -68,37 +67,39 @@ async def _publish_into_hub_repo(tmp_path: Path, monkeypatch, agent: Agent):
         root=hub_repo_sync.mirror_root(repo.repo_id), clone_url=str(hub), branch="main", token="hub-token"
     )
     synced = await hub_repo_sync.sync_asset_with_hub(
-        mirror=mirror, asset_root=folder, rel_path=rel, is_file=False, last_tree=None,
-        author=GitAuthor(name="t", email="t@t"), asset_typeid=str(agent.typeid),
+        mirror=mirror,
+        asset_root=folder,
+        rel_path=rel,
+        is_file=False,
+        last_tree=None,
+        author=GitAuthor(name="t", email="t@t"),
+        asset_typeid=str(agent.typeid),
     )
-    hub_repo_sync.remember_sync(repo.repo_id, repo=repo.repo, rel_path=rel, tree=synced.tree,
-                                head_commit=synced.head_commit, local_path=str(folder.resolve()))
+    hub_repo_sync.remember_sync(
+        repo.repo_id,
+        repo=repo.repo,
+        rel_path=rel,
+        tree=synced.tree,
+        head_commit=synced.head_commit,
+        local_path=str(folder.resolve()),
+    )
     agent.remote = True
     agent.origin = HubRepoOrigin(repo=repo.repo, rel_path=rel, head_commit=synced.head_commit, tree=synced.tree)
     return synced
 
 
-def test_a_place_spec_says_only_what_it_overrides():
-    place = AgentPlaceSpec(deployment_id="d1", model="sonnet", mcp_servers=["zendesk"])
-    assert place.overrides() == {"model": "sonnet", "mcp_servers": ["zendesk"]}
-    doc = AgentSpec.model_validate({"places": [{"deployment_id": "d1", "effort": "high"}], "email_place": "d1"})
-    assert doc.places[0].effort == "high" and doc.email_place == "d1"
-    with pytest.raises(ValueError):
-        AgentSpec.model_validate({"places": [{"deployment_id": "d1", "max_turns": 3}]})
-
-
 @pytest.mark.asyncio
 async def test_a_place_override_reaches_the_launch_and_only_that_place(tmp_path):
     agent = await _agent(tmp_path, "places-launch", model="haiku", permission_mode="bypassPermissions")
-    local = await agent.local_deployment()
+    local = await agent.deploy("local")
     cloud = await _cloud_place(agent)
 
     await set_place_override(agent, local.id, "model", "sonnet")
     await set_place_override(agent, local.id, "permission_mode", "askUser")
 
     fresh = await Agent.get_by_id(agent.id)
-    here = await (await Deployment.get_by_id(local.id)).with_element(fresh).create_process("hi")
-    there = await (await Deployment.get_by_id(cloud.id)).with_element(fresh).create_process("hi")
+    here = await (await Deployment.get_by_id(local.id)).create_process("hi")
+    there = await (await Deployment.get_by_id(cloud.id)).create_process("hi")
     assert here.cli_config["model"] == "sonnet"
     assert here.cli_config["permission_mode"] == "askUser"
     # The other place inherits the definition untouched.
@@ -107,47 +108,43 @@ async def test_a_place_override_reaches_the_launch_and_only_that_place(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_overrides_are_written_to_agent_json_and_reset_removes_them(tmp_path):
+async def test_overrides_live_on_the_deployment_never_in_agent_json(tmp_path):
     agent = await _agent(tmp_path, "places-file", model="haiku", system_prompt="Keep this prompt.")
-    local = await agent.local_deployment()
-    document = Path(agent.asset_ref) / "agent.json"
-    prompt = Path(agent.asset_ref) / "system_prompt.md"
-    assert "Keep this prompt." in prompt.read_text()
+    local = await agent.deploy("local")
+    before = (Path(agent.asset_ref) / "agent.json").read_bytes()
 
     await set_place_override(agent, local.id, "effort", "high")
-    doc = _document(agent)
-    assert [(p["deployment_id"], p.get("effort")) for p in doc["places"]] == [(local.id, "high")]
-    # A header patch: the body (the system prompt) and the other fields survive.
-    assert "Keep this prompt." in prompt.read_text() and doc["model"] == "haiku"
-    assert (await Agent.get_by_id(agent.id)).system_prompt.strip() == "Keep this prompt."
+    assert (await Deployment.get_by_id(local.id)).main_agent_overrides == {"effort": "high"}
+    assert (Path(agent.asset_ref) / "agent.json").read_bytes() == before, "a deployment never dirties git"
 
     await set_place_override(agent, local.id, "effort", None)
-    assert not (await Agent.get_by_id(agent.id)).places
-    assert not json.loads(document.read_text()).get("places")
+    assert (await Deployment.get_by_id(local.id)).main_agent_overrides == {}
 
 
 @pytest.mark.asyncio
 async def test_only_this_agents_places_and_known_fields_are_accepted(tmp_path):
     agent = await _agent(tmp_path, "places-owner")
     other = await _agent(tmp_path, "places-other")
-    foreign = await other.local_deployment()
+    foreign = await other.deploy("local")
 
     with pytest.raises(PlaceError) as refused:
         await set_place_override(agent, foreign.id, "model", "sonnet")
     assert refused.value.status_code == 404
     with pytest.raises(PlaceError):
-        await set_place_override(agent, (await agent.local_deployment()).id, "system_prompt", "x")
+        await set_place_override(agent, (await agent.deploy("local")).id, "system_prompt", "x")
 
 
 def test_a_hub_recorded_node_id_is_recognised_as_this_machine():
     """The hub records a node as ``compute_node-<uuid>``; the local id is bare.
     Unnormalized, every hub-created placement read as elsewhere — on its own box too."""
     here = Deployment(
-        name="here", target={"provider": "e2b", "scope": "machine"},
+        name="here",
+        target={"provider": "e2b", "scope": "machine"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": f"compute_node-{ComputeNode._local_id()}"},
     )
     elsewhere = Deployment(
-        name="elsewhere", target={"provider": "e2b", "scope": "machine"},
+        name="elsewhere",
+        target={"provider": "e2b", "scope": "machine"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
     )
     assert here.is_local is True
@@ -159,7 +156,7 @@ async def test_a_schedule_runs_only_on_its_place(tmp_path):
     from flow_sdk.builtin.trigger import Trigger
 
     agent = await _agent(tmp_path, "places-runs-on")
-    local = await agent.local_deployment()
+    local = await agent.deploy("local")
     cloud = await _cloud_place(agent)
 
     assert await runs_here(Trigger(name="legacy")) is True
@@ -172,15 +169,13 @@ async def test_a_schedule_runs_only_on_its_place(tmp_path):
 async def test_places_list_this_computer_first_with_what_each_owns(tmp_path):
     agent = await _agent(tmp_path, "places-list")
     cloud = await _cloud_place(agent)
-    local = await agent.local_deployment()
+    local = await agent.deploy("local")
     await set_place_override(agent, cloud.id, "model", "sonnet")
 
     rows = await list_places(agent)
     assert [r["deployment"].id for r in rows] == [local.id, cloud.id]
     assert rows[0]["is_local"] is True and rows[1]["is_local"] is False
     assert rows[1]["overrides"] == {"model": "sonnet"}
-    # No email place chosen: this computer answers (legacy rule).
-    assert [r["answers_email"] for r in rows] == [True, False]
 
 
 @pytest.mark.asyncio
@@ -188,12 +183,17 @@ async def test_listing_places_creates_none_and_deploying_here_is_idempotent(tmp_
     agent = await _agent(tmp_path, "places-none")
     assert await list_places(agent) == []
     assert await agent.deployments() == [], "looking at an agent's places deploys it nowhere"
+    assert await email_answers_here(agent.id) is True, "deployed nowhere: the machine polling answers"
+    cloud = await _cloud_place(agent)
+    assert await email_answers_here(agent.id) is False, "deployed only elsewhere: that machine answers"
 
     first = await agent.deploy("local")
     again = await agent.deploy("local")
     assert first.id == again.id
+    assert first.parent_type_id == f"project-{agent.project_id}" and first.main_agent_id == str(agent.typeid)
+    assert await email_answers_here(agent.id) is True
     rows = await list_places(agent)
-    assert [(r["deployment"].id, r["is_local"], r["answers_email"]) for r in rows] == [(first.id, True, True)]
+    assert [(r["deployment"].id, r["is_local"]) for r in rows] == [(first.id, True), (cloud.id, False)]
 
 
 @pytest.mark.asyncio
@@ -204,7 +204,7 @@ async def test_each_place_says_when_it_was_last_active(tmp_path):
 
     agent = await _agent(tmp_path, "places-active")
     cloud = await _cloud_place(agent)
-    local = await agent.local_deployment()
+    local = await agent.deploy("local")
     rows = await list_places(agent)
     assert [r["last_active"] for r in rows] == [None, None]
 
@@ -214,36 +214,6 @@ async def test_each_place_says_when_it_was_last_active(tmp_path):
     local_row, cloud_row = await list_places(agent)
     assert local_row["last_active"] and local_row["last_active"][:19] == run.updated_date.isoformat()[:19]
     assert cloud_row["last_active"] == "2026-09-23T10:00:00+00:00"
-
-
-@pytest.mark.asyncio
-async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
-    from flow_sdk.builtin.data_driver import DataDriver
-    from flow_sdk.builtin.data_source import DataSource, SourceStatus
-
-    CloudEmailDriver = DataDriver.loaded("cloud_email")  # noqa: N806 — the registered source
-
-    agent = await _agent(tmp_path, "places-email", system_prompt="Answer mail.")
-    local = await agent.local_deployment()
-    cloud = await _cloud_place(agent)
-    source = DataSource(
-        name=f"Mailbox {uuid.uuid4().hex[:8]}", provider=CloudEmailDriver.provider, kind=CloudEmailDriver.kind,
-        config={CloudEmailDriver.identity_config_key: agent.id}, account_key="a@x.io",
-        owner=agent.typeid, status=SourceStatus.ACTIVE.value,
-    )
-    await source.save()
-
-    assert await email_answers_here(agent.id) is True
-
-    await set_email_place(agent, cloud.id)
-    assert "Answer mail." in (Path(agent.asset_ref) / "system_prompt.md").read_text()
-    assert (await DataSource.get_by_id(source.id)).status == SourceStatus.DISABLED.value
-    assert await email_answers_here(agent.id) is False
-    assert _document(agent)["email_place"] == cloud.id
-
-    await set_email_place(agent, local.id)
-    assert (await DataSource.get_by_id(source.id)).status == SourceStatus.ACTIVE.value
-    assert await email_answers_here(agent.id) is True
 
 
 @pytest.mark.asyncio
@@ -258,11 +228,20 @@ async def test_version_counts_what_is_not_published(tmp_path):
     git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A")
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "agent")
     state = version_state(agent)
-    assert state["has_repo"] is True and state["published"] is False
-    assert state["pending_changes"] == 1  # one commit, never published
+    # A git checkout deploys its own commits: committed with no remote of its own is nothing pending.
+    assert state["has_repo"] is True and state["published"] is False and state["git_native"] is True
+    assert state["pending_changes"] == 0 and state["has_remote"] is False
 
     (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
-    assert version_state(agent)["pending_changes"] == 2
+    state = version_state(agent)
+    assert (state["pending_changes"], state["uncommitted"], state["unpushed"]) == (1, 1, 0)
+
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "more")
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    git("remote", "add", "origin", str(bare))
+    state = version_state(agent)
+    assert (state["has_remote"], state["unpushed"], state["pending_changes"]) == (True, 2, 2)
 
 
 @pytest.mark.asyncio
@@ -275,7 +254,13 @@ async def test_version_of_an_agent_published_into_its_hub_repo(tmp_path, monkeyp
 
     state = version_state(agent)
     assert not (folder.parents[2] / ".git").exists()
-    assert state == {"published": True, "published_commit": synced.head_commit, "has_repo": True, "pending_changes": 0}
+    assert state == {
+        "published": True,
+        "published_commit": synced.head_commit,
+        "has_repo": True,
+        "git_native": False,
+        "pending_changes": 0,
+    }
 
     (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
     assert version_state(agent)["pending_changes"] == 1
@@ -338,21 +323,61 @@ async def test_publish_force_republishes_an_agent_already_on_the_hub(tmp_path, m
     assert calls == [agent.id, agent.id]
 
 
-@pytest.mark.asyncio
-async def test_a_place_can_be_switched_off_on_its_own(tmp_path):
-    agent = await _agent(tmp_path, "places-enabled")
-    local = await agent.local_deployment()
-    cloud = await _cloud_place(agent)
+async def test_a_project_less_agent_moves_into_a_project_keeping_its_id(tmp_path):
+    """A deploy publishes into the agent's project, so the dialog offers to move a project-less agent there."""
+    from flow_sdk.builtin.data_source import DataSource
 
-    await set_place_enabled(agent, local.id, False)
-    fresh = await Agent.get_by_id(agent.id)
-    assert fresh.enabled_on(local.id) is False
-    assert fresh.enabled_on(cloud.id) is True, "the other place follows the definition"
-    with pytest.raises(RuntimeError, match="disabled"):
-        await (await Deployment.get_by_id(local.id)).with_element(fresh).create_process("hi")
-    assert [p.get("enabled") for p in _document(agent)["places"] if p["deployment_id"] == local.id] == [False]
+    project = await seed_project(tmp_path / "home-project")
+    agent = await seed_agent(tmp_path / "user-scope", "helper")
+    agent_id = agent.id
+    channel = DataSource(
+        name="desk",
+        provider="rss",
+        config={"feed_url": "https://example.com/feed"},
+        owner=agent.typeid,
+        asset_ref=str(tmp_path / "user-scope" / "agentic-assets" / "data_source" / "desk"),
+    )
+    await channel.save()
 
-    with pytest.raises(PlaceError):
-        await set_place_enabled(fresh, local.id, "no")
-    await set_place_enabled(fresh, local.id, None)
-    assert (await Agent.get_by_id(agent.id)).enabled_on(local.id) is True
+    before, channel_before = Path(agent.asset_ref), Path(channel.asset_ref)
+    await agent.move_to_project(str(project.id))
+
+    assert not before.exists(), "the save after the move wrote nothing back to the old folder"
+    assert not channel_before.exists()
+    travelled = await DataSource.get_by_id(channel.id)
+    assert travelled.project_id == str(project.id)
+    assert Path(travelled.asset_ref).is_relative_to(project.fs_storage_mount_path)
+    assert (Path(travelled.asset_ref) / "data_source.json").is_file()
+    moved = await Agent.get_by_id(agent_id)
+    assert moved.project_id == str(project.id)
+    assert (Path(moved.asset_ref) / "agent.json").is_file()
+    assert Path(moved.asset_ref).is_relative_to(project.fs_storage_mount_path)
+    with pytest.raises(ValueError, match="already belongs"):
+        await moved.move_to_project(str(project.id))
+
+
+async def test_values_typed_in_the_dialog_are_stored_on_the_placement_before_the_gate(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin import agent_cloud_deploy
+    from flow_sdk.builtin.agent_cloud_deploy import DEPLOYMENT_STEPS, DeployContext, _store_values
+
+    stored = {}
+
+    async def store(name, values, *, project_id=None, deployment_id=None):
+        stored[name] = (values, deployment_id)
+
+    monkeypatch.setattr("flow_sdk.builtin.credential_service.set_credential_by_name", store)
+    agent = await _agent(tmp_path, "typed")
+    project = await agent._owning_project()
+    ctx = DeployContext(
+        project, agent, None, None, None, agent_cloud_deploy._UNSET, values={"team": {"EMAILS": "a@b.c"}}
+    )
+    ctx.deployment = SimpleNamespace(id="dep-1")
+
+    await _store_values(ctx)
+
+    assert stored == {"team": ({"EMAILS": "a@b.c"}, "dep-1")}
+    assert stored and project is not None
+    names = [step.name for step in DEPLOYMENT_STEPS]
+    assert names.index("values") < names.index("readiness")

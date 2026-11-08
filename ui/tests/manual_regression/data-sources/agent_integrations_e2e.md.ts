@@ -115,7 +115,7 @@ test('2. connect: an rss source over the dialog, pointed at the loopback feed', 
 
 test('3. streaming: items land on the heartbeat', async () => {
   // The heartbeat is ≤60 s after poll_now (test 2, ~10 s ago); sample, never hurry.
-  const filter = encodeURIComponent(JSON.stringify({ match: { op: '$EQ', operands: ['data_source_id', sourceId] }, limit: 10 }));
+  const filter = encodeURIComponent(JSON.stringify({ match: { data_source_id: sourceId }, limit: 10 }));
   await expect(async () => {
     const api = await apiContext();
     const rows = ((await (await api.get(`/api/v1/graph/source_item?filter=${filter}`)).json()).data ?? []) as unknown[];
@@ -159,7 +159,7 @@ test('5. define + annotate: a dataset bound to the source, one labelled example'
   await frame.getByTestId('spec-editor-dataset-name').fill(`labels ${stamp}`);
   await frame.getByTestId('spec-editor-shape-field-0').fill('sentiment');
   await frame.getByTestId('spec-editor-dataset-create').click();
-  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/0 rows · 0 labelled/);
+  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/\(0 rows · 0 labelled\)/);
 
   const firstPromote = frame.locator('[data-testid^="spec-editor-promote-"]').first();
   await firstPromote.click();
@@ -168,7 +168,7 @@ test('5. define + annotate: a dataset bound to the source, one labelled example'
   await expect(frame.getByTestId('spec-editor-annotated')).toHaveText(/labelled \(1 total\)/);
   // Singular: one row is "1 row". The count is copy the person reads, so
   // it agrees with itself rather than being mechanically pluralised.
-  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/1 row · 1 labelled/);
+  await expect(frame.getByTestId('spec-editor-dataset-counts')).toHaveText(/\(1 row · 1 labelled\)/);
 
   const api = await apiContext();
   const rows = ((await (await api.get(`/api/v1/graph/dataset?filter=${encodeURIComponent(JSON.stringify({ source_id: sourceId }))}`)).json()).data ?? []) as {
@@ -180,9 +180,17 @@ test('5. define + annotate: a dataset bound to the source, one labelled example'
   expect(rows[0].num_rows).toBe(1);
   expect(rows[0].num_annotated).toBe(1);
   expect(rows[0].spec).toEqual({ rows: [{ input: 'ingest.source_item', output: { sentiment: 'string' } }] });
-  // The dataset folder holds the definition; its rows live in the dataset's row store, read through the API.
-  expect(existsSync(path.join(datasetFolder, 'dataset.json')), `${datasetFolder} / dataset.json`).toBeTruthy();
   await api.dispose();
+  // The promoted row reads back typed: the item as its input, the label as its gold.
+  const rowsApi = await apiContext();
+  const stored = (await (await rowsApi.get(`/api/v1/graph/dataset/${datasetId}/rows`)).json()).data as {
+    rows: { input: { body?: string }; ground_truth: { sentiment: string } }[]; problems: unknown[];
+  };
+  await rowsApi.dispose();
+  expect(stored.problems).toEqual([]);
+  expect(stored.rows).toHaveLength(1);
+  expect(stored.rows[0].ground_truth).toEqual({ sentiment: 'positive' });
+  expect(stored.rows[0].input.body).toBeTruthy();
 });
 
 test('6. the agent surface: the persona rides the session and the pane shows the editor', async ({ page }) => {

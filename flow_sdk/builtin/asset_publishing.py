@@ -78,7 +78,6 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE  # noqa: PLC0415
     from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
 
@@ -122,11 +121,7 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     try:
         repo = await HubProxy.call("POST", "project", project.id, "hosted_repo", payload={})
     except HubError as exc:
-        if exc.kind is HubFailureKind.NOT_CONFIGURED:
-            raise AssetPublishError(AssetPublishCode.HUB_PUBLISH_FAILED, "Cloud login required") from exc
-        raise AssetPublishError(
-            AssetPublishCode.HUB_PUBLISH_FAILED, "The hub has no repository for this project"
-        ) from exc
+        raise AssetPublishError.from_hub(exc, "The hub could not open this project's repository") from exc
     if not repo or not repo.get("clone_url"):
         raise AssetPublishError(AssetPublishCode.HUB_PUBLISH_FAILED, "The hub has no repository for this project")
 
@@ -137,9 +132,13 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     last_tree = await asyncio.to_thread(last_synced_tree, repo_id, rel_path) or (
         previous.tree if previous is not None and previous.rel_path == rel_path else None
     )
+    from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
+
     mirror = HubRepoMirror(
         root=mirror_root(repo_id),
-        clone_url=repo["clone_url"],
+        # This desktop's own hub URL, as ``publish_files_to_hub`` uses: the hub's ``clone_url``
+        # carries ITS external host, which a box behind a proxy (Docker) cannot reach.
+        clone_url=hub_graph_url("git_repo", repo_id, "git"),
         branch=repo.get("default_branch") or "main",
         token=token,
     )
@@ -157,10 +156,8 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     try:
         hub_result = await HubProxy.call("POST", "project", action="publish_asset", payload=payload)
     except HubError as exc:
-        raise AssetPublishError(
-            AssetPublishCode.HUB_PUBLISH_FAILED,
-            "The asset reached the project repository, but the hub could not register it",
-            data={"rel_path": rel_path, "tree": synced.tree},
+        raise AssetPublishError.from_hub(
+            exc, "The hub refused to register this asset", data={"rel_path": rel_path, "tree": synced.tree}
         ) from exc
     hub_result = hub_result or {}
 

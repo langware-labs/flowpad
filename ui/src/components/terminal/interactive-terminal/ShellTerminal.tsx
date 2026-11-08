@@ -1,4 +1,4 @@
-import { registerTerminalLinks } from './terminal-links';
+import { registerJoinedCopy, registerTerminalLinks } from './terminal-links';
 import { useLinks } from '@src/components/links/LinkMenu';
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
@@ -64,6 +64,7 @@ export const ShellTerminal = forwardRef<ShellTerminalHandle, ShellTerminalProps>
     try {
       xterm.open(container);
       registerTerminalLinks(xterm, terminalLinks.handlers);
+      registerJoinedCopy(xterm);
       // A plain shell emits logical order on every platform — no CLI here that
       // pre-reverses, so this terminal always takes the browser-bidi contract.
       applyRtlGridContract(container, 'unknown');

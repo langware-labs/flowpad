@@ -115,7 +115,7 @@ test.describe('Milkdown selection toolbar', () => {
     const toolbar = page.locator('[data-testid="selection-toolbar"]');
     await expect(toolbar).toBeVisible({ timeout: adjusted(5_000) });
 
-    // Exactly 5 buttons with these titles (the wand "Change this…" sits after the format buttons).
+    // Exactly 5 buttons: the 4 format buttons, then "Change this…" (7cc1a9acc).
     const titles = await toolbar.locator('button').evaluateAll((els) => els.map((b) => b.getAttribute('title')));
     expect(titles.length).toBe(5);
     expect(titles[0]).toBe('Bold');

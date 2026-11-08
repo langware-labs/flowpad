@@ -36,5 +36,5 @@ cd ui && FLOW_INSTANCE=auto-7 VITE_PORT=5056 AUTOMATIONS_SHOTS=/tmp/stream-inbox
 - The stream inbox row wears "⚡ Billing helper"; the message shows the chip; the lifecycle line reads
   *Handling* then *Replied* (the mock worker answers at once).
 - The chip opens the session (`/dock/process-runs?run=…`).
-- The top-bar ⚡ carries a count; the list row shows "N caught · M passed over" and a mark.
+- The automations list row shows "N caught · M passed over" and a mark.
 - No page errors; no `/graph/trigger` response at or above 400 (404 and 422 excepted).

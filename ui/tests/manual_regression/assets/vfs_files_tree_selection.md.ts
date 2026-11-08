@@ -66,18 +66,29 @@ test('a VFS editor URL selects the real file in the Files tree', async ({ page, 
     await expect(editorHeader.getByText('interface.md', { exact: true })).toHaveCount(0);
     await expect(editorHeader.locator('[data-entity-location]')).toHaveCount(0);
     await expect(editorHeader.getByTestId('markdown-editor-copy-content')).toBeVisible();
-    await expect(editorHeader.getByTestId('asset-discuss-in-vibe')).toHaveCount(0);
+    // Discuss is the viewer's one Chat toggle (983df222b), not a top-bar action.
+    await expect(page.getByTestId('viewer-chat-toggle')).toHaveCount(1);
     await editorHeader.getByTestId('editor-mode-chip-editor').click();
     const embeddedToolbar = editorHeader.getByTestId('milkdown-toolbar');
     await expect(embeddedToolbar).toBeVisible();
     await expect(embeddedToolbar).toHaveAttribute('data-embedded', 'true');
     await expect(editorHeader.getByTestId('milkdown-toolbar-table')).toBeVisible();
     await expect(page.locator('[data-testid="milkdown-toolbar"][data-embedded="false"]')).toHaveCount(0);
+    // The open file shows under Documents and under Files; the tree highlights it ONCE, in the
+    // first root that holds it (e30dce41f), and the highlighted row offers "Show in Files".
     const assetsTree = page.getByTestId('navigator-panel-assets').getByRole('tree');
-    // The file is an indexed entity by now, so the tree highlights it where the entity lives (under
-    // Documents) rather than on its plain Files row: the selected row is the file, wherever it sits.
-    await expect(assetsTree.locator('[role="treeitem"][aria-selected="true"]')).toContainText(/interface\.md/i);
-    await expect(assetsTree.locator('[data-browseable-id^="fs-root:"]').getByRole('treeitem', { name: /interface\.md/i })).toBeVisible();
+    const selected = assetsTree.locator('[role="treeitem"][aria-selected="true"]');
+    await expect(selected).toHaveCount(1);
+    await expect(selected).toContainText('interface.md');
+    const filesRoot = assetsTree.locator('[data-browseable-id^="fs-root:"]');
+    const filesRow = filesRoot.getByRole('treeitem', { name: /interface\.md/i });
+    await expect(filesRow).toHaveAttribute('aria-selected', 'false');
+    const reveal = selected.getByTestId('browseable-toolbar-reveal');
+    await expect(reveal).toHaveAttribute('aria-label', 'Show in Files');
+    await reveal.click();
+    // The highlight moves to the real file in the Files tree, still exactly one.
+    await expect(filesRow).toHaveAttribute('aria-selected', 'true');
+    await expect(selected).toHaveCount(1);
   } finally {
     await request.delete(`${API}/api/v1/graph/project/${projectId}`).catch(() => undefined);
     await fs.rm(root, { recursive: true, force: true });

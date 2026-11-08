@@ -37,6 +37,7 @@ from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, ways
 from flow_sdk.schema.data_spec.project_setup_spec import (
     ONE_OF_INPUT,
+    REQUIREMENT_AUTOMATION,
     REQUIREMENT_DEPENDENCY,
     REQUIREMENT_GAP,
     REQUIREMENT_PACK,
@@ -169,6 +170,8 @@ class _Needs:
     oauth: dict[str, _Connection] = field(default_factory=dict)
     gaps: list[SetupRequirementSpec] = field(default_factory=list)
     sources: list[Any] = field(default_factory=list)
+    #: Dependencies Flowpad cloned that are behind their remote — updates waiting, never a to-do.
+    updates: int = 0
 
     def needs_credential(self, spec: Any) -> bool:
         """Whether a root still needs the credential row ``spec`` — what keeps a derived row alive."""
@@ -250,7 +253,7 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
             kind=REQUIREMENT_PACK, credential_kind="oauth", name=row.name, title=row.title, typeid=row.typeid,
             provider=row.provider, scopes=list(row.scopes), help_url=row.help_url, **_why(row),
             satisfied=row.state == "connected", used_by=_names(roots), note=note.get(row.state, ""),
-            skipped=row.setup_skipped, **always,
+            skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
         )
     # Required when any value is MUST or ONE_OF, and then only those are asked (a ONE_OF group as one choice);
     # a credential of OPTIONAL values alone is listed as optional, with those.
@@ -262,7 +265,7 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
         setup_choice=row.setup_choice, ways=dict(row.ways),
         satisfied=row.state == "connected", used_by=_names(roots), required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
-        skipped=row.setup_skipped, **always,
+        skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
     )
 
 
@@ -391,6 +394,7 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
     mount = str(getattr(project, "fs_storage_mount_path", "") or "")
     dependencies = []
     for dep in await project.dependencies():
+        needs.updates += dep.behind > 0
         if dep.state not in ("missing", "unreachable", "not_found"):
             continue
         key = project_dependencies.requirement_key(dep)
@@ -487,7 +491,8 @@ def compile_setup(
         elif req.is_oauth:
             provider = req.provider or req.name
             scopes = [arg for s in req.scopes for arg in ("--scope", s)]
-            checked_here = {"requirement_step": f"connection:{provider}"}
+            # The scopes ride along: a sign-in that cannot do what its requesters need is not set up yet.
+            checked_here = {"requirement_step": f"connection:{provider}::{','.join(req.scopes)}"}
             add({
                 "name": f"connect-{provider}", "label": f"Connect {req.title or provider}",
                 "description": f"{provider} is connected and its grant covers what {', '.join(req.used_by)} need.",
@@ -574,7 +579,7 @@ def unsatisfied(req: SetupRequirementSpec) -> bool:
         return req.satisfied is False
     if req.kind == REQUIREMENT_PACK:
         return bool(req.missing)
-    if req.kind in (REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
+    if req.kind in (REQUIREMENT_DEPENDENCY, REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP, REQUIREMENT_AUTOMATION):
         return req.satisfied is False
     return False
 
@@ -598,16 +603,19 @@ async def readiness_of(project: "Project", deployment_id: str = "", *,
     tree node (``node``, the ``root`` that runs it alone) — work the footer's poll does not pay for."""
     requirements, needs = await _collect(project, deployment_id)
     if not deployment_id:  # what runs HERE: a source in setup, a web app that does not answer (and, asked, what does)
-        requirements += _beyond_credentials(
-            await _running_here(project, needs.sources, include_ready=include_ready), requirements)
+        running, automations = await asyncio.gather(
+            _running_here(project, needs.sources, include_ready=include_ready),
+            _automations_here(project, include_ready=include_ready))
+        requirements += _beyond_credentials(running, requirements) + automations
     if include_ready:
         from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415 — derive imports this module
 
-        requirements = [r if r.kind == REQUIREMENT_GAP else r.model_copy(update={"node": requirement_node_id(r)})
-                        for r in requirements]
+        # A gap and an automation have no tree node: nobody can run a gap, and an automation is a choice.
+        requirements = [r if r.kind in (REQUIREMENT_GAP, REQUIREMENT_AUTOMATION)
+                        else r.model_copy(update={"node": requirement_node_id(r)}) for r in requirements]
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
-        project_id=str(project.id), ready=not left, to_do=left,
+        project_id=str(project.id), ready=not left, to_do=left, updates=needs.updates,
         optional=[r for r in requirements if not r.required and r.skipped is None and unsatisfied(r)],
         skipped=[r for r in requirements if r.skipped is not None and r.kind != REQUIREMENT_GAP],
         gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],
@@ -678,6 +686,58 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
         for app, rec, ok in zip(apps, records, answers) if include_ready or not ok
     ]
     return out
+
+
+async def _automations_here(project: "Project", *, include_ready: bool = False) -> list[SetupRequirementSpec]:
+    """The automations the project RECOMMENDS, as setup rows to decide with Enable / Disable (``decide_automation``):
+    one row per package (the agent or wizard whose folder holds them; on or off together), and one row per rule
+    that has no parent. A row is left while any of its rules is undecided here (``Trigger.decided``);
+    ``include_ready`` lists the decided ones as set up too. Flowpad's own, rules made here (no file) and ones the
+    project does not recommend are never rows."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    rules = [rule for rule in await Trigger.get_all({"match": {"project_id": str(project.id)}})
+             if rule.asset_ref and rule.recommended and not rule.is_builtin]
+    by_parent: dict[str, list] = {}
+    for rule in rules:
+        by_parent.setdefault(str(rule.parent_type_id or ""), []).append(rule)
+    rows = [_automation_row(rule) for rule in by_parent.pop("", [])]
+    rows += await asyncio.gather(*(_automation_group_row(p, group) for p, group in by_parent.items()))
+    return [row for row in rows if include_ready or not row.satisfied]
+
+
+def _automation_row(rule: Any) -> SetupRequirementSpec:
+    return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=str(rule.name), title=str(rule.name),
+                                typeid=str(rule.typeid), used_by=[PROJECT], satisfied=bool(rule.decided),
+                                needed_for=str(rule.description or ""),
+                                note="" if not rule.decided else ("on here" if rule.enabled else "off here"))
+
+
+async def _automation_group_row(parent_typeid: str, rules: list) -> SetupRequirementSpec:
+    """One setup step for a package (a parent's automations): its name and description; on/off together."""
+    from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
+
+    parent = await Trigger.get_by_typeid(parent_typeid)
+    decided = all(rule.decided for rule in rules)
+    note = "" if not decided else ("on here" if all(rule.enabled for rule in rules) else "off here")
+    name = str(getattr(parent, "name", "") or parent_typeid)
+    return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=name, title=name, typeid=parent_typeid,
+                                used_by=[PROJECT], satisfied=decided, note=note,
+                                needed_for=str(getattr(parent, "description", "") or ""))
+
+
+async def decide_automation(project: "Project", typeid: str, on: bool) -> None:
+    """Turn the project's automations on or off HERE — the setup window's Enable / Disable. ``typeid`` is one
+    rule with no package, or a package (its parent): every rule of it, together."""
+    from flow_sdk.builtin.trigger import Trigger, set_package_on, set_trigger_on  # noqa: PLC0415
+
+    rule = await Trigger.get_by_typeid(typeid)
+    if isinstance(rule, Trigger):
+        if str(rule.project_id or "") != str(project.id):
+            raise SkipRefused("That automation is not part of this project.")
+        await set_trigger_on(rule, on)
+    elif not await set_package_on(typeid, on, project_id=str(project.id)):
+        raise SkipRefused("That automation is not part of this project.")
 
 
 def setup_run_address(project_id: str, root: str = "") -> str:
@@ -774,6 +834,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         add_detached_done_callback(task, _log_failure)
         add_detached_done_callback(task, functools.partial(_release_control, key, control))
         add_detached_done_callback(task, functools.partial(_forget_load, pid, root))
+        add_detached_done_callback(task, functools.partial(_status_after_run, pid))
         _RUNS[key] = task
     return setup_run_address(pid, root)
 
@@ -810,7 +871,14 @@ async def requirement_step(project_id: str, which: str, *, check: bool) -> tuple
         from flow_sdk.builtin.data_source import connection_need  # noqa: PLC0415
 
         need = await connection_need(provider)
-        return (True, "Connected") if need is None else (False, need.detail)
+        if need is not None:
+            return False, need.detail
+        from flow_sdk.core.oauth.provider_registry import grant_gap, missing_granted  # noqa: PLC0415
+
+        # Checked against what the provider GRANTED, when that is known: a read-only grant cannot write back.
+        if missing := await missing_granted(provider, [s for s in scopes.split(",") if s]):
+            return False, grant_gap(missing)
+        return True, "Connected"
     if kind != "credential":
         return False, f"unknown requirement step {which!r}"
     try:
@@ -907,6 +975,14 @@ def _forget_load(project_id: str, root: str, _task: "asyncio.Task") -> None:
     from flow_sdk.core.setup.load import forget  # noqa: PLC0415
 
     forget(project_id, root)
+
+
+def _status_after_run(project_id: str, _task: "asyncio.Task") -> None:
+    """A run of the project ended: what it set up (a sign-in among them) is read again."""
+    from flow_sdk.builtin.credential_status import forget_signins  # noqa: PLC0415
+
+    forget_signins()
+    _status_changed(project_id)
 
 
 def _log_failure(task: "asyncio.Task") -> None:
@@ -1006,6 +1082,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
             raise SkipRefused(req.why_not_always or f"{req.name} cannot be removed from this project")
         await _uninstall(project, req.roots)
         _skip_live(project, req, "removed from the project")
+        _status_changed(str(project.id))
         return
     if scope != SKIP_LOCAL:
         raise SkipRefused(f"skip {scope!r}? it is {SKIP_LOCAL!r} or {SKIP_ALWAYS!r}")
@@ -1015,6 +1092,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
     else:
         await write_setup_skip(await _record_of(req), mark)
     _skip_live(project, req, skip_detail(mark))
+    _status_changed(str(project.id))
 
 
 async def skip_asking(run: str, step: str, *, by: str = "") -> bool:
@@ -1055,6 +1133,14 @@ async def unskip_requirement(project: "Project", typeid: str, *, name: str = "")
         await write_setup_skip(project, {k: v for k, v in (project.setup_skipped or {}).items() if k != key})
     else:
         await write_setup_skip(await _record_of(req), None)
+    _status_changed(str(project.id))
+
+
+def _status_changed(project_id: str) -> None:
+    """What this project's setup status reads changed: its stored answer is refreshed (``core/project_status``)."""
+    from flow_sdk.core.project_status import SETUP, mark_stale  # noqa: PLC0415
+
+    mark_stale(project_id, [SETUP])
 
 
 async def _delete_credential_staged(mount: Path, record: Any) -> None:

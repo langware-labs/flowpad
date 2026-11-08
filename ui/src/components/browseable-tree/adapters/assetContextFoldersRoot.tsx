@@ -138,7 +138,13 @@ function typeRowChildren(dir: string, typeName: string, selfId: string) {
   };
 }
 
-/** The per-type rows for one menu node: type, accumulated count, lazy entities.
+/** The per-type rows for one menu node: type, the count of what THIS folder holds,
+ *  lazy entities.
+ *
+ *  The badge is `own_count` — exactly what expanding lists. The subtree total
+ *  (`count`) is not this row's to show: the nested folders that hold the rest
+ *  are rows of their own, each badged with its own count. A type with nothing in
+ *  this folder gets no row here, so a row never expands to "Empty".
  *
  *  `visibleTypes` is the SAME mode-filtered set the top-level type rows are
  *  built from, so a type hidden in the current view mode (e.g. a dev-only one
@@ -147,7 +153,7 @@ function typeRowChildren(dir: string, typeName: string, selfId: string) {
 function typeRows(dir: string, node: ProjectMenuNode | undefined, visibleTypes?: ReadonlySet<string>): Browseable[] {
   if (!node) return [];
   return (node.groups ?? [])
-    .filter((g) => g.count > 0 && (!visibleTypes || visibleTypes.has(g.type_name)))
+    .filter((g) => g.own_count > 0 && (!visibleTypes || visibleTypes.has(g.type_name)))
     .map((g) => {
       const selfId = contextTypeNodeId(dir, g.type_name);
       const Icon = iconForType(g.type_name);
@@ -156,15 +162,13 @@ function typeRows(dir: string, node: ProjectMenuNode | undefined, visibleTypes?:
         kind: 'asset-type',
         label: labelForType(g.type_name),
         icon: <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
-        // The count is accumulated over the subtree; `own_count` is what lives
-        // in THIS folder, which is what expanding actually lists.
         badge: (
           <CountChip
-            count={g.count}
-            title={g.count === g.own_count ? undefined : `${g.own_count} here, ${g.count} including subfolders`}
+            count={g.own_count}
+            title={g.count === g.own_count ? undefined : `${g.own_count} here, ${g.count} including dependencies`}
           />
         ),
-        hasChildren: g.own_count > 0,
+        hasChildren: true,
         listChildren: typeRowChildren(dir, g.type_name, selfId),
         pointer: null,
       } satisfies Browseable;

@@ -399,6 +399,9 @@ async def select_llm_source(payload: dict) -> dict:
                 name=str(payload.get("name") or ""),
                 public=public,
                 hub_origin=str(payload.get("hub_origin") or "") if public else "",
+                # A public budget is unlisted to a signed-out box: the sizes the hub sends with it are
+                # the only ones a spawn will ever see.
+                tiers=payload.get("tiers") if isinstance(payload.get("tiers"), dict) else None,
             )
         cap.auth_mode, cap.api_provider = "api", LMApiProvider.FLOWPAD.value
 

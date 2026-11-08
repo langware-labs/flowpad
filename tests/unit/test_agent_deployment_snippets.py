@@ -1,6 +1,6 @@
 """``docs/snippets/agent-deployment.md``, run as written.
 
-§1 places an agent here and on e2b; §3 reads the placement back; §4 pauses it; §7 launches it here twice
+§1 places an agent's project here (the agent as main) and on e2b; §3 reads the placement back; §4 pauses it; §7 launches it here twice
 (two running deployments, each with its chat); §6 is a loop of the
 caller's own over two of an agent's channels (the WhatsApp and Telegram doubles), routing invoices to
 a second agent in one session per customer — driven by a mock worker until every reply has left.
@@ -35,6 +35,17 @@ def home(fresh_user_scope):
     return fresh_user_scope
 
 
+async def _project(name: str) -> str:
+    from flow_sdk.builtin.project import Project
+    import tempfile
+    from pathlib import Path
+
+    root = Path(tempfile.mkdtemp(prefix=f"{name}-"))
+    project = Project(name=f"{name}-{root.name}", fs_storage_mount_path=str(root))
+    await project.save()
+    return str(project.id)
+
+
 async def _placed() -> dict:
     """§1, both fences, in one namespace — what §3 and §4 read on. The session's test DB holds any
     "researcher" an earlier test placed; the fences find theirs by name, so exactly one must answer."""
@@ -42,7 +53,7 @@ async def _placed() -> dict:
 
     for other in await Agent.get_all({"name": "researcher"}):
         await other.delete()
-    ns = await run_fence(fence_under(doc(DOC), "1."), {}, filename=f"{DOC} §1")
+    ns = await run_fence(fence_under(doc(DOC), "1."), {"PROJECT": await _project("research")}, filename=f"{DOC} §1")
     return await run_fence(fence_under(doc(DOC), "1.", nth=1), ns, filename=f"{DOC} §1b")
 
 
@@ -50,13 +61,14 @@ async def test_1_place_here_and_there():
     ns = await _placed()
     here, there, agent = ns["here"], ns["there"], ns["agent"]
     assert here.is_local and there.target.provider == "e2b"
+    assert here.parent_type_id == there.parent_type_id == f"project-{agent.project_id}"
     assert {d.id for d in await agent.deployments()} == {here.id, there.id}
 
 
 async def test_3_read_a_placement():
     ns = await run_fence(fence_under(doc(DOC), "3."), await _placed(), filename=f"{DOC} §3")
     assert ns["d"].id == ns["here"].id
-    assert (await ns["d"].agent()).id == ns["agent"].id
+    assert (await ns["d"].main_agent()).id == ns["agent"].id
 
 
 async def test_4_stop_the_machine_keep_the_row():
@@ -91,8 +103,11 @@ async def test_6_serve_it_your_way(monkeypatch, tmp_path):
     with double_for("whatsapp") as wa, double_for("telegram") as tg:
         for provider, double in (("whatsapp", wa), ("telegram", tg)):
             monkeypatch.setattr(DataDriver.loaded(provider), "credentials_for", double.credentials)
-        support = Agent(name="support-bot", worker_type="claude", system_prompt="You answer Acme customers.")
-        billing = Agent(name="billing-bot", worker_type="claude", system_prompt="You fix Acme invoices.")
+        # Each in a project of its own: one local deployment per project, so their sessions stay apart.
+        support = Agent(name="support-bot", worker_type="claude", system_prompt="You answer Acme customers.",
+                        project_id=await _project("support"))
+        billing = Agent(name="billing-bot", worker_type="claude", system_prompt="You fix Acme invoices.",
+                        project_id=await _project("billing"))
         await support.save()
         await billing.save()
         whatsapp_source = await _owned_source("whatsapp", wa, support)
@@ -137,7 +152,7 @@ async def test_7_run_it_on_this_computer():
     """Two launches, ONE running deployment with its chat channel — the processes themselves are
     ``tests/long_tests/test_local_deployment_process.py``."""
     ns = await run_fence(fence_under(doc(DOC), "7."), await _placed(), filename=f"{DOC} §7")
-    assert ns["here"].id == ns["again"].id, "one local deployment per agent — the placement §1 made, now running"
+    assert ns["here"].id == ns["again"].id, "one local deployment per project — the one §1 made, now running"
     assert ns["chat"].backend.type == "channel"
 
 
@@ -159,11 +174,12 @@ async def test_2_start_a_session_on_a_placement(mock_driver, tmp_path):
 
 
 async def test_5_a_machine_of_its_own(monkeypatch):
-    """§5 as written; the hub's legs — publish the agent, plan its placement, boot its machine —
+    """§5 as written; the hub's legs — publish the project and agent, plan its placement, boot its machine —
     answered by a double. The agent needs nothing stored, so the readiness gate lets it through."""
     import flow_sdk.auth
     from flow_sdk.builtin import cloud_deploy
     from flow_sdk.builtin.agent import Agent
+    from flow_sdk.builtin.project import Project
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
 
     await _placed()
@@ -177,20 +193,26 @@ async def test_5_a_machine_of_its_own(monkeypatch):
         published.append((self.name, str(actor)))
         return True
 
+    async def project_on_hub(self):
+        return False
+
     async def plan(method, etype, eid=None, action=None, *, payload=None, **_):
-        assert (method, action) == ("POST", "plan_deployment")
+        assert (method, etype, action) == ("POST", "project", "plan_deployment")
         return {"deployment": {"id": "0f8d0356-504f-466c-a0e9-ee2ac90e4a4b", "name": "researcher (e2b)",
-                               "environment": payload["environment"],
-                               "target": {"provider": "e2b", "scope": "agent"}}}
+                               "environment": payload["environment"], "parent_type_id": f"project-{eid}",
+                               "main_agent_id": payload["main_agent_id"],
+                               "target": {"provider": "e2b", "scope": "machine"}}}
 
     monkeypatch.setattr(flow_sdk.auth, "login", login)
     monkeypatch.setattr(Agent, "ensure_on_hub", ensure_on_hub)
+    monkeypatch.setattr(Project, "ensure_on_hub", project_on_hub)
     monkeypatch.setattr(HubProxy, "call", staticmethod(plan))
     machine = asyncio.Event()
 
-    async def deploy(entity, environment=None, *, provider=None, require=None):
+    async def deploy(entity, environment=None, *, provider=None, deployment_id=None, main_agent_id=None, **_):
+        assert entity.type == "project" and main_agent_id.startswith("agent-")
         machine.set()  # the machine starts after the answer
-        return {"entity": entity.name, "environment": environment or "production"}
+        return {"deployment_id": deployment_id, "entity": entity.name, "environment": environment or "production"}
 
     monkeypatch.setattr(cloud_deploy, "deploy_entity_to_cloud", deploy)
     ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")

@@ -25,6 +25,8 @@ export interface EntityActionsToolbarProps {
    * 'compact' (default) renders every action as a same-sized icon button.
    */
   variant?: Variant;
+  /** Slot for caller-supplied actions before the toolbar's own (the bar's Record screen). */
+  leading?: React.ReactNode;
   /** Slot for caller-supplied extra trailing actions (e.g. <ExportEntityButton>). */
   trailing?: React.ReactNode;
   /**
@@ -51,6 +53,7 @@ export function EntityActionsToolbar({
   favoriteTitle,
   favoriteIcon,
   variant = 'compact',
+  leading,
   trailing,
   hideFavorite = false,
   onShared,
@@ -95,6 +98,7 @@ export function EntityActionsToolbar({
 
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
+      {leading}
       <CloudAssetPublishButton typeId={typeId} variant={variant} />
       <ShareButton
         variant={variant}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fsManager, GitWorkdir, type GitConflict } from '@sdk';
-import { getGitStatus } from '@src/lib/git-status-cache';
+import { fsManager, type GitConflict } from '@sdk';
+import { getGitFetch, getGitStatus } from '@src/lib/git-status-cache';
 
 export interface UseGitChangeCountResult {
   /** Total changed + untracked files, or null when unknown / no workdir. */
@@ -36,7 +36,8 @@ const POLL_MS = 10 * 60 * 1000; // 10 minutes
  * ``behind`` needs the network, which ``status`` never touches: on mount,
  * project switch, poll and explicit refresh — not on every file write — a
  * background ``git fetch`` follows the status, and its answer moves
- * ``behind``. The pill never waits on it.
+ * ``behind``. The pill never waits on it. Mount and switch reuse a fetch from
+ * the last poll interval (``getGitFetch``); poll and refresh force a new one.
  */
 export function useGitChangeCount(computeNodeId: string | null, workdir: string | null): UseGitChangeCountResult {
   const [count, setCount] = useState<number | null>(null);
@@ -87,18 +88,22 @@ export function useGitChangeCount(computeNodeId: string | null, workdir: string 
     [computeNodeId, workdir],
   );
 
-  const fetchRemote = useCallback(async () => {
-    const request = ++latestFetchRef.current;
-    if (!computeNodeId || !workdir) return;
-    const result = await new GitWorkdir(workdir, computeNodeId).fetch().catch(() => null);
-    if (request !== latestFetchRef.current || !result || result.error) return;
-    setBehind(result.behind ?? 0);
-  }, [computeNodeId, workdir]);
+  const fetchRemote = useCallback(
+    async (force: boolean) => {
+      const request = ++latestFetchRef.current;
+      if (!computeNodeId || !workdir) return;
+      // Shared and reused across mounts: a project switch does not hit the network again.
+      const result = await getGitFetch(computeNodeId, workdir, { force });
+      if (request !== latestFetchRef.current || !result || result.error) return;
+      setBehind(result.behind ?? 0);
+    },
+    [computeNodeId, workdir],
+  );
 
   const checkAll = useCallback(
     async (force: boolean) => {
       await fetchStatus(force);
-      void fetchRemote();
+      void fetchRemote(force);
     },
     [fetchStatus, fetchRemote],
   );

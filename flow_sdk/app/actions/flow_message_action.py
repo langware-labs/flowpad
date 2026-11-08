@@ -1025,7 +1025,7 @@ async def _self_heal_gone_invitation(inv_id: str, *, context: str) -> ApiFailRes
     try:
         orphan = await LocalInvitation.get_one({"id": inv_id})
         if orphan is not None:
-            await orphan.delete()
+            await orphan.retire("revoked")
     except Exception as del_e:  # noqa: BLE001
         logger.warning("[%s] orphan local delete failed inv=%s: %s", context, inv_id[:8], del_e)
     return ApiFailResponse(
@@ -1419,9 +1419,13 @@ async def handle_invitation_decline(
         if msg.startswith("conversation-"):
             target_conv_id = msg.removeprefix("conversation-")
         try:
-            await inv.delete()
+            if inv.target_type:
+                # A share's conversation is the 1:1 thread with the person who shared — other shares live
+                # there too, so it stays.
+                target_conv_id = None
+            await inv.retire("declined", someone_typeid)
         except Exception as e:  # noqa: BLE001
-            logger.warning("[invitation-decline] local inv delete failed: %s", e)
+            logger.warning("[invitation-decline] local inv update failed: %s", e)
     if target_conv_id:
         try:
             conv = await Conversation.get_one({"id": target_conv_id})
@@ -2041,6 +2045,11 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         if _conv_id:
             payload["parent_type_id"] = f"{Conversation.get_type()}-{_conv_id}"
         fm = FlowMessage.model_validate(payload)
+        # The same derived fields materialize_flow_message fills on every other arrival path: this pull is the
+        # one a reply takes when it lands before the live push (an IT machine answering within a second).
+        from flow_sdk.builtin.flow_message import derive_it_reply  # noqa: PLC0415
+
+        derive_it_reply(fm, raw)
         await fm.save()
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
@@ -2447,7 +2456,6 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     """
     from flow_sdk.app.actions.notification_action import (
         _append_message_to_conversation,
-        _notify_ui_conversation_updated,
         _send_conversation_message_header,
     )
     from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
@@ -2507,8 +2515,6 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         fm_id=fm.id,
         someone_typeid=someone_typeid,
     )
-
-    _notify_ui_conversation_updated(conv.id, "", fm.id)
 
     if is_remote_send:
         conv.kick_delivery()  # the body, if it has one — owed on the row until the hub has it
@@ -2641,7 +2647,31 @@ def _invitation_common_fields(hub_inv: dict) -> dict:
         "expiration_at": expiration_at or None,
         "sender_user_id": inviter.get("user_id"),
         "sender_name": inviter.get("name"),
+        **_invitation_answer_fields(hub_inv),
     }
+
+
+def _invitation_answer_fields(hub_inv: dict) -> dict:
+    """What the share is and what became of it, when the hub says: ``status`` / ``resolved_at``, and
+    the shared entity (``target``) — which a share carried in a conversation now also names. Keys the
+    hub leaves out are left out here, so an older hub never blanks what a row already knows."""
+    from flow_sdk.builtin.invitation import INVITATION_STATES  # noqa: PLC0415
+    from flow_sdk.utils.serialization import iso_to_datetime  # noqa: PLC0415
+
+    out: dict = {}
+    if hub_inv.get("status") in INVITATION_STATES:
+        out["status"] = hub_inv["status"]
+    if hub_inv.get("resolved_at"):
+        try:
+            out["resolved_at"] = iso_to_datetime(hub_inv["resolved_at"])
+        except ValueError:
+            pass
+    target = hub_inv.get("target")
+    if isinstance(target, dict) and target.get("type") and target.get("id"):
+        out.update(target_type=target["type"], target_id=target["id"], target_name=target.get("name"))
+        if target.get("roles"):
+            out["target_roles"] = target["roles"]
+    return out
 
 
 def _membership_cls(target_type: str | None):
@@ -3350,20 +3380,26 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
             # Children-list route, primary source: returns the conversation's
             # FlowMessage children (with updated_date) the caller may see.
             # the hub url builder requires an action segment before sub_path.
-            children = await HubProxy.try_call(
-                "GET",
-                BuiltinEntityType.CONVERSATION,
-                conv_id,
-                action="flow_message",
-            )
-            # try_call returns the unwrapped `data` when 200 and None on any
-            # failure. None ⇒ we cannot prove anything — abort without
-            # touching local state. An EMPTY LIST is a real answer ("this
-            # conversation has zero messages you may see") and still goes
-            # through the authoritative reconcile below.
-            if children is None:
+            try:
+                children = await HubProxy.call(
+                    "GET",
+                    BuiltinEntityType.CONVERSATION,
+                    conv_id,
+                    action="flow_message",
+                    strict=True,
+                )
+            except HubError as e:
+                # Any failure ⇒ we cannot prove anything — abort without touching
+                # messages. One answer is certain, though: the hub holds no row here
+                # this account can reach. For a conversation started here that is a
+                # wrong ``remote`` flag (a share that took a 409 on someone else's
+                # row), not a lost conversation: stop claiming the hub counterpart.
+                if e.is_target_missing and (conv := await Conversation.get_one({"id": conv_id})):
+                    await conv.heal_if_fake_remote("hub has no row here this account can reach")
                 logger.warning("[conv-msg-fetch] %s: children listing unavailable, skipping", conv_id[:8])
                 return False
+            # An EMPTY LIST is a real answer ("this conversation has zero messages
+            # you may see") and still goes through the authoritative reconcile below.
             child_list = [m for m in rows_of(children) if m.get("id")]
             child_list = fetch_order(child_list)
             synced = 0
@@ -3828,14 +3864,11 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     if not hub_auth_available():
         return await _local_only_conversation_list(auth_required=True, user_id=user_id)
 
-    # Bulk-read the entire local mirror ONCE as the reconcile cache. This is the
-    # only consumer of ``local_index`` — the returned list is the separate,
-    # unfiltered ``merged`` below, so output is unaffected. (Must NOT filter by
-    # ``created_by``: remote conversations carry the hub owner's id, not the local
-    # user's, so a ``created_by`` filter returns nothing — emptying the cache and
-    # forcing a per-row get_one + a spurious "stale" verdict for every conv.)
-    local_list = await Conversation.get_all({})
-    local_index = {c.id: c for c in local_list if c.id}
+    # The reconcile cache: conv id -> the local row. Filled batch by batch by ``reconcile_rows``
+    # (``Conversation.mirror_batch`` reads each batch's rows under the writer lock), which is every
+    # row ``reconcile`` looks up — a bulk read of the whole mirror up front was replaced by those
+    # reads before ``reconcile`` ever saw it, and cost a full hydration of every conversation.
+    local_index: dict[str, Conversation] = {}
 
     # The conversation list is walked page by page (the hub pages every list); ``invitation/pending``
     # is an action answering one plain list.
@@ -3989,7 +4022,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
             # On the UI path the HTTP response is followed by one local query
             # refetch, so per-entity broadcasts are suppressed while reconciling
             # the batch: emitting every historical invitation one by one
-            # continuously reorders stream inbox rows and can make an otherwise enabled
+            # continuously reorders stream StreamInbox rows and can make an otherwise enabled
             # action physically unclickable until the catch-up finishes. A
             # backend-initiated sweep has no refetch behind it — see
             # ``announce_invitations``.
@@ -4009,34 +4042,42 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # a pending invitation) means it was deleted hub-side (or the local
     # user lost access). Reconcile by hard-deleting locally so the next
     # render reflects reality.
-    async def prune() -> list[str]:
+    async def prune(local_rows: Optional[list] = None) -> list[str]:
         pruned: list[str] = []
         seen_ids = {c.get("id") for c in hub_convs if c.get("id") and not c.get("deleted_at")}
         seen_ids.update(invitation_conv_ids)
-        # Re-read local state because the upsert + invitation steps may have
-        # added rows that didn't exist when we snapshotted earlier.
-        for c in await Conversation.get_all({}):
+        # The local state AFTER the upsert + invitation steps (they may have added rows): the
+        # caller's read of it when it has one, a fresh read otherwise (the deferred reconcile).
+        for c in local_rows if local_rows is not None else await Conversation.get_all({}):
             # A row a data source feeds (a help-desk ticket staff returned) is the source's to keep:
             # out of the hub list means "not in it", not "gone".
-            if c.remote and c.id and c.id not in seen_ids and not c.channel_source_id:
+            # A conversation holding invites is the record of what was shared: kept even when the hub
+            # stops listing it (a declined or revoked share leaves the person outside it).
+            if c.remote and c.id and c.id not in seen_ids and not c.channel_source_id and not c.carries_invite:
                 try:
+                    if await c.heal_if_fake_remote("absent from the hub's conversation list"):
+                        continue  # written here: never the person's data
                     await _hard_delete_local_conversation(c)
                     pruned.append(c.id)
                 except Exception as e:  # noqa: BLE001
                     logger.warning("[conv-list] prune %s failed: %s", (c.id or "?")[:8], e)
         return pruned
 
+    # ONE read of the local mirror after the upserts and invitations serves the prune and the
+    # response: the prune deletes rows (dropped below) and heals others in place (the same objects).
+    current = await Conversation.get_all({})
     pruned_ids: list[str] = []
     can_prune = hub_reachable and hub_list_complete
     if can_prune and not deferred:
-        pruned_ids = await prune()
+        pruned_ids = await prune(current)
 
     # (f) one unread reconcile for the whole batch — invitations materialized
     # in (d) and conversations pruned in (e) both change the projection.
     stream_inbox.touch("conversation-list")
 
     # return the freshly-merged list.
-    merged = await Conversation.get_all({})
+    gone = set(pruned_ids)
+    merged = [c for c in current if c.id not in gone]
     response = ApiSuccessResponse(
         data={
             "conversations": [c.model_dump(mode="json") for c in merged],
@@ -4165,6 +4206,23 @@ async def conversation_transcript() -> ApiResponse:
         return ApiSuccessResponse(data=data)
     except Exception as e:
         logger.error("[flow_message_action] conversation-transcript error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.get(action_name="attachments", types=["conversation"])
+async def conversation_attachments() -> ApiResponse:
+    """The files across one conversation, newest first (``Conversation.attachments``) — what the
+    StreamInbox row's paperclip lists; the row's number is ``Conversation.attachment_count``."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        conv = await Conversation.get_one({"id": str(request_info.target_entity_typeid.id)})
+        if conv is None:
+            return ApiFailResponse(message="conversation not found", status_code=404)
+        return ApiSuccessResponse(data=[f.model_dump(mode="json") for f in await conv.attachments()])
+    except Exception as e:
+        logger.error("[flow_message_action] attachments error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 
@@ -4317,6 +4375,7 @@ async def _prune_expired_invitations() -> None:
     accepted rows are memberships now and are never invitations to prune.
     """
     from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+    from flow_sdk.builtin.invitation import invitation_answered  # noqa: PLC0415
 
     try:
         local_invs = await LocalInvitation.get_all({})
@@ -4325,7 +4384,8 @@ async def _prune_expired_invitations() -> None:
         return
     for inv in local_invs or []:
         try:
-            if not getattr(inv, "remote", False) or inv.accepted or not inv.is_expired():
+            # Only an unanswered invitation is pruned; an answered one is the record of the share.
+            if not getattr(inv, "remote", False) or invitation_answered(inv) or not inv.is_expired():
                 continue
             await inv.delete()
             logger.info("[invitation-sync] pruned expired invitation %s", (inv.id or "")[:8])
@@ -4733,6 +4793,14 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                             f"and login are restored: {project_payload_error[:160]}"
                         )
                     )
+            else:
+                # Any other shared entity (a machine, a team, an agent…): its hub row, so the mirror is
+                # the real thing (a machine's provider, size, status) and not a name-only husk.
+                hub_row = await HubProxy.try_call(
+                    "GET", membership_target.target_type, membership_target.target_id
+                )
+                if isinstance(hub_row, dict) and hub_row.get("id") == membership_target.target_id:
+                    target_payload.update(hub_row)
             ent = await materialize_remote_membership_entity(
                 cls,
                 target_payload,
@@ -4788,9 +4856,8 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             logger.warning("[invitation-accept] bundle download failed: %s", e)
 
     # Live UI refresh: fire an explicit ``OperationType.UPDATE`` for the
-    # Conversation entity. The per-step sniffer EVENTs logged above as
-    # ``[hook_op] Unhandled event`` don't invalidate the UI's
-    # ``useEntity<Conversation>`` React-Query cache. ``notify_updated``
+    # Conversation entity so the UI's ``useEntity<Conversation>`` React-Query
+    # cache refreshes. ``notify_updated``
     # dispatches a ``DataOpMessage(op=UPDATE)`` which IS what useEntity
     # listens for.
     # The per-step events fired above (materialize, sync) don't all carry the

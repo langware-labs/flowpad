@@ -193,6 +193,22 @@ generally useful, say so and ask — don't decide by committing it.
 **Why:** a rig is sized to one change and rots the moment the code moves (the
 host-tabs A/B rig was 1,454 lines against \~157 lines of product code).
 
+## We don't take a dump on the source code (non-negotiable)
+
+Every line that lands in the tree is a line someone maintains forever. Before you
+commit, once everything passes, **clean up after yourself**:
+
+* **Tests stay proportional to the change.** Keep the few durable tests that pin the
+  behavior; cut duplicates, near-identical cases and scaffolding. Thousands of test
+  lines for a ~1k-line feature is a dump, not coverage.
+* **No rigs, fakes, stress suites or temp files** in the tree (`*_tmp*`, `zz_*`,
+  repro scripts, one-off harnesses). They live in your scratchpad.
+* **Report your footprint.** Say how many lines you added, split into product and
+  tests, and what you removed.
+
+**Why:** on 2026-11-03 one feature left ~6,800 uncommitted lines on agent-sharing-5,
+of which ~970 were product code and ~3,500 were tests and one-off rigs.
+
 ## Entity id policy (non-negotiable)
 
 **UUID v4 is the entity id. The one exception is a READ-ONLY asset, whose id may be v5 derived from its file path.** An id is a name, not a fact about the thing — it does not encode which account a source serves or which record a row mirrors. Anything that needs *that* is a **lookup on the natural key**, not id arithmetic.
@@ -251,6 +267,16 @@ Three tiers, one base:
 * **Registration is import-time, and forgetting it fails SILENTLY.** `__pydantic_init_subclass__` only fires once the module is imported; an unreachable kind resolves to `Any` — *"legal, opaque, never minted"* — so you get an untyped field and no error anywhere. Make it reachable from `register_builtin_kinds()` (`data_spec/_kinds.py`), the way `dataset_spec` is.
 
 * **The authoring form** (how a schema is written as data — `data_schema.json`, an agent's `input`/`output`) is `"string"`, `{field: shape}`, `[shape]`, plus `?shape` (optional) and `"?[shape]"` (an optional list), `enum:a|b` (closed set), `{"*": shape}` (map), and a kind name as a field (`"crm.company"` — a value or a `<kind>.id.<uuid>` reference; `"a|b"` for several kinds, reference only). Those extras are INPUT only: `to_authoring_form` renders a hand-written class back without them, and a `dict[...]` field renders ONLY on a class carrying a `spec_kind` (it short-circuits to the kind). `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
+
+## Nothing from a project runs without the user's approval (non-negotiable)
+
+**An automation's on/off belongs to the machine it runs on and is never read from or written to git.** A
+project can only *recommend* an automation (`recommended` in its `trigger.json`); one that arrives with a
+project stays off until the user turns it on here — the project's setup window offers it (Enable / Disable),
+and a `git pull` that changes it never moves the choice. The one writer is `set_trigger_on`
+(`flow_sdk/builtin/trigger.py`); the rules are in [`docs/automations.md`](docs/automations.md) "On, off and
+recommended". A machine the hub runs only for a deployed agent is the exception: the deploy was its owner's
+approval, so recommended rules are on there.
 
 ## Data sources are self-contained assets (non-negotiable)
 

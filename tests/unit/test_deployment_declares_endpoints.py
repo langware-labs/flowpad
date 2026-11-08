@@ -22,6 +22,16 @@ def declared(name, subkind="service", backend=None, **over):
     return EndpointDeclaration(name=name, subkind=subkind, protocol={"spec_kind": "api.rest"}, backend=backend, **over)
 
 
+async def _project_id() -> str:
+    """A project for the agent: a deployment places a project, its agent the main one."""
+    import tempfile
+    from pathlib import Path
+
+    from tests.unit.agent._seed import seed_project
+
+    return str((await seed_project(Path(tempfile.mkdtemp()) / "proj")).id)
+
+
 async def _local_deployment() -> Deployment:
     row = Deployment(name=f"d-{uuid.uuid4().hex[:6]}", parent_type_id=f"project-{uuid.uuid4()}",
                      target={"provider": "local", "scope": "m"})
@@ -66,7 +76,7 @@ async def test_a_declaration_with_no_backend_yet_waits_for_whoever_places_it():
 
 
 async def test_an_agent_deployment_declares_its_chat():
-    agent = await Agent(name=f"decl-{uuid.uuid4().hex[:6]}", worker_type="claude").save()
+    agent = await Agent(name=f"decl-{uuid.uuid4().hex[:6]}", worker_type="claude", project_id=await _project_id()).save()
 
     deployment = await agent.deploy("local")
 
@@ -87,7 +97,7 @@ async def test_a_declared_service_nothing_serves_is_failing_in_the_node_report()
 
 async def test_a_paused_agent_placement_promises_nothing():
     await ComputeNode.get_local()
-    agent = await Agent(name=f"paused-{uuid.uuid4().hex[:6]}", worker_type="claude").save()
+    agent = await Agent(name=f"paused-{uuid.uuid4().hex[:6]}", worker_type="claude", project_id=await _project_id()).save()
     deployment = await agent.deploy("local")  # declared chat; not serving
 
     report = await (await ComputeNode.get_local()).health_check()

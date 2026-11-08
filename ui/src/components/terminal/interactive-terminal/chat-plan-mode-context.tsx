@@ -89,7 +89,7 @@ export function ChatPlanModeProvider({
   const canAnswerInline = !!process && process.isHeadless;
   const planToggleEnabled = canAnswerInline && !!process.supports_plan_mode;
   const respondEnabled = !!process;
-  const hookQuestion = process?.pending_user_input ?? null;
+  const hookQuestion = process?.pending_user_input?.tool_use_id ? process.pending_user_input : null; // not a launch_blocked marker
   const [planPending, setPlanPending] = useState(false);
   const [sending, setSending] = useState(false);
 

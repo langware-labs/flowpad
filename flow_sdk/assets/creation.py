@@ -6,7 +6,7 @@ import threading
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Awaitable, Callable, TypeVar
 
 from filelock import Timeout
 
@@ -231,3 +231,20 @@ def ensure_asset_document(path: Path, typeid: TypeId, fields: dict) -> Path:
     spec = info.scaffold_spec.model_validate(fields)
     ensure_asset_scaffold(layout.root, typeid, spec)
     return path
+
+
+T = TypeVar("T")
+
+
+async def adopt_unindexed(collision: AssetPathCollisionError, find: Callable[[], Awaitable[T | None]]) -> T:
+    """A create that collided with a folder on disk the index does not hold (a lost row, e.g. after a DB reset):
+    index that folder and return what ``find`` finds there — creating over it would collide on every start."""
+    from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+
+    if collision.path is None:
+        raise collision
+    await reindex_paths([str(collision.path)])
+    found = await find()
+    if found is None:
+        raise collision
+    return found

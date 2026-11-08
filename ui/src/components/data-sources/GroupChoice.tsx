@@ -21,7 +21,8 @@ export function GroupChoice({
   group: string;
   members: DataDriver[];
   selected: string;
-  onPick: (driver: DataDriver) => void;
+  /** The way picked, with what its card learned from the driver (`profile()`) — the form starts from it. */
+  onPick: (driver: DataDriver, profile: DriverProfile | null) => void;
 }) {
   return (
     <div className="space-y-2" data-testid="group-choice">
@@ -30,14 +31,23 @@ export function GroupChoice({
       </p>
       <div className="grid gap-2">
         {members.map((m) => (
-          <MemberCard key={m.name} driver={m} selected={selected === m.name} onPick={() => onPick(m)} />
+          <MemberCard key={m.name} driver={m} selected={selected === m.name} onPick={(profile) => onPick(m, profile)} />
         ))}
       </div>
     </div>
   );
 }
 
-function MemberCard({ driver, selected, onPick }: { driver: DataDriver; selected: boolean; onPick: () => void }) {
+function MemberCard({
+  driver,
+  selected,
+  onPick,
+}: {
+  driver: DataDriver;
+  selected: boolean;
+  /** Picked, with the profile this card already fetched — what the driver says a new source should be called. */
+  onPick: (profile: DriverProfile | null) => void;
+}) {
   const [profile, setProfile] = useState<DriverProfile | null>(null);
 
   useEffect(() => {
@@ -61,7 +71,7 @@ function MemberCard({ driver, selected, onPick }: { driver: DataDriver; selected
       type="button"
       data-testid={`group-member-${driver.name}`}
       disabled={unavailable}
-      onClick={onPick}
+      onClick={() => onPick(profile)}
       className={cn(
         'flex w-full items-start gap-3 rounded border p-3 text-start transition-colors',
         'hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60',

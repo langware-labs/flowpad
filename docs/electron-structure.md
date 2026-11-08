@@ -30,7 +30,7 @@ Electron (main.js)
 | File | Role |
 | --- | --- |
 | `main.js` | Entry point (no exports). Window, menu, deep links, IPC, desktop updates, the startup/install flow (`startApp`, `installAndStartBackend`), the error panel. |
-| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. |
+| `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. A post-boot engine update is first prepared in the background (`prepareEngine`: staged in a throwaway tool dir, then checked to import and report the release; the record is `~/.flow/prepared-engine.json`; the staging dir is removed in the background — a file Windows still holds is tried 3 times, then left to the next prepare's sweep), so the upgrade after "Upgrade" — now, or at a later launch — installs offline in seconds. "Later" to the engine dialog at launch prepares it once the app is up (`prepareDeferredEngineUpdate`), so the next launch's "Upgrade" is fast too. The engine that rides along with a desktop update is prepared the same way while the desktop downloads, for the NEW desktop, which installs it offline after the restart. |
 | `preload.js` | `contextBridge` bridge to the renderer. |
 | `loading.html`, `loading-renderer.js` | Loading screen, progress, and the error panel (including "Send Report"). |
 
@@ -45,8 +45,8 @@ Electron (main.js)
 | `backend-wait.js` | Waiting for the server to come up. |
 | `flow-rs-keychain.js` | Reading keys from the keychain. |
 | `progress-watchdog.js` | Progress guard: 30 s windows, 3 quiet windows in a row = stalled. Gated by `canStall`, async sampling, overlap-safe. |
-| `update-restart.js` | `createRestartApplier` — "Restart now": stops the backend, installs, and recovers if the restart fails. |
-| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
+| `update-restart.js` | `createRestartApplier` — "Restart now": the window stays up on "Installing the update" (never hidden before the quit begins), stops the backend, installs, and brings the app back if the restart fails. |
+| `update-schedule.js` | When automatic update checks happen (FLOWPAD-2308): per-account cadence (hourly for @langware.ai, daily otherwise) plus a desktop-only look at the feed every launch and every hour for every account (`desktopCheckDue`), failure backoff, launch-check planning, the offered-version watermark. Pure decisions; `main.js` owns the timers and the fs. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
 | `support-bundle.js` | "Send Report" zip: `collectLogs`, `buildSupportZip`, `redact`. |
@@ -101,7 +101,25 @@ Electron (main.js)
   only asks whether a check is due; login/logout/account switch re-evaluate at once (a directory watch on
   the instance dir, re-armed by the tick if it dies). The launch check is skipped while a recent answer said
   "current" (the status is seeded, so engine updates are not held), but a relaunch inside a failure backoff
-  retries for real; recovery panels and the update-cycle harness bypass the schedule. A feed answer that
+  retries for real; recovery panels and the update-cycle harness bypass the schedule.
+  The DESKTOP feed is also looked at on every launch and every hour, whatever the account (a new desktop
+  leads; the engine follows its dependencies): a desktop-only check (`getDesktopUpdateVersion({desktopOnly})`)
+  stamps `lastDesktopCheckAt` (and keeps its answer in `lastResult`) and never moves the shared anchor or the
+  backoff, so the engine keeps its cadence. At a launch inside the interval it runs in the background — the
+  start never waits for the feed — and a newer desktop it finds is offered once the app is up, never mid-start.
+  That launch asks no engine question pre-start (it would come before the feed answers): once the app is up,
+  `postBootUpdates` waits for the background look (bounded by the launch check's 20 s; the app is usable
+  meanwhile), offers a desktop it found first — with a newer engine in the same one screen — and only then
+  the engine alone (PyPI comparison, prepared before it asks). A look that gives up defers nothing further; a
+  desktop it finds later still goes first. Not after a failed start (the previous run never got up, per the
+  startup journal, or the error panel's Retry): an engine that does not boot never gets to `postBootUpdates`,
+  so there the engine question is asked pre-start, as before (`engineOfferCanWaitForBoot`). An engine
+  prepared in the background is offered only if no desktop update turned up while it prepared. After a desktop
+  UPGRADE — "Restart now", or installed on quit after "Later" — the new desktop
+  installs the newest engine it accepts without a question (`engineForUpdatedDesktop`; offline when it was
+  prepared with the desktop download; PyPI silent → the version saved with the update). A downgrade (an older
+  installer run by hand) changes no engine by itself: the installed-pair check repairs a forbidden pair, and
+  asks before moving the engine backward. A feed answer that
   cannot be announced (offered before a restart, or a feed regression after a pull) is adopted silently —
   downloaded deferred, installed on the next quit, surfaced by the reminder (`decideDesktopAction`).
   Each channel keeps its own failure streak: a PyPI outage retries engine-only on its backoff without
@@ -177,8 +195,11 @@ On macOS, an app running from a transient location is offered, once per version,
 ## 5. IPC channels
 
 - `handle`: capture-region, close-auth-window, copy-to-clipboard, get-app-version, get-backend-url,
-  get-startup-logs, notify-attention, notify-os, open-auth-window, open-external, open-logs-folder,
-  restart-backend, set-badge, share-logs, upgrade-flowpad.
+  engine-upgrade-target, get-startup-logs, notify-attention, notify-os, open-auth-window, open-external,
+  open-logs-folder, restart-backend, set-badge, share-logs, upgrade-flowpad.
+  The version popover's "Upgrade to vX": `engine-upgrade-target` names the newest release THIS desktop runs
+  (PyPI's newest may need a newer desktop); `upgrade-flowpad(version)` installs exactly it — checked against the
+  desktop before the server is stopped, and a failed install brings the running version back (or the error panel).
 - `on`: quit-app, set-menu-visible, unwatch-startup-logs, watch-startup-logs.
 - `once`: retry-startup.
 - `app` events: activate, before-quit, open-url, second-instance, window-all-closed.

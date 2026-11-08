@@ -84,6 +84,7 @@ _META_TYPES = frozenset(
         "api-request",
         "api-request-blob",
         "api-request-shape",
+        "session-owner",  # Claude 2.1.318+: written after last-prompt
     }
 )
 
@@ -460,6 +461,7 @@ class ClaudeParser:
             is_meta=bool(raw.get("isMeta", False))
             or _is_flowpad_prompt_envelope(text)
             or _is_background_task_notification(text),
+            source_tool_use_id=raw.get("sourceToolUseID") or None,
             **base,
         )
 

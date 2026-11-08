@@ -110,7 +110,7 @@ async def test_shared_skill_on_world_map_of_owner_and_reader(hub_base_url, hub_l
 
     # Grant bob a durable reader edge on the skill (the asset target an invite
     # carries alongside the conversation member target).
-    await _invite(hub_base_url, alice_token, "skill", skill_id, bob_email, role="reader")
+    await _invite(hub_base_url, alice_token, "skill", skill_id, bob_email, roles=("reader",))
     await assert_auto_assigned(
         hub_base_url,
         bob_token,

@@ -4,13 +4,11 @@ import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitC
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
 import { ProjectHomeMenu } from '@src/components/project-home/ProjectHomeMenu';
 import { ProjectSetupPage } from '@src/components/project-setup/ProjectSetupPage';
-import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
+import { ProjectDeploymentsPage } from '@src/components/project-deployments/ProjectDeploymentsPage';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { ProjectGitShareToggle } from '@src/components/project-home/ProjectGitShareToggle';
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
 import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
-import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
-import { launchWizard } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import type { PanelHandlers } from '@src/components/quick-create';
@@ -46,6 +44,8 @@ interface ProjectHomeProps {
   createOnly?: boolean;
   /** Show the project's setup page (`…/project-setup`) under the header instead of Overview/Customize. */
   setupPage?: boolean;
+  /** Draw the project's Deployments page (`/dock/project/<id>/project-deployments`). */
+  deploymentsPage?: boolean;
   /** Hub-owned body rendered inside the shared Project Home shell. When set,
    *  local Git/setup/create controls are omitted; the Hub body owns content. */
   cloudContent?: React.ReactNode;
@@ -149,6 +149,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
   spawnProjectId,
   createOnly = false,
   setupPage = false,
+  deploymentsPage = false,
   cloudContent,
 }) => {
   const dataCtx = useDataContext();
@@ -168,7 +169,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
   // project is the active one (they read/write live Project state).
   const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
   const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
-  const [gitSetupOpen, setGitSetupOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   // "publish this project" (smart navigation): the same popup the publish button opens.
   useUiActionRequest(['publish-dialog'], () => setPublishOpen(true));
@@ -198,43 +198,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
     setPublishOpen(false);
     proceed?.();
   }, []);
-  // Setting up Git needs an answer the old flow never asked for — WHICH remote
-  // and WHICH branch — so `runSetup` opens the chooser and the wizard launches
-  // from its submit, rather than the wizard inventing a public repo on `main`.
-  const runGitSetup = useCallback(
-    async (target: GitTarget) => {
-      if (!project?.fs_storage_mount_path) return;
-      const path = project.fs_storage_mount_path;
-      await launchWizard('git-dependency', {
-        title: t`Set up Git for project sharing`,
-        targetTypeId: project.typeId.toString(),
-        // The payload is the contract — the prompt does not restate it, so the
-        // two cannot disagree about which remote or branch was chosen.
-        payload: {
-          projectId: project.id,
-          optional: false,
-          mode: 'adopt',
-          path,
-          // Names a NEW repo only; an existing one is named by its own URL, and
-          // sending the project name alongside would invite a second repo.
-          ...(target.mode === 'new'
-            ? { name: target.name }
-            : { url: target.url, ...(target.branch ? { branch: target.branch } : {}) }),
-        },
-        prompt: `Set up Git in the exact project folder ${path} for sharing, as the wizard data specifies.`,
-      });
-      // The wizard just changed this folder's git state, and nothing announces
-      // filesystem changes — tell every mounted preflight to ask again.
-      invalidateGitPreflight(project.typeId);
-    },
-    [project],
-  );
-  // Hand off to the chooser; the wizard is launched from the chooser's submit.
-  const openGitSetup = useCallback(() => {
-    if (project?.fs_storage_mount_path) setGitSetupOpen(true);
-    return Promise.resolve();
-  }, [project]);
-
   const overview = <Overview project={resolvedProject ?? null} panelProps={panelProps} dependencies={!createOnly} />;
 
   // A `?highlight=` target that lives on a tab we aren't showing would never
@@ -290,41 +253,17 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
           open
           onOpenChange={(next) => !next && setGitChecks(null)}
           checks={gitChecks}
-          onSetupRepo={openGitSetup}
+          project={project}
         />
       )}
-      {!cloudMode && project && (
-        <GitTargetDialog
-          open={gitSetupOpen}
-          onOpenChange={setGitSetupOpen}
-          title={<Trans>Set up Git</Trans>}
-          description={
-            // Name the folder: this pushes its contents, which is not a
-            // reversible thing to discover afterwards.
-            project.fs_storage_mount_path ? (
-              <Trans>
-                Give <span className="font-mono text-xs">{project.fs_storage_mount_path}</span> a Git remote so this
-                project can be shared.
-              </Trans>
-            ) : (
-              <Trans>Give this project a Git remote so it can be shared.</Trans>
-            )
-          }
-          submitLabel={<Trans>Set up Git</Trans>}
-          nameSeed={project.name ?? undefined}
-          urlLabel={t`Remote repository`}
-          testIdPrefix="project-git-setup"
-          awaitSubmit
-          onSubmit={runGitSetup}
-        />
-      )}
-
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">
           {cloudMode ? (
             cloudContent
           ) : createOnly ? (
             overview
+          ) : deploymentsPage && resolvedProject ? (
+            <ProjectDeploymentsPage project={resolvedProject} />
           ) : setupPage && projectId ? (
             <ProjectSetupPage projectId={projectId} projectName={resolvedProject?.name ?? project?.name ?? ''} />
           ) : (

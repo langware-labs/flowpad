@@ -304,8 +304,9 @@ class SourceItem(ProjectedFields, Entity):
 
     def as_row_input(self) -> "tuple[dict, dict]":
         """``(contents, provenance)`` for one dataset example row: this item's
-        own envelope as ``input/item.json``, and where it came from. The
-        ingest→dataset composition lives with the item, not with ``Dataset``."""
+        own envelope as the input slot's main document (what the row reader
+        loads), and where it came from. The ingest→dataset composition lives
+        with the item, not with ``Dataset``."""
         from flow_sdk.schema.data_spec.layout import INPUT  # noqa: PLC0415
 
         envelope = SourceItemSpec.model_validate({k: getattr(self, k) for k in SourceItemSpec.model_fields})
@@ -313,7 +314,7 @@ class SourceItem(ProjectedFields, Entity):
         # its readers move to ``{scope, key, payload}`` together.
         contents = envelope.model_dump(mode="json", exclude_none=True, exclude={"item_scope"})
         return (
-            {f"{INPUT}/item.json": contents},
+            {f"{INPUT}/{row_input_document()}": contents},
             {
                 "data_source_id": self.data_source_id,
                 "external_id": self.external_id,
@@ -410,3 +411,11 @@ class SourceItem(ProjectedFields, Entity):
             origin_kind=origin.kind, origin_namespace=origin.namespace, origin_key=origin.key,
         )
         return await cls.serializer().resolve(cls, named)
+
+
+def row_input_document() -> str:
+    """The file a promoted item is kept under in its row's ``input/``: the main document of the
+    ``ingest.source_item`` shape, the one name the typed row reader loads."""
+    from flow_sdk.schema.data_spec.io.names import main_document  # noqa: PLC0415
+
+    return main_document(SourceItemSpec)
