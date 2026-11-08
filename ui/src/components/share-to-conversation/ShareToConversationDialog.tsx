@@ -71,6 +71,10 @@ interface ShareToConversationDialogProps {
   /** Seed the contact picker so an existing conversation is pre-selected
    *  (e.g. the feed's suggested support conversation). Read once on open. */
   initialParticipants?: ConversationParticipant[];
+  /** Start a credential share with its secret values selected. */
+  initialShareValues?: boolean;
+  /** The initial delivery route when values are selected. */
+  initialValuesRoute?: 'secured' | 'manager';
   /** Fires with the conversation id once a share succeeds (before the user
    *  closes the success screen) — lets callers dismiss the source surface. */
   onShared?: (conversationId: string) => void;
@@ -142,6 +146,8 @@ export function ShareToConversationDialog({
   projectId,
   defaultNote,
   initialParticipants,
+  initialShareValues = false,
+  initialValuesRoute = 'secured',
   onShared,
   commit,
   hideTitle,
@@ -306,6 +312,8 @@ export function ShareToConversationDialog({
     setLinkedProject(null);
     setDontAsk(false);
     setPreShareDone(false);
+    setShareValues(initialShareValues);
+    setValuesRoute(initialValuesRoute);
     setStep('loading');
     setAttachTranscript(true);
     setCreateBookmark(false);
