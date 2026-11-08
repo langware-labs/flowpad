@@ -13,11 +13,11 @@ import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
 import { RECENT_WINDOW } from '@src/components/entity-execution-panel/use-recent-window';
 
-const near: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
+const near: Array<(entries: Array<{ isIntersecting: boolean; rootBounds?: { height: number } }>) => void> = [];
 vi.stubGlobal(
   'IntersectionObserver',
   class {
-    constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
+    constructor(cb: (entries: Array<{ isIntersecting: boolean; rootBounds?: { height: number } }>) => void) {
       near.push(cb);
     }
     observe() {}
@@ -46,8 +46,14 @@ describe('TurnGroupsList', () => {
     expect(rows(c)).toBe(RECENT_WINDOW);
     expect(c.textContent).toContain('message 99');
 
-    act(() => near.at(-1)!([{ isIntersecting: true }]));
+    act(() => near.at(-1)!([{ isIntersecting: true, rootBounds: { height: 600 } }]));
     expect(rows(c)).toBe(2 * RECENT_WINDOW);
+  });
+
+  it('a hidden pane (no geometry) adds nothing', () => {
+    const c = show();
+    act(() => near.at(-1)!([{ isIntersecting: true, rootBounds: { height: 0 } }]));
+    expect(rows(c)).toBe(RECENT_WINDOW);
   });
 
   it('always mounts the row a pane scrolls to', () => {

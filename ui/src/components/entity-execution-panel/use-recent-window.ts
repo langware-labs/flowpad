@@ -42,7 +42,8 @@ export function useRecentWindow(count: number, keep: number) {
     if (!el || start === 0) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!entry?.isIntersecting) return;
+        // A hidden pane (another layout is showing) has no geometry: nothing is near its top.
+        if (!entry?.isIntersecting || !entry.rootBounds?.height) return;
         const first = el.nextElementSibling;
         if (first) pinned.current = { el: first, top: first.getBoundingClientRect().top };
         setExpanded(Math.max(0, start - RECENT_WINDOW));
