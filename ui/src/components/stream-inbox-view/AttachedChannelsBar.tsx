@@ -225,7 +225,7 @@ export function AttachedChannelsBar({
           onDelete={setDeleting}
         />
       ))}
-      {/* A person's own inbox also narrows to Diagnosis: Diagnose & fix and the help desk it may go to. */}
+      {/* A person's own StreamInbox also narrows to Diagnosis: Diagnose & fix and the help desk it may go to. */}
       {owner.type !== Agent.type && (
         <DiagnosisMark
           filtering={filtering}
