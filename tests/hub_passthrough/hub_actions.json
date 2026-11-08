@@ -674,6 +674,16 @@
   ]
  },
  {
+  "name": "conversation.open_team_conversation",
+  "fn": "open_team_conversation",
+  "methods": [
+   "post"
+  ],
+  "types": [
+   "all"
+  ]
+ },
+ {
   "name": "conversation.return",
   "fn": "release_to_pool",
   "methods": [
