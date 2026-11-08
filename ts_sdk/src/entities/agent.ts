@@ -792,9 +792,16 @@ export class Agent extends APIEntity<Agent> {
     return { copied: res?.copied ?? [], not_here: res?.not_here ?? [], hub_funded: res?.hub_funded ?? [] };
   }
 
-  /** The Flowpad Assistant's skills this agent may pick from for `assistant_skills`. */
+  /**
+   * The Flowpad Assistant's skills this agent may pick from for `assistant_skills`.
+   *
+   * A desktop action: the hub has no `assistant_skill_catalog`, and an unknown action after `agent/<id>` is
+   * parsed there as no action at all -- the GET answers with the agent row itself. Anything but a list is
+   * therefore "no catalog here", never something to map over (it crashed the hub page's agent editor).
+   */
   async assistantSkillCatalog(): Promise<AssistantSkillChoice[]> {
-    return (await this.get<AssistantSkillChoice[] | null>('assistant_skill_catalog')) ?? [];
+    const answer = await this.get<unknown>('assistant_skill_catalog');
+    return Array.isArray(answer) ? (answer as AssistantSkillChoice[]) : [];
   }
 
   /** Whether this agent already auto-launched in its project (the once-only mark is set). */
