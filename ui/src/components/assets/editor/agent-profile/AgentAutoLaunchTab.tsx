@@ -410,7 +410,7 @@ export function AgentAutoLaunchTab({ agent, version }: { agent: Agent; version: 
             </p>
             <WikiTip
               wikiword={IT_ENABLED_WIKI}
-              label={t`Ask every IT Enabled machine one thing; the answers come back as one IT conversation in your inbox.`}
+              label={t`Ask every IT Enabled machine one thing; the answers come back as one IT conversation in your StreamInbox.`}
               learnMore
             >
               <Button

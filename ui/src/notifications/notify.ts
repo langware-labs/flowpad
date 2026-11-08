@@ -1,5 +1,4 @@
 import { toast as sonnerToast } from 'sonner';
-import { getDev } from '@src/contexts/view-mode-context';
 import type { NotificationData, NotificationInput, NotificationLevel } from './types';
 import { detailFromRecentCall, errorDetailFrom } from './error-detail';
 import { useAlertStore } from './alerts-store';
@@ -23,7 +22,7 @@ import { useCenterStore } from './center-store';
  * `category` present → persistent sidebar badge (store). Absent → transient toast.
  *
  * ALERTS (`warning` / `error`) are special: they always go to the alert log
- * behind the footer warnings popover, and they only pop as a toast in Dev mode.
+ * behind the footer warnings popover; they never pop as a toast.
  * Users were drowning in them; developers still want them in their face.
  *
  * `forceToast` opts a SINGLE alert back into toasting in every mode. Reserve it
@@ -104,14 +103,13 @@ function dispatch(input: NotificationInput): string {
     return id;
   }
 
-  // Alerts are logged for the footer warnings popover in every mode, and are
-  // toasted only with Dev on. The explicit dismiss on suppression matters: an alert
+  // Alerts are logged for the footer warnings popover and never toasted (unless `forceToast`). The explicit dismiss on suppression matters: an alert
   // commonly REPLACES a sticky `notify.busy` toast under the same id (see
   // AssetManagerPopover), so silently skipping the emit would leave that
   // spinner running forever.
   if (isAlertLevel(data.level) && !data.transient) {
     useAlertStore.getState().push(data);
-    if (data.logOnly || (!data.forceToast && !getDev())) {
+    if (data.logOnly || !data.forceToast) {
       sonnerToast.dismiss(id);
       return id;
     }
