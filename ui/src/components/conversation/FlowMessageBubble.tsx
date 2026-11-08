@@ -264,8 +264,6 @@ interface FlowMessageBubbleProps {
   callPeerName?: string | null;
   /** Same sender as the bubble above, moments later — drawn without avatar and name. */
   continuation?: boolean;
-  /** In an IT conversation: the IT message a machine's reply answers — what "Turn on and run" sends again. */
-  itMessageText?: string | null;
 }
 
 export function FlowMessageBubble({
@@ -300,7 +298,6 @@ export function FlowMessageBubble({
   formAnswers = null,
   callPeerName = null,
   continuation = false,
-  itMessageText = null,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
@@ -816,12 +813,7 @@ export function FlowMessageBubble({
         />
       )}
       {fm.it_reply && (
-        <ItReplyLine
-          reply={fm.it_reply}
-          agentId={fm.sender_id ?? ''}
-          conversationId={fm.conversation_id ?? ''}
-          text={itMessageText ?? ''}
-        />
+        <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}

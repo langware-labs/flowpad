@@ -18,20 +18,17 @@ const TONE: Record<string, string> = {
 /**
  * Under a machine's reply in an IT conversation: the returned value's fields as chips, the reply's state, and what
  * to do about it -- "Open machine", or "Turn on and run" when IT Sessions was off there (turns it on for that one
- * machine, then sends the conversation's IT message to it again, into this same thread).
+ * machine, then asks it the conversation's own request again -- text, files and answer shape -- into this thread).
  */
 export function ItReplyLine({
   reply,
   agentId,
   conversationId,
-  text,
 }: {
   reply: ItReplyMeta;
   /** The agent whose deployments these are -- the reply's sender. */
   agentId: string;
   conversationId: string;
-  /** The IT message to run again on "Turn on and run". */
-  text: string;
 }) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
@@ -45,7 +42,7 @@ export function ItReplyLine({
     setBusy(true);
     try {
       await agent().setItSessions([reply.node_typeid], true);
-      await agent().itMessage({ text, targets: [reply.node_typeid], conversation_id: conversationId });
+      await agent().itRerun(conversationId, [reply.node_typeid]);
     } catch (e) {
       notify.error({ title: t`Could not run it there`, message: errorMessage(e, ''), forceToast: true });
     } finally {
@@ -97,7 +94,7 @@ export function ItReplyLine({
             variant="outline"
             size="sm"
             className="h-6 gap-1 px-2 text-xs"
-            disabled={busy || !text}
+            disabled={busy}
             onClick={() => void turnOnAndRun()}
             data-testid="it-turn-on-and-run"
           >

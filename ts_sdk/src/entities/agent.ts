@@ -155,7 +155,7 @@ export interface ItMessageRequest {
   /** A JSON shape each machine's answer value must match; null for a plain answer. */
   answer_shape?: Record<string, unknown> | null;
   targets: ItTargets;
-  /** Append to this IT conversation instead of opening a new one ("Turn on and run"). */
+  /** Append to this IT conversation instead of opening a new one. */
   conversation_id?: string;
 }
 
@@ -633,6 +633,19 @@ export class Agent extends APIEntity<Agent> {
   async itMessage(request: ItMessageRequest): Promise<ItMessageResult> {
     const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {
       ...request,
+    });
+    return { conversation_id: data?.conversation_id ?? '', targets: Array.isArray(data?.targets) ? data.targets : [] };
+  }
+
+  /**
+   * "Turn on and run": ask these machines the IT conversation's own first request again -- its text, files and answer
+   * shape -- posting nothing new in the thread.
+   */
+  async itRerun(conversationId: string, targets: ItTargets): Promise<ItMessageResult> {
+    const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {
+      rerun: true,
+      conversation_id: conversationId,
+      targets,
     });
     return { conversation_id: data?.conversation_id ?? '', targets: Array.isArray(data?.targets) ? data.targets : [] };
   }
