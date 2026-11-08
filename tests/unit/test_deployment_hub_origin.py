@@ -167,3 +167,23 @@ async def test_a_cloud_machines_own_placement_reads_its_local_store(monkeypatch)
     here = await Placement.of(stored)
     assert here.secrets.store != hub_store(deployment_id)
     assert here.deployment_id == str((await Deployment.this_computer()).id)
+
+
+async def test_a_project_deployed_on_this_machine_reads_the_placed_environment(monkeypatch):
+    """Seen live on an invite box: the agent's process runs under a provider-``local`` project deployment whose node is
+    the box's OWN local node (not the hub-assigned id) and whose stored environment is ``development``. The values were
+    placed in the box's default environment, so the process must resolve as this computer."""
+    import flow_sdk.instance_settings.runtime as runtime
+    from flow_sdk.builtin.credential_store import Placement
+    from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+    deployment_id = 'a1b2c3d4-0000-4000-8000-000000000002'
+    body = {
+        'id': deployment_id, 'name': 'Project here', 'environment': 'development',
+        'target': {'provider': 'local', 'scope': 'project-11111111-1111-4111-8111-111111111111'},
+        'origin': {'external_id': ComputeNode._local_id()},
+    }
+    await HubWsBridge()._on_data_op({'op': 'update', 'to_entity': f'deployment-{deployment_id}', 'data': body})
+    monkeypatch.setattr(runtime, 'get_assigned_compute_node', lambda: 'compute_node-dad8871a-0000-4000-8000-000000000000')
+    here = await Placement.of(await Deployment.get_by_id(deployment_id))
+    assert here.deployment_id == str((await Deployment.this_computer()).id)
