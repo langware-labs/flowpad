@@ -637,7 +637,7 @@ msgstr "يمكن لـ {0} الآن استخدام {1}."
 #. placeholder {0}: deployment.name
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "{0} cannot pay for its next turn"
-msgstr ""
+msgstr "تعذّر تمويل الدور التالي لـ{0}"
 
 #: src/components/automations/AutomationRow.tsx
 #~ msgid "{0} caught · {1} passed over"
@@ -671,7 +671,7 @@ msgstr ""
 #. placeholder {0}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "{0} connected"
-msgstr ""
+msgstr "{0} متصل"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -1277,7 +1277,7 @@ msgstr "{autoApproveLabel} من {who}"
 
 #: src/components/conversation/conversation-category.ts
 msgid "{base} help desk"
-msgstr ""
+msgstr "مكتب مساعدة {base}"
 
 #. placeholder {0}: deployment?.name ?? ''
 #: src/components/credentials/CredentialDialog.tsx
@@ -1301,7 +1301,7 @@ msgstr "{changedCount} معدّل"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "{cloudPlaces} cloud deployments"
-msgstr ""
+msgstr "{cloudPlaces} عمليات نشر سحابية"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
 msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}"
@@ -1435,7 +1435,7 @@ msgstr "{filteredCount} من {totalCount} مستودعات"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "{firstName} is still uploading the bundle. Try again in a moment."
-msgstr ""
+msgstr "لا يزال {firstName} يرفع الحزمة. يُرجى المحاولة مجددًا بعد لحظة."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
 msgid "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
@@ -1709,15 +1709,15 @@ msgstr "{n} صفوف"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "{n} skipped: not signed in as you, or unavailable."
-msgstr ""
+msgstr "تم تخطي {n}: لم يتم تسجيل الدخول بحسابك، أو غير متاحة."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "{n} skipped: not started, unreachable or unavailable."
-msgstr ""
+msgstr "تم تخطي {n}: لم يتم تشغيلها، أو يتعذر الوصول إليها، أو غير متاحة."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "{n} skipped: unavailable."
-msgstr ""
+msgstr "تم تخطي {n}: غير متاحة."
 
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
@@ -1821,8 +1821,12 @@ msgid "{numSlides} slides"
 msgstr "{numSlides} شرائح"
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
-msgid "{off} have IT Sessions off"
-msgstr ""
+msgid "{off} are IT Disabled"
+msgstr "{off} معطّلة من IT"
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+#~ msgid "{off} have IT Sessions off"
+#~ msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {grouped open error in the last 24 hours} other {grouped open errors in the last 24 hours}}"
@@ -1893,7 +1897,7 @@ msgstr "تمت مشاركة {projectName}"
 #: src/components/agent-resources/AgentWebhooksSection.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "{provider} connection"
-msgstr ""
+msgstr "اتصال {provider}"
 
 #. placeholder {0}: names.length
 #: src/components/connections-manager.tsx
@@ -1951,7 +1955,7 @@ msgstr ""
 
 #: src/components/conversation/InviteCard.tsx
 msgid "{sender} stopped sharing this {typeNoun}"
-msgstr ""
+msgstr "أوقف {sender} مشاركة هذا {typeNoun}"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "{senderName} has shared {sharedThing}"
@@ -2107,7 +2111,7 @@ msgstr "تمت إضافة {trimmed} إلى {parentLabel}."
 
 #: src/components/conversation/InviteCard.tsx
 msgid "{typeLabel} · shared by {sender}"
-msgstr ""
+msgstr "{typeLabel} · شاركه {sender}"
 
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 #~ msgid "{typeLabel} invitation"
@@ -2442,7 +2446,7 @@ msgstr "$ لكل زائر"
 #. placeholder {0}: person.cap_usd_per_day
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "${0}/day"
-msgstr ""
+msgstr "${0} يومياً"
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "${cost} · {sessions} sessions · {duration} active · {prompts} prompts"
@@ -2471,7 +2475,7 @@ msgstr "تغيير واحد غير منشور"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "1 cloud deployment"
-msgstr ""
+msgstr "عملية نشر سحابية واحدة"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "1 commit not pushed — push, then deploy"
@@ -2486,22 +2490,26 @@ msgid "1 file needs merging — let the assistant merge it"
 msgstr "ملف واحد يحتاج إلى دمج — يمكن للمساعد دمجه"
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
-msgid "1 has IT Sessions off"
-msgstr ""
+#~ msgid "1 has IT Sessions off"
+#~ msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "1 hour"
 msgstr "ساعة واحدة"
 
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "1 is IT Disabled"
+msgstr "جهاز واحد معطّل من IT"
+
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "1 Machine"
-msgstr ""
+msgstr "جهاز واحد"
 
 #. placeholder {0}: t(sizeName[size])
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "1 Machine · {0} · {price}"
-msgstr ""
+msgstr "جهاز واحد · {0} · {price}"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "1 message"
@@ -2562,7 +2570,7 @@ msgstr "1أ"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "2 Setup"
-msgstr ""
+msgstr "2 الإعداد"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "2. Copy & open the sign-in page"
@@ -2660,11 +2668,11 @@ msgstr "تتكوّن صيغة cron من خمسة أجزاء."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "A deploy uploads this project to Flowpad cloud."
-msgstr ""
+msgstr "يرفع النشر هذا المشروع إلى سحابة Flowpad."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "A deploy uploads this project's commits to Flowpad cloud — the whole repository, not only the agent."
-msgstr ""
+msgstr "يرفع النشر عمليات commit الخاصة بهذا المشروع إلى سحابة Flowpad - المستودع بأكمله وليس الوكيل فقط."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A deployment"
@@ -2956,7 +2964,7 @@ msgstr "فشل القبول"
 
 #: src/components/conversation/InviteCard.tsx
 msgid "Accepted"
-msgstr ""
+msgstr "مقبولة"
 
 #: src/components/git/InvitationsStrip.tsx
 msgid "Accepted {fullName}"
@@ -3232,7 +3240,7 @@ msgstr "إضافة وكيل…"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Add an LLM endpoint you administer first (LLM Endpoints): visitors are funded from it."
-msgstr ""
+msgstr "يجب أولاً إضافة نقطة نهاية LLM تتولى إدارتها (LLM Endpoints)، فمنها يُموَّل الزوار."
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Add and set up"
@@ -3407,7 +3415,7 @@ msgstr "إضافة رابط"
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Add machine"
-msgstr ""
+msgstr "إضافة جهاز"
 
 #: src/pages/hub-home/HubHome.tsx
 #~ msgid "Add Machine"
@@ -3694,7 +3702,7 @@ msgstr "متقدم: حدود كل نافذة زمنية وسقوف المعدل 
 #. placeholder {0}: seconds / 60
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "After {0} min idle"
-msgstr ""
+msgstr "بعد {0} دقيقة من الخمول"
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
@@ -3758,7 +3766,7 @@ msgstr "الوكيل عام"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Agent machine ready"
-msgstr ""
+msgstr "جهاز الوكيل جاهز"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Agent mailbox"
@@ -3767,7 +3775,7 @@ msgstr "صندوق بريد الوكيل"
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Agent mode"
-msgstr ""
+msgstr "وضع الوكيل"
 
 #~ msgid "Agent name"
 #~ msgstr "اسم الوكيل"
@@ -4039,7 +4047,7 @@ msgstr "كل عمليات التشغيل"
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "All sandboxes for this agent are in use right now. Try again in a few minutes."
-msgstr ""
+msgstr "جميع البيئات المعزولة لهذا الوكيل مشغولة حالياً. يُرجى المحاولة بعد بضع دقائق."
 
 #: src/components/conversation/MessageFormCard.tsx
 msgid "all set by default"
@@ -4097,7 +4105,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "Allocation saved"
-msgstr ""
+msgstr "تم حفظ التخصيص"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
@@ -4142,7 +4150,7 @@ msgstr "السماح بتسجيل الدخول — الجهات المخوّلة
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Allow public deployments"
-msgstr ""
+msgstr "السماح بالنشر العام"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Unix Sockets"
@@ -4286,7 +4294,7 @@ msgstr "يعمل دائماً"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Always on · billed once a month."
-msgstr ""
+msgstr "يعمل دائماً · تُحتسب الفاتورة مرة شهرياً."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Always Thinking Enabled"
@@ -4499,7 +4507,7 @@ msgstr "جهاز آخر"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Another name…"
-msgstr ""
+msgstr "اسم آخر…"
 
 #: src/components/session-taken-over-overlay.tsx
 msgid "Another person signed in to this shared machine, so you were signed out. Sign back in to take it back."
@@ -4616,7 +4624,7 @@ msgstr "يمكن لأي شخص لديه حق الوصول فتح {entityType} م
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Anyone with the link"
-msgstr ""
+msgstr "أي شخص لديه الرابط"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
@@ -4731,7 +4739,7 @@ msgstr "مهلة انتظار API"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "API URL"
-msgstr ""
+msgstr "عنوان API"
 
 #: src/components/asset-counters/app-counters.tsx
 #: src/types/ViewType.ts
@@ -4745,7 +4753,7 @@ msgstr "معرّف التطبيق"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "App ID"
-msgstr ""
+msgstr "معرّف التطبيق"
 
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "App name"
@@ -4993,7 +5001,7 @@ msgstr "اطلبوا من {managers} — الذي يدير الميزانية ا
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Ask a teammate to join it and write there. The agent answers as you."
-msgstr ""
+msgstr "اطلبوا من أحد زملاء الفريق الانضمام إليها والكتابة هناك. يردّ الوكيل بصفتكم."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
@@ -5007,6 +5015,10 @@ msgstr "طرح سؤال حول هذا التحليل…"
 msgid "Ask anything — I can search the guides and walk you through them."
 msgstr "يمكن طرح أي سؤال — سأبحث في الأدلة وأرشدكم خطوة بخطوة."
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Ask every IT Enabled machine one thing; the answers come back as one IT conversation in your inbox."
+msgstr "يُوجَّه سؤال واحد إلى كل جهاز IT مفعّل، وتصل الردود في محادثة IT واحدة ضمن صندوق الوارد."
+
 #: src/i18n/pref-labels.ts
 #: src/i18n/pref-labels.ts
 msgid "Ask every time"
@@ -5014,7 +5026,7 @@ msgstr "السؤال في كل مرة"
 
 #: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
 msgid "Ask Flowpad Assistant to change {displayName}"
-msgstr ""
+msgstr "اطلبوا من Flowpad Assistant تغيير {displayName}"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "ask for a refund or dispute a charge"
@@ -5259,11 +5271,11 @@ msgstr "في"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "At <0>api.slack.com/apps</0> create an app from scratch."
-msgstr ""
+msgstr "في <0>api.slack.com/apps</0> أنشئوا تطبيقًا من الصفر."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "At most"
-msgstr ""
+msgstr "بحدٍّ أقصى"
 
 #. placeholder {0}: formatUsd(left.remaining)
 #: src/components/token-plan/AllocateDialog.tsx
@@ -5473,7 +5485,7 @@ msgstr "تفعيل جميع خوادم MCP على مستوى المشروع تل
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Auto-launch"
-msgstr ""
+msgstr "التشغيل التلقائي"
 
 #: src/agents/agent-auto-launch-warning.ts
 msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
@@ -5501,7 +5513,7 @@ msgstr "تسجيل الدخول التلقائي معطّل"
 
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Auto-pause"
-msgstr ""
+msgstr "إيقاف مؤقت تلقائي"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Auto-send"
@@ -5641,7 +5653,7 @@ msgstr "رجوع"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "Back on the owner's default"
-msgstr ""
+msgstr "تمت العودة إلى تمويل المالك الافتراضي"
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Back to Data sources"
@@ -5777,7 +5789,7 @@ msgstr "إصدارات بيتا المسموح بها"
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Billing"
-msgstr ""
+msgstr "الفوترة"
 
 #: src/components/organization/tabs/BillingTab.tsx
 #: src/components/organization/tabs/OrgView.tsx
@@ -5859,7 +5871,7 @@ msgstr "رمز البوت"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Bot token (xoxb-…)"
-msgstr ""
+msgstr "رمز البوت (xoxb-…)"
 
 #: src/components/assets/editor/chart/MermaidChartView.tsx
 msgid "Both"
@@ -6551,7 +6563,7 @@ msgstr "تغيير"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "Change allocation"
-msgstr ""
+msgstr "تغيير التخصيص"
 
 #: src/components/conversation/FormAnswersCard.tsx
 msgid "Change answers"
@@ -6683,7 +6695,7 @@ msgstr "تفاصيل القناة"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Channel ID (C0123456789)"
-msgstr ""
+msgstr "معرّف القناة (C0123456789)"
 
 #: src/components/inbound/DestinationPicker.tsx
 msgid "Channel id (data source id there)"
@@ -6748,7 +6760,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Chat API"
-msgstr ""
+msgstr "Chat API"
 
 #: src/components/floating-chat/AssistantContextChips.tsx
 msgid "Chat context"
@@ -7054,7 +7066,7 @@ msgstr "اختر نوع كل صف"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Choose the LLM endpoint visitors spend"
-msgstr ""
+msgstr "نقطة نهاية LLM التي يُنفَق منها على الزوار"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
@@ -7416,6 +7428,10 @@ msgstr "تنزيل"
 msgid "Click to edit which models this budget may call"
 msgstr "انقروا لتعديل النماذج المسموح لهذه الميزانية باستدعائها"
 
+#: src/components/notes/QuickPromptsMenu.tsx
+msgid "Click to keep this session's last prompt. It is saved, not run."
+msgstr ""
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Click to rename"
 msgstr "يمكن النقر لإعادة التسمية"
@@ -7766,7 +7782,7 @@ msgstr "ينتهي الرمز في"
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "codes"
-msgstr ""
+msgstr "رموز"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/ProjectShareLanding.tsx
@@ -7936,7 +7952,7 @@ msgstr "التعليقات"
 
 #: src/components/project-deployments/DeploymentContext.tsx
 msgid "commit"
-msgstr ""
+msgstr "commit"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -7974,7 +7990,7 @@ msgstr "الالتزام بجميع التغييرات ودمج الفرع ال�
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Commit and push"
-msgstr ""
+msgstr "Commit و push"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Commit and push this file"
@@ -8181,7 +8197,7 @@ msgstr "ربط {label}"
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "Connect {where}"
-msgstr ""
+msgstr "ربط {where}"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Connect a channel people can reach this agent on"
@@ -8206,7 +8222,7 @@ msgstr "اربطوا مصدر LLM، ثم ثبّتوا الأدوات التي ي
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Connect Flow to {0}"
-msgstr ""
+msgstr "ربط Flow بـ {0}"
 
 #: src/components/git/ConnectGithubButton.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -8244,11 +8260,11 @@ msgstr "ربط مصدر جديد"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Connect Slack"
-msgstr ""
+msgstr "ربط Slack"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Connect this machine"
-msgstr ""
+msgstr "ربط هذا الجهاز"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Connect to a URL"
@@ -8515,7 +8531,7 @@ msgstr "المحادثة غير متاحة"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Conversation with {senderName}"
-msgstr ""
+msgstr "محادثة مع {senderName}"
 
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "Conversations"
@@ -8811,7 +8827,7 @@ msgstr "نسخ أمر الطرفية: {0}"
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Copy them now — they won't be shown again."
-msgstr ""
+msgstr "انسخوها الآن — لن تُعرض مرة أخرى."
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #~ msgid "Copy this file's path to the clipboard"
@@ -8890,7 +8906,7 @@ msgstr "تعذّر تفعيل المؤسسة"
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Could not add codes"
-msgstr ""
+msgstr "تعذّرت إضافة الرموز"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Could not add the help desk."
@@ -8960,8 +8976,12 @@ msgid "Could not change it"
 msgstr "تعذّر التغيير"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "Could not change IT Sessions"
-msgstr ""
+msgid "Could not change IT Enabled"
+msgstr "تعذّر تغيير حالة تفعيل IT"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#~ msgid "Could not change IT Sessions"
+#~ msgstr ""
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Could not change privacy mode"
@@ -8978,11 +8998,11 @@ msgstr "تعذّر تغيير الدور"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "Could not change the allocation"
-msgstr ""
+msgstr "تعذّر تغيير التخصيص"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Could not change the sandbox"
-msgstr ""
+msgstr "تعذّر تغيير البيئة المعزولة"
 
 #: src/components/assets/editor/agent-profile/AgentLocalToggle.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
@@ -8991,7 +9011,7 @@ msgstr ""
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Could not change where the project runs"
-msgstr ""
+msgstr "تعذّر تغيير مكان تشغيل المشروع"
 
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Could not check — {failed}"
@@ -9121,7 +9141,7 @@ msgstr "تعذر حذف {0}"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not delete the deployment"
-msgstr ""
+msgstr "تعذّر حذف النشر"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Could not deny"
@@ -9264,7 +9284,7 @@ msgstr "تعذّر عرض الميزانيات: {loadError}"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Could not list the changes"
-msgstr ""
+msgstr "تعذر عرض قائمة التغييرات"
 
 #: src/components/credentials/SecretVaultPicker.tsx
 msgid "Could not list the secret managers."
@@ -9383,7 +9403,7 @@ msgstr ""
 
 #: src/components/conversation/ItReplyLine.tsx
 msgid "Could not open the machine"
-msgstr ""
+msgstr "تعذّر فتح الجهاز"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 #: src/components/conversation/asset-review/use-open-git-share.ts
@@ -9412,7 +9432,7 @@ msgstr "تعذّر فتح هذا المستند: {error}"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not pause the deployment"
-msgstr ""
+msgstr "تعذّر إيقاف النشر مؤقتاً"
 
 #: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
@@ -9614,7 +9634,7 @@ msgstr "تعذّرت إعادة التشغيل"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not resume the deployment"
-msgstr ""
+msgstr "تعذّر استئناف النشر"
 
 #: src/components/connections-manager.tsx
 msgid "Could not reveal .env.local"
@@ -9622,7 +9642,7 @@ msgstr "تعذّر إظهار .env.local"
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Could not revoke the code"
-msgstr ""
+msgstr "تعذّر إلغاء الرمز"
 
 #. placeholder {0}: a.name
 #: src/components/automations/AutomationsList.tsx
@@ -9635,7 +9655,7 @@ msgstr "تعذّر التشغيل"
 
 #: src/components/conversation/ItReplyLine.tsx
 msgid "Could not run it there"
-msgstr ""
+msgstr "تعذّر تشغيله هناك"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not run schedule"
@@ -9783,7 +9803,7 @@ msgstr ""
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Could not send."
-msgstr ""
+msgstr "تعذّر الإرسال."
 
 #. placeholder {0}: v.envVar
 #: src/components/credentials/CredentialEditDialog.tsx
@@ -9956,11 +9976,11 @@ msgstr "تعذّرت التجربة"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Could not turn off public deployments"
-msgstr ""
+msgstr "تعذّر إيقاف النشر العام"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Could not turn on public deployments"
-msgstr ""
+msgstr "تعذّر تفعيل النشر العام"
 
 #. placeholder {0}: req.name
 #: src/components/project-setup/ProjectSetupDialog.tsx
@@ -9998,7 +10018,7 @@ msgstr "تعذّر تحديث الجدول الزمني"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Could not update the deployment"
-msgstr ""
+msgstr "تعذّر تحديث النشر"
 
 #: src/hooks/use-sandboxes.ts
 msgid "Could not upgrade the sandbox"
@@ -10037,7 +10057,7 @@ msgstr "تعذّر تغيير دور هذا العضو."
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Couldn't check FlowPad's connection"
-msgstr ""
+msgstr "تعذر التحقق من اتصال FlowPad"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
@@ -10112,7 +10132,7 @@ msgstr "تعذر تحميل مستودعاتكم."
 #: src/pages/entry/OpenPcLanding.tsx
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "Couldn't open a sandbox."
-msgstr ""
+msgstr "تعذّر فتح بيئة معزولة."
 
 #: src/components/terminal/project-launch-bar.tsx
 msgid "Couldn't open a terminal"
@@ -10493,7 +10513,7 @@ msgstr "بيانات الاعتماد"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Credential environment this deployment reads"
-msgstr ""
+msgstr "بيئة بيانات الاعتماد التي يقرأها هذا النشر"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #~ msgid "Credential environment this place reads"
@@ -10544,7 +10564,7 @@ msgstr "الحالي"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Current deployments"
-msgstr ""
+msgstr "عمليات النشر الحالية"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Current Directory"
@@ -10629,7 +10649,7 @@ msgstr "تخصيص"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Customize response"
-msgstr ""
+msgstr "تخصيص الرد"
 
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -10879,7 +10899,7 @@ msgstr "مرفوض"
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Declined"
-msgstr ""
+msgstr "مرفوضة"
 
 #: src/components/git/InvitationsStrip.tsx
 msgid "Declined {fullName}"
@@ -11078,7 +11098,7 @@ msgstr ""
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Delete ({n})"
-msgstr ""
+msgstr "حذف ({n})"
 
 #. placeholder {0}: c.displayName
 #. placeholder {0}: item.name
@@ -11127,7 +11147,7 @@ msgstr "حذف {label}"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Delete {n} machines?"
-msgstr ""
+msgstr "حذف {n} من الأجهزة؟"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete {selectedCount} conversations"
@@ -11394,7 +11414,7 @@ msgstr "تم حذف {ok} محادثة"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Deleted {ok} of {total} machines."
-msgstr ""
+msgstr "تم حذف {ok} من أصل {total} من الأجهزة."
 
 #. placeholder {0}: failed.length
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -11519,7 +11539,7 @@ msgstr "الوكيل المنشور"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Deployment"
-msgstr ""
+msgstr "النشر"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #~ msgid "Deployment deleted"
@@ -11561,7 +11581,7 @@ msgstr "عمليات النشر"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "deployments at once"
-msgstr ""
+msgstr "عمليات نشر في آنٍ واحد"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
@@ -12044,6 +12064,7 @@ msgstr "محرّك الإدخال/الإخراج للقرص"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Dismiss"
 msgstr "إغلاق"
 
@@ -12264,7 +12285,7 @@ msgstr "تنزيل .flowmsg"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Download {attachmentFilename}"
-msgstr ""
+msgstr "تنزيل {attachmentFilename}"
 
 #. placeholder {0}: count === 1 ? 'attachment' : 'attachments'
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -12332,11 +12353,11 @@ msgstr "تنزيل ملف CSV نموذجي"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Download the bundle with the conversation."
-msgstr ""
+msgstr "تنزيل الحزمة مع المحادثة."
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Download the bundle with the task details."
-msgstr ""
+msgstr "تنزيل الحزمة مع تفاصيل المهمة."
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
@@ -12500,7 +12521,7 @@ msgstr "مثال: /path/to/script.sh أو if [[ \"$tool_input\" == *.md ]]; then
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Each code opens its own sandbox. Give one code to each visitor."
-msgstr ""
+msgstr "كل رمز يفتح بيئته المعزولة الخاصة. يُرجى إعطاء رمز واحد لكل زائر."
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "Each hop, without sending a message."
@@ -12508,7 +12529,7 @@ msgstr "كل قفزة، دون إرسال رسالة."
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Each machine is shut down and removed. This cannot be undone."
-msgstr ""
+msgstr "سيتم إيقاف تشغيل كل جهاز وإزالته. لا يمكن التراجع عن هذا الإجراء."
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
@@ -12536,7 +12557,7 @@ msgstr "يجب أن يكون لكل متغير اسم فريد."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Each visitor gets a copy of this agent's project in their own sandbox."
-msgstr ""
+msgstr "يحصل كل زائر على نسخة من مشروع هذا الوكيل في بيئته المعزولة الخاصة."
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Earlier message"
@@ -12825,6 +12846,10 @@ msgstr "تفعيل الكل"
 #: src/components/settings-view/settings-utils.ts
 msgid "Enable All Project MCP Servers"
 msgstr "تفعيل جميع خوادم MCP للمشروع"
+
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Enable and run"
+msgstr "تفعيل وتشغيل"
 
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Enable browser automation via Chrome (--chrome)"
@@ -13437,7 +13462,7 @@ msgstr "تُحذف ميزانية كل فرد داخل {0} معه. لا يمكن
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Everything below goes into the commit, not only the agent:"
-msgstr ""
+msgstr "كل ما يلي يدخل في commit، وليس الوكيل فقط:"
 
 #: src/components/inbound/InboundView.tsx
 #~ msgid "Everything else to this number"
@@ -14225,7 +14250,7 @@ msgstr "فشل رفع الصورة"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Failed:"
-msgstr ""
+msgstr "فشلت العملية:"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
@@ -14678,7 +14703,7 @@ msgstr "أكملوا ذلك، ثم اضغطوا «تحقق» مرة أخرى."
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Finish the setup above first."
-msgstr ""
+msgstr "أكمل الإعداد أعلاه أولاً."
 
 #~ msgid "Finish the step above, then press Verify."
 #~ msgstr "أكمل الخطوة أعلاه، ثم اضغط «تحقق»."
@@ -14923,7 +14948,7 @@ msgstr "لا يستطيع Flowpad رؤية أي من مستودعات {owner}. �
 
 #: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "Flowpad cloud"
-msgstr ""
+msgstr "سحابة Flowpad"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Flowpad Cloud"
@@ -14931,7 +14956,7 @@ msgstr "Flowpad Cloud"
 
 #: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
 msgid "Flowpad cloud can run a schedule that runs an agent with a prompt."
-msgstr ""
+msgstr "يمكن لسحابة Flowpad تشغيل جدول زمني يشغّل وكيلاً بموجّه معيّن."
 
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "Flowpad Cloud Results"
@@ -14973,11 +14998,11 @@ msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح الت�
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "FlowPad is a free, open-source desktop app for collaborating on AI-powered conversations. Install it once to open messages like this on your machine."
-msgstr ""
+msgstr "Flowpad تطبيق سطح مكتب مجاني ومفتوح المصدر للتعاون في المحادثات المدعومة بالذكاء الاصطناعي. يكفي تثبيته مرة واحدة لفتح رسائل كهذه على جهازك."
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "FlowPad is a free, open-source desktop app for collaborating on AI-powered tasks. Install it once to open tasks like this on your machine."
-msgstr ""
+msgstr "Flowpad تطبيق سطح مكتب مجاني ومفتوح المصدر للتعاون في المهام المدعومة بالذكاء الاصطناعي. يكفي تثبيته مرة واحدة لفتح مهام كهذه على جهازك."
 
 #: src/pages/hub-home/SharedProjectsBanner.tsx
 #~ msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open a project there and FlowPad sets it up on your machine."
@@ -14989,14 +15014,14 @@ msgstr "FlowPad تطبيق سطح مكتب مجاني ومفتوح المصدر 
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad is connected"
-msgstr ""
+msgstr "FlowPad متصل"
 
 #~ msgid "FlowPad is offline"
 #~ msgstr ""
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad isn't connected — Open starts it if it's installed"
-msgstr ""
+msgstr "FlowPad غير متصل - يؤدي الزر \"فتح\" إلى تشغيله إذا كان مثبتًا"
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad isn't installed on this computer"
@@ -15018,7 +15043,7 @@ msgstr "صندوق بريد Flowpad · لا يصل إلى {0} إلا المرس�
 
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Flowpad messages always reach it."
-msgstr ""
+msgstr "تصل إليه رسائل Flowpad دائمًا."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
 #~ msgid "Flowpad runs it without per-step prompts"
@@ -15034,7 +15059,7 @@ msgstr ""
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "FlowPad stops, upgrades and starts again on each. Anyone working in them is interrupted, and paused machines are woken."
-msgstr ""
+msgstr "يتوقف FlowPad ثم تتم ترقيته ويبدأ من جديد على كل جهاز. سيتم قطع عمل كل من يستخدمها، وتتم إعادة تشغيل الأجهزة المتوقفة مؤقتًا."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
@@ -15362,7 +15387,7 @@ msgstr "دالة (السجل)"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "Funded by"
-msgstr ""
+msgstr "بتمويل من"
 
 #~ msgid "Funded by {0}"
 #~ msgstr "بتمويل من {0}"
@@ -15394,7 +15419,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "Funding"
-msgstr ""
+msgstr "التمويل"
 
 #~ msgid "Funding for"
 #~ msgstr "التمويل لـ"
@@ -15541,7 +15566,7 @@ msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Getting your Slack link…"
-msgstr ""
+msgstr "جارٍ الحصول على رابط Slack الخاص بكم…"
 
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "ghost"
@@ -16407,7 +16432,7 @@ msgstr "ساخن"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Hourly"
-msgstr ""
+msgstr "بالساعة"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "hours"
@@ -16456,7 +16481,7 @@ msgstr "كيفية عمل أوضاع الخصوصية"
 #. placeholder {0}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "How should it connect to {0}?"
-msgstr ""
+msgstr "كيف ينبغي أن يتصل بـ {0}؟"
 
 #: src/components/data-sources/source-parts.tsx
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
@@ -16649,7 +16674,7 @@ msgstr "الهوية"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Idle"
-msgstr ""
+msgstr "خامل"
 
 #: src/components/automations/IfThenGraphic.tsx
 #: src/components/automations/IfThenLine.tsx
@@ -16794,11 +16819,11 @@ msgstr "قيد التنفيذ..."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "In Slack, create a private channel named"
-msgstr ""
+msgstr "في Slack، أنشئوا قناة خاصة باسم"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "In Telegram, message @BotFather and send /newbot."
-msgstr ""
+msgstr "في Telegram، راسلوا @BotFather وأرسلوا /newbot."
 
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "in the project under recordings/"
@@ -17412,19 +17437,19 @@ msgstr "دعوة عبر البريد الإلكتروني…"
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "Invite code"
-msgstr ""
+msgstr "رمز الدعوة"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Invite code only"
-msgstr ""
+msgstr "برمز الدعوة فقط"
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Invite codes"
-msgstr ""
+msgstr "رموز الدعوة"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Invite codes ({activeCodes})"
-msgstr ""
+msgstr "رموز الدعوة ({activeCodes})"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
@@ -17446,7 +17471,7 @@ msgstr "دعوة أشخاص"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Invite the bot to a private channel with /invite @your-bot."
-msgstr ""
+msgstr "ادعوا البوت إلى قناة خاصة باستخدام /invite @your-bot."
 
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
@@ -17480,23 +17505,23 @@ msgstr ""
 
 #: src/components/conversation/conversation-category.ts
 msgid "IT"
-msgstr ""
+msgstr "IT"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "IT —"
-msgstr ""
+msgstr "IT —"
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "IT · {name} - {stamp}"
-msgstr ""
+msgstr "IT · {name} - {stamp}"
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "IT · {name} deployments ({machines} machines)"
-msgstr ""
+msgstr "عمليات نشر IT · {name} (الأجهزة: {machines})"
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "IT · {name} deployments (1 machine)"
-msgstr ""
+msgstr "عمليات نشر IT · {name} (جهاز واحد)"
 
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "It also changes:"
@@ -17504,7 +17529,7 @@ msgstr "ما يتغيّر أيضًا:"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
-msgstr ""
+msgstr "يمكنه قراءة قنوات Slack الخاصة بكم."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "It cannot be removed from the project"
@@ -17515,6 +17540,14 @@ msgstr ""
 msgid "It did not work"
 msgstr "لم ينجح ذلك"
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Disabled"
+msgstr "IT معطّل"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Disabled: this machine refuses IT messages. Click to enable."
+msgstr "IT معطّل: لا يستقبل هذا الجهاز رسائل IT. النقر للتفعيل."
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now?"
 msgstr "يبدو أنه غير مثبّت على جهازكم. هل تريدون تثبيته الآن؟"
@@ -17522,6 +17555,18 @@ msgstr "يبدو أنه غير مثبّت على جهازكم. هل تريدون
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
 msgstr "يبدو أنه غير مثبّت على جهازكم. هل تريدون تثبيته الآن؟ على جهاز Mac يُفتح مثبّت Apple في نافذة مستقلة. إذا لم تظهر لكم، فابحثوا خلف هذه النافذة."
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Enabled"
+msgstr "IT مفعّل"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Enabled not known yet for this machine. Click to enable it."
+msgstr "حالة IT لهذا الجهاز غير معروفة بعد. النقر للتفعيل."
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Enabled: you can send this machine IT messages. Never while someone is signed in. Click to disable."
+msgstr "IT مفعّل: يمكن إرسال رسائل IT إلى هذا الجهاز، لكن لا يتم ذلك أبداً أثناء تسجيل دخول أي مستخدم. النقر للتعطيل."
 
 #: src/components/automations/RunDetail.tsx
 msgid "It failed without saying why."
@@ -17541,6 +17586,10 @@ msgstr "تحصل على مسارات الملفات المتغيّرة في بي
 #: src/components/automations/AutomationPage.tsx
 msgid "It has not run yet. Use Run once now on the Setup tab to try it."
 msgstr "لم تُشغَّل بعد. لتجربتها، يُرجى استخدام «تشغيل مرة واحدة الآن» في علامة تبويب الإعداد."
+
+#: src/components/conversation/it-reply.ts
+msgid "IT is disabled on this machine"
+msgstr "تم تعطيل IT على هذا الجهاز"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
@@ -17573,12 +17622,12 @@ msgid "It may have been deleted, or it wasn't shared with this account."
 msgstr "ربما تم حذفه، أو لم تتم مشاركته مع هذا الحساب."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "IT off"
-msgstr ""
+#~ msgid "IT off"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "IT on"
-msgstr ""
+#~ msgid "IT on"
+#~ msgstr ""
 
 #: src/components/webapp-display/PageCheckPanel.tsx
 #~ msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
@@ -17590,11 +17639,11 @@ msgstr "سيُشغَّل مجدداً في المرة القادمة التي ي
 
 #: src/components/conversation/it-reply.ts
 msgid "IT session · done"
-msgstr ""
+msgstr "جلسة IT · اكتملت"
 
 #: src/components/conversation/it-reply.ts
-msgid "IT Sessions is off on this machine"
-msgstr ""
+#~ msgid "IT Sessions is off on this machine"
+#~ msgstr ""
 
 #: src/components/automations/AutomationsList.tsx
 msgid "It shows up in Runs as a test."
@@ -17666,7 +17715,7 @@ msgstr "يُحذف مجلدها أيضًا. تبقى عمليات التشغيل
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Its machine may use it"
-msgstr ""
+msgstr "قد يستخدمه جهازه"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "its manager"
@@ -17969,7 +18018,7 @@ msgstr "منتهٍ"
 #: src/components/agent-resources/AgentWebhooksSection.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Lapsed"
-msgstr ""
+msgstr "منتهي الصلاحية"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/llm-endpoints/TiersEditor.tsx
@@ -18186,7 +18235,7 @@ msgstr "يجب بدء جلسة أولاً"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Launch bot"
-msgstr ""
+msgstr "تشغيل البوت"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Launch failed."
@@ -18257,7 +18306,7 @@ msgstr "اتركوه فارغًا للإبقاء عليه"
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "Leave it running. This card turns Running by itself once the machine connects."
-msgstr ""
+msgstr "يُرجى تركه قيد التشغيل. ستتحول البطاقة إلى حالة التشغيل تلقائياً بعد اتصال الجهاز."
 
 #~ msgid "Leave live session mode"
 #~ msgstr ""
@@ -18276,7 +18325,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 msgid "Left alone, the agent works with whatever model your budget gives it. Pick a size to require it: if your budget does not offer that size, the agent will not start and tells you why."
-msgstr ""
+msgstr "إن تُرك دون تغيير، يعمل الوكيل بأي نموذج توفره الميزانية. يُختار حجم لإلزامه به: إذا لم تتضمن الميزانية هذا الحجم، فلن يبدأ الوكيل وسيوضح السبب."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
@@ -18330,7 +18379,7 @@ msgstr "السماح لكل من يملك الرابط بعرض هذا الوك�
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Let it read your Slack"
-msgstr ""
+msgstr "اسمحوا له بقراءة Slack الخاص بكم"
 
 #: src/i18n/pref-labels.ts
 msgid "Let other participants see when messages are delivered or read."
@@ -18492,7 +18541,7 @@ msgstr "ربط بالسحابة"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "link visitor"
-msgstr ""
+msgstr "ربط الزائر"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "linked"
@@ -18501,7 +18550,7 @@ msgstr "مرتبط"
 #: src/components/agent-resources/AgentWebhooksSection.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Linked"
-msgstr ""
+msgstr "مرتبط"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -18600,7 +18649,7 @@ msgstr "نسخة حية: {basisLabel}."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Live only — this page does not store the conversation."
-msgstr ""
+msgstr "مباشر فقط — هذه الصفحة لا تحفظ المحادثة."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -19241,7 +19290,7 @@ msgstr "أحرف إنجليزية صغيرة وأرقام و- و_ (لا يُقب
 
 #: src/components/conversation/it-reply.ts
 msgid "machine"
-msgstr ""
+msgstr "الجهاز"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -19274,13 +19323,13 @@ msgstr "حجم الجهاز"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine type"
-msgstr ""
+msgstr "نوع الجهاز"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Machines"
-msgstr ""
+msgstr "الأجهزة"
 
 #: src/components/asset-counters/hub-counters.tsx
 #~ msgid "Machines that are running"
@@ -19312,7 +19361,7 @@ msgstr "تم حفظ إعدادات صندوق البريد"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Main agent"
-msgstr ""
+msgstr "الوكيل الرئيسي"
 
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Make a todo app"
@@ -19324,7 +19373,7 @@ msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Make an agent in 60 seconds — where will you talk to it?"
-msgstr ""
+msgstr "أنشئوا وكيلًا في 60 ثانية — أين ستتحدثون إليه؟"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #~ msgid "Make another"
@@ -20019,7 +20068,7 @@ msgstr "حجم النموذج"
 #: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 #: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 msgid "Model size"
-msgstr ""
+msgstr "حجم النموذج"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
@@ -20109,7 +20158,7 @@ msgstr "المزيد من الإجراءات"
 #. placeholder {0}: deployment.name
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "More actions for {0}"
-msgstr ""
+msgstr "إجراءات أخرى لـ {0}"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #~ msgid "More actions for {name}"
@@ -20552,6 +20601,7 @@ msgstr "جلسة Claude جديدة"
 msgid "New contacts group"
 msgstr "مجموعة متصلين جديدة"
 
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "New conversation"
 msgstr "محادثة جديدة"
@@ -20875,7 +20925,7 @@ msgstr "لا يوجد استطلاع نشط"
 #: src/components/project-deployments/ProjectDeploymentPage.tsx
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "No agent"
-msgstr ""
+msgstr "بدون وكيل"
 
 #: src/components/hooks-manager/index.tsx
 msgid "No agent hooks configured"
@@ -20980,7 +21030,7 @@ msgstr "لم تُحدَّد ميزانية"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "No budget you can allocate from — ask its admin for an allowance."
-msgstr ""
+msgstr "لا توجد ميزانية يمكنك التخصيص منها — يُرجى طلب مخصَّص من مسؤولها."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "No budget you can hand out"
@@ -21000,7 +21050,7 @@ msgstr "لا يوجد بريد مدمج بعد — أنشئه"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "No bundle attached."
-msgstr ""
+msgstr "لم تُرفق أي حزمة."
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "no bundle was ever uploaded"
@@ -21081,7 +21131,7 @@ msgstr "لم يُعثر على بيانات Claude Code. شغّل Claude Code ف
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "No codes yet."
-msgstr ""
+msgstr "لا توجد رموز بعد."
 
 #: src/components/collaboration/CollaborationPage.tsx
 msgid "No collaboration open"
@@ -21385,7 +21435,7 @@ msgstr "لا توجد مجلدات بعد. أي مجلد يُضاف سيُفهر
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "No funding"
-msgstr ""
+msgstr "بدون تمويل"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "No future run."
@@ -21492,7 +21542,7 @@ msgstr "لم يتم العثور على لغات."
 #: src/components/token-plan/SourceSummary.tsx
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "no limit"
-msgstr ""
+msgstr "بلا حد"
 
 #: src/components/token-plan/SourceSummary.tsx
 msgid "No limit"
@@ -21547,7 +21597,7 @@ msgstr "لا توجد سجلات متاحة"
 
 #: src/components/conversation/InviteCard.tsx
 msgid "No longer shared"
-msgstr ""
+msgstr "لم يعد مشتركاً"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "No machine data available"
@@ -21563,7 +21613,7 @@ msgstr "لا يوجد جهاز لفتح طرفية عليه"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "No machine yet"
-msgstr ""
+msgstr "لا يوجد جهاز بعد"
 
 #: src/components/items/home-tabs.tsx
 msgid "No machines yet. A machine runs your agents and workspaces in the cloud."
@@ -21819,6 +21869,10 @@ msgstr "لا توجد مشاريع"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No projects found"
 msgstr "لم يتم العثور على مشاريع"
+
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
+msgid "No projects found."
+msgstr "لم يتم العثور على مشاريع."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "No projects to choose from — use a git repo."
@@ -22092,7 +22146,7 @@ msgstr "لا توجد قشرة مرتبطة بهذه العملية."
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "No sign-in. The same code always opens the same sandbox."
-msgstr ""
+msgstr "لا حاجة لتسجيل الدخول. الرمز نفسه يفتح دائماً البيئة المعزولة نفسها."
 
 #. placeholder {0}: preset.label
 #: src/components/organization/budgets/EndpointControls.tsx
@@ -22324,7 +22378,7 @@ msgstr "لم يتم اكتشاف قيمة"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "No visitor has opened one yet."
-msgstr ""
+msgstr "لم يفتح أي زائر نسخة بعد."
 
 #: src/components/webapp-viewer.tsx
 msgid "No web app available"
@@ -22357,7 +22411,7 @@ msgstr "لم تُخصَّص ميزانية لأي عضو في هذا الفري�
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Nobody has talked to it yet — each person gets their own machine on their first message."
-msgstr ""
+msgstr "لم يتحدث إليه أحد بعد — يحصل كل شخص على جهازه الخاص عند أول رسالة."
 
 #: src/components/organization/tabs/MembersTab.tsx
 msgid "Nobody here."
@@ -22526,7 +22580,7 @@ msgstr "لم يُنشر بعد — لن يعمل في أي مكان حتى يُ�
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Not deployed yet — launch one to give this project a machine of its own."
-msgstr ""
+msgstr "لم يُنشر بعد — يمكن إطلاق نشر ليكون لهذا المشروع جهاز خاص به."
 
 #~ msgid "Not done: {0}"
 #~ msgstr ""
@@ -22649,7 +22703,7 @@ msgstr "لم يُفتح بعد"
 
 #: src/components/conversation/conversation-category.ts
 msgid "Not picked up"
-msgstr ""
+msgstr "لم تُستلم بعد"
 
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Not published"
@@ -22685,7 +22739,7 @@ msgstr "لم يُبلَّغ"
 
 #: src/components/conversation/it-reply.ts
 msgid "Not run — someone is signed in on this machine"
-msgstr ""
+msgstr "لم يتم التشغيل — هناك مستخدم مسجّل الدخول على هذا الجهاز"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 msgid "Not run on this machine yet"
@@ -22716,7 +22770,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not running on this computer"
-msgstr ""
+msgstr "لا يعمل على هذا الجهاز"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Not saved"
@@ -22785,13 +22839,14 @@ msgstr "لم يتم تسجيل الدخول إلى هذا المساعد"
 msgid "not started"
 msgstr "لم يبدأ"
 
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
 msgstr "لم يبدأ بعد"
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Not started · starts on first message"
-msgstr ""
+msgstr "لم يبدأ بعد · يبدأ مع أول رسالة"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Not started yet — its terminal appears when the deployment first runs."
@@ -23158,7 +23213,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Number of codes"
-msgstr ""
+msgstr "عدد الرموز"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "number proven"
@@ -23203,7 +23258,7 @@ msgstr "متوقف"
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Off · turn on to run it here, free, while this computer is awake"
-msgstr ""
+msgstr "متوقف · يمكن التفعيل للتشغيل هنا مجاناً ما دام الكمبيوتر مستيقظاً"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #~ msgid "Off on this place"
@@ -23269,7 +23324,7 @@ msgstr ""
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "On <0>{where}</0>, open a terminal."
-msgstr ""
+msgstr "على <0>{where}</0>، يُرجى فتح الطرفية."
 
 #~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
 #~ msgstr ""
@@ -23569,7 +23624,7 @@ msgstr "فتح {0} في المحرر"
 #. placeholder {0}: slackName.trim()
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Open {0} in Slack"
-msgstr ""
+msgstr "فتح {0} في Slack"
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Open {displayName}"
@@ -23655,7 +23710,7 @@ msgstr "افتح مشروعًا لرؤية نموذج بياناته."
 
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Open a project to see its deployments"
-msgstr ""
+msgstr "افتح مشروعاً لعرض عمليات النشر الخاصة به"
 
 #~ msgid "Open a project to see its schemas."
 #~ msgstr "افتحوا مشروعًا لعرض مخططاته."
@@ -24012,7 +24067,7 @@ msgstr "فتح مجلد السجلات"
 
 #: src/components/conversation/ItReplyLine.tsx
 msgid "Open machine"
-msgstr ""
+msgstr "فتح الجهاز"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Open message"
@@ -24029,7 +24084,7 @@ msgstr "فتح قائمة التبويب الجديد"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Open on any machine and use on-premise"
-msgstr ""
+msgstr "الفتح على أي جهاز والاستخدام محليًا (on-premise)"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -24042,7 +24097,7 @@ msgstr "فتح مجلد المخرجات"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Open PC link"
-msgstr ""
+msgstr "فتح رابط الكمبيوتر"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Open Plan"
@@ -24130,7 +24185,7 @@ msgstr "فتح جلسة المواصفات"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Open stream inbox"
-msgstr ""
+msgstr "فتح صندوق وارد التدفق"
 
 #: src/components/top-nav-bar/use-screen-recorder.ts
 msgid "Open System Settings"
@@ -24182,7 +24237,7 @@ msgstr "فتح صفحة {PRIVACY_WIKI_PAGE}"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Open the agent"
-msgstr ""
+msgstr "فتح الوكيل"
 
 #: src/components/automations/RunDetail.tsx
 msgid "Open the agent run"
@@ -24336,7 +24391,7 @@ msgstr "فتح جلسة العمل المبدوءة بالفعل لهذه الم
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Open their threads"
-msgstr ""
+msgstr "فتح محادثاتهم"
 
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 msgid "Open this agent's transcript"
@@ -24417,7 +24472,7 @@ msgstr ""
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "Open your sandbox"
-msgstr ""
+msgstr "فتح بيئتك المعزولة"
 
 #: src/pages/hub-home/SharedProjectsBanner.tsx
 #~ msgid "Open your shared projects in FlowPad"
@@ -24433,7 +24488,7 @@ msgstr "OPENAI_API_KEY"
 
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "OpenAI-style chat endpoint, called with the person's API key"
-msgstr ""
+msgstr "نقطة نهاية للدردشة بنمط OpenAI، تُستدعى بمفتاح API الخاص بالمستخدم"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "OpenCode"
@@ -24511,7 +24566,7 @@ msgstr "جارٍ فتح البيئة المعزولة الخاصة بكم…"
 #: src/pages/entry/OpenPcLanding.tsx
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "Opening…"
-msgstr ""
+msgstr "جارٍ الفتح…"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "OpenRouter"
@@ -24820,7 +24875,7 @@ msgstr "المالك"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "owner default"
-msgstr ""
+msgstr "الإعداد الافتراضي للمالك"
 
 #~ msgid "Owner: {0}"
 #~ msgstr ""
@@ -25039,7 +25094,7 @@ msgstr "الصقوه مجدداً أدناه."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Paste its Bot User OAuth Token (xoxb-…) and the channel ID here."
-msgstr ""
+msgstr "الصقوا هنا رمز Bot User OAuth Token (xoxb-…) ومعرّف القناة."
 
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Paste Mermaid syntax to replace the current board."
@@ -25064,7 +25119,7 @@ msgstr "لصق مسار {0}"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Paste the token it gives you here."
-msgstr ""
+msgstr "الصقوا هنا الرمز الذي حصلتم عليه."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Paste the whole service-account JSON file from Google Cloud (IAM → Service accounts → Keys → JSON)."
@@ -25144,7 +25199,7 @@ msgstr "متوقف مؤقتًا — لا يُجلب شيء من هذه القن�
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Paused · wakes on next message"
-msgstr ""
+msgstr "متوقف مؤقتاً · يستأنف مع الرسالة التالية"
 
 #: src/components/data-sources/use-source-toggle.ts
 msgid "Paused."
@@ -25157,7 +25212,7 @@ msgstr "ادفعوا تكلفة LLM الخاص بهم"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Pay only while it runs."
-msgstr ""
+msgstr "الدفع فقط أثناء التشغيل."
 
 #: src/components/graph-workflows/panels/InjectPanel.tsx
 msgid "payload"
@@ -25339,7 +25394,7 @@ msgstr "يمكن اختيار تشغيل لمعرفة سبب تشغيله وما
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Pick a size to see the price"
-msgstr ""
+msgstr "اختر حجماً لعرض السعر"
 
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -25428,15 +25483,15 @@ msgstr "حدِّدوا من يتولى المعالجة"
 
 #: src/components/conversation/conversation-category.ts
 msgid "Picked up"
-msgstr ""
+msgstr "تم استلامها"
 
 #: src/components/conversation/conversation-category.ts
 msgid "Picked up by {by}"
-msgstr ""
+msgstr "تم استلامها بواسطة {by}"
 
 #: src/components/conversation/conversation-category.ts
 msgid "Picked up by you"
-msgstr ""
+msgstr "تم استلامها بواسطتكم"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Picking up…"
@@ -25726,7 +25781,7 @@ msgstr "التحضير — قبل خطواته"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Preparing the agent machine"
-msgstr ""
+msgstr "جارٍ تجهيز جهاز الوكيل"
 
 #: src/components/project-setup/ProjectLoadDialog.tsx
 msgid "Preparing this project for use."
@@ -25838,7 +25893,7 @@ msgstr "خاص"
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Private · one machine per person"
-msgstr ""
+msgstr "خاص · جهاز واحد لكل شخص"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -25851,7 +25906,7 @@ msgstr "خاص: كل جهاز يكتب لشخصه فقط — يُرفض البر
 
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Private: each person who talks to it gets their own machine, started on their first message. Shared: everyone reaches one machine."
-msgstr ""
+msgstr "خاص: يحصل كل من يتحدث إليه على جهاز خاص به يبدأ عند أول رسالة. مشترك: يصل الجميع إلى جهاز واحد."
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "problem"
@@ -26412,7 +26467,7 @@ msgstr "تعذّر النشر."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Publish the agent first to let visitors open it."
-msgstr ""
+msgstr "يُرجى نشر الوكيل أولاً ليتمكّن الزوار من فتحه."
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Publish this agent to share it"
@@ -26775,7 +26830,7 @@ msgstr "جارٍ قراءة المشاريع…"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 msgid "Reading the current allocation…"
-msgstr ""
+msgstr "جارٍ قراءة التخصيص الحالي…"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Reading the data model…"
@@ -26795,7 +26850,7 @@ msgstr ""
 
 #: src/components/project-deployments/ProjectDeploymentPage.tsx
 msgid "Reading the threads…"
-msgstr ""
+msgstr "جارٍ قراءة سلاسل المحادثات…"
 
 #~ msgid "Reading this team's people…"
 #~ msgstr ""
@@ -26996,7 +27051,7 @@ msgstr "من لديهم صلاحية الوصول إلى المستودع يفت
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "recommended"
-msgstr ""
+msgstr "موصى به"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Recommended"
@@ -27284,11 +27339,11 @@ msgstr "تم إعادة الإطلاق."
 
 #: src/components/project-deployments/DeploymentContext.tsx
 msgid "release"
-msgstr ""
+msgstr "إصدار"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Release"
-msgstr ""
+msgstr "إصدار"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
@@ -28053,7 +28108,7 @@ msgstr "تعذّرت إعادة الضبط."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Reset sandbox"
-msgstr ""
+msgstr "إعادة تعيين البيئة المعزولة"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset to default"
@@ -28492,19 +28547,19 @@ msgstr "سحب الصلاحية"
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Revoke code"
-msgstr ""
+msgstr "إلغاء الرمز"
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Revoke code ••••{revokingLast4}? Its sandbox is deleted and the code stops working."
-msgstr ""
+msgstr "إلغاء الرمز ••••{revokingLast4}؟ ستُحذف بيئته المعزولة ويتوقف الرمز عن العمل."
 
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Revoked"
-msgstr ""
+msgstr "مُلغى"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Right-click the channel → Copy → Copy link, and paste it here:"
-msgstr ""
+msgstr "انقروا بزر الماوس الأيمن على القناة → نسخ → نسخ الرابط، ثم الصقوه هنا:"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Right-to-left paragraph"
@@ -28832,7 +28887,7 @@ msgstr "تشغيل الآن"
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Run on this computer"
-msgstr ""
+msgstr "التشغيل على هذا الكمبيوتر"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Run on this one"
@@ -28918,11 +28973,11 @@ msgstr "في أي مشروع تريدون تشغيل هذه الجلسة الم�
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "Run:"
-msgstr ""
+msgstr "شغّلوا:"
 
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Runner"
-msgstr ""
+msgstr "المُشغِّل"
 
 #: src/components/conversation/SessionCard.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -28959,7 +29014,7 @@ msgstr "قيد التشغيل · المعرّف {0}"
 #. placeholder {0}: fmtDur(now - startedAt)
 #: src/pages/hub-home/HubHome.tsx
 msgid "running {0}"
-msgstr ""
+msgstr "قيد التشغيل منذ {0}"
 
 #. placeholder {0}: a.name
 #: src/components/automations/AutomationsList.tsx
@@ -28987,7 +29042,7 @@ msgstr "ينفّذ الأمر…"
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Running here · free while this computer is awake"
-msgstr ""
+msgstr "يعمل هنا · مجاناً ما دام الكمبيوتر مستيقظاً"
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."
@@ -29074,7 +29129,7 @@ msgstr "عمليات تشغيل هذا التدفق"
 #: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Runs on"
-msgstr ""
+msgstr "يعمل على"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Runs on {hostName}'s machine, in their Claude Code · Enter to send"
@@ -29082,7 +29137,7 @@ msgstr "يعمل على جهاز {hostName}، في Claude Code لديه · Enter
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Runs on this computer as its project's main agent"
-msgstr ""
+msgstr "يعمل على هذا الجهاز بوصفه الوكيل الرئيسي للمشروع"
 
 #: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
 msgid "Runs on this file"
@@ -29227,8 +29282,12 @@ msgid "Save and run once now"
 msgstr "حفظ وتشغيل مرة واحدة الآن"
 
 #: src/components/notes/QuickPromptsMenu.tsx
-msgid "Save as a quick prompt (does not run it)"
-msgstr "حفظ كموجّه سريع (دون تشغيله)"
+msgid "Save as a quick prompt"
+msgstr ""
+
+#: src/components/notes/QuickPromptsMenu.tsx
+#~ msgid "Save as a quick prompt (does not run it)"
+#~ msgstr "حفظ كموجّه سريع (دون تشغيله)"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Save budget"
@@ -29325,7 +29384,7 @@ msgstr "السياقات المحفوظة"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Saved to My project"
-msgstr ""
+msgstr "تم الحفظ في My project"
 
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "Saved to project"
@@ -29343,7 +29402,7 @@ msgstr "يُحفظ مع النموذج. يتطلب خيار «واحد من مج
 
 #: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
 msgid "Saving moves this schedule: it is deleted where it runs now and created on the new place."
-msgstr ""
+msgstr "الحفظ ينقل هذا الجدول: يُحذف من مكان تشغيله الحالي ويُنشأ في المكان الجديد."
 
 #: src/components/top-nav-bar/RecordScreenButton.tsx
 msgid "Saving the recording"
@@ -29392,7 +29451,7 @@ msgstr "اذكروا ما يجب التقاطه"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "says:"
-msgstr ""
+msgstr "يقول:"
 
 #. placeholder {0}: postScanResult.grand_total.toLocaleString()
 #: src/pages/home-landing/HomeLanding.tsx
@@ -29767,6 +29826,7 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Search projects…"
 msgstr "البحث عن المشاريع…"
@@ -30066,7 +30126,7 @@ msgstr "تحديد جميع المحادثات"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Select all machines"
-msgstr ""
+msgstr "تحديد كل الأجهزة"
 
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Select all matches"
@@ -30229,7 +30289,7 @@ msgstr "إرسال الدعوة"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Send IT message"
-msgstr ""
+msgstr "إرسال رسالة IT"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
@@ -30379,7 +30439,7 @@ msgstr "أُرسل إلى سطح المكتب — أكّدوا هناك."
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Sent via FlowPad"
-msgstr ""
+msgstr "أُرسلت عبر Flowpad"
 
 #. placeholder {0}: labelForType(sent[1])
 #: src/notifications/renderDesktopNotification.ts
@@ -30761,7 +30821,7 @@ msgstr "تم الإعداد خلال {0} ثانية. راسله على <0>{1}</0
 #. placeholder {1}: CHANNEL_TITLE[channel]
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Set up in {0}s. Message it on {1} — it answers there."
-msgstr ""
+msgstr "تم الإعداد خلال {0} ثانية. راسلوه على {1} — فهو يردّ هناك."
 
 #: src/types/ViewType.ts
 msgid "Set up LLM"
@@ -31091,7 +31151,7 @@ msgstr "مشترك"
 
 #: src/components/conversation/InviteCard.tsx
 msgid "shared {typeNoun} <0>{name}</0> with you"
-msgstr ""
+msgstr "شارك معك {typeNoun} <0>{name}</0>"
 
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 #~ msgid "shared {typeNoun} <0>{targetName}</0> with you"
@@ -31124,11 +31184,11 @@ msgstr "الجلسات المشتركة"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Shared Task"
-msgstr ""
+msgstr "مهمة مشتركة"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Shared Task: {taskTitle}"
-msgstr ""
+msgstr "مهمة مشتركة: {taskTitle}"
 
 #. placeholder {0}: vaults.join(', ')
 #: src/components/credentials-view/SecretVaultPanel.tsx
@@ -31623,7 +31683,7 @@ msgstr "تسجيل الدخول إلى Flowpad"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/automations/AutomationPage.tsx
 msgid "Sign in to Flowpad cloud"
-msgstr ""
+msgstr "سجّلوا الدخول إلى سحابة Flowpad"
 
 #: src/components/machine-overview/shared-machine.tsx
 msgid "Sign in to Flowpad Cloud to open it"
@@ -31700,15 +31760,15 @@ msgstr "يمكن تسجيل الدخول تلقائيًا — الصندوق ا�
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Sign out"
-msgstr ""
+msgstr "تسجيل الخروج"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Sign out ({n})"
-msgstr ""
+msgstr "تسجيل الخروج ({n})"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Sign out {n} machines?"
-msgstr ""
+msgstr "تسجيل الخروج من {n} من الأجهزة؟"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign out of this sandbox (you stay signed in here)"
@@ -31757,7 +31817,7 @@ msgstr "تم تسجيل الدخول"
 #. placeholder {0}: row.node.logged_in_user
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Signed in as {0}"
-msgstr ""
+msgstr "تم تسجيل الدخول باسم {0}"
 
 #. placeholder {0}: currentUser.email
 #: src/pages/entry/entry-shell.tsx
@@ -31811,11 +31871,11 @@ msgstr "تم تسجيل الخروج"
 
 #: src/components/asset-counters/hub-counters.tsx
 msgid "Signed out — running with no identity"
-msgstr ""
+msgstr "لم يتم تسجيل الدخول — يعمل بلا هوية"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Signed out {ok} of {total} machines."
-msgstr ""
+msgstr "تم تسجيل الخروج من {ok} من أصل {total} من الأجهزة."
 
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
@@ -32064,11 +32124,11 @@ msgstr "تم التخطي: الفحص قبل التشغيل لم يجد شيئً
 
 #: src/components/assets/editor/agent-profile/AgentModeFields.tsx
 msgid "Slack"
-msgstr ""
+msgstr "Slack"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Slack is linked. Your agent goes live as soon as its machine is ready."
-msgstr ""
+msgstr "تم ربط Slack. سيبدأ وكيلكم العمل فور جاهزية جهازه."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."
@@ -32141,15 +32201,15 @@ msgstr "تعذر حذف بعض السياقات"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Some machines were not deleted"
-msgstr ""
+msgstr "لم يتم حذف بعض الأجهزة"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Some machines were not signed out"
-msgstr ""
+msgstr "لم يتم تسجيل الخروج من بعض الأجهزة"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Some machines were not upgraded"
-msgstr ""
+msgstr "لم تتم ترقية بعض الأجهزة"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Some of the selected cannot be removed from the project"
@@ -32456,7 +32516,7 @@ msgstr "بدء {0}"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Start a cloud sandbox, or connect a computer you own."
-msgstr ""
+msgstr "شغّلوا بيئة معزولة سحابية، أو اربطوا حاسوباً تملكونه."
 
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
@@ -32563,7 +32623,7 @@ msgstr "بدء تشغيل هذا الخادم وعرض الأدوات التي �
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Start this task using one of these options:"
-msgstr ""
+msgstr "يمكن بدء هذه المهمة بإحدى الخيارات التالية:"
 
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Start time"
@@ -32588,7 +32648,7 @@ msgstr "البدء"
 #. placeholder {0}: new Date(startedAt).toLocaleString()
 #: src/pages/hub-home/HubHome.tsx
 msgid "started {0}"
-msgstr ""
+msgstr "بدأ في {0}"
 
 #: src/components/items/ItemCard.tsx
 msgid "Started {ago}"
@@ -32605,7 +32665,7 @@ msgstr "بدأ التشغيل. تابعوه ضمن التشغيلات."
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/items/item-state.ts
 msgid "Starting"
-msgstr ""
+msgstr "جارٍ البدء"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Starting a machine — this takes a couple of minutes."
@@ -32744,7 +32804,7 @@ msgstr "الخطوة {0}"
 #. placeholder {1}: WIZARD.length
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Step {0} of {1}"
-msgstr ""
+msgstr "الخطوة {0} من {1}"
 
 #~ msgid "step: {0}ms · debounce: {1}ms"
 #~ msgstr "الخطوة: {0}ms · إلغاء الاهتزاز: {1}ms"
@@ -33261,11 +33321,11 @@ msgstr "جدول"
 
 #: src/components/project-deployments/DeploymentContext.tsx
 msgid "tag"
-msgstr ""
+msgstr "وسم"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Tag"
-msgstr ""
+msgstr "وسم"
 
 #~ msgid "tag e.g. entity.created"
 #~ msgstr "الوسم (مثل entity.created)"
@@ -33691,7 +33751,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "The agent that answers every call on this machine."
-msgstr ""
+msgstr "الوكيل الذي يرد على كل مكالمة على هذا الجهاز."
 
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
@@ -33851,7 +33911,7 @@ msgstr "مساحة العمل الافتراضية. تنتمي إليها كل �
 
 #: src/components/project-deployments/ProjectDeploymentPage.tsx
 msgid "The deployment failed."
-msgstr ""
+msgstr "فشل النشر."
 
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
@@ -33990,7 +34050,7 @@ msgstr "المضيف"
 
 #: src/components/assets/editor/agent-profile/deployment/use-deployment-threads.ts
 msgid "The hub could not reach this machine. It may be paused or still starting."
-msgstr ""
+msgstr "تعذّر على Hub الوصول إلى هذا الجهاز. قد يكون متوقفاً مؤقتاً أو ما زال قيد البدء."
 
 #: src/components/install/InstallButton.tsx
 msgid "The hub did not accept the request."
@@ -34091,7 +34151,7 @@ msgstr "لم يكتمل تسجيل الخروج."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "The machine did not answer."
-msgstr ""
+msgstr "لم يستجب الجهاز."
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #~ msgid "The machine reads this environment's credentials."
@@ -34307,7 +34367,7 @@ msgstr "معرّف المرسل كما يرسله المزوّد. إن كان م
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "The sender's upload didn't complete. Ask {firstName} to resend."
-msgstr ""
+msgstr "لم يكتمل رفع المُرسِل. اطلبوا من {firstName} إعادة الإرسال."
 
 #: src/components/version-popover/version-popover.tsx
 #~ msgid "The server now runs v{currentVersion}; this page is still v{pageVersion}."
@@ -34502,7 +34562,7 @@ msgstr "ثم"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Then send this to the Flowpad bot:"
-msgstr ""
+msgstr "ثم أرسلوا هذا إلى بوت Flowpad:"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Then: run its rule code"
@@ -34624,7 +34684,7 @@ msgstr "رابط {0} هذا غير صحيح أو غير متاح."
 
 #: src/components/conversation/InviteCard.tsx
 msgid "This {typeNoun} has no page to open here"
-msgstr ""
+msgstr "لا توجد صفحة لفتح {typeNoun} هنا"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "This action cannot be undone."
@@ -34653,6 +34713,14 @@ msgstr ""
 
 #~ msgid "This agent isn't published to the cloud, so there's nothing to launch."
 #~ msgstr ""
+
+#: src/pages/entry/OpenPcLanding.tsx
+msgid "This agent isn't ready to open yet: {why} Tell whoever gave you the code."
+msgstr "الوكيل غير جاهز للفتح بعد: {why} يُرجى إبلاغ من أعطاكم الرمز."
+
+#: src/pages/entry/OpenPcLanding.tsx
+msgid "This agent isn't ready to open yet. Tell whoever gave you the code."
+msgstr "الوكيل غير جاهز للفتح بعد. يُرجى إبلاغ من أعطاكم الرمز."
 
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent no longer exists."
@@ -34734,11 +34802,11 @@ msgstr "لا توجد جلسة قابلة للاستئناف في هذه الم�
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "This code doesn't work. Check it, or ask whoever gave it to you."
-msgstr ""
+msgstr "هذا الرمز لا يعمل. يُرجى التحقق منه أو سؤال من منحكم إياه."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "This code gets a fresh machine. Everything on the current one is erased; the same code opens the new one."
-msgstr ""
+msgstr "يحصل هذا الرمز على جهاز جديد. يُمحى كل ما في الجهاز الحالي، ويفتح الرمز نفسه الجهاز الجديد."
 
 #: src/routes/loaders/load-project.ts
 msgid "This collaboration room no longer exists or is unavailable."
@@ -34761,11 +34829,11 @@ msgstr "هذا الكمبيوتر · {0}"
 
 #: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "This computer · every machine"
-msgstr ""
+msgstr "هذا الحاسوب · كل الأجهزة"
 
 #: src/components/assets/editor/agent-profile/use-place-display.ts
 msgid "This computer · not in the cloud"
-msgstr ""
+msgstr "هذا الحاسوب · ليس في السحابة"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "This computer (fetches its own)"
@@ -35004,7 +35072,7 @@ msgstr "لا يحتوي هذا الرابط على شيء لتشغيله."
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "This link is for visitors. Open it in a private window."
-msgstr ""
+msgstr "هذا الرابط مخصص للزوار. يُرجى فتحه في نافذة تصفح خاصة."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
@@ -35039,7 +35107,7 @@ msgstr "هذا الجهاز"
 
 #: src/pages/hub-home/ConnectMachineDialog.tsx
 msgid "This machine is not connected to the hub, so it cannot be opened from here."
-msgstr ""
+msgstr "هذا الجهاز غير متصل بالمركز، لذلك لا يمكن فتحه من هنا."
 
 #: src/components/agents/AllowedSendersEditor.tsx
 #: src/components/agents/MailboxListsEditor.tsx
@@ -35212,7 +35280,7 @@ msgstr "لا يوجد لهذا المشروع مجلد على القرص، لذ�
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "This project has no folder on this computer."
-msgstr ""
+msgstr "لا يوجد لهذا المشروع مجلد على هذا الكمبيوتر."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project has no secret manager yet — Share secrets continues to set one up."
@@ -35431,7 +35499,7 @@ msgstr "لم تُشغَّل هذه الخطوة بعد."
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "This stops the project on this computer."
-msgstr ""
+msgstr "يؤدي هذا إلى إيقاف المشروع على هذا الكمبيوتر."
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "This task"
@@ -35829,7 +35897,7 @@ msgstr "محاولات كثيرة جداً. يُرجى الانتظار بضع �
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "Too many tries. Try again later."
-msgstr ""
+msgstr "محاولات كثيرة جداً. يُرجى المحاولة لاحقاً."
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "tool"
@@ -36116,7 +36184,7 @@ msgstr "جرّبوا التثبيت التلقائي (يكتب الأمر في �
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Try it"
-msgstr ""
+msgstr "جرّبوه"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Try it on recent messages"
@@ -36124,7 +36192,7 @@ msgstr "جرِّبوها على الرسائل الأخيرة"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Try:"
-msgstr ""
+msgstr "جرّبوا:"
 
 #: src/components/preferences-view/PreferencesView.tsx
 msgid "Tune Flowpad to how you work — changes save automatically."
@@ -36157,12 +36225,12 @@ msgid "Turn failed"
 msgstr "فشل الدور"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "Turn IT Sessions off on this machine"
-msgstr ""
+#~ msgid "Turn IT Sessions off on this machine"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "Turn IT Sessions on on this machine"
-msgstr ""
+#~ msgid "Turn IT Sessions on on this machine"
+#~ msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -36179,8 +36247,8 @@ msgid "Turn on a scope above to see its assets."
 msgstr "فعّلوا نطاقاً من الأعلى لعرض أصوله."
 
 #: src/components/conversation/ItReplyLine.tsx
-msgid "Turn on and run"
-msgstr ""
+#~ msgid "Turn on and run"
+#~ msgstr ""
 
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "Turns a feature or an integration on"
@@ -36247,7 +36315,7 @@ msgstr "الواجهة"
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "UI"
-msgstr ""
+msgstr "UI"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "UI & Display"
@@ -36297,7 +36365,7 @@ msgstr "قيد التقييم"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Under OAuth & Permissions add the bot scopes channels:history, groups:history, channels:read, chat:write and channels:join, then install it to your workspace."
-msgstr ""
+msgstr "ضمن OAuth & Permissions أضيفوا نطاقات البوت channels:history, groups:history, channels:read, chat:write و channels:join، ثم ثبّتوا التطبيق في مساحة عملكم."
 
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
@@ -36588,7 +36656,7 @@ msgstr "تحديث الخطة استناداً إلى أقسام <plan-note>"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Update to"
-msgstr ""
+msgstr "تحديث إلى"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Update values"
@@ -36642,11 +36710,11 @@ msgstr "ترقية"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Upgrade ({n})"
-msgstr ""
+msgstr "ترقية ({n})"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Upgrade FlowPad on {n} machines?"
-msgstr ""
+msgstr "ترقية FlowPad على {n} من الأجهزة؟"
 
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -36664,7 +36732,7 @@ msgstr "الترقية إلى الإصدار {0}"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Upgraded {ok} of {total} machines."
-msgstr ""
+msgstr "تمت ترقية {ok} من أصل {total} من الأجهزة."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Upgrading — this takes a minute or two"
@@ -36708,11 +36776,11 @@ msgstr "رفع صورة"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Upload it to FlowPad on any machine to open the conversation."
-msgstr ""
+msgstr "لفتح المحادثة، ارفعوها إلى Flowpad على أي جهاز."
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Upload it to FlowPad on any machine to open the task."
-msgstr ""
+msgstr "لفتح المهمة، ارفعوها إلى Flowpad على أي جهاز."
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Upload JSON file"
@@ -37313,7 +37381,7 @@ msgstr "عرض التغييرات في هذا الملف"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "View the conversation using one of these options:"
-msgstr ""
+msgstr "يمكن عرض المحادثة بأحد الخيارات التالية:"
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "View the drivers every source is made from"
@@ -37396,7 +37464,7 @@ msgstr ""
 
 #: src/components/conversation/InviteCard.tsx
 msgid "Waiting for an answer"
-msgstr ""
+msgstr "بانتظار الرد"
 
 #: src/components/connections-manager.tsx
 msgid "Waiting for approval…"
@@ -37416,7 +37484,7 @@ msgstr "في انتظار موافقة Keychain…"
 
 #: src/components/conversation/conversation-category.ts
 msgid "Waiting for pickup"
-msgstr ""
+msgstr "بانتظار الاستلام"
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Waiting for sign-in"
@@ -37434,7 +37502,7 @@ msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Waiting for the first message…"
-msgstr ""
+msgstr "بانتظار الرسالة الأولى…"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "waiting for the first signed delivery…"
@@ -37443,7 +37511,7 @@ msgstr "بانتظار أول تسليم موقَّع…"
 #: src/components/agent-resources/AgentWebhooksSection.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Waiting for the link"
-msgstr ""
+msgstr "في انتظار الربط"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
 #~ msgid "Waiting for the page to settle and report its errors · {seconds}s (shown anyway at 8s)"
@@ -37459,7 +37527,7 @@ msgstr "في انتظاركم"
 
 #: src/components/conversation/InviteCard.tsx
 msgid "Waiting for you"
-msgstr ""
+msgstr "بانتظارك"
 
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
@@ -37491,7 +37559,7 @@ msgstr "بانتظار الرسالة…"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Waiting for your message…"
-msgstr ""
+msgstr "بانتظار رسالتكم…"
 
 #: src/components/inbound/InboundView.tsx
 #~ msgid "waiting to be proven"
@@ -37504,7 +37572,7 @@ msgstr "في الانتظار…"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Waking up…"
-msgstr ""
+msgstr "جارٍ التنشيط…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift."
@@ -37613,7 +37681,7 @@ msgstr "عنوان Webhook"
 #: src/components/agent-resources/AgentWebhooksSection.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Webhooks & connections"
-msgstr ""
+msgstr "Webhooks والاتصالات"
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"
@@ -37827,7 +37895,7 @@ msgstr "ما الذي ينبغي معرفته؟"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "What should your agent do? One line is enough."
-msgstr ""
+msgstr "ماذا ينبغي أن يفعل وكيلكم؟ يكفي سطر واحد."
 
 #. placeholder {0}: readiness.environment
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -37843,7 +37911,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "What the machine needs. Leave a field empty to keep the value it already has."
-msgstr ""
+msgstr "ما يحتاجه الجهاز. اترك الحقل فارغاً للإبقاء على القيمة الحالية."
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "What this machine's assistants are funded by right now"
@@ -37906,7 +37974,7 @@ msgstr "ما الذي يمكنكم العمل عليه؟"
 
 #: src/components/assets/editor/agent-profile/AgentModelSizeField.tsx
 msgid "Whatever I get"
-msgstr ""
+msgstr "أيًّا كان المتاح"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "WhatsApp account ID (optional)"
@@ -37914,7 +37982,7 @@ msgstr "معرّف حساب WhatsApp (اختياري)"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "WhatsApp Business account ID"
-msgstr ""
+msgstr "معرّف حساب WhatsApp Business"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -38052,7 +38120,7 @@ msgstr "على أي مشروع يجب أن يعمل؟"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Which set of values the machine reads. It joins the hub you are signed in to either way."
-msgstr ""
+msgstr "أي مجموعة من القيم يقرأها الجهاز. وفي كل الأحوال ينضم إلى hub الذي سجّلت الدخول إليه."
 
 #: src/components/terminal/interactive-terminal/useChainSession.tsx
 msgid "Which worker reviews it?"
@@ -38086,7 +38154,7 @@ msgstr "من يستدعي من، خطوة بخطوة — مع تدفقات فر�
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Who can open it"
-msgstr ""
+msgstr "من يمكنه فتحه"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Who can read"
@@ -38179,15 +38247,15 @@ msgstr "ويكيات"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Will delete"
-msgstr ""
+msgstr "سيتم الحذف"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Will sign out"
-msgstr ""
+msgstr "سيتم تسجيل الخروج"
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Will upgrade"
-msgstr ""
+msgstr "ستتم الترقية"
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Window (days)"
@@ -38215,7 +38283,7 @@ msgstr "فشل إغلاق المعالج"
 
 #: src/components/conversation/it-reply.ts
 msgid "Woke the paused machine · done"
-msgstr ""
+msgstr "تم إيقاظ الجهاز المتوقف مؤقتًا · اكتمل"
 
 #: src/pages/entry/EntityLanding.tsx
 msgid "Work on it in the FlowPad desktop app with your coding agents."
@@ -38642,11 +38710,11 @@ msgstr "أنتم مالكو هذه المحادثة — يُرجى اختيار 
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "You received a new message from <0>{senderName}</0>."
-msgstr ""
+msgstr "وصلتكم رسالة جديدة من <0>{senderName}</0>."
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "You received a new task from <0>{senderName}</0>."
-msgstr ""
+msgstr "وصلتكم مهمة جديدة من <0>{senderName}</0>."
 
 #: src/components/token-plan/ScopePath.tsx
 #~ msgid "You spend through"
@@ -38702,7 +38770,7 @@ msgstr "حسابكم"
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Your agent is live"
-msgstr ""
+msgstr "وكيلكم يعمل الآن"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
@@ -38901,11 +38969,11 @@ msgstr "انتهت صلاحية الجلسة. يُرجى تسجيل الدخول
 
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Your session on each machine is cleared. You stay signed in here."
-msgstr ""
+msgstr "سيتم مسح جلستك على كل جهاز. وتبقى جلستك هنا قائمة."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Your Slack account is linked. The agent will post as you."
-msgstr ""
+msgstr "تم ربط حساب Slack الخاص بكم. سينشر الوكيل بصفتكم."
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Your status report is ready"

@@ -1830,8 +1830,12 @@ msgid "{numSlides} slides"
 msgstr "{numSlides} slides"
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
-msgid "{off} have IT Sessions off"
-msgstr "{off} have IT Sessions off"
+msgid "{off} are IT Disabled"
+msgstr "{off} are IT Disabled"
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+#~ msgid "{off} have IT Sessions off"
+#~ msgstr "{off} have IT Sessions off"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {grouped open error in the last 24 hours} other {grouped open errors in the last 24 hours}}"
@@ -2500,13 +2504,17 @@ msgid "1 file needs merging — let the assistant merge it"
 msgstr "1 file needs merging — let the assistant merge it"
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
-msgid "1 has IT Sessions off"
-msgstr "1 has IT Sessions off"
+#~ msgid "1 has IT Sessions off"
+#~ msgstr "1 has IT Sessions off"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "1 hour"
 msgstr "1 hour"
+
+#: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
+msgid "1 is IT Disabled"
+msgstr "1 is IT Disabled"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "1 Machine"
@@ -5039,6 +5047,10 @@ msgstr "Ask about this analysis…"
 msgid "Ask anything — I can search the guides and walk you through them."
 msgstr "Ask anything — I can search the guides and walk you through them."
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "Ask every IT Enabled machine one thing; the answers come back as one IT conversation in your inbox."
+msgstr "Ask every IT Enabled machine one thing; the answers come back as one IT conversation in your inbox."
+
 #: src/i18n/pref-labels.ts
 #: src/i18n/pref-labels.ts
 msgid "Ask every time"
@@ -7457,6 +7469,10 @@ msgstr "Click to download"
 msgid "Click to edit which models this budget may call"
 msgstr "Click to edit which models this budget may call"
 
+#: src/components/notes/QuickPromptsMenu.tsx
+msgid "Click to keep this session's last prompt. It is saved, not run."
+msgstr "Click to keep this session's last prompt. It is saved, not run."
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Click to rename"
 msgstr "Click to rename"
@@ -9015,8 +9031,12 @@ msgid "Could not change it"
 msgstr "Could not change it"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "Could not change IT Sessions"
-msgstr "Could not change IT Sessions"
+msgid "Could not change IT Enabled"
+msgstr "Could not change IT Enabled"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#~ msgid "Could not change IT Sessions"
+#~ msgstr "Could not change IT Sessions"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Could not change privacy mode"
@@ -12110,6 +12130,7 @@ msgstr "Disk I/O backend"
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
+#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
 
@@ -12901,6 +12922,10 @@ msgstr "Enable all"
 #: src/components/settings-view/settings-utils.ts
 msgid "Enable All Project MCP Servers"
 msgstr "Enable All Project MCP Servers"
+
+#: src/components/conversation/ItReplyLine.tsx
+msgid "Enable and run"
+msgstr "Enable and run"
 
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Enable browser automation via Chrome (--chrome)"
@@ -17628,6 +17653,14 @@ msgstr "It cannot be removed from the project"
 msgid "It did not work"
 msgstr "It did not work"
 
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Disabled"
+msgstr "IT Disabled"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Disabled: this machine refuses IT messages. Click to enable."
+msgstr "IT Disabled: this machine refuses IT messages. Click to enable."
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now?"
 msgstr "It doesn't appear to be installed on your computer. Would you like to install it now?"
@@ -17635,6 +17668,18 @@ msgstr "It doesn't appear to be installed on your computer. Would you like to in
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
 msgstr "It doesn't appear to be installed on your computer. Would you like to install it now? On a Mac, Apple's installer opens in its own window — if you don't see it, look behind this one."
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Enabled"
+msgstr "IT Enabled"
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Enabled not known yet for this machine. Click to enable it."
+msgstr "IT Enabled not known yet for this machine. Click to enable it."
+
+#: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+msgid "IT Enabled: you can send this machine IT messages. Never while someone is signed in. Click to disable."
+msgstr "IT Enabled: you can send this machine IT messages. Never while someone is signed in. Click to disable."
 
 #: src/components/automations/RunDetail.tsx
 msgid "It failed without saying why."
@@ -17654,6 +17699,10 @@ msgstr "It gets the changed file paths in its environment when a file starts it.
 #: src/components/automations/AutomationPage.tsx
 msgid "It has not run yet. Use Run once now on the Setup tab to try it."
 msgstr "It has not run yet. Use Run once now on the Setup tab to try it."
+
+#: src/components/conversation/it-reply.ts
+msgid "IT is disabled on this machine"
+msgstr "IT is disabled on this machine"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
@@ -17686,12 +17735,12 @@ msgid "It may have been deleted, or it wasn't shared with this account."
 msgstr "It may have been deleted, or it wasn't shared with this account."
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "IT off"
-msgstr "IT off"
+#~ msgid "IT off"
+#~ msgstr "IT off"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "IT on"
-msgstr "IT on"
+#~ msgid "IT on"
+#~ msgstr "IT on"
 
 #: src/components/webapp-display/PageCheckPanel.tsx
 #~ msgid "It records what it learned in setup/recovery.md and setup/webapp_errors.json."
@@ -17706,8 +17755,8 @@ msgid "IT session · done"
 msgstr "IT session · done"
 
 #: src/components/conversation/it-reply.ts
-msgid "IT Sessions is off on this machine"
-msgstr "IT Sessions is off on this machine"
+#~ msgid "IT Sessions is off on this machine"
+#~ msgstr "IT Sessions is off on this machine"
 
 #: src/components/automations/AutomationsList.tsx
 msgid "It shows up in Runs as a test."
@@ -20697,6 +20746,7 @@ msgstr "New Claude Session"
 msgid "New contacts group"
 msgstr "New contacts group"
 
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "New conversation"
 msgstr "New conversation"
@@ -21974,6 +22024,10 @@ msgstr "No projects"
 msgid "No projects found"
 msgstr "No projects found"
 
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
+msgid "No projects found."
+msgstr "No projects found."
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "No projects to choose from — use a git repo."
 msgstr "No projects to choose from — use a git repo."
@@ -22950,6 +23004,7 @@ msgstr "Not signed in to this assistant"
 msgid "not started"
 msgstr "not started"
 
+#: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
 msgstr "Not started"
@@ -29434,8 +29489,12 @@ msgid "Save and run once now"
 msgstr "Save and run once now"
 
 #: src/components/notes/QuickPromptsMenu.tsx
-msgid "Save as a quick prompt (does not run it)"
-msgstr "Save as a quick prompt (does not run it)"
+msgid "Save as a quick prompt"
+msgstr "Save as a quick prompt"
+
+#: src/components/notes/QuickPromptsMenu.tsx
+#~ msgid "Save as a quick prompt (does not run it)"
+#~ msgstr "Save as a quick prompt (does not run it)"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 msgid "Save budget"
@@ -29977,6 +30036,7 @@ msgstr "Search people…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Search projects…"
 msgstr "Search projects…"
@@ -34900,6 +34960,14 @@ msgstr "This agent is gone"
 #~ msgid "This agent isn't published to the cloud, so there's nothing to launch."
 #~ msgstr "This agent isn't published to the cloud, so there's nothing to launch."
 
+#: src/pages/entry/OpenPcLanding.tsx
+msgid "This agent isn't ready to open yet: {why} Tell whoever gave you the code."
+msgstr "This agent isn't ready to open yet: {why} Tell whoever gave you the code."
+
+#: src/pages/entry/OpenPcLanding.tsx
+msgid "This agent isn't ready to open yet. Tell whoever gave you the code."
+msgstr "This agent isn't ready to open yet. Tell whoever gave you the code."
+
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent no longer exists."
 msgstr "This Agent no longer exists."
@@ -36411,12 +36479,12 @@ msgid "Turn failed"
 msgstr "Turn failed"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "Turn IT Sessions off on this machine"
-msgstr "Turn IT Sessions off on this machine"
+#~ msgid "Turn IT Sessions off on this machine"
+#~ msgstr "Turn IT Sessions off on this machine"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
-msgid "Turn IT Sessions on on this machine"
-msgstr "Turn IT Sessions on on this machine"
+#~ msgid "Turn IT Sessions on on this machine"
+#~ msgstr "Turn IT Sessions on on this machine"
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -36433,8 +36501,8 @@ msgid "Turn on a scope above to see its assets."
 msgstr "Turn on a scope above to see its assets."
 
 #: src/components/conversation/ItReplyLine.tsx
-msgid "Turn on and run"
-msgstr "Turn on and run"
+#~ msgid "Turn on and run"
+#~ msgstr "Turn on and run"
 
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "Turns a feature or an integration on"
