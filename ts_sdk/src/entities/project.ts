@@ -9,7 +9,7 @@ import {
 } from '../APIEntity';
 import type { IEntity } from '../IEntity';
 import { getRaw } from '../client';
-import { QueryRequest } from '../FlowSync/query';
+import { ExpressionNode, QueryFilter, QueryRequest } from '../FlowSync/query';
 import {
   ActionInfo,
   TypeId,
@@ -627,6 +627,23 @@ export class Project extends APIEntity<Project> {
     const failure = inviteFailure(await this.invite(users));
     if (failure) throw failure;
     return this;
+  }
+
+  /**
+   * The hub project whose hosted repo is `repoTypeId` (an asset's `git_origin.repo` when it lives in a hub repo),
+   * or null. On the hub an asset row carries no `project_id`: its repository is the link to its project.
+   */
+  static async forHostedRepo(repoTypeId: string): Promise<Project | null> {
+    if (!repoTypeId) return null;
+    const found = await Project.query<Project>(
+      new QueryRequest({
+        type: Project.type,
+        query: new QueryFilter({ type: Project.type, match: new ExpressionNode({ hosted_repo: repoTypeId }) }),
+        name: 'Project.forHostedRepo',
+      }),
+    );
+    // Exactly one: a filter the server did not apply would answer every project, never a guess at one of them.
+    return found.length === 1 ? found[0] : null;
   }
 
   /**
