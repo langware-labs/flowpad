@@ -611,6 +611,38 @@ async def upsert_artifact_endpoints(
     return placed
 
 
+async def place_webapp_artifact_locally(artifact) -> list[Placed]:
+    """Place a received web ``Artifact`` whose copied folder is already local.
+
+    A generated app is an ``Artifact`` rather than a ``micro_app`` asset, so
+    filesystem indexing cannot create its route.  Its origin is the source of
+    truth for the local folder; when that folder has static output, give it the
+    same project placement and routed endpoint as agent registration does.
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+    if not kind_matches(WEBAPP_KIND, getattr(artifact, "kind", "")):
+        return []
+    source = artifact.local_origin_path()
+    served = served_dir(source, None) if source else None
+    if served is None:
+        return []
+    project_id = str(getattr(artifact, "project_id", "") or "")
+    project = await Project.get_by_id(project_id) if project_id else None
+    if project is None:
+        return []
+    deployment = await local_web_deployment(project, artifact=artifact)
+    if deployment is None:
+        return []
+    return await upsert_artifact_endpoints(
+        deployment,
+        artifact,
+        [(artifact.name, {"type": "static", "root": str(served)})],
+        project_id=project.id,
+    )
+
+
 async def register_dev_endpoint(project, *, port: int, name: Optional[str] = None, audience: str = "app") -> Placed:
     """The route for a dev server on *port* of this machine — found, or registered.
 
