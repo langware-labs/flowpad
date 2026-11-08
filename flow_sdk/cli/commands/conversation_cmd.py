@@ -211,7 +211,10 @@ def summary_conversation(
 def _form_attachment_line(a: dict) -> Optional[str]:
     """A form or its answers, as an agent reads them — ``None`` for any other attachment."""
     from flow_sdk.schema.data_spec.message_form_spec import (  # noqa: PLC0415
-        answers_in, answers_line, form_in, form_summary,
+        answers_in,
+        answers_line,
+        form_in,
+        form_summary,
     )
 
     raw = [{"attachment_type": a.get("type"), "data": a.get("data"), "prompt_preview": a.get("prompt_preview")}]
@@ -219,7 +222,8 @@ def _form_attachment_line(a: dict) -> Optional[str]:
     if form is not None:
         asks = ", ".join(
             f"{f.id}:{f.type}" + (f"={f.default}" if f.default is not None else "" if f.optional else "=?")
-            for f in form.fields)
+            for f in form.fields
+        )
         return f"  📋 form {form.form_id}: {form_summary(form)} — {asks}"
     answers = answers_in(raw)
     if answers is not None:
@@ -286,9 +290,7 @@ def _render_transcript(data: dict) -> str:
 def show_conversation(
     conversation_id: Annotated[str, typer.Argument(help=_CONV_ID_HELP)],
     last: Annotated[Optional[int], typer.Option("--last", help="Only the newest N messages.")] = None,
-    since: Annotated[
-        Optional[str], typer.Option("--since", help="Only messages at/after this ISO timestamp.")
-    ] = None,
+    since: Annotated[Optional[str], typer.Option("--since", help="Only messages at/after this ISO timestamp.")] = None,
     thread: Annotated[
         Optional[str],
         typer.Option("--thread", help="Only one thread: its id (listed in the header), or any message id in it."),
@@ -471,7 +473,7 @@ def _signed_in() -> bool:
     help=(
         "Start a live session on the other person's machine (they approve it), or show the one already "
         "open. Answers the session id and status; once it is past `pending`, send prompts with "
-        "`flow conversation send <id> \"<what they read>\" --prompt \"<what they run>\" --session <session id>`. "
+        '`flow conversation send <id> "<what they read>" --prompt "<what they run>" --session <session id>`. '
         "Run it again to re-check the status."
     ),
 )
@@ -575,14 +577,47 @@ def new_conversation(
     except (requests.exceptions.RequestException, ValueError) as e:
         _fail(EXIT_ACTION_FAILED, "SHARE_FAILED", f"inviting {shown} failed ({e}); {retry}")
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
-        _fail(EXIT_ACTION_FAILED, "SHARE_FAILED",
-              f"inviting {shown} failed ({body.get('message') or resp.status_code}); {retry}")
+        _fail(
+            EXIT_ACTION_FAILED,
+            "SHARE_FAILED",
+            f"inviting {shown} failed ({body.get('message') or resp.status_code}); {retry}",
+        )
     first: dict = {"text": message, **_origin_session()}
     if form_att:
         first["attachment"] = [form_att]
     data = _post_json(_add_message_url(port, cid), first)
     data["invited"] = invitees
     _emit_send_result(cid, data)
+
+
+@conversation_app.command(
+    "team",
+    help=(
+        "Open the private team conversation of a help-desk ticket you work, with your first message. "
+        "The desk makes it and puts its staff in it; one per ticket, so a second call returns the same "
+        "conversation. Use this instead of `new` for a ticket: a deployed agent may not create a "
+        "conversation or choose who is in it."
+    ),
+)
+def team_conversation(
+    ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (conversation) id.")],
+    message: Annotated[str, typer.Argument(help="First message text, for the team.")],
+    title: Annotated[
+        Optional[str], typer.Option("--title", help="Short title; the desk prefixes the ticket id.")
+    ] = None,
+) -> None:
+    cid = _conversation_id(ticket_id)
+    if not (message or "").strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
+    port = _discover_port()
+    if not _signed_in():
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
+    data = _post_json(
+        _graph_url(port, f"conversation/{cid}/open_team_conversation"),
+        {"title": title or "", "text": message},
+        timeout=60,
+    )
+    _ok({"conversation_id": data.get("conversation_id"), "title": data.get("title"), "ticket_id": cid})
 
 
 def _entity_typeid_or_none(target: str):

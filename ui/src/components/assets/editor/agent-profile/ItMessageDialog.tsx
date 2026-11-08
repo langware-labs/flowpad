@@ -18,7 +18,7 @@ export function ItMessageDialog({
   open: boolean;
   onClose: () => void;
   machines: number;
-  /** How many of them report IT Sessions off. */
+  /** How many of them are IT Disabled. */
   off: number;
 }) {
   const { t } = useLingui();
@@ -36,7 +36,7 @@ export function ItMessageDialog({
       destination={{
         label:
           machines === 1 ? t`IT · ${name} deployments (1 machine)` : t`IT · ${name} deployments (${machines} machines)`,
-        note: off > 0 ? (off === 1 ? t`1 has IT Sessions off` : t`${off} have IT Sessions off`) : null,
+        note: off > 0 ? (off === 1 ? t`1 is IT Disabled` : t`${off} are IT Disabled`) : null,
         title: t`IT · ${name} - ${stamp}`,
         sendLabel: t`Send`,
         send: async ({ text, files }) => {

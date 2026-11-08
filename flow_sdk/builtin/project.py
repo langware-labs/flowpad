@@ -2629,10 +2629,10 @@ class Project(SetupSkippable, Entity):
         return None
 
     @classmethod
-    async def free_name(cls, base: str) -> str:
-        """``base``, or the first ``<base>-N`` no visible project holds."""
+    async def free_name(cls, base: str, taken: Callable[[str], bool] | None = None) -> str:
+        """``base``, or the first ``<base>-N`` no visible project holds (nor ``taken`` claims)."""
         name, n = base, 1
-        while await cls._project_named(name) is not None:
+        while (taken is not None and taken(name)) or await cls._project_named(name) is not None:
             n += 1
             name = f"{base}-{n}"
         return name

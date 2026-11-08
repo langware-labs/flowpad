@@ -68,3 +68,16 @@ async def test_a_row_that_already_has_its_attachments_is_left_alone(initialize_t
     await fma._process_single_hub_message(_hub_message([_TYPE_ID_ATTACHMENT]))
 
     assert (await _stored()).updated_date == newer
+
+
+def test_the_drift_predicate_fires_only_when_the_hub_has_attachments_the_row_lacks() -> None:
+    from flow_sdk.stream_inbox.hub_clock import hub_adds_attachments
+
+    bare = FlowMessage.model_validate({"id": _FM_ID, "text": "hi"})
+    full = FlowMessage.model_validate({"id": _FM_ID, "text": "hi", "attachment": [_TYPE_ID_ATTACHMENT]})
+    with_files = _hub_message([_TYPE_ID_ATTACHMENT])
+
+    assert hub_adds_attachments(bare, with_files)
+    assert not hub_adds_attachments(full, with_files)
+    assert not hub_adds_attachments(bare, _hub_message([]))
+    assert not hub_adds_attachments(None, with_files)

@@ -69,7 +69,7 @@ export interface Rig {
 
 /** Create a conversation on alice, share to bob, bob accepts, and gate on bob's
  *  per-conversation sync returning 200 (his local row materialized). */
-export async function setupSharedConversation(rq: APIRequestContext): Promise<Rig> {
+export async function setupSharedConversation(rq: APIRequestContext, sharedContext: string[] = []): Promise<Rig> {
   // Keep Bob's hub cookie out of the context used for Alice's desktop backend.
   // The hub accepts JWT cookies as well as bearer headers, so one shared cookie
   // jar can silently make a later Alice request run as Bob.
@@ -84,7 +84,10 @@ export async function setupSharedConversation(rq: APIRequestContext): Promise<Ri
     throw new Error('bob hub login failed — is dev-6@local.test seeded on the hub?');
   }
 
-  const conv = await json(rq, `${ALICE_API}/api/v1/graph/conversation`, { method: 'POST', data: { title: `e2etest-collab-${Date.now()}` } });
+  const conv = await json(rq, `${ALICE_API}/api/v1/graph/conversation`, {
+    method: 'POST',
+    data: { title: `e2etest-collab-${Date.now()}`, shared_context_entities: sharedContext },
+  });
   const convId: string = conv.body?.data?.id;
   if (!convId) throw new Error('alice conversation create failed');
   await json(rq, `${ALICE_API}/api/v1/graph/conversation/${convId}/share`, { method: 'POST', data: { ...conv.body.data, recipients: [BOB_EMAIL] } });

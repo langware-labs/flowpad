@@ -37,11 +37,11 @@ export function closeGitConflict(workdir: string): void {
  * Toast a push/pull outcome in the repo at `workdir`. Success is brief; an
  * error is sticky and pops in every view (it is the only answer to the click).
  */
-export function notifyGitOutcome(op: GitSyncOp, result: SyncResult, workdir: string) {
+export function notifyGitOutcome(op: GitSyncOp, result: SyncResult, workdir: string, quietSuccess = false): boolean {
   const copy = gitOutcomeCopy(op, result.kind, getTierMode(), { branch: result.branch, message: result.message });
   if (copy.level === 'success') {
-    notify.success({ title: copy.title, message: copy.message, durationMs: 4000 });
-    return;
+    if (!quietSuccess) notify.success({ title: copy.title, message: copy.message, durationMs: 4000 });
+    return true;
   }
   notify.error({
     ...(copy.resolvable ? { id: gitConflictToastId(workdir) } : {}),
@@ -51,6 +51,7 @@ export function notifyGitOutcome(op: GitSyncOp, result: SyncResult, workdir: str
     forceToast: true,
     actions: copy.resolvable ? [resolveConflictAction(op, result.branch, workdir)] : undefined,
   });
+  return false;
 }
 
 /** Toast a sync that threw before git could answer. */

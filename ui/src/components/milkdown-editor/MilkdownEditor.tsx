@@ -15,7 +15,7 @@ import {
 } from '@milkdown/preset-commonmark';
 import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
 import { tableBlock } from '@milkdown/components/table-block';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { MarkdownFindBar, isFindShortcut } from './MarkdownFindBar';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
@@ -48,6 +48,7 @@ import './plugins/fence-render/fence-render.css';
 import { configureRefractor } from './plugins/prism-languages';
 import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from './plugins/fence-render';
 import { changeMarksKey, changeMarksPlugin, type ChangeMark } from './plugins/change-marks';
+import { commentSlot, commentWidgetsKey, commentWidgetsPlugin, type CommentAnchorMark } from './plugins/comment-widgets';
 // Concrete fence renderers self-register on import. Listed here, at the
 // composition point, rather than inside the plugin — the same direction
 // `AssetsPage` imports its column modules, and it keeps `fence-render/` free of
@@ -186,6 +187,12 @@ export interface RequestChangeOpts {
   runNow?: boolean;
 }
 
+/** Comments drawn in the doc: where each one sits, and its card. */
+export interface CommentLayer {
+  marks: readonly CommentAnchorMark[];
+  renderCard: (id: string) => ReactNode;
+}
+
 interface MilkdownEditorProps {
   content: string;
   onChange?: (content: string) => void;
@@ -203,6 +210,8 @@ interface MilkdownEditorProps {
   onRequestChange?: (change: RequestedChange, opts?: RequestChangeOpts) => void;
   /** Queued change requests to mark on the text (highlight + numbered pin). */
   changeMarks?: readonly ChangeMark[];
+  /** The doc's comment threads, each drawn as a card after the passage it quotes. */
+  commentLayer?: CommentLayer;
   /**
    * Optional outer ref that mirrors the internal editor instance. Lets host
    * components (e.g. the wiki toolbar) issue ProseMirror transactions like
@@ -932,7 +941,7 @@ function ChangeBox({
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef, changeMarks }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef, changeMarks, commentLayer }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const { navigation, currentDock } = useDockNavigation();
 
@@ -1112,7 +1121,9 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
         // fence markdown round-trips byte-identically.
         .use(fenceRenderPlugins)
         // Queued "change this" requests: highlight + numbered pin, display only.
-        .use(changeMarksPlugin);
+        .use(changeMarksPlugin)
+        // The doc's comment threads: highlight + a card slot after the block, display only.
+        .use(commentWidgetsPlugin);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
@@ -1146,6 +1157,19 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
       // view not mounted yet — the next render with the instance retries
     }
   }, [instanceLoading, getInstance, changeMarks]);
+
+  const commentMarks = commentLayer?.marks;
+  useEffect(() => {
+    if (instanceLoading) return;
+    try {
+      getInstance().action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        view.dispatch(view.state.tr.setMeta(commentWidgetsKey, commentMarks ?? []).setMeta('addToHistory', false));
+      });
+    } catch {
+      // view not mounted yet — the next render with the instance retries
+    }
+  }, [instanceLoading, getInstance, commentMarks]);
 
   // One-shot caret restoration: when the editor instance becomes available and
   // an `initialLine` was supplied at mount, place the caret at the start of the
@@ -1273,7 +1297,7 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
   );
 }
 
-export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, onRequestChange, changeMarks, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, onRequestChange, changeMarks, commentLayer, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
@@ -1549,12 +1573,13 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} changeMarks={changeMarks} />
+          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} changeMarks={changeMarks} commentLayer={commentLayer} />
         </div>
       </div>
       {!isReadOnly && toolbarPortalTarget
         ? createPortal(formattingToolbar, toolbarPortalTarget)
         : null}
+      {commentLayer?.marks.map((m) => createPortal(commentLayer.renderCard(m.id), commentSlot(m.id), m.id))}
       {!isReadOnly && !linkPopup && !changeBox && (
         <SelectionToolbar
           rect={selectionRect}

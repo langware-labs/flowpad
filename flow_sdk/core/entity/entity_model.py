@@ -2783,13 +2783,19 @@ class Entity(DBEntity):
         # when the parent row exists locally; when it doesn't (layer-1-gated doc
         # not installed yet), the catch-up rebind pass heals later. Non-fatal.
         try:
-            await ent.ensure_child_edge()
+            linked = await ent.ensure_child_edge()
         except Exception as e:  # noqa: BLE001
             import logging
 
+            linked = False
             logging.getLogger(__name__).warning(
                 "upsert_from_hub_child: edge recreation failed for %s: %s", ent.typeid, e
             )
+        # The save above announced a NEW child before its edge existed, so an open
+        # page watching the parent's scope (a doc's comments) filtered it out and
+        # never showed it until a reload. Announce it again now that it is linked.
+        if notify and linked and existing is None:
+            await ent.notify_updated()
         return ent
 
     async def ensure_child_edge(self) -> bool:

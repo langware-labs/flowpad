@@ -708,6 +708,25 @@ def comment_add(
             help='Optional JSON object for the comment\'s ``data`` field, e.g. \'{"submission_url":"https://…"}\'.',
         ),
     ] = None,
+    quote: Annotated[
+        Optional[str],
+        typer.Option("--quote", help="Doc comment: the exact passage of the doc it is about."),
+    ] = None,
+    kind: Annotated[
+        Optional[str],
+        typer.Option("--kind", help="Doc comment kind: text | questions | change_request (needs --quote)."),
+    ] = None,
+    form: Annotated[
+        Optional[str],
+        typer.Option(
+            "--form",
+            help='--kind questions: the MessageForm JSON, e.g. \'{"form_id":"q1","title":"Launch","fields":[{"id":"d","label":"Date","type":"date"}]}\'.',
+        ),
+    ] = None,
+    instruction: Annotated[
+        Optional[str],
+        typer.Option("--instruction", help="--kind change_request: what should change in the quote."),
+    ] = None,
 ) -> None:
     if not parent_typeid or not parent_typeid.strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "parent_typeid is required")
@@ -716,15 +735,9 @@ def comment_add(
     parent_type, parent_id = _parse_typeid(parent_typeid.strip())
     body: dict[str, Any] = {"raw_content": text}
     if data:
-        try:
-            parsed = json.loads(data)
-        except ValueError as e:
-            _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--data must be valid JSON: {e}")
-            return
-        if not isinstance(parsed, dict):
-            _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--data must be a JSON object")
-            return
-        body["data"] = parsed
+        body["data"] = _json_object(data, "--data")
+    if kind or quote:
+        body["data"] = {**body.get("data", {}), **_doc_comment_data(kind, quote, form, instruction)}
     port = _discover_port()
     # Create scoped to the parent — mirrors the frontend's create URL
     # (``<scope_path>/<type>``): the create handler sets ``parent_type_id`` from
@@ -795,6 +808,102 @@ def comment_list(
     ]
     comments.sort(key=lambda c: c.get("created_date") or "")
     _ok({"parent_typeid": parent_typeid, "total": len(comments), "comments": comments})
+
+
+def _json_object(raw: str, flag: str) -> dict:
+    try:
+        parsed = json.loads(raw)
+    except ValueError as e:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"{flag} must be valid JSON: {e}")
+    if not isinstance(parsed, dict):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"{flag} must be a JSON object")
+    return parsed
+
+
+def _doc_comment_data(kind: Optional[str], quote: Optional[str], form: Optional[str], instruction: Optional[str]) -> dict:
+    """A ``doc.comment`` value from the add flags, checked before it is sent."""
+    from flow_sdk.schema.data_spec.doc_comment_spec import DocComment  # noqa: PLC0415
+
+    if not quote:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "a doc comment needs --quote (the passage it is about)")
+    value = _agent_stamp({"kind": kind or "text", "status": "open", "anchor": {"quote": quote}})
+    if form:
+        value["form"] = _json_object(form, "--form")
+    if instruction:
+        value["change"] = {"instruction": instruction}
+    try:
+        return DocComment.model_validate(value).model_dump(exclude_none=True)
+    except ValueError as e:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"not a valid doc comment: {e}")
+
+
+def _agent_stamp(data: dict[str, Any], *, chat: bool = False) -> dict[str, Any]:
+    """Run inside a session: the comment is the agent's, and (``chat``) links to this turn."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from flow_sdk.cli.commands._common import current_process_id  # noqa: PLC0415
+
+    process_id = current_process_id()
+    if process_id:
+        data["author"] = "agent"
+        if chat:
+            data["chat"] = {"process_id": process_id, "at": datetime.now(timezone.utc).isoformat()}
+    return data
+
+
+def _post_reply(comment_typeid: str, text: str, extra: dict) -> dict:
+    """A reply in a doc comment's thread: a comment on the same doc naming its root —
+    a doc child, so it syncs to everyone the doc is shared with, like the root."""
+    from flow_sdk.cli.commands._common import get_graph_json, graph_url, server_error  # noqa: PLC0415
+
+    ctype, cid = _parse_typeid(comment_typeid.strip())
+    if ctype != "comment":
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"expected a comment TypeId, got {comment_typeid!r}")
+    port = _discover_port()
+    root = get_graph_json(graph_url(port, f"comment/{cid}"), on_error=server_error) or {}
+    doc = root.get("parent_type_id")
+    if not doc or "kind" not in (root.get("data") or {}):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"{comment_typeid} is not a doc comment's thread")
+    doc_type, doc_id = _parse_typeid(doc)
+    data = _agent_stamp({"reply": True, "reply_to": comment_typeid.strip(), **extra}, chat=True)
+    resp = _post_json(
+        graph_url(port, f"{doc_type}/{doc_id}/comment"),
+        {"raw_content": text, "data": data},
+        not_found_hint=f"Doc not found: {doc}",
+    )
+    new_id = resp.get("id") or (resp.get("entity") or {}).get("id")
+    return {"comment": comment_typeid, "id": new_id, "typeid": f"comment-{new_id}" if new_id else None}
+
+
+@comment_app.command(
+    "reply",
+    help=(
+        "Reply in a doc comment's thread. Run inside a session, the reply links to this "
+        "turn of the session's chat, so the person can open the full message."
+    ),
+)
+def comment_reply(
+    comment_typeid: Annotated[str, typer.Argument(help="The thread's root comment, 'comment-<uuid>'.")],
+    text: Annotated[str, typer.Argument(help="The reply — one short line; the full answer stays in the chat.")],
+) -> None:
+    if not text.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "text is required")
+    _ok(_post_reply(comment_typeid, text.strip(), {}))
+
+
+@comment_app.command("status", help="Set a doc comment thread's status: open | sent | done | failed | resolved.")
+def comment_status(
+    comment_typeid: Annotated[str, typer.Argument(help="The thread's root comment, 'comment-<uuid>'.")],
+    status: Annotated[str, typer.Argument(help="open | sent | done | failed | resolved")],
+) -> None:
+    from typing import get_args  # noqa: PLC0415
+
+    from flow_sdk.schema.data_spec.doc_comment_spec import CommentStatus  # noqa: PLC0415
+
+    if status not in get_args(CommentStatus):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"status must be one of {get_args(CommentStatus)}")
+    # A status change is a reply too: any participant may mark a thread, not only its author.
+    _ok({**_post_reply(comment_typeid, "", {"status": status}), "status": status})
 
 
 record_app.add_typer(comment_app, name="comment")

@@ -318,3 +318,9 @@ to record a child executor rather than searching by process name or start time.
 
 * **`Agent`** **is reserved; the** **`.claude/agents/*.md`** **prompt asset is** **`SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.
 
+
+## Notifications = message arrival only (non-negotiable)
+
+**A toast/notification is shown for one thing: a message arriving in a conversation.** Results, status and next
+steps (a diagnosis finished, a fix is ready, "report it") are messages in the conversation, never a custom
+notification with its own buttons. The message's arrival raises the standard new-message notification — that's it.

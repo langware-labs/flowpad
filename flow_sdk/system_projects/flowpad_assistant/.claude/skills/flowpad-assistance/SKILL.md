@@ -143,6 +143,7 @@ For records, search, process or message actions, open the matching file in this 
 | records  | [`records.md`](records.md) — data schemas and datasets are the **data-management** skill |
 | search   | [`search.md`](search.md) |
 | process  | [`process.md`](process.md) |
+| doc comments | [`doc-comments.md`](doc-comments.md) — ask the person questions, or leave a note, ON a doc (drawn under the passage, never written into the file); reply in a comment's thread |
 | message  | [`message.md`](message.md) — read what someone sent (Flowpad conversations, never Slack/Gmail unprompted; needs cloud login) or send |
 | credential test | `flow credentials test <name>` — is a key GOOD, not only present (exit 0 = the provider takes it). No test declared → the **cred-scan** skill, `cred-scan test <name>`, writes one |
 

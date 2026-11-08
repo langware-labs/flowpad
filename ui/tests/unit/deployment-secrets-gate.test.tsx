@@ -177,8 +177,8 @@ describe('the deploy gate', () => {
   });
 });
 
-describe('the Secrets tab', () => {
-  it('lists what the hub holds and revokes a connection', async () => {
+describe('the Environment tab', () => {
+  it('lists the environment the hub places and revokes a connection', async () => {
     const deployment = new Deployment(DEPLOYMENT as never);
     const a = agent();
     vi.spyOn(a, 'readiness').mockResolvedValue(readiness([]));
@@ -187,10 +187,14 @@ describe('the Secrets tab', () => {
       authorizations: [{ provider: 'google', permissions: ['permission.google.drive.read'] }],
     });
     const revoke = vi.spyOn(deployment, 'revoke').mockResolvedValue();
+    vi.spyOn(deployment, 'environmentRows').mockResolvedValue([
+      { name: 'STRIPE_KEY', kind: 'secret', source: 'deployment', written: true, placed_at: '2026-10-01T00:00:00Z' },
+    ]);
 
     render(<AgentPlaceSecrets project={a} deployment={deployment} />);
 
-    expect(await screen.findByTestId('agent-place-secret-STRIPE_KEY')).toHaveTextContent('placed');
+    expect(await screen.findByTestId('deployment-env-row-STRIPE_KEY')).toHaveTextContent('placed');
+    expect(screen.getByTestId('deployment-env-source-STRIPE_KEY')).toHaveTextContent('This deployment');
     expect(screen.queryByTestId('deployment-secrets-gate')).toBeNull();
     fireEvent.click(screen.getByTestId('agent-place-revoke-google'));
     await waitFor(() => expect(revoke).toHaveBeenCalledWith('google'));
@@ -202,7 +206,15 @@ describe('the new deployment dialog', () => {
   // The refusal names the placement planned for the machine and environment as they were: changing either
   // one drops it, or Launch would go on to deploy the old placement.
   it.each([
-    ['the machine', () => Promise.resolve(void (fireEvent.click(screen.getByTestId('new-deployment-back')), fireEvent.click(screen.getByTestId('new-deployment-size-md')), fireEvent.click(screen.getByTestId('new-deployment-next'))))],
+    [
+      'the machine',
+      () =>
+        Promise.resolve(
+          void (fireEvent.click(screen.getByTestId('new-deployment-back')),
+          fireEvent.click(screen.getByTestId('new-deployment-size-md')),
+          fireEvent.click(screen.getByTestId('new-deployment-next'))),
+        ),
+    ],
     [
       'the environment',
       async () => {
@@ -233,7 +245,8 @@ describe('the new deployment dialog', () => {
       const onLaunched = vi.fn();
 
       renderInQuery(<NewDeploymentDialog project={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
-      (fireEvent.click(screen.getByTestId('new-deployment-size-sm')), fireEvent.click(screen.getByTestId('new-deployment-next')));
+      (fireEvent.click(screen.getByTestId('new-deployment-size-sm')),
+        fireEvent.click(screen.getByTestId('new-deployment-next')));
       fireEvent.click(screen.getByTestId('new-deployment-launch'));
 
       expect(await screen.findByTestId('deployment-secret-stripe')).toHaveTextContent('flow credentials set stripe');

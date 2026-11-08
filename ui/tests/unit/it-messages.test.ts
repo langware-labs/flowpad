@@ -50,8 +50,21 @@ describe('a machine reply', () => {
     expect(itMachineName(r)).toBe('••••H8LC');
   });
 
-  it('off offers Turn on and run; signed in offers nothing', () => {
-    expect(itReplyView(reply({ state: 'off' }))).toMatchObject({ tone: 'warn', turnOnAndRun: true });
+  it('a failed session reads as failed, never done', () => {
+    expect(itReplyView(reply({ state: 'failed' }))).toMatchObject({
+      label: 'IT session failed',
+      tone: 'bad',
+      turnOnAndRun: false,
+      openMachine: true,
+    });
+  });
+
+  it('IT Disabled offers Enable and run; signed in offers nothing', () => {
+    expect(itReplyView(reply({ state: 'off' }))).toMatchObject({
+      label: 'IT is disabled on this machine',
+      tone: 'warn',
+      turnOnAndRun: true,
+    });
     expect(itReplyView(reply({ state: 'signed_in' }))).toMatchObject({ turnOnAndRun: false, openMachine: false });
     expect(itValueChips(null)).toEqual([]);
   });
