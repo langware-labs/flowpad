@@ -115,12 +115,17 @@ async def save_env(agent: "Agent", raw: Iterable[Any]) -> dict:
     return merge_view(entries, await sync_env_to_hub(agent, call=HubProxy.call))
 
 
-async def _put_secret(agent: "Agent", name: str, value: str) -> None:
-    """One secret value into the agent's hub store (``POST agent/<id>/env-var``), write-only."""
+async def _put_secret(agent: "Agent", name: str, value: str, written: bool) -> None:
+    """One secret value into the agent's hub store, write-only: a written one is changed (``PUT env-var/<NAME>``),
+    a new one created (``POST env-var``) -- the hub refuses to create a name twice."""
     from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
 
-    payload = {"name": name, "value": value, "var_type": "api_key"}
-    await HubProxy.call("POST", agent.get_type(), str(agent.id), "env-var", payload=payload)
+    if written:
+        payload = {"value": value, "var_type": "api_key"}
+        await HubProxy.call("PUT", agent.get_type(), str(agent.id), f"env-var/{name}", payload=payload)
+    else:
+        payload = {"name": name, "value": value, "var_type": "api_key"}
+        await HubProxy.call("POST", agent.get_type(), str(agent.id), "env-var", payload=payload)
 
 
 async def use_mine(agent: "Agent", names: list[str]) -> dict:
@@ -140,7 +145,13 @@ async def use_mine(agent: "Agent", names: list[str]) -> dict:
     funded = sorted(n for n in names if n in declared and declared[n].spec.lm_provider)
     names = [n for n in names if n not in funded]
     mine = await resolve_project_secrets(project, only=names, declared=declared, placement=await Placement.of(None))
-    await asyncio.gather(*(_put_secret(agent, name, value.get_secret_value()) for name, value in mine.items()))
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+    hub = await HubProxy.try_call("GET", agent.get_type(), str(agent.id), action="env")
+    written = {e.get("name") for e in ((hub or {}).get("entries") or []) if e.get("written")}
+    await asyncio.gather(
+        *(_put_secret(agent, name, value.get_secret_value(), name in written) for name, value in mine.items())
+    )
     return {"copied": sorted(mine), "not_here": sorted(set(names) - set(mine)), "hub_funded": funded}
 
 

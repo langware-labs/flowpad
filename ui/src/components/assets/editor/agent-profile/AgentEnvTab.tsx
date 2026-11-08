@@ -119,7 +119,7 @@ export function AgentEnvTab({ agent }: AgentEnvTabProps) {
     act(
       `set-${entry.name}`,
       async () => {
-        if (entry.kind === 'secret') await agent.setEnvSecret(entry.name, draft);
+        if (entry.kind === 'secret') await agent.setEnvSecret(entry.name, draft, { written: entry.written });
         else await replace(entry.name, { value: draft });
         setEditing(null);
         setDraft('');

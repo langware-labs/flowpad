@@ -128,17 +128,30 @@ describe('the Env tab', () => {
     expect(body.entries.at(-1)).toEqual({ name: 'STRIPE_KEY', kind: 'secret', description: '', inject: true });
   });
 
-  it('sets a secret on the hub, write-only', async () => {
+  it('changes a secret that is already set (PUT env-var/<NAME>) -- the hub refuses to create it twice', async () => {
     render(<AgentEnvTab agent={agent()} />);
     fireEvent.click(await screen.findByTestId('agent-env-set-WEATHER_KEY'));
     fireEvent.change(screen.getByTestId('agent-env-value-WEATHER_KEY'), { target: { value: 'sk-new' } });
     fireEvent.click(screen.getByTestId('agent-env-save-WEATHER_KEY'));
 
-    await waitFor(() => expect(last('/env-var')).toBeDefined());
-    const info = last('/env-var')!;
-    expect(info.method).toBe('POST');
+    await waitFor(() => expect(calls.some((c) => c.fullActionUrl.includes('/env-var'))).toBe(true));
+    const info = calls.filter((c) => c.fullActionUrl.includes('/env-var')).at(-1)!;
+    expect(info.method).toBe('PUT');
+    expect(info.fullActionUrl).toMatch(/\/env-var\/WEATHER_KEY$/);
     expect(info.hubReflect).toBe(true);
-    expect(info.bodyParameters).toEqual({ name: 'WEATHER_KEY', value: 'sk-new', var_type: 'api_key' });
+    expect(info.bodyParameters).toMatchObject({ value: 'sk-new', var_type: 'api_key' });
+  });
+
+  it('creates a secret that has no value yet (POST env-var), write-only', async () => {
+    render(<AgentEnvTab agent={agent()} />);
+    fireEvent.click(await screen.findByTestId('agent-env-set-DRAFT_KEY'));
+    fireEvent.change(screen.getByTestId('agent-env-value-DRAFT_KEY'), { target: { value: 'sk-first' } });
+    fireEvent.click(screen.getByTestId('agent-env-save-DRAFT_KEY'));
+
+    await waitFor(() => expect(calls.some((c) => c.fullActionUrl.includes('/env-var'))).toBe(true));
+    const info = calls.filter((c) => c.fullActionUrl.includes('/env-var')).at(-1)!;
+    expect(info.method).toBe('POST');
+    expect(info.bodyParameters).toEqual({ name: 'DRAFT_KEY', value: 'sk-first', var_type: 'api_key' });
   });
 
   it('lists what Flowpad provides, read-only', async () => {

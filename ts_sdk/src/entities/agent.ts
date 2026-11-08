@@ -770,8 +770,10 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /** Store a secret's value in the agent's hub store (`POST agent/<id>/env-var`) — write-only, never read back. */
-  async setEnvSecret(name: string, value: string): Promise<void> {
-    await this.hubEnv().create({ name, value, var_type: EnvVarType.API_KEY });
+  async setEnvSecret(name: string, value: string, opts: { written?: boolean } = {}): Promise<void> {
+    // A secret already written is CHANGED (PUT); only a new one is created (POST) -- the hub refuses to create twice.
+    if (opts.written) await this.hubEnv().update(name, { value, var_type: EnvVarType.API_KEY });
+    else await this.hubEnv().create({ name, value, var_type: EnvVarType.API_KEY });
   }
 
   /** Forget a secret's value on the hub (`DELETE agent/<id>/env-var/<NAME>`). The entry itself stays. */
