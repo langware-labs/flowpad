@@ -5,6 +5,7 @@ import type { AgenticProcess } from '../process/agentic-process';
 import { lastChatQuery, recencyOf } from '../process/last-chat';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
+import { EntityEnv, EnvVarType } from '../models/env_var';
 import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
@@ -762,25 +763,24 @@ export class Agent extends APIEntity<Agent> {
       kind,
       description: description ?? '',
       inject,
-      ...(kind === 'plain' && value != null ? { value } : {}),
+      ...(value != null ? { value } : {}),
     }));
     return agentEnvOf(await this.post<Partial<AgentEnv> | null>('save_env', { entries: body }));
   }
 
   /** Store a secret's value in the agent's hub store (`POST agent/<id>/env-var`) — write-only, never read back. */
   async setEnvSecret(name: string, value: string): Promise<void> {
-    const info = new ActionInfo('env-var', this.getType(), this.id, 'POST');
-    info.hubReflect = true;
-    info.bodyParameters = { name, value, var_type: 'api_key' };
-    await dataManager.callAction<unknown, unknown>(info);
+    await this.hubEnv().create({ name, value, var_type: EnvVarType.API_KEY });
   }
 
   /** Forget a secret's value on the hub (`DELETE agent/<id>/env-var/<NAME>`). The entry itself stays. */
   async forgetEnv(name: string): Promise<void> {
-    const info = new ActionInfo('env-var', this.getType(), this.id, 'DELETE');
-    info.hubReflect = true;
-    info.subpath = [name];
-    await dataManager.callAction<unknown, unknown>(info);
+    await this.hubEnv().delete(name);
+  }
+
+  /** The agent's own variables in the hub's store (`agent/<id>/env-var`). */
+  private hubEnv(): EntityEnv {
+    return new EntityEnv(new TypeId(this.getType(), this.id), { hubReflect: true });
   }
 
   /** Copy this computer's values for these secret entries into the agent's hub store. Names come back, never a value. */

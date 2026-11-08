@@ -6,6 +6,7 @@ import type { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
 import { isTypeId, TypeId } from '../models/TypeId';
+import { EntityEnv } from '../models/env_var';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
 import { DEFAULT_CREDENTIAL_ENVIRONMENT } from '../services/credentials-service';
@@ -494,10 +495,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
 
   /** Forget this deployment's own value for `name` (`DELETE deployment/<id>/env-var/<NAME>`): the agent's applies again. */
   async forget(name: string): Promise<void> {
-    const info = new ActionInfo('env-var', this.getType(), this.id, 'DELETE');
-    info.hubReflect = true;
-    info.subpath = [name];
-    await dataManager.callAction<unknown, unknown>(info);
+    await new EntityEnv(new TypeId(this.getType(), this.id), { hubReflect: true }).delete(name);
   }
 
   /** Let this placement's machine use your `provider` connection: it asks the hub for a fresh token

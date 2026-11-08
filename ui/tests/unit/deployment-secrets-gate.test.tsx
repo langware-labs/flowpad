@@ -177,8 +177,8 @@ describe('the deploy gate', () => {
   });
 });
 
-describe('the Secrets tab', () => {
-  it('lists what the hub holds and revokes a connection', async () => {
+describe('the Environment tab', () => {
+  it('lists the environment the hub places and revokes a connection', async () => {
     const deployment = new Deployment(DEPLOYMENT as never);
     const a = agent();
     vi.spyOn(a, 'readiness').mockResolvedValue(readiness([]));
@@ -187,8 +187,9 @@ describe('the Secrets tab', () => {
       authorizations: [{ provider: 'google', permissions: ['permission.google.drive.read'] }],
     });
     const revoke = vi.spyOn(deployment, 'revoke').mockResolvedValue();
-    // A hub with no `environment` answer: the deployment's own values are listed as its own.
-    vi.spyOn(deployment, 'environmentRows').mockResolvedValue([]);
+    vi.spyOn(deployment, 'environmentRows').mockResolvedValue([
+      { name: 'STRIPE_KEY', kind: 'secret', source: 'deployment', written: true, placed_at: '2026-10-01T00:00:00Z' },
+    ]);
 
     render(<AgentPlaceSecrets project={a} deployment={deployment} />);
 

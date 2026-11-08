@@ -420,7 +420,7 @@ async def readiness(
     items = [i for i in await asyncio.gather(*asked) if i is not None]
     if cloud and agent is not None:
         covered = {n for req in wanted for n in (req.name, *req.vars)}
-        items += await agent_env_items(agent, deployment, skip=covered)
+        items += await agent_env_items(deployment, skip=covered)
     return ReadinessSpec(
         agent_id=str(agent.id) if agent is not None else "",
         deployment_id=status.deployment_id,
@@ -430,31 +430,31 @@ async def readiness(
     )
 
 
-async def agent_env_items(agent: "Agent", deployment: "Deployment", *, skip: set[str] = frozenset()) -> list[ReadinessItemSpec]:
-    """The agent's approved (``inject``) secret Env entries at a cloud ``deployment``: each one the hub holds
-    no value for — on the agent or overriding it here — is missing. ``skip``: names already answered."""
-    from flow_sdk.builtin.agent_env import entries_of  # noqa: PLC0415
+async def agent_env_items(deployment: "Deployment", *, skip: set[str] = frozenset()) -> list[ReadinessItemSpec]:
+    """The agent's approved (``inject``) secret Env entries at a cloud ``deployment``, as the hub's environment
+    rows have them: an agent-sourced one not written is missing, a written one declared. One overridden here is a
+    ``deployment`` row and blocks nothing. ``skip``: names already answered."""
     from flow_sdk.schema.data_spec.agent_env_spec import ENV_KIND_SECRET  # noqa: PLC0415
 
-    approved = [e for e in entries_of(agent) if e.inject and e.kind == ENV_KIND_SECRET and e.name not in skip]
-    if not approved:
-        return []
-    rows = (await deployment.environment_rows()).get("rows") or []
-    written = {str(r.get("name")) for r in rows if isinstance(r, dict) and r.get("written")}
     items = []
-    for entry in approved:
-        req = RequirementSpec(kind=REQUIREMENT_VARIABLE, name=entry.name, why=entry.description, derived=True)
-        if entry.name in written:
-            items.append(ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where="agent environment", vars=[entry.name]))
+    for row in (await deployment.environment_rows()).get("rows") or []:
+        if not isinstance(row, dict) or row.get("kind") != ENV_KIND_SECRET:
+            continue
+        name, source, written = str(row.get("name") or ""), row.get("source"), bool(row.get("written"))
+        if not name or name in skip or source != "agent" or not row.get("inject"):
+            continue
+        req = RequirementSpec(kind=REQUIREMENT_VARIABLE, name=name, why=str(row.get("description") or ""), derived=True)
+        if written:
+            items.append(ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where="agent environment", vars=[name]))
             continue
         items.append(
             ReadinessItemSpec(
                 requirement=req,
                 status=STATUS_MISSING,
                 where="agent environment",
-                fix=f"set {entry.name} on the agent's Env tab",
-                vars=[entry.name],
-                missing=[entry.name],
+                fix=f"set {name} on the agent's Env tab",
+                vars=[name],
+                missing=[name],
             )
         )
     return items

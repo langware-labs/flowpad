@@ -11,17 +11,15 @@ the agent. Stdlib + pydantic only, like the rest of ``data_spec``.
 
 from __future__ import annotations
 
-import re
 from typing import ClassVar, Literal, Optional
 
 from pydantic import ConfigDict, field_validator, model_validator
 
+from flow_sdk.schema.data_spec.credential_contract import ENV_VAR_RE
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 ENV_KIND_SECRET = "secret"
 ENV_KIND_PLAIN = "plain"
-
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class AgentEnvEntry(DataSpec):
@@ -43,7 +41,7 @@ class AgentEnvEntry(DataSpec):
     @classmethod
     def _name(cls, value: object) -> str:
         text = str(value or "").strip()
-        if not _ENV_NAME.fullmatch(text):
+        if not ENV_VAR_RE.fullmatch(text):
             raise ValueError(f"an env name is letters, digits and _ and does not start with a digit, got {value!r}")
         return text
 
@@ -57,7 +55,7 @@ class AgentEnvEntry(DataSpec):
     def hub_entry(self) -> dict:
         """What ``PUT agent/<id>/env`` takes for this entry: a plain value rides along, a secret is its name."""
         entry: dict = {"name": self.name, "kind": self.kind, "description": self.description, "inject": self.inject}
-        if self.kind == ENV_KIND_PLAIN and self.value is not None:
+        if self.value is not None:  # a secret never holds one (``_secret_has_no_value``)
             entry["value"] = self.value
         return entry
 

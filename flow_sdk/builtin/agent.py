@@ -844,7 +844,7 @@ class Agent(Entity):
         # Published means "in its project's hub repo"; any other origin is
         # republished into the hub repo on the next deploy.
         if self.remote and hub_origin(self) is not None and not force:
-            await sync_env_to_hub(self)
+            await sync_env_to_hub(self, if_changed=True)
             return False
 
         from flow_sdk.builtin.asset_publishing import (

@@ -17,6 +17,7 @@ import { Input } from '@src/components/ui/input';
 import { Switch } from '@src/components/ui/switch';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { SecretValueInput } from '@src/components/credentials/SecretValueInput';
+import { ENV_VAR_RE } from '@src/components/credentials/credential-draft';
 
 import { BusyButton } from './DeploymentSecretsGate';
 
@@ -36,7 +37,7 @@ const toInput = (e: AgentEnvEntry): AgentEnvEntryInput => ({
   kind: e.kind,
   description: e.description,
   inject: e.inject,
-  ...(e.kind === 'plain' ? { value: e.value ?? null } : {}),
+  value: e.value ?? null,
 });
 
 /**
@@ -80,11 +81,12 @@ export function AgentEnvTab({ agent }: AgentEnvTabProps) {
       .catch(() => setDeclared([]));
   }, [agent]);
 
-  const act = async (key: string, run: () => Promise<unknown>, failure: string) => {
+  /** Run one action; `reload` re-reads the Env for an action whose answer is not the view. */
+  const act = async (key: string, run: () => Promise<unknown>, failure: string, reload = false) => {
     setBusy(key);
     try {
       await run();
-      await load();
+      if (reload) await load();
     } catch (e) {
       notify.error({ title: failure, message: errorMessage(e, failure), forceToast: true });
     } finally {
@@ -98,8 +100,8 @@ export function AgentEnvTab({ agent }: AgentEnvTabProps) {
   const replace = (name: string, change: Partial<AgentEnvEntryInput>) =>
     save(entries.map((e) => (e.name === name ? { ...toInput(e), ...change } : toInput(e))));
 
-  const offered = declared.filter(
-    (d, i) => !entries.some((e) => e.name === d.name) && declared.findIndex((x) => x.name === d.name) === i,
+  const offered = [...new Map(declared.map((d) => [d.name, d] as const)).values()].filter(
+    (d) => !entries.some((e) => e.name === d.name),
   );
 
   const add = (name: string, kind: AgentEnvKind) =>
@@ -123,6 +125,7 @@ export function AgentEnvTab({ agent }: AgentEnvTabProps) {
         setDraft('');
       },
       t`Could not set ${entry.name}`,
+      entry.kind === 'secret',
     );
 
   const forget = (entry: AgentEnvEntry) =>
@@ -143,6 +146,7 @@ export function AgentEnvTab({ agent }: AgentEnvTabProps) {
         if (res.not_here.length) notify.warning({ title: t`This computer holds no value for ${entry.name}` });
       },
       t`Could not copy ${entry.name}`,
+      true,
     );
 
   if (!env) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
@@ -336,9 +340,7 @@ export function AgentEnvTab({ agent }: AgentEnvTabProps) {
               label={t`Add`}
               testId="agent-env-add-confirm"
               busy={busy === `add-${newName}`}
-              disabled={
-                busy !== null || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(newName) || entries.some((e) => e.name === newName)
-              }
+              disabled={busy !== null || !ENV_VAR_RE.test(newName) || entries.some((e) => e.name === newName)}
               onClick={() => void add(newName, newKind)}
             />
           </div>

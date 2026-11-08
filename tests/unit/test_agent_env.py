@@ -15,6 +15,7 @@ from flow_sdk.builtin import agent_env
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.readiness import agent_env_items
 from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.agent_env_spec import AgentEnvEntry
 from flow_sdk.schema.data_spec.agent_spec import AgentSpec
@@ -28,6 +29,10 @@ ENV = [
     {"name": "DRAFT_KEY", "kind": "secret", "inject": False},
     {"name": "REGION", "kind": "plain", "inject": True, "value": "eu"},
 ]
+
+
+def _origin() -> HubRepoOrigin:
+    return HubRepoOrigin(repo="git_repo-r1", rel_path="agentic-assets/agent/envy", head_commit="c", tree="t")
 
 
 def _agent(**fields) -> Agent:
@@ -93,7 +98,8 @@ async def test_sync_sends_put_env_for_an_agent_on_the_hub(monkeypatch):
     assert payload == agent_env.hub_payload(agent_env.parse_entries(ENV))
 
 
-async def test_publish_of_an_already_published_agent_still_syncs_its_env(monkeypatch):
+async def test_publish_of_an_already_published_agent_still_syncs_its_env(monkeypatch, tmp_path):
+    from flow_sdk.assets import hub_repo_sync
     from flow_sdk.builtin import agent_places
 
     calls: list[str] = []
@@ -103,7 +109,8 @@ async def test_publish_of_an_already_published_agent_still_syncs_its_env(monkeyp
         return {}
 
     monkeypatch.setattr(HubProxy, "try_call", fake_try_call)
-    monkeypatch.setattr(agent_places, "hub_origin", lambda agent: "https://hub/repo.git")
+    monkeypatch.setattr(agent_places, "hub_origin", lambda agent: _origin())
+    monkeypatch.setattr(hub_repo_sync, "mirror_root", lambda repo_id: tmp_path / "hub_git" / "mirrors" / repo_id)
     assert await _agent(env=ENV, remote=True).ensure_on_hub(actor="user-1") is False
     assert calls == ["PUT env"]
 
@@ -118,16 +125,37 @@ def test_local_view_without_the_hub_has_nothing_written_but_a_set_plain_value():
     assert view["system"] == [] and view["placements"] == []
 
 
-def test_merge_view_takes_written_from_the_hub_and_entries_from_the_file():
+def test_merge_view_passes_the_hub_view_through_and_falls_back_to_the_file():
     hub = {
         "entries": [{"name": "WEATHER_KEY", "kind": "secret", "inject": True, "written": True}],
         "system": [{"name": "ANTHROPIC_BASE_URL", "provided_by": "llm_endpoint", "description": ""}],
         "placements": [{"target": "deployment-1", "kind": "deployment", "placed": ["WEATHER_KEY"], "at": "now"}],
     }
-    view = agent_env.merge_view(agent_env.parse_entries(ENV), hub)
-    assert {r["name"]: r["written"] for r in view["entries"]} == {"WEATHER_KEY": True, "DRAFT_KEY": False, "REGION": True}
-    assert view["system"][0]["provided_by"] == "llm_endpoint"
-    assert view["placements"][0]["placed"] == ["WEATHER_KEY"]
+    entries = agent_env.parse_entries(ENV)
+    assert agent_env.merge_view(entries, hub) == hub
+    assert agent_env.merge_view(entries, None) == agent_env.local_view(entries)
+
+
+async def test_an_unchanged_env_is_not_resent_by_ensure_on_hub(monkeypatch, tmp_path):
+    from flow_sdk.assets import hub_repo_sync
+    from flow_sdk.builtin import agent_places
+    calls: list[str] = []
+
+    async def fake_try_call(method, entity_type, entity_id=None, action=None, *rest, **kwargs):
+        calls.append(f"{method} {action}")
+        return {}
+
+    monkeypatch.setattr(HubProxy, "try_call", fake_try_call)
+    monkeypatch.setattr(agent_places, "hub_origin", lambda agent: _origin())
+    monkeypatch.setattr(hub_repo_sync, "mirror_root", lambda repo_id: tmp_path / "hub_git" / "mirrors" / repo_id)
+    agent = _agent(env=ENV, remote=True)
+    await agent.ensure_on_hub(actor="user-1")
+    await agent.ensure_on_hub(actor="user-1")
+    assert calls == ["PUT env"], "the second call finds the payload unchanged"
+
+    agent.env = [*ENV, {"name": "NEW", "kind": "plain", "value": "x"}]
+    await agent.ensure_on_hub(actor="user-1")
+    assert calls == ["PUT env", "PUT env"]
 
 
 class _Deployment:
@@ -140,22 +168,23 @@ class _Deployment:
         return {"rows": self._rows}
 
 
+def _row(name="WEATHER_KEY", **kw):
+    return {"name": name, "kind": "secret", "source": "agent", "inject": True, "written": False, **kw}
+
+
 async def test_readiness_counts_an_approved_secret_with_no_value_as_missing():
-    agent = _agent(env=ENV)
-    rows = [{"name": "REGION", "kind": "plain", "source": "agent", "written": True}]
-    items = await agent_env_items(agent, _Deployment(rows))
+    rows = [{"name": "REGION", "kind": "plain", "source": "agent", "inject": True, "written": True}, _row()]
+    items = await agent_env_items(_Deployment(rows))
     assert [(i.requirement.name, i.status, i.missing) for i in items] == [("WEATHER_KEY", STATUS_MISSING, ["WEATHER_KEY"])]
     assert items[0].blocks, "an approved secret with no value blocks a cloud deploy"
 
 
 async def test_readiness_is_satisfied_by_the_agent_value_or_a_deployment_override():
-    agent = _agent(env=ENV)
-    for source in ("agent", "deployment"):
-        items = await agent_env_items(agent, _Deployment([{"name": "WEATHER_KEY", "source": source, "written": True}]))
-        assert [(i.requirement.name, i.status) for i in items] == [("WEATHER_KEY", STATUS_DECLARED)]
+    items = await agent_env_items(_Deployment([_row(written=True)]))
+    assert [(i.requirement.name, i.status) for i in items] == [("WEATHER_KEY", STATUS_DECLARED)]
+    assert await agent_env_items(_Deployment([_row(source="deployment", written=True)])) == []
 
 
 async def test_readiness_ignores_unapproved_and_already_answered_entries():
-    agent = _agent(env=ENV)
-    assert await agent_env_items(agent, _Deployment([]), skip={"WEATHER_KEY"}) == []
-    assert await agent_env_items(_agent(env=[ENV[1]]), _Deployment([])) == []
+    assert await agent_env_items(_Deployment([_row()]), skip={"WEATHER_KEY"}) == []
+    assert await agent_env_items(_Deployment([_row(name="DRAFT_KEY", inject=False)])) == []
