@@ -232,8 +232,16 @@ function AlertItem({
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-alert">
-      <div className={`rounded-md p-1.5 ${colors.bg}`}>
+      <div className={`relative rounded-md p-1.5 ${colors.bg}`}>
         <Icon className={`h-4 w-4 ${colors.text}`} />
+        {(alert.count ?? 1) > 1 && (
+          <span
+            className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] font-semibold leading-4 text-white"
+            data-testid="warnings-popover-alert-count"
+          >
+            {alert.count}
+          </span>
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">{alert.title}</p>

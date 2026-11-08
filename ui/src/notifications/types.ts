@@ -72,6 +72,9 @@ export interface NotificationData {
    *  rare alert that must reach the user in EVERY mode — one that explains why an
    *  action they just took did nothing. It still lands in the warnings log too. */
   forceToast?: boolean;
+  /** A standing problem the person reviews at their pace (a file that failed to index): goes to
+   *  the warnings log only and never toasts, Dev mode included. */
+  logOnly?: boolean;
   /** Feedback on one click, not a standing condition: toast once in every mode, time out, and
    *  never enter the warnings log. An unopenable link is the case — logging it left a permanent
    *  warning for a click the user already saw fail. */

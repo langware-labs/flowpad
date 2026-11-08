@@ -111,7 +111,7 @@ function dispatch(input: NotificationInput): string {
   // spinner running forever.
   if (isAlertLevel(data.level) && !data.transient) {
     useAlertStore.getState().push(data);
-    if (!data.forceToast && !getDev()) {
+    if (data.logOnly || (!data.forceToast && !getDev())) {
       sonnerToast.dismiss(id);
       return id;
     }
