@@ -6,7 +6,7 @@ import { useHasOrgOrTeam } from '@src/hooks/use-has-org-or-team';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
-import { PageId } from '@src/types/PageId';
+import { PageId } from '@sdk';
 
 /**
  * Org & teams — account-cluster button at the foot of the rail, beside the theme
