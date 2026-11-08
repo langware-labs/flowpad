@@ -36,7 +36,8 @@ import { BackgroundWorkChip } from './BackgroundWorkChip';
 import { QueueChip } from './QueueChip';
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
-import { TurnGroupsList } from './TurnGroupsList';
+import { nearestGroup, TurnGroupsList } from './TurnGroupsList';
+import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { LinkScope } from '@src/components/links/LinkHandlersContext';
 import type { LinkSurface } from '@src/components/links/link-actions';
 import { ChatActivityLine } from './ChatActivityLine';
@@ -811,11 +812,21 @@ export function EntityExecutionPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPrompt?.nonce]);
 
+  // A doc comment's "Open in chat" puts the moment it links to on the URL (`?t=`):
+  // open at that message, once per moment, instead of following the live edge.
+  const focusAt = useCurrentDock()?.transcriptTimestamp ?? null;
+  const anchorIndex = useMemo(() => nearestGroup(inlineGroups, focusAt), [inlineGroups, focusAt]);
   useEffect(() => {
+    if (anchorIndex !== null) return;
     scrollRef.current?.follow();
     // In dense mode new tool events (and the appearing activity footer) don't
     // bump messages.length — track the group count + active edge too.
-  }, [messages.length, turnGroups.length, activity.active]);
+  }, [messages.length, turnGroups.length, activity.active, anchorIndex]);
+  useEffect(() => {
+    if (anchorIndex === null) return;
+    document.querySelector('[data-chat-anchor]')?.scrollIntoView({ block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per focused moment
+  }, [focusAt, anchorIndex !== null]);
 
   const showEmptyState = !activeProcess && !listLoading && !sending;
 
@@ -981,6 +992,7 @@ export function EntityExecutionPanel({
             <>
               <TurnGroupsList
                 groups={inlineGroups}
+                anchorIndex={anchorIndex}
                 worker={activeProcess?.worker_type ?? undefined}
                 agent={launchingAgent}
                 onWorkerChange={workerLocked ? undefined : handleWorkerChange}

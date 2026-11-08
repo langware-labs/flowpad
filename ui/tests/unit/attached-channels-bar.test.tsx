@@ -26,6 +26,10 @@ import { AttachedChannelsBar, groupChannels } from '@src/components/stream-inbox
 import { channelOffers } from '@src/components/data-sources/use-source-specs';
 import { useSourceSetupStore } from '@src/components/setup-wizard/source-setup-store';
 
+// A person's own StreamInbox also carries the Diagnosis mark; these cases are about channel marks.
+const channelMarks = () =>
+  screen.getAllByTestId('attached-channel').filter((e) => e.dataset.provider !== 'diagnosis');
+
 function mount(rows: DataSource[], selected = new Set<string>()) {
   const onSelectedChange = vi.fn();
   render(
@@ -45,7 +49,7 @@ describe('AttachedChannelsBar', () => {
 
   it('shows one mark per channel kind with its state, and the two controls at rest', () => {
     mount([fake('a'), fake('b', 'disabled', 'gmail'), fake('c', 'setup', 'telegram')]);
-    const marks = screen.getAllByTestId('attached-channel');
+    const marks = channelMarks();
     expect(marks.map((e) => [e.getAttribute('aria-label'), e.dataset.state])).toEqual([
       ['b · paused', 'off'],
       ['a · listening', 'on'],
@@ -69,14 +73,14 @@ describe('AttachedChannelsBar', () => {
         onMarkPress={onMarkPress}
       />,
     );
-    fireEvent.click(screen.getByTestId('attached-channel'));
+    fireEvent.click(channelMarks()[0]);
     expect(onMarkPress).toHaveBeenCalledWith('slack|slack');
     expect(onSelectedChange).not.toHaveBeenCalled();
   });
 
   it('a lit mark still wears "!" when one of its sources needs a person', () => {
     mount([fake('a', 'setup'), fake('b')]);
-    const mark = screen.getByTestId('attached-channel');
+    const mark = channelMarks()[0];
     expect([mark.dataset.state, mark.dataset.attention, mark.getAttribute('aria-label')]).toEqual([
       'on',
       '1',
@@ -89,7 +93,7 @@ describe('AttachedChannelsBar', () => {
     const rows = [fake('a'), fake('b'), fake('c', 'disabled'), fake('g', 'active', 'gmail')];
     const save = vi.spyOn(rows[0], 'save');
     const onSelectedChange = mount(rows);
-    const marks = screen.getAllByTestId('attached-channel');
+    const marks = channelMarks();
     expect(marks.map((e) => [e.dataset.provider, e.dataset.count, e.dataset.state])).toEqual([
       ['gmail', '1', 'on'],
       ['slack', '3', 'on'],
@@ -120,7 +124,7 @@ describe('AttachedChannelsBar', () => {
     expect(screen.queryByTestId('attached-channels-add')).toBeNull();
     // The rest of the line stays, so the marks a person points at do not shift.
     expect(screen.getByTestId('attached-channels-details')).toBeTruthy();
-    const marks = screen.getAllByTestId('attached-channel');
+    const marks = channelMarks();
     expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
     fireEvent.click(screen.getByTestId('attached-channels-clear'));
     expect(onSelectedChange).toHaveBeenCalledWith(new Set());
@@ -234,7 +238,7 @@ describe('channel offers', () => {
 
   it('draws an offer beside the attached marks, and pressing it opens the add dialog on that channel', () => {
     mountOffers();
-    expect(screen.getAllByTestId('attached-channel')).toHaveLength(1);
+    expect(channelMarks()).toHaveLength(1);
     const offers = screen.getAllByTestId('channel-offer');
     expect(offers.map((e) => [e.dataset.channel, e.getAttribute('aria-label')])).toEqual([
       ['Chat', 'Connect Chat'],

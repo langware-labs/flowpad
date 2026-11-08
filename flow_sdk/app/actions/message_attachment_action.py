@@ -478,6 +478,15 @@ async def _install_webapp_artifact_copy(
         )
     if served is None:
         return ApiFailResponse(message="webapp artifact restore failed", status_code=500)
+    # A generated web app is an Artifact, not a manifest-backed micro_app, so
+    # its copy install is the point where its local static route must be placed.
+    # Without this, the review UI says Installed but Open has no served URL.
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import place_webapp_artifact_locally  # noqa: PLC0415
+
+    artifact = await Artifact.get_by_id(ma.asset_id)
+    if artifact is not None:
+        await place_webapp_artifact_locally(artifact)
     await _notify_received_assets({(ma.asset_type, ma.asset_id)})
     return await _finalize_install(ma, scope, project_id, str(root), someone_typeid)
 

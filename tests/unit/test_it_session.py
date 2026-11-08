@@ -141,7 +141,7 @@ async def test_run_answers_its_value_and_leaves_nothing(box, monkeypatch):
         call_id="call-1", text="Check progress", attachments=att, answer_shape=SHAPE, workdir=box.project
     )
 
-    assert answer.as_data() == {"answer": "Snake is built and runs.", "value": value}
+    assert answer.as_data() == {"answer": "Snake is built and runs.", "value": value, "ok": True}
     run = launched[0]
     assert run["workdir"] == box.project and run["remember_prompt"] is False
     assert "class-status.md" in run["prompt"]
@@ -157,7 +157,7 @@ async def test_value_off_its_shape_is_null_and_says_why(box, monkeypatch):
     receipt = {"status": "done", "summary": "Answered.", "data": {it_session.VALUE_KEY: {"tasks": "nope"}}}
     monkeypatch.setattr("flow_sdk.core.compute.process_step.launch_step_process", _launch(box, receipt, []))
     answer = await it_session.run_it_session(call_id="c2", text="x", answer_shape=SHAPE, workdir=box.settings.instance_dir)
-    assert answer.value is None
+    assert answer.value is None and answer.ok is False  # the hub records it as failed, never done
     assert "does not match its shape" in answer.answer
 
 
@@ -165,7 +165,7 @@ async def test_plain_answer_without_a_shape(box, monkeypatch):
     receipt = {"status": "done", "summary": "s", "data": {it_session.OUTCOME_KEY: "All 4 tasks done."}}
     monkeypatch.setattr("flow_sdk.core.compute.process_step.launch_step_process", _launch(box, receipt, []))
     answer = await it_session.run_it_session(call_id="c3", text="x", workdir=box.settings.instance_dir)
-    assert answer.as_data() == {"answer": "All 4 tasks done.", "value": None}
+    assert answer.as_data() == {"answer": "All 4 tasks done.", "value": None, "ok": True}
 
 
 async def test_sign_in_mid_run_cancels_and_cleans(box, monkeypatch):
@@ -236,7 +236,7 @@ def test_run_from_the_hub_answers(client, box, monkeypatch):
     monkeypatch.setattr(it_session, "project_workdir", lambda project=None: _async(box.settings.instance_dir))
     client.post("/api/v1/it-session/setting", json={"on": True}, headers=HUB)
     res = client.post("/api/v1/it-session/run", json={"call_id": "c5", "text": "How is it going?"}, headers=HUB)
-    assert res.status_code == 200 and res.json()["data"] == {"answer": "Fine.", "value": None}
+    assert res.status_code == 200 and res.json()["data"] == {"answer": "Fine.", "value": None, "ok": True}
 
 
 async def _async(value):
@@ -287,3 +287,12 @@ async def test_runs_in_the_project_the_hub_names_not_the_first_project(tmp_path)
 def test_run_route_refuses_a_project_that_is_not_an_object(client):
     r = client.post("/api/v1/it-session/run", json={"call_id": "c", "text": "t", "project": "ai-course"}, headers=HUB)
     assert r.status_code == 400
+
+
+
+async def test_a_session_that_failed_says_so(box, monkeypatch):
+    """Seen on prod: the LLM budget refused (429) and the box answered as if done. A failed run answers ok=False."""
+    receipt = {"status": "error", "summary": "The agent ended error. API Error: Request rejected (429)"}
+    monkeypatch.setattr("flow_sdk.core.compute.process_step.launch_step_process", _launch(box, receipt, []))
+    answer = await it_session.run_it_session(call_id="c9", text="x", answer_shape=SHAPE, workdir=box.settings.instance_dir)
+    assert answer.ok is False and answer.value is None

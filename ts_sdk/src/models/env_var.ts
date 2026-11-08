@@ -93,9 +93,19 @@ export function oauthProviderDisplayName(
  */
 export class EntityEnv {
   private entityTypeId: TypeId;
+  private hubReflect: boolean;
 
-  constructor(entityTypeId: TypeId) {
+  /** `hubReflect`: the calls go to the hub's store for this entity (an agent's or a deployment's), not this computer's. */
+  constructor(entityTypeId: TypeId, options: { hubReflect?: boolean } = {}) {
     this.entityTypeId = entityTypeId;
+    this.hubReflect = options.hubReflect ?? false;
+  }
+
+  private action(method: 'GET' | 'POST' | 'PUT' | 'DELETE', varName?: string): ActionInfo {
+    const info = new ActionInfo('env-var', this.entityTypeId.type, this.entityTypeId.id, method);
+    info.hubReflect = this.hubReflect;
+    if (varName !== undefined) info.subpath = [varName];
+    return info;
   }
 
   // =========================================================================
@@ -107,7 +117,7 @@ export class EntityEnv {
    * POST /<entity-typeid>/env-var
    */
   async create(data: EnvVar): Promise<EnvVar> {
-    const actionInfo = new ActionInfo('env-var', this.entityTypeId.type, this.entityTypeId.id, 'POST');
+    const actionInfo = this.action('POST');
 
     actionInfo.bodyParameters = {
       name: data.name,
@@ -124,14 +134,14 @@ export class EntityEnv {
     }
 
     // Note: apiClient interceptor already unwraps response.data.data
-    const response = await dataManager.callAction<any, ApiResponseData>(actionInfo);
+    const response = await dataManager.callAction<any, ApiResponseData | null>(actionInfo);
 
-    // Map visible_value from API to value in our interface
+    // Map visible_value from API to value in our interface; a write-only store may answer no row.
     return {
-      name: response.name,
-      var_type: response.var_type,
-      description: response.description,
-      value: response.visible_value,
+      name: response?.name ?? data.name,
+      var_type: response?.var_type ?? data.var_type,
+      description: response?.description ?? data.description,
+      value: response?.visible_value,
     };
   }
 
@@ -140,8 +150,7 @@ export class EntityEnv {
    * GET /<entity-typeid>/env-var/{VAR_NAME}
    */
   async get(varName: string): Promise<EnvVar> {
-    const actionInfo = new ActionInfo('env-var', this.entityTypeId.type, this.entityTypeId.id, 'GET');
-    actionInfo.subpath = [varName];
+    const actionInfo = this.action('GET', varName);
 
     interface ApiResponseData {
       name: string;
@@ -168,7 +177,7 @@ export class EntityEnv {
    * @param typeFilter Optional filter by var_type (e.g., [EnvVarType.API_KEY, EnvVarType.OAUTH_TOKEN])
    */
   async list(typeFilter?: EnvVarType[]): Promise<EnvVar[]> {
-    const actionInfo = new ActionInfo('env-var', this.entityTypeId.type, this.entityTypeId.id, 'GET');
+    const actionInfo = this.action('GET');
 
     if (typeFilter && typeFilter.length > 0) {
       actionInfo.queryParameters = {
@@ -200,8 +209,7 @@ export class EntityEnv {
    * PUT /<entity-typeid>/env-var/{VAR_NAME}
    */
   async update(varName: string, data: Partial<EnvVar>): Promise<EnvVar> {
-    const actionInfo = new ActionInfo('env-var', this.entityTypeId.type, this.entityTypeId.id, 'PUT');
-    actionInfo.subpath = [varName];
+    const actionInfo = this.action('PUT', varName);
 
     actionInfo.bodyParameters = {
       name: varName,
@@ -234,8 +242,7 @@ export class EntityEnv {
    * DELETE /<entity-typeid>/env-var/{VAR_NAME}
    */
   async delete(varName: string): Promise<{ message: string }> {
-    const actionInfo = new ActionInfo('env-var', this.entityTypeId.type, this.entityTypeId.id, 'DELETE');
-    actionInfo.subpath = [varName]; // Use the original case, don't convert to uppercase
+    const actionInfo = this.action('DELETE', varName); // Use the original case, don't convert to uppercase
 
     interface ApiResponse {
       message: string;
@@ -254,8 +261,7 @@ export class EntityEnv {
    * - For PROJECT entities: Returns merged project vars + user vars + OAuth providers
    */
   async getTable(): Promise<EntityEnvVars> {
-    const actionInfo = new ActionInfo('env-var', this.entityTypeId.type, this.entityTypeId.id, 'GET');
-    actionInfo.subpath = ['table'];
+    const actionInfo = this.action('GET', 'table');
 
     // Note: apiClient interceptor already unwraps response.data.data
     // So dataManager.callAction returns the data directly, not wrapped in { data: ... }

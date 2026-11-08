@@ -40,6 +40,17 @@ describe('conversationsPageRequest', () => {
     expect(conversationsPageRequest(scope, 'all', null).query!.validate(row({ channel_source_id: 'src-mail' }))).toBe(true);
   });
 
+  it('the Diagnosis mark narrows to the conversations on that channel, alone or beside a source', () => {
+    const diagnosis = conversationsPageRequest({ owner: OWNER, channels: ['diagnosis'] }, 'all', null).query!;
+    expect(diagnosis.validate(row({ channel: 'diagnosis' }))).toBe(true);
+    expect(diagnosis.validate(row({ channel: 'flowpad' }))).toBe(false);
+    const both = conversationsPageRequest({ owner: OWNER, sourceIds: ['src-slack'], channels: ['diagnosis'] }, 'all', null)
+      .query!;
+    expect(both.validate(row({ channel: 'diagnosis' }))).toBe(true);
+    expect(both.validate(row({ channel: 'slack', channel_source_id: 'src-slack' }))).toBe(true);
+    expect(both.validate(row({ channel: 'gmail', channel_source_id: 'src-mail' }))).toBe(false);
+  });
+
   it('a conversation deleted on the hub is not listed; a row kept here (no deleted_at) is', () => {
     const q = conversationsPageRequest(scope, 'all', null).query!;
     expect(q.validate(row({}))).toBe(true);

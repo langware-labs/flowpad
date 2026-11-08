@@ -70,8 +70,8 @@ describe('entity card', () => {
 });
 
 describe('entity card rows', () => {
-  it('a native conversation names the people on its roster when it has no channel address', () => {
+  it('a native conversation names the people on its roster (an email by its short name) when it has no channel address', () => {
     const rows = entityCardRows('conversation', { members: [{ name: 'Dana' }, { email: 'eli@example.com' }] });
-    expect(rows.filter((r) => r.value === 'Dana' || r.value === 'eli@example.com')).toHaveLength(2);
+    expect(rows.filter((r) => r.value === 'Dana' || r.value === 'Eli')).toHaveLength(2);
   });
 });

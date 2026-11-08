@@ -223,34 +223,31 @@ export function isViewer(senderId: string | null | undefined, viewer: CategoryIn
 const AMBER_CHIP = 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300';
 const EMERALD_CHIP = 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
 
-/** The state chip for a ticket facet — label depends on whose side the viewer is on. */
-export function ticketChip(tk: TicketFacet): ChipSpec {
-  const staff = tk.perspective === 'staff';
+/** The state chip for a ticket facet, or none. Pick-up is the desk's own business: the requester sees a
+ *  conversation someone answers, so their side shows only that a ticket was closed. */
+export function ticketChip(tk: TicketFacet): ChipSpec | null {
   if (tk.state === 'closed')
     return { key: 'ticket-closed', icon: CircleCheck, label: t`Closed`, className: MUTED_CHIP };
-  if (tk.state === 'waiting') {
-    return {
-      key: 'ticket-waiting',
-      icon: Clock,
-      label: staff ? t`Not picked up` : t`Waiting for pickup`,
-      className: AMBER_CHIP,
-    };
-  }
+  if (tk.perspective !== 'staff') return null;
+  if (tk.state === 'waiting') return { key: 'ticket-waiting', icon: Clock, label: t`Not picked up`, className: AMBER_CHIP };
   const by = tk.pickedBy;
-  const label = !staff || !by ? t`Picked up` : by === 'you' ? t`Picked up by you` : t`Picked up by ${by}`;
+  const label = !by ? t`Picked up` : by === 'you' ? t`Picked up by you` : t`Picked up by ${by}`;
   return { key: 'ticket-picked', icon: UserCheck, label, className: EMERALD_CHIP };
 }
 
 export function chipsFor(f: ConversationFacets): ChipSpec[] {
   const chips: ChipSpec[] = [];
   if (f.kind === 'helpdesk') {
-    chips.push({ key: 'helpdesk', icon: LifeBuoy, label: t`Support`, className: VIOLET_CHIP });
+    // The asker reads it as the help desk answering them; the desk's own rows name it Support.
+    const label = f.ticket?.perspective === 'staff' ? t`Support` : t`Help desk`;
+    chips.push({ key: 'helpdesk', icon: LifeBuoy, label, className: VIOLET_CHIP });
   }
   if (f.kind === 'it') {
     chips.push({ key: 'it', icon: Wrench, label: t`IT`, className: SKY_CHIP });
   }
   // The asker's side is just a conversation: the queue state is the desk's to show, not theirs.
-  if (f.ticket && f.ticket.perspective === 'staff') chips.push(ticketChip(f.ticket));
+  const state = f.ticket && f.ticket.perspective === 'staff' ? ticketChip(f.ticket) : null;
+  if (state) chips.push(state);
   if (f.isArchived) {
     chips.push({ key: 'archived', icon: Archive, label: t`Archived`, className: MUTED_CHIP });
   }

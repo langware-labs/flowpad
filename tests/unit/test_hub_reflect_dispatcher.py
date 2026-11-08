@@ -250,3 +250,19 @@ async def test_mirror_learns_a_changed_roster_into_the_address_book(monkeypatch)
 
     await mirror_hub_response_into_local(e, "members", roster)
     assert learned == [roster]
+
+
+def test_normalize_never_leaves_a_person_nameless():
+    """An older hub sends an invitation shadow with no name and no email: the row
+    still gets a short name, so no surface falls back to "unknown"."""
+    from flow_sdk.server.routes._hub_reflect import normalize_hub_response
+
+    rows = normalize_hub_response(
+        "members",
+        [
+            {"type": "user", "user_id": "c6a858da-f727", "user_name": None, "user_email": None},
+            {"type": "user", "user_id": "u2", "user_name": None, "user_email": "john.doe@x.io"},
+            {"type": "user", "user_id": "u3", "user_name": "Gadi Tunes"},
+        ],
+    )
+    assert [r["name"] for r in rows] == ["User c6a858", "John Doe", "Gadi Tunes"]

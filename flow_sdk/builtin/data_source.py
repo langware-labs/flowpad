@@ -1276,7 +1276,8 @@ class DataSource(SetupSkippable, Entity):
         as a config_error the card can explain. Callers load the driver first (``DataDriver.find``).
         """
         stype = self._driver()
-        if stype is not None and stype.has_setup:
+        set_up = getattr(getattr(stype, "cls", None), "set_up_by_config", None)
+        if stype is not None and stype.has_setup and not (callable(set_up) and set_up(self.config or {})):
             self.status = SourceStatus.SETUP.value
             need = _declared_sign_in(stype)
             if need is not None and not self.setup_needs:

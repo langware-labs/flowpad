@@ -185,7 +185,7 @@ function ticketInputs(over: {
 
 const stateLabel = (inp: CategoryInputs) => {
   const f = conversationFacets(inp);
-  return f.ticket ? ticketChip(f.ticket).label : null;
+  return f.ticket ? ticketChip(f.ticket)?.label : null;
 };
 
 describe('ticketState', () => {
@@ -217,11 +217,9 @@ describe('ticketState', () => {
 });
 
 describe('ticket chip labels', () => {
-  it('requester: Waiting for pickup → Picked up → Closed', () => {
-    expect(stateLabel(ticketInputs({ viewerId: REQUESTER }))).toBe('Waiting for pickup');
-    expect(stateLabel(ticketInputs({ viewerId: REQUESTER, members: [requesterMember, staffMember] }))).toBe(
-      'Picked up',
-    );
+  it('requester: no pick-up state, only Closed', () => {
+    expect(stateLabel(ticketInputs({ viewerId: REQUESTER }))).toBeUndefined();
+    expect(stateLabel(ticketInputs({ viewerId: REQUESTER, members: [requesterMember, staffMember] }))).toBeUndefined();
     expect(stateLabel(ticketInputs({ viewerId: REQUESTER, status: ConversationStatus.CLOSED }))).toBe('Closed');
   });
   it('staff: Not picked up → Picked up by you / by <name> → Closed', () => {
