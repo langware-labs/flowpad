@@ -103,8 +103,13 @@ def _is_project_root(directory: Path) -> bool:
     itself holds the shipped system project's source under
     ``flow_sdk/system_projects/``, whose compute ops are not the checkout's.
     The scanned root itself is never a child, so its own assets are kept.
+    A folder this user cannot look into is not a project root: the walk then
+    reports it as unreadable instead of the scan failing on its EACCES.
     """
-    return (directory / AGENTIC_ASSETS_DIR).is_dir()
+    try:
+        return (directory / AGENTIC_ASSETS_DIR).is_dir()
+    except PermissionError:
+        return False
 
 
 class AssetFolder(DataSpec):
@@ -194,27 +199,33 @@ class AssetFolder(DataSpec):
                     asset = None
                     # A remaining carrier in a declared folder is evidence of
                     # an incomplete asset, unlike an ordinary empty directory.
-                    if candidate.is_dir():
-                        for name in SchemaRegistry.get_all_types():
-                            info = SchemaRegistry.get(name)
-                            if info is None or not isinstance(info.shape, Folder) or not info.shape.main:
-                                continue
-                            body = candidate / info.shape.main
-                            if body.exists() or name not in SchemaRegistry.main_file_owners(body):
-                                continue
-                            carrier = info.carrier.locate(info.layout_of(candidate))
-                            if carrier == body:
-                                continue
-                            try:
-                                has_identity = not isinstance(info.carrier.read(carrier), Absent)
-                            except (OSError, ValueError) as error:
-                                issue(candidate, str(error))
-                                break
-                            if has_identity:
-                                if _remove_husk(candidate):
+                    # A folder this user cannot look into (a root-owned dir in the home,
+                    # e.g. docker's data root) holds no asset we could read: skip it
+                    # rather than fail the whole scan on its EACCES.
+                    try:
+                        if candidate.is_dir():
+                            for name in SchemaRegistry.get_all_types():
+                                info = SchemaRegistry.get(name)
+                                if info is None or not isinstance(info.shape, Folder) or not info.shape.main:
+                                    continue
+                                body = candidate / info.shape.main
+                                if body.exists() or name not in SchemaRegistry.main_file_owners(body):
+                                    continue
+                                carrier = info.carrier.locate(info.layout_of(candidate))
+                                if carrier == body:
+                                    continue
+                                try:
+                                    has_identity = not isinstance(info.carrier.read(carrier), Absent)
+                                except (OSError, ValueError) as error:
+                                    issue(candidate, str(error))
                                     break
-                                issue(candidate, f"Missing asset main document: {info.shape.main}")
-                                break
+                                if has_identity:
+                                    if _remove_husk(candidate):
+                                        break
+                                    issue(candidate, f"Missing asset main document: {info.shape.main}")
+                                    break
+                    except PermissionError:
+                        pass
                 except (OSError, ValueError) as error:
                     issue(candidate, str(error))
                     asset = None

@@ -243,6 +243,12 @@ export const TabStrip: React.FC<TabStripProps> = ({
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+  // Rename chosen from a chip's context menu, waiting for that menu to close. Opening the editor inside
+  // onSelect mounted the input while the menu's focus trap was still live: the trap pulled focus back,
+  // the input's blur COMMITTED the unchanged name and closed the editor (handleNameBlur) -- choosing
+  // Rename did nothing. The menu's close (onCloseAutoFocus) opens the editor instead, with nothing left
+  // to take focus from it.
+  const renameFromMenuRef = useRef<{ key: string; title: string } | null>(null);
   const shouldSelectRenameInputRef = useRef(false);
 
   // Density: one ResizeObserver on the row; all chips share one width
@@ -734,14 +740,26 @@ export const TabStrip: React.FC<TabStripProps> = ({
               </TooltipContent>
             )}
           </TabChipTooltip>
-          <ContextMenuContent>
+          <ContextMenuContent
+            onCloseAutoFocus={(e) => {
+              const pending = renameFromMenuRef.current;
+              if (!pending) return;
+              renameFromMenuRef.current = null;
+              e.preventDefault(); // the editor takes focus, not the trigger
+              startRename(pending.key, pending.title);
+            }}
+          >
             {/* Emphasized shortcuts (e.g. "Open Project") sit above the tab
                 operations as an accented header group — they navigate, they
                 don't mutate the tab, so they must not read as one more entry. */}
             {renderMenuGroup(item.contextMenuItems?.filter((e) => e.emphasized))}
             {item.renameable && (
               <>
-                <ContextMenuItem onSelect={() => startRename(key, item.title)}>
+                <ContextMenuItem
+                  onSelect={() => {
+                    renameFromMenuRef.current = { key, title: item.title };
+                  }}
+                >
                   <Trans>Rename</Trans>
                 </ContextMenuItem>
                 <ContextMenuSeparator />

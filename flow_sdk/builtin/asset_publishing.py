@@ -165,7 +165,9 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         repo=repo["repo"],
         rel_path=rel_path,
         head_commit=str(hub_result.get("head_commit") or synced.head_commit or ""),
-        tree=str(hub_result.get("tree") or synced.tree),
+        # What THIS desk synced, not the hub repo's head when the hub answered: a publish that finishes
+        # late would otherwise record a newer hub edit as "already seen" and hide the next asset_conflict.
+        tree=str(synced.tree or hub_result.get("tree") or ""),
     )
     await asyncio.to_thread(
         remember_sync,

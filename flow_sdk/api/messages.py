@@ -63,6 +63,8 @@ class BroadcastMessage(BaseMessage):
 
     message_type: str = WSMessageType.BROADCAST.value
     broadcast_type: str
+    #: ``tabs_changed``: the tab list version this change produced (``tab.tabs_version``).
+    version: Optional[str] = None
 
 
 class LlmConfigMessage(BaseMessage):

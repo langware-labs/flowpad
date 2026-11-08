@@ -348,6 +348,17 @@ class DBDriver(Generic[RecordType]):
         """Atomically update only ``tab_order``; no-op on hidden/missing rows."""
         raise NotImplementedError("stamp_tab_order is not implemented")
 
+    async def stamp_tab_orders(self, orders: dict[str, int]) -> set[str]:
+        """Stamp ``tab_order`` on many tabs at once; returns the ids that changed.
+        Same per-row rule as :meth:`stamp_tab_order` (hidden/missing rows and
+        unchanged values are skipped). Drivers may override it with one statement."""
+        changed: set[str] = set()
+        for entity_id, tab_order in orders.items():
+            _, stamped = await self.stamp_tab_order(entity_id, tab_order)
+            if stamped:
+                changed.add(entity_id)
+        return changed
+
     async def compare_and_set_data_field(
         self,
         entity_id: str,

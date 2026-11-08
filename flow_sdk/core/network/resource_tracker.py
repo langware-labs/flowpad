@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from itertools import count
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
@@ -249,7 +249,9 @@ async def handle_entity_op(op_message: Any):
     _sync_handle_entity_op(op_message)
 
 
-async def send_flow_data_to_entity(entity_typeid, flow_data: dict, *, also: Iterable[str] = ()) -> set[str]:
+async def send_flow_data_to_entity(
+    entity_typeid, flow_data: dict, *, also: Iterable[str] = (), only: Optional[Iterable[str]] = None
+) -> set[str]:
     """
     Send FlowData to all connections watching this entity, plus the connections in ``also``.
 
@@ -257,6 +259,8 @@ async def send_flow_data_to_entity(entity_typeid, flow_data: dict, *, also: Iter
         entity_typeid: The TypeId of the entity (or string in "type-id" format)
         flow_data: Dictionary containing FlowData fields (element_type, content, attributes, etc.)
         also: Connection ids to reach even when they no longer watch the entity.
+        only: When given, reach exactly these live connections instead of the watchers (a replay
+            to one client that missed the event).
 
     Returns the connection ids it reached (empty when it reached none).
     """
@@ -289,7 +293,8 @@ async def send_flow_data_to_entity(entity_typeid, flow_data: dict, *, also: Iter
         from flow_sdk.app.actions.watch_registry import get_watched_by
 
         watched = get_watched_by(f"{entity_type}:{entity_id}")
-        recipients = {conn_id for conn_id in (*watched, *also) if conn_id in active_connections}
+        targets = (*watched, *also) if only is None else tuple(only)
+        recipients = {conn_id for conn_id in targets if conn_id in active_connections}
 
         payload = json.dumps(message)
         reached: set[str] = set()

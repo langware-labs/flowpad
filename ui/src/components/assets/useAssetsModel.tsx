@@ -8,6 +8,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import apiClient from '@sdk/client';
 import { dataContext, DiagnosisRequest, fsManager, fsStore, Project, RecordType, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
@@ -210,6 +211,19 @@ export function useAssetsModel() {
   const { endpoints: myEndpoints } = useMyEndpoints();
   const myDiagnosisRequests = useMyDiagnosisRequests();
 
+  // Tags are row-only (never indexed), so `asset-stats` has no `tag` count and the Tag root
+  // stayed hidden even in dev mode. Their count is how many Tag entities the box lists.
+  const [tagCount, setTagCount] = useState(0);
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve(apiClient.get('/graph/tag'))
+      .then((rows) => live && setTagCount(Array.isArray(rows) ? rows.length : 0))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [assetStats.per_type]);
+
   // ONE count source, the same scope as the list: asset-stats counts exactly the rows
   // `/search?top_level=true` returns for `effectiveFilter.scope` (nested rows are
   // subtracted server-side). Dependency assets are counted only when the scope asks for
@@ -229,8 +243,9 @@ export function useAssetsModel() {
     // Diagnosis requests likewise have no file to index or attribute: the hub lists them, and
     // the scope narrows them to the project each was opened under (or the user, for the rest).
     counts.set(DiagnosisRequest.type, requestsInScope(myDiagnosisRequests, effectiveFilter.scope).length);
+    counts.set('tag', tagCount);
     return counts;
-  }, [assetStats.per_type, myEndpoints.length, myDiagnosisRequests, effectiveFilter.scope]);
+  }, [assetStats.per_type, myEndpoints.length, myDiagnosisRequests, effectiveFilter.scope, tagCount]);
 
   // An LLM endpoint belongs to a PERSON, never to a project — it is exactly the kind of
   // user-scoped asset the User chip exists for. Under a project-only scope the row would
