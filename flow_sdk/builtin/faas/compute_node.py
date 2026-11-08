@@ -1277,11 +1277,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         a name no visible project holds — a clone's folder name becomes its project's name."""
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-        name, n = leaf, 1
-        while cls._next_free_leaf(name, base=base) != name or await Project._project_named(name) is not None:
-            n += 1
-            name = f"{leaf}-{n}"
-        return name
+        return await Project.free_name(leaf, taken=lambda name: cls._next_free_leaf(name, base=base) != name)
 
     @staticmethod
     def _next_free_leaf(leaf: str, base: str | None = None) -> str:

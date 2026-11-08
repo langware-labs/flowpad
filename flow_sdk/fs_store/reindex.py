@@ -70,18 +70,15 @@ async def retire_or_adopt(row) -> bool:
     """Reap ``row`` now that its source is gone — unless another copy of the same asset id
     (a second clone of its repository: ``asset_occurrences``) is still on disk, which then
     becomes the row's source. True when a copy was adopted, False when the row was reaped.
-
-    One row stands for every copy of an id; the indexer keeps one as primary and skips the
-    rest. Deleting the primary's folder used to reap the row and leave the surviving copy
-    unindexed — its project lost those assets until something walked it again.
+    One row stands for every copy of an id: the indexer keeps one as primary, lists the rest.
     """
     from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
-    gone = canonical_posix_path(str(getattr(row, "asset_ref", "") or ""))
-    for occurrence in getattr(row, "asset_occurrences", None) or []:
-        path = str((occurrence or {}).get("path") or "")
+    gone = canonical_posix_path(row.asset_ref or "")
+    for occurrence in row.asset_occurrences or []:
+        path = occurrence.get("path") or ""
         if not path or canonical_posix_path(path) == gone or not Path(path).exists():
             continue
         try:
