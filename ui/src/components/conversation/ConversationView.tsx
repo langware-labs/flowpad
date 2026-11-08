@@ -651,7 +651,8 @@ export function ConversationView({
         prev = null;
         continue;
       }
-      const cur = { sender_id: fm.sender_id, at: Date.parse(item.timestamp) };
+      // IT replies are all written by the agent; each machine is its own sender.
+      const cur = { sender_id: fm.it_reply?.node_typeid ?? fm.sender_id, at: Date.parse(item.timestamp) };
       if (continuesGroup(prev, cur)) keys.add(item.key);
       prev = cur;
     }

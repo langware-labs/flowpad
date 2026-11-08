@@ -259,6 +259,12 @@ def test_it_reply_rides_the_hub_metadata():
     assert fm.it_reply == it
     assert ConversationKind.IT == "it"
 
+    # The owner's IT message carries metadata.it too (its attachment names): it is the message, not a reply.
+    owner_payload = {"id": "fm-0", "text": "Check progress", "metadata": {"it": {"attachments": ["shape.json"]}}}
+    owner = FlowMessage.model_validate(owner_payload)
+    derive_it_reply(owner, owner_payload)
+    assert owner.it_reply is None
+
 
 async def test_runs_in_the_project_the_hub_names_not_the_first_project(tmp_path):
     """A public box holds a starter project and the course; it has no opening project. The hub names the agent's

@@ -327,7 +327,8 @@ export interface FlowMessage extends EntityMerge<IFlowMessage> {}
 /** The IT reply a hub message's `metadata.it` carries, else null. */
 export function itReplyOf(metadata: Record<string, unknown> | null | undefined): ItReplyMeta | null {
   const it = metadata?.it;
-  return it && typeof it === 'object' ? (it as ItReplyMeta) : null;
+  // Only a machine's reply names its node; the owner's IT message carries `metadata.it` too (its attachment names).
+  return it && typeof it === 'object' && (it as ItReplyMeta).node_typeid ? (it as ItReplyMeta) : null;
 }
 
 @registerEntity

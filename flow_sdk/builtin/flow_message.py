@@ -401,7 +401,9 @@ def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
     """Carry an IT reply's ``metadata.it`` (hub-written) onto ``it_reply``. Idempotent; absent leaves it as is."""
     metadata = payload.get("metadata")
     it = metadata.get("it") if isinstance(metadata, dict) else None
-    if isinstance(it, dict):
+    # Only a MACHINE's reply names its node; the owner's IT message carries ``metadata.it`` too (its attachment
+    # names) and is the IT message itself, not a reply.
+    if isinstance(it, dict) and it.get("node_typeid"):
         fm.it_reply = dict(it)
 
 

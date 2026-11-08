@@ -60,6 +60,8 @@ describe('a machine reply', () => {
     const it = reply({ state: 'off' });
     expect(itReplyOf({ it })).toEqual(it);
     expect(itReplyOf(null)).toBeNull();
+    // The owner's IT message carries metadata.it (its attachment names) but names no machine: not a reply.
+    expect(itReplyOf({ it: { attachments: ['shape.json'] } })).toBeNull();
     expect(new FlowMessage({ metadata: { it } }).it_reply).toEqual(it);
     expect(new FlowMessage({ it_reply: it }).it_reply).toEqual(it);
   });
