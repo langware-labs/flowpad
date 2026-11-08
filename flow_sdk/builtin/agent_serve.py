@@ -1365,26 +1365,21 @@ class AgentServer:
         # A deployment with a main agent runs that agent; the rest are web-only or this computer -- and
         # one whose main agent was just cleared is a stray when its loop is still up.
         local = QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["target.provider", "local"]))
-        unwanted: list = []
         for deployment in await Deployment.get_all(local):
             if not deployment.is_local:
                 continue
             agent = await deployment.main_agent() if deployment.serving else None
             if agent is not None and agent.enabled:
                 wanted[str(deployment.id)] = (agent, deployment)
-            elif str(deployment.id) not in self._running:
-                unwanted.append(deployment)
-        # One read of the process table, off the event loop: per-deployment scans stalled every request on a busy host.
-        if unwanted:
-            running = await asyncio.to_thread(deployment_process.alive_many, unwanted)
-            strays = [d for d in unwanted if str(d.id) in running]
+            elif str(deployment.id) not in self._running and deployment_process.alive(deployment):
+                strays.append(deployment)
         return wanted, strays
 
     async def _keep_running(self, agent, deployment) -> None:
-        if str(deployment.id) in self._running and await asyncio.to_thread(deployment_process.alive, deployment):
+        if str(deployment.id) in self._running and deployment_process.alive(deployment):
             return
         await ensure_chat_channel(agent, deployment)
-        if not await asyncio.to_thread(deployment_process.alive, deployment):
+        if not deployment_process.alive(deployment):
             labels = await deployment_process.start(deployment)
             if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
                 # The row as it is NOW, not the copy read before the start: a hub adopt that landed in

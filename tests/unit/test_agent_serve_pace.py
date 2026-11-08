@@ -110,24 +110,3 @@ async def test_a_parked_source_is_asked_by_nobody_however_long_it_isserved(worke
     assert str(source.id) not in dispatched, "the heartbeat skips a parked source"
     assert [s for s in syncs if s == str(source.id)] == [], "and so does every consumer"
     assert double.sent() == [] and worker.received_prompts == []
-
-
-def test_alive_many_reads_the_process_table_once(monkeypatch, tmp_path):
-    """The supervisor's tick asked `alive` per deployment, each reading every process's command line on the event loop."""
-    import psutil
-    from types import SimpleNamespace
-
-    from flow_sdk.builtin import deployment_process
-
-    monkeypatch.setattr(deployment_process, "_lock_path", lambda _id: tmp_path / f"{_id}.lock")
-    monkeypatch.setattr(deployment_process, "file_of", lambda d: f"/loops/{d.id}.py")
-    deployments = [SimpleNamespace(id=f"d{i}") for i in range(5)]
-    scans = []
-
-    def fake_iter(attrs):
-        scans.append(1)
-        return [SimpleNamespace(info={"pid": 4242, "cmdline": ["python", "/loops/d3.py", "d3"]})]
-
-    monkeypatch.setattr(psutil, "process_iter", fake_iter)
-    assert deployment_process.alive_many(deployments) == {"d3"}
-    assert len(scans) == 1

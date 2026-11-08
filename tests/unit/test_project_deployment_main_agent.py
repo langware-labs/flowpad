@@ -142,6 +142,6 @@ async def test_the_supervisor_keeps_a_cleared_main_agent_cleared_and_stops_its_l
     assert row.provider_labels.get(deployment_process.SHELL_LABEL) == "shell-1"
 
     server._running.clear()
-    monkeypatch.setattr(deployment_process, "alive_many", lambda rows: {str(d.id) for d in rows})
+    monkeypatch.setattr(deployment_process, "alive", lambda _d: True)
     wanted, strays = await server._wanted()
     assert stale.id not in wanted and stale.id in [d.id for d in strays], "its loop is a stray to stop"
