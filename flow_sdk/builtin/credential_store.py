@@ -165,12 +165,16 @@ class Placement:
 def _runs_on_this_machine(deployment: "Deployment") -> bool:
     """Whether ``deployment`` is placed on THIS machine: a cloud box running its own deployment.
     A desktop has no assigned node, so a cloud deployment it looks at never matches."""
+    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
     from flow_sdk.instance_settings.runtime import get_assigned_compute_node  # noqa: PLC0415
 
     if deployment.is_this_computer:
         return False
-    mine = (get_assigned_compute_node() or "").removeprefix("compute_node-")
-    return bool(mine) and (deployment.compute_node_id or "") == mine
+    # This machine by either name: its own local node (a project deployed here, provider ``local``) or the
+    # node the hub assigned it (a cloud box's own placement). Such a row's stored environment is the
+    # template's (``development``); the values were placed in this machine's default environment.
+    mine = {ComputeNode._local_id(), (get_assigned_compute_node() or "").removeprefix("compute_node-")} - {""}
+    return (deployment.compute_node_id or "") in mine
 
 
 def secret_store_ref(spec: "Credential", scope: CredentialScope, env_var: str, placement: Placement) -> SecretStoreRef:
