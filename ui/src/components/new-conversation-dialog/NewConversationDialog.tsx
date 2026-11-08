@@ -154,7 +154,7 @@ export function NewConversationDialog({ open, onClose, destination = null }: New
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquarePlus className="h-5 w-5 text-primary" />
-            {autofillTitle}
+            <Trans>New conversation</Trans>
           </DialogTitle>
         </DialogHeader>
 
