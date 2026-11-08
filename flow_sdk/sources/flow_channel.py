@@ -233,6 +233,12 @@ class FlowChannel(MessageSource):
     @setup_step("connected")
     async def _connected(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
         """The gate: the hub validated the code from the person's account. Until then this says why not."""
+        if self.answers_delivered:
+            # An agent's private channel: the provider's claim (proven at the hub, not here) is what delivers to this
+            # machine, and the hub decides who reaches it and what it may answer. Naming the claim is being connected.
+            if not self.claim_id:
+                return ReturnedValue.not_yet("this private channel names no hub claim")
+            return ReturnedValue.satisfied("delivered by the hub's claim", ran=False)
         claim = await self.hub.claim(self.claim_id) if self.claim_id else None
         if claim is None:
             return ReturnedValue.not_yet(f"Press {self.connect_label} first.")

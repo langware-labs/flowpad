@@ -81,3 +81,11 @@ async def test_a_private_machine_takes_whoever_the_hub_delivers_and_only_answers
             await source.send(MessageData(text="unprompted", conversation=source.conversation_origin("U0BOB")))
     assert asked.data.conversation.key == "U0BOB"
     assert hub.replies == [("C1", "Hi Bob.", "D1:1700000000.000100")] and answered.data.conversation.key == "U0BOB"
+
+
+async def test_a_private_channel_is_connected_by_naming_its_claim_with_no_hub_lookup():
+    """The person's machine never reads the provider's claim (it may not): the claim it names is its connection."""
+    hub = _Hub()
+    named = await _source(hub, claim_id="C1", answers_delivered=True).verify()
+    unnamed = await _source(hub, answers_delivered=True).verify()
+    assert named.ready and not unnamed.ready
