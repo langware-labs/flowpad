@@ -23131,6 +23131,11 @@ msgstr "היסט Y בפיקסלים מראש אזור התצוגה הגלוי (v
 msgid "Placed"
 msgstr ""
 
+#. placeholder {0}: formatTimeAgoShort(row.placed_at)
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "placed {0}"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "placed on {placedOn} of {total}"
 msgstr ""
@@ -24183,6 +24188,7 @@ msgid "Push to the remote — optionally tell people about it."
 msgstr "דחיפה למאגר המרוחק — אפשר גם להודיע לאנשים על כך"
 
 #: src/components/git/RepoPicker.tsx
+#: src/components/status-bar/GitPushButton.tsx
 msgid "Pushed"
 msgstr "דחפו"
 

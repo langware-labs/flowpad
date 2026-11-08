@@ -23131,6 +23131,11 @@ msgstr "Pixel Y offset from the top of the visible viewport (viewportRow × cell
 msgid "Placed"
 msgstr "Placed"
 
+#. placeholder {0}: formatTimeAgoShort(row.placed_at)
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "placed {0}"
+msgstr "placed {0}"
+
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "placed on {placedOn} of {total}"
 msgstr "placed on {placedOn} of {total}"
@@ -24183,6 +24188,7 @@ msgid "Push to the remote — optionally tell people about it."
 msgstr "Push to the remote — optionally tell people about it."
 
 #: src/components/git/RepoPicker.tsx
+#: src/components/status-bar/GitPushButton.tsx
 msgid "Pushed"
 msgstr "Pushed"
 
