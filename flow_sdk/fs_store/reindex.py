@@ -66,6 +66,36 @@ async def owning_asset_for_removed_path(path: str):
     return row, (not alive and not source_unreachable(root))
 
 
+async def retire_or_adopt(row) -> bool:
+    """Reap ``row`` now that its source is gone — unless another copy of the same asset id
+    (a second clone of its repository: ``asset_occurrences``) is still on disk, which then
+    becomes the row's source. True when a copy was adopted, False when the row was reaped.
+
+    One row stands for every copy of an id; the indexer keeps one as primary and skips the
+    rest. Deleting the primary's folder used to reap the row and leave the surviving copy
+    unindexed — its project lost those assets until something walked it again.
+    """
+    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
+    gone = canonical_posix_path(str(getattr(row, "asset_ref", "") or ""))
+    for occurrence in getattr(row, "asset_occurrences", None) or []:
+        path = str((occurrence or {}).get("path") or "")
+        if not path or canonical_posix_path(path) == gone or not Path(path).exists():
+            continue
+        try:
+            resolved = await resolve_asset(path, write=False, type_name=row.get_type(), owner_id=str(row.id))
+        except NotAnAsset:
+            continue
+        if str(resolved.id) != str(row.id):
+            continue
+        if await index_one(resolved, notify=True) is not None:
+            return True
+    await remove_orphan_row(str(row.id), row.get_type())
+    return False
+
+
 @dataclass
 class ReindexResult:
     reindexed: list[str] = field(default_factory=list)
@@ -210,7 +240,6 @@ async def reindex_paths(
     became a dynamic workflow owned by no project, and so listed under all of them.
     """
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
     from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
@@ -260,8 +289,8 @@ async def reindex_paths(
             if exact is not None:
                 rec = await exact.get_record()
                 if rec is not None and rec.orphan:
-                    await remove_orphan_row(str(exact.id), exact.get_type())
-                    result.orphaned.append(path)
+                    adopted = await retire_or_adopt(exact)
+                    (result.reindexed if adopted else result.orphaned).append(path)
                 elif rec is not None and source_unreachable(path):
                     # `rec.orphan` already declined; without this we would fall
                     # through to a resync on the same unreadable path.
@@ -282,8 +311,8 @@ async def reindex_paths(
                 if root and not Path(root).exists() and not source_unreachable(root):
                     # The whole asset is gone — reap it, or deleting a skill would
                     # leave a row pointing at nothing, searchable forever.
-                    await remove_orphan_row(str(folder.id), folder.get_type())
-                    result.orphaned.append(path)
+                    adopted = await retire_or_adopt(folder)
+                    (result.reindexed if adopted else result.orphaned).append(path)
                 else:
                     # Root still there: ONE inner file went away. Never reap on
                     # this branch — that asymmetry is load-bearing.

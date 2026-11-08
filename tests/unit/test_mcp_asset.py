@@ -443,3 +443,30 @@ async def test_a_recloned_agent_writes_its_mcp_under_its_new_folder_not_the_old_
     assert (new_dir / "agentic-assets" / "mcp" / "dummy" / "mcp.json").is_file()
     assert not (home / "old-clone").exists(), "the deleted clone's folder came back"
     assert [Path(m.asset_ref).parent.parent.parent for m in await agent.mcp_assets()] == [new_dir]
+
+
+async def test_deleting_the_kept_clone_moves_its_agent_to_the_surviving_clone(home, agent_name):
+    """Two clones of one repo carry the same agent id: one row stands for both, its source the
+    clone indexed first. Deleting that clone must leave the agent on the other one, not reap it."""
+    import shutil
+
+    from flow_sdk.fs_store.reindex import reindex_paths
+
+    first = home / "clone-a" / "agentic-assets" / "agent" / agent_name
+    first.mkdir(parents=True)
+    _write_agent_document(first, agent_name, "claude")
+    await _index(home / "clone-a")
+    second = home / "clone-b" / "agentic-assets" / "agent" / agent_name
+    second.parent.mkdir(parents=True)
+    shutil.copytree(first, second)                       # the second clone: same files, same identity capsule
+    await _index(home / "clone-b")
+    agent = await Agent.get_one({"name": agent_name})
+    assert Path(agent.asset_ref) == first
+    assert [Path(o["path"]) for o in agent.asset_occurrences] == [first, second]
+
+    shutil.rmtree(home / "clone-a")
+    await reindex_paths([], [str(first / "agent.json")])
+
+    agent = await Agent.get_one({"name": agent_name})
+    assert agent is not None, "the surviving clone lost its agent"
+    assert Path(agent.asset_ref) == second
