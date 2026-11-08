@@ -57,7 +57,7 @@ from flow_sdk.stream_inbox.agent_scope import (
     resolve_agent_stream_inbox_scope,
     resolve_local_stream_inbox_scope,
 )
-from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_created_drift
+from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_adds_attachments, hub_created_drift
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -2059,7 +2059,7 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     if adopt_hub_created_date(existing, raw):
         with remote_reflection():
             await existing.save(notify=False)
-    if existing is not None and not FlowMessage.is_stale(existing, raw):
+    if existing is not None and not FlowMessage.is_stale(existing, raw) and not hub_adds_attachments(existing, raw):
         # Metadata current (body handled above).
         return fm_id
     # Bundle-less: persist the FM payload as-is, then append the pointer to
@@ -3476,6 +3476,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
                     not FlowMessage.is_stale(local, raw_fm)
                     and not needs_body_reconcile
                     and not hub_created_drift(local, raw_fm)
+                    and not hub_adds_attachments(local, raw_fm)
                 ):
                     continue
                 try:
