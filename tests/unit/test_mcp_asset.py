@@ -416,3 +416,30 @@ async def test_a_codex_agent_refuses_a_name_codex_cannot_address(home, agent_nam
     with pytest.raises(ValueError, match="contains '.'"):
         await agent.add_mcp(McpSpec(name="claude.ai", command="/bin/true"))
     assert not (agent_dir / "agentic-assets" / "mcp").exists(), "must refuse BEFORE writing"
+
+
+async def test_a_recloned_agent_writes_its_mcp_under_its_new_folder_not_the_old_one(home, agent_name):
+    """A deleted clone's MCP rows keep the agent as parent (its id rides in git), so the new
+    clone's launch must not re-save them at the old path and recreate the deleted folder."""
+    import shutil
+
+    old_dir = home / "old-clone" / "agentic-assets" / "agent" / agent_name
+    old_dir.mkdir(parents=True)
+    _write_agent_document(old_dir, agent_name, "claude")
+    await _index(home / "old-clone")
+    agent = await Agent.get_one({"name": agent_name})
+    assert await agent.add_mcp(SPEC) is True
+
+    new_dir = home / "new-clone" / "agentic-assets" / "agent" / agent_name
+    new_dir.parent.mkdir(parents=True)
+    shutil.copytree(old_dir, new_dir, ignore=shutil.ignore_patterns("agentic-assets"))  # agent.json + identity capsule
+    shutil.rmtree(home / "old-clone")
+    await _index(home / "new-clone")
+    agent = await Agent.get_one({"name": agent_name})
+    assert Path(agent.asset_ref) == new_dir, "the re-clone keeps the agent's id at its new folder"
+
+    moved = SPEC.model_copy(update={"args": ["/tmp/new_clone_mcp.py"]})
+    assert await agent.add_mcp(moved) is True
+    assert (new_dir / "agentic-assets" / "mcp" / "dummy" / "mcp.json").is_file()
+    assert not (home / "old-clone").exists(), "the deleted clone's folder came back"
+    assert [Path(m.asset_ref).parent.parent.parent for m in await agent.mcp_assets()] == [new_dir]
