@@ -2045,6 +2045,11 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         if _conv_id:
             payload["parent_type_id"] = f"{Conversation.get_type()}-{_conv_id}"
         fm = FlowMessage.model_validate(payload)
+        # The same derived fields materialize_flow_message fills on every other arrival path: this pull is the
+        # one a reply takes when it lands before the live push (an IT machine answering within a second).
+        from flow_sdk.builtin.flow_message import derive_it_reply  # noqa: PLC0415
+
+        derive_it_reply(fm, raw)
         await fm.save()
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
