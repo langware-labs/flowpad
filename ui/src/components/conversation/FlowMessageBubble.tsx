@@ -41,6 +41,7 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
+  DIAGNOSIS_FILE,
   HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
@@ -57,7 +58,9 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
+import { ItReplyLine } from './ItReplyLine';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
@@ -261,6 +264,8 @@ interface FlowMessageBubbleProps {
   callPeerName?: string | null;
   /** Same sender as the bubble above, moments later — drawn without avatar and name. */
   continuation?: boolean;
+  /** In an IT conversation: the IT message a machine's reply answers — what "Turn on and run" sends again. */
+  itMessageText?: string | null;
 }
 
 export function FlowMessageBubble({
@@ -295,6 +300,7 @@ export function FlowMessageBubble({
   formAnswers = null,
   callPeerName = null,
   continuation = false,
+  itMessageText = null,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
@@ -603,6 +609,10 @@ export function FlowMessageBubble({
   // not re-derive it.
   const isHelpRequest =
     fm.kind === FlowMessageKind.HELP_REQUEST || attachmentItems.some((i) => i.filename === HELP_REQUEST_FILE);
+  // Its diagnosis, posted when the background run ends: the text is the bottom line, the details fold away.
+  const isDiagnosis =
+    !isHelpRequest &&
+    (fm.kind === FlowMessageKind.DIAGNOSIS || attachmentItems.some((i) => i.filename === DIAGNOSIS_FILE));
   // The "Download N" button must not re-count what's already surfaced without a
   // download: images shown inline above, and prompt entities (previewed in the
   // prompt row, materialized on Approve & Execute).
@@ -805,9 +815,16 @@ export function FlowMessageBubble({
           canChange={isCurrentUser && formAnswers.latest}
         />
       )}
-      {isHelpRequest && (
-        <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />
+      {fm.it_reply && (
+        <ItReplyLine
+          reply={fm.it_reply}
+          agentId={fm.sender_id ?? ''}
+          conversationId={fm.conversation_id ?? ''}
+          text={itMessageText ?? ''}
+        />
       )}
+      {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
+      {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p

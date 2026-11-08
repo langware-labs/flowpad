@@ -111,6 +111,8 @@ from flow_sdk.transcript_analyzer.worker_status import (
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 if TYPE_CHECKING:
+    from starlette.responses import JSONResponse
+
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
@@ -141,6 +143,11 @@ BACKGROUND_TASKS_RUNNING = "background tasks are running"
 
 #: How far back to look for a pending question's answer (it lands right after).
 _PENDING_INPUT_TAIL_BYTES = 256 * 1024
+
+# Text a FlowData derives from its value, dropped from ``get-history``: the client rebuilds a
+# frame from flow_value/attributes/index/created_time/process_entry and never reads these, yet
+# they were half of a 10.8 MB history (perf hunt 2026-11-07).
+_DERIVED_TEXT = {"to_xml", "content", "start_tag_xml", "end_tag_xml"}
 
 #: ``context_data`` key: the question the worker is blocked on, as its
 #: ``PreToolUse`` hook reported it. Claude may keep a pending ``AskUserQuestion``
@@ -1455,28 +1462,24 @@ class AgenticProcess(Entity):
         return pending.get("code") if pending.get("kind") == "launch_blocked" else None
 
     async def _watch_launch_screen(self, shell: "Shell", screen) -> None:
-        """For the PTY's life, no deadline: launch prompts until the composer, then refused credentials (new text only)."""
-        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-            latch_credential_failure,
-            strip_pty_controls,
-        )
+        """Launch prompts until the composer, then done. Screen text after that is the transcript,
+        which a TUI repaints on resume and resize, so nothing after the composer is read: a quoted
+        "401" in the history is not a refusal. Detection only reports; it never stops the worker."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import strip_pty_controls
 
         async with shell._output_feed() as feed:
-            text, shown, booted = strip_pty_controls(feed.initial[-16384:]) if feed else "", None, False
+            text, shown = strip_pty_controls(feed.initial[-16384:]) if feed else "", None
             while feed is not None:
-                if not booted and (verdict := screen.classify(text)) != shown:
+                if (verdict := screen.classify(text)) != shown:
                     if verdict in BLOCKING_CODES or shown in BLOCKING_CODES:
                         await self._apply_launch_screen(verdict, text, screen)
-                    shown, booted = verdict, verdict == "ready"
-                    text = "" if booted else text
-                elif booted and (failure := screen.classify_auth(text)):  # stop now, latch like a headless turn
-                    await self.exit()
-                    proc = await AgenticProcess.get_by_id(self.id) or self
-                    return await latch_credential_failure(proc, LaunchError.of(*failure), text)
+                    if verdict == "ready":
+                        return
+                    shown = verdict
                 chunk = await feed.next()
                 if feed.closed:
                     return
-                text = (text + strip_pty_controls(chunk))[-(200 + len(chunk) if booted else 16384):]
+                text = (text + strip_pty_controls(chunk))[-16384:]
 
     async def _apply_launch_screen(self, verdict: str | None, text: str, screen) -> None:
         proc = await AgenticProcess.get_by_id(self.id) or self
@@ -6705,7 +6708,7 @@ class AgenticProcess(Entity):
         )
 
     @action.get(action_name="get-history")
-    async def get_history_action(self) -> "ApiSuccessResponse":
+    async def get_history_action(self) -> "ApiSuccessResponse | JSONResponse":
         """Return this process's transcript as a list of FlowData dicts.
 
         Driver-supplied. Stateless — works for processes that have exited
@@ -6714,37 +6717,41 @@ class AgenticProcess(Entity):
         """
         if self.hub_route:
             return await self._relay_json("get-history", method="GET", refresh=False)
+        from starlette.responses import JSONResponse  # noqa: PLC0415 -- starlette is an app-layer dep
+
         from flow_sdk.builtin.agentic_process.turn_abort import (  # noqa: PLC0415
             history_start_time,
             load_abort_marker_frames,
             merge_abort_markers,
         )
 
-        history = self.driver.load_history(self)
-        # Merge flowpad-authored durable abort markers (written by
-        # ``cancel-prompt``) so a cancelled turn replays as terminated instead
-        # of leaving its last tool call rendered as still running. Worker-
-        # generic: the vendor transcript is vendor-owned and never contains
-        # these; the sidecar in the process record dir does.
-        # ``history_start`` scopes sid-less markers (written before the worker
-        # reported a session id) to rollouts they chronologically overlap — a
-        # rotated session must not inherit them as a phantom index-0 abort.
-        history = merge_abort_markers(
-            history,
-            load_abort_marker_frames(
-                self._record_dir(),
-                session_id=self.session_id,
-                history_start=history_start_time(history),
-            ),
-        )
-        return ApiSuccessResponse(
-            data={
-                "session_id": self.session_id,
-                "use_worker_history": True,
-                "count": len(history),
-                "history": [fd.model_dump(mode="python") for fd in history],
-            }
-        )
+        def read() -> JSONResponse:
+            history = self.driver.load_history(self)
+            # Merge flowpad-authored durable abort markers (written by
+            # ``cancel-prompt``) so a cancelled turn replays as terminated instead
+            # of leaving its last tool call rendered as still running. Worker-
+            # generic: the vendor transcript is vendor-owned and never contains
+            # these; the sidecar in the process record dir does.
+            # ``history_start`` scopes sid-less markers (written before the worker
+            # reported a session id) to rollouts they chronologically overlap — a
+            # rotated session must not inherit them as a phantom index-0 abort.
+            history = merge_abort_markers(
+                history,
+                load_abort_marker_frames(
+                    self._record_dir(),
+                    session_id=self.session_id,
+                    history_start=history_start_time(history),
+                ),
+            )
+            rows = [fd.model_dump(mode="python", exclude=_DERIVED_TEXT) for fd in history]
+            data = {"session_id": self.session_id, "use_worker_history": True, "count": len(rows), "history": rows}
+            # The same envelope and renderer the graph route would apply (``_rendered_once``),
+            # built here so the encode of these freshly-made dicts runs off the loop too.
+            return JSONResponse(content=ApiSuccessResponse(data=data).model_dump())
+
+        # Off the loop: reading, encoding and rendering a multi-MB transcript held the loop
+        # 0.3-0.4 s, and every other request waited behind each chat open (perf hunt 2026-11-07).
+        return await asyncio.to_thread(read)
 
     @action.get(action_name="continuation-prompt")
     async def continuation_prompt_action(

@@ -141,9 +141,6 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       <TooltipProvider>
         <NotificationOutlet />
         <NotificationCommandBridge />
-        {/* `<DiagnoseErrorModal/>` is mounted in `main.tsx`, above the router:
-            the root error boundary replaces this whole tree, and the error
-            screen's diagnose button still needs a host. */}
         <DeleteAssetModal />
         <InputPromptModal />
         <ImageAnnotatorRoot />

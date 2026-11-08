@@ -128,6 +128,8 @@ export interface PublicDeployment {
   code_last4: string | null;
   created_date: string | null;
   last_used_at: string | null;
+  /** IT Sessions on that machine, when the hub reports it (null/absent = not known yet). */
+  it_sessions?: boolean | null;
 }
 
 export interface PublicDeploymentsState {
@@ -137,6 +139,48 @@ export interface PublicDeploymentsState {
 }
 
 export type PublicDeploymentOp = 'open' | 'pause' | 'resume' | 'reset';
+
+/** Which public machines an IT message (or an IT Sessions switch) reaches: all of them, or these `node_typeid`s. */
+export type ItTargets = 'all' | string[];
+
+/** A file an IT message carries to each machine. */
+export interface ItAttachment {
+  name: string;
+  content_b64: string;
+}
+
+export interface ItMessageRequest {
+  text: string;
+  attachments?: ItAttachment[];
+  /** A JSON shape each machine's answer value must match; null for a plain answer. */
+  answer_shape?: Record<string, unknown> | null;
+  targets: ItTargets;
+  /** Append to this IT conversation instead of opening a new one ("Turn on and run"). */
+  conversation_id?: string;
+}
+
+export interface ItMessageResult {
+  conversation_id: string;
+  targets: string[];
+}
+
+export interface ItSessionsBox {
+  node_typeid: string;
+  on: boolean;
+  error?: string;
+}
+
+/** A machine's reply in an IT conversation, as the hub stamps it on the message (`metadata.it`). */
+export type ItReplyState = 'done' | 'off' | 'signed_in' | 'unreachable';
+
+export interface ItReplyMeta {
+  node_typeid: string;
+  code_last4: string | null;
+  state: ItReplyState;
+  woke?: boolean;
+  value?: Record<string, unknown> | null;
+  call_id?: string;
+}
 
 export interface PublicDeploymentOpResult {
   node_typeid: string;
@@ -580,6 +624,26 @@ export class Agent extends APIEntity<Agent> {
   /** `reset` gives the same deployment a brand-new machine, filled from scratch; it answers like `open`. */
   async managePublicDeployment(nodeTypeId: string, op: PublicDeploymentOp): Promise<PublicDeploymentOpResult> {
     return this.publicDeploymentsCall('manage_public_deployment', 'POST', { node_typeid: nodeTypeId, op });
+  }
+
+  /**
+   * IT message: run `text` once on each targeted public machine, in a throwaway session; the answers come back as
+   * one IT conversation in the StreamInbox. Hub-only and owner-only.
+   */
+  async itMessage(request: ItMessageRequest): Promise<ItMessageResult> {
+    const data = await this.publicDeploymentsCall<Partial<ItMessageResult> | null>('it_message', 'POST', {
+      ...request,
+    });
+    return { conversation_id: data?.conversation_id ?? '', targets: Array.isArray(data?.targets) ? data.targets : [] };
+  }
+
+  /** Turn IT Sessions on or off on the targeted public machines; answers each machine's resulting state. */
+  async setItSessions(targets: ItTargets, on: boolean): Promise<ItSessionsBox[]> {
+    const data = await this.publicDeploymentsCall<{ boxes?: ItSessionsBox[] } | null>('it_sessions', 'POST', {
+      targets,
+      on,
+    });
+    return Array.isArray(data?.boxes) ? data.boxes : [];
   }
 
   private publicDeploymentsCall<T>(name: string, method: 'GET' | 'POST', body?: Record<string, unknown>): Promise<T> {

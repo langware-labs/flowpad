@@ -1,9 +1,19 @@
 import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
-import { Archive, ArchiveRestore, CheckSquare, CircleCheck, Clock, LifeBuoy, Trash2, UserCheck } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  CheckSquare,
+  CircleCheck,
+  Clock,
+  LifeBuoy,
+  Trash2,
+  UserCheck,
+  Wrench,
+} from 'lucide-react';
 import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
 import type { EntityMember } from '@sdk/APIEntity';
-import { isClosedConversation } from '@sdk/entities/conversation';
+import { isClosedConversation, isItKind } from '@sdk/entities/conversation';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 
 // ── Conversation category — the single source of truth ──────────────────────
@@ -98,7 +108,7 @@ export function deskChipLabel(deskName: string): string {
 }
 
 export interface ConversationFacets {
-  kind: 'direct' | 'helpdesk';
+  kind: 'direct' | 'helpdesk' | 'it';
   /** Viewer is the pending recipient of an unaccepted invitation. */
   isInvitation: boolean;
   /** `archived_at` is set and not yet revived by newer activity. */
@@ -115,7 +125,7 @@ export interface ConversationFacets {
 export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const { conv, firstMessage, latestMessage, latestPtrTs, invitation, viewer } = inp;
 
-  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : 'direct';
+  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : isItKind(conv.kind) ? 'it' : 'direct';
 
   // Invitation — viewer-relative. The first message stays `kind === invitation`
   // forever, so the sender (and everyone post-accept) must see a normal row;
@@ -200,6 +210,7 @@ export interface ChipSpec {
 
 const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
 const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
+const SKY_CHIP = 'border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-300';
 
 /** Whether `senderId` is the viewer. BOTH ids count: a locally written row is
  *  stamped with the desktop user id, a hub-mirrored row with the cloud user id,
@@ -234,6 +245,9 @@ export function chipsFor(f: ConversationFacets): ChipSpec[] {
   const chips: ChipSpec[] = [];
   if (f.kind === 'helpdesk') {
     chips.push({ key: 'helpdesk', icon: LifeBuoy, label: t`Support`, className: VIOLET_CHIP });
+  }
+  if (f.kind === 'it') {
+    chips.push({ key: 'it', icon: Wrench, label: t`IT`, className: SKY_CHIP });
   }
   // The asker's side is just a conversation: the queue state is the desk's to show, not theirs.
   if (f.ticket && f.ticket.perspective === 'staff') chips.push(ticketChip(f.ticket));

@@ -322,6 +322,8 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "mark",
                 "outbound",
                 "delivery_failure",
+                # `it_reply`: re-derived from the hub-written metadata on every arrival, never sent back.
+                "it_reply",
             ],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
@@ -425,9 +427,11 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `archived_at`/`dismissed_at`: this viewer's own archive/dismiss — never travel.
             # `marks`: the chips a local source puts on the whole conversation — local.
             # `plan_sessions_indexed_at`: when this machine last linked plan sessions — local.
+            # `attachment_count`: a projection of the messages' files, like `message_count`.
             [
                 "hub_updated_date",
                 "message_ids",
+                "attachment_count",
                 "owner",
                 "channel_source_id",
                 "is_unread",
@@ -467,6 +471,7 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "marks",
                 "message_count",
                 "message_ids",
+                "attachment_count",
                 # A projection like `message_count`: only `recompute_unread` may write it.
                 "is_unread",
                 "unread_count",

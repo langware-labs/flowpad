@@ -46,7 +46,7 @@ def test_the_known_derived_fields_are_declared():
     assert DATASET_COUNTERS <= Dataset.derived_fields
     assert {"target_type", "target_id"} <= Tab.derived_fields
     assert "message_count" in MessageThread.projected_fields
-    assert {"message_count", "unread_count", "is_unread", "archived"} <= Conversation.projected_fields
+    assert {"message_count", "attachment_count", "unread_count", "is_unread", "archived"} <= Conversation.projected_fields
 
 
 @pytest.mark.parametrize(("cls", "field", "value"), [

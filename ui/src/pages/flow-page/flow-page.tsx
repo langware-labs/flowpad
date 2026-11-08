@@ -14,6 +14,7 @@ import { AssetVibeWorkspace } from './asset-vibe-workspace';
 import { UnifiedTabStrip } from './content-panel/unified-tab-strip';
 import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
 import { PageId } from '@sdk';
+import { TabFullScreenExit, useTabFullScreen } from '@src/tabs/tab-full-screen';
 
 export default function FlowPage() {
   const isVibe = useIsVibe();
@@ -36,6 +37,8 @@ export default function FlowPage() {
   // `TabStripOwnedAbove` and don't draw their own). The Vibe home (new chat / no
   // process) is the tabless open screen; the win/ focus layout has no strip. A
   // session of a vibe-only agent has none either: it has no other tab to reach.
+  const fullScreen = useTabFullScreen((s) => s.on);
+
   const vibeOnly = !!useVibeOnlyAgent(vibeSession?.processId);
   const framedByStrip =
     !windowMode &&
@@ -66,7 +69,15 @@ export default function FlowPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           {framedByStrip && <UnifiedTabStrip />}
           <TabStripOwnedAbove.Provider value={framedByStrip}>
-            <div className={`flex-1 overflow-hidden ${framedByStrip ? 'border-t border-border' : ''}`}>
+            <div
+              data-testid="tab-content-area"
+              className={
+                fullScreen
+                  ? 'fixed inset-0 z-50 overflow-hidden bg-background'
+                  : `flex-1 overflow-hidden ${framedByStrip ? 'border-t border-border' : ''}`
+              }
+            >
+              {fullScreen && <TabFullScreenExit />}
               {layout === DockLayout.ASSET_WORKSPACE ? (
                 <AssetVibeWorkspace chatBeside={assetChatBeside} session={vibeSession} />
               ) : layout === DockLayout.VIBE_WORKSPACE && vibeSession ? (

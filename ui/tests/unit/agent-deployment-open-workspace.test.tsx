@@ -4,6 +4,7 @@
  * deployment sits on a machine and the hub's address is known.
  */
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,7 +54,11 @@ const deployment = (provider: string, externalId: string) =>
 const show = (row: unknown, hubUrl = HUB) => {
   state.deployment = row;
   vi.spyOn(cloudManager, 'cloudAppUrl', 'get').mockReturnValue(hubUrl);
-  render(<ProjectDeploymentPage project={new Project({ id: AGENT_ID, name: 'q' } as never)} deploymentId={DEPLOYMENT_ID} />);
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <ProjectDeploymentPage project={new Project({ id: AGENT_ID, name: 'q' } as never)} deploymentId={DEPLOYMENT_ID} />
+    </QueryClientProvider>,
+  );
 };
 
 afterEach(() => {

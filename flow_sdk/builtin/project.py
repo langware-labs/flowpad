@@ -2935,6 +2935,7 @@ class Project(SetupSkippable, Entity):
         token_allocation: Any = _UNSET,
         deployment_id: Optional[str] = None,
         main_agent=None,
+        mode_fields: Optional[dict] = None,
     ) -> "Any":
         """The cloud placement of this project on ``provider`` in ``environment`` — the hub's row, adopted
         here — before it has a machine. ``main_agent`` answers on it: its webhooks and help desks go along
@@ -2950,9 +2951,14 @@ class Project(SetupSkippable, Entity):
             "provider": provider or DEFAULT_CLOUD_PROVIDER,
             "main_agent_id": str(main_agent.typeid) if main_agent is not None else None,
             "webhooks": [w.model_dump(mode="json") for w in await main_agent.webhook_specs()] if main_agent else [],
-            "help_desks": await main_agent.hub_desks() if main_agent else [],
             **({"deployment_id": deployment_id} if deployment_id else {}),
+            # Private is planned as such: the hub answers with the agent's one private template.
+            **(mode_fields or {}),
         }
+        # The desks it staffs (an empty list un-staffs the ones it dropped). A private template staffs none, and the
+        # hub refuses being asked: a private plan names no desks.
+        if (mode_fields or {}).get("agent_mode") != "private":
+            body["help_desks"] = await main_agent.hub_desks() if main_agent else []
         if token_allocation is not _UNSET:
             body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
         data = await HubProxy.call("POST", self.get_type(), self.id, "plan_deployment", payload=body)
@@ -2974,6 +2980,7 @@ class Project(SetupSkippable, Entity):
         token_allocation: Any = _UNSET,
         values: Optional[dict] = None,
         deployment_id: Optional[str] = None,
+        mode_fields: Optional[dict] = None,
     ) -> dict:
         """Place this project on a machine with ``main_agent`` answering there. ``provider="local"`` is this
         computer's one local deployment (serving the main agent); any other runs ``DEPLOYMENT_STEPS``."""
@@ -3000,6 +3007,7 @@ class Project(SetupSkippable, Entity):
             values=values,
             source_kind=source_kind,
             source_ref=source_ref,
+            mode_fields=mode_fields,
         )
 
     @action.post(action_name="deploy")
@@ -3039,6 +3047,7 @@ class Project(SetupSkippable, Entity):
                 token_allocation=body.token_allocation if body.allocation_given else _UNSET,
                 values=body.values,
                 deployment_id=body.deployment_id,
+                mode_fields=body.mode_fields,
             )
         except DeployRunning as exc:
             return ApiFailResponse(status_code=409, message=str(exc), data={"code": "deploy_running"})

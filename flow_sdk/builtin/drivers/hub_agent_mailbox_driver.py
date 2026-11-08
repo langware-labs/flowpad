@@ -78,9 +78,15 @@ class HubAgentMailboxDriver:
         data = await self._get(agent_id, None)
         return (data or {}).get("mailbox") or None
 
-    async def offered(self, agent_id: str) -> bool:
-        """Whether the hub can give an agent a mailbox at all. A hub too old to say is taken at its word later."""
-        data = await self._get(agent_id, None)
+    async def offered(self, agent_id: str = "") -> bool:
+        """Whether the hub gives agents a mailbox at all — a fact about the hub, asked with no agent (an agent
+        not yet on the hub cannot read its own mailbox). A hub too old to answer is taken at its word later."""
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+        try:
+            data = await HubProxy.call("GET", BuiltinEntityType.AGENT, None, "mailbox_offer", quiet=True)
+        except HubError:
+            return True
         return bool((data or {}).get("offered", True))
 
     async def delete_mailbox(self, agent_id: str) -> bool:

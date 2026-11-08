@@ -126,14 +126,14 @@ describe('D10 large-history render budget', () => {
     const { container } = render(<ChatHarness stream={stream} />);
     const initialMs = performance.now() - t0;
 
-    // Cardinality: every message and every dense run is on screen.
+    // A long chat opens on its recent turns (useRecentWindow): the newest reply is on screen,
+    // the oldest turns are not mounted until the reader scrolls up.
     const messages = container.querySelectorAll('div.contents[data-role]');
-    const denseRows = container.querySelectorAll('[data-testid="dense-tool-row"]');
-    expect(messages.length).toBe(messageCount);
-    expect(denseRows.length).toBe(denseGroupCount);
-
-    // First/last identity.
-    expect(messages[0].textContent).toContain(FIRST_PROMPT);
+    const denseRows = container.querySelectorAll('[data-testid="dense-tool-row"]').length;
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages.length).toBeLessThan(messageCount);
+    expect(denseRows).toBeLessThanOrEqual(denseGroupCount);
+    expect(container.textContent).not.toContain(FIRST_PROMPT);
     expect(messages[messages.length - 1].textContent).toContain(FINAL_REPLY);
 
     // Measured fixed ≈400ms (pre-fix identical — every row mounts once either
@@ -155,7 +155,7 @@ describe('D10 large-history render budget', () => {
     expect(liveMs).toBeLessThan(1500);
 
     // The appended live turn is on screen (one growing trailing dense group).
-    expect(container.querySelectorAll('[data-testid="dense-tool-row"]').length).toBe(denseGroupCount + 1);
+    expect(container.querySelectorAll('[data-testid="dense-tool-row"]').length).toBe(denseRows + 1);
 
     // ── Force reload (A7 useTurnCompletionReconcile: clear + append) ────────
     // Must cost ONE full rebuild, not two: the clear's empty render is trivial
@@ -170,9 +170,8 @@ describe('D10 large-history render budget', () => {
 
     // Identical content after the authoritative replace.
     const reloadedMessages = container.querySelectorAll('div.contents[data-role]');
-    expect(reloadedMessages.length).toBe(messageCount);
-    expect(reloadedMessages[0].textContent).toContain(FIRST_PROMPT);
-    expect(container.querySelectorAll('[data-testid="dense-tool-row"]').length).toBe(denseGroupCount + 1);
+    expect(reloadedMessages.length).toBe(messages.length);
+    expect(container.querySelectorAll('[data-testid="dense-tool-row"]').length).toBe(denseRows + 1);
   });
 
   it('incremental grouping matches the pure grouper on append-only growth', async () => {

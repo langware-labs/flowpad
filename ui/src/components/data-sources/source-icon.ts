@@ -18,7 +18,7 @@ import { DataSource, type DataDriver } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
 
-type SpecGlyphs = Pick<DataDriver, 'icon_name' | 'channel_icon_names'> & Partial<Pick<DataDriver, 'group_icon_name'>>;
+type SpecGlyphs = Partial<Pick<DataDriver, 'icon_name' | 'channel_icon_names' | 'group_icon_name'>>;
 
 export function sourceIconName(spec: SpecGlyphs | null | undefined, channel: string | null | undefined): string {
   const byChannel = channel ? spec?.channel_icon_names?.[channel] : undefined;

@@ -83,7 +83,7 @@ function dedupeByName(names: string[], resolveRef: (name: string) => string | un
  * asset page on click; built-in sub-agents (general-purpose, Explore, …) and
  * any unresolved skill render as non-clickable muted rows.
  *
- * Advanced-mode only — gated by the `advancedOnly` flag on its SIDE_TABS entry.
+ * Advanced-mode only — gated by `advancedOnly` on its SIDE_TABS entry (session menu).
  */
 export function SkillsAgentsPanel({ workerType, sessionId }: Props) {
   const { t } = useLingui();

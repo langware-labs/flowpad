@@ -36,7 +36,7 @@ import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
-import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
+import { isClosedConversation, isHelpdeskKind, isItKind } from '@sdk/entities/conversation';
 import { replyPickedUp, ticketAffordances } from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
@@ -181,7 +181,9 @@ export function ConversationView({
       return;
     }
     try {
-      setAgentScope(await new Agent({ id: agentId }).streamInboxScope());
+      const agent = await Agent.getById(agentId);
+      if (!agent) throw new Error('agent not found');
+      setAgentScope(await agent.streamInboxScope());
     } catch {
       setAgentScope({ agent_id: agentId, source_id: null, conversation_ids: [], thread_ids: [], flow_message_ids: [] });
     }
@@ -609,6 +611,15 @@ export function ConversationView({
     if (!call) return null;
     return { call, answer: calls.answerByCall.get(call.call_id) ?? null, running: runningCalls.has(call.call_id) };
   };
+  // An IT conversation: the IT message is its first message that is not a machine's reply.
+  const itMessageText = useMemo(() => {
+    if (!isItKind(conversation?.kind)) return null;
+    for (const it of orderedItems) {
+      const fm = it.kind === ConversationItemKind.POINTER ? messagesById.get(it.messageId) : undefined;
+      if (fm && !fm.it_reply && fm.text) return fm.text;
+    }
+    return null;
+  }, [conversation?.kind, orderedItems, messagesById]);
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
     const feed = orderedItems.filter(
@@ -640,7 +651,8 @@ export function ConversationView({
         prev = null;
         continue;
       }
-      const cur = { sender_id: fm.sender_id, at: Date.parse(item.timestamp) };
+      // IT replies are all written by the agent; each machine is its own sender.
+      const cur = { sender_id: fm.it_reply?.node_typeid ?? fm.sender_id, at: Date.parse(item.timestamp) };
       if (continuesGroup(prev, cur)) keys.add(item.key);
       prev = cur;
     }
@@ -756,6 +768,7 @@ export function ConversationView({
           formAnswers={formAnswersFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
           continuation={continuation}
+          itMessageText={itMessageText}
         />
       );
     }
@@ -954,7 +967,8 @@ export function ConversationView({
   const { canPickup, canSettle } = ticketAffordances({
     helpdesk: isHelpdeskConversation,
     cloudUserId,
-    isOwner: isConversationOwner,
+    // A ticket the hub does not hold yet was written here: I am the one who asked, not desk staff.
+    isOwner: isConversationOwner || conversation?.remote !== true,
     isParticipant,
   });
   useEffect(() => {

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optiona
 
 from pydantic import PrivateAttr, computed_field, field_validator, model_validator
 
-from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
+from flow_sdk._compat import UTC, StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
@@ -73,6 +73,8 @@ class ConversationKind(StrEnum):
 
     DIRECT = "direct"
     HELPDESK = "helpdesk"
+    #: An agent owner's IT message to its deployments: one reply per machine, written by the hub.
+    IT = "it"
 
 
 class ConversationStatus(StrEnum):
@@ -93,7 +95,7 @@ if TYPE_CHECKING:  # pragma: no cover
 # shared `ProjectedFields` mixin (one sentinel for every projected entity).
 _PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
-_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread", "unread_count", "archived"})
+_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "attachment_count", "is_unread", "unread_count", "archived"})
 
 
 # Shared-context asset types the hub hosts as first-class nodes, so a share can
@@ -221,6 +223,9 @@ class Conversation(ProjectedFields, Entity):
     awaits_hub: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     origin_project_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
+    # Files attached across the conversation's messages — the StreamInbox row's paperclip. Projected
+    # with ``message_count``, so the row shows it without loading a single message.
+    attachment_count: int = APIField(0, sharing=Sharing.PRIVATE)
     # Who is in the conversation: the hub's ``members``, copied as is.
     members: List[dict] = APIField(default_factory=list, sharing=Sharing.HUB_READ)
     # JSON-encoded [{"typeid": ..., "ts": ...}] — a projection of the pointer
@@ -267,7 +272,7 @@ class Conversation(ProjectedFields, Entity):
     archived: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
     projection_writer: ClassVar[str] = (
-        "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count/archived)"
+        "ConversationRecord.sync_to_db (message_ids/message_count/attachment_count) or stream_inbox.recompute_unread (is_unread/unread_count/archived)"
     )
 
     @classmethod
@@ -435,6 +440,38 @@ class Conversation(ProjectedFields, Entity):
         if getattr(response, "status", "") != "SUCCESS":
             raise ValueError(getattr(response, "message", None) or "send refused")
         return await FlowMessage.get_one({"id": response.data["flow_message_id"]})
+
+    async def messages_by_edge(self) -> list:
+        """This conversation's messages by its ``is_child`` edges, in EVENT order — the membership and
+        order its projection (``message_ids`` / ``message_count`` / ``attachment_count``) is built from."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+        kids = await self.get_children(
+            child_filter=QueryFilter(type=FlowMessage.get_type(), order_by={"created_date": "asc"})
+        )
+        out = [c.value for c in kids if getattr(c, "value", None) is not None]
+        # Conversation order is EVENT time (the DB can only order by the bookkeeping clock): a
+        # backfilled year-old message belongs before today's replies. Stable sort over the
+        # created_date pre-order keeps ties deterministic; dateless rows sort last.
+        _min = datetime.min.replace(tzinfo=UTC)
+
+        def _event_key(m):
+            ts = Conversation._as_datetime(m.occurred_at)
+            return (ts is None, ts or _min)
+
+        out.sort(key=_event_key)
+        return out
+
+    @staticmethod
+    def count_listed_files(messages: list) -> int:
+        """How many files these messages list (``Attachment.is_listed_file``) — ``attachment_count``."""
+        return sum(1 for m in messages for a in (m.attachment or []) if a.is_listed_file)
+
+    async def attachments(self) -> list:
+        """The files across this conversation, newest first — what the StreamInbox paperclip lists: the
+        same messages and the same rule ``attachment_count`` is counted from."""
+        return [f for m in reversed(await self.messages_by_edge()) for f in m.listed_files()]
 
     async def messages(self, *, thread=None) -> list:
         """This conversation's messages, oldest first — only one thread's with ``thread`` (a
@@ -846,8 +883,11 @@ class Conversation(ProjectedFields, Entity):
 
         if self.origin_project_id:
             return True
+        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
         for mine in ({"outbound": True}, {"delivery_status": DeliveryStatus.PENDING_SEND.value}):
-            if await FlowMessage.get_one({"match": {"conversation_id": str(self.id), **mine}}) is not None:
+            # Any one is enough -- a conversation I wrote in usually holds several of mine.
+            if await FlowMessage.get_all(QueryFilter(match={"conversation_id": str(self.id), **mine}, limit=1)):
                 return True
         return False
 

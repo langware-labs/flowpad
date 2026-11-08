@@ -668,6 +668,20 @@ run it with the right status:
    it records the diagnosis for history only. **Use** **`--status ok`** **for a healthy result — and still run
    the script.**
 
+4. **`--cause` says whose problem it is** — it decides whether the person is offered to report it,
+   and to whom. Pick exactly one, from your evidence:
+   - `project` — the person's own project files (a broken `agent.json`, a bad reference in their data).
+     Nothing to report: they own it, and you usually fixed it.
+   - `machine` — this computer, not software: a port held by another app, a full disk, no network.
+   - `flowpad` — Flowpad itself: its server, its UI, its packaging, a shipped skill.
+   - `dependency` — an external asset the project uses: a `flow.json` dependency, a pip/npm package, an
+     external code library. Also pass `--cause-asset "<its name>"` (the folder, package or repo name).
+     **Check the project's `flow.json` first:** every folder its `dependencies` / `optionalDependencies`
+     name is a dependency — a `file:` one on this same computer too — even when it sits beside the
+     project in the workspace. Its files are not the person's to fix: never edit them, report them.
+   - `unknown` — you could not tell. Say so in `--rca`.
+   A report is offered for `flowpad`, `dependency` and `unknown` only.
+
 (Surfacing the diagnosis to the user — the CLI's Home-Feed card, or the UI's "View diagnosis" popup —
 is handled by the `flow diagnose` runner afterwards, not by you. The runner also cross-links the
 diagnosis to this process for you — do **not** attempt the cross-link yourself.)
@@ -680,6 +694,7 @@ diagnosis to this process for you — do **not** attempt the cross-link yourself
   --fix "<what you did / what the user should do, or 'none needed'>" \
   --summary "<one-paragraph plain summary>" \
   --status fixed|needs_action|unrecognized|informational|ok \
+  --cause project|machine|flowpad|dependency|unknown \
   --platform "macOS|Windows|Linux" \
   --details "<the full == Flowpad Diagnostic Report == block from Step 6>"
 ```

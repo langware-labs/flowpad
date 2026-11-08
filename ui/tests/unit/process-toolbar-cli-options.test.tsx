@@ -211,6 +211,7 @@ describe('ProcessToolbar — one bar for every surface', () => {
       'session-action-command-options',
       'session-action-assets',
       'process-toolbar-restart',
+      'session-action-side-tab-analysis',
       'session-action-terminal',
       'session-action-worktree',
       'session-action-chain',
@@ -231,6 +232,7 @@ describe('ProcessToolbar — one bar for every surface', () => {
       'session-action-command-options',
       'session-action-assets',
       'process-toolbar-restart',
+      'session-action-side-tab-analysis',
     ]);
   });
 
