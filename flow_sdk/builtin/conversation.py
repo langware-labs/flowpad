@@ -73,6 +73,8 @@ class ConversationKind(StrEnum):
 
     DIRECT = "direct"
     HELPDESK = "helpdesk"
+    #: An agent owner's IT message to its deployments: one reply per machine, written by the hub.
+    IT = "it"
 
 
 class ConversationStatus(StrEnum):

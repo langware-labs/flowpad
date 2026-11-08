@@ -27,6 +27,9 @@ export enum PrefDataType {
 export enum PrefKey {
   SHOW_SYSTEM_SKILLS = 'preferences.general.show_system_skills',
   DEFAULT_TERMINAL = 'preferences.general.default_terminal',
+  /** IT Sessions: the agent's owner may run IT messages here (never while someone is signed in).
+   *  Mirrored in flow_sdk/core/compute/it_session.py; the hub switches it through the it-session route. */
+  IT_SESSIONS = 'preferences.general.it_sessions',
   BUFFER_SYNC_UPDATES = 'preferences.terminal.buffer_sync_updates',
   SOUND_ENABLED = 'preferences.notifications.sound_enabled',
   SOUND_KEY = 'preferences.notifications.sound_key',
@@ -245,7 +248,6 @@ function indexFolderPref(key: PrefKey, folder: string): PrefInfo {
 }
 
 export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
-
   [PrefKey.SHOW_SYSTEM_SKILLS]: {
     key: PrefKey.SHOW_SYSTEM_SKILLS,
     surfaced: true,
@@ -268,6 +270,15 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
       { value: TerminalType.BUILTIN_XTERM, label: 'In-app only' },
       { value: TerminalType.EXTERNAL_TERMINAL, label: 'Also open sidecar OS Terminal' },
     ],
+  },
+  [PrefKey.IT_SESSIONS]: {
+    key: PrefKey.IT_SESSIONS,
+    surfaced: true,
+    category: 'general',
+    label: 'IT Sessions',
+    description: "Let this machine's owner send IT messages to run here. They never run while someone is signed in.",
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
   },
   [PrefKey.BUFFER_SYNC_UPDATES]: {
     key: PrefKey.BUFFER_SYNC_UPDATES,

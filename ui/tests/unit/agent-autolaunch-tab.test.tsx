@@ -3,7 +3,7 @@
  * the open link and each visitor's box; an unpublished agent is told to publish first.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
@@ -60,12 +60,18 @@ const PAYLOAD = {
 };
 
 let urls: string[];
+let bodies: Record<string, unknown>[];
 beforeEach(() => {
   urls = [];
+  bodies = [];
   vi.spyOn(cloudManager, 'cloudAppUrl', 'get').mockReturnValue(HUB);
   vi.spyOn(dataManager, 'callAction').mockImplementation((info) => {
     urls.push(info.fullActionUrl);
+    bodies.push((info.bodyParameters ?? {}) as Record<string, unknown>);
     if (info.fullActionUrl.endsWith('/public_deployments')) return Promise.resolve(PAYLOAD);
+    if (info.fullActionUrl.endsWith('/it_sessions')) {
+      return Promise.resolve({ boxes: [{ node_typeid: 'compute_node-1', on: true }] });
+    }
     return Promise.resolve({ audience: 'visitor', roles: ['reader'] });
   });
 });
@@ -103,5 +109,20 @@ describe('AgentAutoLaunchTab', () => {
     expect(rows[0]).toHaveTextContent('Resume');
     expect(rows[1]).toHaveTextContent('link visitor');
     expect(rows[1]).toHaveTextContent('Pause');
+  });
+
+  it('offers Send IT message above the machines, and switches IT Sessions per machine', async () => {
+    render(tab(PUBLISHED));
+
+    const rows = await screen.findAllByTestId('agent-autolaunch-deployment');
+    expect(screen.getByTestId('it-message-send-open')).toHaveTextContent('Send IT message');
+    const state = rows[0].querySelector('[data-testid="it-sessions-state"]') as HTMLElement;
+    expect(state).toHaveTextContent('IT —'); // the hub has not said yet
+    fireEvent.click(state);
+
+    await waitFor(() => expect(state).toHaveTextContent('IT on'));
+    const at = urls.findIndex((u) => u.endsWith(`/agent/${AGENT_ID}/it_sessions`));
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(bodies[at]).toEqual({ targets: ['compute_node-1'], on: true });
   });
 });

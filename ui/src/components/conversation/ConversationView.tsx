@@ -36,7 +36,7 @@ import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
-import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
+import { isClosedConversation, isHelpdeskKind, isItKind } from '@sdk/entities/conversation';
 import { replyPickedUp, ticketAffordances } from './ticket-affordances';
 import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
@@ -611,6 +611,15 @@ export function ConversationView({
     if (!call) return null;
     return { call, answer: calls.answerByCall.get(call.call_id) ?? null, running: runningCalls.has(call.call_id) };
   };
+  // An IT conversation: the IT message is its first message that is not a machine's reply.
+  const itMessageText = useMemo(() => {
+    if (!isItKind(conversation?.kind)) return null;
+    for (const it of orderedItems) {
+      const fm = it.kind === ConversationItemKind.POINTER ? messagesById.get(it.messageId) : undefined;
+      if (fm && !fm.it_reply && fm.text) return fm.text;
+    }
+    return null;
+  }, [conversation?.kind, orderedItems, messagesById]);
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
     const feed = orderedItems.filter(
@@ -758,6 +767,7 @@ export function ConversationView({
           formAnswers={formAnswersFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
           continuation={continuation}
+          itMessageText={itMessageText}
         />
       );
     }

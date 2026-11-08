@@ -397,6 +397,14 @@ def derive_help_request_kind(fm: "FlowMessage") -> None:
         fm.kind = FlowMessageKind.HELP_REQUEST
 
 
+def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
+    """Carry an IT reply's ``metadata.it`` (hub-written) onto ``it_reply``. Idempotent; absent leaves it as is."""
+    metadata = payload.get("metadata")
+    it = metadata.get("it") if isinstance(metadata, dict) else None
+    if isinstance(it, dict):
+        fm.it_reply = dict(it)
+
+
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
     """Sync disk probe: is the entity referenced by a TYPE_ID attachment
     locally present? See ``_type_id_attachment_path`` for where it looks.
@@ -704,6 +712,10 @@ class FlowMessage(Entity):
     # What the channel message did (approved, merged) — projected from ``MessageData.mark``. PRIVATE
     # like ``envelope``: re-derived here, so a hub refresh never blanks it.
     mark: Optional[MessageMarkSpec] = APIField(None, sharing=Sharing.PRIVATE)
+    # A machine's reply in an IT conversation (``ConversationKind.IT``): the hub writes it with
+    # ``metadata.it`` = ``{node_typeid, code_last4, state, woke, value, call_id}``. PRIVATE like ``mark``:
+    # re-derived from that metadata on every arrival (``derive_it_reply``), never sent back.
+    it_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

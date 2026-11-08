@@ -5,6 +5,7 @@ import { ActionInfo } from '../models/ActionInfo';
 import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { IMessageEnvelope } from '../models/MessageEnvelope';
 import { IMessageSender } from '../models/MessageSender';
+import type { ItReplyMeta } from './agent';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -275,6 +276,10 @@ export interface IFlowMessage extends IEntity {
    *  exactly the badge rule: no origin, no channel mark. */
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
+  /** A machine's reply in an IT conversation: the hub's `metadata.it` (kept locally as `it_reply`). */
+  it_reply?: ItReplyMeta | null;
+  /** Hub-relayed opaque metadata (a hub-page read carries it raw). */
+  metadata?: Record<string, unknown> | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
@@ -319,6 +324,12 @@ export interface IMessageReaction {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface FlowMessage extends EntityMerge<IFlowMessage> {}
 
+/** The IT reply a hub message's `metadata.it` carries, else null. */
+export function itReplyOf(metadata: Record<string, unknown> | null | undefined): ItReplyMeta | null {
+  const it = metadata?.it;
+  return it && typeof it === 'object' ? (it as ItReplyMeta) : null;
+}
+
 @registerEntity
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
   text?: string;
@@ -352,6 +363,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   remote_worker_session_id?: string | null;
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
+  it_reply?: ItReplyMeta | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
@@ -403,6 +415,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
     this.origin = entity.origin ?? null;
     this.origin_local = entity.origin_local ?? null;
+    this.it_reply = entity.it_reply ?? itReplyOf(entity.metadata);
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
