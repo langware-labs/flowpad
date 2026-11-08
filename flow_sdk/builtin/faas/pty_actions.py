@@ -440,7 +440,10 @@ class PtyActionsMixin:
             # (recovery respawns into the SAME stream file): seqs must stay
             # monotonic within one file or the frontend's replay-vs-live
             # dedup drops post-restart output — "PTY looks dead after restart".
-            persisted_max = pty_stream_file.max_seq()
+            # Off the loop: it parses every frame of the file, ~0.1 s for a long session's
+            # 17 MB, and every other request waited behind each terminal open. Not a tail
+            # read: files written before seqs were resumed are not monotonic.
+            persisted_max = await asyncio.to_thread(pty_stream_file.max_seq)
             if persisted_max > session_state.seq:
                 session_state.seq = persisted_max
             # A previous process may have died fullscreen (alternate screen,
