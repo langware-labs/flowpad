@@ -24,13 +24,23 @@ import signal
 from pathlib import Path
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.instances.restart_marker import BACKEND_RESTART_MARKER_FILENAME, request_backend_restart  # noqa: F401
 
+BACKEND_RESTART_MARKER_FILENAME = ".backend-restart-requested"
 _RECOVERABLE_WORKER_SIGNALS = frozenset(
     int(signum)
     for name in ("SIGTERM", "SIGKILL", "SIGHUP")
     if (signum := getattr(signal, name, None)) is not None
 )
+
+
+def request_backend_restart(instance_dir: Path, server_pid: int) -> Path:
+    """Mark one exact backend generation for intentional replacement."""
+    if server_pid <= 0:
+        raise ValueError("server_pid must be positive")
+    marker = instance_dir / BACKEND_RESTART_MARKER_FILENAME
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(str(server_pid))
+    return marker
 
 
 def backend_restart_requested() -> bool:

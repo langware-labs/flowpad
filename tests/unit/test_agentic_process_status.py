@@ -921,18 +921,6 @@ def test_ignored_types_match_meta_types():
                 {"type": "atis-latch", "atis": "", "sessionId": "abc"},
             ],
         ),
-        # Claude 2.1.3xx writes `api-request` rows as a turn re-enters the model (after a
-        # tool result, or after a `!` shell command's output). Unclassified, the tail read
-        # UNKNOWN — not busy — and a command link typed into the TUI mid-answer was lost.
-        (
-            "tool_use",
-            WorkerStatus.TOOL_CALL,
-            [
-                {"type": "api-request-shape", "shapeHash": "x", "shape": {}},
-                {"type": "api-request-blob", "blob": "x"},
-                {"type": "api-request", "request": {}},
-            ],
-        ),
     ],
 )
 def test_tail_status_signal_survives_envelope_epilogue(tmp_path, stop_reason, expected, envelope):

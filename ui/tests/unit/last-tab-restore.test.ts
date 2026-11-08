@@ -51,13 +51,6 @@ describe('last place restore', () => {
     expect(await homeLoad()).toBeNull();
   });
 
-  it('Back onto a bare `/` is not a launch: Home stays Home', async () => {
-    rememberLastPlace(SHELL, SHELL_URL);
-    resetLastPlaceRestoreForTests(LAUNCH_DOCUMENT, 'back_forward');
-
-    expect(await homeLoad()).toBeNull();
-  });
-
   it('a document opened anywhere but a bare `/` is not a launch (a reload)', async () => {
     rememberLastPlace(SHELL, SHELL_URL);
     resetLastPlaceRestoreForTests('http://flowpad.local/?viewMode=standard');

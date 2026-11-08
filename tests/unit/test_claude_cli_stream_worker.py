@@ -539,11 +539,8 @@ def test_build_spawn_uses_absolute_discovered_claude_path(tmp_path: Path, monkey
     # stdin now carries TWO lines: a ``set_max_thinking_tokens`` control
     # request (opts into summarized thinking — FLOWPAD-2098) ahead of the
     # user message it used to be alone.
-    # A fresh session's first turn also asks the CLI to title it (a headless CLI
-    # never auto-titles): ``generate_session_title`` with ``persist`` writes the
-    # native ``ai-title`` row the naming adapter reads.
     lines = stdin_payload.splitlines()
-    assert len(lines) == 3
+    assert len(lines) == 2
     control = json.loads(lines[0])
     assert control["type"] == "control_request"
     assert control["request"]["subtype"] == "set_max_thinking_tokens"
@@ -551,16 +548,6 @@ def test_build_spawn_uses_absolute_discovered_claude_path(tmp_path: Path, monkey
     payload = json.loads(lines[1])
     assert payload["type"] == "user"
     assert payload["message"]["content"][0]["text"] == "hi"
-    title = json.loads(lines[2])
-    assert title["type"] == "control_request"
-    assert title["request"] == {"subtype": "generate_session_title", "description": "hi", "persist": True}
-
-    # A resumed turn's session is already titled (or pinned): no second request.
-    ctx.resume_session_id = "11111111-1111-1111-1111-111111111111"
-    _, _, resumed = ClaudeCLIStreamWorker()._build_spawn(ctx, "again")
-    assert [json.loads(line)["request"]["subtype"] for line in resumed.splitlines() if "control_request" in line] == [
-        "set_max_thinking_tokens"
-    ]
 
 
 # ── debug-file granularity switch ────────────────────────────────────────────

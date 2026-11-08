@@ -207,14 +207,12 @@ async function materializeTab(
   // doing so erases every other project's tabs, collapsing the
   // footer projects-chip to a single project. Use the scoped list only to find
   // the materialized tab, then re-read the UNSCOPED global list for adoption.
-  // The write answers with the global list too (and its version), which the manager
-  // adopts — then there is nothing to re-read. An older backend answers the scoped list only.
-  const { tabs: scoped, adopted } = await perfTime('materializeTab.ensureDock', () =>
+  const { tabs: scoped } = await perfTime('materializeTab.ensureDock', () =>
     tabManager.ensureDock(dock, { parentTabId: detach ? '' : parentTabId, viewMode: dock.viewMode }),
   );
   const scopedTab = tabForDockKey(scoped, dock.tabHash);
 
-  if (!adopted) await perfTime('materializeTab.refresh(adopt)', () => tabManager.refresh());
+  await perfTime('materializeTab.refresh(adopt)', () => tabManager.refresh());
   const all = tabManager.getSnapshot();
   return { tab: tabForDockKey(all, dock.tabHash) ?? scopedTab, tabs: all };
 }

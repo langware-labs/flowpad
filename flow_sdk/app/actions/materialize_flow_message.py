@@ -314,6 +314,20 @@ async def materialize_flow_message(
         # carries the read shape — no re-hydration here.
         await handle_entity_op(DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid))
 
+    if is_new:
+        # A native thread travels as ``thread_root_id``: place this message (and the root it
+        # names) in THIS machine's thread row, or — when this is a root that arrived after its
+        # replies — join the thread they opened. After the CREATE, so the update follows it.
+        from flow_sdk.stream_inbox.native_threads import heal_thread_root, project_native_thread  # noqa: PLC0415
+
+        try:
+            if fm.thread_root_id:
+                await project_native_thread(fm, notify=notify)
+            else:
+                await heal_thread_root(fm, notify=notify)
+        except Exception as e:  # noqa: BLE001 — a thread is grouping, never a reason to drop a message
+            logger.warning("[materialize_fm] native thread for %s failed: %s", fm.id, e)
+
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
@@ -344,40 +358,6 @@ async def materialize_flow_message(
         parent_type=parent_type,
     )
 
-    # The recipient's bubble is drawn once the conversation's pointer log names the message
-    # (the realtime SLO, sender click -> bubble < 500 ms): project the pointer and send the
-    # conversation UPDATE right after the FlowMessage CREATE, ahead of the thread healing, the
-    # parent stamp and the child edge, which nothing on screen waits for.
-    ts = bundle_ts or datetime.now(UTC).isoformat()
-    existing_ids = {p.id for p in message_pointers(rec)}
-    if fm.id not in existing_ids:
-        append_message_pointer(rec, fm.id, ts)
-        await rec.sync_to_db(notify=False)
-        await project_pointers_to_entity(rec, notify=False)
-
-    if notify:
-        try:
-            # Entity-event channel: what makes React useEntity hooks re-render.
-            conv_fresh = await Conversation.get_one({"id": conv.id})
-            if conv_fresh:
-                await conv_fresh.notify_updated()
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[materialize_flow_message] notify failed: %s", e)
-
-    if is_new:
-        # A native thread travels as ``thread_root_id``: place this message (and the root it
-        # names) in THIS machine's thread row, or — when this is a root that arrived after its
-        # replies — join the thread they opened. After the CREATE, so the update follows it.
-        from flow_sdk.stream_inbox.native_threads import heal_thread_root, project_native_thread  # noqa: PLC0415
-
-        try:
-            if fm.thread_root_id:
-                await project_native_thread(fm, notify=notify)
-            else:
-                await heal_thread_root(fm, notify=notify)
-        except Exception as e:  # noqa: BLE001 — a thread is grouping, never a reason to drop a message
-            logger.warning("[materialize_fm] native thread for %s failed: %s", fm.id, e)
-
     # The message IS a child of the conversation — model it as a real local edge,
     # matching the hub (``Conversation.add_child`` inside ``add_message``).
     # ``attach_child`` is silent on re-convergence, so the repeat materializations
@@ -399,6 +379,13 @@ async def materialize_flow_message(
     except Exception as e:  # noqa: BLE001
         logger.warning("[materialize_flow_message] child edge conv=%s failed: %s", conv.id, e)
 
+    ts = bundle_ts or datetime.now(UTC).isoformat()
+    existing_ids = {p.id for p in message_pointers(rec)}
+    if fm.id not in existing_ids:
+        append_message_pointer(rec, fm.id, ts)
+        await rec.sync_to_db(notify=False)
+        await project_pointers_to_entity(rec, notify=False)
+
     if announce_child:
         try:
             from flow_sdk.api.api_types.messages import OperationType  # noqa: PLC0415
@@ -406,5 +393,14 @@ async def materialize_flow_message(
             await conv.emit_child_op(fm, OperationType.CHILD_CREATED)
         except Exception as e:  # noqa: BLE001
             logger.warning("[materialize_flow_message] child announce conv=%s failed: %s", conv.id, e)
+
+    if notify:
+        try:
+            # Entity-event channel: what makes React useEntity hooks re-render.
+            conv_fresh = await Conversation.get_one({"id": conv.id})
+            if conv_fresh:
+                await conv_fresh.notify_updated()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[materialize_flow_message] notify failed: %s", e)
 
     return fm

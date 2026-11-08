@@ -76,7 +76,7 @@ function ArtifactList({
           {ex.files.map((f) => {
             const id = artifactId(ex.key, f.name);
             return (
-              <div key={`${f.direction}:${id}:${f.path ?? ''}`} className="afl-file">
+              <div key={id} className="afl-file">
                 <button
                   className={`afl-filerow ${f.direction}${open === id ? 'on' : ''}`}
                   onClick={() => show(ex.key, f.name)}

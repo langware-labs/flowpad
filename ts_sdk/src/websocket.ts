@@ -282,8 +282,6 @@ export interface FlowDataMessage extends EntityMessage {
 export interface BroadcastMessage extends BaseMessage {
   message_type: 'broadcast';
   broadcast_type?: string;
-  /** `tabs_changed`: the tab list version this change produced (`<epoch>:<seq>`). */
-  version?: string | null;
 }
 
 export type DataOpType =

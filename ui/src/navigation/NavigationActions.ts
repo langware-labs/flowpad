@@ -51,8 +51,6 @@ import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
-import { assetDocumentAtOwner } from './asset-document-owner';
-import { highlightTab } from '@src/tabs/tab-highlight';
 import { openExternal } from '@src/lib/open-external';
 import { browserProfileManager } from '@src/lib/browser-profiles';
 import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
@@ -846,13 +844,7 @@ export class NavigationActions {
    */
   async openLink(link: string, source: LinkSource | null): Promise<void> {
     try {
-      const dock = await this.resolveLinkDock(link, source);
-      this.openDock(dock);
-      // Show the user which tab the click landed in. Moving to the plain openDock (80b37df5d) dropped
-      // the highlight presentDockTab gave it; the key is the one the loader mints (a document rebased
-      // onto its owner), and the strip glows the chip as soon as it exists.
-      const placed = (await assetDocumentAtOwner(dock).catch(() => null)) ?? dock;
-      if (placed.tabHash) highlightTab(placed.tabHash);
+      this.openDock(await this.resolveLinkDock(link, source));
     } catch (error) {
       notifyLinkError(error);
     }

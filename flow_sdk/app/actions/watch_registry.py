@@ -98,18 +98,6 @@ async def create_watch(connection_id: str, target_typeid):
     except Exception:
         logger.debug("recovered-on-watch emit skipped", exc_info=True)
 
-    # A `flow show` emitted between this connection opening and this watch landing went to no
-    # one here (the live event reaches watchers only): give that one show to this connection.
-    if target_typeid.type == "agentic_process":
-        try:
-            from flow_sdk.builtin.agentic_process import AgenticProcess
-
-            process = await AgenticProcess.get_by_id(entity_id)
-            if process is not None and await process.replay_missed_show(connection_id):
-                logger.info(f"Replayed a missed show of {entity_key} to {connection_id}")
-        except Exception:
-            logger.debug("show-on-watch replay skipped", exc_info=True)
-
     return ApiSuccessResponse[bool](data=True)
 
 

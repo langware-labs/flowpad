@@ -1,4 +1,3 @@
-import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { SearchResultCard } from '@src/components/record-search-bar/SearchResultCard';
 import { SearchScopeToggle } from '@src/components/record-search-bar/SearchScopeToggle';
@@ -126,11 +125,6 @@ export function SearchView() {
 
   const [scanInfo, setScanInfo] = useState(() => dataManager.scanInfo);
   useEffect(() => dataManager.onScanInfoChange(setScanInfo), []);
-  // scan_info rides the deferred runtime info, which nothing loads until a consumer asks. This view reads it
-  // straight off dataManager, so it asks itself instead of showing no "N indexed" badge on a cold load.
-  useEffect(() => {
-    void lazyAssets.load(LazyAsset.RuntimeInfo).catch(() => {});
-  }, []);
 
   // Index status — derived, not mirrored: `statusState` is the single source of
   // truth, and a completed build calls `refreshStatus()` to re-read it.

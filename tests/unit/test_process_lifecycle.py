@@ -519,22 +519,3 @@ async def test_open_missing_fork_source_fails_before_shell_spawn():
     assert result.status_code == 404
     assert source_id in (result.message or "")
     create_shell.assert_not_awaited()
-
-
-def test_restart_backend_marker_does_not_import_the_entity_registry():
-    """`flow instance restart-backend` runs in QA loops under a 15 s budget: writing the marker must not pull in flow_sdk.builtin."""
-    import subprocess
-    import sys
-
-    code = (
-        "import sys; from flow_sdk.instances.restart_marker import request_backend_restart; "
-        "import flow_sdk.cli.commands.instance_cmd; "
-        "sys.exit(1 if 'flow_sdk.builtin' in sys.modules else 0)"
-    )
-    assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
-
-    import inspect
-
-    from flow_sdk.cli.commands import instance_cmd
-
-    assert "flow_sdk.builtin" not in inspect.getsource(instance_cmd.restart_backend)

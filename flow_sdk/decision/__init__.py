@@ -81,10 +81,10 @@ async def decide(spec: DecisionSpec | dict, *, endpoint: Optional[str] = None) -
                 body = resp.text[:500]
     except HubError as exc:
         raise DecisionError(
-            "auth" if exc.status_code == 401 else "unavailable",
+            "auth" if exc.status == 401 else "unavailable",
             f"The hub could not be reached: {exc}",
-            status=exc.status_code,
-            wire=wire.model_copy(update={"status": exc.status_code or 0}),
+            status=exc.status,
+            wire=wire.model_copy(update={"status": exc.status or 0}),
         ) from exc
     wire = wire.model_copy(update={"status": status, "response": body})
     if status == 0:

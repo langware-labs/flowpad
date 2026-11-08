@@ -388,7 +388,7 @@ def restart_backend(
     json_out: Annotated[bool, typer.Option("--json", help="Emit a machine-readable summary.")] = False,
 ) -> None:
     """Restart only a named instance's backend, preserving all instance data."""
-    from flow_sdk.instances.restart_marker import request_backend_restart
+    from flow_sdk.builtin.process_lifecycle import request_backend_restart
 
     t0 = time.monotonic()
     instance_dir = _instance_dir(name)

@@ -313,7 +313,7 @@ def assemble_session_jsonl(session_id: str, process_id: str | None = None) -> Pa
 
     out = opencode_session_projection_path(process_id, session_id)
     try:
-        if out.exists() and out.stat().st_mtime > db_mtime:  # strict: an equal mtime (same fs tick) may hide a write
+        if out.exists() and out.stat().st_mtime >= db_mtime:
             return out
     except OSError:
         pass

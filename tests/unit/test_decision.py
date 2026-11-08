@@ -297,21 +297,3 @@ async def test_the_llm_sources_status_says_why_there_is_no_decision_api(env, mon
     _hub(monkeypatch, listing={"data": [OTHER]}, catalog=[])
     none_marked = await _decision_api(refresh=True)
     assert not none_marked.available and "marked as a decision API" in none_marked.reason
-
-
-async def test_a_hub_transport_error_is_unavailable_not_a_crash(env, monkeypatch) -> None:
-    """The hub dropping the connection mid-call (HubError, status_code 0) must come out as the closed
-    ``unavailable`` reason, so the caller takes its ordinary path -- not as an AttributeError."""
-    from flow_sdk.cloud_client.shared.errors import HubError
-    from flow_sdk.decision import decide
-
-    _login()
-    _hub(monkeypatch, listing={"data": [DECIDER]}, catalog=[], invoke=(200, {}))
-
-    async def _dropped(method, url, *, json=None, **kwargs):
-        raise HubError(0, "connection reset")
-
-    monkeypatch.setattr(HubProxy, "send", staticmethod(_dropped))
-    with pytest.raises(DecisionError) as e:
-        await decide(SPEC)
-    assert (e.value.reason, e.value.wire.status) == ("unavailable", 0)
