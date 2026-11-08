@@ -3431,7 +3431,25 @@ ipcMain.handle('upgrade-flowpad', async (_event, version) => {
   if (!uvManager) return { success: false, error: 'No uv manager' };
   const target = isInstallableVersion(version) ? version : null;
   // Desktop first: refuse before touching the running server or the window.
-  if (engineChangeAllowed('upgrade-flowpad IPC') !== 'allow') {
+  let policy = engineChangeAllowed('upgrade-flowpad IPC');
+  if (policy !== 'allow' && !pendingDesktopVersion && desktopStatus.state === 'unknown') {
+    // The last look at the desktop feed did not answer (a GitHub 504, a dropped connection) — that is no newer
+    // desktop, only no answer, and the next scheduled look may be an hour away. The user is asking NOW: look
+    // again, bounded like the launch check, rather than refuse on an old failure (seen on a 0.2.59 desktop, the
+    // newest: refused with "a newer desktop must be installed first").
+    log.info(`[update] upgrade-flowpad: the desktop update status is unknown (${desktopStatus.reason || 'no answer'}) — checking the feed again`);
+    await updateRecovery.boundedCheck(() => getDesktopUpdateVersion({ desktopOnly: true }), { ms: updateTest.checkBoundMs() });
+    policy = engineChangeAllowed('upgrade-flowpad IPC, after checking the feed again');
+  }
+  if (policy !== 'allow') {
+    // Say which: a newer desktop is known, or the feed still does not answer (nothing to install first).
+    if (!pendingDesktopVersion && desktopStatus.state !== 'available') {
+      return {
+        success: false,
+        desktopCheckFailed: true,
+        error: 'FlowPad could not check for a desktop update right now (the update server did not answer), and the engine is updated only once that is known. Try again in a few minutes.',
+      };
+    }
     return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
   }
   if (target) {

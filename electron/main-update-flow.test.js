@@ -716,6 +716,40 @@ const HOUR = 60 * 60 * 1000;
     eq(env.uv.upgrades.map((o) => o.version), ['0.2.181', null], 'the named release exactly; a non-version is ignored');
   }
   {
+    // The desktop check failed (GitHub 504): no newer desktop is known, only no answer. "Upgrade" looks at the feed
+    // again — seen on a 0.2.59 desktop, the newest, refused with "a newer desktop must be installed first".
+    const env = load({ appVersion: '0.2.59', desktopFeed: '0.2.59' });
+    let failing = true;
+    const answer = env.autoUpdater.checkForUpdates;
+    env.autoUpdater.checkForUpdates = async () => { if (failing) { env.autoUpdater.checks++; throw new Error('HttpError: 504 Gateway Time-out'); } return answer(); };
+    await env.t.getDesktopUpdateVersion();
+    eq(env.t.getDesktopStatus().state, 'unknown', 'a failed check leaves the status unknown');
+    const realFetch = global.fetch;
+    global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' });
+    try {
+      const checksBefore = env.autoUpdater.checks;
+      const still = await env.ipc['upgrade-flowpad']({}, '0.2.181');
+      eq(env.autoUpdater.checks, checksBefore + 1, 'the click looks at the feed again');
+      eq([still.success, still.desktopCheckFailed, still.desktopUpdatePending], [false, true, undefined], 'still no answer: refused as a failed check');
+      ok(/could not check for a desktop update/.test(still.error) && !/newer FlowPad desktop must be installed/.test(still.error),
+        'and says so — not "a newer desktop must be installed first"');
+      eq(env.uv.upgrades.length, 0, 'nothing installed');
+      failing = false;
+      const r = await env.ipc['upgrade-flowpad']({}, '0.2.181');
+      eq(env.t.getDesktopStatus().state, 'current', 'the feed answers now: current');
+      eq([r.desktopCheckFailed, r.desktopUpdatePending, env.uv.upgrades.map((o) => o.version)], [undefined, undefined, ['0.2.181']], 'so the upgrade goes on');
+    } finally { global.fetch = realFetch; }
+  }
+  {
+    // A newer desktop IS known: refused as before, without asking the feed again.
+    const env = load({ appVersion: '0.2.59', desktopFeed: '0.2.60' });
+    await env.t.getDesktopUpdateVersion();
+    const checksBefore = env.autoUpdater.checks;
+    const r = await env.ipc['upgrade-flowpad']({}, '0.2.181');
+    eq([r.success, r.desktopUpdatePending, /newer FlowPad desktop must be installed first/.test(r.error)], [false, true, true], 'a newer desktop: that message');
+    eq(env.autoUpdater.checks, checksBefore, 'no extra look at the feed');
+  }
+  {
     // A named release this desktop cannot run is refused BEFORE the server is touched: the app stays as it was.
     const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', incompatible: ['0.2.190'] });
     await env.t.getDesktopUpdateVersion();

@@ -133,7 +133,11 @@ Electron (main.js)
   After a consented "Restart now", the new desktop installs exactly `flowpad==X` (`planAfterDesktopUpdate` → `upgrade({version})`).
 - **"Later":** a reminder every 90 minutes (`READY_REMINDER_MS`). If the app is closed after Later, the regular engine
   dialog appears — no silent install.
-- **A newer desktop** refreshes X. Engine dialogs are **held back** while a desktop update is pending.
+- **A newer desktop** refreshes X. Engine dialogs are **held back** while a desktop update is pending — and while
+  the desktop check has not answered (`unknown`: a failed or unfinished check is not "no newer desktop"). The
+  version popover's "Upgrade" then looks at the feed again (bounded like the launch check) before refusing, and a
+  refusal says which it is: a newer desktop to install first (`desktopUpdatePending`), or a feed that still does
+  not answer (`desktopCheckFailed`, "try again in a few minutes").
 - **A yanked X** is replaced by the latest release (`_resolveEngineTarget`).
 - Engine-only update: the regular dialog. Desktop-only update: background download and the "ready" prompt.
 - electron-updater: `autoDownload=false`, `autoInstallOnAppQuit=true`, NSIS with `oneClick:false`
