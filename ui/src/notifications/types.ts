@@ -81,8 +81,6 @@ export interface NotificationData {
   transient?: boolean;
   /** What a Details popup shows for an error/warning (see `ErrorDetail`). */
   detail?: ErrorDetail;
-  /** Set once a diagnosis repaired it: what changed. The entry stays until the person clears it. */
-  fixed?: { summary: string };
   /** Stamped by the dispatcher: when an alert under this id was first emitted, and how many times. */
   firstAt?: number;
   count?: number;

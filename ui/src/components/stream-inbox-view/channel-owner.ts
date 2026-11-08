@@ -88,21 +88,33 @@ export const STREAM_INBOX_PAGE_SIZE = 100;
 /** Which conversations a page lists: an owner's stream inbox — narrowed to some of its sources when the
  *  channel marks pick them — or one data source's. The narrowing is part of the query, so a filtered page
  *  is N rows of those sources, never N rows the browser then thins out. */
-export type ConversationScope = { owner: TypeId; sourceIds?: readonly string[] } | { sourceId: string };
+export type ConversationScope =
+  | { owner: TypeId; sourceIds?: readonly string[]; channels?: readonly string[] }
+  | { sourceId: string };
+
+/** Channels no data source delivers but a mark still narrows to: their conversations carry the channel itself
+ *  (``Conversation.channel``). Diagnosis — Diagnose & fix and the help desk it may be reported to — is one. */
+export const DIAGNOSIS_CHANNEL = 'diagnosis';
+export const BUILT_IN_CHANNELS: readonly string[] = [DIAGNOSIS_CHANNEL];
 
 /** A scope as a string: what keys a memo or a request on it. */
 export const scopeKey = (scope: ConversationScope) =>
   'owner' in scope
-    ? scope.sourceIds?.length
-      ? `${scope.owner.toString()}|${[...scope.sourceIds].sort().join(',')}`
-      : scope.owner.toString()
+    ? [scope.owner.toString(), [...(scope.sourceIds ?? [])].sort().join(','), [...(scope.channels ?? [])].sort().join(',')]
+        .join('|')
+        .replace(/\|+$/, '')
     : scope.sourceId;
 
 const scopeClauses = (scope: ConversationScope): ExpressionNode[] => {
   if (!('owner' in scope)) return [sourceMatch(scope.sourceId)];
   const clauses = [ownerMatch(scope.owner)];
+  // The picked marks: a source's conversations by its id, a built-in channel's by the channel they carry.
+  const picked: ExpressionNode[] = [];
   if (scope.sourceIds?.length)
-    clauses.push(new ExpressionNode({ op: '$IN', operands: ['channel_source_id', [...scope.sourceIds]] }));
+    picked.push(new ExpressionNode({ op: '$IN', operands: ['channel_source_id', [...scope.sourceIds]] }));
+  if (scope.channels?.length) picked.push(new ExpressionNode({ op: '$IN', operands: ['channel', [...scope.channels]] }));
+  if (picked.length === 1) clauses.push(picked[0]);
+  else if (picked.length > 1) clauses.push(new ExpressionNode({ op: '$OR', operands: picked }));
   return clauses;
 };
 

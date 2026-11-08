@@ -66,7 +66,7 @@ import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
-import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
+import { participantLabelByUserId, personName, unresolvedSenderLabel, warnUnresolvedSender } from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
 import { AttachmentDownloadWarning } from './AttachmentDownloadWarning';
 import { dockPointerForLocalFile } from './attachment-url';
@@ -472,7 +472,7 @@ export function FlowMessageBubble({
     cloudUserId: viewerCloudUserId,
     localUserId: localUser?.id ?? null,
   });
-  const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() || null;
+  const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() ? personName(creator) : null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
@@ -493,7 +493,7 @@ export function FlowMessageBubble({
   //      confirmed loaded (rosterReady) AND none of the cushions matched.
   //      That's the "the hub roster says no, no other signal" case worth
   //      alerting on.
-  //   7b. otherwise the benign 'unknown' string (roster still loading, no
+  //   7b. otherwise a short name from the sender id (roster still loading, no
   //      sender_id at all, etc.)
   const rosterLabel = fm.sender_id ? participantLabelByUserId(participants, fm.sender_id) : null;
   const wireSenderName = fm.sender_name?.trim() || null;
@@ -514,9 +514,9 @@ export function FlowMessageBubble({
   } else if (creatorLabel) {
     displayName = creatorLabel;
   } else if (fm.sender_id && rosterReady && !isHelpdesk) {
-    displayName = UNRESOLVED_SENDER_LABEL;
+    displayName = unresolvedSenderLabel(fm.sender_id);
   } else {
-    displayName = t`unknown`;
+    displayName = personName({ user_id: fm.sender_id });
   }
 
   // When task is present, role tracks the original task initiator (sender) vs

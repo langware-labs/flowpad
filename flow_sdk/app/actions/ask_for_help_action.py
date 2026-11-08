@@ -36,6 +36,7 @@ from flow_sdk.actions.action_registry import action
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.app.actions.share_action import LOCAL_MODE_SHARE_MESSAGE, _local_mode_share_blocked
 from flow_sdk.builtin.conversation import Conversation, ConversationKind
+from flow_sdk.builtin.conversation_channel import DIAGNOSIS
 from flow_sdk.builtin.flow_message import (
     HELP_REQUEST_FILE,
     DeliveryStatus,
@@ -52,6 +53,7 @@ from flow_sdk.request_context.methods import get_current_request_info, request_f
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.help_request_spec import (
     AskForHelpRequest,
+    HelpOrigin,
     HelpRecipient,
     HelpRecipientKind,
     HelpRequestCarrier,
@@ -404,6 +406,7 @@ async def _diagnose(ask: AskForHelpRequest):
             prompt_extra=_REPAIR_ASK + await _dependencies_said(ask.project_id),
             project_id=ask.project_id,
             connection_id=ask.connection_id,
+            feed=False,
         )
         raw = (done[-1].get("diagnosis") if done else None) or {}
         diagnosis = DiagnosisSpec.model_validate({k: v for k, v in raw.items() if k != "spec_kind"}) if raw else None
@@ -459,7 +462,12 @@ async def _post_diagnosis(conv, ask: AskForHelpRequest, diagnosis, diagnosis_id,
         "files": [_Upload(n, c) for n, c in files.items()] if shared else [],
         **({"asset_references": [f"flowpad_diagnosis-{diagnosis_id}"]} if diagnosis_id else {}),
     }
-    await handle_add_message(body, someone)
+    added = await handle_add_message(body, someone)
+    # The answer is a message; its arrival is the one notification (CLAUDE.md "Notifications = message arrival only").
+    if isinstance(added, ApiSuccessResponse) and (added.data or {}).get("id"):
+        from flow_sdk.notifications import notify_message_arrival  # noqa: PLC0415
+
+        await notify_message_arrival(conv.id, added.data["id"], sender_name="Flowpad Diagnosis", text=text)
 
 
 def _held_diagnosis(conv_id: str):
@@ -586,6 +594,20 @@ def _is_ticket(conv) -> bool:
     return conv.kind in (ConversationKind.HELPDESK, ConversationKind.HELPDESK.value)
 
 
+async def _desk_replied(conv) -> bool:
+    """Whether the last word in a reported request is someone else's — the help desk answered. The asker
+    is whoever sent the request; Flowpad's own lines (the request, the diagnosis) are never an answer."""
+    messages = await conv.messages()
+    asker = next((m.sender_id for m in messages if _kind(m) == FlowMessageKind.HELP_REQUEST.value), None)
+    last = messages[-1] if messages else None
+    own = (FlowMessageKind.HELP_REQUEST.value, FlowMessageKind.DIAGNOSIS.value)
+    return bool(last and asker and _kind(last) not in own and last.sender_id and last.sender_id != asker)
+
+
+def _kind(fm) -> str:
+    return getattr(fm.kind, "value", fm.kind)
+
+
 async def _posted_diagnosis(conv):
     """The diagnosis a request's diagnosis message carries (shared), else the one held here (private)."""
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
@@ -633,6 +655,7 @@ async def help_request_diagnosis() -> ApiResponse:
             "diagnosis": diagnosis.model_dump(mode="json") if diagnosis is not None else None,
             "reportable": bool(diagnosis is not None and diagnosis.reportable and not reported),
             "reported": reported,
+            "replied": reported and await _desk_replied(conv),
             "desk": desk,
             "pass_on": pass_on,
         }
@@ -688,6 +711,14 @@ def member_of(recipient) -> dict:
     }
 
 
+def _is_diagnosis(ask: AskForHelpRequest) -> bool:
+    """A private request Flowpad diagnoses for a warning or an error (Diagnose & fix): its conversation lives
+    on the Diagnosis channel, and stays there when it is reported to a help desk."""
+    from flow_sdk.diagnose import DiagnosePurpose  # noqa: PLC0415
+
+    return ask.purpose is DiagnosePurpose.REPAIR or ask.origin is HelpOrigin.WARNING
+
+
 async def _capture_conversation(ask: AskForHelpRequest, someone) -> tuple[Conversation, Optional[Task], bool]:
     """The request's conversation (and task, for a person) — found by the asker's id, or written.
     A desk makes it a ticket; people make it their conversation; nobody makes it private (never sent)."""
@@ -718,6 +749,8 @@ async def _capture_conversation(ask: AskForHelpRequest, someone) -> tuple[Conver
         from flow_sdk.app.actions.flow_message_action import _ticket_title  # noqa: PLC0415
 
         conv = Conversation(id=conv_id, title=ask.title.strip() or _ticket_title(ask.text))
+        if _is_diagnosis(ask):
+            conv.channel = DIAGNOSIS.name
     conv.awaits_hub = bool(ask.recipients) and ask.send is HelpSend.WHEN_DIAGNOSED
     conv.origin_project_id = ask.project_id
     conv = await conv.save(someone)

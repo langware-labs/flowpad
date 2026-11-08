@@ -188,14 +188,14 @@ async function poolRow(desk: string, convId: string): Promise<any> {
 
 function chipLabel(inp: CategoryInputs): string | null {
   const f = conversationFacets(inp);
-  return f.ticket ? ticketChip(f.ticket).label : null;
+  return (f.ticket && ticketChip(f.ticket)?.label) ?? null;
 }
 
 describe.each([
   { label: 'customer desk', deskName: DISPLAY_NAME, desk: () => deskId },
   { label: 'default Flowpad desk', deskName: HELPDESK_DISPLAY_NAME, desk: () => defaultDeskId },
 ])("help desk state chips — $label", ({ desk }) => {
-  it('staff: desk chip + Not picked up → Picked up by you → Closed; requester: Waiting → Picked up → Closed; a reply after close stays Closed and unread', async (context: any) => {
+  it('staff: desk chip + Not picked up → Picked up by you → Closed; requester: no pick-up state, then Closed; a reply after close stays Closed and unread', async (context: any) => {
     const theDesk = desk();
     if (!theDesk) return context.skip();
     const ts = Date.now();
@@ -244,7 +244,8 @@ describe.each([
 
       // 1. Unpicked.
       expect(await staffLabel()).toBe('Not picked up');
-      expect(await guestLabel()).toBe('Waiting for pickup');
+      // Pick-up is the desk's own business: the requester's side shows no state while it is open.
+      expect(await guestLabel()).toBeNull();
 
       // 2. Staff pick it up.
       await hubJson(staffToken, `/graph/conversation/${convId}/pickup`, {});
@@ -255,13 +256,7 @@ describe.each([
           'staff: Picked up by you',
         ),
       ).toBe(true);
-      expect(
-        await pollUntil(
-          async () => ((await guestLabel()) === 'Picked up' ? true : null),
-          10_000,
-          'requester: Picked up',
-        ),
-      ).toBe(true);
+      expect(await guestLabel()).toBeNull();
 
       // 3. Closed — both sides say so, and the ticket is still listed (D7).
       await hubJson(guestToken, `/graph/conversation/${convId}/close`, {});
@@ -286,7 +281,7 @@ describe.each([
       const conv: any = await staffConv();
       const f = conversationFacets({ conv, latestMessage: latest, viewer: staffViewer, staffView: true });
       expect(f.isUnread).toBe(true);
-      expect(f.ticket && ticketChip(f.ticket).label).toBe('Closed');
+      expect(f.ticket && ticketChip(f.ticket)?.label).toBe('Closed');
     } finally {
       await hubJson(guestToken, `/graph/conversation/${convId}/close`, {}).catch(() => undefined);
       if (ownSource) await source.delete();

@@ -24,10 +24,23 @@ interface AlertState {
   alerts: NotificationData[];
   push: (alert: NotificationData) => void;
   dismiss: (id: string) => void;
-  /** A diagnosis repaired this alert's cause: mark it, with what changed. */
-  markFixed: (id: string, summary: string) => void;
   dismissAll: () => void;
 }
+
+/**
+ * Which warnings-list entry a Diagnose & fix started from → the diagnosis conversation. The entry shows that
+ * conversation's status until it is dismissed (and only Dismiss removes it). Keyed by the entry's own key: an
+ * alert's id, or a derived warning's id. Session-scoped, like the entries themselves.
+ */
+interface DiagnosisLinks {
+  links: Readonly<Record<string, string>>;
+  link: (entryKey: string, conversationId: string) => void;
+}
+
+export const useDiagnosisLinks = create<DiagnosisLinks>((set) => ({
+  links: {},
+  link: (entryKey, conversationId) => set((s) => ({ links: { ...s.links, [entryKey]: conversationId } })),
+}));
 
 export const useAlertStore = create<AlertState>((set) => ({
   alerts: [],
@@ -40,7 +53,5 @@ export const useAlertStore = create<AlertState>((set) => ({
       const next = s.alerts.filter((a) => a.id !== id);
       return next.length === s.alerts.length ? s : { alerts: next };
     }),
-  markFixed: (id, summary) =>
-    set((s) => ({ alerts: s.alerts.map((a) => (a.id === id ? { ...a, fixed: { summary } } : a)) })),
   dismissAll: () => set({ alerts: [] }),
 }));

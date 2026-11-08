@@ -819,6 +819,7 @@ msgstr "{0} left of {1}."
 
 #. placeholder {0}: missing.length
 #. placeholder {1}: missing.join(', ')
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/conversation/MessageFormCard.tsx
 msgid "{0} left to fill: {1}"
 msgstr "{0} left to fill: {1}"
@@ -2744,6 +2745,7 @@ msgid "Activity"
 msgstr "Activity"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
@@ -3120,6 +3122,7 @@ msgstr "Add translation"
 msgid "Add Trigger"
 msgstr "Add Trigger"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Add variable"
@@ -3273,6 +3276,7 @@ msgstr "agent"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -3689,6 +3693,10 @@ msgstr "Already a member — change their role in the list above"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Already attached to this project."
 msgstr "Already attached to this project."
+
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Already diagnosed — see the conversation"
+msgstr "Already diagnosed — see the conversation"
 
 #: src/components/conversation/MessageRunStatus.tsx
 msgid "Already executed — open the run"
@@ -4705,8 +4713,12 @@ msgid "Attach all"
 msgstr "Attach all"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Attach an asset (skill, agent, doc, spec)"
-msgstr "Attach an asset (skill, agent, doc, spec)"
+msgid "Attach an asset"
+msgstr "Attach an asset"
+
+#: src/components/conversation/MessageComposer.tsx
+#~ msgid "Attach an asset (skill, agent, doc, spec)"
+#~ msgstr "Attach an asset (skill, agent, doc, spec)"
 
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -5706,6 +5718,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
 #: src/components/token-plan/AllocateDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -5862,12 +5875,13 @@ msgid "Chain"
 msgstr "Chain"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
 msgid "Chain session"
 msgstr "Chain session"
 
 #: src/components/terminal/interactive-terminal/useChainSession.tsx
-msgid "Chain this session into which project?"
-msgstr "Chain this session into which project?"
+#~ msgid "Chain this session into which project?"
+#~ msgstr "Chain this session into which project?"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
@@ -5910,6 +5924,10 @@ msgstr "Change language"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Change now ↵"
 msgstr "Change now ↵"
+
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Change request"
+msgstr "Change request"
 
 #: src/components/conversation/task-it.tsx
 msgid "Change status"
@@ -6250,6 +6268,10 @@ msgstr "Chief of Staff"
 msgid "Choose"
 msgstr "Choose"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Choose a credential to share securely…"
+msgstr "Choose a credential to share securely…"
+
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Choose a data source from this project by name."
 msgstr "Choose a data source from this project by name."
@@ -6334,6 +6356,10 @@ msgstr "Choose where <0>{path}</0> keeps its git repository."
 #: src/components/git/GitSetupWizard.tsx
 msgid "Choose where this project keeps its git repository."
 msgstr "Choose where this project keeps its git repository."
+
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
+msgid "Choose where this review runs and which worker handles it."
+msgstr "Choose where this review runs and which worker handles it."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Choose which model each tier uses, or add your own — per assistant and provider."
@@ -7142,6 +7168,7 @@ msgstr "Commands"
 msgid "Commands excluded from sandboxing"
 msgstr "Commands excluded from sandboxing"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -7150,9 +7177,15 @@ msgstr "Commands excluded from sandboxing"
 msgid "Comment"
 msgstr "Comment"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "Comments"
 msgstr "Comments"
+
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Comments on this doc"
+msgstr "Comments on this doc"
 
 #: src/components/project-deployments/DeploymentContext.tsx
 msgid "commit"
@@ -8037,6 +8070,10 @@ msgstr "Cost (USD), total"
 msgid "Could not activate the organization"
 msgstr "Could not activate the organization"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Could not add {name}"
+msgstr "Could not add {name}"
+
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "Could not add codes"
 msgstr "Could not add codes"
@@ -8072,7 +8109,9 @@ msgid "Could not attach {name}"
 msgstr "Could not attach {name}"
 
 #. placeholder {0}: a.name
+#. placeholder {0}: e.name
 #. placeholder {0}: members[0].parent_name || parent
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/automations/AutomationsList.tsx
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not change {0}"
@@ -8147,6 +8186,11 @@ msgstr "Could not connect to {displayName}."
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 msgid "Could not convert the chart"
 msgstr "Could not convert the chart"
+
+#. placeholder {0}: entry.name
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Could not copy {0}"
+msgstr "Could not copy {0}"
 
 #: src/components/links/link-handlers.ts
 msgid "Could not copy link"
@@ -8309,6 +8353,11 @@ msgstr "Could not fill in {name}"
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
 msgstr "Could not fix {key}"
+
+#. placeholder {0}: entry.name
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Could not forget {0}"
+msgstr "Could not forget {0}"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Could not forward diagnosis"
@@ -8521,6 +8570,10 @@ msgstr "Could not reach the backend. Try again in a moment."
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "Could not reach this cloud machine. It may be paused."
+
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Could not read the agent's Env"
+msgstr "Could not read the agent's Env"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
@@ -8827,7 +8880,9 @@ msgstr "Could not send your answers"
 msgid "Could not send."
 msgstr "Could not send."
 
+#. placeholder {0}: entry.name
 #. placeholder {0}: v.envVar
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 msgid "Could not set {0}"
 msgstr "Could not set {0}"
@@ -9089,6 +9144,10 @@ msgstr "Couldn't finish preparing your workspace"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Couldn't finish setting up the sandbox."
 msgstr "Couldn't finish setting up the sandbox."
+
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Couldn't fix it here — report it from the conversation"
+msgstr "Couldn't fix it here — report it from the conversation"
 
 #. placeholder {0}: f.email || f.user_id || ''
 #. placeholder {1}: f.message
@@ -9457,6 +9516,10 @@ msgstr "credential"
 #: src/i18n/type-labels.ts
 msgid "Credential"
 msgstr "Credential"
+
+#: src/components/project-deployments/ProjectDeploymentCard.tsx
+msgid "Credential environment"
+msgstr "Credential environment"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Credential environment this deployment reads"
@@ -10603,7 +10666,6 @@ msgid "Diagnose"
 msgstr "Diagnose"
 
 #: src/components/warnings-popover/warnings-popover.tsx
-#: src/components/warnings-popover/warnings-popover.tsx
 msgid "Diagnose & fix"
 msgstr "Diagnose & fix"
 
@@ -10615,6 +10677,11 @@ msgstr "Diagnose this error"
 msgid "Diagnose this warning"
 msgstr "Diagnose this warning"
 
+#. placeholder {0}: d.summary
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Diagnosed: {0}"
+msgstr "Diagnosed: {0}"
+
 #: src/components/conversation/HelpRequestLine.tsx
 msgid "Diagnosing privately… you can leave, the answer lands here."
 msgstr "Diagnosing privately… you can leave, the answer lands here."
@@ -10623,12 +10690,22 @@ msgstr "Diagnosing privately… you can leave, the answer lands here."
 msgid "Diagnosing…"
 msgstr "Diagnosing…"
 
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Diagnosing… you'll get a message when it's done"
+msgstr "Diagnosing… you'll get a message when it's done"
+
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
+#: src/components/conversation/channel-attribution.tsx
 #: src/components/diagnosis-viewer/DiagnosisViewer.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
 #: src/types/ViewType.ts
 msgid "Diagnosis"
 msgstr "Diagnosis"
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Diagnosis — diagnoses and the help desk"
+msgstr "Diagnosis — diagnoses and the help desk"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosis & context"
@@ -11009,6 +11086,7 @@ msgid "done"
 msgstr "done"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactPermissionsDialog.tsx
@@ -11032,8 +11110,8 @@ msgid "Done — access given"
 msgstr "Done — access given"
 
 #: src/components/warnings-popover/warnings-popover.tsx
-msgid "Done — remove"
-msgstr "Done — remove"
+#~ msgid "Done — remove"
+#~ msgstr "Done — remove"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Done!"
@@ -11779,6 +11857,7 @@ msgstr "Entry details"
 msgid "Entry: {entryId}"
 msgstr "Entry: {entryId}"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 msgid "Env"
 msgstr "Env"
@@ -11791,7 +11870,9 @@ msgstr "Env files"
 msgid "Env:"
 msgstr "Env:"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/project-deployments/ProjectDeploymentCard.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment"
 msgstr "Environment"
@@ -12381,6 +12462,7 @@ msgid "failed"
 msgstr "failed"
 
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
 #: src/components/conversation/SessionCard.tsx
@@ -12737,6 +12819,11 @@ msgstr "Failed to send status request"
 #: src/components/assets/editor/changes/useDocChangesWorker.ts
 msgid "Failed to send the changes"
 msgstr "Failed to send the changes"
+
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Failed to send the comments"
+msgstr "Failed to send the comments"
 
 #: src/components/conversation/useConversationSession.ts
 msgid "Failed to send to the session"
@@ -13279,12 +13366,17 @@ msgid "Fix…"
 msgstr "Fix…"
 
 #: src/components/warnings-popover/warnings-popover.tsx
-msgid "Fixed"
-msgstr "Fixed"
+#~ msgid "Fixed"
+#~ msgstr "Fixed"
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
 msgstr "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
+
+#. placeholder {0}: d.fix || d.summary
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Fixed: {0}"
+msgstr "Fixed: {0}"
 
 #: src/components/project-setup/SetupFailureActions.tsx
 msgid "Fixing the setup…"
@@ -13576,6 +13668,10 @@ msgstr "Force Login Org UUID"
 msgid "Force login to a specific organization"
 msgstr "Force login to a specific organization"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Forget"
+msgstr "Forget"
+
 #: src/navigation/record-type-nav.ts
 msgid "Fork"
 msgstr "Fork"
@@ -13663,6 +13759,7 @@ msgid "From git"
 msgstr "From git"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "From the agent"
 msgstr "From the agent"
 
@@ -13673,6 +13770,10 @@ msgstr "From the tag index"
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "From the tag index; the last refresh failed"
 msgstr "From the tag index; the last refresh failed"
+
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "From this agent's credentials"
+msgstr "From this agent's credentials"
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "From this block's own sites list"
@@ -14332,6 +14433,7 @@ msgid "Held by"
 msgstr "Held by"
 
 #: src/components/conversation/conversation-category.ts
+#: src/components/conversation/conversation-category.ts
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/AskForHelpDialog.tsx
@@ -14343,6 +14445,10 @@ msgstr "Help desk"
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Help desk files removed"
 msgstr "Help desk files removed"
+
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Help desk replied"
+msgstr "Help desk replied"
 
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "Help desk unavailable"
@@ -15211,6 +15317,15 @@ msgstr "Initialize git repo"
 msgid "Initializing…"
 msgstr "Initializing…"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Inject"
+msgstr "Inject"
+
+#. placeholder {0}: e.name
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Inject {0} into deployments"
+msgstr "Inject {0} into deployments"
+
 #: src/components/graph-workflows/panels/InjectPanel.tsx
 msgid "Inject ▶"
 msgstr "Inject ▶"
@@ -15766,6 +15881,10 @@ msgstr "It runs again the next time the project opens."
 msgid "IT session · done"
 msgstr "IT session · done"
 
+#: src/components/conversation/it-reply.ts
+msgid "IT session failed"
+msgstr "IT session failed"
+
 #: src/components/automations/AutomationsList.tsx
 msgid "It shows up in Runs as a test."
 msgstr "It shows up in Runs as a test."
@@ -16022,6 +16141,7 @@ msgstr "kind"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
@@ -17910,10 +18030,12 @@ msgid "Misroutes ×{0}: the place answered 404 — that channel is not there any
 msgstr "Misroutes ×{0}: the place answered 404 — that channel is not there any more. Pick another destination."
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "missing"
 msgstr "missing"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Missing"
 msgstr "Missing"
@@ -18096,6 +18218,8 @@ msgid "More"
 msgstr "More"
 
 #: src/components/conversation/AttachmentChip.tsx
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/data-sources/SourceMenu.tsx
 msgid "More actions"
 msgstr "More actions"
@@ -18205,6 +18329,7 @@ msgstr "name"
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
@@ -18770,6 +18895,7 @@ msgid "No access to this repository. Connect GitHub if it's private, or check th
 msgstr "No access to this repository. Connect GitHub if it's private, or check the URL."
 
 #: src/components/assets/editor/changes/useDocChangesWorker.ts
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/notes/useNoteWorker.ts
 #: src/components/terminal/HistoryModal.tsx
@@ -18984,6 +19110,10 @@ msgstr "No color"
 #: src/components/assets/editor/task/TaskComments.tsx
 msgid "No comments yet."
 msgstr "No comments yet."
+
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "No comments yet. Select text and press the wand to ask for a change."
+msgstr "No comments yet. Select text and press the wand to ask for a change."
 
 #: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -19497,6 +19627,7 @@ msgid "No member usage yet."
 msgstr "No member usage yet."
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No members"
 msgstr "No members"
 
@@ -20112,6 +20243,10 @@ msgstr "No usage in this period."
 msgid "No value discovered"
 msgstr "No value discovered"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "No variables yet."
+msgstr "No variables yet."
+
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "No visitor has opened one yet."
 msgstr "No visitor has opened one yet."
@@ -20493,6 +20628,7 @@ msgstr "Not sent yet"
 msgid "not set"
 msgstr "not set"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 msgid "Not set"
 msgstr "Not set"
@@ -21180,6 +21316,7 @@ msgstr "Oops! Page not found"
 
 #: src/components/asset-counters/AssetListView.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -21329,6 +21466,10 @@ msgstr "Open a project to see its data model."
 msgid "Open a project to see its deployments"
 msgstr "Open a project to see its deployments"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Open a project to send these comments."
+msgstr "Open a project to send these comments."
+
 #: src/components/notes/useNoteWorker.ts
 msgid "Open a project to work on this note."
 msgstr "Open a project to work on this note."
@@ -21405,6 +21546,10 @@ msgstr "Open connections"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open Context"
 msgstr "Open Context"
+
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Open conversation"
+msgstr "Open conversation"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Open credential"
@@ -21532,6 +21677,10 @@ msgstr "Open in a new tab"
 #: src/pages/flow-page/app-display-viewer.tsx
 msgid "Open in browser"
 msgstr "Open in browser"
+
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Open in chat"
+msgstr "Open in chat"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
@@ -21942,6 +22091,10 @@ msgstr "Open the source template"
 msgid "Open the spec/plan in the Milkdown editor"
 msgstr "Open the spec/plan in the Milkdown editor"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Open the thread"
+msgstr "Open the thread"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
 msgstr "Open the transcript analysis session"
@@ -22135,6 +22288,7 @@ msgid "Operation failed"
 msgstr "Operation failed"
 
 #: src/components/assets/DependencyChips.tsx
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
@@ -22363,6 +22517,7 @@ msgstr "Overridden"
 msgid "overridden by the project's"
 msgstr "overridden by the project's"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Override"
 msgstr "Override"
@@ -22972,6 +23127,19 @@ msgstr "Pixel Y offset from the top of the full scroll buffer (absRow × cellHei
 msgid "Pixel Y offset from the top of the visible viewport (viewportRow × cellHeight). Used for placing UI elements relative to the current view."
 msgstr "Pixel Y offset from the top of the visible viewport (viewportRow × cellHeight). Used for placing UI elements relative to the current view."
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Placed"
+msgstr "Placed"
+
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "placed on {placedOn} of {total}"
+msgstr "placed on {placedOn} of {total}"
+
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Plain"
+msgstr "Plain"
+
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/hooks/event-summaries.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
@@ -23445,6 +23613,7 @@ msgstr "project"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/discover-page/DiscoverRow.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -23786,6 +23955,11 @@ msgstr "Proves the bot (getMe). Stored write-only."
 msgid "Proves the number on your server. Stored write-only."
 msgstr "Proves the number on your server. Stored write-only."
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "Provided by Flowpad"
+msgstr "Provided by Flowpad"
+
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
@@ -24051,6 +24225,10 @@ msgstr "Python (flow SDK)"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "question"
 msgstr "question"
+
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Questions"
+msgstr "Questions"
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Queue"
@@ -25131,6 +25309,10 @@ msgstr "Reply in thread"
 msgid "Reply to sender…"
 msgstr "Reply to sender…"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Reply…"
+msgstr "Reply…"
+
 #. placeholder {0}: replyTo.sender
 #: src/components/conversation/MessageComposer.tsx
 msgid "Replying in the thread of {0}"
@@ -25310,6 +25492,7 @@ msgstr "reset"
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -25382,10 +25565,12 @@ msgstr "Resize navigator"
 msgid "Resize the From column"
 msgstr "Resize the From column"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "Resolve"
 msgstr "Resolve"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/help/MyHelpRequests.tsx
 #: src/components/items/item-state.ts
 msgid "Resolved"
@@ -26345,7 +26530,9 @@ msgstr "Sandbox upgraded"
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentFunding.tsx
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
@@ -26964,6 +27151,11 @@ msgstr "Searching inside sessions…"
 msgid "Searching…"
 msgstr "Searching…"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Secret"
+msgstr "Secret"
+
 #: src/components/credentials/VariableDetails.tsx
 msgid "Secret (mask value)"
 msgstr "Secret (mask value)"
@@ -27000,7 +27192,6 @@ msgstr "Secret token"
 
 #: src/components/account/account-info.tsx
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Secrets"
 msgstr "Secrets"
 
@@ -27012,6 +27203,8 @@ msgstr "Secrets enabled"
 msgid "secured transfer"
 msgstr "secured transfer"
 
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secured transfer"
 msgstr "Secured transfer"
@@ -27319,6 +27512,10 @@ msgstr "Send this link to anyone you want to give access. It is shown only once.
 msgid "Send this to the person you support — they run it in their terminal:"
 msgstr "Send this to the person you support — they run it in their terminal:"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Send to agent"
+msgstr "Send to agent"
+
 #: src/components/conversation/MessageFormCard.tsx
 msgid "Send updated answers"
 msgstr "Send updated answers"
@@ -27359,6 +27556,10 @@ msgstr "sending…"
 msgid "Sending…"
 msgstr "Sending…"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Sends every ready comment on this doc as one turn."
+msgstr "Sends every ready comment on this doc as one turn."
+
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Sends replies"
 msgstr "Sends replies"
@@ -27368,6 +27569,7 @@ msgid "Sends your answers to {otherName} as a reply."
 msgstr "Sends your answers to {otherName} as a reply."
 
 #: src/components/assets/editor/changes/useDocChanges.tsx
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Sent"
@@ -27384,6 +27586,10 @@ msgstr "Sent along"
 #: src/components/conversation/MessageFormCard.tsx
 msgid "Sent as a new reply; the first stays in the thread."
 msgstr "Sent as a new reply; the first stays in the thread."
+
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "Sent to the help desk"
+msgstr "Sent to the help desk"
 
 #: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Sent to the sharer"
@@ -27648,10 +27854,13 @@ msgid "sessions: {sessions}"
 msgstr "sessions: {sessions}"
 
 #: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "set"
 msgstr "set"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 msgid "Set"
@@ -27971,6 +28180,7 @@ msgstr "Share project"
 msgid "Share sandbox"
 msgstr "Share sandbox"
 
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Share secrets"
 msgstr "Share secrets"
@@ -28275,6 +28485,10 @@ msgstr "Show in {0}"
 msgid "Show in Display"
 msgstr "Show in Display"
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "Show in doc"
+msgstr "Show in doc"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "Show in folder (selects file for drag-and-drop)"
@@ -28450,6 +28664,10 @@ msgstr "Showing the raw execution trace — run analysis to add goals & verdict.
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"
 msgstr "Shown at approval"
+
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Shown once the agent is published."
+msgstr "Shown once the agent is published."
 
 #: src/components/ui/sidebar.tsx
 msgid "Sidebar"
@@ -29030,6 +29248,7 @@ msgstr "Some of the selected cannot be removed from the project"
 msgid "Some things need attention."
 msgstr "Some things need attention."
 
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
@@ -29394,6 +29613,10 @@ msgstr "Start or restart"
 msgid "Start over"
 msgstr "Start over"
 
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
+msgid "Start review"
+msgstr "Start review"
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Start room"
 msgstr "Start room"
@@ -29519,6 +29742,7 @@ msgstr "status"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/asset-counters/StatChips.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
 #: src/components/conversation/task-it.tsx
@@ -30589,6 +30813,10 @@ msgstr "The deployment failed."
 msgid "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have an agent explain it."
 
+#: src/components/warnings-popover/warnings-popover.tsx
+msgid "The diagnosis could not run — you can report it from the conversation"
+msgstr "The diagnosis could not run — you can report it from the conversation"
+
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be put on the hub the last time it was published."
 msgstr "The document could not be put on the hub the last time it was published."
@@ -30900,6 +31128,10 @@ msgstr "The provider took the key ({0})"
 #: src/components/rag/RagView.tsx
 msgid "The query failed"
 msgstr "The query failed"
+
+#: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+msgid "The quoted text is no longer in the doc."
+msgstr "The quoted text is no longer in the doc."
 
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/conversation/ShareReplyCard.tsx
@@ -31358,6 +31590,11 @@ msgstr "This computer · not in the cloud"
 msgid "This computer (fetches its own)"
 msgstr "This computer (fetches its own)"
 
+#. placeholder {0}: entry.name
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "This computer holds no value for {0}"
+msgstr "This computer holds no value for {0}"
+
 #: src/components/credentials-view/SecretVaultPanel.tsx
 msgid "This computer is not signed in to the secret manager yet — Set up signs in, then fetches."
 msgstr "This computer is not signed in to the secret manager yet — Set up signs in, then fetches."
@@ -31419,6 +31656,7 @@ msgid "This credential no longer exists."
 msgstr "This credential no longer exists."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "This deployment"
 msgstr "This deployment"
 
@@ -32786,14 +33024,13 @@ msgid "Unit"
 msgstr "Unit"
 
 #: src/components/assets/DependencyChips.tsx
-#: src/components/conversation/FlowMessageBubble.tsx
 msgid "unknown"
 msgstr "unknown"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "Unknown"
-msgstr "Unknown"
+#~ msgid "Unknown"
+#~ msgstr "Unknown"
 
 #: src/components/graph-view/ui/HeatLegend.tsx
 msgid "Unknown · {unknown}"
@@ -33241,6 +33478,7 @@ msgstr "Use Google Vertex AI as the backend"
 msgid "Use letters, digits, '.', '_', '~' or '-', starting with a letter or digit."
 msgstr "Use letters, digits, '.', '_', '~' or '-', starting with a letter or digit."
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Use mine"
@@ -33412,6 +33650,17 @@ msgstr "Value for {0}"
 msgid "Value for {key}"
 msgstr "Value for {key}"
 
+#. placeholder {0}: e.name
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "Value of {0}"
+msgstr "Value of {0}"
+
+#. placeholder {0}: row.name
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "Value of {0} on this deployment"
+msgstr "Value of {0} on this deployment"
+
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Value shared"
 msgstr "Value shared"
@@ -33462,12 +33711,17 @@ msgid "Values stay on this machine — in a .env.local file or the encrypted vau
 msgstr "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
-msgid "Values the hub holds"
-msgstr "Values the hub holds"
+#~ msgid "Values the hub holds"
+#~ msgstr "Values the hub holds"
 
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Variable name"
 msgstr "Variable name"
+
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "VARIABLE_NAME"
+msgstr "VARIABLE_NAME"
 
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialDialog.tsx
@@ -33766,8 +34020,8 @@ msgid "Waiting for keychain approval…"
 msgstr "Waiting for keychain approval…"
 
 #: src/components/conversation/conversation-category.ts
-msgid "Waiting for pickup"
-msgstr "Waiting for pickup"
+#~ msgid "Waiting for pickup"
+#~ msgstr "Waiting for pickup"
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Waiting for sign-in"
@@ -33986,6 +34240,10 @@ msgstr "What do you want to do?"
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
 msgstr "What do you want to work on"
+
+#: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
+msgid "What every deployment of this agent gets. Only the variables you approve with Inject are placed on its machines. A secret's value is kept by Flowpad Cloud and is never shown again."
+msgstr "What every deployment of this agent gets. Only the variables you approve with Inject are placed on its machines. A secret's value is kept by Flowpad Cloud and is never shown again."
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "What Flowpad found when it checked this project's Git setup."
@@ -34284,8 +34542,8 @@ msgid "Which set of values the machine reads. It joins the hub you are signed in
 msgstr "Which set of values the machine reads. It joins the hub you are signed in to either way."
 
 #: src/components/terminal/interactive-terminal/useChainSession.tsx
-msgid "Which worker reviews it?"
-msgstr "Which worker reviews it?"
+#~ msgid "Which worker reviews it?"
+#~ msgstr "Which worker reviews it?"
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "While it is offline, the hub answers 503 and your server retries — nothing is lost and nothing is stored. Messages from other senders keep flowing."
@@ -34439,6 +34697,7 @@ msgstr "Work on this note"
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/terminal/interactive-terminal/useChainSession.tsx
 #: src/components/workers/WorkerTypeSelect.tsx
 #: src/components/workers/WorkerTypeSelect.tsx
 #: src/types/ViewType.ts
@@ -34616,10 +34875,9 @@ msgstr "Writes a row for this asset into the project's manifest (agentic-assets/
 msgid "Writing"
 msgstr "Writing"
 
-#. placeholder {0}: when(row.written)
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
-msgid "written {0}"
-msgstr "written {0}"
+#~ msgid "written {0}"
+#~ msgstr "written {0}"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Written down, not started. Launching boots it and sets the project up."

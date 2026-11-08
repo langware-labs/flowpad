@@ -35,15 +35,20 @@ vi.mock('sonner', () => ({
   Toaster: () => null,
 }));
 
+const openDock = vi.fn();
 vi.mock('@src/navigation', () => ({
-  useDockNavigation: () => ({ navigation: { openTab: vi.fn(), openDock: vi.fn() } }),
+  useDockNavigation: () => ({ navigation: { openTab: vi.fn(), openDock } }),
 }));
 
 const diagnoseAndFix = vi.fn(async () => {});
-vi.mock('@src/notifications/diagnose/diagnose-and-fix', () => ({ diagnoseAndFix, markDiagnosedAlert: vi.fn() }));
+vi.mock('@src/notifications/diagnose/diagnose-and-fix', () => ({ diagnoseAndFix }));
+
+// The diagnosis conversation's state, as `help-request-diagnosis` answers it.
+const helpRequestDiagnosis = vi.fn();
+vi.mock('@sdk', async (orig) => ({ ...(await orig<object>()), helpRequestDiagnosis }));
 
 const { notify } = await import('@src/notifications/notify');
-const { useAlertStore } = await import('@src/notifications/alerts-store');
+const { useAlertStore, useDiagnosisLinks } = await import('@src/notifications/alerts-store');
 const { WarningsPopover } = await import('@src/components/warnings-popover/warnings-popover');
 
 /** The popover row (alert or derived warning) that displays `text`. */
@@ -57,7 +62,9 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
   beforeEach(() => {
     dataContext.bootstrapInfo = null;
     useAlertStore.setState({ alerts: [] });
+    useDiagnosisLinks.setState({ links: {} });
     diagnoseAndFix.mockClear();
+    openDock.mockClear();
   });
 
   afterEach(() => {
@@ -94,27 +101,55 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     await screen.findAllByTestId('warnings-popover-alert');
     await user.click(within(rowFor('Slow query')).getByTestId('warnings-popover-diagnose-fix'));
 
-    // One click, no window: the private Diagnose & fix request, seeded with the warning; the alert id
-    // lets a repair mark this entry fixed.
+    // One click, no window, no navigation: the private Diagnose & fix request, seeded with the warning; the
+    // entry's key links it to the conversation, whose status the entry then shows.
     expect(diagnoseAndFix).toHaveBeenCalledWith('Slow query\ntook 9s', 'warning', 'w');
   });
 
-  it('a repaired alert shows Fixed with what changed, and Done removes it', async () => {
+  it('a diagnosed entry stays: its status, Dismiss, a disabled Diagnose & fix and Open conversation', async () => {
     const user = userEvent.setup();
-
-    notify.error({ id: 'e', title: 'Indexing failed: chart a', message: 'a/CHART.md: bad YAML' });
-    useAlertStore.getState().markFixed('e', 'Moved the stray line into the description.');
+    helpRequestDiagnosis.mockResolvedValue({
+      diagnosing: false,
+      diagnosis: { status: 'needs_action', summary: 'Your hub session expired.' },
+      reportable: false,
+      reported: false,
+      desk: '',
+      pass_on: '',
+    });
+    notify.error({ id: 'e', title: 'Cloud Request Failed', message: '403' });
+    useDiagnosisLinks.getState().link('e', 'conv-1');
 
     render(<WarningsPopover />);
     await user.click(await screen.findByTestId('warnings-popover-trigger'));
-    const row = rowFor('Indexing failed: chart a');
+    const row = rowFor('Cloud Request Failed');
 
-    expect(within(row).getByTestId('warnings-popover-fixed')).toBeTruthy();
-    expect(within(row).getByText('Moved the stray line into the description.')).toBeTruthy();
-    expect(within(row).queryByTestId('warnings-popover-diagnose-fix')).toBeNull();
-    await user.click(within(row).getByTestId('warnings-popover-done'));
-
+    const status = await within(row).findByText('Diagnosed: Your hub session expired.');
+    expect(status.closest('[data-status]')?.getAttribute('data-status')).toBe('diagnosed');
+    expect((within(row).getByTestId('warnings-popover-diagnose-fix') as HTMLButtonElement).disabled).toBe(true);
+    await user.click(within(row).getByTestId('warnings-popover-open-conversation'));
+    expect(String(openDock.mock.calls[0][0])).toContain('conv-1');
+    await user.click(within(row).getByTestId('warnings-popover-dismiss-button'));
     expect(useAlertStore.getState().alerts).toEqual([]);
+  });
+
+  it('a reported entry the help desk answered says so', async () => {
+    const user = userEvent.setup();
+    helpRequestDiagnosis.mockResolvedValue({
+      diagnosing: false,
+      diagnosis: { status: 'unrecognized', summary: 'Unclear.' },
+      reportable: false,
+      reported: true,
+      replied: true,
+      desk: '',
+      pass_on: '',
+    });
+    notify.error({ id: 'e', title: 'Cloud Request Failed', message: '403' });
+    useDiagnosisLinks.getState().link('e', 'conv-1');
+
+    render(<WarningsPopover />);
+    await user.click(await screen.findByTestId('warnings-popover-trigger'));
+    const status = await within(rowFor('Cloud Request Failed')).findByText('Help desk replied');
+    expect(status.closest('[data-status]')?.getAttribute('data-status')).toBe('replied');
   });
 
   it('offers it on a derived warning, which carries no notification at all', async () => {
@@ -128,6 +163,6 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
     const row = rowFor('No harness found');
     await user.click(within(row).getByTestId('warnings-popover-warning-diagnose-fix'));
 
-    expect(diagnoseAndFix).toHaveBeenCalledWith(expect.stringContaining('No harness found'), 'warning', undefined);
+    expect(diagnoseAndFix).toHaveBeenCalledWith(expect.stringContaining('No harness found'), 'warning', expect.any(String));
   });
 });

@@ -31,8 +31,8 @@ export function CategoryChips({ facets, className }: { facets: ConversationFacet
 
 /** Just a ticket's state chip (waiting / picked / closed) — for surfaces that already say "support". */
 export function TicketStateChip({ ticket, className }: { ticket: TicketFacet | null | undefined; className?: string }) {
-  if (!ticket) return null;
-  const c = ticketChip(ticket);
+  const c = ticket ? ticketChip(ticket) : null;
+  if (!c) return null;
   return (
     <Badge
       variant="outline"

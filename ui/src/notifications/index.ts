@@ -8,7 +8,7 @@ export { initNotificationIngest } from './ingest';
 export { NotificationFeed } from './feed';
 export { registerCommand, runCommand, runAction, registerNavigate, navigateTo } from './commands';
 export { useBadgeStore } from './store';
-export { useAlertStore } from './alerts-store';
+export { useAlertStore, useDiagnosisLinks } from './alerts-store';
 export type {
   NotificationData,
   NotificationInput,

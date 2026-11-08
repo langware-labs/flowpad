@@ -34,6 +34,21 @@ CHAT_API = ChannelSpec(
     transport=ChannelTransport.FLOWPAD,
 )
 
+#: A diagnosis Flowpad runs for a warning or an error (Diagnose & fix): one channel for the diagnosis and, once
+#: reported, the help desk answering in the same conversation. Flowpad's own transport; it wears a chip so the
+#: stream inbox can be narrowed to it. ``home``: a desk's help desk source adopts its copy like any native chat.
+DIAGNOSIS = ChannelSpec(
+    name="diagnosis",
+    title="Diagnosis",
+    icon_name="Stethoscope",
+    home=True,
+    transport=ChannelTransport.FLOWPAD,
+    accepts_attachments=True,
+    replies=True,
+    quotes=True,
+    needs_cloud_login=True,
+)
+
 #: The channel every conversation is born with.
 HOME_CHANNEL = FLOWPAD.name
 
@@ -48,6 +63,8 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
         return FLOWPAD
     if key == CHAT_API.name:
         return CHAT_API
+    if key == DIAGNOSIS.name:
+        return DIAGNOSIS
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415 — builtin must not import drivers at load
     from flow_sdk.sources.protocols import Reacting, actions_of  # noqa: PLC0415
 
@@ -68,4 +85,4 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
     )
 
 
-__all__ = ["CHAT_API", "HOME_CHANNEL", "channel_spec"]
+__all__ = ["CHAT_API", "DIAGNOSIS", "HOME_CHANNEL", "channel_spec"]

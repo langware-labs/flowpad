@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DataSource, type Conversation } from '@sdk';
@@ -12,6 +13,7 @@ import { cn } from '@src/lib/utils';
 import { COMPACT } from './CategoryChips';
 import { deskChipLabel } from './conversation-category';
 import { humanizeType } from '@src/utils/humanize';
+import { DIAGNOSIS_CHANNEL } from '@src/components/stream-inbox-view/channel-owner';
 
 /**
  * ONE resolver from a message's channel to its glyph + label, and the compact
@@ -67,6 +69,7 @@ export function sourceForOrigin(
 }
 
 export function useChannelAttribution() {
+  const { t } = useLingui();
   const { specFor } = useSourceSpecs();
   const { data: sources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
 
@@ -101,6 +104,8 @@ export function useChannelAttribution() {
         (byChannel ? undefined : sourceSpec?.group || sourceSpec?.title) ||
         kindSpec?.group ||
         kindSpec?.title ||
+        // Flowpad's own Diagnosis channel is named in the person's language, like its 🩺 mark.
+        (kind === DIAGNOSIS_CHANNEL ? t`Diagnosis` : undefined) ||
         // A channel no source delivers (the hub's Chat API thread) is named by the conversation's own spec.
         (channelSpec?.name === kind ? channelSpec.title : undefined) ||
         channelLabel(kind);
@@ -111,7 +116,7 @@ export function useChannelAttribution() {
       const { Base, Badge } = sourceGlyphs(spec, kind);
       return { icon: Base, badge: Badge, label };
     },
-    [sources, specFor],
+    [sources, specFor, t],
   );
 
   /** A whole conversation's channel — what its header names it by, before any message is read. */

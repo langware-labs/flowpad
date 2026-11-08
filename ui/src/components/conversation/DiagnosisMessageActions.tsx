@@ -5,7 +5,6 @@ import { type HelpRequestDiagnosis, helpRequestDiagnosis, helpRequestReport } fr
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-import { markDiagnosedAlert } from '@src/notifications/diagnose/diagnose-and-fix';
 
 /**
  * Under a diagnosis message (its text is the bottom line): the ONE action its cause calls for -- Report it,
@@ -21,10 +20,7 @@ export function DiagnosisMessageActions({ conversationId, isMine }: { conversati
   const load = useCallback(() => {
     if (!conversationId) return;
     void helpRequestDiagnosis(conversationId)
-      .then((s) => {
-        setState(s);
-        if (s.diagnosis?.status === 'fixed') markDiagnosedAlert(conversationId, s.diagnosis.fix || s.diagnosis.summary);
-      })
+      .then(setState)
       .catch(() => setState(null));
   }, [conversationId]);
   useEffect(load, [load]);

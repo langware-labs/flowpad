@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { type HelpRequestDiagnosis, helpRequestDiagnosis, UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { openWikiModal } from '@src/components/wiki-tip';
@@ -7,7 +7,14 @@ import { useDockNavigation } from '@src/navigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useWarnings } from '@sdk/react/hooks';
 import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-setup-incomplete-warning';
-import { diagnoseAndFix, notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
+import {
+  diagnoseAndFix,
+  notificationText,
+  runAction,
+  runCommand,
+  useAlertStore,
+  useDiagnosisLinks,
+} from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
 import type { DiagnoseKind } from '@src/notifications/diagnose/diagnose-and-fix';
 import { ErrorDetailsButton } from '@src/notifications/ErrorDetailsDialog';
@@ -21,12 +28,13 @@ import {
   FolderX,
   Info,
   Key,
+  Loader2,
   Settings,
   Wifi,
   WifiOff,
   X,
 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { create } from 'zustand';
 
 // Map icon names to Lucide components
@@ -131,13 +139,125 @@ const useDismissedWarnings = create<{ keys: ReadonlyMap<string, string>; dismiss
   }),
 );
 
+/** The diagnosis started from an entry, as one line — the same conversation, seen from the warning. It reads the
+ *  conversation's own state (``help-request-diagnosis``); while the diagnosis runs it looks again now and then,
+ *  like the request line in the conversation does. */
+function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
+  const { t } = useLingui();
+  const [state, setState] = useState<HelpRequestDiagnosis | null>(null);
+  useEffect(() => {
+    let live = true;
+    let timer: number | undefined;
+    const load = () =>
+      helpRequestDiagnosis(conversationId)
+        .then((s) => {
+          if (!live) return;
+          setState(s);
+          if (s.diagnosing) timer = window.setTimeout(load, 3000);
+        })
+        .catch(() => undefined);
+    void load();
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [conversationId]);
+
+  const d = state?.diagnosis;
+  let status: 'diagnosing' | 'replied' | 'reported' | 'fixed' | 'report' | 'diagnosed' | 'failed';
+  let text: string;
+  if (!state || state.diagnosing) {
+    status = 'diagnosing';
+    text = t`Diagnosing… you'll get a message when it's done`;
+  } else if (state.reported && state.replied) {
+    status = 'replied';
+    text = t`Help desk replied`;
+  } else if (state.reported) {
+    status = 'reported';
+    text = t`Sent to the help desk`;
+  } else if (!d) {
+    status = 'failed';
+    text = t`The diagnosis could not run — you can report it from the conversation`;
+  } else if (d.status === 'fixed') {
+    status = 'fixed';
+    text = t`Fixed: ${d.fix || d.summary}`;
+  } else if (state.reportable) {
+    status = 'report';
+    text = t`Couldn't fix it here — report it from the conversation`;
+  } else {
+    status = 'diagnosed';
+    text = t`Diagnosed: ${d.summary}`;
+  }
+  return (
+    <p
+      className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/60 px-2 py-1 text-xs text-foreground/90"
+      data-testid="warnings-popover-diagnosis-status"
+      data-status={status}
+    >
+      {status === 'diagnosing' ? (
+        <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin" aria-hidden />
+      ) : (
+        <Check className="mt-0.5 h-3 w-3 shrink-0 text-green-500" aria-hidden />
+      )}
+      <span className="min-w-0">{text}</span>
+    </p>
+  );
+}
+
+const PRIMARY_BTN = 'rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90';
+const MUTED_BTN = 'rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80';
+
+/** An entry's Diagnose & fix: enabled until a diagnosis was started from it; then disabled, with the way to its
+ *  conversation beside it. Dismiss stays on every entry, always — it is the only way an entry leaves. */
+function DiagnoseButtons({
+  conversationId,
+  onDiagnose,
+  onDismiss,
+  testId,
+}: {
+  conversationId: string | undefined;
+  onDiagnose: () => void;
+  onDismiss: () => void;
+  testId: string;
+}) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onDiagnose}
+        disabled={!!conversationId}
+        title={conversationId ? t`Already diagnosed — see the conversation` : undefined}
+        className={`${PRIMARY_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
+        data-testid={testId}
+      >
+        <Trans>Diagnose &amp; fix</Trans>
+      </button>
+      {conversationId && (
+        <button
+          type="button"
+          onClick={() => navigation.openDock(DockPointer.forConversation(conversationId))}
+          className={MUTED_BTN}
+          data-testid="warnings-popover-open-conversation"
+        >
+          <Trans>Open conversation</Trans>
+        </button>
+      )}
+      <button type="button" onClick={onDismiss} className={MUTED_BTN} data-testid="warnings-popover-dismiss-button">
+        <Trans>Dismiss</Trans>
+      </button>
+    </>
+  );
+}
+
 interface WarningItemProps {
   warning: UserWarning;
   onClick: () => void;
   /** The warning's own button (`warning.action`), already wired to close the popover. */
   onAction: () => void;
-  /** Diagnose & fix — closes the popover: the conversation it opens is what comes next. */
-  onDiagnose: (detail: string, kind: DiagnoseKind, alertId?: string) => void;
+  /** Diagnose & fix — starts it in place; the entry then shows its status. */
+  onDiagnose: (detail: string, kind: DiagnoseKind, entryKey: string) => void;
   onDismiss: () => void;
 }
 
@@ -153,6 +273,7 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
   const detail = warning.description ? `${warning.message}\n${warning.description}` : warning.message;
+  const conversationId = useDiagnosisLinks((s) => s.links[warning.id]);
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-warning">
@@ -181,15 +302,18 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
           )}
           {/* Everything in this popover is a warning by construction, so a derived
               condition (cloud down, no harness) is diagnosable just like a logged one. */}
-          <button
-            type="button"
-            onClick={() => onDiagnose(detail, 'warning')}
-            className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-            data-testid="warnings-popover-warning-diagnose-fix"
-          >
-            <Trans>Diagnose &amp; fix</Trans>
-          </button>
+          <DiagnoseButtons
+            conversationId={conversationId}
+            onDiagnose={() => onDiagnose(detail, 'warning', warning.id)}
+            onDismiss={onDismiss}
+            testId="warnings-popover-warning-diagnose-fix"
+          />
         </div>
+        {conversationId && (
+          <div className="ms-10">
+            <DiagnosisStatusLine conversationId={conversationId} />
+          </div>
+        )}
       </div>
       <div className="flex shrink-0 items-start gap-0.5">
         <CopyButton text={detail} />
@@ -227,7 +351,8 @@ function AlertItem({
   const alertTitle = alert.title;
   const colors = colorMap[ALERT_COLOR[alert.level]] || colorMap.yellow;
   const Icon = alert.level === 'error' ? AlertCircle : AlertTriangle;
-  const text = alert.fixed?.summary ?? alert.message;
+  const text = alert.message;
+  const conversationId = useDiagnosisLinks((s) => s.links[alert.id]);
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-alert">
@@ -245,59 +370,27 @@ function AlertItem({
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">{alert.title}</p>
         {text && <p className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{text}</p>}
-        {alert.fixed ? (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span
-              className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-medium text-green-400"
-              data-testid="warnings-popover-fixed"
-            >
-              ✓ <Trans>Fixed</Trans>
-            </span>
+        {conversationId && <DiagnosisStatusLine conversationId={conversationId} />}
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(alert.actions ?? []).map((action, i) => (
             <button
+              key={i}
               type="button"
-              onClick={onDismiss}
-              className="rounded bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700"
-              data-testid="warnings-popover-done"
+              onClick={() => runAction(action, alert.id)}
+              className={i === 0 ? PRIMARY_BTN : MUTED_BTN}
             >
-              <Trans>Done — remove</Trans>
+              {action.label}
             </button>
-          </div>
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {(alert.actions ?? []).map((action, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => runAction(action, alert.id)}
-                className={`rounded px-2 py-1 text-xs font-medium ${
-                  i === 0
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                }`}
-              >
-                {action.label}
-              </button>
-            ))}
-            <ErrorDetailsButton data={alert} />
-            {/* The log holds only warnings and errors, both diagnosable. */}
-            <button
-              type="button"
-              onClick={() => onDiagnose(notificationText(alert), alert.level as DiagnoseKind, alert.id)}
-              className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-              data-testid="warnings-popover-diagnose-fix"
-            >
-              <Trans>Diagnose &amp; fix</Trans>
-            </button>
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
-              data-testid="warnings-popover-dismiss-button"
-            >
-              <Trans>Dismiss</Trans>
-            </button>
-          </div>
-        )}
+          ))}
+          <ErrorDetailsButton data={alert} />
+          {/* The log holds only warnings and errors, both diagnosable. */}
+          <DiagnoseButtons
+            conversationId={conversationId}
+            onDiagnose={() => onDiagnose(notificationText(alert), alert.level as DiagnoseKind, alert.id)}
+            onDismiss={onDismiss}
+            testId="warnings-popover-diagnose-fix"
+          />
+        </div>
       </div>
       <div className="flex shrink-0 items-start gap-0.5">
         <CopyButton text={notificationText(alert)} />
@@ -337,9 +430,9 @@ export function WarningsPopover() {
   }, [dismissWarnings, warnings, dismissAllAlerts]);
   const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
-  const diagnose = useCallback((detail: string, kind: DiagnoseKind, alertId?: string) => {
-    setOpen(false);
-    void diagnoseAndFix(detail, kind, alertId);
+  // Starts in place: no navigation, the popover stays open and the entry shows the diagnosis status.
+  const diagnose = useCallback((detail: string, kind: DiagnoseKind, entryKey: string) => {
+    void diagnoseAndFix(detail, kind, entryKey);
   }, []);
 
   const handleOpenChange = useCallback((isOpen: boolean) => {

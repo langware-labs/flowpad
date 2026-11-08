@@ -68,6 +68,7 @@ import { AttachedChannelsBar, ConnectChannelPrompt, useAttachedChannels } from '
 import { ChannelAttentionBar } from './ChannelAttentionBar';
 import {
   attentionAmong,
+  BUILT_IN_CHANNELS,
   channelKeyOf,
   channelsOwnerFor,
   type ConversationScope,
@@ -95,6 +96,7 @@ import { ProjectUploadMessageButton } from '@src/components/project-home/Project
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
 import { ConversationAttachmentsButton } from './ConversationAttachmentsButton';
+import { personName } from '@src/components/conversation/participant-display';
 
 /** Row actions on this machine's own state (read marks, archive): the hub page offers none. */
 const PER_MACHINE_ROW_ACTIONS = new Set(['toggle-read', 'archive', 'unarchive']);
@@ -214,7 +216,7 @@ interface ConversationListRowProps {
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
   /** Set while the list is narrowed to some channels: does this message's source pass? */
-  channelMatch?: (message: FlowMessage) => boolean;
+  channelMatch?: (message: FlowMessage, conversation: Conversation) => boolean;
   /** Set while a header column filter is engaged. */
   columnFilter?: ColumnFilter;
   /** The list resolves attribution once and hands each row its answer. */
@@ -319,7 +321,12 @@ export const ConversationListRow = memo(function ConversationListRow({
   const deskMsg = [latestMessage, firstMessage].find((m) => m?.origin?.kind === 'helpdesk');
   const attributed = deskMsg ?? latestMessage;
   // A thread the hub writes (a Chat API exchange) carries no per-message origin: the conversation's channel names it.
-  const attribution = attributed?.origin?.kind
+  // The asker's own ticket is not: a Diagnosis reported to a help desk reads as the help desk (its kind chip),
+  // not as the channel it started on.
+  const asksTicket = facets.kind === 'helpdesk' && facets.ticket?.perspective === 'requester' && !deskMsg;
+  const attribution = asksTicket
+    ? null
+    : attributed?.origin?.kind
     ? attributionFor(attributed.origin, attributed.origin_local, conv.channel_spec)
     : conv.channel
       ? attributionFor({ kind: conv.channel, namespace: '', key: '', url: null }, null, conv.channel_spec)
@@ -354,12 +361,12 @@ export const ConversationListRow = memo(function ConversationListRow({
   let isHidden = inLoadingState;
   // The channel filter narrows on the latest message's source; a row whose
   // message is not loaded yet cannot claim a channel, so it waits hidden.
-  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage);
+  if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage, conv);
 
   // Gmail-style sender column: comma-joined names of everyone who has
   // participated in the thread, with the latest sender first so the most
   // recent author is the lead name. Deduped case-insensitively.
-  // Falls back to ``Unknown`` when neither the latest message nor any
+  // Falls back to ``No members`` when neither the latest message nor any
   // participant has a name; invitation rows always render the canonical
   // ``Invitation`` placeholder so the violet mail-plus icon reads cleanly.
   // MUST run before the `isHidden` early return so the hook order stays
@@ -392,14 +399,20 @@ export const ConversationListRow = memo(function ConversationListRow({
       for (const p of conv.members ?? []) {
         const email = (p?.email || '').trim().toLowerCase();
         pushName(
-          p?.name || (p?.email ? p.email.split('@')[0] : ''),
+          personName(p),
           isViewer(p?.user_id, viewer) || (!!myEmail && email === myEmail),
         );
       }
     }
     const names = [...others, ...own];
-    return names.length > 0 ? names : [t`Unknown`];
+    if (names.length > 0) return names;
+    // A conversation only the viewer is in (a private Diagnosis, a note to self) is theirs: name them, as the
+    // conversation itself does, rather than "Unknown".
+    const self = (currentUser?.name || cloudUser?.name || myEmail.split('@')[0] || '').trim();
+    return [self || t`No members`];
   }, [
+    currentUser?.name,
+    cloudUser?.name,
     isInvitationRow,
     firstMessage,
     latestMessage,
@@ -735,7 +748,9 @@ export function StreamInboxView({
   const channelMatch = useMemo(
     () =>
       channelFilter.size
-        ? (m: FlowMessage) => {
+        ? (m: FlowMessage, conv: Conversation) => {
+            // A built-in channel (Diagnosis) is the conversation's own; a source's is its message's.
+            if (conv.channel && channelFilter.has(conv.channel)) return true;
             const source = sourceForOrigin(ownerChannels, m.origin, m.origin_local);
             return !!source && channelFilter.has(channelKeyOf(source));
           }
@@ -862,11 +877,14 @@ export function StreamInboxView({
         : [],
     [ownerChannels, channelFilter],
   );
-  const pickedKey = [...pickedSources].sort().join(','); // a refreshed channel list with the same picks keeps the scope
+  const pickedChannels = useMemo(() => BUILT_IN_CHANNELS.filter((c) => channelFilter.has(c)), [channelFilter]);
+  // a refreshed channel list with the same picks keeps the scope
+  const pickedKey = [...pickedSources].sort().join(',') + '|' + pickedChannels.join(',');
   const scope = useMemo<ConversationScope | null>(() => {
     if (sourceId) return { sourceId };
     if (!channelsOwner) return null;
-    return pickedSources.length ? { owner: channelsOwner, sourceIds: pickedSources } : { owner: channelsOwner };
+    if (!pickedSources.length && !pickedChannels.length) return { owner: channelsOwner };
+    return { owner: channelsOwner, sourceIds: pickedSources, channels: pickedChannels };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's and the picks' string forms
   }, [ownerKey, sourceId, pickedKey]);
   const request = useMemo(() => {

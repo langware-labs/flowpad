@@ -21,29 +21,53 @@ export function contactFromParticipant(row: {
   return { userId, email, name };
 }
 
-export function participantLabel(participant: ConversationParticipant | null | undefined): string {
-  return participant?.name?.trim() || participant?.email?.trim() || 'unknown';
+/** Same cap as the hub's ``NAME_FROM_EMAIL_MAX``. */
+const NAME_FROM_EMAIL_MAX = 20;
+
+/** ``john.doe@x`` -> ``John Doe``, capped — mirrors the hub's ``name_from_email``. */
+export function nameFromEmail(email: string | null | undefined): string {
+  const local = (email ?? '').trim().split('@')[0] ?? '';
+  return local
+    .split(/[._+-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
+    .slice(0, NAME_FROM_EMAIL_MAX)
+    .trim();
 }
 
-/** The second line under a person's name in a list: their email, when a name
- *  is the label (else the email IS the label) and an email is known. The hub
- *  never discloses another member's email, so a hub-only contact has none. */
+/** The one name builder for a person: never empty, never "unknown", never an
+ *  email. A real name, else a short name from the email, else a short id. */
+export function personName(
+  person:
+    | { name?: string | null; email?: string | null; user_id?: string | null; id?: string | null }
+    | null
+    | undefined,
+): string {
+  const name = person?.name?.trim();
+  if (name && !name.includes('@')) return name;
+  const fromEmail = nameFromEmail(person?.email || (name ?? ''));
+  if (fromEmail) return fromEmail;
+  const id = (person?.user_id || person?.id || '').trim();
+  return id ? `User ${id.slice(0, 6)}` : 'Guest';
+}
+
+export function participantLabel(participant: ConversationParticipant | null | undefined): string {
+  return personName(participant);
+}
+
+/** The second line under a person's name in a list: their email, when known.
+ *  The hub never discloses another member's email, so a hub-only contact has none. */
 export function participantSubtitle(
   participant: { name?: string | null; email?: string | null } | null | undefined,
 ): string | null {
-  const name = participant?.name?.trim();
-  const email = participant?.email?.trim();
-  return name && email ? email : null;
+  return participant?.email?.trim() || null;
 }
 
 /** Name-only display — never the full email. Falls back to the email's local
  *  part (before @) so compact surfaces show a name-ish token, not an address. */
 export function participantName(participant: ConversationParticipant | null | undefined): string {
-  const name = participant?.name?.trim();
-  if (name) return name;
-  const email = participant?.email?.trim();
-  if (email) return email.split('@')[0] || email;
-  return 'unknown';
+  return personName(participant);
 }
 
 /** True when a participant row is the given user — matched by hub ``user_id``
@@ -78,8 +102,10 @@ export function participantLabelByUserId(
  *  loaded) means the local roster is stale or, in the worst case, a spoof
  *  attempt the hub should have blocked. Reserved for the genuine unknown
  *  case; legitimate gaps (loading roster, departed member, cross-instance
- *  bundle import) fall back through the tiered chain first. */
-export const UNRESOLVED_SENDER_LABEL = '⚠ unknown sender';
+ *  bundle import) fall back through the tiered chain first. Still a name, never "unknown". */
+export function unresolvedSenderLabel(senderId: string): string {
+  return `⚠ ${personName({ user_id: senderId })}`;
+}
 
 /** Module-level dedup so the unresolved-sender warn fires AT MOST once per
  *  (sender_id, conversation) pair — callers invoke it from a useEffect, so
@@ -147,5 +173,5 @@ export function initialsFromLabel(label: string | null | undefined, maxChars: 1 
 /** First-letter initials for the participant avatar fallback. */
 export function participantInitials(participant: ConversationParticipant | null | undefined): string {
   const label = participantLabel(participant);
-  return !label || label === 'unknown' ? '?' : initialsFromLabel(label);
+  return initialsFromLabel(label) || '?';
 }
