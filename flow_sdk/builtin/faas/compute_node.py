@@ -1215,10 +1215,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
 
         target_dir = os.path.join(workspace_root, leaf)
-        suggested = self._next_free_leaf(leaf, base=workspace_root)
+        suggested = await self._free_project_leaf(leaf, base=workspace_root)
         if suggested != leaf:
-            # The caller chose this name and it is taken — refuse; offer the
-            # next-free `<leaf>-N` so the dialog can suggest it.
+            # The name is taken — by a folder here, or by another project (a hub
+            # project not set up here holds its name too): refuse BEFORE cloning,
+            # and offer the next `<leaf>-N` free both ways so the dialog suggests it.
             return ApiFailResponse(
                 message=f"'{leaf}' already exists in workspace",
                 data={"suggested_name": suggested, "attempted_name": leaf},
@@ -1269,6 +1270,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 "dependencies": _dependencies_report(declared),
             }
         )
+
+    @classmethod
+    async def _free_project_leaf(cls, leaf: str, base: str | None = None) -> str:
+        """``leaf``, or the first ``leaf-N`` that is both a free folder under ``base`` and
+        a name no visible project holds — a clone's folder name becomes its project's name."""
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        name, n = leaf, 1
+        while cls._next_free_leaf(name, base=base) != name or await Project._project_named(name) is not None:
+            n += 1
+            name = f"{leaf}-{n}"
+        return name
 
     @staticmethod
     def _next_free_leaf(leaf: str, base: str | None = None) -> str:
