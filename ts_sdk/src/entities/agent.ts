@@ -171,7 +171,7 @@ export interface ItSessionsBox {
 }
 
 /** A machine's reply in an IT conversation, as the hub stamps it on the message (`metadata.it`). */
-export type ItReplyState = 'done' | 'off' | 'signed_in' | 'unreachable';
+export type ItReplyState = 'done' | 'failed' | 'off' | 'signed_in' | 'unreachable';
 
 export interface ItReplyMeta {
   node_typeid: string;

@@ -20,6 +20,9 @@ export function itReplyView(reply: ItReplyMeta): ItReplyView {
       };
     case 'off':
       return { label: t`IT is disabled on this machine`, tone: 'warn', turnOnAndRun: true, openMachine: false };
+    case 'failed':
+      // The box ran it and the session failed (the agent errored, the budget refused): the reply text says why.
+      return { label: t`IT session failed`, tone: 'bad', turnOnAndRun: false, openMachine: true };
     case 'signed_in':
       return {
         label: t`Not run — someone is signed in on this machine`,

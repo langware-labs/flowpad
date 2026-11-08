@@ -50,6 +50,15 @@ describe('a machine reply', () => {
     expect(itMachineName(r)).toBe('••••H8LC');
   });
 
+  it('a failed session reads as failed, never done', () => {
+    expect(itReplyView(reply({ state: 'failed' }))).toMatchObject({
+      label: 'IT session failed',
+      tone: 'bad',
+      turnOnAndRun: false,
+      openMachine: true,
+    });
+  });
+
   it('IT Disabled offers Enable and run; signed in offers nothing', () => {
     expect(itReplyView(reply({ state: 'off' }))).toMatchObject({
       label: 'IT is disabled on this machine',
