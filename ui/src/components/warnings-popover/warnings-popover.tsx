@@ -289,6 +289,14 @@ function AlertItem({
             >
               <Trans>Diagnose &amp; fix</Trans>
             </button>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
+              data-testid="warnings-popover-dismiss-button"
+            >
+              <Trans>Dismiss</Trans>
+            </button>
           </div>
         )}
       </div>
