@@ -3,22 +3,33 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Boxes,
   File as FileIcon,
+  Lock,
   MessagesSquare,
   MonitorPlay,
   Paperclip,
+  Plus,
   Send,
   Smile,
   SquareTerminal,
   Trash2,
   X,
 } from 'lucide-react';
-import type { AssetDescriptor, FlowMessage } from '@sdk';
+import { TypeId, type AssetDescriptor, type FlowMessage } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@src/components/ui/dropdown-menu';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { genericEntityShareSource, type ShareSource } from '@src/hooks/share-sources';
+import { displayLabelForDescriptor } from '@src/components/asset-manager/asset-row-helpers';
 import { MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
 import { mergePickedFiles } from './FileAttachmentPicker';
@@ -198,6 +209,9 @@ export function MessageComposer({
   // A live-session prompt survives navigating away and back, like a tab session's draft.
   const draftScope = !isDraftMode && liveSessionId ? `live-session:${liveSessionId}` : undefined;
   const [text, setText] = useState(draft?.text ?? readDraft(draftScope));
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [credentialPickerOpen, setCredentialPickerOpen] = useState(false);
+  const [secretShareSource, setSecretShareSource] = useState<ShareSource | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
@@ -528,39 +542,56 @@ export function MessageComposer({
     />
   );
 
-  /** File / Asset / Repo — flat buttons, each opening a self-contained surface
-   *  (no nested popovers). This is the attach row both modes render. */
+  const chooseCredentialForSecureShare = (descriptor: AssetDescriptor) => {
+    const typeId = new TypeId(descriptor.typeid);
+    setCredentialPickerOpen(false);
+    setSecretShareSource(genericEntityShareSource(typeId, { label: displayLabelForDescriptor(descriptor) }));
+  };
+
+  /** Emoji stays one click away; the plus menu holds the remaining composer actions. */
   const attachButtons = (
     <>
       {canAttach && (
-        <>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={attachmentsDisabled}
-            title={t`Attach files`}
-            data-testid="attach-file-button"
-            className={ICON_BUTTON_CLASS}
-          >
-            <Paperclip className="h-3.5 w-3.5" />
-          </button>
-          <AssetManagerPopover
-            trigger={
-              <button
-                type="button"
-                disabled={assetsDisabled}
-                title={t`Attach an asset (skill, agent, doc, spec)`}
-                data-testid="attach-asset-button"
-                className={ICON_BUTTON_CLASS}
-              >
-                <Boxes className="h-3.5 w-3.5" />
-              </button>
-            }
-            {...assetSelection}
-            side="top"
-            searchPlaceholder={t`Search assets…`}
-          />
-        </>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={isDisabled}
+              title={t`More actions`}
+              aria-label={t`More actions`}
+              data-testid="composer-more-actions"
+              className={ICON_BUTTON_CLASS}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="top">
+            <DropdownMenuItem
+              disabled={attachmentsDisabled}
+              onSelect={() => fileInputRef.current?.click()}
+              data-testid="attach-file-button"
+            >
+              <Paperclip className="mr-2 h-3.5 w-3.5" />
+              <Trans>Attach files</Trans>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={assetsDisabled}
+              onSelect={() => setAssetPickerOpen(true)}
+              data-testid="attach-asset-button"
+            >
+              <Boxes className="mr-2 h-3.5 w-3.5" />
+              <Trans>Attach an asset</Trans>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={isDisabled}
+              onSelect={() => setCredentialPickerOpen(true)}
+              data-testid="composer-secured-transfer"
+            >
+              <Lock className="mr-2 h-3.5 w-3.5" />
+              <Trans>Secured transfer</Trans>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
       <EmojiPicker
         side="top"
@@ -828,6 +859,34 @@ export function MessageComposer({
       {chipLists}
       {error && <p className="text-xs text-destructive">{error}</p>}
       {hiddenFileInput}
+      <AssetManagerPopover
+        centered
+        open={assetPickerOpen}
+        onOpenChange={setAssetPickerOpen}
+        {...assetSelection}
+        searchPlaceholder={t`Search assets…`}
+      />
+      <AssetManagerPopover
+        centered
+        open={credentialPickerOpen}
+        onOpenChange={setCredentialPickerOpen}
+        selectedTypeIds={[]}
+        onPick={chooseCredentialForSecureShare}
+        onUnpick={() => undefined}
+        filter={(descriptor) => new TypeId(descriptor.typeid).type === 'credential'}
+        searchPlaceholder={t`Choose a credential to share securely…`}
+      />
+      {secretShareSource && (
+        <ShareToConversationDialog
+          open
+          onClose={() => setSecretShareSource(null)}
+          source={secretShareSource}
+          initialShareValues
+          initialValuesRoute="secured"
+          heading={t`Secured transfer`}
+          submitLabel={t`Share secrets`}
+        />
+      )}
     </div>
   );
 }

@@ -1,12 +1,14 @@
 import { AgenticProcess, ProcessKind } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { useMemo, useState, type ReactNode } from 'react';
-import { ProjectSelectorModal } from '@src/components/project-selector';
+import { ProjectSelector } from '@src/components/project-selector';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
-import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
+import { VibeWorkerSelect } from '@src/pages/flow-page/vibe-worker-select';
 import type { WorkerType } from '@src/components/workers/worker-types';
+import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
@@ -23,18 +25,19 @@ export function chainPrompt(process: Pick<AgenticProcess, 'worker_type' | 'sessi
 export function useChainSession(process: AgenticProcess): { start: () => void; picker: ReactNode } {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  const defaultWorkerType = useDefaultWorkerType();
   const [open, setOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [workerType, setWorkerType] = useState<WorkerType>(defaultWorkerType);
   const { projects, isLoading } = useProjects({ enabled: open });
   const items = useMemo(() => projectEntitiesToSelectorItems(projects).filter((p) => !!p.path), [projects]);
 
-  const launch = async (worker: WorkerType) => {
-    setProjectId(null);
+  const launch = async () => {
     const project = items.find((p) => p.id === projectId);
     if (!project) return;
     try {
       const chained = await AgenticProcess.launch({
-        workerType: worker,
+        workerType,
         workdir: project.path,
         projectId,
         launchPrompt: chainPrompt(process),
@@ -42,6 +45,8 @@ export function useChainSession(process: AgenticProcess): { start: () => void; p
         processType: ProcessKind.Analysis,
         sharedContextEntities: [process.typeId.toString()],
       });
+      setOpen(false);
+      setProjectId(null);
       void navigation.openShellProcess(chained.id);
     } catch (err) {
       console.error('[chain-session] launch failed', err);
@@ -50,27 +55,55 @@ export function useChainSession(process: AgenticProcess): { start: () => void; p
   };
 
   const picker = (
-    <>
-      <ProjectSelectorModal
-        open={open}
-        onOpenChange={setOpen}
-        projects={items}
-        selectedId={null}
-        excludeIds={process.project_id ? [process.project_id] : undefined}
-        onSelect={setProjectId}
-        isLoading={isLoading}
-        title={t`Chain this session into which project?`}
-      />
-      <Dialog open={!!projectId} onOpenChange={(o) => !o && setProjectId(null)}>
-        <DialogContent className="sm:max-w-sm" data-testid="chain-session-worker-picker">
-          <DialogHeader>
-            <DialogTitle>{t`Which worker reviews it?`}</DialogTitle>
-          </DialogHeader>
-          <ContextWorkerToolbar mode="all" onLaunch={launch} testIdPrefix="chain-session" />
-        </DialogContent>
-      </Dialog>
-    </>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setProjectId(null);
+      }}
+    >
+      <DialogContent className="sm:max-w-md" data-testid="chain-session-picker">
+        <DialogHeader>
+          <DialogTitle>{t`Chain session`}</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            {t`Choose where this review runs and which worker handles it.`}
+          </p>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="text-sm font-medium">{t`Project`}</div>
+            <div className="h-52 rounded-md border p-2">
+              <ProjectSelector
+                projects={items}
+                selectedId={projectId}
+                excludeIds={process.project_id ? [process.project_id] : undefined}
+                onSelect={setProjectId}
+                isLoading={isLoading}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium">{t`Worker`}</span>
+            <VibeWorkerSelect value={workerType} onChange={setWorkerType} testId="chain-session-worker-select" />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              {t`Cancel`}
+            </Button>
+            <Button type="button" disabled={!projectId} onClick={() => void launch()}>
+              {t`Start review`}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 
-  return { start: () => setOpen(true), picker };
+  return {
+    start: () => {
+      setWorkerType(defaultWorkerType);
+      setOpen(true);
+    },
+    picker,
+  };
 }

@@ -1,6 +1,7 @@
 import { Trans } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
 import { useMembers } from '@src/hooks/use-members';
+import { personName } from './participant-display';
 
 /** Email-style sub-header: every member of the conversation, name + address,
  *  spread across one wrapping line. */
@@ -13,7 +14,7 @@ export function ConversationMembersLine({ typeId }: { typeId: TypeId }) {
         <Trans>Members:</Trans>
       </span>
       {members.map((m, i) => {
-        const name = m.name || m.email || m.user_id || '';
+        const name = personName(m);
         return (
           <span key={m.user_id || m.email || i} className="min-w-0 truncate">
             <span className="font-medium text-foreground">{name}</span>

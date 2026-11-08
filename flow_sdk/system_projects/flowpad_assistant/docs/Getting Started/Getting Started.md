@@ -17,6 +17,8 @@ of them is one click from here.
   reach Flowpad cloud, and what each mode actually blocks.
 - [[Where your assets live]] — the local / cloud / git badge on every asset, and
   how it relates to your privacy mode.
+- [[IT Enabled]] — whether a deployed machine accepts IT messages from its owner,
+  and how the answers come back as one IT conversation.
 
 As more onboarding docs are added under `docs/Getting Started/`, they'll show
 up here automatically (and as children of this entity in the API).

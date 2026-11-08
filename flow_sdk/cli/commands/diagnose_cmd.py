@@ -424,6 +424,7 @@ async def _run_diagnose(
     prompt_extra: str = "",
     report_only: bool = False,
     connection_id: str | None = None,
+    feed: bool = True,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -437,7 +438,7 @@ async def _run_diagnose(
     ``_TerminalSink`` so the CLI renders exactly as before; the UI's HTTP endpoint
     passes its own ``emit`` to forward the same events as SSE.
 
-    Every completed run posts exactly one Home-Feed card through
+    Every completed run posts exactly one Home-Feed card (unless ``feed=False``: Diagnose & fix answers in its conversation) through
     ``_post_home_feed_entry`` — an issue card carrying the report buttons when
     report.py created a support Conversation/FlowMessage, otherwise a no-issue card
     carrying the summary. This holds for both surfaces (the CLI and the UI modal), so
@@ -656,7 +657,9 @@ async def _run_diagnose(
             )
             done(False, sweep)
             return 1
-        feed_entry_id = await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did)
+        feed_entry_id = (
+            await _post_home_feed_entry(summary=sweep.summary or sweep.title or "", diagnosis_id=did) if feed else None
+        )
         emit({"type": "status", "text": "  ! The agent could not finish. Recorded what the checks found instead."})
         done(False, sweep, diagnosis_id=did, feed_entry_id=feed_entry_id)
         return 0
@@ -727,11 +730,16 @@ async def _run_diagnose(
             # card carrying the summary. Either way the result reaches the Home feed,
             # from the CLI or the UI modal, watched or not.
             summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
-            feed_entry_id = await _post_home_feed_entry(
-                summary=summary,
-                conversation_id=conv_id,
-                flow_message_id=msg_id,
-                diagnosis_id=did,
+            # ``feed=False``: the caller answers in a conversation (Diagnose & fix) — one place for the answer.
+            feed_entry_id = (
+                await _post_home_feed_entry(
+                    summary=summary,
+                    conversation_id=conv_id,
+                    flow_message_id=msg_id,
+                    diagnosis_id=did,
+                )
+                if feed
+                else None
             )
             emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
             done(

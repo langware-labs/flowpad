@@ -162,6 +162,8 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
 
   function stateOf(place: AgentPlace): string {
     if (place.deployment.status?.provider_state === 'paused') return t`Paused`;
+    // Planned and never placed (a refused or not-yet-run deploy): no machine answers, so never "Running".
+    if (!place.is_local && place.deployment.status?.provider_state === 'planned') return t`Not started`;
     return place.is_local ? t`On` : t`Running`;
   }
 }

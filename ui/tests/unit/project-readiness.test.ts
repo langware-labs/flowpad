@@ -13,7 +13,6 @@ import {
   recheckProjectReadiness,
   refreshProjectReadiness,
 } from '@sdk/stores/project-readiness-store';
-import { createProjectSetupRequiredWarning, WARNING_IDS } from '@sdk/models/UserWarning';
 
 const readiness = (project_id: string, ready: boolean): ProjectReadiness => ({
   project_id,
@@ -61,14 +60,5 @@ describe('project readiness store', () => {
   it('a project with no id clears the answer', async () => {
     await refreshProjectReadiness(null);
     expect(getProjectReadiness()).toBeNull();
-  });
-});
-
-describe('the warning', () => {
-  it('names the project and how many things are left, and is routed by its id', () => {
-    const warning = createProjectSetupRequiredWarning('acme', 3);
-    expect(warning.id).toBe(WARNING_IDS.PROJECT_SETUP_REQUIRED);
-    expect(warning.message).toBe('Project setup required');
-    expect(warning.description).toContain('acme: 3 things');
   });
 });

@@ -406,8 +406,7 @@ async def _retire_row(path: str) -> None:
     Uses the same `remove_orphan_row` helper as the sweep, so the narrower
     type-scoped delete (no relationship cascade) applies here too.
     """
-    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
-    from flow_sdk.fs_store.reindex import owning_asset_for_removed_path  # noqa: PLC0415
+    from flow_sdk.fs_store.reindex import owning_asset_for_removed_path, retire_or_adopt  # noqa: PLC0415
 
     try:
         entity, root_gone = await owning_asset_for_removed_path(path)
@@ -421,7 +420,7 @@ async def _retire_row(path: str) -> None:
         # there — that is an edit, not a deletion. Reaping here would destroy a
         # skill because one of its files was removed.
         return
-    await remove_orphan_row(str(entity.id), entity.get_type())
+    await retire_or_adopt(entity)
 
 
 def _stamps_identity(source: "DataSource") -> bool:

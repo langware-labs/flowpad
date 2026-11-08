@@ -52,9 +52,12 @@ CANCELLED_BY_SIGN_IN = "Stopped: someone signed in on this machine, so the IT se
 class ItAnswer:
     answer: str
     value: Optional[Any] = None
+    #: False when the session failed (the agent errored, the budget refused, no answer in the asked shape): the hub
+    #: then records the reply as failed with ``answer`` as its reason, never as done.
+    ok: bool = True
 
     def as_data(self) -> dict:
-        return {"answer": self.answer, "value": self.value}
+        return {"answer": self.answer, "value": self.value, "ok": self.ok}
 
 
 class ItSessionCancelled(Exception):
@@ -188,13 +191,15 @@ def read_answer(result_path: Path, answer_shape: Optional[dict], fallback: str) 
     output = VALUE_KEY if answer_shape is not None else OUTCOME_KEY
     receipt = read_step_result(result_path, output=output)
     if not receipt.ok:
-        return ItAnswer(answer=receipt.summary or receipt.error or fallback, value=None)
+        return ItAnswer(answer=receipt.summary or receipt.error or fallback, value=None, ok=False)
     if answer_shape is None:
         text = receipt.value if isinstance(receipt.value, str) else ""
         return ItAnswer(answer=text or receipt.summary or fallback, value=None)
     why = shape_mismatch(receipt.value, answer_shape)
     if why is not None:
-        return ItAnswer(answer=f"{receipt.summary or 'Answered'} — but the answer does not match its shape: {why}")
+        return ItAnswer(
+            answer=f"{receipt.summary or 'Answered'} — but the answer does not match its shape: {why}", ok=False
+        )
     return ItAnswer(answer=receipt.summary or "Done.", value=receipt.value)
 
 
@@ -237,9 +242,8 @@ async def project_workdir(project: Optional[dict] = None) -> Path:
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.remote_worker_session import scratch_workdir  # noqa: PLC0415
     from flow_sdk.config import is_system_project_path  # noqa: PLC0415
-    from flow_sdk.server.state import _read_opening_project  # noqa: PLC0415
-
     from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+    from flow_sdk.server.state import _read_opening_project  # noqa: PLC0415
 
     named = project or {}
     candidates = [await Project.get_one({"id": named["id"]})] if named.get("id") else []
@@ -317,20 +321,20 @@ async def run_it_session(
             said = await run
         except asyncio.CancelledError:
             if person_signed_in():
-                return ItAnswer(answer=CANCELLED_BY_SIGN_IN)
+                return ItAnswer(answer=CANCELLED_BY_SIGN_IN, ok=False)
             raise
         finally:
             watcher.cancel()
         if said.executor:
             executors.add(said.executor)
         if not said.ok:
-            return ItAnswer(answer=said.detail or "The IT session did not finish.")
+            return ItAnswer(answer=said.detail or "The IT session did not finish.", ok=False)
         return read_answer(result_path, answer_shape, said.detail or "Done.")
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # noqa: BLE001 — an answer, never a silent death
         logger.exception("IT session %s crashed", call_id)
-        return ItAnswer(answer=f"The IT session failed: {exc}")
+        return ItAnswer(answer=f"The IT session failed: {exc}", ok=False)
     finally:
         _RUNNING.pop(call_id, None)
         for executor in executors:

@@ -27,15 +27,20 @@ function requesterFacets(status: ConversationStatus, staff: boolean) {
 }
 
 describe('HelpdeskMyItems state chip', () => {
+  // Pick-up is the desk's own business: the requester sees no state while the ticket is open.
   it.each([
-    [ConversationStatus.OPEN, false, 'Waiting for pickup', 'ticket-waiting'],
-    [ConversationStatus.OPEN, true, 'Picked up', 'ticket-picked'],
-    [ConversationStatus.CLOSED, true, 'Closed', 'ticket-closed'],
-  ])('%s staff=%s → %s', (status, staff, label, key) => {
-    render(<TicketStateChip ticket={requesterFacets(status, staff).ticket} />);
+    [false],
+    [true],
+  ])('open staff=%s → no chip', (staff) => {
+    const { container } = render(<TicketStateChip ticket={requesterFacets(ConversationStatus.OPEN, staff).ticket} />);
+    expect(container.textContent).toBe('');
+  });
+
+  it('closed → Closed', () => {
+    render(<TicketStateChip ticket={requesterFacets(ConversationStatus.CLOSED, true).ticket} />);
     const chip = screen.getByTestId('ticket-state-chip');
-    expect(chip.textContent).toBe(label);
-    expect(chip.getAttribute('data-chip-type')).toBe(key);
+    expect(chip.textContent).toBe('Closed');
+    expect(chip.getAttribute('data-chip-type')).toBe('ticket-closed');
   });
 
   it('renders nothing for a non-ticket', () => {

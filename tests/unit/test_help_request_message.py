@@ -232,6 +232,10 @@ async def test_diagnose_and_fix_is_private_until_report_it_sends_it_where_the_ca
     )
     found = SimpleNamespace(queue_project_id="acme-desk", mount_path=adopted) if adopted else None
     monkeypatch.setattr(helpdesk_resolver, "resolve_adopted_helpdesk", AsyncMock(return_value=found))
+    from flow_sdk import notifications
+
+    arrived = AsyncMock()
+    monkeypatch.setattr(notifications, "notify_message_arrival", arrived)
     ask = _ask(
         text="Diagnose & fix: Cloud request rejected",
         recipients=[],
@@ -246,12 +250,17 @@ async def test_diagnose_and_fix_is_private_until_report_it_sends_it_where_the_ca
     request, diagnosis = await _messages(ask["conversation_id"])
     assert diagnosis.kind == FlowMessageKind.DIAGNOSIS and _files(diagnosis) == {}, "private: details held here"
     hub.assert_not_awaited()
+    # The answer is a message on the Diagnosis channel; its arrival is the one notification.
+    assert (await Conversation.get_one({"id": ask["conversation_id"]})).channel == "diagnosis"
+    arrived.assert_awaited_once()
+    assert arrived.await_args.args == (ask["conversation_id"], diagnosis.id)
 
     reported = await _call(afh.help_request_report, {}, ask["conversation_id"])
 
     assert reported.data["pass_on"] == pass_on
     conv = await Conversation.get_one({"id": ask["conversation_id"]})
     assert conv.kind == "helpdesk" and conv.remote_project_id == desk and conv.hub_bound
+    assert conv.channel == "diagnosis", "reported, it stays one conversation on the Diagnosis channel"
     *_, line = await _messages(ask["conversation_id"])
     assert afh.DIAGNOSIS_FILE in _files(line)
     assert json.loads(_files(line)[HELP_REQUEST_FILE])["pass_on"] == pass_on
@@ -367,3 +376,16 @@ async def test_a_desk_and_a_person_each_get_the_request_diagnosed_once(monkeypat
     assert people.members and str(getattr(ticket.kind, "value", ticket.kind)) == "helpdesk"
     assert len(await _messages(people.id)) == 1 and len(await _messages(ticket.id)) == 1
     assert len(runs) == 1, "one request is diagnosed once"
+
+
+def test_the_warning_learns_the_help_desk_replied_only_from_someone_elses_last_word():
+    def fm(kind, sender):
+        return SimpleNamespace(kind=kind, sender_id=sender)
+
+    def conv(*messages):
+        return list(messages)
+
+    asked = [fm("help_request", "me"), fm("diagnosis", "me"), fm("help_request", "me")]
+    assert not afh._desk_replied(conv(*asked)), "reported, nobody answered yet"
+    assert afh._desk_replied(conv(*asked, fm("user", "dana"))), "the desk answered"
+    assert not afh._desk_replied(conv(*asked, fm("user", "dana"), fm("user", "me"))), "the asker spoke last"

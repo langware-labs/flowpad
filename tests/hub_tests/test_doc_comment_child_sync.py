@@ -387,3 +387,28 @@ def test_doc_comment_receiver_scope_visibility(shared):
     got = _wait_scoped(c, bob, conv_id, "markdown", md_id, cid)
     assert got is not None, "receiver-scope: comment not visible in bob's doc gutter query after rebind"
     assert got.get("raw_content") == f"gutter-{stamp}", "receiver-scope: gutter query must carry the comment body"
+
+
+def test_doc_comment_thread_sync(shared):
+    """A doc comment thread crosses peers whole: alice's questions (typed data) reach bob;
+    bob answers and replies — both doc children naming the root in ``reply_to`` (on a
+    shared doc only the author may edit the root) — and alice receives them bound to
+    the doc."""
+    c, alice, bob = shared["client"], shared["alice"], shared["bob"]
+    conv_id, md_id, md_ref, stamp = shared["conv_id"], shared["md_id"], shared["md_ref"], shared["stamp"]
+    form = {"form_id": "q", "title": "Launch", "fields": [{"id": "d", "label": "Date", "type": "date"}]}
+    data = {"kind": "questions", "status": "open", "anchor": {"quote": "Line 2"}, "form": form}
+
+    root = _u(c.post(f"{alice}/api/v1/graph/markdown/{md_id}/comment", json={"raw_content": f"ask-{stamp}", "data": data}))["id"]
+    got = _wait_text(c, bob, conv_id, root, f"ask-{stamp}")
+    assert got is not None and got["data"]["form"]["title"] == "Launch", "thread: bob never got alice's questions"
+
+    answers = {"form_id": "q", "values": {"d": "2026-12-01"}}
+    reply = {"reply": True, "reply_to": f"comment-{root}", "answers": answers, "status": "sent"}
+    rid = _u(c.post(f"{bob}/api/v1/graph/markdown/{md_id}/comment", json={"raw_content": f"answer-{stamp}", "data": reply}))["id"]
+
+    got_reply = _wait_text(c, alice, conv_id, rid, f"answer-{stamp}")
+    assert got_reply is not None, "thread: alice never got bob's answers"
+    assert got_reply.get("parent_type_id") == md_ref, "thread: a reply must bind to the doc"
+    assert got_reply["data"]["reply_to"] == f"comment-{root}" and got_reply["data"]["answers"] == answers
+    assert rid in _scoped_ids(c, alice, "markdown", md_id), "thread: reply missing from alice's doc-scoped query"
