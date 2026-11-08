@@ -1926,6 +1926,19 @@ async def _fetch_raw_messages_from_hub(since: str | None) -> list[dict] | None:
     return result if isinstance(result, list) else []
 
 
+def _hub_adds_attachments(existing: FlowMessage, raw: dict) -> bool:
+    """The hub's message carries attachments the local row lacks.
+
+    A message first synced before its viewer could see its attachments (a help-desk ticket's files are
+    the hub's to give once its staff member has picked the ticket up) is stored without them. Any local
+    save after that (the unread flag, the body healing) stamps the row newer than the hub's own clock, so
+    ``is_stale`` calls it current for good and the attachments the hub now sends are never merged: the
+    files sit unpacked on disk and the message shows none. What the hub carries and the row lacks is a
+    change whatever the clocks say.
+    """
+    return bool(raw.get("attachment")) and not (existing.attachment or [])
+
+
 async def _process_single_hub_message(raw: dict) -> str | None:
     """Download and unpack the .flowmsg bundle for one hub FlowMessage.
 
@@ -2013,7 +2026,7 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     if adopt_hub_created_date(existing, raw):
         with remote_reflection():
             await existing.save(notify=False)
-    if existing is not None and not FlowMessage.is_stale(existing, raw):
+    if existing is not None and not FlowMessage.is_stale(existing, raw) and not _hub_adds_attachments(existing, raw):
         # Metadata current (body handled above).
         return fm_id
     # Bundle-less: persist the FM payload as-is, then append the pointer to
@@ -4796,9 +4809,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             else:
                 # Any other shared entity (a machine, a team, an agent…): its hub row, so the mirror is
                 # the real thing (a machine's provider, size, status) and not a name-only husk.
-                hub_row = await HubProxy.try_call(
-                    "GET", membership_target.target_type, membership_target.target_id
-                )
+                hub_row = await HubProxy.try_call("GET", membership_target.target_type, membership_target.target_id)
                 if isinstance(hub_row, dict) and hub_row.get("id") == membership_target.target_id:
                     target_payload.update(hub_row)
             ent = await materialize_remote_membership_entity(
