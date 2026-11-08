@@ -169,6 +169,8 @@ export interface PublicDeploymentSetup {
 export interface PublicInviteCode {
   id: string;
   last4: string;
+  /** Who the code is for, as the owner named it ("" when unnamed). */
+  name?: string;
   state: 'unused' | 'in_use' | 'revoked';
   node_typeid: string | null;
   created_at: string;
@@ -180,6 +182,7 @@ export interface NewPublicInviteCode {
   id: string;
   code: string;
   last4: string;
+  name?: string;
 }
 
 /** One visitor's box. `code_id` is null for a link visitor. */
@@ -671,12 +674,18 @@ export class Agent extends APIEntity<Agent> {
     };
   }
 
-  /** Mint `count` (1..100) codes; their plaintext is answered this once only. */
-  async addPublicCodes(count: number): Promise<NewPublicInviteCode[]> {
+  /** Mint `count` (1..100) codes, optionally named in order; their plaintext is answered this once only. */
+  async addPublicCodes(count: number, names: string[] = []): Promise<NewPublicInviteCode[]> {
     const data = await this.publicDeploymentsCall<{ codes?: NewPublicInviteCode[] }>('add_public_codes', 'POST', {
       count,
+      ...(names.length ? { names } : {}),
     });
     return data?.codes ?? [];
+  }
+
+  /** Name an invite code (who it is for); an empty name clears it. */
+  async renamePublicCode(codeId: string, name: string): Promise<void> {
+    await this.publicDeploymentsCall('rename_public_code', 'POST', { code_id: codeId, name });
   }
 
   /** Revoke a code: its sandbox is deleted and it stops working. */

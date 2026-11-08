@@ -1,19 +1,22 @@
-import type { Agent } from '@sdk';
+import type { Agent, PublicDeploymentsState } from '@sdk';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Loader2, Mail, Plus, Server } from 'lucide-react';
+import { ChevronRight, Loader2, Mail, Server, Ticket } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import { providerIcon, useAgentChannels } from '@src/components/agent-resources/AgentWebhooksSection';
-import { useAgentPlaces, type AgentPlace } from './use-agent-places';
+import { isPublicPlace, useAgentPlaces, type AgentPlace } from './use-agent-places';
 import { usePlaceDisplay } from './use-place-display';
 import { AgentPeopleList } from './AgentPeopleList';
 
 interface AgentPlacesColumnProps {
   agent: Agent;
+  /** Open the agent's invite deployment (its one row in this list). */
+  onOpenInvite?: () => void;
 }
 
 /**
@@ -22,7 +25,7 @@ interface AgentPlacesColumnProps {
  * Deployments with this agent preset as the main agent of a new deployment. A deployment belongs to its
  * project; the agent page only shows where it is main.
  */
-export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
+export function AgentPlacesColumn({ agent, onOpenInvite }: AgentPlacesColumnProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const display = usePlaceDisplay();
@@ -30,9 +33,50 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
   // The hub answers what is wired to the agent (links, connections) in one read.
   const wired = useAgentChannels(agent);
   const hub = isHubOnly();
-  const deployPage = agent.deployPagePointer;
 
-  const visible = places ?? [];
+  const visible = (places ?? []).filter((p) => !isPublicPlace(p.deployment));
+  // The invite deployment is ONE row: its machines live inside it, never as rows of their own.
+  const [invites, setInvites] = useState<PublicDeploymentsState | null>(null);
+  useEffect(() => {
+    let live = true;
+    agent
+      .publicDeployments()
+      .then((s) => live && setInvites(s))
+      .catch(() => live && setInvites(null));
+    return () => {
+      live = false;
+    };
+  }, [agent]);
+  const invite = invites?.settings?.allow_visitor_deployment ? invites : null;
+  const inviteRow = invite && (
+    <li className="flex items-center">
+      <button
+        type="button"
+        onClick={onOpenInvite}
+        className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-start hover:bg-muted/60"
+        data-testid="agent-invite-row"
+      >
+        <Ticket className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-sm">{t`Invite · ${agent.displayName || agent.name}`}</span>
+          <span className="truncate text-xs text-muted-foreground">
+            {[
+              invite.settings?.mode === 'link' ? t`Anyone with the link` : t`Invite code only`,
+              invite.settings?.max_deployments
+                ? t`${invite.deployments.length} of ${invite.settings.max_deployments} machines in use`
+                : t`${invite.deployments.length} machines in use`,
+              invite.settings?.cap_usd != null ? t`$${invite.settings.cap_usd} per user` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{t`On`}</span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground rtl:-scale-x-100" />
+      </button>
+    </li>
+  );
+  const hubRows = (wired?.deployments ?? []).filter((d) => !isPublicPlace(d));
   const openPage = (place: AgentPlace) => {
     const pointer = place.deployment.projectPagePointer;
     if (pointer) navigation.openDock(pointer);
@@ -40,40 +84,33 @@ export function AgentPlacesColumn({ agent }: AgentPlacesColumnProps) {
 
   return (
     <section className="flex flex-col gap-3" aria-labelledby="agent-deployments" data-testid="agent-places">
-      <div className="flex items-center justify-between gap-2">
-        <h2 id="agent-deployments" className="text-sm font-semibold">
-          <Trans>Deployments</Trans>
-        </h2>
-        {deployPage && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 shrink-0"
-            onClick={() => navigation.openDock(deployPage)}
-            data-testid="agent-new-deployment"
-          >
-            <Plus className="me-1.5 h-3.5 w-3.5" />
-            <Trans>Deploy</Trans>
-          </Button>
-        )}
-      </div>
+      <h2 id="agent-deployments" className="text-sm font-semibold">
+        <Trans>Deployments</Trans>
+      </h2>
       {places === null ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-      ) : visible.length === 0 && hub && wired && wired.deployments.length > 0 ? (
+      ) : visible.length === 0 && hub && hubRows.length > 0 ? (
         <ul className="flex flex-col divide-y rounded-md border" data-testid="agent-hub-deployments">
-          {wired.deployments.map((d) => (
+          {inviteRow}
+          {hubRows.map((d) => (
             <li key={d.typeid} className="flex items-center gap-2 px-3 py-2 text-sm">
               <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate">{d.node_typeid ? t`Cloud machine` : t`No machine yet`}</span>
             </li>
           ))}
         </ul>
-      ) : visible.length === 0 && wired?.deployments.some((d) => d.agent_mode === 'private') ? null : visible.length === 0 ? (
+      ) : visible.length === 0 && inviteRow ? (
+        <ul className="flex flex-col divide-y rounded-md border" data-testid="agent-places-list">
+          {inviteRow}
+        </ul>
+      ) : visible.length === 0 && wired?.deployments.some((d) => d.agent_mode === 'private') ? null : visible.length ===
+        0 ? (
         <span className="text-xs text-muted-foreground" data-testid="agent-places-empty">
           <Trans>Not deployed yet — it runs nowhere until you launch it.</Trans>
         </span>
       ) : (
         <ul className="flex flex-col divide-y rounded-md border" data-testid="agent-places-list">
+          {inviteRow}
           {visible.map((place) => {
             const { label, Icon } = display(place);
             return (

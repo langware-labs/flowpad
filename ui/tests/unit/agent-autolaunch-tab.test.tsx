@@ -34,8 +34,17 @@ const PAYLOAD = {
     cap_usd: null,
   },
   codes: [
-    { id: 'c1', last4: 'MJHT', state: 'in_use', node_typeid: 'compute_node-1', created_at: '', last_used_at: null },
+    {
+      id: 'c1',
+      last4: 'MJHT',
+      name: 'Noa',
+      state: 'in_use',
+      node_typeid: 'compute_node-1',
+      created_at: '',
+      last_used_at: null,
+    },
     { id: 'c2', last4: 'QQQQ', state: 'revoked', node_typeid: null, created_at: '', last_used_at: null },
+    { id: 'c3', last4: 'ZZZZ', name: '', state: 'unused', node_typeid: null, created_at: '', last_used_at: null },
   ],
   deployments: [
     {
@@ -100,7 +109,9 @@ describe('AgentAutoLaunchTab', () => {
     expect(await screen.findByTestId('agent-autolaunch-allow')).toHaveAttribute('data-state', 'checked');
     expect(screen.getByTestId('agent-autolaunch-link')).toHaveTextContent(`${HUB}/open-pc/${AGENT_ID}`);
     expect(screen.getByTestId('agent-autolaunch-mode-code')).toHaveAttribute('data-state', 'checked');
-    expect(screen.getByTestId('agent-autolaunch-codes')).toHaveTextContent('Invite codes (1)');
+    expect(screen.getByTestId('agent-autolaunch-codes')).toHaveTextContent('Add codes');
+    // Revoked codes are gone; a used code and an unused one each get a line.
+    expect(screen.getByTestId('agent-invite-count')).toHaveTextContent('Invites · 2 codes · 2 machines');
     expect(screen.getByTestId('agent-autolaunch-max')).toHaveValue(3);
     // Saved and shown agree: nothing to update.
     expect(screen.queryByTestId('agent-autolaunch-update')).toBeNull();
@@ -111,6 +122,21 @@ describe('AgentAutoLaunchTab', () => {
     expect(rows[0]).toHaveTextContent('Resume');
     expect(rows[1]).toHaveTextContent('link visitor');
     expect(rows[1]).toHaveTextContent('Pause');
+    // One line per invite: the used code carries its machine and its name; the unused one only Revoke.
+    expect(screen.getAllByTestId('agent-invite-name')[0]).toHaveValue('Noa');
+    const unused = screen.getByTestId('agent-invite-unused');
+    expect(unused).toHaveTextContent('••••ZZZZ');
+    expect(unused).toHaveTextContent('Revoke');
+    expect(screen.queryByText('••••QQQQ')).toBeNull();
+  });
+
+  it('renames an invite on blur through rename_public_code', async () => {
+    render(tab(PUBLISHED));
+    const [name] = await screen.findAllByTestId('agent-invite-name');
+    fireEvent.change(name, { target: { value: 'Amit' } });
+    fireEvent.blur(name);
+    await waitFor(() => expect(urls.some((u) => u.endsWith('/rename_public_code'))).toBe(true));
+    expect(bodies[urls.findIndex((u) => u.endsWith('/rename_public_code'))]).toEqual({ code_id: 'c1', name: 'Amit' });
   });
 
   it('shows each machine IT Enabled / IT Disabled as the hub reports it, and one click flips it', async () => {

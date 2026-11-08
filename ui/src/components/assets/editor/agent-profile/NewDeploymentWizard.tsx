@@ -1,0 +1,333 @@
+import type { Agent, NewPublicInviteCode, PublicDeploymentMode } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { Link2, Loader2, Server, Ticket, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+
+import { endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
+import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
+import { Input } from '@src/components/ui/input';
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+
+import { DEFAULT_CAP_USD, DEFAULT_MAX_DEPLOYMENTS, openPcLink, turnOnPublicDeployments } from './AgentAutoLaunchTab';
+import { useVisitorRole } from './AgentVisibilitySection';
+import { FreshCodes, saveCodeNames } from './FreshCodes';
+
+type Step = 'kind' | 'settings' | 'launch';
+const STEPS: Step[] = ['kind', 'settings', 'launch'];
+
+/**
+ * New deployment, as a three-step card in the style of "Make an agent in 60 seconds": what kind, its settings,
+ * launch. Invites are one setup per agent: when they are already on, the invite tiles open that deployment.
+ */
+export function NewDeploymentWizard({
+  agent,
+  onClose,
+  onOpenInvite,
+}: {
+  agent: Agent;
+  onClose: () => void;
+  /** Open the agent's invite deployment (it exists already, or was just launched). */
+  onOpenInvite: () => void;
+}) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const [role] = useVisitorRole(agent, true);
+  const [step, setStep] = useState<Step>('kind');
+  const [mode, setMode] = useState<PublicDeploymentMode>('code');
+  const [count, setCount] = useState(8);
+  const [max, setMax] = useState<number | null>(DEFAULT_MAX_DEPLOYMENTS);
+  const [source, setSource] = useState('');
+  const [cap, setCap] = useState<number | null>(DEFAULT_CAP_USD);
+  const [invitesOn, setInvitesOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [fresh, setFresh] = useState<NewPublicInviteCode[]>([]);
+  const [names, setNames] = useState<Record<string, string>>({});
+
+  const { status } = useLlmSources();
+  const sources = useMemo(
+    () => (status?.available ?? []).filter((e) => e.kind === 'hub' && e.can_administer === true),
+    [status],
+  );
+  const chosenSource = source || (sources[0] ? endpointTypeId(sources[0].id) : '');
+
+  useEffect(() => {
+    let live = true;
+    agent
+      .publicDeployments()
+      .then((s) => live && setInvitesOn(s.settings?.allow_visitor_deployment === true))
+      .catch(() => live && setInvitesOn(false));
+    return () => {
+      live = false;
+    };
+  }, [agent]);
+
+  const deployPage = agent.deployPagePointer;
+  const at = STEPS.indexOf(step);
+  const link = openPcLink(agent);
+  const ready = Boolean(chosenSource) && cap !== null && cap > 0 && (mode === 'link' || (count >= 1 && count <= 100));
+
+  const pick = (next: PublicDeploymentMode) => {
+    if (invitesOn) return onOpenInvite();
+    setMode(next);
+    setStep('settings');
+  };
+
+  const launch = async () => {
+    setBusy(true);
+    try {
+      await turnOnPublicDeployments(
+        agent,
+        { mode, max_deployments: max, llm_source: chosenSource, cap_usd: cap as number },
+        role,
+      );
+      if (mode === 'code') setFresh(await agent.addPublicCodes(count));
+      setStep('launch');
+    } catch (e) {
+      notify.error({
+        title: t`Could not launch the deployment`,
+        message: errorMessage(e, t`The hub refused the change.`),
+        forceToast: true,
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const done = async () => {
+    setBusy(true);
+    try {
+      await saveCodeNames(agent, fresh, names);
+      onOpenInvite();
+    } catch (e) {
+      notify.error({ title: t`Could not name the invites`, message: errorMessage(e, t`The hub refused the change.`) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const crumbs = [t`Kind`, t`Settings`, t`Launch`];
+  const kindDone = mode === 'code' ? t`Invite codes` : t`Public link`;
+  const settingsDone = mode === 'code' ? t`${count} codes · $${cap ?? 0}` : t`$${cap ?? 0} per user`;
+
+  const tile = (
+    Icon: typeof Ticket,
+    title: string,
+    sub: string,
+    onClick: (() => void) | null,
+    testId: string,
+    disabledWhy?: string,
+  ) => (
+    <button
+      type="button"
+      disabled={!onClick}
+      title={disabledWhy}
+      onClick={onClick ?? undefined}
+      className="flex flex-1 flex-col items-start gap-2 rounded-lg border border-border bg-background p-4 text-left hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+      data-testid={testId}
+    >
+      <Icon className="h-7 w-7 shrink-0 text-primary" />
+      <span className="text-sm font-semibold text-foreground">{title}</span>
+      <span className="text-xs text-muted-foreground">{disabledWhy ?? sub}</span>
+    </button>
+  );
+
+  return (
+    <section data-testid="new-deployment-wizard" className="w-full rounded-xl border bg-card p-5 text-left shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <nav className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs" data-testid="new-deployment-crumbs">
+          {STEPS.map((s, i) => (
+            <span key={s} className="flex items-center gap-1.5">
+              {i > 0 && <span className="text-muted-foreground">›</span>}
+              {i < at ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+                  onClick={() => step !== 'launch' && setStep(s)}
+                >
+                  ✓ {crumbs[i]}:<span className="text-foreground">{i === 0 ? kindDone : settingsDone}</span>
+                </button>
+              ) : (
+                <span className={i === at ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                  {i + 1}. {crumbs[i]}
+                </span>
+              )}
+            </span>
+          ))}
+        </nav>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            <Trans>
+              Step {at + 1} of {STEPS.length}
+            </Trans>
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            aria-label={t`Close`}
+            title={t`Close`}
+            onClick={onClose}
+            data-testid="new-deployment-close"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <h2 className="text-base font-semibold">
+          {step === 'kind' && <Trans>New deployment — who will use it?</Trans>}
+          {step === 'settings' && <Trans>Settings — how many, and who pays</Trans>}
+          {step === 'launch' &&
+            (mode === 'code' ? <Trans>Launch — hand out the codes</Trans> : <Trans>Launch — share the link</Trans>)}
+        </h2>
+      </div>
+
+      {step === 'kind' &&
+        (invitesOn === null ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row">
+            {tile(
+              Ticket,
+              t`Invite codes`,
+              invitesOn ? t`Already on — open it to add codes.` : t`One machine per user. You hand out the codes.`,
+              () => pick('code'),
+              'new-deployment-kind-code',
+            )}
+            {tile(
+              Link2,
+              t`Public link`,
+              invitesOn
+                ? t`Already on — open it to change who can open it.`
+                : t`Anyone with the link gets their own machine.`,
+              () => pick('link'),
+              'new-deployment-kind-link',
+            )}
+            {tile(
+              Server,
+              t`Cloud machine`,
+              t`One shared machine, always on.`,
+              deployPage ? () => navigation.openDock(deployPage) : null,
+              'new-deployment-kind-machine',
+              deployPage ? undefined : t`Needs the agent's project on this hub.`,
+            )}
+          </div>
+        ))}
+
+      {step === 'settings' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap gap-4">
+            {mode === 'code' && (
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="font-medium">
+                  <Trans>Codes</Trans>
+                </span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  className="h-8 w-24 text-xs"
+                  value={count}
+                  onChange={(e) => setCount(Number(e.target.value))}
+                  data-testid="new-deployment-count"
+                />
+              </label>
+            )}
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="font-medium">
+                <Trans>At most machines at once</Trans>
+              </span>
+              <Input
+                type="number"
+                min={1}
+                className="h-8 w-24 text-xs"
+                value={max ?? ''}
+                placeholder={t`no limit`}
+                onChange={(e) => setMax(e.target.value === '' ? null : Number(e.target.value))}
+                data-testid="new-deployment-max"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-end gap-4">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="font-medium">
+                <Trans>LLM source — users spend it</Trans>
+              </span>
+              <select
+                className="h-8 w-72 rounded-md border border-input bg-background px-2 text-xs"
+                value={chosenSource}
+                onChange={(e) => setSource(e.target.value)}
+                data-testid="new-deployment-source"
+              >
+                {!chosenSource && <option value="">{t`Choose the LLM endpoint users spend`}</option>}
+                {sources.map((e) => (
+                  <option key={e.id} value={endpointTypeId(e.id)}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="font-medium">
+                <Trans>$ per user</Trans>
+              </span>
+              <Input
+                type="number"
+                min={0}
+                step="0.5"
+                className="h-8 w-24 text-xs"
+                value={cap ?? ''}
+                onChange={(e) => setCap(e.target.value === '' ? null : Number(e.target.value))}
+                data-testid="new-deployment-cap"
+              />
+            </label>
+          </div>
+          {sources.length === 0 && (
+            <p className="text-xs text-destructive">
+              <Trans>Add an LLM endpoint you administer first (LLM Endpoints): users are funded from it.</Trans>
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => void launch()} disabled={busy || !ready} data-testid="new-deployment-next">
+              {busy && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
+              <Trans>Next</Trans>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setStep('kind')} disabled={busy}>
+              <Trans>Back</Trans>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === 'launch' && (
+        <div className="flex flex-col gap-3">
+          {fresh.length > 0 && (
+            <FreshCodes codes={fresh} names={names} onName={(id, v) => setNames((p) => ({ ...p, [id]: v }))} />
+          )}
+          {link && (
+            <div className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs" data-testid="new-deployment-link">
+                {link}
+              </span>
+              <CopyButton
+                value={link}
+                title={t`Copy link`}
+                className="shrink-0 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => void done()} disabled={busy} data-testid="new-deployment-done">
+              <Trans>Done</Trans>
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}

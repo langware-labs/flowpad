@@ -183,10 +183,12 @@ export default defineConfig(({ mode }) => {
         const gate = env.FLOWPAD_GATE_TOKEN ? { 'X-Cookie-Gate': env.FLOWPAD_GATE_TOKEN } : undefined;
         // PROD_READ_ONLY=1: refuse every write, so a dev UI pointed at real data can only look.
         const readOnly = env.PROD_READ_ONLY === '1';
+        // PROD_WRITE_ALLOW=<regex>: the writes a read-only proxy still lets through (one validation's actions only).
+        const writeAllow = env.PROD_WRITE_ALLOW ? new RegExp(env.PROD_WRITE_ALLOW) : null;
         const guard = (o: Record<string, unknown>) => ({
           ...o,
           ...(gate ? { headers: gate } : {}),
-          configure: (proxy: import('http-proxy').Server) => {
+          configure: (proxy: import('vite').HttpProxy.Server) => {
             const bearer = (p: import('http').ClientRequest) => {
               if (hubSession.token) p.setHeader('Authorization', `Bearer ${hubSession.token}`);
             };
@@ -198,7 +200,9 @@ export default defineConfig(({ mode }) => {
                 bypass: (req: { method?: string }, res: import('http').ServerResponse | undefined) => {
                   if (['GET', 'HEAD', 'OPTIONS'].includes((req.method || 'GET').toUpperCase())) return undefined;
                   // Signing in and out is not a data write: let the auth steps through.
-                  if (/^\/api\/v1\/(login|logout|auth|token|oauth)/.test((req as { url?: string }).url || '')) {
+                  const url = (req as { url?: string }).url || '';
+                  if (writeAllow?.test(url)) return undefined;
+                  if (/^\/api\/v1\/(login|logout|auth|token|oauth)/.test(url)) {
                     return undefined;
                   }
                   res?.writeHead(403, { 'content-type': 'application/json' });
